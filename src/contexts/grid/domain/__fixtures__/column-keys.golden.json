@@ -1,0 +1,1011 @@
+{
+ "taken": [
+  "name",
+  "column",
+  "column2",
+  "jobTitle",
+  "email"
+ ],
+ "cases": [
+  {
+   "label": "Job Title",
+   "key": "jobTitle",
+   "unique": "jobTitle2"
+  },
+  {
+   "label": "First Name",
+   "key": "firstName",
+   "unique": "firstName"
+  },
+  {
+   "label": "last name",
+   "key": "lastName",
+   "unique": "lastName"
+  },
+  {
+   "label": "Email",
+   "key": "email",
+   "unique": "email2"
+  },
+  {
+   "label": "E-mail Address",
+   "key": "eMailAddress",
+   "unique": "eMailAddress"
+  },
+  {
+   "label": "Company",
+   "key": "company",
+   "unique": "company"
+  },
+  {
+   "label": "Company Name",
+   "key": "companyName",
+   "unique": "companyName"
+  },
+  {
+   "label": "Phone Number",
+   "key": "phoneNumber",
+   "unique": "phoneNumber"
+  },
+  {
+   "label": "LinkedIn URL",
+   "key": "linkedinUrl",
+   "unique": "linkedinUrl"
+  },
+  {
+   "label": "Website",
+   "key": "website",
+   "unique": "website"
+  },
+  {
+   "label": "Domain",
+   "key": "domain",
+   "unique": "domain"
+  },
+  {
+   "label": "Industry",
+   "key": "industry",
+   "unique": "industry"
+  },
+  {
+   "label": "Employee Count",
+   "key": "employeeCount",
+   "unique": "employeeCount"
+  },
+  {
+   "label": "# of Employees",
+   "key": "ofEmployees",
+   "unique": "ofEmployees"
+  },
+  {
+   "label": "Revenue ($)",
+   "key": "revenue",
+   "unique": "revenue"
+  },
+  {
+   "label": "Annual Revenue (USD)",
+   "key": "annualRevenueUsd",
+   "unique": "annualRevenueUsd"
+  },
+  {
+   "label": "2024 Revenue",
+   "key": "c2024Revenue",
+   "unique": "c2024Revenue"
+  },
+  {
+   "label": "3rd Party ID",
+   "key": "c3rdPartyId",
+   "unique": "c3rdPartyId"
+  },
+  {
+   "label": "1",
+   "key": "c1",
+   "unique": "c1"
+  },
+  {
+   "label": "42",
+   "key": "c42",
+   "unique": "c42"
+  },
+  {
+   "label": "007",
+   "key": "c007",
+   "unique": "c007"
+  },
+  {
+   "label": "Name",
+   "key": "name",
+   "unique": "name2"
+  },
+  {
+   "label": "name",
+   "key": "name",
+   "unique": "name2"
+  },
+  {
+   "label": "NAME",
+   "key": "name",
+   "unique": "name2"
+  },
+  {
+   "label": "ID",
+   "key": "id",
+   "unique": "id"
+  },
+  {
+   "label": "id",
+   "key": "id",
+   "unique": "id"
+  },
+  {
+   "label": "URL",
+   "key": "url",
+   "unique": "url"
+  },
+  {
+   "label": "HTTP Status",
+   "key": "httpStatus",
+   "unique": "httpStatus"
+  },
+  {
+   "label": "Lead Score",
+   "key": "leadScore",
+   "unique": "leadScore"
+  },
+  {
+   "label": "Lead_Score",
+   "key": "leadScore",
+   "unique": "leadScore"
+  },
+  {
+   "label": "lead-score",
+   "key": "leadScore",
+   "unique": "leadScore"
+  },
+  {
+   "label": "lead.score",
+   "key": "leadScore",
+   "unique": "leadScore"
+  },
+  {
+   "label": "lead/score",
+   "key": "leadScore",
+   "unique": "leadScore"
+  },
+  {
+   "label": "lead  score",
+   "key": "leadScore",
+   "unique": "leadScore"
+  },
+  {
+   "label": "  padded  ",
+   "key": "padded",
+   "unique": "padded"
+  },
+  {
+   "label": "\tTabbed\tHeader\t",
+   "key": "tabbedHeader",
+   "unique": "tabbedHeader"
+  },
+  {
+   "label": "Title (Current)",
+   "key": "titleCurrent",
+   "unique": "titleCurrent"
+  },
+  {
+   "label": "City, State",
+   "key": "cityState",
+   "unique": "cityState"
+  },
+  {
+   "label": "Country/Region",
+   "key": "countryRegion",
+   "unique": "countryRegion"
+  },
+  {
+   "label": "Zip Code",
+   "key": "zipCode",
+   "unique": "zipCode"
+  },
+  {
+   "label": "Zip+4",
+   "key": "zip4",
+   "unique": "zip4"
+  },
+  {
+   "label": "Notes",
+   "key": "notes",
+   "unique": "notes"
+  },
+  {
+   "label": "Last Contacted At",
+   "key": "lastContactedAt",
+   "unique": "lastContactedAt"
+  },
+  {
+   "label": "Next Step",
+   "key": "nextStep",
+   "unique": "nextStep"
+  },
+  {
+   "label": "Owner",
+   "key": "owner",
+   "unique": "owner"
+  },
+  {
+   "label": "Created By",
+   "key": "createdBy",
+   "unique": "createdBy"
+  },
+  {
+   "label": "Updated At",
+   "key": "updatedAt",
+   "unique": "updatedAt"
+  },
+  {
+   "label": "Status",
+   "key": "status",
+   "unique": "status"
+  },
+  {
+   "label": "Stage",
+   "key": "stage",
+   "unique": "stage"
+  },
+  {
+   "label": "Source",
+   "key": "source",
+   "unique": "source"
+  },
+  {
+   "label": "Campaign",
+   "key": "campaign",
+   "unique": "campaign"
+  },
+  {
+   "label": "Tags",
+   "key": "tags",
+   "unique": "tags"
+  },
+  {
+   "label": "Twitter @handle",
+   "key": "twitterHandle",
+   "unique": "twitterHandle"
+  },
+  {
+   "label": "Facebook",
+   "key": "facebook",
+   "unique": "facebook"
+  },
+  {
+   "label": "Instagram",
+   "key": "instagram",
+   "unique": "instagram"
+  },
+  {
+   "label": "Funding Round",
+   "key": "fundingRound",
+   "unique": "fundingRound"
+  },
+  {
+   "label": "Series A",
+   "key": "seriesA",
+   "unique": "seriesA"
+  },
+  {
+   "label": "Series B/C",
+   "key": "seriesBC",
+   "unique": "seriesBC"
+  },
+  {
+   "label": "Total Raised $M",
+   "key": "totalRaisedM",
+   "unique": "totalRaisedM"
+  },
+  {
+   "label": "Founded Year",
+   "key": "foundedYear",
+   "unique": "foundedYear"
+  },
+  {
+   "label": "HQ Location",
+   "key": "hqLocation",
+   "unique": "hqLocation"
+  },
+  {
+   "label": "Tech Stack",
+   "key": "techStack",
+   "unique": "techStack"
+  },
+  {
+   "label": "CRM",
+   "key": "crm",
+   "unique": "crm"
+  },
+  {
+   "label": "Competitors",
+   "key": "competitors",
+   "unique": "competitors"
+  },
+  {
+   "label": "Do Not Contact",
+   "key": "doNotContact",
+   "unique": "doNotContact"
+  },
+  {
+   "label": "Opt-In?",
+   "key": "optIn",
+   "unique": "optIn"
+  },
+  {
+   "label": "Is Verified?",
+   "key": "isVerified",
+   "unique": "isVerified"
+  },
+  {
+   "label": "Verified Email",
+   "key": "verifiedEmail",
+   "unique": "verifiedEmail"
+  },
+  {
+   "label": "Email Status",
+   "key": "emailStatus",
+   "unique": "emailStatus"
+  },
+  {
+   "label": "Bounce Reason",
+   "key": "bounceReason",
+   "unique": "bounceReason"
+  },
+  {
+   "label": "Reply Text",
+   "key": "replyText",
+   "unique": "replyText"
+  },
+  {
+   "label": "AI Summary",
+   "key": "aiSummary",
+   "unique": "aiSummary"
+  },
+  {
+   "label": "AI Output 1",
+   "key": "aiOutput1",
+   "unique": "aiOutput1"
+  },
+  {
+   "label": "Output #2",
+   "key": "output2",
+   "unique": "output2"
+  },
+  {
+   "label": "Enrich: Email",
+   "key": "enrichEmail",
+   "unique": "enrichEmail"
+  },
+  {
+   "label": "Enrich - Phone",
+   "key": "enrichPhone",
+   "unique": "enrichPhone"
+  },
+  {
+   "label": "Full Name",
+   "key": "fullName",
+   "unique": "fullName"
+  },
+  {
+   "label": "Full_Name",
+   "key": "fullName",
+   "unique": "fullName"
+  },
+  {
+   "label": "fullName",
+   "key": "fullname",
+   "unique": "fullname"
+  },
+  {
+   "label": "FullName",
+   "key": "fullname",
+   "unique": "fullname"
+  },
+  {
+   "label": "FULL NAME",
+   "key": "fullName",
+   "unique": "fullName"
+  },
+  {
+   "label": "a",
+   "key": "a",
+   "unique": "a"
+  },
+  {
+   "label": "A",
+   "key": "a",
+   "unique": "a"
+  },
+  {
+   "label": "A B",
+   "key": "aB",
+   "unique": "aB"
+  },
+  {
+   "label": "a b c d e f",
+   "key": "aBCDEF",
+   "unique": "aBCDEF"
+  },
+  {
+   "label": "x1",
+   "key": "x1",
+   "unique": "x1"
+  },
+  {
+   "label": "X 1",
+   "key": "x1",
+   "unique": "x1"
+  },
+  {
+   "label": "1x",
+   "key": "c1x",
+   "unique": "c1x"
+  },
+  {
+   "label": "1 x",
+   "key": "c1X",
+   "unique": "c1X"
+  },
+  {
+   "label": "9 lives",
+   "key": "c9Lives",
+   "unique": "c9Lives"
+  },
+  {
+   "label": "_private",
+   "key": "private",
+   "unique": "private"
+  },
+  {
+   "label": "__dunder",
+   "key": "dunder",
+   "unique": "dunder"
+  },
+  {
+   "label": "under_score",
+   "key": "underScore",
+   "unique": "underScore"
+  },
+  {
+   "label": "trailing_",
+   "key": "trailing",
+   "unique": "trailing"
+  },
+  {
+   "label": "a_b",
+   "key": "aB",
+   "unique": "aB"
+  },
+  {
+   "label": "a__b",
+   "key": "aB",
+   "unique": "aB"
+  },
+  {
+   "label": "hello world 123",
+   "key": "helloWorld123",
+   "unique": "helloWorld123"
+  },
+  {
+   "label": "Hello, World!",
+   "key": "helloWorld",
+   "unique": "helloWorld"
+  },
+  {
+   "label": "!!!",
+   "key": "",
+   "unique": "column3"
+  },
+  {
+   "label": "---",
+   "key": "",
+   "unique": "column3"
+  },
+  {
+   "label": "???",
+   "key": "",
+   "unique": "column3"
+  },
+  {
+   "label": "$$$",
+   "key": "",
+   "unique": "column3"
+  },
+  {
+   "label": "   ",
+   "key": "",
+   "unique": "column3"
+  },
+  {
+   "label": "",
+   "key": "",
+   "unique": "column3"
+  },
+  {
+   "label": "(blank)",
+   "key": "blank",
+   "unique": "blank"
+  },
+  {
+   "label": "N/A",
+   "key": "nA",
+   "unique": "nA"
+  },
+  {
+   "label": "n/a",
+   "key": "nA",
+   "unique": "nA"
+  },
+  {
+   "label": "TBD",
+   "key": "tbd",
+   "unique": "tbd"
+  },
+  {
+   "label": "Q1 Sales",
+   "key": "q1Sales",
+   "unique": "q1Sales"
+  },
+  {
+   "label": "Q2 sales",
+   "key": "q2Sales",
+   "unique": "q2Sales"
+  },
+  {
+   "label": "FY2024 Target",
+   "key": "fy2024Target",
+   "unique": "fy2024Target"
+  },
+  {
+   "label": "FY 2024 target",
+   "key": "fy2024Target",
+   "unique": "fy2024Target"
+  },
+  {
+   "label": "Region (EMEA)",
+   "key": "regionEmea",
+   "unique": "regionEmea"
+  },
+  {
+   "label": "Region (APAC)",
+   "key": "regionApac",
+   "unique": "regionApac"
+  },
+  {
+   "label": "Sub-Region",
+   "key": "subRegion",
+   "unique": "subRegion"
+  },
+  {
+   "label": "Account Manager",
+   "key": "accountManager",
+   "unique": "accountManager"
+  },
+  {
+   "label": "Account Exec",
+   "key": "accountExec",
+   "unique": "accountExec"
+  },
+  {
+   "label": "SDR",
+   "key": "sdr",
+   "unique": "sdr"
+  },
+  {
+   "label": "BDR Owner",
+   "key": "bdrOwner",
+   "unique": "bdrOwner"
+  },
+  {
+   "label": "Meeting Booked",
+   "key": "meetingBooked",
+   "unique": "meetingBooked"
+  },
+  {
+   "label": "Meeting Date",
+   "key": "meetingDate",
+   "unique": "meetingDate"
+  },
+  {
+   "label": "Demo Date",
+   "key": "demoDate",
+   "unique": "demoDate"
+  },
+  {
+   "label": "Trial Start",
+   "key": "trialStart",
+   "unique": "trialStart"
+  },
+  {
+   "label": "Trial End",
+   "key": "trialEnd",
+   "unique": "trialEnd"
+  },
+  {
+   "label": "Contract Value",
+   "key": "contractValue",
+   "unique": "contractValue"
+  },
+  {
+   "label": "ARR",
+   "key": "arr",
+   "unique": "arr"
+  },
+  {
+   "label": "MRR",
+   "key": "mrr",
+   "unique": "mrr"
+  },
+  {
+   "label": "Churn Risk",
+   "key": "churnRisk",
+   "unique": "churnRisk"
+  },
+  {
+   "label": "NPS",
+   "key": "nps",
+   "unique": "nps"
+  },
+  {
+   "label": "CSAT",
+   "key": "csat",
+   "unique": "csat"
+  },
+  {
+   "label": "Last Login",
+   "key": "lastLogin",
+   "unique": "lastLogin"
+  },
+  {
+   "label": "Seats",
+   "key": "seats",
+   "unique": "seats"
+  },
+  {
+   "label": "Plan",
+   "key": "plan",
+   "unique": "plan"
+  },
+  {
+   "label": "Plan Tier",
+   "key": "planTier",
+   "unique": "planTier"
+  },
+  {
+   "label": "Billing Email",
+   "key": "billingEmail",
+   "unique": "billingEmail"
+  },
+  {
+   "label": "Billing Address",
+   "key": "billingAddress",
+   "unique": "billingAddress"
+  },
+  {
+   "label": "Street",
+   "key": "street",
+   "unique": "street"
+  },
+  {
+   "label": "Street 2",
+   "key": "street2",
+   "unique": "street2"
+  },
+  {
+   "label": "State/Province",
+   "key": "stateProvince",
+   "unique": "stateProvince"
+  },
+  {
+   "label": "Postal Code",
+   "key": "postalCode",
+   "unique": "postalCode"
+  },
+  {
+   "label": "Time Zone",
+   "key": "timeZone",
+   "unique": "timeZone"
+  },
+  {
+   "label": "Language",
+   "key": "language",
+   "unique": "language"
+  },
+  {
+   "label": "Locale",
+   "key": "locale",
+   "unique": "locale"
+  },
+  {
+   "label": "Currency",
+   "key": "currency",
+   "unique": "currency"
+  },
+  {
+   "label": "Industry Code (SIC)",
+   "key": "industryCodeSic",
+   "unique": "industryCodeSic"
+  },
+  {
+   "label": "NAICS",
+   "key": "naics",
+   "unique": "naics"
+  },
+  {
+   "label": "Parent Company",
+   "key": "parentCompany",
+   "unique": "parentCompany"
+  },
+  {
+   "label": "Subsidiary",
+   "key": "subsidiary",
+   "unique": "subsidiary"
+  },
+  {
+   "label": "Headcount Growth %",
+   "key": "headcountGrowth",
+   "unique": "headcountGrowth"
+  },
+  {
+   "label": "Web Traffic",
+   "key": "webTraffic",
+   "unique": "webTraffic"
+  },
+  {
+   "label": "Alexa Rank",
+   "key": "alexaRank",
+   "unique": "alexaRank"
+  },
+  {
+   "label": "Domain Authority",
+   "key": "domainAuthority",
+   "unique": "domainAuthority"
+  },
+  {
+   "label": "Keywords",
+   "key": "keywords",
+   "unique": "keywords"
+  },
+  {
+   "label": "Description",
+   "key": "description",
+   "unique": "description"
+  },
+  {
+   "label": "Short Description",
+   "key": "shortDescription",
+   "unique": "shortDescription"
+  },
+  {
+   "label": "Long Description",
+   "key": "longDescription",
+   "unique": "longDescription"
+  },
+  {
+   "label": "About",
+   "key": "about",
+   "unique": "about"
+  },
+  {
+   "label": "Bio",
+   "key": "bio",
+   "unique": "bio"
+  },
+  {
+   "label": "Headline",
+   "key": "headline",
+   "unique": "headline"
+  },
+  {
+   "label": "Summary",
+   "key": "summary",
+   "unique": "summary"
+  },
+  {
+   "label": "Experience (Years)",
+   "key": "experienceYears",
+   "unique": "experienceYears"
+  },
+  {
+   "label": "Education",
+   "key": "education",
+   "unique": "education"
+  },
+  {
+   "label": "School",
+   "key": "school",
+   "unique": "school"
+  },
+  {
+   "label": "Degree",
+   "key": "degree",
+   "unique": "degree"
+  },
+  {
+   "label": "Skills",
+   "key": "skills",
+   "unique": "skills"
+  },
+  {
+   "label": "Certifications",
+   "key": "certifications",
+   "unique": "certifications"
+  },
+  {
+   "label": "Languages",
+   "key": "languages",
+   "unique": "languages"
+  },
+  {
+   "label": "Interests",
+   "key": "interests",
+   "unique": "interests"
+  },
+  {
+   "label": "Connections",
+   "key": "connections",
+   "unique": "connections"
+  },
+  {
+   "label": "Followers",
+   "key": "followers",
+   "unique": "followers"
+  },
+  {
+   "label": "Following",
+   "key": "following",
+   "unique": "following"
+  },
+  {
+   "label": "Posts",
+   "key": "posts",
+   "unique": "posts"
+  },
+  {
+   "label": "Likes",
+   "key": "likes",
+   "unique": "likes"
+  },
+  {
+   "label": "Comments",
+   "key": "comments",
+   "unique": "comments"
+  },
+  {
+   "label": "Shares",
+   "key": "shares",
+   "unique": "shares"
+  },
+  {
+   "label": "Mentions",
+   "key": "mentions",
+   "unique": "mentions"
+  },
+  {
+   "label": "Click Rate",
+   "key": "clickRate",
+   "unique": "clickRate"
+  },
+  {
+   "label": "Open Rate",
+   "key": "openRate",
+   "unique": "openRate"
+  },
+  {
+   "label": "Reply Rate",
+   "key": "replyRate",
+   "unique": "replyRate"
+  },
+  {
+   "label": "Bounce Rate",
+   "key": "bounceRate",
+   "unique": "bounceRate"
+  },
+  {
+   "label": "Unsubscribe",
+   "key": "unsubscribe",
+   "unique": "unsubscribe"
+  },
+  {
+   "label": "Spam Complaint",
+   "key": "spamComplaint",
+   "unique": "spamComplaint"
+  },
+  {
+   "label": "Sent At",
+   "key": "sentAt",
+   "unique": "sentAt"
+  },
+  {
+   "label": "Delivered At",
+   "key": "deliveredAt",
+   "unique": "deliveredAt"
+  },
+  {
+   "label": "Opened At",
+   "key": "openedAt",
+   "unique": "openedAt"
+  },
+  {
+   "label": "Clicked At",
+   "key": "clickedAt",
+   "unique": "clickedAt"
+  },
+  {
+   "label": "Replied At",
+   "key": "repliedAt",
+   "unique": "repliedAt"
+  },
+  {
+   "label": "Step 1 Subject",
+   "key": "step1Subject",
+   "unique": "step1Subject"
+  },
+  {
+   "label": "Step 1 Body",
+   "key": "step1Body",
+   "unique": "step1Body"
+  },
+  {
+   "label": "Step 2 Subject",
+   "key": "step2Subject",
+   "unique": "step2Subject"
+  },
+  {
+   "label": "Subject Line",
+   "key": "subjectLine",
+   "unique": "subjectLine"
+  },
+  {
+   "label": "Preview Text",
+   "key": "previewText",
+   "unique": "previewText"
+  },
+  {
+   "label": "CTA",
+   "key": "cta",
+   "unique": "cta"
+  },
+  {
+   "label": "Landing Page",
+   "key": "landingPage",
+   "unique": "landingPage"
+  },
+  {
+   "label": "UTM Source",
+   "key": "utmSource",
+   "unique": "utmSource"
+  },
+  {
+   "label": "UTM_Medium",
+   "key": "utmMedium",
+   "unique": "utmMedium"
+  },
+  {
+   "label": "utm-campaign",
+   "key": "utmCampaign",
+   "unique": "utmCampaign"
+  },
+  {
+   "label": "Referrer",
+   "key": "referrer",
+   "unique": "referrer"
+  },
+  {
+   "label": "IP Address",
+   "key": "ipAddress",
+   "unique": "ipAddress"
+  },
+  {
+   "label": "User Agent",
+   "key": "userAgent",
+   "unique": "userAgent"
+  }
+ ]
+}

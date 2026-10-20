@@ -1,0 +1,17 @@
+node_modules
+.next
+.next-*
+reference
+docs
+.git
+.env*
+!.env.example
+e2e
+test-results
+playwright-report
+coverage
+*.tsbuildinfo
+secrets
+docker-compose.override.yml
+.claude
+.impeccable

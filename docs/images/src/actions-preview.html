@@ -1,0 +1,56 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="base.css">
+<style>
+.stage { height: 640px; }
+.stage .art { background-image: url('art/nocturne-whistler.jpg'), linear-gradient(160deg, #2c3a5e 0%, #1f2742 50%, #2a3a3f 100%); background-position: center 50%; }
+.content { padding: 44px 50px; }
+.window { width: 860px; margin: 0 auto; }
+.body { padding: 26px 30px 10px; }
+.h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 18px; }
+.h h2 { font-family: var(--serif); font-weight: 400; font-size: 30px; letter-spacing: -0.025em; }
+.h span { font-size: 13px; color: var(--ink-muted); }
+.sec { padding: 16px 0 10px; border-top: 1px solid var(--line); }
+.sec .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.sec .count { font-size: 12px; color: var(--accent); font-family: var(--mono); }
+.sec .desc { font-size: 12.5px; color: var(--ink-muted); margin-left: auto; }
+.row { display: grid; grid-template-columns: 26px 1fr auto; gap: 12px; padding: 9px 0; align-items: start; }
+.row + .row { border-top: 1px solid var(--line); }
+.ch { font-family: var(--mono); font-size: 11px; color: var(--ink-muted); padding-top: 3px; }
+.t { font-size: 15px; color: var(--ink); }
+.t b { font-weight: 500; }
+.r { font-size: 13px; color: var(--ink-sub); margin-top: 3px; }
+.r q { font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--ink-sub); }
+.tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 11.5px; color: var(--accent); vertical-align: 1px; }
+.btn { font-size: 12.5px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong); color: var(--ink); white-space: nowrap; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #17121f; font-weight: 500; }
+.when { font-family: var(--mono); font-size: 12px; color: var(--ink-muted); padding-top: 3px; }
+</style></head><body>
+<div class="stage"><div class="art"></div><div class="veil"></div>
+<div class="content"><div class="window">
+  <div class="bar"><i></i><i></i><i></i><span>/actions</span></div>
+  <div class="body">
+    <div class="h"><h2>Actions</h2><span>Oldest first · 7 waiting on your team</span></div>
+    <div class="sec">
+      <div class="head"><span class="label">Replies to approve</span><span class="count">3</span><span class="desc">Nothing is sent until you approve.</span></div>
+      <div class="row"><span class="ch">in</span>
+        <div><div class="t"><b>Dana Whitfield</b> · Northwind<span class="tag">Meeting requested</span></div>
+        <div class="r"><q>Thursday at 2pm works. I will send an invite with the security doc attached.</q></div></div>
+        <span class="btn primary">Approve and send</span></div>
+      <div class="row"><span class="ch">em</span>
+        <div><div class="t"><b>Priya Raman</b> · Brightwell<span class="tag">Information requested</span></div>
+        <div class="r"><q>Here is the annual-plan quote you asked for, with the seat pricing broken out.</q></div></div>
+        <span class="btn primary">Approve and send</span></div>
+    </div>
+    <div class="sec">
+      <div class="head"><span class="label">Follow-ups due</span><span class="count">2</span><span class="desc">Leads you waited on who are due another touch.</span></div>
+      <div class="row"><span class="ch">em</span>
+        <div><div class="t"><b>Marco Bellini</b> · Harbor Labs</div><div class="r">Step 3 of Q4 founders · no reply in 6 days</div></div>
+        <span class="when">due today</span></div>
+    </div>
+    <div class="sec">
+      <div class="head"><span class="label">Your tasks</span><span class="count">2</span><span class="desc">Open tasks assigned to you, overdue first.</span></div>
+      <div class="row"><span class="ch">T</span>
+        <div><div class="t">Send the pilot proposal</div><div class="r">Northwind · deal in Proposal</div></div>
+        <span class="when">tomorrow</span></div>
+    </div>
+  </div>
+</div></div></div></body></html>

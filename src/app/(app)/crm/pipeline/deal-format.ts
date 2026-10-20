@@ -1,0 +1,44 @@
+import { formatMinor } from "@/contexts/deals/domain/money";
+
+/** Display text of the Pipeline board and the deal page. Pure and locale-free, so the server and the browser print the same. */
+
+/**
+ * "USD 12,500.00", "KRW 1,500". A column total arrives as a decimal string and can pass 2^53 - 1, so the split into major and
+ * minor units runs on a bigint and the grouping on its digits; a Number would round it.
+ */
+export function formatAmount(amountMinor: number | bigint | string, currency: string): string {
+  const value = BigInt(amountMinor);
+  const negative = value < BigInt(0);
+  const [whole, fraction] = formatMinor(negative ? -value : value, currency).split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${currency} ${negative ? "-" : ""}${grouped}${fraction === undefined ? "" : `.${fraction}`}`;
+}
+
+/** The per-currency totals of a column, largest first. Amounts of different currencies never add up. */
+export function formatTotals(amounts: ReadonlyArray<{ currency: string; amountMinor: string }>): string | null {
+  if (amounts.length === 0) return null;
+  return [...amounts]
+    .sort((a, b) => a.currency.localeCompare(b.currency))
+    .map((a) => formatAmount(a.amountMinor, a.currency))
+    .join(", ");
+}
+
+const DAY_MS = 86_400_000;
+
+/** "Today", "1 day", "12 days" in the stage, counted from the server's clock. */
+export function daysInStage(stageChangedAt: string | Date, nowMs: number): string {
+  const days = Math.max(0, Math.floor((nowMs - new Date(stageChangedAt).getTime()) / DAY_MS));
+  if (days === 0) return "Today";
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
+/** The owner line: a member's name, "Former member" for someone who left, or "No owner". */
+export function ownerText(owner: { name: string | null; isMember: boolean } | null): string {
+  if (!owner) return "No owner";
+  return owner.isMember && owner.name ? owner.name : "Former member";
+}
+
+/** True when an open deal's expected close date (YYYY-MM-DD) lies before today in the organization's zone. */
+export function isOverdue(expectedCloseOn: string | null, today: string, stageKind: string): boolean {
+  return stageKind === "open" && expectedCloseOn !== null && expectedCloseOn < today;
+}

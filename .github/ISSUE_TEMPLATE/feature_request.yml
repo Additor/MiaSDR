@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest a change to how MiaSDR works.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and where MiaSDR gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: The change you have in mind. Screens, settings or API shapes help.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now instead

@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="base.css">
+<style>
+.stage { height: 508px; }
+.stage .art { background-image: url('art/water-lilies-1906-monet.jpg'), linear-gradient(160deg, #3b4a6e 0%, #2a3350 50%, #2d4a45 100%); background-position: center 40%; }
+.content { padding: 44px 50px; }
+.window { width: 1100px; }
+.body { padding: 28px 28px 30px; display: grid; grid-template-columns: 1fr 24px 1.1fr 24px 1.15fr 24px 1fr; align-items: start; }
+.arrow { align-self: center; color: var(--ink-muted); font-size: 18px; text-align: center; margin-top: 60px; }
+.step h3 { font-family: var(--serif); font-weight: 400; font-size: 22px; letter-spacing: -0.02em; margin: 10px 0 8px; }
+.step p { font-size: 13px; line-height: 1.5; color: var(--ink-sub); }
+.chips { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.chip { background: var(--paper-warm); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--ink); }
+.files { margin-top: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.75; color: var(--ink-sub); }
+.files b { color: var(--accent); font-weight: 500; }
+.out { margin-top: 14px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.out .t { font-size: 13px; color: var(--ink); margin-bottom: 8px; }
+.out .r { height: 6px; border-radius: 3px; background: var(--paper-warm); margin-bottom: 7px; }
+.out .cfg { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10.5px; color: var(--accent); line-height: 1.5; }
+</style></head><body>
+<div class="stage"><div class="art"></div><div class="veil"></div>
+<div class="content"><div class="window">
+  <div class="bar"><i></i><i></i><i></i><span>how it works</span></div>
+  <div class="body">
+    <div class="step"><div class="label">01 · Import</div><h3>Your leads</h3><p>Bring them in once. MiaSDR merges duplicates.</p>
+      <div class="chips"><div class="chip">CSV or XLSX</div><div class="chip">LinkedIn search</div><div class="chip">Tables rows</div></div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="step"><div class="label">02 · Send</div><h3>Campaign steps</h3><p>From your Google Workspace mailboxes and your LinkedIn account, inside the limits you set.</p>
+      <div class="files">09:00&ndash;17:00 local<br>40 per mailbox a day<br>gap <b>3&ndash;9 min</b>, random</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="step"><div class="label">03 · Reply</div><h3>AI reads and drafts</h3><p>A reply stops the sequence everywhere. The AI sorts it and writes an answer.</p>
+      <div class="chips"><div class="chip">Meeting requested</div><div class="chip">Information requested</div><div class="chip">Out of office</div></div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="step"><div class="label">04 · Approve</div><h3>A person decides</h3><p>Your team approves each draft in Actions. Deals go to the CRM.</p>
+      <div class="out"><div class="t">Replies to approve · 3</div><div class="r" style="width:92%"></div><div class="r" style="width:70%"></div><div class="r" style="width:82%"></div>
+      <div class="cfg">Nothing is sent until<br>you approve.</div></div></div>
+  </div>
+</div></div></div></body></html>

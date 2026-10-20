@@ -1,0 +1,215 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Geist from next/font (layout.tsx). The token used to point at itself, which left every page in the browser serif. */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-count: var(--sidebar-count);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-solid: var(--destructive-solid);
+  --color-warning: var(--warning);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Spacing roles (see "Spacing" in DESIGN.md). Utilities take them by name: gap-section, py-section, px-gutter, gap-group. */
+  --spacing-gutter: var(--space-gutter);
+  --spacing-section: var(--space-section);
+  --spacing-group: var(--space-group);
+  --spacing-field: var(--space-field);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.52 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  /* Red-700. Text and the 10% tint behind it reach 4.5:1; the old 0.577 lightness gave 3.99:1 on the tint. */
+  --destructive: oklch(0.505 0.213 27.518);
+  /* Fill behind white text on solid destructive buttons. */
+  --destructive-solid: var(--destructive);
+  /* Amber for uncertain or degraded states (an unconfirmed send, a mailbox warning). Text and icons only, never a fill; 4.5:1 on white. */
+  --warning: oklch(0.52 0.13 60);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  /* Dark enough that the focus ring reads on white. */
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  /* 8px: a dense operate UI, not the 10px starter default. */
+  --radius: 0.5rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  /* Brand lavender; dark text keeps the fill readable. */
+  --sidebar-primary: #b9aaff;
+  --sidebar-primary-foreground: #1e1724;
+  /* Count text in the brand hue. The lavender itself is too light as text on the light sidebar (about 2:1), so mix it toward the dark foreground until it reaches 4.5:1. */
+  --sidebar-count: color-mix(in oklab, #b9aaff 55%, #1e1724);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  /* The light red above is too pale for white text (3.4:1), so the fill is a darker red than the text color. */
+  --destructive-solid: oklch(0.55 0.22 27);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #b9aaff;
+  --sidebar-primary-foreground: #1e1724;
+  --sidebar-count: #b9aaff;
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --warning: oklch(0.83 0.14 80);
+}
+
+/*
+ * Spacing by relationship, not by number. Four roles, from loose to tight:
+ * gutter  the page edge, shared by the top bar and the body so both start on one line;
+ * section between independent parts of a page (record sections, settings blocks, the record header and its body);
+ * group   between the parts of one thing (a toolbar and its table, a heading and its content, list rows);
+ * field   between a label and its control, or a heading and its one-line description.
+ * Gutter and section open up on wide screens; group and field stay put so a form reads the same everywhere.
+ */
+:root {
+  --space-gutter: 1rem;
+  --space-section: 1.5rem;
+  --space-group: 0.75rem;
+  --space-field: 0.375rem;
+}
+@media (width >= 64rem) {
+  :root {
+    --space-gutter: 1.5rem;
+    --space-section: 2rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--foreground) 14%, transparent);
+  }
+  /* Counts, dates and amounts line up in every table and fact list. */
+  table,
+  dl {
+    font-variant-numeric: tabular-nums;
+  }
+}
+/* The body under a PageHeader: gutter on the sides and top, room to scroll past the last row. Pair it with a stack. */
+@utility page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  padding: var(--space-gutter) var(--space-gutter) 3rem;
+}
+
+/* Children are independent sections. */
+@utility stack-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-section);
+}
+
+/* Children are parts of one thing. */
+@utility stack-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-group);
+}
+
+/* A label and its control, or a heading and its description. */
+@utility stack-field {
+  display: grid;
+  gap: var(--space-field);
+}

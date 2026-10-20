@@ -1,0 +1,69 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+/**
+ * The public surface of a context for `src/app`. Pages and route handlers import a context's `domain/` and
+ * `application/` freely, but from `infrastructure/` only its composition files (`composition.ts`, `*-composition.ts`),
+ * which hand out wired deps, plus the identity entry points below. Everything else in `infrastructure/` is private, so
+ * a context can rename or split a store without touching a route.
+ */
+
+/** Identity's auth entry points: the session readers, the Better Auth handler and client, and the sign-up facts. */
+const PUBLIC_INFRASTRUCTURE = new Set(["identity/infrastructure/session", "identity/infrastructure/auth-client", "identity/infrastructure/auth", "identity/infrastructure/signup-facts"]);
+
+/** App files that still import a private infrastructure module, as the code stood when the rule arrived. Shrink only. */
+const PRIVATE_IMPORTS: Record<string, string[]> = {
+  "src/app/api/dev/inbound/route.ts": ["outreach/email/infrastructure/fake-mailbox-provider"],
+  "src/app/api/grid/tables/[tableId]/import/route.ts": ["grid/infrastructure/parse-upload"],
+  "src/app/api/leads/import/preview/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
+  "src/app/api/leads/import/read-form.ts": ["leads/infrastructure/csv"],
+  "src/app/api/leads/import/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
+  "src/app/api/leads/import/summary/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
+  "src/app/api/linkedin/search-batches/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
+  "src/app/api/webhooks/dev-fakes/route.ts": ["identity/infrastructure/e2e-rate-limit", "outreach/email/infrastructure/fake-mailbox-provider", "outreach/linkedin/infrastructure/fake-linkedin-gateway"],
+};
+
+const ROOT = path.resolve(__dirname, "../..");
+
+function appFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) appFiles(full, out);
+    else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(full);
+  }
+  return out;
+}
+
+/** The private infrastructure modules `source` imports, as `<context>[/<subdomain>]/infrastructure/<module>`. */
+export function privateImports(source: string): string[] {
+  const found = new Set<string>();
+  for (const m of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)["']@\/contexts\/([a-z]+(?:\/[a-z-]+)?\/infrastructure\/[a-z0-9-]+)["']/g)) {
+    const imported = m[1];
+    if (/(^|-)composition$/.test(imported.split("/").pop() ?? "") || PUBLIC_INFRASTRUCTURE.has(imported)) continue;
+    found.add(imported);
+  }
+  return [...found].sort();
+}
+
+describe("app boundaries", () => {
+  it("imports private infrastructure only where the shrink-only list allows it", () => {
+    const found: Record<string, string[]> = {};
+    for (const file of appFiles(path.join(ROOT, "src/app"))) {
+      const hits = privateImports(readFileSync(file, "utf8"));
+      if (hits.length > 0) found[path.relative(ROOT, file).split(path.sep).join("/")] = hits;
+    }
+    expect(found).toEqual(PRIVATE_IMPORTS);
+  });
+
+  it("tells a composition and an entry point from a private module", () => {
+    const source = [
+      'import { mailboxDeps } from "@/contexts/outreach/infrastructure/composition";',
+      'import { linkedinJobs } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";',
+      'import { requireOrgContext } from "@/contexts/identity/infrastructure/session";',
+      'import { drizzleLeadStore } from "@/contexts/leads/infrastructure/drizzle-lead-store";',
+      'const csv = await import("@/contexts/leads/infrastructure/csv");',
+    ].join("\n");
+    expect(privateImports(source)).toEqual(["leads/infrastructure/csv", "leads/infrastructure/drizzle-lead-store"]);
+  });
+});

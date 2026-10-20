@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in MiaSDR does not work the way the docs say.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem goes through private reporting instead, see SECURITY.md. Remove keys, mailbox addresses and lead data from anything you paste.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. Quote error messages exactly.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Campaigns and create a campaign
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.1.0 or a commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: How you run it
+      options:
+        - Docker Compose (bundled Postgres)
+        - Docker Compose (external Postgres)
+        - pnpm dev
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The app container's output around the failure (`docker compose logs app`).
+      render: text

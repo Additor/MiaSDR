@@ -1,0 +1,42 @@
+/* Mia night theme tokens. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;1,8..60,400&display=swap');
+
+:root {
+  --accent: #b9aaff;
+  --ink: #f2effa;
+  --ink-sub: #b3adc2;
+  --ink-muted: #8f89a1;
+  --paper: #0f0c15;
+  --paper-alt: #131019;
+  --window: #171320;
+  --paper-card: #1c1727;
+  --paper-warm: #1f1a2b;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --serif: 'Source Serif 4', serif;
+  --sans: 'Geist', sans-serif;
+  --mono: 'Geist Mono', ui-monospace, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 1200px; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+
+/* Painting stage: full-bleed art, light veil, canvas grain. */
+.stage { position: relative; width: 1200px; overflow: hidden; background: #3a3158; }
+.stage .art { position: absolute; inset: 0; background-size: cover; background-position: center 30%;
+  background-color: #3a3158;
+  background-image: linear-gradient(160deg, #4a3d6e 0%, #2f2a4a 45%, #2d4a3a 100%); }
+.stage .veil { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(14,12,22,.30) 0%, rgba(14,12,22,.12) 45%, rgba(14,12,22,.34) 100%); }
+.stage .content { position: relative; }
+
+.lockup { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 400; color: var(--ink); }
+.lockup svg { width: 34px; height: 34px; color: var(--accent); }
+
+/* Product window, same grammar as the landing's Window component. */
+.window { background: var(--window); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  box-shadow: 0 32px 90px rgba(20,16,32,.45); }
+.window .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--paper-card); border-bottom: 1px solid var(--line); }
+.window .bar i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,.14); display: block; }
+.window .bar span { margin-left: 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-muted); }
+.label { font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+.mono { font-family: var(--mono); }

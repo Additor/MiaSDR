@@ -1,0 +1,60 @@
+# MiaSDR against a database you run yourself (managed PostgreSQL 17 or newer, or a server on another host).
+# This file replaces docker-compose.yml: it has the app service only and no db service.
+#
+#   1. Copy .env.example to .env, replace every CHANGEME, and set DATABASE_URL (and DATABASE_SSL if the
+#      server does not use TLS). POSTGRES_PASSWORD is not needed.
+#   2. Select this file for every compose command in the shell, or once in .env:
+#        export COMPOSE_FILE=docker-compose.external-db.yml
+#      or the one-off form:
+#        docker compose -f docker-compose.external-db.yml up -d --build
+#   3. Optional: set RUN_MIGRATIONS=false and run `docker compose run --rm app node scripts/migrate.mjs`
+#      from your deploy pipeline instead of migrating at boot.
+#
+# Do not list both files in COMPOSE_FILE: Compose would merge the two app services and start the bundled db too.
+
+name: miasdr
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # One instance only until the outreach send claim is verified under overlap.
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      DATABASE_SSL: ${DATABASE_SSL:-require}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      INTEGRATION_CREDENTIALS_KEY: ${INTEGRATION_CREDENTIALS_KEY:?set INTEGRATION_CREDENTIALS_KEY in .env}
+      INTEGRATION_CREDENTIALS_LEGACY_KEYS: ${INTEGRATION_CREDENTIALS_LEGACY_KEYS:-}
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET:?set UNSUBSCRIBE_SECRET in .env}
+      CRON_SECRET: ${CRON_SECRET:-}
+      AUTH_SIGNUP: ${AUTH_SIGNUP:-invite-only}
+      MAILBOX_ALLOWED_DOMAINS: ${MAILBOX_ALLOWED_DOMAINS:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      DB_POOL_MAX: ${DB_POOL_MAX:-8}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-}
+      EMBEDDED_SCHEDULER: ${EMBEDDED_SCHEDULER:-}
+      PAUSE_OUTBOUND: ${PAUSE_OUTBOUND:-}
+      DEFAULT_PHONE_COUNTRY: ${DEFAULT_PHONE_COUNTRY:-}
+      MAILBOX_PROVIDER: ${MAILBOX_PROVIDER:-}
+      LINKEDIN_PROVIDER: ${LINKEDIN_PROVIDER:-}
+      LINKEDIN_DSN_ALLOWED_HOSTS: ${LINKEDIN_DSN_ALLOWED_HOSTS:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_MODEL: ${AI_MODEL:-}
+      GRID_PROVIDER: ${GRID_PROVIDER:-}
+      GRID_HTTP_ALLOWED_HOSTS: ${GRID_HTTP_ALLOWED_HOSTS:-}
+      GRID_RUN_CONCURRENCY: ${GRID_RUN_CONCURRENCY:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_SERVICE_ACCOUNT_FILE: ${GOOGLE_SERVICE_ACCOUNT_FILE:-}
+      RETENTION_JOB_RUNS_DAYS: ${RETENTION_JOB_RUNS_DAYS:-}
+      RETENTION_INBOUND_EVENTS_DAYS: ${RETENTION_INBOUND_EVENTS_DAYS:-}
+      RETENTION_INBOUND_FAILED_DAYS: ${RETENTION_INBOUND_FAILED_DAYS:-}
+      RETENTION_AI_JOBS_DAYS: ${RETENTION_AI_JOBS_DAYS:-}
+    # To use the file variant, uncomment and set GOOGLE_SERVICE_ACCOUNT_FILE=/run/secrets/google-service-account.json in .env.
+    # volumes:
+    #   - ./secrets/google-service-account.json:/run/secrets/google-service-account.json:ro

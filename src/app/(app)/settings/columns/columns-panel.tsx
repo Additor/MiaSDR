@@ -1,0 +1,224 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useId, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { callApi } from "@/lib/api-client";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { EmptyState } from "@/components/shell/empty-state";
+import { Tabs } from "@/components/shell/tabs";
+import { cn } from "@/lib/utils";
+import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
+
+type Entity = "people" | "companies";
+
+interface Column {
+  id: string;
+  key: string;
+  name: string;
+  archivedAt: string | null;
+  usedBy: number;
+}
+
+const TITLES: Record<Entity, string> = { people: "Person fields", companies: "Company fields" };
+/** Where the fields of each type show, in the order set here. */
+const SHOWN_ON: Record<Entity, string> = { people: "the lead and contact forms", companies: "the company form" };
+
+export function ColumnsPanel({ canManage, initial }: { canManage: boolean; initial: Record<Entity, Column[]> }) {
+  return (
+    <div className="max-w-3xl">
+      <Tabs
+        label="Field type"
+        tabs={(Object.keys(TITLES) as Entity[]).map((entity) => ({
+          id: entity,
+          label: TITLES[entity],
+          content: <EntityColumns entity={entity} columns={initial[entity]} canManage={canManage} />,
+        }))}
+      />
+    </div>
+  );
+}
+
+function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns: Column[]; canManage: boolean }) {
+  const router = useRouter();
+  const nameId = useId();
+  const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Column | null>(null);
+  const [archiving, setArchiving] = useState<Column | null>(null);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const active = columns.filter((c) => !c.archivedAt);
+  const archived = columns.filter((c) => c.archivedAt);
+
+  async function run(call: Promise<{ ok: boolean; error: string | null }>, done?: string) {
+    setPending(true);
+    const result = await call;
+    setPending(false);
+    if (!result.ok) {
+      setError(result.error);
+      return false;
+    }
+    setError(null);
+    if (done) toast.success(done);
+    router.refresh();
+    return true;
+  }
+
+  /** For a ConfirmDialog: a failure throws, so the dialog stays open and shows the message. */
+  async function runOrThrow(call: Promise<{ ok: boolean; error: string | null }>, done: string) {
+    const result = await call;
+    if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
+    setError(null);
+    toast.success(done);
+    router.refresh();
+  }
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    if (await run(callApi("/api/leads/columns", "POST", { entity, name }), "Field added.")) setName("");
+  }
+
+  async function rename(id: string) {
+    if (await run(callApi(`/api/leads/columns/${id}`, "PATCH", { name: draft }), "Field renamed.")) setEditingId(null);
+  }
+
+  function move(index: number, delta: number) {
+    const ids = active.map((c) => c.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    void run(callApi("/api/leads/columns", "PUT", { entity, ids }));
+  }
+
+  function remove(column: Column) {
+    void run(callApi(`/api/leads/columns/${column.id}`, "DELETE"), `${column.name} deleted.`);
+  }
+
+  return (
+    <div>
+      {canManage && (
+        <SettingsSection title="Add a field" description="Imports turn extra file columns into fields too. Names are unique per type, ignoring case.">
+          <form onSubmit={add} className="flex flex-wrap items-end gap-2">
+            <div className="stack-field">
+              <Label htmlFor={nameId}>New field name</Label>
+              <Input id={nameId} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required className="w-64 max-w-full" />
+            </div>
+            <Button type="submit" disabled={pending}>
+              Add field
+            </Button>
+          </form>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </SettingsSection>
+      )}
+      <SettingsSection title={TITLES[entity]} description={active.length > 0 ? `Order here is the order on ${SHOWN_ON[entity]}.` : undefined}>
+        {!canManage && error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        {active.length === 0 ? (
+          <EmptyState
+            className="py-0"
+            title={`No ${entity === "people" ? "person" : "company"} fields yet`}
+            description={canManage ? "Add one above, or import a file with extra columns and MiaSDR creates them for you." : "An owner or admin can add one, or an import can create them."}
+            action={{ label: "Import leads", href: "/leads/import" }}
+          />
+        ) : (
+          <ul className={RULED_LIST}>
+            {active.map((column, index) => (
+              <li key={column.id} className={cn(RULED_ROW, "flex min-h-11 flex-wrap items-center gap-2")}>
+                {editingId === column.id ? (
+                  <>
+                    <Input aria-label="Field name" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={60} className="w-56" />
+                    <Button size="sm" disabled={pending} onClick={() => rename(column.id)}>
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium">{column.name}</span>
+                    <span className="text-sm text-muted-foreground">{column.usedBy} with a value</span>
+                    {canManage && (
+                      <span className="ml-auto flex gap-1">
+                        <Button size="sm" variant="ghost" aria-label={`Move ${column.name} up`} disabled={pending || index === 0} onClick={() => move(index, -1)}>
+                          Up
+                        </Button>
+                        <Button size="sm" variant="ghost" aria-label={`Move ${column.name} down`} disabled={pending || index === active.length - 1} onClick={() => move(index, 1)}>
+                          Down
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingId(column.id);
+                            setDraft(column.name);
+                          }}
+                        >
+                          Rename
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={pending} onClick={() => setArchiving(column)}>
+                          Archive
+                        </Button>
+                      </span>
+                    )}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsSection>
+      {archived.length > 0 && (
+        <SettingsSection title={`Archived (${archived.length})`} description="Archived fields keep their values. Delete one to remove the values from every row.">
+          <ul className={RULED_LIST}>
+            {archived.map((column) => (
+              <li key={column.id} className={cn(RULED_ROW, "flex min-h-11 flex-wrap items-center gap-2 opacity-80")}>
+                <span className="font-medium">{column.name}</span>
+                <span className="text-sm text-muted-foreground">{column.usedBy} with a value</span>
+                {canManage && (
+                  <span className="ml-auto flex gap-1">
+                    <Button size="sm" variant="outline" disabled={pending} onClick={() => run(callApi(`/api/leads/columns/${column.id}`, "PATCH", { archived: false }), `${column.name} restored.`)}>
+                      Restore
+                    </Button>
+                    <Button size="sm" variant="destructive" disabled={pending} onClick={() => setDeleting(column)}>
+                      Delete
+                    </Button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </SettingsSection>
+      )}
+      <ConfirmDialog
+        open={archiving !== null}
+        onOpenChange={(open) => !open && setArchiving(null)}
+        title={`Archive "${archiving?.name ?? "this field"}"?`}
+        description={`It leaves ${SHOWN_ON[entity]}. Its values stay on ${archiving?.usedBy ?? 0} ${entity === "people" ? "people" : "companies"}, and you can restore it later.`}
+        confirmLabel="Archive field"
+        onConfirm={() => archiving && runOrThrow(callApi(`/api/leads/columns/${archiving.id}`, "PATCH", { archived: true }), `${archiving.name} archived.`)}
+      />
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete "${deleting?.name ?? "this field"}"?`}
+        description={`Its value is removed from ${deleting?.usedBy ?? 0} ${entity === "people" ? "people" : "companies"}. This cannot be undone.`}
+        confirmLabel="Delete field"
+        destructive
+        onConfirm={() => deleting && remove(deleting)}
+      />
+    </div>
+  );
+}

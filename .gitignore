@@ -1,0 +1,57 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnpm-store/
+
+# testing
+/coverage
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/.run/
+
+# next.js (the e2e runner builds into .next-<name>/)
+/.next/
+/.next-*/
+/out/
+
+# production
+/build
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# env files (only the example is committed)
+.env*
+!.env.example
+
+# local secrets and machine-specific compose overrides
+/secrets/
+docker-compose.override.yml
+*.pem
+*.key
+*.p12
+
+# vercel
+.vercel
+
+# logs and caches
+*.log
+.eslintcache
+
+# editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# local agent and design-tool state
+/.claude/
+/.impeccable/
+CLAUDE.local.md
+

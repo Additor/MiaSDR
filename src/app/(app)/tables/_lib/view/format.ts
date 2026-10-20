@@ -1,0 +1,122 @@
+import { effectiveColumnType, isStaticColumnType, STATIC_COLUMN_TYPES, type ColumnType } from "@/contexts/grid/domain/column-types";
+import type { CellMeta, GridColumn, GridRow } from "../data/types";
+
+export const TYPE_LABELS: Record<string, string> = {
+  text: "Text",
+  number: "Number",
+  currency: "Currency",
+  boolean: "Checkbox",
+  date: "Date",
+  url: "URL",
+  email: "Email",
+  image: "Image URL",
+  select: "Select",
+  multiselect: "Multi select",
+  json: "JSON",
+  enrichment: "Enrichment",
+  integration_output: "Enrichment output",
+  ai_output: "AI output",
+  http: "HTTP",
+  ai: "AI",
+  functions: "Functions",
+  message: "Message",
+  waterfall: "Waterfall",
+  formula: "Formula",
+  merge: "Merge",
+};
+
+export const typeLabel = (type: string) => TYPE_LABELS[type] ?? type;
+
+export const EDITABLE_TYPE_OPTIONS = STATIC_COLUMN_TYPES.map((value) => ({ value, label: typeLabel(value) }));
+
+export const RUNNER_TYPES_WITH_RUN: ReadonlySet<string> = new Set(["enrichment", "waterfall", "ai"]);
+
+/** Only static columns take typed values. A runner column's value comes from its run. */
+export const isEditableColumn = (column: Pick<GridColumn, "type">) => isStaticColumnType(column.type);
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export function selectOptions(column: Pick<GridColumn, "config">): SelectOption[] {
+  const raw = column.config.options;
+  if (!Array.isArray(raw)) return [];
+  const out: SelectOption[] = [];
+  for (const o of raw) {
+    if (typeof o === "string") out.push({ value: o, label: o });
+    else if (o && typeof o === "object" && typeof (o as { value?: unknown }).value === "string") {
+      const v = o as { value: string; label?: unknown };
+      out.push({ value: v.value, label: typeof v.label === "string" ? v.label : v.value });
+    }
+  }
+  return out;
+}
+
+/** Compact one-line text of any stored value. */
+export function displayValue(value: unknown, column: Pick<GridColumn, "type" | "config">): string {
+  if (value === null || value === undefined) return "";
+  const type = effectiveColumnType(column);
+  if (typeof value === "string") return value;
+  if (typeof value === "number") {
+    if (type === "currency") {
+      const currency = typeof column.config.currency === "string" ? column.config.currency : "USD";
+      try {
+        return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  }
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.map((v) => (typeof v === "string" ? v : JSON.stringify(v))).join(", ");
+  return JSON.stringify(value);
+}
+
+/** Text an editor starts with. Strings stay as stored, structured values become JSON or comma lists. */
+export function editorText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value) && value.every((v) => typeof v === "string")) return value.join(", ");
+  return JSON.stringify(value, null, 2);
+}
+
+/** Editor text to the value sent to the server, which coerces by column type. Blank clears the cell. */
+export function parseEditorText(text: string): string | null {
+  return text.trim() === "" ? null : text;
+}
+
+export function cellStatus(row: GridRow, columnKey: string): { state: "idle" | "running" | "error" | "stale" | "miss" | "skipped"; message?: string } {
+  const meta: CellMeta | undefined = row.cellMeta[columnKey];
+  if (!meta) return { state: "idle" };
+  if (meta.status === "running" || meta.status === "queued" || meta.status === "waiting") return { state: "running" };
+  if (meta.status === "error" || meta.status === "failed") return { state: "error", message: meta.error ?? "The run failed." };
+  if (meta.status === "skipped: cap") return { state: "skipped", message: meta.reason ?? "Not run automatically: over the auto-run limit." };
+  // A formula cell whose LOOKUP source changed after its last run. The value is the old one.
+  if (meta.status === "stale") return { state: "stale", message: meta.error ?? "The source changed. Recalculate this column." };
+  if (meta.outcome === "miss") return { state: "miss" };
+  return { state: "idle" };
+}
+
+export const DEFAULT_WIDTH: Record<string, number> = {
+  boolean: 90,
+  number: 120,
+  currency: 130,
+  date: 130,
+  select: 150,
+  multiselect: 200,
+  json: 220,
+  formula: 180,
+  ai: 220,
+  ai_output: 200,
+  integration_output: 180,
+  enrichment: 200,
+  waterfall: 200,
+};
+
+export const columnWidth = (column: Pick<GridColumn, "type">) => DEFAULT_WIDTH[column.type] ?? 180;
+
+/** Column key for a freshly typed name, only for display hints. The server derives the real key. */
+export const isRunnerType = (type: ColumnType | string) => !isStaticColumnType(type) && type !== "formula";

@@ -1,0 +1,393 @@
+"use client";
+
+import { EllipsisIcon } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  MERGE_TIMEOUT,
+  companyChangedText,
+  companyLabel,
+  deleteCompanyDescription,
+  deletedCompanyText,
+  keepOptionLabel,
+  mergePreviewLines,
+  mergeTryAgain,
+  mergedText,
+  noMatchText,
+  type MergePreview,
+} from "./company-merge-copy";
+
+/** The company as the page read it. `version` goes back with the delete; `contacts` and `leads` decide which delete dialog opens. */
+export interface CompanyActionTarget {
+  id: string;
+  name: string | null;
+  domain: string;
+  version: number;
+  contacts: number;
+  leads: number;
+}
+
+/**
+ * The company's rare actions: a ghost More menu with Merge with another company and Delete company, so neither stands
+ * level with Create deal or Add contact. `inUseText` is the `company_in_use` sentence the server words for a company with people.
+ */
+export function CompanyActions({ company, inUseText }: { company: CompanyActionTarget; inUseText: string }) {
+  const [dialog, setDialog] = useState<"merge" | "delete" | null>(null);
+  const label = companyLabel(company);
+  const onOpenChange = (open: boolean) => !open && setDialog(null);
+  const inUse = company.contacts + company.leads > 0;
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" aria-label={`More actions for ${label}`} />}>
+          <EllipsisIcon aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-48">
+          <DropdownMenuItem className="max-sm:min-h-11" onClick={() => setDialog("merge")}>
+            Merge with another company
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" className="max-sm:min-h-11" onClick={() => setDialog("delete")}>
+            Delete company
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <MergeDialog company={company} open={dialog === "merge"} onOpenChange={onOpenChange} />
+      {inUse ? (
+        <CompanyInUseDialog company={company} text={inUseText} open={dialog === "delete"} onOpenChange={onOpenChange} />
+      ) : (
+        <DeleteCompanyDialog company={company} open={dialog === "delete"} onOpenChange={onOpenChange} />
+      )}
+    </>
+  );
+}
+
+const leadsHref = (domain: string) => `/leads?q=${encodeURIComponent(domain)}`;
+
+interface SearchRow {
+  companyId: string;
+  name: string | null;
+  domain: string;
+  contacts: number;
+  listed: boolean;
+}
+
+interface Answer {
+  status: number;
+  body: Record<string, unknown> | null;
+}
+
+/** One API call with its status code. A request that never answers throws, so the caller can say the merge may still run. */
+async function send(url: string, method: "GET" | "POST" | "DELETE", body?: unknown, timeoutMs = 60_000): Promise<Answer> {
+  const response = await fetch(url, {
+    method,
+    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return { status: response.status, body: (await response.json().catch(() => null)) as Record<string, unknown> | null };
+}
+
+const errorOf = (answer: Answer, fallback: string) => (typeof answer.body?.error === "string" ? answer.body.error : fallback);
+
+/**
+ * Merge in two steps of one dialog. Step 1 finds the other company (companies with leads only included, marked "Leads only") and
+ * asks which one to keep, the current one checked. Step 2 shows the preview; Back returns with the choice kept.
+ */
+function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTarget; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const router = useRouter();
+  const id = useId();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [query, setQuery] = useState("");
+  const [searched, setSearched] = useState<string | null>(null);
+  const [results, setResults] = useState<SearchRow[] | null>(null);
+  const [picked, setPicked] = useState<SearchRow | null>(null);
+  const [keepId, setKeepId] = useState(company.id);
+  const [preview, setPreview] = useState<MergePreview | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [wasOpen, setWasOpen] = useState(open);
+  const firstLine = useRef<HTMLParagraphElement>(null);
+
+  // Each open starts at step 1 with nothing picked.
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setStep(1);
+      setQuery("");
+      setSearched(null);
+      setResults(null);
+      setPicked(null);
+      setKeepId(company.id);
+      setPreview(null);
+      setStatus(null);
+    }
+  }
+
+  useEffect(() => {
+    if (step === 2 && preview) firstLine.current?.focus();
+  }, [step, preview]);
+
+  const label = companyLabel(company);
+  const current: SearchRow = { companyId: company.id, name: company.name, domain: company.domain, contacts: company.contacts, listed: true };
+  const pair = picked ? (keepId === company.id ? { kept: current, other: picked } : { kept: picked, other: current }) : null;
+
+  async function search(event: FormEvent) {
+    event.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    setStatus(null);
+    try {
+      const answer = await send(`/api/companies/search?q=${encodeURIComponent(q)}&all=1`, "GET");
+      if (answer.status !== 200) return setStatus(errorOf(answer, "Could not search companies. Try again."));
+      const rows = ((answer.body?.companies as SearchRow[] | undefined) ?? []).filter((row) => row.companyId !== company.id);
+      setResults(rows);
+      setSearched(q);
+      if (picked && !rows.some((row) => row.companyId === picked.companyId)) {
+        setPicked(null);
+        setKeepId(company.id);
+      }
+    } catch {
+      setStatus("Could not reach the server.");
+    }
+  }
+
+  async function loadPreview(): Promise<boolean> {
+    if (!pair) return false;
+    try {
+      const answer = await send(`/api/companies/${pair.kept.companyId}/merge/preview`, "POST", { otherId: pair.other.companyId });
+      if (answer.status !== 200 || !answer.body) {
+        setStatus(errorOf(answer, "Could not preview the merge. Try again."));
+        return false;
+      }
+      setPreview(answer.body as unknown as MergePreview);
+      return true;
+    } catch {
+      setStatus("Could not reach the server.");
+      return false;
+    }
+  }
+
+  async function toPreview(): Promise<false> {
+    setStatus(null);
+    if (await loadPreview()) setStep(2);
+    return false;
+  }
+
+  async function merge(): Promise<false | void> {
+    if (!preview) return false;
+    setStatus(null);
+    const kept = companyLabel(preview.kept);
+    const other = companyLabel(preview.other);
+    let answer: Answer;
+    try {
+      answer = await send(`/api/companies/${preview.kept.id}/merge`, "POST", {
+        otherId: preview.other.id,
+        expected: { keptVersion: preview.kept.version, otherVersion: preview.other.version, keptPeople: preview.kept.people, otherPeople: preview.other.people },
+      });
+    } catch {
+      setStatus(MERGE_TIMEOUT);
+      return false;
+    }
+    if (answer.status === 200) {
+      toast.success(mergedText(other, kept));
+      router.replace(`/crm/companies/${preview.kept.id}`);
+      router.refresh();
+      return;
+    }
+    if (answer.status >= 502 && answer.status <= 504) {
+      setStatus(MERGE_TIMEOUT);
+      return false;
+    }
+    const code = answer.body?.code;
+    if (code === "company_changed") {
+      setStatus(errorOf(answer, `${kept} changed while this was open. Check the preview again.`));
+      await loadPreview();
+      return false;
+    }
+    setStatus(code === "try_again" ? mergeTryAgain(kept) : errorOf(answer, "Could not merge the companies. Try again."));
+    return false;
+  }
+
+  const statusLine = status && (
+    <p role="status" className="text-sm" data-testid="merge-status">
+      {status}
+    </p>
+  );
+
+  if (step === 2 && preview) {
+    const lines = mergePreviewLines(preview);
+    return (
+      <ConfirmDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title={`Merge ${label} with another company`}
+        description=""
+        confirmLabel="Merge companies"
+        pendingLabel="Merging…"
+        className="sm:max-w-md [&_[data-slot=dialog-description]:empty]:hidden"
+        back={{
+          label: "Back",
+          onClick: () => {
+            setStatus(null);
+            setStep(1);
+          },
+        }}
+        onConfirm={merge}
+      >
+        {statusLine}
+        <div className="grid gap-2 text-sm" data-testid="merge-preview">
+          {lines.map((line, index) => (
+            <p key={line} ref={index === 0 ? firstLine : undefined} tabIndex={index === 0 ? -1 : undefined} className={index === 0 ? "font-medium outline-none" : index === lines.length - 1 ? "font-medium" : "text-muted-foreground"}>
+              {line}
+            </p>
+          ))}
+        </div>
+      </ConfirmDialog>
+    );
+  }
+
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Merge ${label} with another company`}
+      description=""
+      confirmLabel="Preview merge"
+      pendingLabel="Checking…"
+      confirmDisabled={!pair}
+      className="sm:max-w-md [&_[data-slot=dialog-description]:empty]:hidden"
+      onConfirm={toPreview}
+    >
+      <form onSubmit={search} className="flex flex-wrap items-end gap-2" data-testid="merge-search">
+        <div className="stack-field min-w-0 flex-1">
+          <Label htmlFor={`${id}-q`}>Company to merge</Label>
+          <Input id={`${id}-q`} value={query} autoFocus autoComplete="off" placeholder="Search companies by name or domain" className="max-sm:h-11" onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        <Button type="submit" variant="outline" disabled={query.trim() === ""} className="max-sm:h-11">
+          Search
+        </Button>
+      </form>
+      {statusLine}
+      {results && results.length === 0 && searched && <p className="text-sm text-muted-foreground">{noMatchText(searched)}</p>}
+      {results && results.length > 0 && (
+        <ul className="grid gap-1" aria-label="Matching companies">
+          {results.map((row) => (
+            <li key={row.companyId}>
+              <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border p-2 text-sm has-[:checked]:border-ring has-[:checked]:bg-muted/50">
+                <input
+                  type="radio"
+                  name={`${id}-other`}
+                  checked={picked?.companyId === row.companyId}
+                  onChange={() => {
+                    setPicked(row);
+                    setKeepId(company.id);
+                  }}
+                />
+                <span className="min-w-0 flex-1 break-words">
+                  {companyLabel(row)} <span className="text-muted-foreground">({row.domain})</span>
+                </span>
+                {!row.listed && <Badge variant="outline">Leads only</Badge>}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {picked && (
+        <fieldset className="grid gap-1" data-testid="merge-keep">
+          <legend className="mb-1 text-sm font-medium">Company to keep</legend>
+          {[current, picked].map((row) => (
+            <label key={row.companyId} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border p-2 text-sm has-[:checked]:border-ring has-[:checked]:bg-muted/50">
+              <input type="radio" name={`${id}-keep`} checked={keepId === row.companyId} onChange={() => setKeepId(row.companyId)} />
+              <span className="min-w-0 flex-1 break-words">{keepOptionLabel(row)}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+    </ConfirmDialog>
+  );
+}
+
+/** A company that people still point at: the reason and the way to its leads, and no confirm. */
+function CompanyInUseDialog({ company, text, open, onOpenChange }: { company: CompanyActionTarget; text: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{`Delete ${companyLabel(company)}?`}</DialogTitle>
+          <DialogDescription>{text}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Link href={leadsHref(company.domain)} className={buttonVariants({ variant: "outline" })}>
+            Find its leads
+          </Link>
+          <Button onClick={() => onOpenChange(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteCompanyDialog({ company, open, onOpenChange }: { company: CompanyActionTarget; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const router = useRouter();
+  const [status, setStatus] = useState<string | null>(null);
+  const [wasOpen, setWasOpen] = useState(open);
+  const label = companyLabel(company);
+
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setStatus(null);
+  }
+
+  async function remove(): Promise<false | void> {
+    setStatus(null);
+    let answer: Answer;
+    try {
+      answer = await send(`/api/companies/${company.id}?expectedVersion=${company.version}`, "DELETE");
+    } catch {
+      throw new Error("Could not reach the server.");
+    }
+    if (answer.status === 200) {
+      toast.success(deletedCompanyText(label));
+      router.replace("/crm/companies");
+      router.refresh();
+      return;
+    }
+    if (answer.body?.code === "company_changed") {
+      setStatus(companyChangedText(label));
+      // The page reads the new version and people counts.
+      router.refresh();
+      return false;
+    }
+    setStatus(errorOf(answer, "Could not delete the company. Try again."));
+    return false;
+  }
+
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`Delete ${label}?`}
+      description={deleteCompanyDescription(label, company.domain)}
+      confirmLabel="Delete company"
+      cancelLabel="Keep company"
+      pendingLabel="Deleting…"
+      destructive
+      onConfirm={remove}
+    >
+      {status && (
+        <p role="status" className="text-sm" data-testid="company-delete-status">
+          {status}
+        </p>
+      )}
+    </ConfirmDialog>
+  );
+}

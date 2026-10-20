@@ -1,0 +1,149 @@
+import type { ReactNode } from "react";
+
+/**
+ * The top of a lead, contact, company or deal page: who or what this is, how to reach it, where it stands, and what to
+ * do next. The name is the page's h1; the top bar keeps it as the breadcrumb's last step. Facts beyond these live in the
+ * page's Details panel.
+ */
+export function RecordHeader({
+  name,
+  subtitle,
+  state,
+  status,
+  reach,
+  actions,
+  nav,
+  testId,
+}: {
+  name: string;
+  /** "Title at Company", or the company's domain. */
+  subtitle?: ReactNode;
+  /** One state token beside the name, such as the lead status. A contact passes none. */
+  state?: ReactNode;
+  /** One metadata line (MetaLine) for company and deal pages: stage, owner, amount, counts. */
+  status?: ReactNode;
+  /** `ReachLinks`: email, phone and LinkedIn with their reach state. */
+  reach?: ReactNode;
+  /** The record's primary actions, the main one first. */
+  actions?: ReactNode;
+  /** Previous and next in the list the person came from. */
+  nav?: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <section aria-labelledby="page-title" className="stack-group border-b pb-section" data-testid={testId}>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="stack-field min-w-0">
+          {/* The token follows the name on its line and wraps under it on a phone, above the actions. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 id="page-title" className="min-w-0 text-2xl leading-tight font-semibold tracking-tight text-balance break-words">
+              {name}
+            </h1>
+            {state}
+          </div>
+          {subtitle && <div className="text-sm text-muted-foreground">{subtitle}</div>}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-2 max-sm:[&_a]:h-11 max-sm:[&_button]:h-11">{actions}</div>}
+      </div>
+      {status}
+      {(reach || nav) && (
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          {reach ?? <span />}
+          {nav}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * One line of facts under the record's name, separated by middots, for company and deal pages. Plain text carries the
+ * usual facts; a Badge inside an item marks the deal stage. Lead status and reach have their own forms (`state`, `reach`).
+ */
+export function MetaLine({ label, items, testId }: { label: string; items: ReactNode[]; testId?: string }) {
+  const shown = items.filter(Boolean);
+  if (shown.length === 0) return null;
+  return (
+    <ul
+      aria-label={label}
+      data-testid={testId}
+      // A phone stacks the items; from sm up they run on one line with middots between them.
+      className="flex flex-col items-start gap-x-2 gap-y-1 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:[&>li+li]:before:mr-2 sm:[&>li+li]:before:text-muted-foreground/60 sm:[&>li+li]:before:content-['·']"
+    >
+      {shown.map((item, index) => (
+        <li key={index} className="flex min-w-0 items-center">
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The body under a RecordHeader: the work column, a ruled sheet of sections, and a 20rem side column with one panel of
+ * facts and stop controls. One column on a phone, main first.
+ */
+export function RecordBody({ main, aside, asideLabel }: { main: ReactNode; aside: ReactNode; asideLabel: string }) {
+  return (
+    <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid min-w-0 content-start">{main}</div>
+      <aside aria-label={asideLabel} className="min-w-0 content-start self-start rounded-lg border">
+        <div className="divide-y">{aside}</div>
+      </aside>
+    </div>
+  );
+}
+
+/**
+ * A section of the work column: an h2 with an optional count and action, then its content flush to the column. Sections
+ * are ruled apart by a hairline, not boxed.
+ */
+export function RecordSection({
+  title,
+  count,
+  action,
+  level = "h2",
+  testId,
+  children,
+}: {
+  title: string;
+  /** A short tally beside the title, such as "2 open of 3". */
+  count?: ReactNode;
+  action?: ReactNode;
+  /** h3 when the section sits inside another one. */
+  level?: "h2" | "h3";
+  testId?: string;
+  children?: ReactNode;
+}) {
+  const Heading = level;
+  return (
+    <section className="stack-group border-t py-section first:border-t-0 first:pt-0" data-testid={testId}>
+      <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex items-baseline gap-2">
+          <Heading className="text-sm font-semibold">{title}</Heading>
+          {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A section of the side panel: a title row with an optional action, then its content. */
+export function AsideSection({ title, action, testId, children }: { title: string; action?: ReactNode; testId?: string; children: ReactNode }) {
+  return (
+    <section className="stack-group p-4" data-testid={testId}>
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Page frame for a record: header, then body, with the page padding. */
+export function RecordPage({ children }: { children: ReactNode }) {
+  return <div className="page stack-section">{children}</div>;
+}

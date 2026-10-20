@@ -1,0 +1,39 @@
+import { connection } from "next/server";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import { canChangeTask } from "@/contexts/conversations/actions/domain/tasks";
+import { listTasks } from "@/contexts/conversations/actions/application/tasks";
+import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
+import type { Actor } from "@/shared/errors";
+import { TasksPanel, type TaskTarget } from "./tasks-panel";
+
+/**
+ * Loads the tasks and the organization's members. With `recordId`, one reply record's tasks; with `personId`, every task of
+ * the person, and new tasks get no record. `heading={false}` drops the panel's own title for a section that names it. Wrap
+ * it in Suspense.
+ */
+export async function TasksSection({ actor, heading, ...target }: TaskTarget & { actor: Actor; heading?: boolean }) {
+  await connection();
+  const deps = taskDeps();
+  const scope = target.recordId !== undefined ? { recordId: target.recordId } : { personId: target.personId };
+  const [tasks, members] = await Promise.all([listTasks(deps, actor, { state: "all", ...scope }), deps.store.members(actor.organizationId)]);
+  const admin = isOwnerOrAdmin(actor.role);
+  return (
+    <TasksPanel
+      {...target}
+      heading={heading}
+      currentUserId={actor.userId}
+      nowMs={deps.now().getTime()}
+      members={members}
+      tasks={tasks.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        isCompleted: t.isCompleted,
+        dueAt: t.dueAt?.toISOString() ?? null,
+        assigneeId: t.assigneeId,
+        assigneeName: t.assigneeName,
+        canChange: canChangeTask(actor, admin, t),
+      }))}
+    />
+  );
+}
