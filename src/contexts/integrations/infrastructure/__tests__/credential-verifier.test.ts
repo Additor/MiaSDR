@@ -4,9 +4,9 @@ import { createCredentialVerifier } from "../credential-verifier";
 
 const KEY = "sk-ant-SECRET-key-0123456789";
 const respond = (status: number) => vi.fn(async () => new Response("{}", { status }));
-const names = { anthropic: "Anthropic", hunter: "Hunter", apollo: "Apollo" } as const;
+const names = { anthropic: "Anthropic" } as const;
 
-async function run(providerKey: "anthropic" | "hunter" | "apollo", fetchStub: typeof fetch, extra: { timeoutMs?: number } = {}) {
+async function run(providerKey: "anthropic", fetchStub: typeof fetch, extra: { timeoutMs?: number } = {}) {
   const verifier = createCredentialVerifier({ fetch: fetchStub, ...extra });
   const result = await verifier.verify(providerKey, { apiKey: KEY });
   let message = "";
@@ -37,45 +37,6 @@ describe("credential verifier", () => {
     const [url, init] = stub.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.anthropic.com/v1/models?limit=1");
     expect(init.headers).toMatchObject({ "x-api-key": KEY, "anthropic-version": "2023-06-01" });
-    expect(init.method).toBe("GET");
-  });
-
-  it.each([
-    ["200", 200, null],
-    ["401", 401, "rejected"],
-    ["403", 403, "rate_limited"],
-    ["429", 429, "rate_limited"],
-    ["500", 500, "unverifiable"],
-  ] as Array<[string, number, VerifyFailure | null]>)("Hunter status %s keeps the key out of the URL", async (_label, status, reason) => {
-    const stub = respond(status);
-    const { result, message } = await run("hunter", stub as unknown as typeof fetch);
-    expect(result).toEqual(reason ? { ok: false, reason } : { ok: true, verified: true });
-    expect(message).not.toContain(KEY);
-    const [url, init] = stub.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://api.hunter.io/v2/account");
-    expect(url).not.toContain(KEY);
-    expect(init.headers).toMatchObject({ "X-API-KEY": KEY });
-  });
-
-  it.each([
-    ["200 logged in", 200, '{"healthy":true,"is_logged_in":true}', null],
-    ["200 no flag", 200, "{}", null],
-    ["200 HTML page", 200, "<html>Sign in to the network</html>", "unverifiable"],
-    ["200 empty body", 200, "", "unverifiable"],
-    ["200 JSON null", 200, "null", "unverifiable"],
-    ["200 not logged in", 200, '{"healthy":true,"is_logged_in":false}', "rejected"],
-    ["401", 401, "Invalid API key", "rejected"],
-    ["403", 403, "{}", "rejected"],
-    ["429", 429, "{}", "rate_limited"],
-    ["500", 500, "{}", "unverifiable"],
-  ] as Array<[string, number, string, VerifyFailure | null]>)("Apollo %s keeps the key out of the URL", async (_label, status, body, reason) => {
-    const stub = vi.fn(async () => new Response(body, { status }));
-    const { result, message } = await run("apollo", stub as unknown as typeof fetch);
-    expect(result).toEqual(reason ? { ok: false, reason } : { ok: true, verified: true });
-    expect(message).not.toContain(KEY);
-    const [url, init] = stub.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://api.apollo.io/api/v1/auth/health");
-    expect(init.headers).toMatchObject({ "x-api-key": KEY });
     expect(init.method).toBe("GET");
   });
 
@@ -110,10 +71,11 @@ describe("credential verifier", () => {
     expect(verifyFailureMessage("X", "unverifiable")).toBe("X could not verify this account right now. Try again shortly.");
   });
 
-  it("makes no call for skipped, http, fake or unknown providers", async () => {
+  it("makes no call for skipped providers or any key but Anthropic's", async () => {
     const stub = respond(500);
     const verifier = createCredentialVerifier({ fetch: stub as unknown as typeof fetch, skip: (key) => key === "anthropic" });
-    for (const key of ["anthropic", "http", "fake", "other"]) expect(await verifier.verify(key, { apiKey: KEY })).toEqual({ ok: true, verified: false });
+    // Enrichment vendor keys are checked in the grid context.
+    for (const key of ["anthropic", "hunter", "apollo", "http", "fake", "other"]) expect(await verifier.verify(key, { apiKey: KEY })).toEqual({ ok: true, verified: false });
     expect(stub).not.toHaveBeenCalled();
   });
 
@@ -126,11 +88,11 @@ describe("credential verifier", () => {
     expect(await assertCredentialVerified(undefined, { key: "anthropic", name: "Anthropic" }, { apiKey: KEY })).toBe(false);
   });
 
-  it("refuses redirects and leaves Hunter's body unread", async () => {
+  it("refuses redirects and leaves the body unread", async () => {
     const cancel = vi.fn();
     const stub = vi.fn(async () => new Response(new ReadableStream({ cancel }), { status: 200 }));
     const verifier = createCredentialVerifier({ fetch: stub as unknown as typeof fetch });
-    expect(await verifier.verify("hunter", { apiKey: KEY })).toEqual({ ok: true, verified: true });
+    expect(await verifier.verify("anthropic", { apiKey: KEY })).toEqual({ ok: true, verified: true });
     const [, init] = stub.mock.calls[0] as unknown as [string, RequestInit];
     expect(init.redirect).toBe("error");
     expect(cancel).toHaveBeenCalled();
@@ -139,7 +101,7 @@ describe("credential verifier", () => {
   it("rejects a key with a line break without a call", async () => {
     const stub = respond(200);
     const verifier = createCredentialVerifier({ fetch: stub as unknown as typeof fetch });
-    expect(await verifier.verify("hunter", { apiKey: "a\nb" })).toEqual({ ok: false, reason: "rejected" });
+    expect(await verifier.verify("anthropic", { apiKey: "a\nb" })).toEqual({ ok: false, reason: "rejected" });
     expect(stub).not.toHaveBeenCalled();
   });
 });
@@ -152,7 +114,7 @@ describe("credential verifier, keys outside printable ASCII", () => {
     ["DEL", "sk-ant-\x7fbad-0123456789"],
     ["emoji", "sk-ant-\u{1F511}-0123456789"],
   ];
-  const cases = keys.flatMap(([label, key]) => (["anthropic", "hunter", "apollo"] as const).map((vendor) => [vendor, label, key] as const));
+  const cases = keys.map(([label, key]) => ["anthropic", label, key] as const);
 
   it.each(cases)("%s with a %s key is rejected without a network call", async (vendor, _label, key) => {
     // A real fetch throws on such header values, which the verifier would report as unreachable.

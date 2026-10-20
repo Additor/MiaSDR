@@ -2,7 +2,6 @@ import { hostname } from "node:os";
 import { aiResolver } from "@/contexts/conversations/ai/infrastructure/ai-composition";
 import { AiError } from "@/contexts/conversations/ai/application/ai-ports";
 import { credentialCipher } from "@/contexts/integrations/infrastructure/credential-cipher";
-import { createCredentialVerifier } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { env } from "@/shared/env";
 import { kickJob } from "@/platform/jobs/kick";
 import type { Job } from "@/platform/jobs/types";
@@ -16,6 +15,7 @@ import type { UrlPolicy } from "../domain/enrichment-url-policy";
 import { createAdapterRegistry, FakeEnrichmentProvider } from "./enrichment-adapters";
 import { drizzleProviderStore } from "./enrichment-provider-store";
 import { drizzleGridRunStore } from "./enrichment-run-store";
+import { createEnrichmentVerifier } from "./vendors";
 
 const globalForGrid = globalThis as unknown as { __miasdrFakeGridProvider?: FakeEnrichmentProvider };
 
@@ -54,7 +54,7 @@ export function gridAdapters(options: { allowLoopback?: boolean; fake?: FakeEnri
 }
 
 export function gridProviderDeps(): ProviderDeps {
-  return { providers: drizzleProviderStore, cipher: gridCipher, adapters: gridAdapters(), urlPolicy: gridUrlPolicy(), allowFake: fakeMode(), verifier: createCredentialVerifier({ skip: fakeMode }) };
+  return { providers: drizzleProviderStore, cipher: gridCipher, adapters: gridAdapters(), urlPolicy: gridUrlPolicy(), allowFake: fakeMode(), verifier: createEnrichmentVerifier({ skip: fakeMode }) };
 }
 
 /** Runs `grid.run` in this process soon after a request queued cells. Other instances pick the cells up on their tick. */

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ActionSpec } from "./enrichment-catalog";
+import { SIMPLE_ADAPTER_KEYS, type ActionSpec } from "./enrichment-catalog";
 import { HEADER_NAME, QUERY_PARAM_NAME } from "./enrichment-url-policy";
 import { TOKEN, normalizeKey } from "./keys";
 
@@ -88,7 +88,7 @@ export const httpProviderConfigSchema = z.strictObject({
 export type HttpProviderConfig = z.infer<typeof httpProviderConfigSchema>;
 export type HttpAction = z.infer<typeof httpActionSchema>;
 
-export const simpleAdapterConfigSchema = z.strictObject({ adapter: z.enum(["hunter", "apollo", "fake"]) });
+export const simpleAdapterConfigSchema = z.strictObject({ adapter: z.string().refine((key) => SIMPLE_ADAPTER_KEYS.includes(key), "Unknown adapter") });
 
 export function httpActionSpecs(config: HttpProviderConfig): ActionSpec[] {
   return Object.entries(config.actions).map(([key, action]) => ({

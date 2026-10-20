@@ -5,6 +5,9 @@
  */
 
 export type ProviderStatus = "available" | "catalog_only";
+/** Vendors with a native adapter in `infrastructure/vendors`. The key is also the `config.adapter` value stored on provider rows. */
+export type VendorAdapterKey = "hunter" | "apollo";
+export type AdapterKey = VendorAdapterKey | "http" | "fake";
 export type ValueType = "text" | "email" | "url" | "number" | "boolean" | "json" | "domain";
 
 export interface ActionInput {
@@ -41,7 +44,7 @@ export interface CatalogEntry {
   description: string;
   status: ProviderStatus;
   /** Adapter that serves the entry. Null for catalog-only entries. */
-  adapter: "hunter" | "apollo" | "http" | "fake" | null;
+  adapter: AdapterKey | null;
   /** Fixed API host for adapters that call one vendor. The saved base URL must equal it. */
   fixedBaseUrl?: string;
   credentialFields: CredentialField[];
@@ -224,5 +227,8 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
   catalogOnly("rocketreach", "RocketReach", "Contact lookup."),
   catalogOnly("icypeas", "Icypeas", "Email finder and verifier."),
 ];
+
+/** Adapters a provider row can name without its own config: every native vendor, plus the fake one. */
+export const SIMPLE_ADAPTER_KEYS: readonly string[] = PROVIDER_CATALOG.flatMap((e) => (e.status === "available" && e.adapter && e.adapter !== "http" ? [e.adapter] : []));
 
 export const catalogEntry = (key: string): CatalogEntry | undefined => PROVIDER_CATALOG.find((e) => e.key === key);

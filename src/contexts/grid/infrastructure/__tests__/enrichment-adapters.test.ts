@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ProviderError, type ProviderCall, type ProviderRecord } from "../../application/enrichment-ports";
-import { ApolloAdapter, HttpAdapter, HunterAdapter, apolloRetryAfterMs } from "../enrichment-adapters";
+import { HttpAdapter, createAdapterRegistry } from "../enrichment-adapters";
+import { VENDORS } from "../vendors";
+import { retryAfterMs } from "../vendors/vendor-kit";
+import { SIMPLE_ADAPTER_KEYS } from "../../domain/enrichment-catalog";
 import { safeRequest } from "../enrichment-http";
 
 const policy = { allowedHosts: ["api.vendor.test"] };
@@ -140,7 +143,7 @@ describe("safeRequest", () => {
 });
 
 describe("Hunter adapter", () => {
-  const hunter = (fn: typeof fetch) => new HunterAdapter({ fetch: fn, resolve: publicResolver });
+  const hunter = (fn: typeof fetch) => createAdapterRegistry({ policy, net: { fetch: fn, resolve: publicResolver } }).adapterFor(provider({ config: { adapter: "hunter" } }))!;
   const hunterCall = (action: string, inputs: Record<string, unknown>): ProviderCall => ({ action, inputs, credentials: { apiKey: "hunter-key-987654" }, provider: provider({ key: "hunter", config: { adapter: "hunter" }, baseUrl: "https://api.hunter.io" }), timeoutMs: 1000 });
 
   it("finds a work email and sends the key in a header, not the URL", async () => {
@@ -198,7 +201,7 @@ describe("Hunter adapter", () => {
 });
 
 describe("Apollo adapter", () => {
-  const apollo = (fn: typeof fetch) => new ApolloAdapter({ fetch: fn, resolve: publicResolver });
+  const apollo = (fn: typeof fetch) => createAdapterRegistry({ policy, net: { fetch: fn, resolve: publicResolver } }).adapterFor(provider({ config: { adapter: "apollo" } }))!;
   const apolloCall = (action: string, inputs: Record<string, unknown>): ProviderCall => ({ action, inputs, credentials: { apiKey: "apollo-key-987654" }, provider: provider({ key: "apollo", config: { adapter: "apollo" }, baseUrl: "https://api.apollo.io" }), timeoutMs: 1000 });
   const person = { person: { email: "ada@acme.com", email_status: "verified", title: "CTO", linkedin_url: "https://www.linkedin.com/in/ada", match_confidence: "high", organization: { name: "Acme" } } };
 
@@ -279,9 +282,21 @@ describe("Apollo adapter", () => {
   });
 
   it("reads retry-after seconds with a one hour cap", () => {
-    expect(apolloRetryAfterMs("30")).toBe(30_000);
-    expect(apolloRetryAfterMs("999999")).toBe(3_600_000);
-    expect(apolloRetryAfterMs("soon")).toBe(60_000);
-    expect(apolloRetryAfterMs(null)).toBe(60_000);
+    expect(retryAfterMs("30")).toBe(30_000);
+    expect(retryAfterMs("999999")).toBe(3_600_000);
+    expect(retryAfterMs("soon")).toBe(60_000);
+    expect(retryAfterMs(null)).toBe(60_000);
+  });
+});
+
+describe("adapter registry", () => {
+  it("serves every native vendor in the catalog and nothing else", () => {
+    const registry = createAdapterRegistry({ policy });
+    const native = SIMPLE_ADAPTER_KEYS.filter((k) => k !== "fake");
+    expect(VENDORS.map((v) => v.key).sort()).toEqual([...native].sort());
+    for (const key of native) expect(registry.adapterFor(provider({ config: { adapter: key } }))?.adapter).toBe(key);
+    expect(registry.adapterFor(provider({ config: { adapter: "zerobounce-legacy" } }))).toBeNull();
+    // Without an instance the fake adapter stays off.
+    expect(registry.adapterFor(provider({ config: { adapter: "fake" } }))).toBeNull();
   });
 });

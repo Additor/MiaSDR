@@ -1,180 +1,31 @@
 import { ProviderError, type AdapterRegistry, type EnrichmentProvider, type ProviderAnswer, type ProviderCall, type ProviderRecord } from "../application/enrichment-ports";
-import { APOLLO_ACTIONS, FAKE_ACTIONS, HUNTER_ACTIONS, type ActionSpec } from "../domain/enrichment-catalog";
+import { catalogEntry, FAKE_ACTIONS, type ActionSpec } from "../domain/enrichment-catalog";
 import { httpActionSpecs, httpProviderConfigSchema } from "../domain/enrichment-config";
 import { stripLineBreaks, parseProviderBaseUrl, type UrlPolicy } from "../domain/enrichment-url-policy";
 import { hasCellValue, pluck, render, renderBody } from "../domain/enrichment-templates";
 import { isTransientStatus, parseBody, safeRequest, type SafeFetchDeps } from "./enrichment-http";
+import { VENDORS } from "./vendors";
+import { errorSnippet, type VendorDefinition } from "./vendors/vendor-kit";
 
-const asRecord = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
-
-/** The first useful sentence of a vendor's error body, never more than 300 characters. */
-function errorSnippet(body: unknown): string {
-  if (typeof body === "string") return body.slice(0, 300);
-  const root = asRecord(body);
-  const errors = root.errors;
-  const first = Array.isArray(errors) ? asRecord(errors[0]) : asRecord(errors);
-  for (const value of [first.details, first.detail, first.message, root.message, (root.error as { message?: unknown } | undefined)?.message, root.error]) {
-    if (typeof value === "string" && value) return value.slice(0, 300);
+/** A native vendor adapter. Its actions come from the vendor's catalog entry, its calls from the vendor's definition. */
+export class VendorAdapter implements EnrichmentProvider {
+  readonly adapter: string;
+  constructor(
+    private readonly vendor: VendorDefinition,
+    private readonly net: SafeFetchDeps = {},
+  ) {
+    this.adapter = vendor.key;
   }
-  return "request failed";
-}
-
-// ---------------------------------------------------------------------------
-// Hunter (https://hunter.io/api-documentation/v2). The caller brings their own key.
-// ---------------------------------------------------------------------------
-
-const HUNTER_BASE = "https://api.hunter.io/v2";
-
-export class HunterAdapter implements EnrichmentProvider {
-  readonly adapter = "hunter";
-  constructor(private readonly net: SafeFetchDeps = {}) {}
 
   actions(): ActionSpec[] {
-    return HUNTER_ACTIONS;
+    return catalogEntry(this.vendor.key)?.actions ?? [];
   }
 
-  async execute(call: ProviderCall): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The Hunter API key is missing.", false);
-    const url = new URL(HUNTER_BASE);
-    const { inputs } = call;
-    if (call.action === "verify-email") {
-      url.pathname = "/v2/email-verifier";
-      url.searchParams.set("email", String(inputs.email));
-    } else if (call.action === "find-emails-by-company") {
-      url.pathname = "/v2/domain-search";
-      url.searchParams.set("domain", String(inputs.companyDomain));
-      url.searchParams.set("limit", "10");
-    } else if (call.action === "find-work-email") {
-      url.pathname = "/v2/email-finder";
-      url.searchParams.set("domain", String(inputs.companyDomain));
-      url.searchParams.set("full_name", String(inputs.fullName));
-    } else {
-      throw new ProviderError(`Unknown Hunter action: ${call.action}`, false);
-    }
-    const request = { method: "GET", endpoint: url.pathname, inputKeys: Object.keys(inputs) };
-    const response = await safeRequest(url, { method: "GET", headers: { Accept: "application/json", "X-API-KEY": stripLineBreaks(apiKey) } }, call.timeoutMs, this.net);
-    const body = parseBody(response);
-    if (response.status === 202) throw new ProviderError("Hunter is still verifying this address. It will be asked again.", true, { request, response: body });
-    if (response.status < 200 || response.status >= 300) {
-      // 222 and 403 are Hunter's usage and rate limits; they clear on their own.
-      const transient = response.status === 222 || response.status === 403 || isTransientStatus(response.status);
-      throw new ProviderError(`Hunter returned ${response.status}: ${errorSnippet(body)}`, transient, { request, response: body });
-    }
-    const data = asRecord(asRecord(body).data);
-    let outputs: Record<string, unknown>;
-    let primary: unknown;
-    if (call.action === "verify-email") {
-      outputs = { email: data.email, status: data.status, score: data.score, acceptAll: data.accept_all, disposable: data.disposable, webmail: data.webmail };
-      primary = data.status;
-    } else if (call.action === "find-emails-by-company") {
-      const emails = Array.isArray(data.emails) ? data.emails : [];
-      outputs = { emails, emailCount: emails.length, firstEmail: asRecord(emails[0]).value, organization: data.organization, pattern: data.pattern };
-      primary = outputs.firstEmail;
-    } else {
-      outputs = { email: data.email, score: data.score, verificationStatus: asRecord(data.verification).status, position: data.position, linkedinUrl: data.linkedin_url };
-      primary = data.email;
-    }
-    const found = hasCellValue(primary);
-    return { outcome: found ? "hit" : "miss", primary: found ? primary : null, outputs: Object.fromEntries(Object.entries(outputs).map(([k, v]) => [k, v ?? null])), request, response: body };
+  execute(call: ProviderCall): Promise<ProviderAnswer> {
+    return this.vendor.execute(call, this.net);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Apollo (https://docs.apollo.io/reference/people-enrichment, .../organization-enrichment).
-// The caller brings their own key. Docs read 2026-10-16; not exercised against a live key.
-// ---------------------------------------------------------------------------
-
-const APOLLO_BASE = "https://api.apollo.io/api/v1";
-const APOLLO_DEFAULT_WAIT_MS = 60_000;
-const APOLLO_MAX_WAIT_MS = 60 * 60_000;
-
-/** `retry-after` is a number of seconds. A missing or odd value waits a minute; a long one is capped at an hour. */
-export function apolloRetryAfterMs(header: string | null): number {
-  const seconds = Number(header);
-  if (!header || !Number.isFinite(seconds) || seconds < 0) return APOLLO_DEFAULT_WAIT_MS;
-  return Math.min(APOLLO_MAX_WAIT_MS, Math.max(1000, Math.ceil(seconds * 1000)));
-}
-
-const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
-
-export class ApolloAdapter implements EnrichmentProvider {
-  readonly adapter = "apollo";
-  constructor(private readonly net: SafeFetchDeps = {}) {}
-
-  actions(): ActionSpec[] {
-    return APOLLO_ACTIONS;
-  }
-
-  async execute(call: ProviderCall): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The Apollo API key is missing.", false);
-    const { inputs } = call;
-    const url = new URL(APOLLO_BASE);
-    let method: "GET" | "POST";
-    if (call.action === "enrich-person") {
-      const email = text(inputs.email);
-      const linkedin = text(inputs.linkedinUrl);
-      const name = text(inputs.fullName);
-      const domain = text(inputs.companyDomain);
-      if (!email && !linkedin && !(name && domain)) throw new ProviderError("Apollo needs an email, a LinkedIn URL, or a full name with a company domain.", false);
-      method = "POST";
-      url.pathname = "/api/v1/people/match";
-      if (email) url.searchParams.set("email", email);
-      if (linkedin) url.searchParams.set("linkedin_url", linkedin);
-      if (name) url.searchParams.set("name", name);
-      if (domain) url.searchParams.set("domain", domain);
-    } else if (call.action === "enrich-company") {
-      const domain = text(inputs.companyDomain);
-      if (!domain) throw new ProviderError("Apollo needs a company domain.", false);
-      method = "GET";
-      url.pathname = "/api/v1/organizations/enrich";
-      url.searchParams.set("domain", domain);
-    } else {
-      throw new ProviderError(`Unknown Apollo action: ${call.action}`, false);
-    }
-    const request = { method, endpoint: url.pathname, inputKeys: Object.keys(inputs) };
-    const response = await safeRequest(url, { method, headers: { Accept: "application/json", "Cache-Control": "no-cache", "x-api-key": stripLineBreaks(apiKey) } }, call.timeoutMs, this.net);
-    const body = parseBody(response);
-    if (response.status < 200 || response.status >= 300) {
-      const detail = `Apollo returned ${response.status}: ${errorSnippet(body)}`;
-      if (response.status === 401 || response.status === 403) throw new ProviderError(`${detail} Check the Apollo API key.`, false, { request, response: body });
-      if (response.status === 429) throw new ProviderError(detail, true, { request, response: body }, apolloRetryAfterMs(response.retryAfter));
-      throw new ProviderError(detail, isTransientStatus(response.status), { request, response: body });
-    }
-    let outputs: Record<string, unknown>;
-    let primary: unknown;
-    if (call.action === "enrich-person") {
-      const person = asRecord(asRecord(body).person);
-      const confidence = text(person.match_confidence);
-      // Apollo bills nothing for "none", and its fields then belong to nobody.
-      const matched = confidence !== "none";
-      outputs = {
-        email: matched ? person.email : null,
-        emailStatus: matched ? person.email_status : null,
-        title: matched ? person.title : null,
-        company: matched ? asRecord(person.organization).name : null,
-        linkedinUrl: matched ? person.linkedin_url : null,
-        matchConfidence: confidence,
-      };
-      primary = outputs.email;
-    } else {
-      const org = asRecord(asRecord(body).organization);
-      outputs = {
-        name: org.name,
-        industry: org.industry,
-        employeeCount: org.estimated_num_employees,
-        websiteUrl: org.website_url,
-        linkedinUrl: org.linkedin_url,
-        city: org.city,
-        country: org.country,
-      };
-      primary = org.name;
-    }
-    const found = hasCellValue(primary);
-    return { outcome: found ? "hit" : "miss", primary: found ? primary : null, outputs: Object.fromEntries(Object.entries(outputs).map(([k, v]) => [k, v ?? null])), request, response: body };
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Generic HTTP: any JSON API the operator allow-listed, described by the provider's config.
@@ -288,23 +139,14 @@ export interface RegistryOptions {
 }
 
 export function createAdapterRegistry(options: RegistryOptions): AdapterRegistry {
-  const hunter = new HunterAdapter(options.net);
-  const apollo = new ApolloAdapter(options.net);
+  const vendors = new Map(VENDORS.map((v) => [v.key as string, new VendorAdapter(v, options.net)]));
   const http = new HttpAdapter(options.policy, options.net);
   return {
     adapterFor(provider) {
-      switch (provider.config.adapter) {
-        case "hunter":
-          return hunter;
-        case "apollo":
-          return apollo;
-        case "http":
-          return http;
-        case "fake":
-          return options.fake ?? null;
-        default:
-          return null;
-      }
+      const adapter = String(provider.config.adapter ?? "");
+      if (adapter === "http") return http;
+      if (adapter === "fake") return options.fake ?? null;
+      return vendors.get(adapter) ?? null;
     },
   };
 }
