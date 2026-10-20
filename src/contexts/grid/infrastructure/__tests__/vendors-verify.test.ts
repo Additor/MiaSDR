@@ -94,6 +94,16 @@ describe("MillionVerifier", () => {
     expect(result.billable === false).toBe(!billable);
   });
 
+  it.each([
+    // Seen live on 2026-10-20 with the docs' test key API_KEY_FOR_TEST.
+    [{ email: "user1@example.com", quality: "risky", result: "unknown", resultcode: 5, subresult: "no_local_ip_available", free: false, role: false, didyoumean: "", credits: 0, executiontime: 0, error: "", livemode: false }, "miss", "unknown"],
+    [{ email: "user2@example.com", quality: "risky", result: "catch_all", resultcode: 2, subresult: "ok", free: false, role: false, didyoumean: "", credits: 0, executiontime: 0, error: "", livemode: false }, "miss", "catch_all"],
+    [{ email: "user4@example.com", quality: "bad", result: "disposable", resultcode: 3, subresult: "ok", free: false, role: false, didyoumean: "", credits: 0, executiontime: 0, error: "", livemode: false }, "hit", "disposable"],
+  ])("reads a live test-key answer %#", async (body, outcome, status) => {
+    const { result } = await verify(200, body);
+    expect(result).toMatchObject({ outcome, primary: status, outputs: { status, didYouMean: null, quality: body.quality } });
+  });
+
   it("reads the live bad-key answer as a permanent error", async () => {
     // Seen live on 2026-10-20 with an invalid key.
     const { result } = await verify(200, { email: "valid@example.com", result: "error", resultcode: 4, error: "Apikey not found" });

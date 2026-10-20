@@ -8,7 +8,9 @@ import { answerWith, asRecord, statusError, text, type VendorDefinition } from "
 // MillionVerifier (https://developer.millionverifier.com/, help.millionverifier.com email-verification-results and
 // refund-for-risky-emails). Docs read 2026-10-20. The API takes the key only as the `api` query parameter. The audit
 // records the path, and the worker redacts the key in every encoded form.
-// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
+// Run live on 2026-10-20: an invalid key was refused as the code expects, and the docs' test key API_KEY_FOR_TEST
+// (random verdicts, no credits) returned invalid, unknown, catch_all and disposable answers that read correctly. The
+// credits endpoint refuses that test key.
 const VERIFY_URL = "https://api.millionverifier.com/api/v3/";
 const CREDITS_URL = "https://api.millionverifier.com/api/v3/credits";
 
@@ -36,7 +38,7 @@ export const millionverifier: VendorDefinition = {
     if (error || body.result === "error") throw new ProviderError(`MillionVerifier refused the request: ${(error ?? "error").slice(0, 300)}`, false, { request, response: { result: body.result, error } });
 
     const status = body.result === undefined || body.result === null ? null : verificationStatus(body.result, STATUS);
-    const outputs = { email: body.email, status, providerStatus: body.result, score: null, subStatus: body.subresult, quality: body.quality, freeEmail: body.free, role: body.role, didYouMean: body.didyoumean };
+    const outputs = { email: body.email, status, providerStatus: body.result, score: null, subStatus: body.subresult, quality: body.quality, freeEmail: body.free, role: body.role, didYouMean: text(body.didyoumean) };
     const kept = { email: body.email, result: body.result, subresult: body.subresult, quality: body.quality, free: body.free, role: body.role, didyoumean: body.didyoumean };
     // MillionVerifier refunds unknown and catch-all results as goodwill credits.
     return answerWith(outputs, status, request, kept, { hit: status !== null && isSettled(status), billable: status !== "unknown" && status !== "catch_all" });
