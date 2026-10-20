@@ -1,9 +1,9 @@
 import type { VerifyResult } from "@/contexts/integrations/application/credential-verifier";
 import type { KeyCheck } from "@/contexts/integrations/infrastructure/credential-verifier";
-import type { ProviderAnswer, ProviderCall } from "../../application/enrichment-ports";
+import { ProviderError, type ProviderAnswer, type ProviderCall } from "../../application/enrichment-ports";
 import type { VendorAdapterKey } from "../../domain/enrichment-catalog";
 import { hasCellValue } from "../../domain/enrichment-templates";
-import type { SafeFetchDeps } from "../enrichment-http";
+import { isTransientStatus, type SafeFetchDeps, type SafeResponse } from "../enrichment-http";
 
 /**
  * One enrichment vendor with a fixed host. Each definition builds its own requests and reads its own answers, so a
@@ -59,3 +59,23 @@ export function answerWith(outputs: Record<string, unknown>, primary: unknown, r
     response,
   };
 }
+
+/**
+ * The shared reading of a failed status: 401 and 403 mean the key, 402 means credits, 429 waits for `retry-after`, and
+ * 408 and 5xx are worth asking again. Everything else fails the same way next time.
+ */
+export function statusError(vendor: string, response: SafeResponse, body: unknown, request: unknown): ProviderError {
+  const detail = `${vendor} returned ${response.status}: ${errorSnippet(body)}`;
+  const audit = { request, response: body };
+  if (response.status === 401 || response.status === 403) return new ProviderError(`${detail} Check the ${vendor} API key.`, false, audit);
+  if (response.status === 402) return new ProviderError(`${detail} The ${vendor} account is out of credits.`, false, audit);
+  if (response.status === 429) return new ProviderError(detail, true, audit, retryAfterMs(response.retryAfter));
+  return new ProviderError(detail, isTransientStatus(response.status), audit);
+}
+
+/** A LinkedIn profile URL with a scheme. Some vendors send `linkedin.com/in/x`. */
+export const withScheme = (value: unknown): string | null => {
+  const url = text(value);
+  if (!url) return null;
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+};

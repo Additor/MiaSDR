@@ -133,7 +133,7 @@ export async function createProvider(deps: ProviderDeps, actor: Actor, input: Pr
   const envelope = Object.keys(credentials).length ? deps.cipher.encrypt(JSON.stringify(credentials)) : null;
   const created = await deps.providers.create(
     actor.organizationId,
-    { key, name, baseUrl: adapter.baseUrl, defaultCostCents: input.defaultCostCents ?? 0, rateLimitPerMin: input.rateLimitPerMin ?? null, config: adapter.config },
+    { key, name, baseUrl: adapter.baseUrl, defaultCostCents: input.defaultCostCents ?? 0, rateLimitPerMin: input.rateLimitPerMin === undefined ? (entry.defaultRateLimitPerMin ?? null) : input.rateLimitPerMin, config: adapter.config },
     envelope,
   );
   return toView(deps, created);

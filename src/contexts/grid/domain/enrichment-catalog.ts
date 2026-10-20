@@ -8,7 +8,7 @@ import { contractAction } from "./enrichment-contracts";
 
 export type ProviderStatus = "available" | "catalog_only";
 /** Vendors with a native adapter in `infrastructure/vendors`. The key is also the `config.adapter` value stored on provider rows. */
-export type VendorAdapterKey = "hunter" | "apollo";
+export type VendorAdapterKey = "hunter" | "apollo" | "zerobounce" | "millionverifier" | "neverbounce";
 export type AdapterKey = VendorAdapterKey | "http" | "fake";
 export type ValueType = "text" | "email" | "url" | "number" | "boolean" | "json" | "domain";
 
@@ -50,6 +50,8 @@ export interface CatalogEntry {
   /** Fixed API host for adapters that call one vendor. The saved base URL must equal it. */
   fixedBaseUrl?: string;
   credentialFields: CredentialField[];
+  /** Calls per minute a new provider row starts with, from the vendor's published limit. Null means no limit. */
+  defaultRateLimitPerMin?: number;
   /** Static actions. The `http` adapter reads its actions from the provider config instead. */
   actions: ActionSpec[];
 }
@@ -97,6 +99,19 @@ export const APOLLO_ACTIONS: ActionSpec[] = [
     ],
   }),
   contractAction("enrich-company"),
+];
+
+const verifyExtras = [
+  { key: "subStatus", name: "Sub-status", type: "text" },
+  { key: "freeEmail", name: "Free email", type: "boolean" },
+  { key: "role", name: "Role address", type: "boolean" },
+  { key: "didYouMean", name: "Did you mean", type: "email" },
+] as const satisfies ActionOutput[];
+
+export const ZEROBOUNCE_ACTIONS: ActionSpec[] = [contractAction("verify-email", { extraOutputs: [...verifyExtras] })];
+export const MILLIONVERIFIER_ACTIONS: ActionSpec[] = [contractAction("verify-email", { extraOutputs: [...verifyExtras, { key: "quality", name: "Quality", type: "text" }] })];
+export const NEVERBOUNCE_ACTIONS: ActionSpec[] = [
+  contractAction("verify-email", { extraOutputs: [...verifyExtras.filter((o) => o.key !== "subStatus"), { key: "flags", name: "Flags", type: "json" }] }),
 ];
 
 /** Deterministic provider for tests and demos. Never calls a network. */
@@ -166,15 +181,43 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
     credentialFields: [{ key: "apiKey", label: "API key", required: false }],
     actions: FAKE_ACTIONS,
   },
+  {
+    key: "zerobounce",
+    name: "ZeroBounce",
+    description: "Verify email addresses. Bring your own ZeroBounce API key. ZeroBounce charges nothing for an unknown result.",
+    status: "available",
+    adapter: "zerobounce",
+    fixedBaseUrl: "https://api.zerobounce.net",
+    credentialFields: API_KEY,
+    actions: ZEROBOUNCE_ACTIONS,
+  },
+  {
+    key: "millionverifier",
+    name: "MillionVerifier",
+    description: "Verify email addresses. Bring your own MillionVerifier API key. Unknown and catch-all results are refunded as credits.",
+    status: "available",
+    adapter: "millionverifier",
+    fixedBaseUrl: "https://api.millionverifier.com",
+    credentialFields: API_KEY,
+    actions: MILLIONVERIFIER_ACTIONS,
+  },
+  {
+    key: "neverbounce",
+    name: "NeverBounce",
+    description: "Verify email addresses. Bring your own NeverBounce API key.",
+    status: "available",
+    adapter: "neverbounce",
+    fixedBaseUrl: "https://api.neverbounce.com",
+    credentialFields: API_KEY,
+    actions: NEVERBOUNCE_ACTIONS,
+  },
   catalogOnly("cleanlist", "Cleanlist", "Contact enrichment."),
   catalogOnly("snov", "Snov.io", "Email finder and verifier."),
-  catalogOnly("millionverifier", "MillionVerifier", "Email verification."),
   catalogOnly("contactout", "ContactOut", "Contact details lookup."),
   catalogOnly("findymail", "Findymail", "Email finder."),
   catalogOnly("fullenrich", "FullEnrich", "Waterfall contact enrichment."),
   catalogOnly("leadmagic", "LeadMagic", "Email and mobile finder."),
   catalogOnly("lusha", "Lusha", "Contact and company data."),
-  catalogOnly("zerobounce", "ZeroBounce", "Email validation."),
   catalogOnly("similarweb", "Similarweb", "Website traffic data."),
   catalogOnly("semrush", "Semrush", "SEO and domain metrics."),
   catalogOnly("rocketreach", "RocketReach", "Contact lookup."),
