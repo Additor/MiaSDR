@@ -126,6 +126,16 @@ describe("credential verifier", () => {
     expect(await assertCredentialVerified(undefined, { key: "anthropic", name: "Anthropic" }, { apiKey: KEY })).toBe(false);
   });
 
+  it("refuses redirects and leaves Hunter's body unread", async () => {
+    const cancel = vi.fn();
+    const stub = vi.fn(async () => new Response(new ReadableStream({ cancel }), { status: 200 }));
+    const verifier = createCredentialVerifier({ fetch: stub as unknown as typeof fetch });
+    expect(await verifier.verify("hunter", { apiKey: KEY })).toEqual({ ok: true, verified: true });
+    const [, init] = stub.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.redirect).toBe("error");
+    expect(cancel).toHaveBeenCalled();
+  });
+
   it("rejects a key with a line break without a call", async () => {
     const stub = respond(200);
     const verifier = createCredentialVerifier({ fetch: stub as unknown as typeof fetch });

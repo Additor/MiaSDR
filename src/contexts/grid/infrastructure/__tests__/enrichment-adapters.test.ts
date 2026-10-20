@@ -158,9 +158,42 @@ describe("Hunter adapter", () => {
 
   it("treats 202 and 429 as retryable and 401 as permanent", async () => {
     const run = async (status: number) => hunter(mockFetch(status, { errors: [{ details: "x" }] }).fn).execute(hunterCall("verify-email", { email: "a@acme.com" })).catch((e) => e);
-    expect(await run(202)).toMatchObject({ transient: true });
+    expect(await run(202)).toMatchObject({ transient: true, message: "Hunter is still verifying this address. It will be asked again." });
     expect(await run(429)).toMatchObject({ transient: true });
-    expect(await run(401)).toMatchObject({ transient: false });
+    expect(await run(401)).toMatchObject({ transient: false, message: "Hunter returned 401: x" });
+    expect(await run(403)).toMatchObject({ transient: true });
+    // 222 is inside the 2xx range, so it reads as an empty answer today.
+    expect(await run(222)).toMatchObject({ outcome: "miss", primary: null });
+  });
+
+  it("verifies an email and maps Hunter's fields", async () => {
+    const { fn, seen } = mockFetch(200, { data: { email: "ada@acme.com", status: "valid", score: 97, accept_all: false, disposable: false, webmail: false } });
+    const answer = await hunter(fn).execute(hunterCall("verify-email", { email: "ada@acme.com" }));
+    expect(seen[0].url).toBe("https://api.hunter.io/v2/email-verifier?email=ada%40acme.com");
+    expect(answer).toMatchObject({ outcome: "hit", primary: "valid", outputs: { email: "ada@acme.com", status: "valid", score: 97, acceptAll: false, disposable: false, webmail: false } });
+  });
+
+  it("finds emails by company domain with a limit of ten", async () => {
+    const { fn, seen } = mockFetch(200, { data: { emails: [{ value: "ada@acme.com" }, { value: "bob@acme.com" }], organization: "Acme", pattern: "{first}" } });
+    const answer = await hunter(fn).execute(hunterCall("find-emails-by-company", { companyDomain: "acme.com" }));
+    expect(seen[0].url).toBe("https://api.hunter.io/v2/domain-search?domain=acme.com&limit=10");
+    expect(answer).toMatchObject({ outcome: "hit", primary: "ada@acme.com", outputs: { emailCount: 2, firstEmail: "ada@acme.com", organization: "Acme", pattern: "{first}" } });
+  });
+
+  it("records the request as method, endpoint and input keys, and fills missing outputs with null", async () => {
+    const { fn } = mockFetch(200, { data: { email: "ada@acme.com" } });
+    const answer = await hunter(fn).execute(hunterCall("find-work-email", { fullName: "Ada Lovelace", companyDomain: "acme.com" }));
+    expect(answer.request).toEqual({ method: "GET", endpoint: "/v2/email-finder", inputKeys: ["fullName", "companyDomain"] });
+    expect(answer.outputs).toEqual({ email: "ada@acme.com", score: null, verificationStatus: null, position: null, linkedinUrl: null });
+  });
+
+  it("refuses a missing key and an unknown action without a call", async () => {
+    const { fn, seen } = mockFetch(200, {});
+    const noKey = await hunter(fn).execute({ ...hunterCall("verify-email", { email: "a@acme.com" }), credentials: {} }).catch((e) => e);
+    expect(noKey).toMatchObject({ transient: false, message: "The Hunter API key is missing." });
+    const unknown = await hunter(fn).execute(hunterCall("guess", {})).catch((e) => e);
+    expect(unknown).toMatchObject({ transient: false, message: "Unknown Hunter action: guess" });
+    expect(seen).toHaveLength(0);
   });
 });
 
@@ -217,6 +250,32 @@ describe("Apollo adapter", () => {
     expect(await run(429, { "content-type": "application/json", "retry-after": "45" })).toMatchObject({ transient: true, retryAfterMs: 45_000 });
     expect(await run(429)).toMatchObject({ transient: true, retryAfterMs: 60_000 });
     expect((await run(401)).message).not.toContain("apollo-key");
+  });
+
+  it("trims inputs, sends Accept and Cache-Control, and records the request without the key", async () => {
+    const { fn, seen } = mockFetch(200, person);
+    const answer = await apollo(fn).execute(apolloCall("enrich-person", { email: "  ada@acme.com  " }));
+    expect(seen[0].url).toBe("https://api.apollo.io/api/v1/people/match?email=ada%40acme.com");
+    expect(seen[0].init.headers).toMatchObject({ Accept: "application/json", "Cache-Control": "no-cache" });
+    expect(answer.request).toEqual({ method: "POST", endpoint: "/api/v1/people/match", inputKeys: ["email"] });
+  });
+
+  it("fills missing company fields with null", async () => {
+    const answer = await apollo(mockFetch(200, { organization: { name: "Acme" } }).fn).execute(apolloCall("enrich-company", { companyDomain: "acme.com" }));
+    expect(answer.outputs).toEqual({ name: "Acme", industry: null, employeeCount: null, websiteUrl: null, linkedinUrl: null, city: null, country: null });
+  });
+
+  it("refuses a company lookup without a domain and an unknown action, without a call", async () => {
+    const { fn, seen } = mockFetch(200, {});
+    expect(await apollo(fn).execute(apolloCall("enrich-company", { companyDomain: "  " })).catch((e) => e)).toMatchObject({ transient: false, message: "Apollo needs a company domain." });
+    expect(await apollo(fn).execute(apolloCall("guess", {})).catch((e) => e)).toMatchObject({ transient: false, message: "Unknown Apollo action: guess" });
+    expect(await apollo(fn).execute({ ...apolloCall("enrich-company", { companyDomain: "acme.com" }), credentials: {} }).catch((e) => e)).toMatchObject({ message: "The Apollo API key is missing." });
+    expect(seen).toHaveLength(0);
+  });
+
+  it("asks to check the key on 401 and 403", async () => {
+    const error = await apollo(mockFetch(401, { error: "Invalid access credentials." }).fn).execute(apolloCall("enrich-company", { companyDomain: "acme.com" })).catch((e) => e);
+    expect(error.message).toBe("Apollo returned 401: Invalid access credentials. Check the Apollo API key.");
   });
 
   it("reads retry-after seconds with a one hour cap", () => {
