@@ -1,14 +1,17 @@
 import type { CredentialVerifier } from "@/contexts/integrations/application/credential-verifier";
 import { createCredentialVerifier, createKeyCheck, headerSafe, type VerifierOptions } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { apollo } from "./apollo";
+import { findymail } from "./findymail";
 import { hunter } from "./hunter";
+import { leadmagic } from "./leadmagic";
 import { millionverifier } from "./millionverifier";
 import { neverbounce } from "./neverbounce";
+import { prospeo } from "./prospeo";
 import type { VendorDefinition } from "./vendor-kit";
 import { zerobounce } from "./zerobounce";
 
 /** Every vendor with a native adapter. A catalog entry is `available` exactly when it has a definition here. */
-export const VENDORS: readonly VendorDefinition[] = [hunter, apollo, zerobounce, millionverifier, neverbounce];
+export const VENDORS: readonly VendorDefinition[] = [hunter, apollo, zerobounce, millionverifier, neverbounce, findymail, prospeo, leadmagic];
 
 export const vendorFor = (key: string): VendorDefinition | undefined => VENDORS.find((v) => v.key === key);
 

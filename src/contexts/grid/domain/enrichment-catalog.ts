@@ -8,7 +8,7 @@ import { contractAction } from "./enrichment-contracts";
 
 export type ProviderStatus = "available" | "catalog_only";
 /** Vendors with a native adapter in `infrastructure/vendors`. The key is also the `config.adapter` value stored on provider rows. */
-export type VendorAdapterKey = "hunter" | "apollo" | "zerobounce" | "millionverifier" | "neverbounce";
+export type VendorAdapterKey = "hunter" | "apollo" | "zerobounce" | "millionverifier" | "neverbounce" | "findymail" | "prospeo" | "leadmagic";
 export type AdapterKey = VendorAdapterKey | "http" | "fake";
 export type ValueType = "text" | "email" | "url" | "number" | "boolean" | "json" | "domain";
 
@@ -114,6 +114,10 @@ export const NEVERBOUNCE_ACTIONS: ActionSpec[] = [
   contractAction("verify-email", { extraOutputs: [...verifyExtras.filter((o) => o.key !== "subStatus"), { key: "flags", name: "Flags", type: "json" }] }),
 ];
 
+export const FINDYMAIL_ACTIONS: ActionSpec[] = [contractAction("find-work-email")];
+export const PROSPEO_ACTIONS: ActionSpec[] = [contractAction("find-work-email")];
+export const LEADMAGIC_ACTIONS: ActionSpec[] = [contractAction("find-work-email", { extraOutputs: [{ key: "employmentVerified", name: "Employment verified", type: "boolean" }] })];
+
 /** Deterministic provider for tests and demos. Never calls a network. */
 export const FAKE_ACTIONS: ActionSpec[] = [
   {
@@ -211,12 +215,43 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
     credentialFields: API_KEY,
     actions: NEVERBOUNCE_ACTIONS,
   },
+  {
+    key: "findymail",
+    name: "Findymail",
+    description: "Find verified work emails from a name and a company domain. Bring your own Findymail API key. A search that finds nothing is free.",
+    status: "available",
+    adapter: "findymail",
+    fixedBaseUrl: "https://app.findymail.com",
+    credentialFields: API_KEY,
+    actions: FINDYMAIL_ACTIONS,
+  },
+  {
+    key: "prospeo",
+    name: "Prospeo",
+    description: "Find verified work emails from a name and a company domain. Bring your own Prospeo API key. A search that finds nothing is free.",
+    status: "available",
+    adapter: "prospeo",
+    fixedBaseUrl: "https://api.prospeo.io",
+    credentialFields: API_KEY,
+    // The Starter plan's limit; raise it on the provider for a larger plan.
+    defaultRateLimitPerMin: 300,
+    actions: PROSPEO_ACTIONS,
+  },
+  {
+    key: "leadmagic",
+    name: "LeadMagic",
+    description: "Find work emails from a name and a company domain. Bring your own LeadMagic API key. A search that finds nothing is free.",
+    status: "available",
+    adapter: "leadmagic",
+    fixedBaseUrl: "https://api.leadmagic.io",
+    credentialFields: API_KEY,
+    defaultRateLimitPerMin: 600,
+    actions: LEADMAGIC_ACTIONS,
+  },
   catalogOnly("cleanlist", "Cleanlist", "Contact enrichment."),
   catalogOnly("snov", "Snov.io", "Email finder and verifier."),
   catalogOnly("contactout", "ContactOut", "Contact details lookup."),
-  catalogOnly("findymail", "Findymail", "Email finder."),
   catalogOnly("fullenrich", "FullEnrich", "Waterfall contact enrichment."),
-  catalogOnly("leadmagic", "LeadMagic", "Email and mobile finder."),
   catalogOnly("lusha", "Lusha", "Contact and company data."),
   catalogOnly("similarweb", "Similarweb", "Website traffic data."),
   catalogOnly("semrush", "Semrush", "SEO and domain metrics."),

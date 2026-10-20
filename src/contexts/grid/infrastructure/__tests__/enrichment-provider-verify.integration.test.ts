@@ -94,6 +94,17 @@ describeDb("grid provider key verification", () => {
     expect(created.actions.map((a) => a.key)).toEqual(["enrich-person", "enrich-company"]);
   });
 
+  it("starts a vendor with its published rate limit unless the admin sets one", async () => {
+    const t = await org();
+    const ok = verifier({ ok: true });
+    const prospeo = await m.providers.createProvider(deps(ok), t.actor, { adapter: "prospeo", credentials: { apiKey: KEY } });
+    expect(prospeo).toMatchObject({ baseUrl: "https://api.prospeo.io", rateLimitPerMin: 300 });
+    const own = await m.providers.createProvider(deps(ok), t.actor, { adapter: "leadmagic", rateLimitPerMin: 50, credentials: { apiKey: KEY } });
+    expect(own.rateLimitPerMin).toBe(50);
+    const unlimited = await m.providers.createProvider(deps(ok), t.actor, { adapter: "zerobounce", credentials: { apiKey: KEY } });
+    expect(unlimited.rateLimitPerMin).toBeNull();
+  });
+
   it("does not verify for a member", async () => {
     const t = await org("member");
     const v = verifier({ ok: true });
