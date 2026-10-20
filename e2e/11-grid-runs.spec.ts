@@ -77,6 +77,35 @@ test.describe("grid runs", () => {
     await expect(page.getByRole("status").filter({ hasText: "failed" })).toHaveCount(0);
   });
 
+  test("a verification waterfall starts from a preset that lines up every verifier", async ({ page }) => {
+    await signInAdmin(page);
+    const { workbookId, tableId } = await newWorkbook(page.request, "C2 verify waterfall");
+    await importCsv(page.request, tableId, [["Full name", "Email"], ["Ann Lee", "ann@acme.test"]]);
+    // In fake mode the key check makes no call, so these keys are never sent anywhere. Nothing here runs the column.
+    for (const adapter of ["hunter", "zerobounce"]) {
+      const res = await page.request.post("/api/grid/providers", { data: { adapter, key: `c2-${adapter}`, credentials: { apiKey: `c2-${adapter}-key` } } });
+      expect(res.status(), `connect ${adapter}`).toBe(201);
+    }
+    await page.goto(`/tables/${workbookId}`);
+    await expect(page.getByRole("gridcell", { name: "Email: ann@acme.test" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Add column" }).click();
+    await page.getByRole("menuitem", { name: "Enrichment" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add enrichment" });
+    await dialog.getByRole("tab", { name: "Waterfall" }).click();
+    await dialog.getByRole("button", { name: "Verify email (2 providers)" }).click();
+    await expect(dialog.locator("#step-p-0")).toContainText("Hunter");
+    await expect(dialog.locator("#step-p-1")).toContainText("ZeroBounce");
+    // Both steps run the same action, so "Add step" has no third verifier to offer.
+    await expect(dialog.getByRole("button", { name: "Add step" })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Add columns" }).click();
+    await expect(dialog).toBeHidden();
+
+    const { columns } = await gridPage(page.request, tableId);
+    const waterfall = columns.find((c) => c.type === "waterfall");
+    expect(waterfall?.config).toMatchObject({ steps: [{ providerKey: "c2-hunter", actionKey: "verify-email" }, { providerKey: "c2-zerobounce", actionKey: "verify-email" }] });
+  });
+
   test("an AI column is added from the toolbar and filled by a run", async ({ page }) => {
     await signInAdmin(page);
     const { workbookId, tableId } = await newWorkbook(page.request, "C2 AI column");

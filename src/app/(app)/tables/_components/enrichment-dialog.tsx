@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { guessColumn, usableProviders, useProviders, type ActionSpec, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
+import { nextStep, presetSteps, providersForStep, WATERFALL_PRESETS, type WaterfallStep } from "../_lib/data/waterfall-steps";
 import { ColumnChoice, Choice, ErrorText, Field } from "./form-bits";
 import { ProviderManager } from "./provider-manager";
 
@@ -22,10 +23,7 @@ interface Props {
   onSaved: () => Promise<void>;
 }
 
-interface Step {
-  providerKey: string;
-  actionKey: string;
-}
+type Step = WaterfallStep;
 
 /** Adds an enrichment (one provider action) or a waterfall (several, tried in order) column. */
 export function EnrichmentDialog(props: Props) {
@@ -132,7 +130,11 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
   }, [chosen]);
 
   function setStep(index: number, next: Step) {
-    const list = steps.map((s, i) => (i === index ? next : s));
+    let list = steps.map((s, i) => (i === index ? next : s));
+    // A new first action keeps only the later steps whose provider offers it too.
+    if (index === 0 && mode === "waterfall") {
+      list = [next, ...list.slice(1).filter((s) => usable.find((p) => p.key === s.providerKey)?.actions.some((a) => a.key === next.actionKey)).map((s) => ({ ...s, actionKey: next.actionKey }))];
+    }
     applySteps(list);
   }
   function applySteps(list: Step[]) {
@@ -156,9 +158,11 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
     if (next === "single" && steps.length > 1) applySteps(steps.slice(0, 1));
   }
   function addStep() {
-    const p = usable[0];
-    if (p) applySteps([...steps, defaultStep(p)]);
+    const step = nextStep(usable, steps);
+    if (step) applySteps([...steps, step]);
   }
+  const canAdd = nextStep(usable, steps) !== null;
+  const presets = WATERFALL_PRESETS.map((preset) => ({ ...preset, steps: presetSteps(usable, preset.actionKey) })).filter((preset) => preset.steps.length >= 2);
   function move(i: number, d: -1 | 1) {
     const list = steps.slice();
     const j = i + d;
@@ -209,7 +213,17 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
             </button>
           ))}
         </div>
-        {mode === "waterfall" && <p className="text-xs text-muted-foreground">A waterfall tries each step in order and stops at the first hit.</p>}
+        {mode === "waterfall" && <p className="text-xs text-muted-foreground">A waterfall tries each step in order and stops at the first hit. Every step runs the same action, so their answers fill the same columns.</p>}
+        {mode === "waterfall" && presets.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Start from</span>
+            {presets.map((preset) => (
+              <Button key={preset.actionKey} type="button" variant="outline" size="sm" onClick={() => applySteps(preset.steps)}>
+                {preset.label} ({preset.steps.length} providers)
+              </Button>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading providers...</p>
@@ -219,21 +233,27 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
             {usable.length === 0 && <p className="rounded-lg border border-dashed p-3 text-sm">No provider is ready. Connect one and save its key below.</p>}
             {steps.map((step, i) => {
               const provider = usable.find((p) => p.key === step.providerKey);
+              const later = mode === "waterfall" && i > 0;
               return (
                 <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_auto]">
                   <Field label={mode === "waterfall" ? `Step ${i + 1} provider` : "Provider"} htmlFor={`step-p-${i}`}>
                     <Choice
                       id={`step-p-${i}`}
-                      items={usable.map((p) => ({ value: p.key, label: p.name }))}
+                      items={providersForStep(usable, steps, later ? i : 0).map((p) => ({ value: p.key, label: p.name }))}
                       value={step.providerKey}
                       onChange={(k) => {
                         const p = usable.find((x) => x.key === k);
-                        if (p) setStep(i, defaultStep(p));
+                        if (p) setStep(i, later ? { providerKey: p.key, actionKey: steps[0].actionKey } : defaultStep(p));
                       }}
                     />
                   </Field>
                   <Field label="Action" htmlFor={`step-a-${i}`}>
-                    <Choice id={`step-a-${i}`} items={(provider?.actions ?? []).map((a) => ({ value: a.key, label: a.name }))} value={step.actionKey} onChange={(a) => setStep(i, { ...step, actionKey: a })} />
+                    <Choice
+                      id={`step-a-${i}`}
+                      items={(provider?.actions ?? []).filter((a) => !later || a.key === steps[0].actionKey).map((a) => ({ value: a.key, label: a.name }))}
+                      value={step.actionKey}
+                      onChange={(a) => setStep(i, { ...step, actionKey: a })}
+                    />
                   </Field>
                   {mode === "waterfall" && (
                     <div className="flex items-end gap-1">
@@ -253,7 +273,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
             })}
             {usable.length > 0 && (mode === "waterfall" || steps.length === 0) && (
               <div>
-                <Button type="button" variant="outline" size="sm" onClick={addStep}>
+                <Button type="button" variant="outline" size="sm" onClick={addStep} disabled={!canAdd}>
                   <PlusIcon /> {steps.length === 0 ? "Choose provider" : "Add step"}
                 </Button>
               </div>

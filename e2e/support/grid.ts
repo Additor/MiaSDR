@@ -7,6 +7,7 @@ export interface GridColumnJson {
   key: string;
   name: string;
   type: string;
+  config: Record<string, unknown>;
 }
 
 export interface GridRowJson {
