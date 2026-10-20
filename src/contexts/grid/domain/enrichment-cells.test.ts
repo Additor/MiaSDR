@@ -12,6 +12,10 @@ describe("redaction", () => {
     expect(JSON.stringify(out)).not.toContain("sk-live-123456");
     expect(JSON.stringify(out)).toContain("[redacted]");
     expect(JSON.stringify(redactSecrets({ a: 'pa"ss\\word99' }, ['pa"ss\\word99']))).not.toContain("word99");
+    // A key passed as a query parameter shows up URL-encoded.
+    const key = "ab+cd/ef=gh 12";
+    const encoded = redactSecrets({ url: `https://x.test/?api=${encodeURIComponent(key)}`, form: `api=${new URLSearchParams({ k: key }).toString().slice(2)}` }, [key]);
+    expect(encoded).toEqual({ url: "https://x.test/?api=[redacted]", form: "api=[redacted]" });
   });
   it("ignores secrets too short to match safely", () => {
     expect(redactSecrets({ a: "abc" }, ["ab"])).toEqual({ a: "abc" });
