@@ -57,7 +57,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 
 **Research**
 
-- **Tables**: a spreadsheet with formulas, enrichment from Apollo, Hunter or any HTTP API, and AI columns. Push a table's rows to a campaign in one step.
+- **Tables**: a spreadsheet with formulas, AI columns and enrichment from nine vendors (email verification, email finding, person and company data) or any HTTP API. Line vendors up in a waterfall that stops at the first answer, then push a table's rows to a campaign in one step.
 
 **Learn what works**
 
@@ -102,7 +102,7 @@ Docker Compose is the supported deployment: the app container and Postgres 17, w
 |---|---|---|
 | [Quick start guide](docs/guides/quick-start.md) | [Gmail](docs/setup/gmail.md) | [Self-hosting](docs/deploy/self-host.md) |
 | [How MiaSDR works](docs/guides/how-it-works.md) | [LinkedIn through Unipile](docs/setup/linkedin-unipile.md) | [Configuration](docs/configuration.md) |
-| [Responsible use](docs/responsible-use.md) | [Apollo enrichment](docs/setup/apollo.md) | [Operations](docs/operations.md) |
+| [Responsible use](docs/responsible-use.md) | [Enrichment providers](docs/setup/enrichment.md) | [Operations](docs/operations.md) |
 
 ## License
 

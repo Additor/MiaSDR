@@ -271,8 +271,6 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
   catalogOnly("contactout", "ContactOut", "Contact details lookup."),
   catalogOnly("fullenrich", "FullEnrich", "Waterfall contact enrichment."),
   catalogOnly("lusha", "Lusha", "Contact and company data."),
-  catalogOnly("similarweb", "Similarweb", "Website traffic data."),
-  catalogOnly("semrush", "Semrush", "SEO and domain metrics."),
   catalogOnly("rocketreach", "RocketReach", "Contact lookup."),
   catalogOnly("icypeas", "Icypeas", "Email finder and verifier."),
 ];

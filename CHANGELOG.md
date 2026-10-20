@@ -11,5 +11,5 @@ First public release.
 - Replies stop outreach on every channel. AI classifies each reply and drafts an answer that a person approves.
 - Inbox for conversations, and Actions as a queue of work waiting on a person, with assignment.
 - CRM: contacts, companies with merge, deals on a pipeline board.
-- Tables: a spreadsheet with formulas, enrichment and AI columns.
+- Tables: a spreadsheet with formulas, enrichment and AI columns. Enrichment calls Hunter, ZeroBounce, MillionVerifier, NeverBounce, Findymail, Prospeo, LeadMagic, Apollo and People Data Labs natively, and vendors that share an action line up in a waterfall.
 - Self-hosting with Docker Compose and Postgres 17.
