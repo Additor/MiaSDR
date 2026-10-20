@@ -129,8 +129,9 @@ test.describe("smoke at 390x844 in dark mode", () => {
   test("the views, the filter button and the Actions line fit the phone", async ({ page }) => {
     await openWithReply(page);
     await page.goto("/inbox");
-    // The list streams in behind a skeleton. Measure once it is there.
-    await expect(page.getByTestId("waiting-in-actions")).toBeVisible();
+    // The list streams in behind a skeleton, and for a moment the streamed copy and the shown one are both in the page.
+    // Measure once the shown one is there.
+    await expect(page.getByTestId("waiting-in-actions").filter({ visible: true })).toBeVisible();
     await expectNoHorizontalOverflow(page);
     const targets = {
       more: page.getByTestId("more-views"),
