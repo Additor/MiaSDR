@@ -5,8 +5,9 @@ import { parseBody, safeRequest } from "../enrichment-http";
 import { answerWith, asRecord, statusError, text, withScheme, type VendorDefinition } from "./vendor-kit";
 
 // People Data Labs (https://docs.peopledatalabs.com/docs/reference-person-enrichment-api, input-parameters-person-
-// enrichment-api, reference-company-enrichment-api, errors, usage-limits). Docs read 2026-10-20; not exercised against a
-// live key. PDL charges per match, so a 404 is a free miss.
+// enrichment-api, reference-company-enrichment-api, errors, usage-limits). Docs read 2026-10-20. PDL charges per match,
+// so a 404 is a free miss.
+// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const BASE = "https://api.peopledatalabs.com";
 const AUTOCOMPLETE_URL = `${BASE}/v5/autocomplete?field=company&text=a&size=1`;
 

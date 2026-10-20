@@ -85,7 +85,7 @@ pnpm e2e
 
 `pnpm e2e` builds the app twice (a test build and a production-like build), starts both with fake providers and their own database, and runs the Playwright specs in `e2e/`. It needs a Postgres it can create databases on: set `E2E_PG_URL` to an admin URL, or start one on the default port 55437. The specs run in file order on one worker, and later specs use what earlier ones created (`01-setup-onboarding` creates the owner, `02-invite-signup` the second member), so run a single spec together with the specs it depends on. `E2E_SKIP_BUILD=1` reuses the last builds, and arguments after `--` go to `playwright test`. The header of `e2e/run.mjs` lists the other options.
 
-Timing runs stay out of the suite and live in `scripts/bench`: the grid change feed, grid sort and recalculation, the lead list on 10,000 leads, and the read indexes. Run them with `pnpm vitest run -c scripts/bench/vitest.config.mts` and `TEST_DATABASE_URL` set; each file's header names its size variables.
+Timing runs stay out of the suite and live in `scripts/bench`: the grid change feed, grid sort and recalculation, the lead list on 10,000 leads, and the read indexes. Run them with `pnpm vitest run -c scripts/bench/vitest.config.mts` and `TEST_DATABASE_URL` set; each file's header names its size variables. Live enrichment vendor calls live in `scripts/smoke` and need your own keys; see [Enrichment providers](docs/setup/enrichment.md#verification-of-these-adapters).
 
 `scripts/ci-local.sh` runs the whole CI pipeline (install, typecheck, lint, migrate, tests, build, e2e, Docker image check) against a throwaway Postgres. Run it before you push a larger change.
 

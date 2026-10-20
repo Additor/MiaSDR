@@ -6,8 +6,10 @@ import { parseBody, safeRequest } from "../enrichment-http";
 import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // NeverBounce (https://developers.neverbounce.com/reference/single-check, account-info, error-handling,
-// usage-guidelines). Docs read 2026-10-20; not exercised against a live key. The key goes in the `key` query parameter.
-// NeverBounce asks that single checks not loop over a whole list; a table run is one check per cell the person queued.
+// usage-guidelines). Docs read 2026-10-20. The key goes in the `key` query parameter, and a bad-key message repeats it,
+// which the worker's cleanError removes. NeverBounce asks that single checks not loop over a whole list; a table run is
+// one check per cell the person queued.
+// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const CHECK_URL = "https://api.neverbounce.com/v4.2/single/check";
 const ACCOUNT_URL = "https://api.neverbounce.com/v4.2/account/info";
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { cleanError } from "../../domain/enrichment-redact";
 import { ask, checkKey, keyForms, VENDOR_KEY } from "./vendor-test-kit";
 
 const noKey = (value: unknown) => {
@@ -93,6 +94,12 @@ describe("MillionVerifier", () => {
     expect(result.billable === false).toBe(!billable);
   });
 
+  it("reads the live bad-key answer as a permanent error", async () => {
+    // Seen live on 2026-10-20 with an invalid key.
+    const { result } = await verify(200, { email: "valid@example.com", result: "error", resultcode: 4, error: "Apikey not found" });
+    expect(result).toMatchObject({ transient: false, message: "MillionVerifier refused the request: Apikey not found" });
+  });
+
   it("reads an error text in a 200 answer as a permanent error", async () => {
     const { result } = await verify(200, { ...docInvalid, result: "error", resultcode: 4, error: "apikey_not_found" });
     expect(result).toMatchObject({ transient: false });
@@ -129,6 +136,14 @@ describe("NeverBounce", () => {
     ["unknown", "unknown", "miss"],
   ])("maps %s to %s, a %s", async (raw, status, outcome) => {
     expect((await verify(200, { ...docValid, result: raw })).result).toMatchObject({ outcome, primary: status });
+  });
+
+  it("echoes the key in its bad-key message, which the worker's cleanError removes", async () => {
+    // Seen live on 2026-10-20: NeverBounce repeats the key it was given.
+    const { result } = await verify(200, { status: "auth_failure", message: `Invalid API key '${VENDOR_KEY}'`, execution_time: 3 });
+    expect(result).toMatchObject({ transient: false });
+    const stored = cleanError(String(result.message), [VENDOR_KEY]);
+    expect(stored).toBe("NeverBounce returned auth_failure: Invalid API key '[redacted]' Check the NeverBounce API key.");
   });
 
   it("reads failures that come back with HTTP 200", async () => {

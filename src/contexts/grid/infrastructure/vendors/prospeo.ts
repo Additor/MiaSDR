@@ -5,8 +5,9 @@ import { parseBody, safeRequest } from "../enrichment-http";
 import { answerWith, asRecord, retryAfterMs, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // Prospeo (https://prospeo.io/api-docs/enrich-person, person-object, account-information, rate-limits). Docs read
-// 2026-10-20; not exercised against a live key. Most errors share HTTP 400 and differ by `error_code`. The request asks
-// for verified emails only, and Prospeo charges nothing when it finds no match.
+// 2026-10-20. Most errors share HTTP 400 and differ by `error_code`. The request asks for verified emails only, and
+// Prospeo charges nothing when it finds no match.
+// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const ENRICH_URL = "https://api.prospeo.io/enrich-person";
 const ACCOUNT_URL = "https://api.prospeo.io/account-information";
 

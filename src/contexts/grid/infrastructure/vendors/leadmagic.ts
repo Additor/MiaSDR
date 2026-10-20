@@ -5,8 +5,9 @@ import { parseBody, safeRequest } from "../enrichment-http";
 import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // LeadMagic (https://leadmagic.io/docs/api-reference/email-finder, openapi.json, docs/v1/making-api-calls, docs/v1/credits).
-// Docs read 2026-10-20; not exercised against a live key. A no-match is HTTP 200 with a null email and costs nothing.
-// LeadMagic pauses a key after ten rejected-key calls in ten minutes, so the key check is never retried.
+// Docs read 2026-10-20. A no-match is HTTP 200 with a null email and costs nothing. LeadMagic pauses a key after ten
+// rejected-key calls in ten minutes, so the key check is never retried.
+// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const FINDER_URL = "https://api.leadmagic.io/v1/people/email-finder";
 const CREDITS_URL = "https://api.leadmagic.io/v1/credits";
 

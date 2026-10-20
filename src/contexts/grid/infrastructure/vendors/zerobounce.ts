@@ -6,8 +6,9 @@ import { parseBody, safeRequest } from "../enrichment-http";
 import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // ZeroBounce (https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-validate-emails, v2-status-codes,
-// v2-credit-balance). Docs read 2026-10-20; not exercised against a live key. The key goes in a form body, so it never
-// sits in a URL; the credit check is a GET and takes it as a query parameter. The regional hosts (api-us, api-eu) are not offered.
+// v2-credit-balance). Docs read 2026-10-20. The key goes in a form body, so it never sits in a URL; the credit check is a
+// GET and takes it as a query parameter. The regional hosts (api-us, api-eu) are not offered.
+// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const VALIDATE_URL = "https://api.zerobounce.net/v2/validate";
 const CREDITS_URL = "https://api.zerobounce.net/v2/getcredits";
 

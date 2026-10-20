@@ -6,8 +6,9 @@ import { parseBody, safeRequest } from "../enrichment-http";
 import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // MillionVerifier (https://developer.millionverifier.com/, help.millionverifier.com email-verification-results and
-// refund-for-risky-emails). Docs read 2026-10-20; not exercised against a live key. The API takes the key only as the
-// `api` query parameter. The audit records the path, and the worker redacts the key in every encoded form.
+// refund-for-risky-emails). Docs read 2026-10-20. The API takes the key only as the `api` query parameter. The audit
+// records the path, and the worker redacts the key in every encoded form.
+// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const VERIFY_URL = "https://api.millionverifier.com/api/v3/";
 const CREDITS_URL = "https://api.millionverifier.com/api/v3/credits";
 

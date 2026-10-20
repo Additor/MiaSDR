@@ -4,9 +4,10 @@ import { stripLineBreaks } from "../../domain/enrichment-url-policy";
 import { parseBody, safeRequest } from "../enrichment-http";
 import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
 
-// Findymail (https://app.findymail.com/docs/, openapi.yaml). Docs read 2026-10-20; not exercised against a live key.
-// The finder returns verified emails only and charges only when it finds one. The docs show no no-match body, so an
-// answer without an email, or a 404, reads as a free miss.
+// Findymail (https://app.findymail.com/docs/, openapi.yaml). Docs read 2026-10-20. The finder returns verified emails
+// only and charges only when it finds one. The docs show no no-match body, so an answer without an email, or a 404,
+// reads as a free miss.
+// Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const SEARCH_URL = "https://app.findymail.com/api/search/name";
 const CREDITS_URL = "https://app.findymail.com/api/credits";
 
