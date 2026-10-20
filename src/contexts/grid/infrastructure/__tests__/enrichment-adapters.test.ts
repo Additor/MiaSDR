@@ -151,7 +151,7 @@ describe("Hunter adapter", () => {
     const answer = await hunter(fn).execute(hunterCall("find-work-email", { fullName: "Ada Lovelace", companyDomain: "acme.com" }));
     expect(seen[0].url).toBe("https://api.hunter.io/v2/email-finder?domain=acme.com&full_name=Ada+Lovelace");
     expect((seen[0].init.headers as Record<string, string>)["X-API-KEY"]).toBe("hunter-key-987654");
-    expect(answer).toMatchObject({ outcome: "hit", primary: "ada@acme.com", outputs: { score: 91, verificationStatus: "valid" } });
+    expect(answer).toMatchObject({ outcome: "hit", primary: "ada@acme.com", outputs: { confidence: 91, score: 91, verificationStatus: "valid" } });
   });
 
   it("answers a miss when Hunter finds nothing", async () => {
@@ -165,15 +165,29 @@ describe("Hunter adapter", () => {
     expect(await run(429)).toMatchObject({ transient: true });
     expect(await run(401)).toMatchObject({ transient: false, message: "Hunter returned 401: x" });
     expect(await run(403)).toMatchObject({ transient: true });
-    // 222 is inside the 2xx range, so it reads as an empty answer today.
-    expect(await run(222)).toMatchObject({ outcome: "miss", primary: null });
+    // 222: the mail server answered oddly; Hunter advises asking again later.
+    expect(await run(222)).toMatchObject({ transient: true, message: "Hunter could not verify this address right now. It will be asked again." });
   });
 
   it("verifies an email and maps Hunter's fields", async () => {
     const { fn, seen } = mockFetch(200, { data: { email: "ada@acme.com", status: "valid", score: 97, accept_all: false, disposable: false, webmail: false } });
     const answer = await hunter(fn).execute(hunterCall("verify-email", { email: "ada@acme.com" }));
     expect(seen[0].url).toBe("https://api.hunter.io/v2/email-verifier?email=ada%40acme.com");
-    expect(answer).toMatchObject({ outcome: "hit", primary: "valid", outputs: { email: "ada@acme.com", status: "valid", score: 97, acceptAll: false, disposable: false, webmail: false } });
+    expect(answer).toMatchObject({ outcome: "hit", primary: "valid", outputs: { email: "ada@acme.com", status: "valid", providerStatus: "valid", score: 97, acceptAll: false, disposable: false, webmail: false } });
+  });
+
+  it.each([
+    ["valid", "valid", "hit"],
+    ["webmail", "valid", "hit"],
+    ["invalid", "invalid", "hit"],
+    ["disposable", "disposable", "hit"],
+    ["accept_all", "catch_all", "miss"],
+    ["unknown", "unknown", "miss"],
+    ["blocked", "unknown", "miss"],
+  ])("maps Hunter's %s to %s, a %s", async (raw, status, outcome) => {
+    const answer = await hunter(mockFetch(200, { data: { email: "ada@acme.com", status: raw } }).fn).execute(hunterCall("verify-email", { email: "ada@acme.com" }));
+    // A miss keeps its verdict, so the cell can show it when no later step settles the address.
+    expect(answer).toMatchObject({ outcome, primary: status, outputs: { status, providerStatus: raw } });
   });
 
   it("finds emails by company domain with a limit of ten", async () => {
@@ -187,7 +201,7 @@ describe("Hunter adapter", () => {
     const { fn } = mockFetch(200, { data: { email: "ada@acme.com" } });
     const answer = await hunter(fn).execute(hunterCall("find-work-email", { fullName: "Ada Lovelace", companyDomain: "acme.com" }));
     expect(answer.request).toEqual({ method: "GET", endpoint: "/v2/email-finder", inputKeys: ["fullName", "companyDomain"] });
-    expect(answer.outputs).toEqual({ email: "ada@acme.com", score: null, verificationStatus: null, position: null, linkedinUrl: null });
+    expect(answer.outputs).toEqual({ email: "ada@acme.com", confidence: null, verificationStatus: null, score: null, position: null, linkedinUrl: null });
   });
 
   it("refuses a missing key and an unknown action without a call", async () => {

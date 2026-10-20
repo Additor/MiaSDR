@@ -4,6 +4,8 @@
  * operator allow-lists the host.
  */
 
+import { contractAction } from "./enrichment-contracts";
+
 export type ProviderStatus = "available" | "catalog_only";
 /** Vendors with a native adapter in `infrastructure/vendors`. The key is also the `config.adapter` value stored on provider rows. */
 export type VendorAdapterKey = "hunter" | "apollo";
@@ -55,38 +57,21 @@ export interface CatalogEntry {
 const API_KEY: CredentialField[] = [{ key: "apiKey", label: "API key", required: true }];
 
 export const HUNTER_ACTIONS: ActionSpec[] = [
-  {
-    key: "verify-email",
-    name: "Verify email",
-    inputs: [{ key: "email", name: "Email", type: "email", required: true }],
-    outputs: [
-      { key: "email", name: "Email", type: "email" },
-      { key: "status", name: "Status", type: "text" },
-      { key: "score", name: "Score", type: "number" },
+  contractAction("verify-email", {
+    extraOutputs: [
       { key: "acceptAll", name: "Accept all", type: "boolean" },
       { key: "disposable", name: "Disposable", type: "boolean" },
       { key: "webmail", name: "Webmail", type: "boolean" },
     ],
-    primaryOutput: "status",
-    defaultCostCents: 0,
-  },
-  {
-    key: "find-work-email",
-    name: "Find work email",
-    inputs: [
-      { key: "fullName", name: "Full name", type: "text", required: true },
-      { key: "companyDomain", name: "Company domain", type: "domain", required: true },
-    ],
-    outputs: [
-      { key: "email", name: "Work email", type: "email" },
+  }),
+  // `score` predates the contract's `confidence` and stays, so saved columns keep their values.
+  contractAction("find-work-email", {
+    extraOutputs: [
       { key: "score", name: "Score", type: "number" },
-      { key: "verificationStatus", name: "Verification status", type: "text" },
       { key: "position", name: "Position", type: "text" },
       { key: "linkedinUrl", name: "LinkedIn URL", type: "url" },
     ],
-    primaryOutput: "email",
-    defaultCostCents: 0,
-  },
+  }),
   {
     key: "find-emails-by-company",
     name: "Find emails by company",
@@ -103,47 +88,15 @@ export const HUNTER_ACTIONS: ActionSpec[] = [
   },
 ];
 
-/**
- * Apollo. Inputs are optional because Apollo matches on any of several identities; the adapter refuses a call
- * that has none of the usable combinations. The adapter never asks Apollo to reveal phone numbers or personal emails.
- */
+/** Apollo. The adapter never asks Apollo to reveal phone numbers or personal emails. */
 export const APOLLO_ACTIONS: ActionSpec[] = [
-  {
-    key: "enrich-person",
-    name: "Enrich person",
-    inputs: [
-      { key: "email", name: "Email", type: "email", required: false },
-      { key: "fullName", name: "Full name", type: "text", required: false },
-      { key: "companyDomain", name: "Company domain", type: "domain", required: false },
-      { key: "linkedinUrl", name: "LinkedIn URL", type: "url", required: false },
-    ],
-    outputs: [
-      { key: "email", name: "Work email", type: "email" },
+  contractAction("enrich-person", {
+    extraOutputs: [
       { key: "emailStatus", name: "Email status", type: "text" },
-      { key: "title", name: "Title", type: "text" },
-      { key: "company", name: "Company", type: "text" },
-      { key: "linkedinUrl", name: "LinkedIn URL", type: "url" },
       { key: "matchConfidence", name: "Match confidence", type: "text" },
     ],
-    primaryOutput: "email",
-    defaultCostCents: 0,
-  },
-  {
-    key: "enrich-company",
-    name: "Enrich company",
-    inputs: [{ key: "companyDomain", name: "Company domain", type: "domain", required: true }],
-    outputs: [
-      { key: "name", name: "Company name", type: "text" },
-      { key: "industry", name: "Industry", type: "text" },
-      { key: "employeeCount", name: "Employees", type: "number" },
-      { key: "websiteUrl", name: "Website", type: "url" },
-      { key: "linkedinUrl", name: "LinkedIn URL", type: "url" },
-      { key: "city", name: "City", type: "text" },
-      { key: "country", name: "Country", type: "text" },
-    ],
-    primaryOutput: "name",
-    defaultCostCents: 0,
-  },
+  }),
+  contractAction("enrich-company"),
 ];
 
 /** Deterministic provider for tests and demos. Never calls a network. */
