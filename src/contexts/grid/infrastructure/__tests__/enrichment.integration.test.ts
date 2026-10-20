@@ -313,6 +313,53 @@ describeDb("grid enrichment runs", () => {
     expect(ledger.map((r) => [r.provider, r.outcome, r.cost])).toEqual([["fake-a", "miss", 0], ["fake-b", "miss", 3]]);
   });
 
+  it("a verification waterfall across native vendors moves past unsettled verdicts, retries only the failed step, and keeps keys out of the ledger", async () => {
+    const { actor, table, rows } = await fixture([{ name: "Ada Lovelace", domain: "acme.com", about: "ada@acme.com" }]);
+    const keys = { hunter: "hunter-key-0123456789", zerobounce: "zb-key+0123456789/x", millionverifier: "mv-key=0123456789" };
+    let millionCalls = 0;
+    // One stub stands in for the three vendors, answering with the shapes their docs show.
+    const vendorFetch = (async (url: URL) => {
+      const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+      if (url.hostname === "api.hunter.io") return json(200, { data: { email: "ada@acme.com", status: "accept_all", score: 60 } });
+      if (url.hostname === "api.zerobounce.net") return json(200, { address: "ada@acme.com", status: "unknown", sub_status: "greylisted", free_email: false });
+      millionCalls++;
+      return millionCalls === 1 ? json(503, { error: "busy" }) : json(200, { email: "ada@acme.com", result: "ok", quality: "good", free: false, role: false, error: "" });
+    }) as unknown as typeof fetch;
+    const d = deps(fake(), { fetch: vendorFetch });
+    for (const [adapter, apiKey] of Object.entries(keys)) {
+      await m.providers.createProvider(d.providerDeps, actor, { adapter, credentials: { apiKey }, defaultCostCents: 1 });
+    }
+    await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
+      inputs: { email: "about" },
+      steps: ["hunter", "zerobounce", "millionverifier"].map((providerKey) => ({ providerKey, actionKey: "verify-email" })),
+      selectedOutputs: ["status", "providerStatus"],
+    });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+
+    // Hunter says catch-all and ZeroBounce unknown: neither settles the address, and MillionVerifier is busy.
+    const [job] = await sql`select status, attempts, provider_state from grid_jobs where table_id = ${table}`;
+    expect(job).toMatchObject({ status: "queued", attempts: 1 });
+    expect([...job.provider_state.missed].sort()).toEqual(["hunter/verify-email", "zerobounce/verify-email"]);
+
+    await sql`update grid_jobs set run_after = now() - interval '1 minute' where table_id = ${table}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(millionCalls).toBe(2);
+    const row = await cells(rows[0]);
+    expect(row.cells).toMatchObject({ status: "valid", providerStatus: "ok" });
+
+    const ledger = await sql`select provider, outcome, cost_cents::float as cost, request, response from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
+    expect(ledger.map((r) => [r.provider, r.outcome, r.cost])).toEqual([
+      ["hunter", "miss", 1],
+      // ZeroBounce charges nothing for unknown.
+      ["zerobounce", "miss", 0],
+      ["millionverifier", "error", 0],
+      ["millionverifier", "hit", 1],
+    ]);
+    const stored = JSON.stringify(ledger);
+    for (const key of Object.values(keys)) for (const form of [key, encodeURIComponent(key)]) expect(stored).not.toContain(form);
+  });
+
   it("holds cells back when a provider's rate limit is used up, without spending their attempts", async () => {
     const { actor, table } = await fixture(Array.from({ length: 5 }, (_, i) => ({ name: `Person${i} Test`, domain: "acme.com" })));
     const f = fake();
