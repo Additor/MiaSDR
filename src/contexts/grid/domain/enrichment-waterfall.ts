@@ -1,3 +1,5 @@
+import { hasCellValue } from "./enrichment-templates";
+
 /**
  * Waterfall semantics: steps run in order and the first hit wins. A miss moves on. A permanent error
  * (bad key, rejected request) is recorded and moves on. A transient error or a rate-limited provider moves
@@ -33,9 +35,16 @@ export interface StepAttempt {
 
 export type WaterfallResult =
   | { status: "hit"; winner: Extract<StepExecution, { kind: "result" }>; winnerStep: WaterfallStep; attempts: StepAttempt[]; spentCents: number; missed: string[] }
-  | { status: "miss"; attempts: StepAttempt[]; spentCents: number; missed: string[] }
+  | { status: "miss"; fallback?: MissVerdict; attempts: StepAttempt[]; spentCents: number; missed: string[] }
   | { status: "retry"; retryAfterMs?: number; attempts: StepAttempt[]; spentCents: number; missed: string[] }
   | { status: "failed"; message: string; attempts: StepAttempt[]; spentCents: number; missed: string[] };
+
+/** A miss that still carried a verdict, such as a catch-all address. The first one in step order is kept. */
+export interface MissVerdict {
+  step: WaterfallStep;
+  primary: unknown;
+  outputs: Record<string, unknown>;
+}
 
 export interface WaterfallOptions {
   /** Cents this cell may spend in total. A step whose worst case would pass it is skipped. */
@@ -60,6 +69,7 @@ export async function runWaterfall(
   let limitedAfterMs: number | undefined;
   let permanentMessage: string | null = null;
   let answered = false;
+  let fallback: MissVerdict | undefined;
 
   for (const step of steps) {
     if (options.shouldStop?.()) {
@@ -82,6 +92,7 @@ export async function runWaterfall(
       if (result.outcome === "hit") {
         return { status: "hit", winner: result, winnerStep: step, attempts, spentCents: spent, missed: [...missed] };
       }
+      if (!fallback && hasCellValue(result.primary)) fallback = { step, primary: result.primary, outputs: result.outputs };
       missed.add(id);
       answered = true;
     } else if (result.kind === "error") {
@@ -103,5 +114,5 @@ export async function runWaterfall(
   const base = { attempts, spentCents: spent, missed: [...missed] };
   if (transient || limitedAfterMs !== undefined) return { status: "retry", retryAfterMs: limitedAfterMs, ...base };
   if (!answered && permanentMessage !== null) return { status: "failed", message: permanentMessage, ...base };
-  return { status: "miss", ...base };
+  return { status: "miss", ...(fallback ? { fallback } : {}), ...base };
 }

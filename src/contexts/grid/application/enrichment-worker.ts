@@ -116,7 +116,7 @@ async function executeStep(
       outcome: answer.outcome,
       primary: answer.primary,
       outputs: redactSecrets(answer.outputs, secrets),
-      costCents: answer.costCents ?? estimateStepCents(provider, action),
+      costCents: answer.costCents ?? (answer.billable === false ? 0 : estimateStepCents(provider, action)),
       latencyMs: Date.now() - started,
       request: boundedAudit(redactSecrets(answer.request ?? { action: action.key, inputKeys: Object.keys(inputs) }, secrets)),
       response: boundedAudit(redactSecrets(answer.response ?? null, secrets)),
@@ -232,12 +232,13 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   const cells2: Record<string, unknown> = {};
   const meta: Record<string, unknown> = {};
   const hit = result.status === "hit";
-  const provider = hit ? result.winnerStep.providerKey : undefined;
-  const base = { status: "success", outcome: hit ? "hit" : "miss", provider, costCents: result.spentCents, runAt };
-  cells2[column.key] = hit ? sanitizeOutputString(cellText(result.winner.primary)) : "Not found";
+  // With no hit, the first verdict a vendor gave (a catch-all address) still fills the cells, so a paid answer is kept.
+  const answer = hit ? { step: result.winnerStep, primary: result.winner.primary, outputs: result.winner.outputs } : result.fallback;
+  const base = { status: "success", outcome: hit ? "hit" : "miss", provider: answer?.step.providerKey, costCents: result.spentCents, runAt };
+  cells2[column.key] = answer ? sanitizeOutputString(cellText(answer.primary)) : "Not found";
   meta[column.key] = base;
   for (const [outputKey, columnKey] of Object.entries(plan.outputs)) {
-    cells2[columnKey] = hit ? sanitizeOutput(result.winner.outputs[outputKey] ?? null) : null;
+    cells2[columnKey] = answer ? sanitizeOutput(answer.outputs[outputKey] ?? null) : null;
     meta[columnKey] = base;
   }
   const ok = await succeedOnce(deps, job, { cells: cells2, meta }, ledger(result.attempts), () => cascadeSpecFor(deps, job.organizationId, ctx.columns, Object.keys(cells2)));

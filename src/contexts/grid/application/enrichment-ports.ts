@@ -76,11 +76,16 @@ export interface ProviderCall {
 
 export interface ProviderAnswer {
   outcome: "hit" | "miss";
-  /** The value for the column's own cell when it is a hit. */
+  /**
+   * The value for the column's own cell when it is a hit. On a miss it may hold the vendor's verdict that does not count
+   * as found (a catch-all address); the cell shows it when no step of the column hits.
+   */
   primary: unknown;
   outputs: Record<string, unknown>;
-  /** Cents this call cost. Unset means the provider's configured price. */
+  /** Cents this call cost. Unset means the provider's configured price, or 0 when `billable` is false. */
   costCents?: number;
+  /** False when the vendor charges nothing for this answer (no match, an unknown verdict). */
+  billable?: boolean;
   request?: unknown;
   response?: unknown;
 }

@@ -62,7 +62,7 @@ export const apollo: VendorDefinition = {
         linkedinUrl: matched ? person.linkedin_url : null,
         matchConfidence: confidence,
       };
-      return answerWith(outputs, outputs.email, request, body);
+      return answerWith(outputs, outputs.email, request, body, matched ? {} : { billable: false });
     }
     const org = asRecord(asRecord(body).organization);
     const outputs = { name: org.name, industry: org.industry, employeeCount: org.estimated_num_employees, websiteUrl: org.website_url, linkedinUrl: org.linkedin_url, city: org.city, country: org.country };

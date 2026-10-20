@@ -31,6 +31,16 @@ describe("waterfall", () => {
     expect(result).toMatchObject({ status: "miss", spentCents: 2, missed: ["a/find", "b/find"] });
   });
 
+  it("keeps the first miss that carried a verdict, so a paid answer is not lost", async () => {
+    const verdict = (status: string): StepExecution => ({ kind: "result", outcome: "miss", primary: status, outputs: { status }, costCents: 1 });
+    const run = scripted({ "a/find": miss(), "b/find": verdict("catch_all"), "c/find": verdict("unknown") });
+    const result = await runWaterfall([a, b, c], run.execute, { estimate: () => 1 });
+    expect(result).toMatchObject({ status: "miss", fallback: { step: b, primary: "catch_all", outputs: { status: "catch_all" } } });
+    expect(run.asked).toEqual(["a/find", "b/find", "c/find"]);
+    const plain = await runWaterfall([a], scripted({ "a/find": miss() }).execute, { estimate: () => 1 });
+    expect(plain).not.toHaveProperty("fallback");
+  });
+
   it("moves past a permanent error to the next provider", async () => {
     const run = scripted({ "a/find": { kind: "error", transient: false, message: "bad key" }, "b/find": hit("y@acme.test") });
     const result = await runWaterfall([a, b], run.execute, { estimate: () => 0 });

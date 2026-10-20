@@ -286,6 +286,33 @@ describeDb("grid enrichment runs", () => {
     expect(JSON.stringify(ledger)).toContain("[redacted]");
   });
 
+  it("a waterfall with no hit keeps the first verdict, and an answer the vendor does not bill costs nothing", async () => {
+    const { actor, table, rows } = await fixture();
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
+    await addFake(d, actor, "fake-b", { defaultCostCents: 3 });
+    f.handler = async (call) =>
+      call.provider.key === "fake-a"
+        ? { outcome: "miss", primary: "catch_all", outputs: { email: "ada@acme.com", confidence: 40 }, billable: false }
+        : { outcome: "miss", primary: null, outputs: { email: null, confidence: null } };
+    await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
+      inputs: { fullName: "name", companyDomain: "domain" },
+      steps: [{ providerKey: "fake-a", actionKey: "find-email" }, { providerKey: "fake-b", actionKey: "find-email" }],
+      selectedOutputs: ["email", "confidence"],
+    });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+
+    const row = await cells(rows[0]);
+    const main = Object.keys(row.cells).find((k) => !["name", "domain", "email", "confidence"].includes(k))!;
+    expect(row.cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com", confidence: 40 });
+    // fake-a billed nothing; fake-b's miss costs its price.
+    expect(row.cell_meta[main]).toMatchObject({ outcome: "miss", provider: "fake-a", costCents: 3 });
+    const ledger = await sql`select provider, outcome, cost_cents::float as cost from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
+    expect(ledger.map((r) => [r.provider, r.outcome, r.cost])).toEqual([["fake-a", "miss", 0], ["fake-b", "miss", 3]]);
+  });
+
   it("holds cells back when a provider's rate limit is used up, without spending their attempts", async () => {
     const { actor, table } = await fixture(Array.from({ length: 5 }, (_, i) => ({ name: `Person${i} Test`, domain: "acme.com" })));
     const f = fake();

@@ -43,8 +43,19 @@ export function retryAfterMs(header: string | null): number {
   return Math.min(MAX_WAIT_MS, Math.max(1000, Math.ceil(seconds * 1000)));
 }
 
-/** A hit when `primary` holds a value, a miss otherwise. Every output the vendor left out becomes null. */
-export function answerWith(outputs: Record<string, unknown>, primary: unknown, request: unknown, response: unknown): ProviderAnswer {
-  const found = hasCellValue(primary);
-  return { outcome: found ? "hit" : "miss", primary: found ? primary : null, outputs: Object.fromEntries(Object.entries(outputs).map(([k, v]) => [k, v ?? null])), request, response };
+/**
+ * A hit when `primary` holds a value, a miss otherwise. `hit: false` makes a miss that keeps its verdict (a catch-all
+ * address). Every output the vendor left out becomes null.
+ */
+export function answerWith(outputs: Record<string, unknown>, primary: unknown, request: unknown, response: unknown, options: { hit?: boolean; billable?: boolean } = {}): ProviderAnswer {
+  const present = hasCellValue(primary);
+  const found = present && options.hit !== false;
+  return {
+    outcome: found ? "hit" : "miss",
+    primary: present ? primary : null,
+    outputs: Object.fromEntries(Object.entries(outputs).map(([k, v]) => [k, v ?? null])),
+    ...(options.billable === false ? { billable: false } : {}),
+    request,
+    response,
+  };
 }

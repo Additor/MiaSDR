@@ -230,7 +230,7 @@ describe("Apollo adapter", () => {
 
   it("answers a miss for match_confidence none and for an empty person", async () => {
     const none = await apollo(mockFetch(200, { person: { ...person.person, match_confidence: "none" } }).fn).execute(apolloCall("enrich-person", { email: "a@acme.com" }));
-    expect(none).toMatchObject({ outcome: "miss", primary: null, outputs: { email: null, matchConfidence: "none" } });
+    expect(none).toMatchObject({ outcome: "miss", primary: null, billable: false, outputs: { email: null, matchConfidence: "none" } });
     expect((await apollo(mockFetch(200, { person: null }).fn).execute(apolloCall("enrich-person", { email: "a@acme.com" }))).outcome).toBe("miss");
   });
 
