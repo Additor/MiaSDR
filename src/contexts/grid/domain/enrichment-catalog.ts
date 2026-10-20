@@ -8,7 +8,7 @@ import { contractAction } from "./enrichment-contracts";
 
 export type ProviderStatus = "available" | "catalog_only";
 /** Vendors with a native adapter in `infrastructure/vendors`. The key is also the `config.adapter` value stored on provider rows. */
-export type VendorAdapterKey = "hunter" | "apollo" | "zerobounce" | "millionverifier" | "neverbounce" | "findymail" | "prospeo" | "leadmagic";
+export type VendorAdapterKey = "hunter" | "apollo" | "zerobounce" | "millionverifier" | "neverbounce" | "findymail" | "prospeo" | "leadmagic" | "peopledatalabs";
 export type AdapterKey = VendorAdapterKey | "http" | "fake";
 export type ValueType = "text" | "email" | "url" | "number" | "boolean" | "json" | "domain";
 
@@ -117,6 +117,12 @@ export const NEVERBOUNCE_ACTIONS: ActionSpec[] = [
 export const FINDYMAIL_ACTIONS: ActionSpec[] = [contractAction("find-work-email")];
 export const PROSPEO_ACTIONS: ActionSpec[] = [contractAction("find-work-email")];
 export const LEADMAGIC_ACTIONS: ActionSpec[] = [contractAction("find-work-email", { extraOutputs: [{ key: "employmentVerified", name: "Employment verified", type: "boolean" }] })];
+
+/** People Data Labs. Only work fields are requested; personal emails, phones and addresses never are. */
+export const PEOPLEDATALABS_ACTIONS: ActionSpec[] = [
+  contractAction("enrich-person", { extraOutputs: [{ key: "likelihood", name: "Likelihood", type: "number" }] }),
+  contractAction("enrich-company", { extraOutputs: [{ key: "size", name: "Size range", type: "text" }] }),
+];
 
 /** Deterministic provider for tests and demos. Never calls a network. */
 export const FAKE_ACTIONS: ActionSpec[] = [
@@ -247,6 +253,18 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
     credentialFields: API_KEY,
     defaultRateLimitPerMin: 600,
     actions: LEADMAGIC_ACTIONS,
+  },
+  {
+    key: "peopledatalabs",
+    name: "People Data Labs",
+    description: "Enrich a person (work email, title, company, LinkedIn URL) or a company. Bring your own People Data Labs API key. Only a match is billed, and person matches below a likelihood of 6 are dropped.",
+    status: "available",
+    adapter: "peopledatalabs",
+    fixedBaseUrl: "https://api.peopledatalabs.com",
+    credentialFields: API_KEY,
+    // The free plan's person limit. Company lookups allow 10 a minute on that plan and retry when PDL says so.
+    defaultRateLimitPerMin: 100,
+    actions: PEOPLEDATALABS_ACTIONS,
   },
   catalogOnly("cleanlist", "Cleanlist", "Contact enrichment."),
   catalogOnly("snov", "Snov.io", "Email finder and verifier."),
