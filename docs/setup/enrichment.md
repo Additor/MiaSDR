@@ -71,6 +71,10 @@ Apollo answers `email_not_unlocked@<domain>` for an address nobody on your accou
 
 MiaSDR asks People Data Labs for work fields only (work email, job title, company, LinkedIn URL), so personal emails, phone numbers and home addresses never arrive. A person match needs a likelihood of 6 or more; PDL's default of 2 means a 10 to 30 percent chance of the right person. On PDL's free plan contact fields come back as true or false, and MiaSDR leaves the email empty.
 
+## NeverBounce and existing lists
+
+NeverBounce's usage guidelines say: "Do NOT use single verification for verifying emails in an existing list or database one-by-one", and warn that the account "may be locked and API access disabled". MiaSDR calls NeverBounce's single check, one call per cell. Use NeverBounce for rows that arrive over time (an auto-run column on new rows), and verify a whole existing table in NeverBounce's bulk tool or with another verifier.
+
 ## Rate limits
 
 A new provider starts with the vendor's published per-minute limit where there is one: Hunter 300 (Email Verifier), Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin` to match your plan. When a vendor answers 429, the cell waits as the vendor asks and runs again: `retry-after` first, then Prospeo's reset seconds (the daily one once the day's requests are gone) or PDL's `x-ratelimit-reset`, up to an hour.

@@ -216,7 +216,7 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
   {
     key: "neverbounce",
     name: "NeverBounce",
-    description: "Verify email addresses. Bring your own NeverBounce API key.",
+    description: "Verify email addresses as they come in. Bring your own NeverBounce API key. NeverBounce may lock a key that checks an existing list one by one, so verify a whole list in NeverBounce's bulk tool instead.",
     status: "available",
     adapter: "neverbounce",
     fixedBaseUrl: "https://api.neverbounce.com",
