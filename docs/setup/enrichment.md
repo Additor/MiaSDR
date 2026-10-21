@@ -69,6 +69,10 @@ Find work email vendors return Confidence from 0 to 100 when they have one (Hunt
 
 Apollo answers `email_not_unlocked@<domain>` for an address nobody on your account has revealed, and Prospeo masks an unrevealed one (`eva.*****@intercom.com`). MiaSDR stores neither and reads the step as a miss.
 
+## Weak person matches
+
+A person enrichment that is not sure it found the right person reads as a miss, so a work email of someone else never fills a cell. Apollo's `low` match confidence and a People Data Labs likelihood under 6 count as weak. The Match confidence column still shows Apollo's word, so you can see why the row stayed empty, and a waterfall asks the next vendor. Apollo may bill a low match, so MiaSDR records it as billed.
+
 ## People Data Labs and personal data
 
 MiaSDR asks People Data Labs for work fields only (work email, job title, company, LinkedIn URL), so personal emails, phone numbers and home addresses never arrive. A person match needs a likelihood of 6 or more; PDL's default of 2 means a 10 to 30 percent chance of the right person. On PDL's free plan contact fields come back as true or false, and MiaSDR leaves the email empty.

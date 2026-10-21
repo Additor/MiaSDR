@@ -48,17 +48,21 @@ export const apollo: VendorDefinition = {
       const confidence = text(person.match_confidence);
       // Apollo bills nothing when it finds no one or answers "none", and the fields of a "none" belong to nobody.
       const matched = Object.keys(person).length > 0 && confidence !== "none";
+      // A "low" match may be someone else, and its work email would send mail to the wrong person. Like PDL's likelihood
+      // floor, it reads as a miss: only Match confidence fills, and a waterfall asks the next vendor. Apollo may still
+      // bill it, so the call stays billable.
+      const trusted = matched && confidence !== "low";
       // An address nobody on the account has revealed comes back as email_not_unlocked@<domain>.
       const email = text(person.email);
       const outputs = {
-        email: matched && email && !/^email_not_unlocked@/i.test(email) ? email : null,
-        emailStatus: matched ? person.email_status : null,
-        title: matched ? person.title : null,
-        company: matched ? asRecord(person.organization).name : null,
-        linkedinUrl: matched ? person.linkedin_url : null,
+        email: trusted && email && !/^email_not_unlocked@/i.test(email) ? email : null,
+        emailStatus: trusted ? person.email_status : null,
+        title: trusted ? person.title : null,
+        company: trusted ? asRecord(person.organization).name : null,
+        linkedinUrl: trusted ? person.linkedin_url : null,
         matchConfidence: confidence,
       };
-      const kept = matched
+      const kept = trusted
         ? { person: { id: person.id, match_confidence: person.match_confidence, email: person.email, email_status: person.email_status, title: person.title, linkedin_url: person.linkedin_url, organization: { name: asRecord(person.organization).name } } }
         : { person: Object.keys(person).length ? { match_confidence: person.match_confidence } : null };
       return answerWith(outputs, outputs.email, request, kept, matched ? {} : { billable: false });
