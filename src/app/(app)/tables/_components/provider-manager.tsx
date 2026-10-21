@@ -163,7 +163,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
       </div>
       {open && (
         <form
-          className="mt-3 grid gap-3 border-t pt-3"
+          className="mt-3 grid gap-3 border-t pt-3 transition-[opacity,translate] duration-(--duration-menu) ease-out starting:opacity-0 motion-safe:starting:-translate-y-1"
           onSubmit={(e) => {
             e.preventDefault();
             void save();

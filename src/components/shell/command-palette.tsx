@@ -88,7 +88,7 @@ export function CommandPalette({ destinations, open, onOpenChange }: { destinati
         }
       }}
     >
-      <DialogContent showCloseButton={false} className="top-[20%] translate-y-0 gap-0 p-0 sm:max-w-md">
+      <DialogContent showCloseButton={false} overlayClassName="transition-none" className="top-[20%] translate-y-0 gap-0 p-0 transition-none sm:max-w-md">
         <DialogTitle className="sr-only">Go to a page</DialogTitle>
         <DialogDescription className="sr-only">Type a page name, use the arrow keys to choose, and press Enter.</DialogDescription>
         <div className="flex items-center gap-2 border-b px-3">

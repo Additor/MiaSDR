@@ -198,7 +198,7 @@ export function RunProgress({
   return (
     <div className="flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs" role="status" aria-live="polite">
       <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Run progress">
-        <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+        <div className="h-full w-full origin-left bg-primary transition-transform duration-(--duration-drawer) ease-out" style={{ transform: `scaleX(${pct / 100})` }} />
       </div>
       <span className="tabular-nums">
         {pending > 0 ? `${pending.toLocaleString("en-US")} left` : "Done"} · {done.toLocaleString("en-US")} succeeded

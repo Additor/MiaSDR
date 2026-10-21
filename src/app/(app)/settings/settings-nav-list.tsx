@@ -68,7 +68,7 @@ export function SettingsNavList({ groups, attention = {} }: { groups: SettingsGr
           <ChevronDownIcon aria-hidden className={cn("size-4 transition-transform", open && "rotate-180")} />
         </span>
       </button>
-      <div id="settings-nav-groups" className={cn("flex-col gap-4 p-2 md:flex md:gap-5 md:p-3", open ? "flex" : "hidden")}>
+      <div id="settings-nav-groups" className={cn("flex-col gap-4 p-2 md:flex md:gap-5 md:p-3 transition-[opacity,translate] duration-(--duration-menu) ease-out max-md:starting:opacity-0 max-md:motion-safe:starting:-translate-y-1", open ? "flex" : "hidden")}>
         {groups.map((group) => (
           <div key={group.label} role="group" aria-label={group.label} className="flex flex-col gap-0.5">
             <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{group.label}</p>

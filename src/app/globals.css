@@ -55,6 +55,10 @@
   --spacing-section: var(--space-section);
   --spacing-group: var(--space-group);
   --spacing-field: var(--space-field);
+  /* Motion curves. ease-out replaces Tailwind's default so the `ease-out` utility gets the strong curve. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 :root {
@@ -161,6 +165,20 @@
   }
 }
 
+/*
+ * Motion durations, from quick to slow:
+ * tip     tooltips;
+ * menu    dropdowns and selects;
+ * panel   dialogs, overlays and the sidebar collapse;
+ * drawer  sheets that slide in from an edge.
+ */
+:root {
+  --duration-tip: 125ms;
+  --duration-menu: 150ms;
+  --duration-panel: 200ms;
+  --duration-drawer: 300ms;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -186,6 +204,35 @@
   table,
   dl {
     font-variant-numeric: tabular-nums;
+  }
+  /*
+   * A disclosure's content fades in as it opens and out as it closes, on the chevron's timing.
+   * Browsers that can animate to `height: auto` also grow it, so the rows below slide instead of jumping.
+   */
+  details::details-content {
+    opacity: 0;
+    transition:
+      opacity var(--duration-panel) var(--ease-out),
+      content-visibility var(--duration-panel) var(--ease-out) allow-discrete;
+  }
+  details[open]::details-content {
+    opacity: 1;
+  }
+  @supports (interpolate-size: allow-keywords) {
+    details {
+      interpolate-size: allow-keywords;
+    }
+    details::details-content {
+      height: 0;
+      overflow: clip;
+      transition:
+        opacity var(--duration-panel) var(--ease-out),
+        height var(--duration-panel) var(--ease-out),
+        content-visibility var(--duration-panel) var(--ease-out) allow-discrete;
+    }
+    details[open]::details-content {
+      height: auto;
+    }
   }
 }
 /* The body under a PageHeader: gutter on the sides and top, room to scroll past the last row. Pair it with a stack. */
@@ -216,4 +263,28 @@
 @utility stack-field {
   display: grid;
   gap: var(--space-field);
+}
+
+/*
+ * Reduced motion keeps fades and drops movement: popups and sheets fade in place,
+ * and the sidebar collapses at once. Disclosures keep their fade and open to full height at once.
+ */
+@media (prefers-reduced-motion: reduce) {
+  details::details-content {
+    transition-property: opacity, content-visibility !important;
+  }
+  [data-starting-style],
+  [data-ending-style] {
+    scale: none !important;
+  }
+  [data-slot="sheet-content"][data-starting-style],
+  [data-slot="sheet-content"][data-ending-style] {
+    translate: none !important;
+  }
+  [data-slot="sidebar-gap"],
+  [data-slot="sidebar-container"],
+  [data-slot="sidebar-group-label"],
+  [data-slot="sidebar-menu-button"] {
+    transition-duration: 0s !important;
+  }
 }

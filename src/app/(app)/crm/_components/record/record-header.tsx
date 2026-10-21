@@ -152,7 +152,7 @@ export function AsideDisclosure({ title, count, open = false, testId, children }
   return (
     <details className="group p-4" open={open} data-testid={testId}>
       <summary className="-m-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md p-1 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
-        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
         <h2 className="text-sm font-semibold">{title}</h2>
         {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
       </summary>
@@ -169,7 +169,7 @@ export function RecordDisclosure({ title, count, open = false, testId, children 
   return (
     <details className="group border-t py-group" open={open} data-testid={testId}>
       <summary className="-mx-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md px-1 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
-        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
         <h3 className="text-sm font-semibold">{title}</h3>
         {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
       </summary>

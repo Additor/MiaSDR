@@ -139,7 +139,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
       <Card>
         <details open={classificationNeedsYou} data-testid="classification" className="group">
           <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-(--card-spacing) text-sm font-semibold outline-none select-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+            <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
             Classification
             {panel.category ? (
               <Badge variant="secondary" data-testid="category-chip">

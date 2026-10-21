@@ -116,7 +116,7 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
   const found = review ? { adds: review.found.wouldAdd ?? 0, skipped: skippedSummary(review.found, linkedin) } : null;
 
   return (
-    <section id="add-leads-panel" aria-labelledby="add-leads-title" className="stack-group border-y py-section">
+    <section id="add-leads-panel" aria-labelledby="add-leads-title" className="stack-group border-y py-section transition-[opacity,translate] duration-(--duration-menu) ease-out starting:opacity-0 motion-safe:starting:-translate-y-1">
       <div className="stack-field">
         <h3 id="add-leads-title" className="text-sm font-semibold">
           Add leads
