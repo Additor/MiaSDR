@@ -1,5 +1,6 @@
 "use client";
 
+import { TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -43,6 +44,8 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
   const [showRegenerate, setShowRegenerate] = useState(false);
   const [override, setOverride] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // An out-of-date draft cannot send. "Edit and send anyway" copies its text into the composer as a new draft.
+  const [editStale, setEditStale] = useState(false);
   const key = useRef<string>("");
 
   // A new draft or a revision saved elsewhere replaces the editor text.
@@ -52,6 +55,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
     setBody(saved);
     setSubject(draft?.subject ?? "");
     setCc(draft?.cc ?? []);
+    setEditStale(false);
   }
 
   const ccDirty = draft !== null && [...cc].sort().join(",") !== [...draft.cc].sort().join(",");
@@ -120,7 +124,13 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
             Reply
-            {draft && <Badge variant={draft.status === "stale" ? "destructive" : "outline"} data-testid="draft-status">{draftStatusLabel(draft.status)}</Badge>}
+            {draft && (
+              // Out of date is uncertain, not an error: the warning hue on its icon, never a red fill.
+              <Badge variant="outline" data-testid="draft-status">
+                {draft.status === "stale" && <TriangleAlertIcon aria-hidden className="text-warning" />}
+                {draftStatusLabel(draft.status)}
+              </Badge>
+            )}
             {draft?.regeneratedFrom && <Badge variant="outline">Regenerated</Badge>}
           </CardTitle>
           <CardDescription>To {panel.recipient ?? "no address"}</CardDescription>
@@ -131,6 +141,11 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             // Ctrl or Cmd with Enter approves from the subject or the message, the way a mail client sends. It is the same decision
             // as the button, with the same idempotency key, and it does nothing while a request runs or the message is empty.
             if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
+            if (draft?.status === "stale" && !editStale) {
+              event.preventDefault();
+              setError("This draft is out of date. Regenerate it, or edit it and send it as a new draft.");
+              return;
+            }
             if (draft?.status !== "awaiting_review" || busy !== null || body.trim() === "" || event.nativeEvent.isComposing) return;
             event.preventDefault();
             void approve();
@@ -158,11 +173,36 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               )}
             </div>
           )}
-          {(!draft || draft.status === "sent" || draft.status === "stale") && composer}
+          {(!draft || draft.status === "sent") && composer}
 
-          {draft && (draft.status === "awaiting_review" || draft.status === "failed" || draft.status === "stale") && (
+          {draft?.status === "stale" && (
+            <div className="grid gap-3" data-testid="stale-draft">
+              <p className="text-sm">{draft.error ?? "The thread or the reply category changed after this draft was written."}</p>
+              {editStale ? (
+                <ReplyComposer
+                  conversationId={panel.conversationId}
+                  defaultSubject={draft.subject ?? composerSubject}
+                  defaultBody={saved}
+                  title="Edit the draft as a new reply"
+                  knownCcs={panel.knownCcs}
+                  disabledReason={composerBlocked}
+                />
+              ) : (
+                <p className="line-clamp-4 rounded-lg bg-muted/40 p-3 text-sm whitespace-pre-wrap text-muted-foreground" data-testid="stale-preview">
+                  {saved || "The draft is empty."}
+                </p>
+              )}
+              {showRegenerate && (
+                <div className="grid gap-1">
+                  <Label htmlFor="regen-note">What should change? (optional)</Label>
+                  <Input id="regen-note" value={note} onChange={(e) => setNote(e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {draft && (draft.status === "awaiting_review" || draft.status === "failed") && (
             <>
-              {draft.status === "stale" && <p className="text-sm text-destructive">This draft may be out of date: the thread or the category changed after it was written. Regenerate or discard it.</p>}
               {draft.status === "failed" && <p className="text-sm text-destructive">This draft cannot be sent. Regenerate or discard it.</p>}
               <div className="grid gap-1">
                 <Label htmlFor="draft-subject">Subject</Label>
@@ -227,7 +267,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
           )}
 
           {panel.mailboxIssue && draft?.status === "awaiting_review" && <p className="text-sm text-destructive">{panel.mailboxIssue}</p>}
-          {draft?.error && draft.status !== "delivery_uncertain" && <p className="text-sm text-muted-foreground">{draft.error}</p>}
+          {draft?.error && draft.status !== "delivery_uncertain" && draft.status !== "stale" && <p className="text-sm text-muted-foreground">{draft.error}</p>}
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
@@ -235,7 +275,8 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
           )}
         </CardContent>
         {draft && (draft.status === "awaiting_review" || draft.status === "failed" || draft.status === "stale") && (
-          <CardFooter className="sticky bottom-0 z-10 flex flex-wrap gap-2 bg-card shadow-[0_-1px_0_0_var(--border)]" data-testid="reply-actions">
+          // The bar sticks to the bottom while a draft waits for approval; an out-of-date draft is short and keeps its bar in place.
+          <CardFooter className={cn("flex flex-wrap gap-2 bg-card shadow-[0_-1px_0_0_var(--border)]", draft.status === "awaiting_review" && "sticky bottom-0 z-10")} data-testid="reply-actions">
             {draft.status === "awaiting_review" && (
               <Button disabled={busy !== null || body.trim() === ""} onClick={approve} aria-keyshortcuts="Control+Enter Meta+Enter">
                 {busy === "send" ? "Sending…" : "Approve and send"}
@@ -251,7 +292,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               </Button>
             )}
             <Button
-              variant="outline"
+              variant={draft.status === "stale" ? "default" : "outline"}
               disabled={busy !== null || !panel.aiConfigured}
               onClick={async () => {
                 if (!showRegenerate) return setShowRegenerate(true);
@@ -263,6 +304,11 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             >
               {busy === "regen" ? "Writing…" : showRegenerate ? "Regenerate now" : "Regenerate"}
             </Button>
+            {draft.status === "stale" && !editStale && (
+              <Button variant="outline" disabled={busy !== null} onClick={() => setEditStale(true)}>
+                Edit and send anyway
+              </Button>
+            )}
             <Button variant="ghost" disabled={busy !== null} onClick={() => setConfirmDiscard(true)}>
               Discard
             </Button>

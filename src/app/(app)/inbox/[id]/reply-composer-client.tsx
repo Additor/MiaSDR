@@ -17,12 +17,27 @@ interface KnownCcOption {
 
 /**
  * Hand-typed reply. It needs no AI key: "Create draft" saves the text as an ordinary draft awaiting review, and the
- * draft editor above it handles review, CC edits and "Approve and send".
+ * draft editor above it handles review, CC edits and "Approve and send". `defaultBody` starts it from other text, such as
+ * an out-of-date draft the person chose to edit.
  */
-export function ReplyComposer({ conversationId, defaultSubject, knownCcs, disabledReason }: { conversationId: string; defaultSubject: string; knownCcs: KnownCcOption[]; disabledReason: string | null }) {
+export function ReplyComposer({
+  conversationId,
+  defaultSubject,
+  defaultBody = "",
+  title = "Write the reply yourself",
+  knownCcs,
+  disabledReason,
+}: {
+  conversationId: string;
+  defaultSubject: string;
+  defaultBody?: string;
+  title?: string;
+  knownCcs: KnownCcOption[];
+  disabledReason: string | null;
+}) {
   const router = useRouter();
   const [subject, setSubject] = useState(defaultSubject);
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(defaultBody);
   const [cc, setCc] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +55,7 @@ export function ReplyComposer({ conversationId, defaultSubject, knownCcs, disabl
 
   return (
     <div className="grid gap-3" data-testid="reply-composer">
-      <p className="text-sm font-medium">Write the reply yourself</p>
+      <p className="text-sm font-medium">{title}</p>
       <div className="grid gap-1">
         <Label htmlFor="compose-subject">Subject</Label>
         <Input id="compose-subject" value={subject} maxLength={MANUAL_SUBJECT_MAX} onChange={(e) => setSubject(e.target.value)} />
