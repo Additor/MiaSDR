@@ -25,8 +25,15 @@ const topGroup = (view: TableView): FilterGroup => view.filters ?? { conjunction
  */
 export function withRunFailures(view: TableView, columnKeys: readonly string[]): TableView {
   const failed: FilterGroup = { conjunction: "or", conditions: columnKeys.map((columnKey) => ({ columnKey, operator: "runFailed" as const })) };
-  // A run-failed group from an earlier press goes, so pressing again replaces it instead of nesting another.
-  const isFailures = (node: FilterCondition | FilterGroup) => isFilterGroup(node) && node.conditions.length > 0 && node.conditions.every((c) => !isFilterGroup(c) && c.operator === "runFailed");
+  // The group an earlier press built for the same columns goes, so pressing again does not nest another. A group the
+  // person built, or one with a muted condition, stays.
+  const keys = new Set(columnKeys);
+  const isFailures = (node: FilterCondition | FilterGroup) =>
+    isFilterGroup(node) &&
+    node.conjunction === "or" &&
+    node.conditions.length === keys.size &&
+    node.conditions.every((c) => !isFilterGroup(c) && c.operator === "runFailed" && c.value === undefined && !c.disabled && keys.has(c.columnKey)) &&
+    new Set(node.conditions.map((c) => (c as FilterCondition).columnKey)).size === keys.size;
   let current = topGroup(view);
   if (isFailures(current)) current = { conjunction: "and", conditions: [] };
   else if (current.conjunction === "and") {

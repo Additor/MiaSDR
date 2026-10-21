@@ -625,6 +625,34 @@ describeDb("grid enrichment runs", () => {
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     const [later] = await sql`select attempts, provider_state from grid_jobs where row_id = ${rows[0]}`;
     expect(later).toMatchObject({ attempts: 1, provider_state: { fresh: true, waits: 25 } });
+
+    // A table run queues it again: the fresh flag and the wait count belong to the run that set them.
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: col.key, rowIds: [rows[0]], onlyEmpty: false });
+    const [requeued] = await sql`select provider_state from grid_jobs where row_id = ${rows[0]}`;
+    expect(requeued.provider_state?.fresh).toBeUndefined();
+    expect(requeued.provider_state?.waits).toBeUndefined();
+  });
+
+  it("keeps a cell's wait count when our own gate holds it between two vendor 429s", async () => {
+    const { actor, table, rows } = await fixture([
+      { name: "Ada Lovelace", domain: "acme.com" },
+      { name: "Grace Hopper", domain: "acme.com" },
+    ]);
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor);
+    const [col] = await findColumn(d, actor, table);
+    const { ProviderError } = await import("../../application/enrichment-ports");
+    f.handler = async () => {
+      throw new ProviderError("fake returned 429: slow down", true, undefined, 30_000);
+    };
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: col.key, rowIds: rows, onlyEmpty: false });
+    // Both cells have sat through waits before. One at a time, the first 429 makes our gate hold the other cell.
+    await sql`update grid_jobs set provider_state = '{"waits":7}'::jsonb where table_id = ${table}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1", { concurrency: 1 })));
+    expect(f.calls).toHaveLength(1);
+    const waits = (await sql`select (provider_state ->> 'waits')::int as waits from grid_jobs where table_id = ${table}`).map((r) => r.waits).sort();
+    expect(waits).toEqual([7, 8]);
   });
 
   it("queues an auto-run column whose provider is switched off, so its cells wait instead of never running", async () => {

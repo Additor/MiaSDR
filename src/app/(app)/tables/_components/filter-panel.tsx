@@ -227,6 +227,8 @@ function ConditionRow({ condition, path, root, columns, types, onChange }: RowPr
   const name = path.map((p) => p + 1).join(".");
   const type = types.get(condition.columnKey) ?? "text";
   const runs = RUN_FILLED_TYPES.has(columns.find((c) => c.key === condition.columnKey)?.type ?? "");
+  // A view saved when output columns offered "run failed" keeps showing it, so the person sees it and can change it.
+  const operators = operatorsFor(type, { runs: runs || condition.operator === "runFailed" });
   const muted = condition.disabled === true;
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${muted ? "opacity-60" : ""}`} role="group" aria-label={`Condition ${name}${muted ? " (muted)" : ""}`}>
@@ -242,8 +244,8 @@ function ConditionRow({ condition, path, root, columns, types, onChange }: RowPr
         <Choice
           label={`Condition ${name} operator`}
           value={condition.operator}
-          items={operatorsFor(type, { runs }).map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))}
-          onChange={(op) => onChange(updateCondition(root, path, { operator: operatorsFor(type, { runs }).find((o) => o === op) ?? condition.operator }))}
+          items={operators.map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))}
+          onChange={(op) => onChange(updateCondition(root, path, { operator: operators.find((o) => o === op) ?? condition.operator }))}
         />
       </div>
       {operatorNeedsValue(condition.operator) && (

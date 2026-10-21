@@ -29,6 +29,9 @@ const toColumn = (c: typeof gridColumns.$inferSelect): ColumnRow => ({
 /** Every jsonb write goes through here: Postgres rejects \u0000 and lone surrogates, and a rejected write after a paid call re-bills. */
 const jsonb = (value: unknown) => sql`${JSON.stringify(sanitizeOutput(value))}::jsonb`;
 
+/** A job's state when it is queued again: the tries' work stays, the fresh flag and the free-wait count go. */
+const requeuedState = sql`nullif(${gridJobs.providerState} - 'fresh' - 'waits', '{}'::jsonb)`;
+
 /** Merges cell values and metadata into one row. The version trigger bumps `grid_rows.version`. */
 async function patchRow(tx: Tx, organizationId: string, tableId: string, rowId: string, cells: Record<string, unknown>, meta: Record<string, unknown>) {
   await tx
@@ -115,13 +118,14 @@ async function enqueueIn(tx: Tx, organizationId: string, tableId: string, target
       .onConflictDoUpdate({
         target: [gridJobs.rowId, gridJobs.columnKey],
         // Queuing again keeps the steps that missed, the verdict and the spend of earlier tries, so nothing is paid
-        // twice and the caps hold; the worker drops that state when the inputs changed. A queued job also keeps a
-        // later run_after, which is a vendor's wait. A fresh run starts over.
+        // twice and the caps hold; the worker drops that state when the inputs changed. It drops the fresh flag and
+        // the free-wait count, which belong to the run that set them. A queued job also keeps a later run_after,
+        // which is a vendor's wait. A fresh run starts over.
         set: {
           status: "queued",
           attempts: 0,
           error: null,
-          providerState: options.fresh ? sql`'{"fresh":true}'::jsonb` : sql`${gridJobs.providerState}`,
+          providerState: options.fresh ? sql`'{"fresh":true}'::jsonb` : requeuedState,
           lockedAt: null,
           priority: options.priority,
           runAfter: options.fresh ? sql`excluded.run_after` : sql`case when ${gridJobs.status} = 'queued' then greatest(${gridJobs.runAfter}, excluded.run_after) else excluded.run_after end`,
@@ -283,8 +287,9 @@ export const drizzleGridRunStore: GridRunStore = {
       if (options.columnKey) where.push(eq(gridJobs.columnKey, options.columnKey));
       const rows = await tx
         .update(gridJobs)
-        // The state of the failed tries stays, so a retry does not pay again for the steps that already missed.
-        .set({ status: "queued", attempts: 0, error: null, lockedAt: null, runAfter: new Date(options.now.getTime() - DUE_SKEW_MS), updatedAt: new Date() })
+        // The state of the failed tries stays, so a retry does not pay again for the steps that already missed. The
+        // fresh flag goes, so the retry reuses the answers the failed run paid for, and the cell gets its free waits back.
+        .set({ status: "queued", attempts: 0, error: null, providerState: requeuedState, lockedAt: null, runAfter: new Date(options.now.getTime() - DUE_SKEW_MS), updatedAt: new Date() })
         .where(and(...where))
         .returning({ rowId: gridJobs.rowId, columnKey: gridJobs.columnKey });
       await markQueued(tx, organizationId, tableId, rows);

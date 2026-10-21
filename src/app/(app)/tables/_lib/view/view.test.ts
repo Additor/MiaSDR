@@ -57,4 +57,12 @@ describe("show the rows whose run failed", () => {
     expect(withRunFailures(withRunFailures({}, ["find"]), ["find"])).toEqual(withRunFailures({}, ["find"]));
     expect(narrowed.filters).toEqual({ conjunction: "and", conditions: [{ conjunction: "and", conditions: [{ columnKey: "name", operator: "notEmpty" }] }, { conjunction: "or", conditions: [{ columnKey: "find", operator: "runFailed" }] }] });
   });
+
+  it("keeps a run-failed group the person built, and one with a muted condition", () => {
+    const own = { conjunction: "or" as const, conditions: [{ columnKey: "find", operator: "runFailed" as const }, { columnKey: "verify", operator: "runFailed" as const }] };
+    const view = { filters: { conjunction: "and" as const, conditions: [{ columnKey: "name", operator: "notEmpty" as const }, own] } };
+    expect(JSON.stringify(withRunFailures(view, ["enrich"]).filters)).toContain('"verify"');
+    const muted = { filters: { conjunction: "or" as const, conditions: [{ columnKey: "find", operator: "runFailed" as const, disabled: true }] } };
+    expect(JSON.stringify(withRunFailures(muted, ["find"]).filters)).toContain('"disabled":true');
+  });
 });

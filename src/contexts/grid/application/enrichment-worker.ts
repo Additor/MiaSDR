@@ -218,8 +218,9 @@ async function succeedOnce(deps: WorkerDeps, job: CellJob, write: CellWrite, run
     const message = sanitizeOutputString(`The provider answered and was paid, but the result could not be saved: ${reason}. It was not run again. Retry failed saves it without paying again when the column reuses answers; running the cell asks the provider again.`, 500);
     console.error(`[grid] result of ${job.columnKey} could not be saved after a paid call:`, reason);
     try {
-      // The paid answer sits in the ledger: Retry failed takes it without paying, so no fresh flag may survive.
-      await deps.store.fail(job, message, runs, {});
+      // The job keeps the state of its earlier tries. Queuing it again drops the fresh flag, so Retry failed takes the
+      // paid answer from the ledger.
+      await deps.store.fail(job, message, runs);
     } catch (failure) {
       // The ledger row may be the part that failed. Record the cell error alone; only a dead database leaves the job running.
       await deps.store.fail(job, message, []).catch(() => false);
@@ -237,7 +238,7 @@ const inputsKeyOf = (columnKey: string, inputs: Record<string, string>, cells: R
  * The job's saved state, read with care: it comes back from a JSON column. State saved for other input values (the row
  * was edited since) is dropped, so a step that missed for the old email is asked about the new one.
  */
-function retryStateOf(job: CellJob, inputsKey: string): { missed: Set<string>; fallback?: MissVerdict; spentCents: number; spentCredits: number; fresh: boolean } {
+function retryStateOf(job: CellJob, inputsKey: string): { missed: Set<string>; fallback?: MissVerdict; spentCents: number; spentCredits: number; waits: number; fresh: boolean } {
   const saved = job.providerState ?? {};
   const fresh = saved.fresh === true;
   const state = saved.inputsKey === undefined || saved.inputsKey === inputsKey ? saved : {};
@@ -248,7 +249,7 @@ function retryStateOf(job: CellJob, inputsKey: string): { missed: Set<string>; f
       ? { step: { providerKey: f.step.providerKey, actionKey: f.step.actionKey }, primary: f.primary, outputs: f.outputs }
       : undefined;
   const positive = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
-  return { missed: new Set(missed), fallback, spentCents: positive(state.spentCents), spentCredits: positive(state.spentCredits), fresh };
+  return { missed: new Set(missed), fallback, spentCents: positive(state.spentCents), spentCredits: positive(state.spentCredits), waits: Math.floor(positive(state.waits)), fresh };
 }
 
 /** A transient error that used up an attempt. A vendor's 429 told the cell to wait, which is not the cell's fault. */
@@ -261,8 +262,9 @@ async function finishRetry(deps: WorkerDeps, job: CellJob, attempts: StepAttempt
   const sawTransientError = failedTry(attempts);
   // A rate-limit wait, ours or the vendor's, does not use up an attempt, up to MAX_FREE_WAITS vendor waits.
   const waited = attempts.some((a) => a.waited);
-  const waits = (job.providerState?.waits ?? 0) + (waited ? 1 : 0);
-  if (waited) state = { ...state, waits };
+  // The count rides along on every retry, so a try held by the local gate between two 429s keeps it.
+  const waits = (state.waits ?? 0) + (waited ? 1 : 0);
+  if (waits > 0) state = { ...state, waits };
   const consumeAttempt = sawTransientError || (waited && waits > MAX_FREE_WAITS);
   if (consumeAttempt && job.attempts >= job.maxAttempts) {
     await deps.store.fail(job, message, ledger(attempts), state);
@@ -324,7 +326,7 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   if (result.status === "retry" && !(result.fallback && lastAttempt(job, result.attempts))) {
     // The error, else the reason a step was held (a rate limit, a switched-off provider), else the general word.
     const message = result.attempts.find((a) => a.outcome === "error")?.detail ?? result.attempts.find((a) => a.outcome === "skipped" && a.retryable)?.detail ?? "Every provider was busy or unavailable. The cell will run again soon.";
-    const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents, spentCredits: result.spentCredits, inputsKey, ...(carried.fresh ? { fresh: true } : {}) };
+    const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents, spentCredits: result.spentCredits, inputsKey, ...(carried.waits > 0 ? { waits: carried.waits } : {}), ...(carried.fresh ? { fresh: true } : {}) };
     return finishRetry(deps, job, result.attempts, state, result.retryAfterMs, message);
   }
   if (result.status === "failed") {

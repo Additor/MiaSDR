@@ -116,7 +116,7 @@ When a waterfall step is rate limited, the cell asks the next step by default. T
 | 401, or a body that says the key is wrong | The key is wrong. The step fails and is not retried. |
 | 403 | The key is wrong, or your plan does not include the endpoint. The step fails. Hunter's 403 is its rate limit and retries. |
 | 402, Hunter's 429, or a body that says the credits ran out | Out of credits. The step fails and a waterfall moves on. |
-| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries. Steps that already missed are not asked again, and a catch-all or unknown verdict and the spend of earlier tries stay, also when you run the table again or press Retry failed. Once you change the row's inputs, the cell starts over. A vendor's 429 uses no attempt for its first 24 waits; a vendor that keeps answering 429 then uses attempts, so the cell ends. |
+| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries. Steps that already missed are not asked again, and a catch-all or unknown verdict and the spend of earlier tries stay, also when you run the table again or press Retry failed. Once you change the row's inputs, the cell starts over. A vendor's 429 uses no attempt for its first 24 waits; a vendor that keeps answering 429 then uses attempts, so the cell ends. Running the cell again or pressing Retry failed gives it the 24 waits back. |
 | Hunter's 451 | The person asked Hunter not to process their data. The step fails. |
 | Any other 4xx | The input is wrong for that vendor. The step fails. |
 

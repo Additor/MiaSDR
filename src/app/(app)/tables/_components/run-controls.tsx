@@ -144,7 +144,7 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="button" onClick={start} disabled={busy || estimate?.cells === 0 || !!estimate?.problem}>
+          <Button type="button" onClick={start} disabled={busy || !!estimateError || estimate?.cells === 0 || !!estimate?.problem}>
             <PlayIcon /> {busy ? "Queueing..." : estimate && estimate.cells > 0 ? `Run ${estimate.rows.toLocaleString("en-US")} ${estimate.rows === 1 ? "row" : "rows"}` : "Run"}
           </Button>
         </DialogFooter>
