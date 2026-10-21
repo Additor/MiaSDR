@@ -403,7 +403,8 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               </Button>
             )}
             <Button
-              variant={draft.status === "stale" ? "default" : "outline"}
+              // One filled button on the page: a decision above the reply keeps it, and Regenerate leads only when it is the next step.
+              variant={draft.status === "stale" && !classificationFirst ? "default" : "outline"}
               disabled={busy !== null || !panel.aiConfigured}
               onClick={async () => {
                 if (!showRegenerate) return setShowRegenerate(true);
