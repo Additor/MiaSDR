@@ -61,6 +61,9 @@ async function writeRuns(tx: Tx, job: Pick<CellJob, "organizationId" | "tableId"
           outcome: r.outcome,
           costCents: String(r.costCents),
           credits: typeof r.credits === "number" ? String(r.credits) : null,
+          lookupKey: r.lookupKey ?? null,
+          answer: r.answer ? (sanitizeOutput(r.answer) as never) : null,
+          reused: r.reused === true,
           latencyMs: r.latencyMs ?? null,
           provider: r.provider === null ? null : sanitizeOutputString(r.provider, 200),
           request: sanitizeOutput(r.request ?? null) as never,
@@ -370,8 +373,20 @@ export const drizzleGridRunStore: GridRunStore = {
     const rows = await db
       .select({ at: gridCellRuns.createdAt })
       .from(gridCellRuns)
-      .where(and(eq(gridCellRuns.organizationId, organizationId), eq(gridCellRuns.provider, providerKey), inArray(gridCellRuns.outcome, ["hit", "miss", "error"]), sql`${gridCellRuns.createdAt} > ${since.toISOString()}::timestamptz`));
+      .where(and(eq(gridCellRuns.organizationId, organizationId), eq(gridCellRuns.provider, providerKey), inArray(gridCellRuns.outcome, ["hit", "miss", "error"]), eq(gridCellRuns.reused, false), sql`${gridCellRuns.createdAt} > ${since.toISOString()}::timestamptz`));
     return rows.map((r) => r.at.getTime());
+  },
+
+  async reusableAnswer(organizationId, lookupKey, since) {
+    const [row] = await db
+      .select({ id: gridCellRuns.id, createdAt: gridCellRuns.createdAt, outcome: gridCellRuns.outcome, answer: gridCellRuns.answer })
+      .from(gridCellRuns)
+      .where(and(eq(gridCellRuns.organizationId, organizationId), eq(gridCellRuns.lookupKey, lookupKey), sql`${gridCellRuns.createdAt} > ${since.toISOString()}::timestamptz`))
+      .orderBy(desc(gridCellRuns.createdAt))
+      .limit(1);
+    const answer = row?.answer as { primary?: unknown; outputs?: unknown } | null | undefined;
+    if (!row || (row.outcome !== "hit" && row.outcome !== "miss") || !answer || typeof answer.outputs !== "object" || answer.outputs === null) return null;
+    return { id: row.id, createdAt: row.createdAt, outcome: row.outcome, answer: { primary: answer.primary ?? null, outputs: answer.outputs as Record<string, unknown> } };
   },
 
   async succeed(job, write, runs, cascade) {

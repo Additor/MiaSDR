@@ -184,6 +184,12 @@ export const gridCellRuns = pgTable(
     latencyMs: integer("latency_ms"),
     request: jsonb("request").$type<unknown>(),
     response: jsonb("response").$type<unknown>(),
+    /** sha256 of the provider, action and folded inputs, on an answer later cells may reuse. */
+    lookupKey: text("lookup_key"),
+    /** The primary value and outputs a reuse gets. Gone with the table, like the rest of the row. */
+    answer: jsonb("answer").$type<unknown>(),
+    /** True when the answer came from an earlier row instead of the vendor; it is not a call for the rate limit. */
+    reused: boolean("reused").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -194,6 +200,7 @@ export const gridCellRuns = pgTable(
     check("grid_cell_runs_credits_ck", sql`${t.credits} is null or ${t.credits} >= 0`),
     index("grid_cell_runs_cell_idx").on(t.rowId, t.columnKey),
     index("grid_cell_runs_table_created_idx").on(t.tableId, t.createdAt),
+    index("grid_cell_runs_lookup_idx").on(t.organizationId, t.lookupKey, t.createdAt).where(sql`${t.lookupKey} is not null`),
   ],
 );
 

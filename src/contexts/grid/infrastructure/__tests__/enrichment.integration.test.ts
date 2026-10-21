@@ -428,6 +428,35 @@ describeDb("grid enrichment runs", () => {
     expect((await cells(rows[0])).cells).toMatchObject({ workEmail: "ada@acme.com" });
   });
 
+  it("reuses a vendor's answer to the same lookup for free, and asks again when reuse is off", async () => {
+    const { actor, table, rows } = await fixture([{ about: "ada@acme.com" }, { about: " ADA@acme.com" }]);
+    let calls = 0;
+    const vendorFetch = (async () => {
+      calls++;
+      return new Response(JSON.stringify({ address: "ada@acme.com", status: "valid", sub_status: "", free_email: false }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const d = deps(fake(), { fetch: vendorFetch });
+    await m.providers.createProvider(d.providerDeps, actor, { adapter: "zerobounce", credentials: { apiKey: "zb-key-0123456789" }, defaultCostCents: 1, rateLimitPerMin: 1 });
+    await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "zerobounce", actionKey: "verify-email", inputs: { email: "about" }, selectedOutputs: ["status"] });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1", { concurrency: 1 })));
+
+    // One call for both rows, and the reused answer is no call for the rate limit of one a minute.
+    expect(calls).toBe(1);
+    for (const row of rows) expect((await cells(row)).cells).toMatchObject({ status: "valid" });
+    const ledger = await sql`select outcome, cost_cents::float as cost, credits::float as credits, reused, lookup_key is not null as stored from grid_cell_runs where table_id = ${table} order by created_at, id`;
+    expect(ledger.map((r) => [r.outcome, r.cost, r.credits, r.reused, r.stored])).toEqual([
+      ["hit", 1, 1, false, true],
+      ["hit", 0, 0, true, false],
+    ]);
+
+    await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "zerobounce", actionKey: "verify-email", inputs: { email: "about" }, selectedOutputs: ["status"], reuseDays: 0 });
+    await sql`update grid_providers set rate_limit_per_min = null where organization_id = ${(await sql`select organization_id from grid_tables where id = ${table}`)[0].organization_id}`;
+    await m.run.requestRun(d.runDeps, actor, table, { onlyEmpty: true });
+    await tick(m.worker.createGridRunJob(d.worker("w1", { concurrency: 1 })));
+    expect(calls).toBe(3);
+  });
+
   it("holds the other cells of a tick once the vendor answers 429, without spending their attempts", async () => {
     const { actor, table } = await fixture([1, 2, 3, 4, 5, 6].map((i) => ({ name: `Person ${i}`, domain: "acme.com" })));
     const f = fake();

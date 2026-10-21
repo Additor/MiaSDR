@@ -16,10 +16,16 @@ export interface WaterfallStep {
 export const stepId = (step: WaterfallStep) => `${step.providerKey}/${step.actionKey}`;
 
 export type StepExecution =
-  | { kind: "result"; outcome: "hit" | "miss"; primary: unknown; outputs: Record<string, unknown>; costCents: number; credits?: number | null; latencyMs?: number; request?: unknown; response?: unknown }
+  | { kind: "result"; outcome: "hit" | "miss"; primary: unknown; outputs: Record<string, unknown>; costCents: number; credits?: number | null; latencyMs?: number; request?: unknown; response?: unknown; reuse?: ReuseNote }
   | { kind: "error"; transient: boolean; message: string; costCents?: number; request?: unknown; response?: unknown; retryAfterMs?: number }
   | { kind: "rate_limited"; retryAfterMs: number }
   | { kind: "unavailable"; message: string };
+
+/** How an answer relates to reuse: stored under `lookupKey` for later cells, or `reused` from an earlier call. */
+export interface ReuseNote {
+  lookupKey?: string;
+  reused?: boolean;
+}
 
 export interface StepAttempt {
   step: WaterfallStep;
@@ -34,6 +40,8 @@ export interface StepAttempt {
   detail?: string;
   /** True for an error worth retrying, a rate limit, or a skip caused by the cost cap. */
   retryable?: boolean;
+  /** Set on an answer that later cells may reuse, with the answer to store, or on an answer that was reused. */
+  reuse?: ReuseNote & { primary?: unknown; outputs?: Record<string, unknown> };
 }
 
 export type WaterfallResult =
@@ -120,7 +128,8 @@ export async function runWaterfall(
     if (result.kind === "result") {
       spent += result.costCents;
       credits += result.credits ?? 0;
-      attempts.push({ step, outcome: result.outcome, costCents: result.costCents, credits: result.credits, latencyMs: result.latencyMs, request: result.request, response: result.response });
+      const reuse = result.reuse ? { ...result.reuse, ...(result.reuse.lookupKey ? { primary: result.primary, outputs: result.outputs } : {}) } : undefined;
+      attempts.push({ step, outcome: result.outcome, costCents: result.costCents, credits: result.credits, latencyMs: result.latencyMs, request: result.request, response: result.response, ...(reuse ? { reuse } : {}) });
       if (result.outcome === "hit") {
         return { status: "hit", winner: result, winnerStep: step, attempts, spentCents: spent, spentCredits: credits, missed: [...missed] };
       }

@@ -73,6 +73,12 @@ Apollo answers `email_not_unlocked@<domain>` for an address nobody on your accou
 
 MiaSDR asks People Data Labs for work fields only (work email, job title, company, LinkedIn URL), so personal emails, phone numbers and home addresses never arrive. A person match needs a likelihood of 6 or more; PDL's default of 2 means a 10 to 30 percent chance of the right person. On PDL's free plan contact fields come back as true or false, and MiaSDR leaves the email empty.
 
+## Reusing answers
+
+When a vendor answered the same lookup in your organization within the last 30 days, a cell takes that answer instead of calling again: the same provider, the same action and the same inputs, with case and outer space ignored. The reused call records 0 cents and 0 credits, marks the ledger row as reused, and does not count against the rate limit. MiaSDR reuses found values and verdicts (a catch-all too); an empty "not found" is asked again. Set "Reuse an answer for the same lookup (days)" in the dialog, or `reuseDays` on the column, from 0 (always ask) to 365. The 30 days count from the vendor's answer, not from a reuse. Custom HTTP API providers never reuse, because their actions may do more than look something up.
+
+The stored answer lives in the ledger row of the call that paid for it, under a sha256 of the lookup. It goes when its table goes.
+
 ## NeverBounce and existing lists
 
 NeverBounce's usage guidelines say: "Do NOT use single verification for verifying emails in an existing list or database one-by-one", and warn that the account "may be locked and API access disabled". MiaSDR calls NeverBounce's single check, one call per cell. Use NeverBounce for rows that arrive over time (an auto-run column on new rows), and verify a whole existing table in NeverBounce's bulk tool or with another verifier.

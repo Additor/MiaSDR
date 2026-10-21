@@ -1,7 +1,7 @@
 import type { Job } from "@/platform/jobs/types";
 import { MAX_JOBS_PER_TICK, clampConcurrency } from "../domain/enrichment-run-limits";
 import { RATE_WINDOW_MS, LocalRateGate } from "../domain/enrichment-rate-limit";
-import { aiConfigSchema, enrichmentConfigSchema, waterfallConfigSchema } from "../domain/enrichment-config";
+import { aiConfigSchema, DEFAULT_REUSE_DAYS, enrichmentConfigSchema, waterfallConfigSchema } from "../domain/enrichment-config";
 import { coerceAiOutput } from "../domain/ai-output-coerce";
 import { inputsReady } from "../domain/enrichment-cascade";
 import { acceptsText, inputsCovered } from "../domain/enrichment-inputs";
@@ -24,6 +24,7 @@ import {
   type RetryState,
 } from "./enrichment-ports";
 import { cascadeSpecFor, estimateStepCents } from "./enrichment-cost";
+import { lookupKey } from "./enrichment-reuse";
 
 export interface WorkerDeps {
   store: GridRunStore;
@@ -55,18 +56,22 @@ export { estimateStepCents };
 function stepsOf(
   type: string,
   config: Record<string, unknown>,
-): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number; maxCredits?: number; waitOnRateLimit?: boolean } | string {
+): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number; maxCredits?: number; waitOnRateLimit?: boolean; reuseDays: number } | string {
   if (type === "enrichment") {
     const parsed = enrichmentConfigSchema.safeParse(config);
     if (!parsed.success) return "This column's configuration is invalid. Save it again.";
-    return { steps: [{ providerKey: parsed.data.providerKey, actionKey: parsed.data.actionKey }], inputs: parsed.data.inputs, outputs: parsed.data.outputs };
+    return { steps: [{ providerKey: parsed.data.providerKey, actionKey: parsed.data.actionKey }], inputs: parsed.data.inputs, outputs: parsed.data.outputs, reuseDays: parsed.data.reuseDays ?? DEFAULT_REUSE_DAYS };
   }
   const parsed = waterfallConfigSchema.safeParse(config);
   if (!parsed.success) return "This column's configuration is invalid. Save it again.";
-  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents, maxCredits: parsed.data.maxCredits, waitOnRateLimit: parsed.data.onRateLimit === "wait" };
+  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents, maxCredits: parsed.data.maxCredits, waitOnRateLimit: parsed.data.onRateLimit === "wait", reuseDays: parsed.data.reuseDays ?? DEFAULT_REUSE_DAYS };
 }
 
-/** Runs one provider call for one step: validates inputs, checks the key and the rate limit, calls, and redacts. */
+/**
+ * Runs one provider call for one step: validates inputs, reuses a recent answer to the same lookup, checks the key and
+ * the rate limit, calls, and redacts. Only native vendors (actions with credits) reuse answers; a Custom HTTP action
+ * may do more than look something up.
+ */
 async function executeStep(
   deps: WorkerDeps,
   job: CellJob,
@@ -74,6 +79,7 @@ async function executeStep(
   inputsMap: Record<string, string>,
   cells: Record<string, unknown>,
   gate: LocalRateGate,
+  reuseDays: number,
 ): Promise<StepExecution> {
   const provider = await deps.providers.getByKey(job.organizationId, step.providerKey);
   if (!provider || !provider.enabled) return { kind: "unavailable", message: `Provider "${step.providerKey}" is not connected or is switched off.` };
@@ -95,6 +101,26 @@ async function executeStep(
     inputs[input.key] = input.type === "domain" && typeof value === "string" ? normalizeDomain(value) : value;
   }
   if (!inputsCovered(action, (key) => key in inputs)) return { kind: "unavailable", message: `${action.name} needs ${acceptsText(action)}.` };
+
+  const reusable = reuseDays > 0 && action.creditsPerCall !== undefined;
+  const key = reusable ? lookupKey(provider.key, action.key, inputs) : undefined;
+  if (key) {
+    const earlier = await deps.store.reusableAnswer(job.organizationId, key, new Date(deps.now().getTime() - reuseDays * 86_400_000));
+    if (earlier) {
+      return {
+        kind: "result",
+        outcome: earlier.outcome,
+        primary: earlier.answer.primary,
+        outputs: earlier.answer.outputs,
+        costCents: 0,
+        credits: 0,
+        latencyMs: 0,
+        request: { action: action.key, inputKeys: Object.keys(inputs), reusedFrom: earlier.id },
+        response: { reused: true, answeredAt: earlier.createdAt.toISOString() },
+        reuse: { reused: true },
+      };
+    }
+  }
 
   let credentials: Record<string, string> = {};
   const envelope = await deps.providers.encryptedCredential(job.organizationId, provider.id);
@@ -128,6 +154,8 @@ async function executeStep(
       latencyMs: Date.now() - started,
       request: boundedAudit(redactSecrets(answer.request ?? { action: action.key, inputKeys: Object.keys(inputs) }, secrets)),
       response: boundedAudit(redactSecrets(answer.response ?? null, secrets)),
+      // A found value or a verdict is worth reusing; an empty miss is asked again next time.
+      ...(key && (answer.outcome === "hit" || hasCellValue(answer.primary)) ? { reuse: { lookupKey: key } } : {}),
     };
   } catch (error) {
     if (error instanceof ProviderError) {
@@ -161,6 +189,8 @@ const ledger = (attempts: StepAttempt[]): LedgerRun[] =>
     outcome: a.outcome === "skipped" ? "skipped" : a.outcome,
     costCents: a.costCents,
     credits: a.credits ?? null,
+    ...(a.reuse?.lookupKey ? { lookupKey: a.reuse.lookupKey, answer: boundedAudit({ primary: a.reuse.primary ?? null, outputs: a.reuse.outputs ?? {} }) as LedgerRun["answer"] } : {}),
+    ...(a.reuse?.reused ? { reused: true } : {}),
     latencyMs: a.latencyMs ?? null,
     request: sanitizeOutput(a.request ?? { action: a.step.actionKey }),
     response: sanitizeOutput(a.response ?? (a.detail ? { detail: a.detail } : null)),
@@ -250,7 +280,7 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   }
 
   const carried = retryStateOf(job);
-  const result = await runWaterfall(plan.steps, (step) => executeStep(deps, job, step, plan.inputs, cells, gate), {
+  const result = await runWaterfall(plan.steps, (step) => executeStep(deps, job, step, plan.inputs, cells, gate, plan.reuseDays), {
     maxCostCents: plan.maxCostCents,
     estimate: (step) => estimates.get(stepId(step)) ?? 0,
     alreadyMissed: carried.missed,

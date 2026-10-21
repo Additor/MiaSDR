@@ -3,7 +3,7 @@ import { createEnrichmentColumns, createWaterfallColumns, updateRunnableColumn }
 import { gridColumnDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
 import { withActor } from "@/shared/api";
 
-const placement = { afterColumnId: z.string().uuid().optional(), autoRun: z.boolean().optional(), delaySeconds: z.number().int().min(0).max(3600).optional() };
+const placement = { afterColumnId: z.string().uuid().optional(), autoRun: z.boolean().optional(), delaySeconds: z.number().int().min(0).max(3600).optional(), reuseDays: z.number().int().min(0).max(365).optional() };
 
 const body = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("enrichment"), providerKey: z.string(), actionKey: z.string(), inputs: z.record(z.string(), z.string()), selectedOutputs: z.array(z.string()), ...placement }),

@@ -179,6 +179,17 @@ export interface LedgerRun {
   latencyMs?: number | null;
   request?: unknown;
   response?: unknown;
+  /** Hash of the lookup, on an answer later cells may reuse, with the answer they get. */
+  lookupKey?: string;
+  answer?: ReusableAnswer;
+  /** True when the answer came from an earlier call instead of the vendor. */
+  reused?: boolean;
+}
+
+/** The part of a vendor answer a later cell reuses. */
+export interface ReusableAnswer {
+  primary: unknown;
+  outputs: Record<string, unknown>;
 }
 
 /** Worst-case cents per cell of each runnable column, so the store can apply the cost cap inside the finishing transaction. */
@@ -244,8 +255,10 @@ export interface GridRunStore {
   claim(now: Date, leaseMs: number, limit: number, workerId: string, options?: { sweepExhausted?: boolean }): Promise<CellJob[]>;
   /** What a worker needs to run a job, read for the job's own organization. Null when the column or row is gone. */
   loadCell(job: CellJob): Promise<{ column: ColumnRow; columns: ColumnRow[]; cells: Record<string, unknown>; tableAutoRun: boolean } | null>;
-  /** Call times (epoch ms) of this provider's calls since `since`, for the rate limit. */
+  /** Call times (epoch ms) of this provider's calls since `since`, for the rate limit. Reused answers are not calls. */
   recentCalls(organizationId: string, providerKey: string, since: Date): Promise<number[]>;
+  /** The newest stored answer to the same lookup since `since`, in this organization, or null. */
+  reusableAnswer(organizationId: string, lookupKey: string, since: Date): Promise<{ id: string; createdAt: Date; outcome: "hit" | "miss"; answer: ReusableAnswer } | null>;
 
   /** Each finisher returns false when the lease was lost, and then writes nothing. */
   succeed(job: CellJob, write: CellWrite, runs: LedgerRun[], cascade: CascadeSpec | false): Promise<boolean>;

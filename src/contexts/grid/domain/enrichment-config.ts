@@ -9,6 +9,10 @@ const columnKey = z.string().min(1).max(80);
 const slug = z.string().regex(/^[a-z][a-z0-9_-]{0,59}$/);
 const actionKey = z.string().regex(/^[a-z][a-z0-9_-]{0,59}$/);
 
+/** Days a vendor's answer to the same lookup may be reused instead of paying again. Unset means 30; 0 always asks. */
+export const DEFAULT_REUSE_DAYS = 30;
+const reuseDays = z.number().int().min(0).max(365).optional();
+
 export const enrichmentConfigSchema = z.strictObject({
   providerKey: slug,
   actionKey,
@@ -17,6 +21,7 @@ export const enrichmentConfigSchema = z.strictObject({
   /** Action output key to the integration_output column that receives it. */
   outputs: z.record(z.string().min(1).max(60), columnKey).default({}),
   delaySeconds: z.number().int().min(0).max(3600).optional(),
+  reuseDays,
 });
 export type EnrichmentConfig = z.infer<typeof enrichmentConfigSchema>;
 
@@ -31,6 +36,7 @@ export const waterfallConfigSchema = z.strictObject({
   maxCredits: z.number().min(0).max(100_000).optional(),
   /** "next" (the default) asks the next step when one is rate limited; "wait" retries the cell later so the order holds. */
   onRateLimit: z.enum(["next", "wait"]).optional(),
+  reuseDays,
   delaySeconds: z.number().int().min(0).max(3600).optional(),
 });
 export type WaterfallConfig = z.infer<typeof waterfallConfigSchema>;

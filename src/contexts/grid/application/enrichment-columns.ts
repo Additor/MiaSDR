@@ -79,6 +79,7 @@ export interface CreateEnrichmentInput extends Placement {
   selectedOutputs: string[];
   autoRun?: boolean;
   delaySeconds?: number;
+  reuseDays?: number;
 }
 
 /** Refuses a mapping that misses a required input or every combination the action accepts. `step` is 0-based. */
@@ -109,6 +110,7 @@ export async function createEnrichmentColumns(deps: ColumnDeps, actor: Actor, ta
       inputs: input.inputs,
       outputs: Object.fromEntries(plan.outputRows.map((r) => [r.o.outputKey, r.key])),
       delaySeconds: input.delaySeconds,
+      reuseDays: input.reuseDays,
     });
     return {
       renumber: plan.renumber,
@@ -130,6 +132,7 @@ export interface CreateWaterfallInput extends Placement {
   maxCostCents?: number;
   maxCredits?: number;
   onRateLimit?: "next" | "wait";
+  reuseDays?: number;
   autoRun?: boolean;
   delaySeconds?: number;
 }
@@ -159,6 +162,7 @@ export async function createWaterfallColumns(deps: ColumnDeps, actor: Actor, tab
       maxCostCents: input.maxCostCents,
       maxCredits: input.maxCredits,
       onRateLimit: input.onRateLimit,
+      reuseDays: input.reuseDays,
       delaySeconds: input.delaySeconds,
     });
     return {

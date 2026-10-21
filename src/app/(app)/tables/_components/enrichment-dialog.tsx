@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gridRequest, gridUrl } from "../_lib/data/client";
+import { DEFAULT_REUSE_DAYS } from "@/contexts/grid/domain/enrichment-config";
 import { acceptsText, inputsCovered } from "@/contexts/grid/domain/enrichment-inputs";
 import { guessColumn, usableProviders, useProviders, type ActionSpec, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
@@ -112,6 +113,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
   const [maxCost, setMaxCost] = useState("");
   const [maxCredits, setMaxCredits] = useState("");
   const [waitOnLimit, setWaitOnLimit] = useState(false);
+  const [reuseDays, setReuseDays] = useState(String(DEFAULT_REUSE_DAYS));
   const [autoRun, setAutoRun] = useState(false);
   const [delay, setDelay] = useState("0");
   const [busy, setBusy] = useState(false);
@@ -183,7 +185,14 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
     setBusy(true);
     setError(null);
     const cleanInputs = Object.fromEntries(Object.entries(inputs).filter(([, v]) => v));
-    const base = { inputs: cleanInputs, selectedOutputs: outputs, afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id, autoRun, delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))) };
+    const base = {
+      inputs: cleanInputs,
+      selectedOutputs: outputs,
+      afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id,
+      autoRun,
+      delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
+      reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
+    };
     const body =
       mode === "single"
         ? { kind: "enrichment", providerKey: steps[0].providerKey, actionKey: steps[0].actionKey, ...base }
@@ -326,6 +335,9 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
               </div>
             )}
             <RunTiming autoRun={autoRun} setAutoRun={setAutoRun} delay={delay} setDelay={setDelay} />
+            <Field label="Reuse an answer for the same lookup (days)" htmlFor="reuse-days" hint="A vendor answered the same input within this many days: the cell takes that answer and pays nothing. 0 always asks.">
+              <Input id="reuse-days" type="number" min={0} max={365} value={reuseDays} onChange={(e) => setReuseDays(e.target.value)} className="w-28" />
+            </Field>
           </>
         )}
         <div>
