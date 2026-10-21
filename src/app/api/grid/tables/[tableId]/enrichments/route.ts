@@ -14,6 +14,7 @@ const body = z.discriminatedUnion("kind", [
     steps: z.array(z.object({ providerKey: z.string(), actionKey: z.string() })),
     selectedOutputs: z.array(z.string()),
     maxCostCents: z.number().min(0).optional(),
+    maxCredits: z.number().min(0).optional(),
     ...placement,
   }),
 ]);

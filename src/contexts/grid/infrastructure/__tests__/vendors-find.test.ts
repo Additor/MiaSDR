@@ -26,6 +26,13 @@ describe("a company name in place of a domain", () => {
   });
 });
 
+describe("vendor credit counts", () => {
+  it("LeadMagic reports the credits it consumed", async () => {
+    const { result } = await ask("leadmagic", 200, { email: "john.doe@company.com", status: "valid", credits_consumed: 1 }, "find-work-email", inputs);
+    expect(result).toMatchObject({ outcome: "hit", credits: 1 });
+  });
+});
+
 describe("Findymail", () => {
   // https://app.findymail.com/docs/openapi.yaml, read 2026-10-20.
   const find = (status: number, body: unknown) => ask("findymail", status, body, "find-work-email", inputs);

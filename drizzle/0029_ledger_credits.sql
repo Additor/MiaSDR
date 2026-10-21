@@ -1,0 +1,2 @@
+ALTER TABLE "grid_cell_runs" ADD COLUMN "credits" numeric(12, 4);--> statement-breakpoint
+ALTER TABLE "grid_cell_runs" ADD CONSTRAINT "grid_cell_runs_credits_ck" CHECK ("grid_cell_runs"."credits" is null or "grid_cell_runs"."credits" >= 0);

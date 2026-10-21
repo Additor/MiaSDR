@@ -20,6 +20,8 @@ Every vendor has a fixed host, so none needs an entry in `GRID_HTTP_ALLOWED_HOST
 
 MiaSDR records a call that the vendor does not bill at 0 cents. Every other call costs the price you set on the provider (`defaultCostCents`, 0 by default), because vendor credits are not money.
 
+Each ledger row also keeps the vendor credits the call used: LeadMagic's `credits_consumed` and PDL's `x-call-credits-spent` when they send them, otherwise one credit per billed call (Hunter: half a credit per verification) and 0 for a call the vendor does not bill. The cell drawer shows them beside the cost. A waterfall can cap a cell's credits (`maxCredits`) as well as its cents; a step that would pass a cap is skipped. A Custom HTTP API provider has no credits.
+
 ## Connect a vendor
 
 1. Create an API key in the vendor's dashboard.

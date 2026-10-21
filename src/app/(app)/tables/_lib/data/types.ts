@@ -22,6 +22,8 @@ export interface CellMeta {
   /** Why a cell was not run, for `skipped: cap`. */
   reason?: string;
   costCents?: number;
+  /** Vendor credits the cell used across its steps, when its providers count credits. */
+  credits?: number;
   runAt?: string;
 }
 

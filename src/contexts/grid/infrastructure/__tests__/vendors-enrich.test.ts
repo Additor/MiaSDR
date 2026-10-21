@@ -26,8 +26,10 @@ describe("People Data Labs", () => {
 
   it("reads the billed credits from x-call-credits-spent and waits for x-ratelimit-reset", async () => {
     const json = { "content-type": "application/json" };
-    expect((await person(200, docPerson, undefined, { ...json, "x-call-credits-spent": "0" })).result).toMatchObject({ outcome: "hit", billable: false });
-    expect((await person(200, docPerson, undefined, { ...json, "x-call-credits-spent": "1" })).result.billable).toBeUndefined();
+    expect((await person(200, docPerson, undefined, { ...json, "x-call-credits-spent": "0" })).result).toMatchObject({ outcome: "hit", billable: false, credits: 0 });
+    const billed = (await person(200, docPerson, undefined, { ...json, "x-call-credits-spent": "1" })).result;
+    expect(billed.billable).toBeUndefined();
+    expect(billed.credits).toBe(1);
     const reset = new Date(Date.now() + 45_000).toISOString();
     const limited = await person(429, { status: 429, error: { type: "rate_limit_error", message: "Rate limit exceeded" } }, undefined, { ...json, "x-ratelimit-reset": reset });
     expect(limited.result.transient).toBe(true);

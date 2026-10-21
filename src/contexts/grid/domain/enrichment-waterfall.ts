@@ -16,7 +16,7 @@ export interface WaterfallStep {
 export const stepId = (step: WaterfallStep) => `${step.providerKey}/${step.actionKey}`;
 
 export type StepExecution =
-  | { kind: "result"; outcome: "hit" | "miss"; primary: unknown; outputs: Record<string, unknown>; costCents: number; latencyMs?: number; request?: unknown; response?: unknown }
+  | { kind: "result"; outcome: "hit" | "miss"; primary: unknown; outputs: Record<string, unknown>; costCents: number; credits?: number | null; latencyMs?: number; request?: unknown; response?: unknown }
   | { kind: "error"; transient: boolean; message: string; costCents?: number; request?: unknown; response?: unknown; retryAfterMs?: number }
   | { kind: "rate_limited"; retryAfterMs: number }
   | { kind: "unavailable"; message: string };
@@ -25,6 +25,8 @@ export interface StepAttempt {
   step: WaterfallStep;
   outcome: "hit" | "miss" | "error" | "skipped";
   costCents: number;
+  /** Vendor credits the call used, or null when the provider has no credits. */
+  credits?: number | null;
   latencyMs?: number;
   request?: unknown;
   response?: unknown;
@@ -35,10 +37,18 @@ export interface StepAttempt {
 }
 
 export type WaterfallResult =
-  | { status: "hit"; winner: Extract<StepExecution, { kind: "result" }>; winnerStep: WaterfallStep; attempts: StepAttempt[]; spentCents: number; missed: string[] }
-  | { status: "miss"; fallback?: MissVerdict; attempts: StepAttempt[]; spentCents: number; missed: string[] }
-  | { status: "retry"; retryAfterMs?: number; fallback?: MissVerdict; attempts: StepAttempt[]; spentCents: number; missed: string[] }
-  | { status: "failed"; message: string; attempts: StepAttempt[]; spentCents: number; missed: string[] };
+  | ({ status: "hit"; winner: Extract<StepExecution, { kind: "result" }>; winnerStep: WaterfallStep } & Spent)
+  | ({ status: "miss"; fallback?: MissVerdict } & Spent)
+  | ({ status: "retry"; retryAfterMs?: number; fallback?: MissVerdict } & Spent)
+  | ({ status: "failed"; message: string } & Spent);
+
+/** What a cell has spent so far, earlier tries included, and the steps that missed. */
+interface Spent {
+  attempts: StepAttempt[];
+  spentCents: number;
+  spentCredits: number;
+  missed: string[];
+}
 
 /** A miss that still carried a verdict, such as a catch-all address. The first one in step order is kept. */
 export interface MissVerdict {
@@ -52,12 +62,18 @@ export interface WaterfallOptions {
   maxCostCents?: number;
   /** Cents a step can cost at most, checked against `maxCostCents` before the call. */
   estimate: (step: WaterfallStep) => number;
+  /** Vendor credits one cell may use. A step whose credits would pass it is skipped. */
+  maxCredits?: number;
+  /** Credits a step uses at most, checked against `maxCredits`. */
+  estimateCredits?: (step: WaterfallStep) => number;
   /** Steps that answered with a miss on an earlier try of this cell. */
   alreadyMissed?: ReadonlySet<string>;
   /** The miss verdict an earlier try of this cell kept. */
   carriedFallback?: MissVerdict;
   /** Cents earlier tries of this cell spent, counted against `maxCostCents`. */
   carriedSpentCents?: number;
+  /** Credits earlier tries of this cell used, counted against `maxCredits`. */
+  carriedSpentCredits?: number;
   /** Stops early (cancel, deadline). */
   shouldStop?: () => boolean;
 }
@@ -70,6 +86,7 @@ export async function runWaterfall(
   const attempts: StepAttempt[] = [];
   const missed = new Set(options.alreadyMissed ?? []);
   let spent = options.carriedSpentCents ?? 0;
+  let credits = options.carriedSpentCredits ?? 0;
   let transient = false;
   let limitedAfterMs: number | undefined;
   let permanentMessage: string | null = null;
@@ -90,12 +107,17 @@ export async function runWaterfall(
       attempts.push({ step, outcome: "skipped", costCents: 0, detail: "The per-cell cost cap would be exceeded." });
       continue;
     }
+    if (options.maxCredits !== undefined && credits + (options.estimateCredits?.(step) ?? 0) > options.maxCredits) {
+      attempts.push({ step, outcome: "skipped", costCents: 0, detail: "The per-cell credit cap would be exceeded." });
+      continue;
+    }
     const result = await execute(step);
     if (result.kind === "result") {
       spent += result.costCents;
-      attempts.push({ step, outcome: result.outcome, costCents: result.costCents, latencyMs: result.latencyMs, request: result.request, response: result.response });
+      credits += result.credits ?? 0;
+      attempts.push({ step, outcome: result.outcome, costCents: result.costCents, credits: result.credits, latencyMs: result.latencyMs, request: result.request, response: result.response });
       if (result.outcome === "hit") {
-        return { status: "hit", winner: result, winnerStep: step, attempts, spentCents: spent, missed: [...missed] };
+        return { status: "hit", winner: result, winnerStep: step, attempts, spentCents: spent, spentCredits: credits, missed: [...missed] };
       }
       if (!fallback && hasCellValue(result.primary)) fallback = { step, primary: result.primary, outputs: result.outputs };
       missed.add(id);
@@ -116,7 +138,7 @@ export async function runWaterfall(
     }
   }
 
-  const base = { attempts, spentCents: spent, missed: [...missed] };
+  const base = { attempts, spentCents: spent, spentCredits: credits, missed: [...missed] };
   if (transient || limitedAfterMs !== undefined) return { status: "retry", retryAfterMs: limitedAfterMs, ...(fallback ? { fallback } : {}), ...base };
   if (!answered && permanentMessage !== null) return { status: "failed", message: permanentMessage, ...base };
   return { status: "miss", ...(fallback ? { fallback } : {}), ...base };

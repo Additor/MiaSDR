@@ -348,14 +348,18 @@ describeDb("grid enrichment runs", () => {
     const row = await cells(rows[0]);
     expect(row.cells).toMatchObject({ status: "valid", providerStatus: "ok" });
 
-    const ledger = await sql`select provider, outcome, cost_cents::float as cost, request, response from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
-    expect(ledger.map((r) => [r.provider, r.outcome, r.cost])).toEqual([
-      ["hunter", "miss", 1],
+    const ledger = await sql`select provider, outcome, cost_cents::float as cost, credits::float as credits, request, response from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
+    expect(ledger.map((r) => [r.provider, r.outcome, r.cost, r.credits])).toEqual([
+      // Hunter takes half a credit per verification.
+      ["hunter", "miss", 1, 0.5],
       // ZeroBounce charges nothing for unknown.
-      ["zerobounce", "miss", 0],
-      ["millionverifier", "error", 0],
-      ["millionverifier", "hit", 1],
+      ["zerobounce", "miss", 0, 0],
+      ["millionverifier", "error", 0, null],
+      ["millionverifier", "hit", 1, 1],
     ]);
+    // The cell's credits count both tries.
+    const main = Object.keys(row.cells).find((k) => !["name", "domain", "about", "status", "providerStatus"].includes(k))!;
+    expect(row.cell_meta[main]).toMatchObject({ credits: 1.5 });
     const stored = JSON.stringify(ledger);
     for (const key of Object.values(keys)) for (const form of [key, encodeURIComponent(key)]) expect(stored).not.toContain(form);
   });

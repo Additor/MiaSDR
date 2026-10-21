@@ -39,7 +39,8 @@ export const leadmagic: VendorDefinition = {
     const status = text(body.status);
     const outputs = { email, confidence: null, verificationStatus: email ? (status === "valid" ? "valid" : "unknown") : null, employmentVerified: body.employment_verified };
     const kept = { email: body.email, status: body.status, credits_consumed: body.credits_consumed, message: body.message, employment_verified: body.employment_verified };
-    return answerWith(outputs, email, request, kept, body.credits_consumed === 0 || !email ? { billable: false } : {});
+    const answer = answerWith(outputs, email, request, kept, body.credits_consumed === 0 || !email ? { billable: false } : {});
+    return typeof body.credits_consumed === "number" ? { ...answer, credits: body.credits_consumed } : answer;
   },
 
   checkKey(apiKey, check) {

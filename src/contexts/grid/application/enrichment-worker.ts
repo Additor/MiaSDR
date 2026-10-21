@@ -52,7 +52,7 @@ const retryDelayMs = (attempts: number) => Math.min(5 * 60_000, 2000 * 4 ** Math
 
 export { estimateStepCents };
 
-function stepsOf(type: string, config: Record<string, unknown>): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number } | string {
+function stepsOf(type: string, config: Record<string, unknown>): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number; maxCredits?: number } | string {
   if (type === "enrichment") {
     const parsed = enrichmentConfigSchema.safeParse(config);
     if (!parsed.success) return "This column's configuration is invalid. Save it again.";
@@ -60,7 +60,7 @@ function stepsOf(type: string, config: Record<string, unknown>): { steps: Waterf
   }
   const parsed = waterfallConfigSchema.safeParse(config);
   if (!parsed.success) return "This column's configuration is invalid. Save it again.";
-  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents };
+  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents, maxCredits: parsed.data.maxCredits };
 }
 
 /** Runs one provider call for one step: validates inputs, checks the key and the rate limit, calls, and redacts. */
@@ -120,6 +120,7 @@ async function executeStep(
       primary: answer.primary,
       outputs: redactSecrets(answer.outputs, secrets),
       costCents: answer.costCents ?? (answer.billable === false ? 0 : estimateStepCents(provider, action)),
+      credits: creditsOf(answer, action),
       latencyMs: Date.now() - started,
       request: boundedAudit(redactSecrets(answer.request ?? { action: action.key, inputKeys: Object.keys(inputs) }, secrets)),
       response: boundedAudit(redactSecrets(answer.response ?? null, secrets)),
@@ -141,11 +142,19 @@ async function executeStep(
   }
 }
 
+/** The vendor's own count, else the action's credits per billed call. A provider without credits records none. */
+function creditsOf(answer: { credits?: number; billable?: boolean }, action: { creditsPerCall?: number }): number | null {
+  if (typeof answer.credits === "number" && Number.isFinite(answer.credits) && answer.credits >= 0) return answer.credits;
+  if (action.creditsPerCall === undefined) return null;
+  return answer.billable === false ? 0 : action.creditsPerCall;
+}
+
 const ledger = (attempts: StepAttempt[]): LedgerRun[] =>
   attempts.map((a) => ({
     provider: a.step.providerKey,
     outcome: a.outcome === "skipped" ? "skipped" : a.outcome,
     costCents: a.costCents,
+    credits: a.credits ?? null,
     latencyMs: a.latencyMs ?? null,
     request: sanitizeOutput(a.request ?? { action: a.step.actionKey }),
     response: sanitizeOutput(a.response ?? (a.detail ? { detail: a.detail } : null)),
@@ -176,7 +185,7 @@ async function succeedOnce(deps: WorkerDeps, job: CellJob, write: CellWrite, run
 }
 
 /** The job's saved state, read with care: it comes back from a JSON column. */
-function retryStateOf(job: CellJob): { missed: Set<string>; fallback?: MissVerdict; spentCents: number } {
+function retryStateOf(job: CellJob): { missed: Set<string>; fallback?: MissVerdict; spentCents: number; spentCredits: number } {
   const state = job.providerState ?? {};
   const missed = Array.isArray(state.missed) ? state.missed.filter((id): id is string => typeof id === "string") : [];
   const f = state.fallback;
@@ -184,8 +193,8 @@ function retryStateOf(job: CellJob): { missed: Set<string>; fallback?: MissVerdi
     f && typeof f === "object" && f.step && typeof f.step.providerKey === "string" && typeof f.step.actionKey === "string" && f.outputs && typeof f.outputs === "object"
       ? { step: { providerKey: f.step.providerKey, actionKey: f.step.actionKey }, primary: f.primary, outputs: f.outputs }
       : undefined;
-  const spentCents = typeof state.spentCents === "number" && Number.isFinite(state.spentCents) && state.spentCents > 0 ? state.spentCents : 0;
-  return { missed: new Set(missed), fallback, spentCents };
+  const positive = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
+  return { missed: new Set(missed), fallback, spentCents: positive(state.spentCents), spentCredits: positive(state.spentCredits) };
 }
 
 /** True when this try used the cell's last attempt on a transient error, so a retry would fail it. */
@@ -224,12 +233,14 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
     return "skipped";
   }
 
-  // Worst case per step, for the per-cell cap. A missing provider costs nothing because the step is skipped.
+  // Worst case per step, for the per-cell caps. A missing provider costs nothing because the step is skipped.
   const estimates = new Map<string, number>();
+  const creditEstimates = new Map<string, number>();
   for (const step of plan.steps) {
     const provider = await deps.providers.getByKey(job.organizationId, step.providerKey);
     const action = provider ? deps.adapters.adapterFor(provider)?.actions(provider).find((a) => a.key === step.actionKey) : undefined;
     estimates.set(stepId(step), provider ? estimateStepCents(provider, action) : 0);
+    creditEstimates.set(stepId(step), action?.creditsPerCall ?? 0);
   }
 
   const carried = retryStateOf(job);
@@ -239,12 +250,15 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
     alreadyMissed: carried.missed,
     carriedFallback: carried.fallback,
     carriedSpentCents: carried.spentCents,
+    maxCredits: plan.maxCredits,
+    estimateCredits: (step) => creditEstimates.get(stepId(step)) ?? 0,
+    carriedSpentCredits: carried.spentCredits,
   });
 
   // On the last attempt a paid miss verdict is saved as the cell's answer instead of failing the cell.
   if (result.status === "retry" && !(result.fallback && lastAttempt(job, result.attempts))) {
     const message = result.attempts.find((a) => a.outcome === "error")?.detail ?? "Every provider was busy or unavailable. The cell will run again soon.";
-    const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents };
+    const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents, spentCredits: result.spentCredits };
     return finishRetry(deps, job, result.attempts, state, result.retryAfterMs, message);
   }
   if (result.status === "failed") {
@@ -258,7 +272,7 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   const hit = result.status === "hit";
   // With no hit, the first verdict a vendor gave (a catch-all address) still fills the cells, so a paid answer is kept.
   const answer = hit ? { step: result.winnerStep, primary: result.winner.primary, outputs: result.winner.outputs } : result.fallback;
-  const base = { status: "success", outcome: hit ? "hit" : "miss", provider: answer?.step.providerKey, costCents: result.spentCents, runAt };
+  const base = { status: "success", outcome: hit ? "hit" : "miss", provider: answer?.step.providerKey, costCents: result.spentCents, ...(result.attempts.some((a) => typeof a.credits === "number") || result.spentCredits > 0 ? { credits: result.spentCredits } : {}), runAt };
   cells2[column.key] = answer ? sanitizeOutputString(cellText(answer.primary)) : "Not found";
   meta[column.key] = base;
   for (const [outputKey, columnKey] of Object.entries(plan.outputs)) {

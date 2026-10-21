@@ -110,6 +110,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
   const [outputs, setOutputs] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [maxCost, setMaxCost] = useState("");
+  const [maxCredits, setMaxCredits] = useState("");
   const [autoRun, setAutoRun] = useState(false);
   const [delay, setDelay] = useState("0");
   const [busy, setBusy] = useState(false);
@@ -185,7 +186,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
     const body =
       mode === "single"
         ? { kind: "enrichment", providerKey: steps[0].providerKey, actionKey: steps[0].actionKey, ...base }
-        : { kind: "waterfall", name: name.trim() || undefined, steps, ...base, ...(maxCost.trim() !== "" ? { maxCostCents: Math.max(0, Number(maxCost) || 0) } : {}) };
+        : { kind: "waterfall", name: name.trim() || undefined, steps, ...base, ...(maxCost.trim() !== "" ? { maxCostCents: Math.max(0, Number(maxCost) || 0) } : {}), ...(maxCredits.trim() !== "" ? { maxCredits: Math.max(0, Number(maxCredits) || 0) } : {}) };
     const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "POST", body);
     if (!res.ok) {
       setBusy(false);
@@ -313,6 +314,9 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
                 </Field>
                 <Field label="Spend cap per cell (cents)" htmlFor="wf-cap" hint="Optional. A step that would pass it is skipped.">
                   <Input id="wf-cap" type="number" min={0} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} className="w-28" />
+                </Field>
+                <Field label="Credit cap per cell" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">
+                  <Input id="wf-credits" type="number" min={0} step={0.5} value={maxCredits} onChange={(e) => setMaxCredits(e.target.value)} className="w-28" />
                 </Field>
               </div>
             )}

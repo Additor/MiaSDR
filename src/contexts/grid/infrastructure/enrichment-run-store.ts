@@ -60,6 +60,7 @@ async function writeRuns(tx: Tx, job: Pick<CellJob, "organizationId" | "tableId"
           columnKey: job.columnKey,
           outcome: r.outcome,
           costCents: String(r.costCents),
+          credits: typeof r.credits === "number" ? String(r.credits) : null,
           latencyMs: r.latencyMs ?? null,
           provider: r.provider === null ? null : sanitizeOutputString(r.provider, 200),
           request: sanitizeOutput(r.request ?? null) as never,
@@ -422,7 +423,7 @@ export const drizzleGridRunStore: GridRunStore = {
           error: sanitizeOutputString(options.error, 1000),
           runAfter: options.runAfter,
           attempts: options.consumeAttempt ? job.attempts : Math.max(0, job.attempts - 1),
-          providerState: (options.state.missed?.length ?? 0) > 0 || options.state.fallback || (options.state.spentCents ?? 0) > 0 ? options.state : null,
+          providerState: (options.state.missed?.length ?? 0) > 0 || options.state.fallback || (options.state.spentCents ?? 0) > 0 || (options.state.spentCredits ?? 0) > 0 ? options.state : null,
           updatedAt: new Date(),
         })
         .where(fenced(job))
@@ -461,6 +462,6 @@ export const drizzleGridRunStore: GridRunStore = {
       .where(and(eq(gridCellRuns.organizationId, organizationId), eq(gridCellRuns.tableId, tableId), eq(gridCellRuns.rowId, rowId), eq(gridCellRuns.columnKey, columnKey)))
       .orderBy(desc(gridCellRuns.createdAt))
       .limit(limit);
-    return rows.map((r) => ({ id: r.id, provider: r.provider, outcome: r.outcome, costCents: Number(r.costCents), latencyMs: r.latencyMs, request: r.request, response: r.response, createdAt: r.createdAt }));
+    return rows.map((r) => ({ id: r.id, provider: r.provider, outcome: r.outcome, costCents: Number(r.costCents), credits: r.credits === null ? null : Number(r.credits), latencyMs: r.latencyMs, request: r.request, response: r.response, createdAt: r.createdAt }));
   },
 };

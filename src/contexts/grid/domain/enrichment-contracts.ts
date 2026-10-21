@@ -100,7 +100,7 @@ export const CONTRACTS: Readonly<Record<ContractKey, Contract>> = {
 };
 
 /** The action a vendor offers for a contract: the contract's inputs and outputs, then the vendor's own outputs. */
-export function contractAction(key: ContractKey, options: { extraOutputs?: ActionOutput[]; defaultCostCents?: number } = {}): ActionSpec {
+export function contractAction(key: ContractKey, options: { extraOutputs?: ActionOutput[]; defaultCostCents?: number; creditsPerCall?: number } = {}): ActionSpec {
   const contract = CONTRACTS[key];
   return {
     key,
@@ -109,6 +109,7 @@ export function contractAction(key: ContractKey, options: { extraOutputs?: Actio
     outputs: [...contract.outputs, ...(options.extraOutputs ?? [])],
     primaryOutput: contract.primaryOutput,
     defaultCostCents: options.defaultCostCents ?? 0,
+    creditsPerCall: options.creditsPerCall ?? 1,
     ...(contract.accepts ? { accepts: contract.accepts } : {}),
   };
 }

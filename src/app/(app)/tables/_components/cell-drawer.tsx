@@ -21,6 +21,7 @@ interface Run {
   provider: string | null;
   outcome: string;
   costCents: number;
+  credits: number | null;
   latencyMs: number | null;
   request: unknown;
   response: unknown;
@@ -145,6 +146,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
                         <Time value={r.createdAt} className="text-xs text-muted-foreground" />
                         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
                           {r.costCents > 0 ? `${r.costCents}c` : "free"}
+                          {r.credits !== null ? ` · ${r.credits} ${r.credits === 1 ? "credit" : "credits"}` : ""}
                           {r.latencyMs !== null ? ` · ${r.latencyMs} ms` : ""}
                         </span>
                       </div>

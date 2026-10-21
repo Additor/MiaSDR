@@ -179,6 +179,8 @@ export const gridCellRuns = pgTable(
     provider: text("provider"),
     outcome: text("outcome").notNull(),
     costCents: numeric("cost_cents", { precision: 12, scale: 6 }).notNull().default("0"),
+    /** Vendor credits the call used; null for a provider without credits and for rows written before credits were kept. */
+    credits: numeric("credits", { precision: 12, scale: 4 }),
     latencyMs: integer("latency_ms"),
     request: jsonb("request").$type<unknown>(),
     response: jsonb("response").$type<unknown>(),
@@ -189,6 +191,7 @@ export const gridCellRuns = pgTable(
     foreignKey({ columns: [t.rowId, t.organizationId], foreignColumns: [gridRows.id, gridRows.organizationId] }).onDelete("cascade"),
     check("grid_cell_runs_outcome_ck", inList(t.outcome, GRID_CELL_OUTCOMES)),
     check("grid_cell_runs_cost_ck", sql`${t.costCents} >= 0 and (${t.latencyMs} is null or ${t.latencyMs} >= 0)`),
+    check("grid_cell_runs_credits_ck", sql`${t.credits} is null or ${t.credits} >= 0`),
     index("grid_cell_runs_cell_idx").on(t.rowId, t.columnKey),
     index("grid_cell_runs_table_created_idx").on(t.tableId, t.createdAt),
   ],

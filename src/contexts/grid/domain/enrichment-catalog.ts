@@ -33,6 +33,11 @@ export interface ActionSpec {
   /** Provider credits are not money; this is the cents a hit costs when the provider row sets no price. */
   defaultCostCents: number;
   /**
+   * Vendor credits one billed call uses (Hunter's verifier takes half a credit). Set for native vendors only; a Custom
+   * HTTP action has no credits, and its ledger rows leave them empty.
+   */
+  creditsPerCall?: number;
+  /**
    * Input combinations the action can match on, beyond its required inputs. A cell runs when one combination is
    * filled. Empty or absent means the required inputs are enough.
    */
@@ -64,7 +69,9 @@ export interface CatalogEntry {
 const API_KEY: CredentialField[] = [{ key: "apiKey", label: "API key", required: true }];
 
 export const HUNTER_ACTIONS: ActionSpec[] = [
+  // help.hunter.io "How do credits work": 0.5 credits per verification, 1 per found email or domain search.
   contractAction("verify-email", {
+    creditsPerCall: 0.5,
     extraOutputs: [
       { key: "acceptAll", name: "Accept all", type: "boolean" },
       { key: "disposable", name: "Disposable", type: "boolean" },

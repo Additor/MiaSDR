@@ -27,6 +27,8 @@ export const waterfallConfigSchema = z.strictObject({
   outputs: z.record(z.string().min(1).max(60), columnKey).default({}),
   /** Cents one cell may spend across all steps. A step that would pass it is skipped. */
   maxCostCents: z.number().min(0).max(100_000).optional(),
+  /** Vendor credits one cell may use across all steps. A step that would pass it is skipped. */
+  maxCredits: z.number().min(0).max(100_000).optional(),
   delaySeconds: z.number().int().min(0).max(3600).optional(),
 });
 export type WaterfallConfig = z.infer<typeof waterfallConfigSchema>;

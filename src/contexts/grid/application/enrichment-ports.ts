@@ -86,6 +86,8 @@ export interface ProviderAnswer {
   costCents?: number;
   /** False when the vendor charges nothing for this answer (no match, an unknown verdict). */
   billable?: boolean;
+  /** Vendor credits the call used, when the vendor reports them. Unset means the action's `creditsPerCall`, or 0 when not billable. */
+  credits?: number;
   request?: unknown;
   response?: unknown;
 }
@@ -148,6 +150,7 @@ export interface RetryState {
   missed?: string[];
   fallback?: MissVerdict;
   spentCents?: number;
+  spentCredits?: number;
 }
 
 export interface CellJob {
@@ -171,6 +174,8 @@ export interface LedgerRun {
   provider: string | null;
   outcome: RunOutcome;
   costCents: number;
+  /** Vendor credits the call used; null or unset for a provider without credits. */
+  credits?: number | null;
   latencyMs?: number | null;
   request?: unknown;
   response?: unknown;
@@ -199,6 +204,7 @@ export interface CellRunView {
   provider: string | null;
   outcome: string;
   costCents: number;
+  credits: number | null;
   latencyMs: number | null;
   request: unknown;
   response: unknown;

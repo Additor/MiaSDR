@@ -68,6 +68,14 @@ describe("waterfall", () => {
     expect(await runWaterfall([a, b], busy.execute, { estimate: () => 0, alreadyMissed: new Set(["b/find"]), carriedFallback })).toMatchObject({ status: "retry", fallback: carriedFallback });
   });
 
+  it("counts credits, earlier tries included, and skips a step that would pass the credit cap", async () => {
+    const run = scripted({ "a/find": { kind: "result", outcome: "miss", primary: null, outputs: {}, costCents: 0, credits: 0.5 }, "b/find": hit("z@acme.test") });
+    const result = await runWaterfall([a, b], run.execute, { estimate: () => 0, maxCredits: 1, estimateCredits: () => 0.5, carriedSpentCredits: 0.5 });
+    expect(run.asked).toEqual(["a/find"]);
+    expect(result).toMatchObject({ status: "miss", spentCredits: 1 });
+    expect(result.attempts[1]).toMatchObject({ outcome: "skipped", detail: "The per-cell credit cap would be exceeded." });
+  });
+
   it("does not ask a step that already missed on an earlier try", async () => {
     const run = scripted({ "b/find": hit("z@acme.test") });
     const result = await runWaterfall([a, b], run.execute, { estimate: () => 0, alreadyMissed: new Set(["a/find"]) });
