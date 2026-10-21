@@ -79,7 +79,9 @@ NeverBounce's usage guidelines say: "Do NOT use single verification for verifyin
 
 ## Rate limits
 
-A new provider starts with the vendor's published per-minute limit where there is one: Hunter 300 (Email Verifier), Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin` to match your plan. When a vendor answers 429, the cell waits as the vendor asks and runs again: `retry-after` first, then Prospeo's reset seconds (the daily one once the day's requests are gone) or PDL's `x-ratelimit-reset`, up to an hour.
+A new provider starts with the vendor's published per-minute limit where there is one: Hunter 300 (Email Verifier), Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin` to match your plan. When a vendor answers 429, the cell waits as the vendor asks and runs again: `retry-after` first, then Prospeo's reset seconds (the daily one once the day's requests are gone) or PDL's `x-ratelimit-reset`, up to an hour. The other cells that worker runs at the same time hold off for the same wait, so one 429 does not turn into a burst of them.
+
+When a waterfall step is rate limited, the cell asks the next step by default. Tick "Wait for a rate-limited step instead of asking the next one" (`onRateLimit: "wait"`) to keep the order: the cell waits for the preferred vendor and asks no later, maybe pricier, step meanwhile. A rate-limit wait uses no attempt either way.
 
 ## Errors
 

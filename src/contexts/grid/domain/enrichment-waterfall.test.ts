@@ -76,6 +76,18 @@ describe("waterfall", () => {
     expect(result.attempts[1]).toMatchObject({ outcome: "skipped", detail: "The per-cell credit cap would be exceeded." });
   });
 
+  it("waits for a rate-limited step instead of asking the next when told to", async () => {
+    const limited = scripted({ "a/find": { kind: "rate_limited", retryAfterMs: 20_000 }, "b/find": hit("q@acme.test") });
+    expect(await runWaterfall([a, b], limited.execute, { estimate: () => 0, waitOnRateLimit: true })).toMatchObject({ status: "retry", retryAfterMs: 20_000 });
+    expect(limited.asked).toEqual(["a/find"]);
+    const vendor429 = scripted({ "a/find": { kind: "error", transient: true, message: "429", retryAfterMs: 5_000 }, "b/find": hit("q@acme.test") });
+    expect(await runWaterfall([a, b], vendor429.execute, { estimate: () => 0, waitOnRateLimit: true })).toMatchObject({ status: "retry", retryAfterMs: 5_000 });
+    expect(vendor429.asked).toEqual(["a/find"]);
+    // A plain transient error still moves on.
+    const busy = scripted({ "a/find": { kind: "error", transient: true, message: "502" }, "b/find": hit("q@acme.test") });
+    expect((await runWaterfall([a, b], busy.execute, { estimate: () => 0, waitOnRateLimit: true })).status).toBe("hit");
+  });
+
   it("does not ask a step that already missed on an earlier try", async () => {
     const run = scripted({ "b/find": hit("z@acme.test") });
     const result = await runWaterfall([a, b], run.execute, { estimate: () => 0, alreadyMissed: new Set(["a/find"]) });

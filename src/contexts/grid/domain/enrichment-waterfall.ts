@@ -76,6 +76,11 @@ export interface WaterfallOptions {
   carriedSpentCredits?: number;
   /** Stops early (cancel, deadline). */
   shouldStop?: () => boolean;
+  /**
+   * True stops at a rate-limited step (the gate or the vendor's 429) and retries the cell later, so a later and maybe
+   * pricier step is not asked while the preferred one only needs a moment.
+   */
+  waitOnRateLimit?: boolean;
 }
 
 export async function runWaterfall(
@@ -128,10 +133,12 @@ export async function runWaterfall(
       if (result.transient) {
         transient = true;
         if (result.retryAfterMs !== undefined) limitedAfterMs = Math.min(limitedAfterMs ?? Infinity, result.retryAfterMs);
+        if (result.retryAfterMs !== undefined && options.waitOnRateLimit) break;
       } else permanentMessage ??= result.message;
     } else if (result.kind === "rate_limited") {
       attempts.push({ step, outcome: "skipped", costCents: 0, detail: "The provider's rate limit is used up for now.", retryable: true });
       limitedAfterMs = Math.min(limitedAfterMs ?? Infinity, result.retryAfterMs);
+      if (options.waitOnRateLimit) break;
     } else {
       attempts.push({ step, outcome: "skipped", costCents: 0, detail: result.message });
       permanentMessage ??= result.message;

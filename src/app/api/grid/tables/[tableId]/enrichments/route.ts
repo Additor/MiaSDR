@@ -15,6 +15,7 @@ const body = z.discriminatedUnion("kind", [
     selectedOutputs: z.array(z.string()),
     maxCostCents: z.number().min(0).optional(),
     maxCredits: z.number().min(0).optional(),
+    onRateLimit: z.enum(["next", "wait"]).optional(),
     ...placement,
   }),
 ]);

@@ -29,6 +29,8 @@ export const waterfallConfigSchema = z.strictObject({
   maxCostCents: z.number().min(0).max(100_000).optional(),
   /** Vendor credits one cell may use across all steps. A step that would pass it is skipped. */
   maxCredits: z.number().min(0).max(100_000).optional(),
+  /** "next" (the default) asks the next step when one is rate limited; "wait" retries the cell later so the order holds. */
+  onRateLimit: z.enum(["next", "wait"]).optional(),
   delaySeconds: z.number().int().min(0).max(3600).optional(),
 });
 export type WaterfallConfig = z.infer<typeof waterfallConfigSchema>;

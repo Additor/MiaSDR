@@ -52,7 +52,10 @@ const retryDelayMs = (attempts: number) => Math.min(5 * 60_000, 2000 * 4 ** Math
 
 export { estimateStepCents };
 
-function stepsOf(type: string, config: Record<string, unknown>): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number; maxCredits?: number } | string {
+function stepsOf(
+  type: string,
+  config: Record<string, unknown>,
+): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number; maxCredits?: number; waitOnRateLimit?: boolean } | string {
   if (type === "enrichment") {
     const parsed = enrichmentConfigSchema.safeParse(config);
     if (!parsed.success) return "This column's configuration is invalid. Save it again.";
@@ -60,7 +63,7 @@ function stepsOf(type: string, config: Record<string, unknown>): { steps: Waterf
   }
   const parsed = waterfallConfigSchema.safeParse(config);
   if (!parsed.success) return "This column's configuration is invalid. Save it again.";
-  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents, maxCredits: parsed.data.maxCredits };
+  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents, maxCredits: parsed.data.maxCredits, waitOnRateLimit: parsed.data.onRateLimit === "wait" };
 }
 
 /** Runs one provider call for one step: validates inputs, checks the key and the rate limit, calls, and redacts. */
@@ -108,7 +111,8 @@ async function executeStep(
 
   const now = deps.now();
   const recent = provider.rateLimitPerMin === null ? [] : await deps.store.recentCalls(job.organizationId, provider.key, new Date(now.getTime() - RATE_WINDOW_MS));
-  const decision = gate.tryTake(`${job.organizationId}:${provider.key}`, recent, now.getTime(), provider.rateLimitPerMin);
+  const gateKey = `${job.organizationId}:${provider.key}`;
+  const decision = gate.tryTake(gateKey, recent, now.getTime(), provider.rateLimitPerMin);
   if (!decision.allowed) return { kind: "rate_limited", retryAfterMs: decision.retryAfterMs };
 
   const started = Date.now();
@@ -127,6 +131,8 @@ async function executeStep(
     };
   } catch (error) {
     if (error instanceof ProviderError) {
+      // The vendor said how long to wait: the other cells of this worker hold off too.
+      if (error.transient && error.retryAfterMs !== undefined) gate.hold(gateKey, deps.now().getTime() + error.retryAfterMs);
       return {
         kind: "error",
         transient: error.transient,
@@ -253,6 +259,7 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
     maxCredits: plan.maxCredits,
     estimateCredits: (step) => creditEstimates.get(stepId(step)) ?? 0,
     carriedSpentCredits: carried.spentCredits,
+    waitOnRateLimit: plan.waitOnRateLimit,
   });
 
   // On the last attempt a paid miss verdict is saved as the cell's answer instead of failing the cell.

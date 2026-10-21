@@ -39,6 +39,17 @@ describe("provider rate limit", () => {
     expect(gate.tryTake("org:q", [], now + 2, 2).allowed).toBe(true);
   });
 
+  it("holds every call to a provider until the vendor's wait is over", () => {
+    const gate = new LocalRateGate();
+    gate.hold("org:p", now + 30_000);
+    expect(gate.tryTake("org:p", [], now, null)).toEqual({ allowed: false, retryAfterMs: 30_000 });
+    expect(gate.tryTake("org:q", [], now, null).allowed).toBe(true);
+    // A shorter hold does not cut a longer one.
+    gate.hold("org:p", now + 5_000);
+    expect(gate.tryTake("org:p", [], now + 10_000, null).allowed).toBe(false);
+    expect(gate.tryTake("org:p", [], now + 30_000, null).allowed).toBe(true);
+  });
+
   it("the local gate does not count a call twice once the store shows it", () => {
     const gate = new LocalRateGate();
     gate.tryTake("org:p", [], now, 3);

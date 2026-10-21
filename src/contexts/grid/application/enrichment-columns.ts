@@ -129,6 +129,7 @@ export interface CreateWaterfallInput extends Placement {
   selectedOutputs: string[];
   maxCostCents?: number;
   maxCredits?: number;
+  onRateLimit?: "next" | "wait";
   autoRun?: boolean;
   delaySeconds?: number;
 }
@@ -157,6 +158,7 @@ export async function createWaterfallColumns(deps: ColumnDeps, actor: Actor, tab
       outputs: Object.fromEntries(plan.outputRows.map((r) => [r.o.outputKey, r.key])),
       maxCostCents: input.maxCostCents,
       maxCredits: input.maxCredits,
+      onRateLimit: input.onRateLimit,
       delaySeconds: input.delaySeconds,
     });
     return {

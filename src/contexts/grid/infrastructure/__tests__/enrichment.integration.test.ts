@@ -428,6 +428,28 @@ describeDb("grid enrichment runs", () => {
     expect((await cells(rows[0])).cells).toMatchObject({ workEmail: "ada@acme.com" });
   });
 
+  it("holds the other cells of a tick once the vendor answers 429, without spending their attempts", async () => {
+    const { actor, table } = await fixture([1, 2, 3, 4, 5, 6].map((i) => ({ name: `Person ${i}`, domain: "acme.com" })));
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor);
+    await findColumn(d, actor, table);
+    const { ProviderError } = await import("../../application/enrichment-ports");
+    let calls = 0;
+    f.handler = async () => {
+      calls++;
+      throw new ProviderError("fake returned 429: slow down", true, undefined, 30_000);
+    };
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1", { concurrency: 1 })));
+    expect(calls).toBe(1);
+    const queued = await sql`select attempts, run_after > now() + interval '20 seconds' as later from grid_jobs where table_id = ${table} and status = 'queued'`;
+    expect(queued).toHaveLength(6);
+    // Only the cell that got the 429 used an attempt; the held ones wait for free.
+    expect(queued.map((j) => j.attempts).sort()).toEqual([0, 0, 0, 0, 0, 1]);
+    expect(queued.every((j) => j.later)).toBe(true);
+  });
+
   it("holds cells back when a provider's rate limit is used up, without spending their attempts", async () => {
     const { actor, table } = await fixture(Array.from({ length: 5 }, (_, i) => ({ name: `Person${i} Test`, domain: "acme.com" })));
     const f = fake();
