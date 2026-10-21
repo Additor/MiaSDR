@@ -154,35 +154,37 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
       </ol>
       <div className="flex flex-wrap gap-2">
         {run.status === "active" && (
-          <Button size="sm" variant="outline" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("pause")}>
+          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("pause")}>
             Pause follow-ups
           </Button>
         )}
         {run.status === "paused" && (
-          <Button size="sm" variant="outline" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("resume")}>
+          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("resume")}>
             Resume
           </Button>
         )}
         {live && (
-          <Button size="sm" variant="outline" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("skip")}>
+          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("skip")}>
             Skip step
-          </Button>
-        )}
-        {live && (
-          <Button size="sm" variant="destructive" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => setConfirmStop(true)}>
-            Stop follow-ups
           </Button>
         )}
         {showRestart && (
           <Button
             size="sm"
             variant="outline"
+            className="max-sm:h-11"
             disabled={off || !state.canRestart}
             onClick={() => call("restart")}
             title={disabledReason ?? restartHelp ?? "Starts the follow-ups again from the first step and replaces the current run"}
             aria-describedby={locked ? "after-reply-disabled-reason" : restartHelp ? "restart-blocked-reason" : undefined}
           >
             Restart follow-ups
+          </Button>
+        )}
+        {/* The destructive action comes last. */}
+        {live && (
+          <Button size="sm" variant="destructive" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => setConfirmStop(true)}>
+            Stop follow-ups
           </Button>
         )}
       </div>

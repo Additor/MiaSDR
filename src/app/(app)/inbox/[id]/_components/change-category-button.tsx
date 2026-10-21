@@ -73,7 +73,7 @@ export function ChangeCategoryButton({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size={size} />}>Change category</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" size={size} className="max-sm:h-11" />}>Change category</DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
