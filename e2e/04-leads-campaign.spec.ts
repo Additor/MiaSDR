@@ -64,7 +64,7 @@ test.describe("leads import to campaign start", () => {
     await page.getByRole("button", { name: "Add matching leads" }).click();
     await expect(page.locator('[role="status"]').filter({ hasText: "Added 2 leads." })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Leads in this campaign" })).toBeVisible();
-    await expect(page.getByTestId("leads-count")).toHaveText("2");
+    await expect(page.getByTestId("tab-all")).toHaveText(/^All\s*2$/);
 
     // Preview now uses a real lead.
     await openCampaignTab(page, "sequence");

@@ -8,10 +8,10 @@ import { CampaignStatusToken } from "./campaign-status-token";
 const SENDERS_SHOWN = 2;
 
 function sendersText(channel: OutreachChannelName, senders: string[]): string {
-  if (senders.length === 0) return channel === "linkedin" ? "Sends from every connected LinkedIn account" : "Sends from every connected mailbox";
+  if (senders.length === 0) return channel === "linkedin" ? "All LinkedIn accounts" : "All mailboxes";
   const shown = senders.slice(0, SENDERS_SHOWN).join(", ");
   const more = senders.length - SENDERS_SHOWN;
-  return more > 0 ? `Sends from ${shown} and ${more} more` : `Sends from ${shown}`;
+  return more > 0 ? `From ${shown} and ${more} more` : `From ${shown}`;
 }
 
 /**

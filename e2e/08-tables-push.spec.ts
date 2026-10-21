@@ -50,7 +50,7 @@ test.describe("tables edit and push to campaign", () => {
     // The campaign holds the four leads, with the typed row among them. Nothing was started.
     await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}$/);
     await expect(page.getByRole("heading", { name: "Leads in this campaign" })).toBeVisible();
-    await expect(page.getByTestId("leads-count")).toHaveText("4");
+    await expect(page.getByTestId("tab-all")).toHaveText(/^All\s*4$/);
     for (const email of ["tess@s8-ventures.test", "uri@s8-ventures.test", "vera@s8-ventures.test", "wes@s8-ventures.test"]) {
       await expect(page.getByRole("cell", { name: email, exact: true })).toBeVisible();
     }

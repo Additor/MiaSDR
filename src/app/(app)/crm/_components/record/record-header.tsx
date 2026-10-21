@@ -68,8 +68,8 @@ export function MetaLine({ label, items, testId }: { label: string; items: React
     <ul
       aria-label={label}
       data-testid={testId}
-      // A phone stacks the items; from sm up they run on one line with middots between them.
-      className="flex flex-col items-start gap-x-2 gap-y-1 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:[&>li+li]:before:mr-2 sm:[&>li+li]:before:text-muted-foreground/60 sm:[&>li+li]:before:content-['·']"
+      // The items run on one line with middots between them and wrap where the width runs out, a phone included.
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground [&>li+li]:before:mr-2 [&>li+li]:before:text-muted-foreground/60 [&>li+li]:before:content-['·']"
     >
       {shown.map((item, index) => (
         <li key={index} className="flex min-w-0 items-center">

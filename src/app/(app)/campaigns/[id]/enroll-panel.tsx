@@ -44,15 +44,15 @@ function skippedSummary(result: Result, linkedin: boolean): { count: number; tex
 }
 
 /**
- * The Leads tab as one ruled section: the title with the lead count and the Add leads button, the add panel under the
- * header when open, then the list (`children`). The panel starts open while the campaign has no leads.
+ * The Leads tab as one ruled section: the title and the Add leads button, the add panel under the header when open, then
+ * the list (`children`). The count lives on the All chip and in the summary above, so the title carries none. The panel
+ * starts open while the campaign has no leads.
  */
 export function LeadsSection({ id, count, disabled, channel = "email", children }: { id: string; count: number; disabled: boolean; channel?: "email" | "linkedin"; children: ReactNode }) {
   const [open, setOpen] = useState(count === 0 && !disabled);
   return (
     <CampaignSection
       title="Leads in this campaign"
-      count={<span data-testid="leads-count">{count.toLocaleString("en-US")}</span>}
       testId="campaign-leads"
       // The tab bar above carries the rule, so the section starts without its own.
       className="border-t-0 pt-0"
