@@ -2,7 +2,7 @@
 
 Clay-style tables: folder, workbook, table, typed columns, rows. Cells live in `grid_rows.cells` (jsonb keyed by column key), per-cell run state in `cell_meta`. Every table carries `organization_id`; every query filters on it, and another tenant's id answers `NotFoundError`.
 
-Two modules share this context. The enrichment module owns providers, credentials, AI and enrichment columns, `grid_jobs`, `grid_cell_runs` writes and `/run` (`application/enrichment-*.ts`). The core module (this section) owns everything else. They meet at the functions listed under "Seams".
+Two modules share this context. The enrichment module owns providers, credentials, AI and enrichment columns, `grid_jobs`, `grid_cell_runs` writes and `/run`, and lives in `enrichment/` with its own `domain`, `application` and `infrastructure` folders. The core module (this section) owns everything else. They meet at the functions listed under "Seams".
 
 ## Core module
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { createEnrichmentColumns, createWaterfallColumns, updateRunnableColumn } from "@/contexts/grid/application/enrichment-columns";
-import { gridColumnDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
+import { createEnrichmentColumns, createWaterfallColumns, updateRunnableColumn } from "@/contexts/grid/enrichment/application/enrichment-columns";
+import { gridColumnDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/shared/api";
 
 const placement = { afterColumnId: z.string().uuid().optional(), autoRun: z.boolean().optional(), delaySeconds: z.number().int().min(0).max(3600).optional(), reuseDays: z.number().int().min(0).max(365).optional(),

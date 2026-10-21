@@ -47,7 +47,7 @@ describeDb("credential stores write v2 envelopes", () => {
   });
 
   it("grid provider store: create and replace pass the envelope CHECK", async () => {
-    const { drizzleProviderStore } = await import("@/contexts/grid/infrastructure/enrichment-provider-store");
+    const { drizzleProviderStore } = await import("@/contexts/grid/enrichment/infrastructure/enrichment-provider-store");
     const { credentialCipher } = await import("../credential-cipher");
     const created = await drizzleProviderStore.create(orgId, { key: "hunter", name: "Hunter", baseUrl: null, defaultCostCents: 0, rateLimitPerMin: null, config: {} }, credentialCipher.encrypt('{"apiKey":"g1"}'));
     const read = async () => (await sql`select encrypted_payload, encryption_version from grid_provider_credentials where provider_id = ${created.id}`)[0];

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { deleteProvider, updateProvider } from "@/contexts/grid/application/enrichment-providers";
-import { gridProviderDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
+import { deleteProvider, updateProvider } from "@/contexts/grid/enrichment/application/enrichment-providers";
+import { gridProviderDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withAdmin } from "@/shared/api";
 
 const body = z.object({

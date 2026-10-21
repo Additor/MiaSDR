@@ -1,7 +1,7 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { EXTERNAL_PROVIDERS, managedProvider, validateCredentialInput } from "../domain/providers";
-import { assertCredentialVerified, type CredentialVerifier } from "./credential-verifier";
+import { assertCredentialVerified, type CredentialVerifier } from "@/platform/credentials/verify";
 
 /** What the UI may see about a connection. There is deliberately no field for the secret. */
 export interface IntegrationView {

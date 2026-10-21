@@ -1,6 +1,6 @@
-import { CsvError } from "@/contexts/leads/infrastructure/csv";
-import { parseSpreadsheet } from "@/contexts/leads/infrastructure/spreadsheet";
-import { SheetContentError } from "@/contexts/leads/infrastructure/xlsx";
+import { CsvError } from "@/platform/files/csv";
+import { parseSpreadsheet } from "@/platform/files/spreadsheet";
+import { SheetContentError } from "@/platform/files/xlsx";
 import { ValidationError } from "@/shared/errors";
 import type { ParsedSheet } from "../application/import-export";
 

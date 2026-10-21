@@ -1,5 +1,5 @@
 import { registerCellsChangedListener } from "../application/cell-events";
-import { cascadeFromEdits } from "../application/enrichment-run";
+import { cascadeFromEdits } from "../enrichment/application/enrichment-run";
 import type { GridDeps } from "../application/ports";
 import { isStaticColumnType } from "../domain/column-types";
 import { campaignHandoff } from "./campaign-handoff";
@@ -7,7 +7,7 @@ import { drizzleColumnStore } from "./drizzle-column-store";
 import { drizzleCellRunStore, drizzleFormulaStore } from "./drizzle-formula-store";
 import { drizzleRowStore } from "./drizzle-row-store";
 import { drizzleStructureStore } from "./drizzle-structure-store";
-import { gridRunDeps } from "./enrichment-composition";
+import { gridRunDeps } from "../enrichment/infrastructure/enrichment-composition";
 import { createFormulaAuthor } from "./formula-author";
 
 /** The grid's adapters. Routes call `gridDeps()` per request. */

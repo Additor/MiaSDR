@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { assertCredentialVerified, verifyFailureMessage, type VerifyFailure } from "../../application/credential-verifier";
+import { assertCredentialVerified, verifyFailureMessage, type VerifyFailure } from "@/platform/credentials/verify";
 import { createCredentialVerifier } from "../credential-verifier";
 
 const KEY = "sk-ant-SECRET-key-0123456789";

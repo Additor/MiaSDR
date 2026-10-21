@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { cancelRun, requestRun, runStatus } from "@/contexts/grid/application/enrichment-run";
-import { gridRunDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
+import { cancelRun, requestRun, runStatus } from "@/contexts/grid/enrichment/application/enrichment-run";
+import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/shared/api";
 
 const body = z.object({

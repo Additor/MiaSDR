@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { cellRuns } from "@/contexts/grid/application/enrichment-run";
-import { gridRunDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
+import { cellRuns } from "@/contexts/grid/enrichment/application/enrichment-run";
+import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/shared/api";
 
 /** Run ledger of one cell: provider, outcome, cost and latency per attempt, newest first. */

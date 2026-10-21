@@ -124,7 +124,7 @@ ZeroBounce, MillionVerifier and NeverBounce can report errors with HTTP 200; Mia
 
 ## Verification of these adapters
 
-Each adapter was written from the vendor's public API docs on 2026-10-20 (2026-10-16 for Apollo), and its tests use the response samples those docs show. Each adapter file in `src/contexts/grid/infrastructure/vendors` names the pages it follows.
+Each adapter was written from the vendor's public API docs on 2026-10-20 (2026-10-16 for Apollo), and its tests use the response samples those docs show. Each adapter file in `src/contexts/grid/enrichment/infrastructure/vendors` names the pages it follows.
 
 On 2026-10-20 the seven newer vendors were called live with an invalid key. Every key check answered "rejected", and every call failed as a permanent error with the vendor's own text, which confirms the hosts, paths, key placement and bad-key handling. NeverBounce repeats the key in that text; MiaSDR removes it before anything is stored.
 

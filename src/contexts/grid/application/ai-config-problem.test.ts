@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { aiConfigSchema } from "../domain/enrichment-config";
-import { aiConfigProblem } from "./enrichment-columns";
+import { aiConfigSchema } from "../enrichment/domain/enrichment-config";
+import { aiConfigProblem } from "../enrichment/application/enrichment-columns";
 
 const problem = (config: unknown) => {
   const parsed = aiConfigSchema.safeParse(config);

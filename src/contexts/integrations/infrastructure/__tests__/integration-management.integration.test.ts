@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { CredentialVerifier, VerifyResult } from "../../application/credential-verifier";
+import type { CredentialVerifier, VerifyResult } from "@/platform/credentials/verify";
 import type { Actor } from "@/shared/errors";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/shared/errors";
 import { describeDb, dropOrgs, testSql, useTestEnv } from "@/test-support/db";

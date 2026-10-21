@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { retryFailedCells } from "@/contexts/grid/application/enrichment-run";
-import { gridRunDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
+import { retryFailedCells } from "@/contexts/grid/enrichment/application/enrichment-run";
+import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/shared/api";
 
 /** Re-queues failed cells only. */

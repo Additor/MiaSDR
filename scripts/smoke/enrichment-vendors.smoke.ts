@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ProviderAnswer, ProviderRecord } from "@/contexts/grid/application/enrichment-ports";
-import { catalogEntry, SIMPLE_ADAPTER_KEYS } from "@/contexts/grid/domain/enrichment-catalog";
-import { CONTRACTS, type ContractKey } from "@/contexts/grid/domain/enrichment-contracts";
-import { redactSecrets } from "@/contexts/grid/domain/enrichment-redact";
-import { createAdapterRegistry } from "@/contexts/grid/infrastructure/enrichment-adapters";
-import { createEnrichmentVerifier } from "@/contexts/grid/infrastructure/vendors";
+import type { ProviderAnswer, ProviderRecord } from "@/contexts/grid/enrichment/application/enrichment-ports";
+import { catalogEntry, SIMPLE_ADAPTER_KEYS } from "@/contexts/grid/enrichment/domain/enrichment-catalog";
+import { CONTRACTS, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
+import { redactSecrets } from "@/contexts/grid/enrichment/domain/enrichment-redact";
+import { createAdapterRegistry } from "@/contexts/grid/enrichment/infrastructure/enrichment-adapters";
+import { createEnrichmentVerifier } from "@/contexts/grid/enrichment/infrastructure/vendors";
 
 /**
  * Calls each enrichment vendor for real, once, with your own key. A vendor without a key is skipped. Each call spends at

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateFormula, parseFormula } from "./formula";
 import { SINGLE_TOKEN, TOKEN, scanKey, toColumnKey, uniqueColumnKey } from "./keys";
 import { configDependencies } from "./column-config";
-import { render, renderValue, tokensIn } from "./enrichment-templates";
+import { render, renderValue, tokensIn } from "../enrichment/domain/enrichment-templates";
 import { suggestMapping } from "./import-plan";
 
 interface Golden {

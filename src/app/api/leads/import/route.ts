@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ImportInputError, importLeads } from "@/contexts/leads/application/import-leads";
-import { CsvError } from "@/contexts/leads/infrastructure/csv";
-import { parseSpreadsheet } from "@/contexts/leads/infrastructure/spreadsheet";
+import { CsvError } from "@/platform/files/csv";
+import { parseSpreadsheet } from "@/platform/files/spreadsheet";
 import { leadImportDeps } from "@/contexts/leads/infrastructure/composition";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";

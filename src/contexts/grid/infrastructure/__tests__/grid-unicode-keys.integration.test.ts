@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { GridDeps } from "../../application/ports";
-import { render } from "../../domain/enrichment-templates";
+import { render } from "../../enrichment/domain/enrichment-templates";
 import type { Actor } from "@/shared/errors";
 import { describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 import { gridOrg } from "./grid-test-kit";

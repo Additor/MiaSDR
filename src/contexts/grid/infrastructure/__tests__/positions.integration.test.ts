@@ -13,11 +13,11 @@ describeDb("positions stay distinct and ordered", () => {
   let structure: typeof import("../../application/structure-management");
   let columnsUc: typeof import("../../application/column-management");
   let m: {
-    providers: typeof import("../../application/enrichment-providers");
-    columns: typeof import("../../application/enrichment-columns");
-    adapters: typeof import("../enrichment-adapters");
-    pstore: typeof import("../enrichment-provider-store");
-    rstore: typeof import("../enrichment-run-store");
+    providers: typeof import("../../enrichment/application/enrichment-providers");
+    columns: typeof import("../../enrichment/application/enrichment-columns");
+    adapters: typeof import("../../enrichment/infrastructure/enrichment-adapters");
+    pstore: typeof import("../../enrichment/infrastructure/enrichment-provider-store");
+    rstore: typeof import("../../enrichment/infrastructure/enrichment-run-store");
     crypto: typeof import("@/contexts/integrations/infrastructure/credential-crypto");
   };
 
@@ -40,11 +40,11 @@ describeDb("positions stay distinct and ordered", () => {
     structure = await import("../../application/structure-management");
     columnsUc = await import("../../application/column-management");
     m = {
-      providers: await import("../../application/enrichment-providers"),
-      columns: await import("../../application/enrichment-columns"),
-      adapters: await import("../enrichment-adapters"),
-      pstore: await import("../enrichment-provider-store"),
-      rstore: await import("../enrichment-run-store"),
+      providers: await import("../../enrichment/application/enrichment-providers"),
+      columns: await import("../../enrichment/application/enrichment-columns"),
+      adapters: await import("../../enrichment/infrastructure/enrichment-adapters"),
+      pstore: await import("../../enrichment/infrastructure/enrichment-provider-store"),
+      rstore: await import("../../enrichment/infrastructure/enrichment-run-store"),
       crypto: await import("@/contexts/integrations/infrastructure/credential-crypto"),
     };
   });

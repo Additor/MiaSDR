@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { MAX_IMPORT_ROWS } from "@/contexts/leads/application/import-leads";
 import { suggestMapping } from "@/contexts/leads/domain/import-plan";
-import { CsvError, MAX_FILE_BYTES } from "@/contexts/leads/infrastructure/csv";
+import { CsvError, MAX_FILE_BYTES } from "@/platform/files/csv";
 import { collectExamples } from "@/contexts/leads/domain/import-summary";
-import { parseSpreadsheet } from "@/contexts/leads/infrastructure/spreadsheet";
+import { parseSpreadsheet } from "@/platform/files/spreadsheet";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 
 /** Reads the uploaded CSV and returns its headers, up to three distinct example values per column and a guessed mapping. Stores nothing. */

@@ -16,11 +16,6 @@ const PUBLIC_INFRASTRUCTURE = new Set(["identity/infrastructure/session", "ident
 const PRIVATE_IMPORTS: Record<string, string[]> = {
   "src/app/api/dev/inbound/route.ts": ["outreach/email/infrastructure/fake-mailbox-provider"],
   "src/app/api/grid/tables/[tableId]/import/route.ts": ["grid/infrastructure/parse-upload"],
-  "src/app/api/leads/import/preview/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
-  "src/app/api/leads/import/read-form.ts": ["leads/infrastructure/csv"],
-  "src/app/api/leads/import/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
-  "src/app/api/leads/import/summary/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
-  "src/app/api/linkedin/search-batches/route.ts": ["leads/infrastructure/csv", "leads/infrastructure/spreadsheet"],
   "src/app/api/webhooks/dev-fakes/route.ts": ["identity/infrastructure/e2e-rate-limit", "outreach/email/infrastructure/fake-mailbox-provider", "outreach/linkedin/infrastructure/fake-linkedin-gateway"],
 };
 
@@ -62,8 +57,8 @@ describe("app boundaries", () => {
       'import { linkedinJobs } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";',
       'import { requireOrgContext } from "@/contexts/identity/infrastructure/session";',
       'import { drizzleLeadStore } from "@/contexts/leads/infrastructure/drizzle-lead-store";',
-      'const csv = await import("@/contexts/leads/infrastructure/csv");',
+      'const q = await import("@/contexts/leads/infrastructure/queries");',
     ].join("\n");
-    expect(privateImports(source)).toEqual(["leads/infrastructure/csv", "leads/infrastructure/drizzle-lead-store"]);
+    expect(privateImports(source)).toEqual(["leads/infrastructure/drizzle-lead-store", "leads/infrastructure/queries"]);
   });
 });

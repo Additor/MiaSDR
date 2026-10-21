@@ -1,4 +1,4 @@
-import { gridJobs } from "@/contexts/grid/infrastructure/enrichment-composition";
+import { gridJobs } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { conversationJobs } from "@/contexts/conversations/ai/infrastructure/ai-composition";
 import { sequenceJobs } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import { emailJobs } from "@/contexts/outreach/infrastructure/composition";

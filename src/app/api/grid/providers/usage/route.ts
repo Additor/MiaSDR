@@ -1,5 +1,5 @@
-import { providerUsage, USAGE_DAYS } from "@/contexts/grid/application/enrichment-run";
-import { gridRunDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
+import { providerUsage, USAGE_DAYS } from "@/contexts/grid/enrichment/application/enrichment-run";
+import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/shared/api";
 
 /** Each provider's calls, found and missed answers, errors, reuses, credits and cost over `days` (default 30). */

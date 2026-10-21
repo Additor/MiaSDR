@@ -4,8 +4,8 @@ import type { Actor } from "@/shared/errors";
 import { ValidationError } from "@/shared/errors";
 import { suggestMapping } from "../../domain/import-plan";
 import { RAW_LIMITS } from "../../domain/raw";
-import { parseCsv } from "../csv";
-import { parseXlsx } from "../xlsx";
+import { parseCsv } from "@/platform/files/csv";
+import { parseXlsx } from "@/platform/files/xlsx";
 import { describeDb, dropOrgs, testSql, useTestEnv } from "@/test-support/db";
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
