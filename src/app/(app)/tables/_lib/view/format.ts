@@ -109,9 +109,9 @@ export function cellStatus(row: GridRow, columnKey: string): { state: "idle" | "
   return { state: "idle" };
 }
 
-/** A cell's last result in words, for the cell drawer. */
-export function cellResultText(meta: Pick<CellMeta, "status" | "outcome">): string | null {
-  if (meta.status === "success") return meta.outcome === "miss" ? "Nothing found or settled" : "Found";
+/** A cell's last result in words, for the cell drawer. A miss that kept a value holds an unsettled verdict, such as catch-all. */
+export function cellResultText(meta: Pick<CellMeta, "status" | "outcome">, hasValue = false): string | null {
+  if (meta.status === "success") return meta.outcome !== "miss" ? "Found" : hasValue ? "Not settled: the first verdict a provider gave" : "Nothing found";
   if (meta.status === "error" || meta.status === "failed") return "Failed";
   if (meta.status === "queued" || meta.status === "waiting") return "Waiting to run";
   if (meta.status === "running") return "Running";

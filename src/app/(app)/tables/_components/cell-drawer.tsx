@@ -67,6 +67,8 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
 
   const value = row.cells[column.key];
   const meta = row.cellMeta[column.key];
+  // Verdicts read in words (Catch-all); the stored code shows underneath when it differs.
+  const shown = typeof value === "string" ? displayValue(value, column) : "";
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
@@ -82,7 +84,8 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
             <h3 id="cd-value" className="mb-1 text-xs font-medium text-muted-foreground">
               Value
             </h3>
-            <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2.5 text-xs break-words whitespace-pre-wrap">{editorText(value) || displayValue(value, column) || "(empty)"}</pre>
+            <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2.5 text-xs break-words whitespace-pre-wrap">{shown || editorText(value) || "(empty)"}</pre>
+            {typeof value === "string" && shown !== value && <p className="mt-1 text-xs text-muted-foreground">Stored as {value}</p>}
           </section>
 
           {meta && (
@@ -91,10 +94,10 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
                 State
               </h3>
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                {cellResultText(meta) && (
+                {cellResultText(meta, shown !== "") && (
                   <>
                     <dt className="text-muted-foreground">Result</dt>
-                    <dd>{cellResultText(meta)}</dd>
+                    <dd>{cellResultText(meta, shown !== "")}</dd>
                   </>
                 )}
                 {(meta.costCents !== undefined || meta.credits !== undefined) && (
