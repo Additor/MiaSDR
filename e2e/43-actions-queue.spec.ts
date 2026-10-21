@@ -146,7 +146,9 @@ test.describe("smoke at 390x844 in dark mode", () => {
   test("rows keep their time on screen and are tall enough to touch", async ({ page }) => {
     await signInAdmin(page);
     await page.goto("/actions");
-    const rows = page.getByTestId("queue-item");
+    // The list streams in behind a skeleton, and for a moment the streamed copy and the shown one are both in the page.
+    // Measure the shown rows only.
+    const rows = page.getByTestId("queue-item").filter({ visible: true });
     await expect(rows.first()).toBeVisible();
     await expectNoHorizontalOverflow(page);
     for (const row of await rows.all()) {
