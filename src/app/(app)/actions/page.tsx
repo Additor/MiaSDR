@@ -31,6 +31,7 @@ import { ListSkeleton } from "@/components/shell/list-skeleton";
 import { FilterChips } from "@/components/shell/filter-chips";
 import { ActiveFilterChips } from "@/components/shell/filter-panel";
 import { ListToolbar } from "@/components/shell/list-toolbar";
+import { InfoTip, KeyboardHint } from "@/components/shell/info-tip";
 import { PageHeader } from "@/components/shell/page-header";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
@@ -56,7 +57,7 @@ export default function ActionsPage({ searchParams }: PageProps<"/actions">) {
 }
 
 /** A list of work below the queue. With nothing in it the section shrinks to one summary line. */
-function Section({ id, title, description, count, icon, children }: { id: string; title: string; description: string; count: number; icon?: ReactNode; children: ReactNode }) {
+function Section({ id, title, description, count, icon, children }: { id: string; title: string; description?: string; count: number; icon?: ReactNode; children: ReactNode }) {
   // A source with nothing in it has no section. The page folds those into one line at the end.
   if (count === 0) return null;
   return (
@@ -66,20 +67,10 @@ function Section({ id, title, description, count, icon, children }: { id: string
         <h2 className="text-sm font-semibold">{title}</h2>
         {/* Lavender marks work that waits for a person, here and in the queue groups above. */}
         <span className="text-xs font-semibold text-sidebar-count tabular-nums">{count}</span>
+        {description && <InfoTip label={`About ${title}`}>{description}</InfoTip>}
       </div>
-      <p className="text-xs text-muted-foreground">{description}</p>
       <ul className="divide-y rounded-lg border text-sm">{children}</ul>
     </section>
-  );
-}
-
-function SummaryRow({ count, title }: { count: number; title: string }) {
-  return (
-    <div className="flex items-baseline gap-2 text-sm text-muted-foreground">
-      <span className="tabular-nums">{count}</span>
-      <span aria-hidden>·</span>
-      <span>{title}</span>
-    </div>
   );
 }
 
@@ -112,11 +103,7 @@ function taskTarget(t: TaskRow): { href: string; action: string } {
   return { href: personHref(t.personId, t.personLifecycle), action: "Open lead" };
 }
 
-const TASK_SECTIONS: Record<QueueScope, { title: string; description: string }> = {
-  mine: { title: "Your tasks", description: "Open tasks assigned to you, overdue first." },
-  unassigned: { title: "Unassigned tasks", description: "Open tasks that nobody holds yet." },
-  others: { title: "Tasks held by teammates", description: "Open tasks assigned to someone else." },
-};
+const TASK_SECTIONS: Record<QueueScope, string> = { mine: "Your tasks", unassigned: "Unassigned tasks", others: "Tasks held by teammates" };
 
 const toView = (item: QueueItem): QueueItemView => JSON.parse(JSON.stringify(item));
 
@@ -194,7 +181,6 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   // Groups with work show in their usual order. The empty ones collapse into one line below them.
   const visibleGroups = QUEUE_GROUPS.filter((g) => (raw.errorsOnly !== "" ? g === "problem" : !raw.group || raw.group === g));
   const groups = queue ? visibleGroups.filter((g) => queue.groups[g].total > 0) : [];
-  const emptyGroups = queue ? visibleGroups.filter((g) => queue.groups[g].total === 0) : [];
   const queueEmpty = queue !== null && groups.length === 0;
   const nowIso = new Date(now).toISOString();
   const oldestWaiting = counts.oldestWaiting[scope];
@@ -208,14 +194,6 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     unmatchedSenders: extras.openIdentityExceptions,
     deadLetters: dead?.total ?? 0,
   });
-
-  const quiet = [
-    ...(queue && !queueEmpty ? emptyGroups.map((g) => QUEUE_GROUP_LABELS[g].title) : []),
-    ...(scopedTasks.length === 0 ? [TASK_SECTIONS[scope].title] : []),
-    ...(extras.uncertainCampaignSends.length === 0 ? ["Unconfirmed campaign sends"] : []),
-    ...(dead && dead.total === 0 ? ["Inbound dead letters"] : []),
-    ...(extras.openIdentityExceptions === 0 ? ["Unmatched senders"] : []),
-  ];
 
   // The oldest wait has a name when it is the first item of one of the lists in view, which it is unless a filter hides it.
   const view = actionsViewFrom(params);
@@ -232,9 +210,10 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
         }
       : null;
   const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", classification: "Classifications", next_step: "Next steps" };
+  // Every group in view with its count, the empty ones muted, so the strip says what waits and what does not in one line.
   const jumps = [
-    ...groups.map((g) => ({ href: `#group-${g}`, label: SHORT[g], count: queue?.groups[g].total ?? 0 })),
-    ...(scopedTasks.length > 0 ? [{ href: "#section-tasks", label: "Tasks", count: scopedTasks.length }] : []),
+    ...visibleGroups.map((g) => ({ href: `#group-${g}`, label: SHORT[g], count: queue?.groups[g].total ?? 0 })),
+    { href: "#section-tasks", label: "Tasks", count: scopedTasks.length },
     ...(extras.uncertainCampaignSends.length > 0 ? [{ href: "#section-sends", label: "Unconfirmed sends", count: extras.uncertainCampaignSends.length }] : []),
     ...(dead && dead.total > 0 ? [{ href: "#section-dead", label: "Dead letters", count: dead.total }] : []),
     ...(extras.openIdentityExceptions > 0 ? [{ href: "#section-unmatched", label: "Unmatched senders", count: extras.openIdentityExceptions }] : []),
@@ -258,6 +237,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     <>
       <ListKeys />
       <ListToolbar
+        end={groups.length > 0 || scopedTasks.length > 0 ? <KeyboardHint noun="rows" /> : undefined}
         filters={{
           count: queueChips.length,
           panel: <QueueFilters values={filterValues} scope={scope} subcategories={subcategories} campaigns={campaigns} />,
@@ -266,35 +246,41 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
         <FilterChips label="Whose work" items={scopeChips.map((c) => ({ href: scopeHref(c.scope), active: scope === c.scope, testId: `scope-${c.scope}`, label: c.label, count: counts.work[c.scope] }))} />
       </ListToolbar>
       <ActiveFilterChips chips={queueChips} clearHref={`/actions?scope=${scope}`} />
-      {oldestWaiting && (
-        <p className="text-sm text-muted-foreground" data-testid="queue-oldest">
-          The oldest has waited {elapsed(oldestWaiting, nowIso, true)}
-          {oldestItem && (
-            <>
-              :{" "}
-              <Link href={oldestItem.href} className="font-medium text-foreground underline-offset-4 hover:underline" data-testid="queue-oldest-link">
-                {oldestItem.name}
-              </Link>
-            </>
+      {!clear && (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
+          <nav aria-label="Jump to a list" className="flex flex-wrap gap-x-4 text-muted-foreground" data-testid="queue-jumps">
+            {jumps.map((jump) =>
+              jump.count > 0 ? (
+                <a key={jump.href} href={jump.href} className="inline-flex min-h-8 items-center gap-1 underline-offset-4 hover:text-foreground hover:underline max-sm:min-h-11">
+                  {jump.label} <span className="text-xs font-semibold text-sidebar-count tabular-nums">{jump.count}</span>
+                </a>
+              ) : (
+                <span key={jump.href} className="inline-flex min-h-8 items-center gap-1 text-muted-foreground/60 max-sm:min-h-11">
+                  {jump.label} <span className="text-xs tabular-nums">0</span>
+                </span>
+              ),
+            )}
+          </nav>
+          {oldestWaiting && (
+            <p className="text-muted-foreground" data-testid="queue-oldest">
+              Oldest wait {elapsed(oldestWaiting, nowIso, true)}
+              {oldestItem && (
+                <>
+                  {", "}
+                  <Link href={oldestItem.href} className="font-medium text-foreground underline-offset-4 hover:underline" data-testid="queue-oldest-link">
+                    {oldestItem.name}
+                  </Link>
+                </>
+              )}
+            </p>
           )}
-          .
-        </p>
-      )}
-      {jumps.length >= 3 && (
-        <nav aria-label="Jump to a list" className="flex flex-wrap gap-x-4 text-sm text-muted-foreground" data-testid="queue-jumps">
-          {jumps.map((jump) => (
-            <a key={jump.href} href={jump.href} className="inline-flex min-h-8 items-center gap-1 underline-offset-4 hover:text-foreground hover:underline max-sm:min-h-11">
-              {jump.label} <span className="text-xs font-semibold text-sidebar-count tabular-nums">{jump.count}</span>
-            </a>
-          ))}
-        </nav>
+        </div>
       )}
       {filterError && (
         <p role="alert" className="text-sm text-destructive">
           {filterError}
         </p>
       )}
-      {queue && queueEmpty && !filtered && !clear && <SummaryRow count={0} title="Replies, follow-ups, classifications, next steps and problems" />}
       {queue && queueEmpty && (filtered || clear) && (
         <EmptyState
           title={hasAnyFilter(filterValues) ? "No actions match these filters" : scope === "others" ? "Teammates have nothing waiting" : scope === "unassigned" ? "Nothing is waiting for someone to take it" : "Nothing waits on you"}
@@ -325,7 +311,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
               key={`${g}:${query}:${page.total}:${page.items[0]?.recordId ?? ""}`}
               group={g}
               title={QUEUE_GROUP_LABELS[g].title}
-              description={QUEUE_GROUP_LABELS[g].description}
+              description={g === "classification" || g === "problem" ? QUEUE_GROUP_LABELS[g].description : undefined}
               total={page.total}
               initialItems={page.items.map(toView)}
               initialCursor={page.nextCursor}
@@ -336,7 +322,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
           );
         })}
 
-      <Section id="section-tasks" title={TASK_SECTIONS[scope].title} description={TASK_SECTIONS[scope].description} count={scopedTasks.length}>
+      <Section id="section-tasks" title={TASK_SECTIONS[scope]} count={scopedTasks.length}>
         {scopedTasks.map(taskRow)}
       </Section>
 
@@ -387,7 +373,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
         </Section>
       )}
 
-      <Section id="section-unmatched" title="Unmatched senders" description="Messages from senders we could not match to a person." count={extras.openIdentityExceptions}>
+      <Section id="section-unmatched" title="Unmatched senders" description="Messages from senders we could not match to a person. File each one under a person." count={extras.openIdentityExceptions}>
         <Row
           id="unmatched"
           href="/inbox/unmatched"
@@ -396,16 +382,6 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
         />
       </Section>
 
-      {(groups.length > 0 || scopedTasks.length > 0) && (
-        <p className="hidden text-xs text-muted-foreground sm:block">Keyboard: j and k move between rows, Enter opens the highlighted one.</p>
-      )}
-
-      {/* Everything that is empty, said once. When nothing waits at all the empty state above says it instead. */}
-      {quiet.length > 0 && !clear && (
-        <p className="text-sm text-muted-foreground" data-testid="queue-quiet">
-          Nothing in {quiet.join(", ")}.
-        </p>
-      )}
     </>
   );
 }

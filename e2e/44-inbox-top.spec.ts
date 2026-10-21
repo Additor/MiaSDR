@@ -59,7 +59,7 @@ test.describe("the top of the Inbox is about conversations", () => {
     const more = page.getByTestId("more-views");
     await waitForHydrated(more);
     await more.click();
-    await expect(page.getByRole("menuitem")).toHaveText(["Sent", "Replied", "Out of office", "Automated"]);
+    await expect(page.getByRole("menuitem")).toHaveText(["Sent", "Replied", "Out of office", /^Automated\d*$/]);
     await page.getByRole("menuitem", { name: "Sent" }).click();
     await expect(page).toHaveURL(/view=sent/);
     await expect(page.getByTestId("more-views")).toHaveText("Sent");

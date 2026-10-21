@@ -147,8 +147,10 @@ test.describe("inbox filters and views", () => {
 
     await page.goto(`/inbox?mailbox=${boxB}`);
     await expect(page.getByRole("link", { name: "Billing Robot" })).toHaveCount(0);
-    await expect(page.getByText(/2 automated conversations are hidden/)).toBeVisible();
-    await page.getByRole("link", { name: "Show automated" }).click();
+    const hidden = page.getByTestId("automated-hidden");
+    await expect(hidden).toHaveAccessibleName("Show 2 hidden automated conversations");
+    await expect(hidden).toHaveText("2");
+    await hidden.click();
     await expect(page).toHaveURL(/view=automated/);
     await expect(page.getByRole("link", { name: "Billing Robot" })).toBeVisible();
 

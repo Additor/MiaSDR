@@ -19,7 +19,7 @@ test.describe("the Actions queue as a list to work through", () => {
     // One link per row, named after the person with what opening it does.
     await expect(row.getByRole("link")).toHaveCount(1);
     await expect(row.getByRole("link")).toHaveAccessibleName(/^Dina Park\s*, .+, (Waiting|Overdue|Failed) /);
-    await expect(page.getByTestId("queue-oldest")).toHaveText(/^The oldest has waited .+\.$/);
+    await expect(page.getByTestId("queue-oldest")).toHaveText(/^Oldest wait .+/);
 
     // A click anywhere on the row opens the thread, here in the middle of it, and the thread knows where it came from.
     await row.click();
@@ -128,15 +128,18 @@ test.describe("the Actions queue as a list to work through", () => {
     }
   });
 
-  test("everything with nothing in it folds into one line", async ({ page }) => {
+  test("the strip counts every list, and an empty one is a muted zero with no section", async ({ page }) => {
     await signInAdmin(page);
     await page.goto("/actions");
-    const folded = page.getByTestId("queue-quiet");
-    await expect(folded).toHaveText(/^Nothing in .+\.$/);
-    // A group named in the folded line has no section of its own.
+    const jumps = page.getByTestId("queue-jumps");
+    await expect(jumps.getByText(/^(Problems|Replies|Follow-ups|Classifications|Next steps|Tasks) \d+$/)).toHaveCount(6);
+    // An empty list is text, not a link, and has no section of its own.
     const groupsShown = await page.locator('[data-slot="queue-group"]').count();
     expect(groupsShown).toBeGreaterThan(0);
     expect(groupsShown).toBeLessThan(5);
+    expect(await jumps.getByRole("link").count()).toBeLessThan(6);
+    // Help sits on info marks, and only where a group's name needs it.
+    await expect(page.getByText("Drafts waiting for your review. Nothing is sent until you approve.", { exact: true })).toHaveCount(0);
   });
 });
 

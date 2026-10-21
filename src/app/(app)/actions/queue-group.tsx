@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
+import { InfoTip } from "@/components/shell/info-tip";
 import { Time } from "@/components/shell/time";
 import { callApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -112,7 +113,8 @@ export function QueueGroup({
 }: {
   group: string;
   title: string;
-  description: string;
+  /** Help for a group whose name needs it, on an info mark beside the heading. */
+  description?: string;
   total: number;
   initialItems: QueueItemView[];
   initialCursor: string | null;
@@ -228,8 +230,8 @@ export function QueueGroup({
     setCursor(page.nextCursor);
   }
 
-  // The same frame as the lists below the queue (actions/page.tsx Section): heading and count, one line of help, then one
-  // bordered list with hairlines between the items. The count stays lavender: it is work that waits for a person.
+  // The same frame as the lists below the queue (actions/page.tsx Section): heading and count, help on an info mark where
+  // the name needs it, then one bordered list with hairlines between the items. The count stays lavender: it is work that waits for a person.
   return (
     <section id={`group-${group}`} aria-label={title} data-slot="queue-group" data-group={group} className="grid scroll-mt-4 gap-2">
       <div className="flex items-baseline gap-2">
@@ -237,13 +239,17 @@ export function QueueGroup({
         <span className="text-xs font-semibold text-sidebar-count tabular-nums" data-testid={`queue-total-${group}`}>
           {total}
         </span>
+        {description && (
+          <span className="self-center">
+            <InfoTip label={`About ${title}`}>{description}</InfoTip>
+          </span>
+        )}
         {confident.length >= 2 && (
           <Button variant="ghost" size="xs" className="ml-auto max-sm:h-11" disabled={rowBusy !== null} onClick={markConfident} data-testid="mark-confident">
             {rowBusy === "bulk" ? "Saving…" : `Mark ${confident.length} sure changes as looked at`}
           </Button>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">{description}</p>
       <ul ref={list} className="divide-y rounded-lg border text-sm">
         {items.map((item) => {
           const thread = rowHref(item, query);
@@ -305,7 +311,8 @@ export function QueueGroup({
           );
         })}
       </ul>
-      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      {/* The count matters while more can load; with everything shown it stays for screen readers only. */}
+      <div className={cn("flex items-center justify-between gap-2 text-xs text-muted-foreground", !cursor && "sr-only")}>
         <span role="status" aria-live="polite">
           Showing {items.length} of {total}
           <span className="sr-only">{notice && ` ${notice}`}</span>

@@ -24,7 +24,8 @@ import { toActor } from "@/shared/api";
 import { ActiveFilterChips } from "@/components/shell/filter-panel";
 import { ListToolbar } from "@/components/shell/list-toolbar";
 import { activeFilterChips, clearedInboxHref, InboxFilterForm } from "./filter-panel";
-import { MoreViews } from "./more-views";
+import { HiddenAutomated, MoreViews } from "./more-views";
+import { KeyboardHint } from "@/components/shell/info-tip";
 import { ConversationRow } from "./conversation-row";
 import { groupByDayInZone, rowTimeLabel } from "./day-groups";
 import { ListKeys } from "@/components/shell/list-keys";
@@ -119,6 +120,8 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
   // A thread opened from the list carries the list's view and filters, so its back link and "Next unread" stay in that list.
   const listQuery = inboxHref(params).split("?")[1];
   const threadHref = (id: string) => `/inbox/${id}${listQuery ? `?${listQuery}` : ""}`;
+  // All leaves automated mail out; the count says how much, beside the chips.
+  const hiddenAutomated = view === "all" && !query ? (listed?.automatedHidden ?? 0) : 0;
   const mailboxConnected = (options?.mailboxes.length ?? 0) > 0;
 
   const search = (
@@ -164,11 +167,12 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
           { href: link({ view: "scheduled", page: 1 }), label: "Scheduled", active: scheduled },
         ]}
       />
-      <ListToolbar filters={options ? { count: activeFilterCount(params), panel: <InboxFilterForm params={params} options={options}/> } : undefined} end={status}>
+      <ListToolbar filters={options ? { count: activeFilterCount(params), panel: <InboxFilterForm params={params} options={options}/> } : undefined} end={<>{!scheduled && <KeyboardHint noun="conversations" />}{status}</>}>
         {!scheduled && (
           <div className="flex flex-wrap items-center gap-1.5">
             <FilterChips label="Conversation views" items={CHIP_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view }))} />
-            <MoreViews items={MORE_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view }))} />
+            <MoreViews items={MORE_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view, count: v.key === "automated" ? hiddenAutomated : undefined }))} />
+            {hiddenAutomated > 0 && <HiddenAutomated count={hiddenAutomated} href={link({ view: "automated", page: 1 })} />}
           </div>
         )}
         {search}
@@ -183,16 +187,6 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
             Try again
           </Link>
         </div>
-      )}
-
-      {loaded && view === "all" && !query && (listed?.automatedHidden ?? 0) > 0 && (
-        <p className="text-sm text-muted-foreground">
-          {listed?.automatedHidden} automated {listed?.automatedHidden === 1 ? "conversation is" : "conversations are"} hidden
-          <span className="hidden sm:inline"> (auto-replies, no-reply senders, DMARC reports, bounce notices)</span>.{" "}
-          <Link href={link({ view: "automated", page: 1 })} className="inline-flex min-h-8 items-center underline underline-offset-4 max-sm:min-h-11">
-            Show automated
-          </Link>
-        </p>
       )}
 
       {!loaded ? null : total === 0 ? (
@@ -262,7 +256,6 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
           {!queued && (
             <>
               <ListKeys />
-              <p className="hidden text-xs text-muted-foreground sm:block">Keyboard: j and k move between conversations, Enter opens the highlighted one.</p>
             </>
           )}
           <ListPager total={total} page={page} pageCount={pageCount} noun={scheduled ? ["queued step", "queued steps"] : ["conversation", "conversations"]} hrefFor={(p) => link({ page: p })} />
