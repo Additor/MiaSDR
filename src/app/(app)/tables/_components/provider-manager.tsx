@@ -103,7 +103,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
             {!available && <Badge variant="outline">Catalog only</Badge>}
             {provider && provider.hasCredential && (
               <Badge variant="secondary">
-                <CheckCircle2Icon /> Key saved
+                <CheckCircle2Icon /> {isHttp ? "Key saved, not checked" : "Key checked and saved"}
               </Badge>
             )}
             {provider && !provider.enabled && <Badge variant="outline">Off</Badge>}
@@ -139,7 +139,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
           autoComplete="off"
         >
           {entry.credentialFields.map((f) => (
-            <Field key={f.key} label={f.label} htmlFor={`cred-${entry.key}-${f.key}`} hint={provider?.hasCredential ? "Leave blank to keep the saved key. A saved key is never shown again." : undefined}>
+            <Field key={f.key} label={f.label} htmlFor={`cred-${entry.key}-${f.key}`} hint={[provider?.hasCredential ? "Leave blank to keep the saved key. A saved key is never shown again." : null, isHttp ? "MiaSDR cannot check a Custom HTTP key; a wrong one fails on the first call." : null].filter(Boolean).join(" ") || undefined}>
               <Input
                 id={`cred-${entry.key}-${f.key}`}
                 type="password"
