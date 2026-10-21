@@ -20,7 +20,7 @@ import { NotFoundError } from "@/shared/errors";
 import { AddLeadToCampaign } from "../add-to-campaign";
 import { CampaignsTable } from "../../crm/_components/person/campaigns-table";
 import { SendHistoryTable } from "../../crm/_components/person/send-history-table";
-import { DeleteLeadSection } from "./delete-lead-button";
+import { LeadMoreMenu } from "./delete-lead-button";
 import { LeadNav } from "./lead-header";
 import { MakeContactButton } from "./make-contact-button";
 import { backToListHref, neighborHref, parseListContext, LIST_PARAM } from "./list-context";
@@ -122,6 +122,7 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
                   Open conversation
                 </Link>
               )}
+              <LeadMoreMenu id={person.id} name={title} qualification={qualification} returnTo={listHref} />
             </>
           }
         />
@@ -162,9 +163,7 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
                 reason={policy?.reason ?? null}
                 setAt={policy?.setAt?.toISOString() ?? null}
                 suppression={suppression ? { reason: suppression.reason, note: suppression.note, date: suppression.createdAt.toISOString() } : null}
-              >
-                <DeleteLeadSection id={person.id} name={title} qualification={qualification} returnTo={listHref} />
-              </DoNotContactCard>
+              />
             </>
           }
         />

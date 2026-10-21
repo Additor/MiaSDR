@@ -65,15 +65,16 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(page.getByText("Step skipped.", { exact: true })).toBeVisible();
     await expect(card.getByText("Skipped", { exact: true })).toBeVisible();
 
-    // Stop asks first, and Keep following up leaves the run going.
+    // Stop asks first in place, like the other stops, and Keep following up leaves the run going.
     await card.getByRole("button", { name: "Stop follow-ups" }).click();
-    const dialog = page.getByRole("dialog", { name: "Stop follow-ups?" });
-    await dialog.getByRole("button", { name: "Keep following up" }).click();
-    await expect(dialog).toBeHidden();
+    const stop = card.getByTestId("stop-follow-ups");
+    await expect(stop).toContainText("Stopped follow-ups cannot resume");
+    await stop.getByRole("button", { name: "Keep following up" }).click();
+    await expect(stop).toBeHidden();
     await expect(card.locator('[data-slot="badge"]').getByText("Running", { exact: true })).toBeVisible();
     await expect(card.getByText("Cancelled", { exact: true })).toHaveCount(0);
     await card.getByRole("button", { name: "Stop follow-ups" }).click();
-    await dialog.getByRole("button", { name: "Stop follow-ups" }).click();
+    await stop.getByRole("button", { name: "Confirm stop" }).click();
     await expect(page.getByText("Follow-ups stopped.", { exact: true })).toBeVisible();
     await expect(card.getByText("Cancelled", { exact: true }).first()).toBeVisible();
     await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Stopped follow-ups");
@@ -128,30 +129,33 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(settings.getByRole("heading", { name: "Follow-ups in progress (0)" })).toBeVisible();
     await expect(settings.getByText("No follow-ups are running for this campaign.")).toBeVisible();
 
-    // The reply waits in the Inbox, and the thread's After a reply card offers no controls.
+    // The reply waits in the Inbox. Nothing follows up, so the thread shows no Follow-ups; the campaign's row says why.
     await page.goto("/inbox");
     await page.getByRole("link", { name: /Hal Ortiz/ }).first().click();
     await expect(page).toHaveURL(/\/inbox\/[0-9a-f-]{36}/);
-    const card = threadAfterReply(page);
-    await expect(card.getByText("This campaign hands replies to the Inbox.")).toBeVisible();
-    await expect(card.getByRole("link", { name: "S7H campaign" })).toBeVisible();
-    await expect(card.getByRole("button", { name: /follow-ups|Skip step|Resume/ })).toHaveCount(0);
+    await expect(threadAfterReply(page)).toHaveCount(0);
+    const campaigns = page.locator("#main-content").getByTestId("thread-campaigns");
+    await campaigns.locator("summary").click();
+    await expect(campaigns.getByTestId("campaign-handoff")).toContainText("Replies go to the Inbox.");
+    await expect(campaigns.getByRole("link", { name: "Turn on AI follow-ups" })).toHaveAttribute("href", /#after-reply$/);
     await expect(page.getByText("Started follow-ups")).toHaveCount(0);
 
-    // Close reply handling with a reason, then reopen it. It sits with do not contact at the foot of the panel and works
-    // the same way: a quiet button opens the reason, and a missing reason is said on confirm.
+    // Close reply handling with a reason, then reopen it. Closing sits at the foot of the panel and works like the
+    // other stops: a quiet button opens the reason, and a missing reason is said on confirm. Closed, the reply category
+    // says so and offers Reopen in place of Change category.
     const category = replyCategory(page);
-    const handling = page.locator("#main-content").getByTestId("reply-handling");
-    await expect(handling.getByText("Closing stops follow-ups on every channel and retires unsent drafts.", { exact: false })).toBeVisible();
+    const handling = page.locator("#main-content").getByTestId("thread-reply-handling");
     await handling.getByRole("button", { name: "Close reply handling" }).click();
+    await expect(handling.getByText("Closing stops follow-ups on every channel and retires unsent drafts.", { exact: false })).toBeVisible();
     await handling.getByRole("button", { name: "Confirm close" }).click();
     await expect(handling.getByRole("alert")).toHaveText("Type a reason to close reply handling.");
     await handling.getByLabel("Reason").fill("Talking on the phone now");
     await handling.getByRole("button", { name: "Confirm close" }).click();
     await expect(page.getByText("Reply handling closed.", { exact: true })).toBeVisible();
-    await expect(handling).toContainText("Closed: Talking on the phone now.");
+    await expect(category).toContainText("Reply handling closed: Talking on the phone now.");
     await expect(category.getByRole("button", { name: "Change category" })).toHaveCount(0);
-    await handling.getByRole("button", { name: "Reopen" }).click();
+    await expect(handling).toHaveCount(0);
+    await category.getByRole("button", { name: "Reopen" }).click();
     await expect(page.getByText("Reply handling reopened.", { exact: true })).toBeVisible();
     await expect(category.getByRole("button", { name: "Change category" })).toBeVisible();
   });
@@ -177,8 +181,8 @@ test.describe("reply handling on the thread and After a reply", () => {
 
     await expect(person.getByRole("link", { name: "Open deal" })).toHaveAttribute("href", /^\/crm\/deals\/[0-9a-f-]{36}\?from=%2Finbox%2F[0-9a-f-]{36}$/);
     await expect(person.getByRole("link", { name: "Open contact" })).toHaveAttribute("href", /^\/crm\/contacts\/[0-9a-f-]{36}$/);
-    await expect(threadAfterReply(page)).toContainText("The person is a contact, so follow-ups do not apply.");
-    await expect(threadAfterReply(page).getByRole("button")).toHaveCount(0);
+    // A contact gets no follow-ups, and with no run to show the thread has no Follow-ups section.
+    await expect(threadAfterReply(page)).toHaveCount(0);
     // Reply handling itself stays: the category can still change, and the activity names the conversion.
     await expect(replyCategory(page).getByRole("button", { name: "Change category" })).toBeVisible();
     await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Became a contact");

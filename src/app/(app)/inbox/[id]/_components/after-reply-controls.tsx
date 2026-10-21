@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,15 +32,18 @@ const DONE_MESSAGE: Record<Command, string> = {
 };
 
 /**
- * After a reply on one conversation: the campaign that owns it, the run status and steps, and the pause, resume, skip,
+ * Follow-ups on one conversation: the campaign that owns them, the run status and steps, and the pause, resume, skip,
  * stop and restart controls. Follow-ups only write drafts, so nothing here sends. A person still approves every draft.
- * `disabledReason` turns every control off and says why (a contact gets no follow-ups).
+ * `disabledReason` turns every control off and says why (a contact gets no follow-ups). The page shows this only when a
+ * run exists or the campaign drafts follow-ups; a campaign that hands replies to the Inbox says so in its Campaigns row.
+ * Stop works like the other stops: a quiet button opens the consequence in place, and only the confirm is red.
  */
 export function AfterReplyControls({ recordId, state, disabledReason = null }: { recordId: string; state: State; disabledReason?: string | null }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const { run, campaign } = state;
   const campaignLink = campaign ? `/campaigns/${campaign.id}#after-reply` : null;
   const locked = disabledReason !== null;
@@ -65,36 +67,28 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
     toast.success(DONE_MESSAGE[action]);
     router.refresh();
   }
-  /** The confirmation dialog shows a failure itself, so this throws instead of using the inline error. */
   async function stopRun() {
+    setStopping(true);
+    setError(null);
     const problem = await send("cancel");
-    if (problem) throw new Error(problem);
+    setStopping(false);
+    if (problem) return setError(problem);
+    setConfirmStop(false);
     toast.success(DONE_MESSAGE.cancel);
     router.refresh();
   }
 
   if (!run) {
     if (locked) return <div className="grid gap-1 text-sm">{lockedNote}</div>;
+    if (!campaign || campaign.mode !== "ai_drafts" || !campaignLink) return null;
     return (
-      <div className="grid gap-1 text-sm">
-        {!campaign && <p className="text-muted-foreground">No campaign has emailed this person, so there is nothing to follow up on.</p>}
-        {campaign && campaign.mode === "handoff" && campaignLink && (
-          <>
-            <p className="text-muted-foreground">This campaign hands replies to the Inbox. Turn on AI follow-ups in its After a reply setting.</p>
-            <Link href={campaignLink} className="w-fit underline underline-offset-4">
-              {campaign.name}
-            </Link>
-          </>
-        )}
-        {campaign && campaign.mode === "ai_drafts" && campaignLink && (
-          <>
-            <p className="text-muted-foreground">No follow-ups yet. They start when a reply from this person is classified.</p>
-            <Link href={campaignLink} className="w-fit underline underline-offset-4">
-              {campaign.name}
-            </Link>
-          </>
-        )}
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Follow-ups from{" "}
+        <Link href={campaignLink} className="underline underline-offset-4 hover:text-foreground">
+          {campaign.name}
+        </Link>{" "}
+        start once a reply from this person is classified.
+      </p>
     );
   }
 
@@ -115,9 +109,7 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
           <span className="font-medium">Campaign removed</span>
         )}
         <Badge variant={run.status === "active" ? "secondary" : "outline"}>{run.statusLabel}</Badge>
-        <span className="text-xs text-muted-foreground">
-          version {run.version}, {run.startedByLabel.toLowerCase()}
-        </span>
+        <span className="text-xs text-muted-foreground">{run.startedByLabel}</span>
       </div>
       {!live && run.endedReasonLabel && <p className="text-muted-foreground">{run.endedReasonLabel}.</p>}
       {campaign?.mode === "handoff" && campaignLink && (
@@ -181,13 +173,26 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
             Restart follow-ups
           </Button>
         )}
-        {/* The destructive action comes last. */}
-        {live && (
-          <Button size="sm" variant="destructive" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => setConfirmStop(true)}>
+        {/* The destructive action comes last, and quiet until you confirm it. */}
+        {live && !confirmStop && (
+          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => setConfirmStop(true)}>
             Stop follow-ups
           </Button>
         )}
       </div>
+      {live && confirmStop && (
+        <div className="grid gap-2" data-testid="stop-follow-ups">
+          <p>The remaining steps are cancelled and drafts that wait for review are withdrawn. Stopped follow-ups cannot resume; Restart follow-ups starts them again from the first step.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="destructive" className="max-sm:h-11" disabled={stopping} onClick={() => void stopRun()}>
+              {stopping ? "Stopping…" : "Confirm stop"}
+            </Button>
+            <Button size="sm" variant="ghost" className="max-sm:h-11" disabled={stopping} onClick={() => setConfirmStop(false)}>
+              Keep following up
+            </Button>
+          </div>
+        </div>
+      )}
       {showRestart && restartHelp && (
         <p id="restart-blocked-reason" className="text-xs text-muted-foreground">
           {restartHelp}
@@ -198,17 +203,6 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
           {error}
         </p>
       )}
-      <ConfirmDialog
-        open={confirmStop}
-        onOpenChange={setConfirmStop}
-        title="Stop follow-ups?"
-        description="The remaining steps are cancelled and drafts that wait for review are withdrawn. Stopped follow-ups cannot resume. Restart follow-ups starts them again from the first step."
-        confirmLabel="Stop follow-ups"
-        cancelLabel="Keep following up"
-        pendingLabel="Stopping…"
-        destructive
-        onConfirm={stopRun}
-      />
     </div>
   );
 }

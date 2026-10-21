@@ -1,19 +1,22 @@
 "use client";
 
-import { Trash2Icon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { DELETE_EFFECT, deleteConfirmation, type DeleteQualification } from "@/contexts/leads/application/lead-delete-check";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { deleteConfirmation, type DeleteQualification } from "@/contexts/leads/application/lead-delete-check";
 import { callApi } from "@/lib/api-client";
 
 /**
- * The delete row of the Contact details and removal section. It says before the click whether the lead qualifies. A lead the
- * rules protect gets the reason and no button, so nothing in the row looks broken. The server applies the same rules again.
+ * The lead's rare actions: a ghost More menu in the header with Delete lead, as company and deal pages keep theirs. A lead
+ * the rules protect still offers the item; the dialog says why it stays and has nothing to confirm. The server applies the
+ * same rules again.
  */
-export function DeleteLeadSection({ id, name, qualification, returnTo }: { id: string; name: string; qualification: DeleteQualification; returnTo: string }) {
+export function LeadMoreMenu({ id, name, qualification, returnTo }: { id: string; name: string; qualification: DeleteQualification; returnTo: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -27,34 +30,42 @@ export function DeleteLeadSection({ id, name, qualification, returnTo }: { id: s
   }
 
   return (
-    <div className="grid gap-3" data-testid="delete-section" data-can-delete={qualification.canDelete}>
-      <div className="grid gap-1">
-        <h3 className="text-sm font-medium">Delete lead</h3>
-        <p className="text-sm text-muted-foreground" data-testid="delete-qualification">
-          <span className="font-medium text-foreground">{qualification.summary}</span> {qualification.detail}
-          {qualification.canDelete && ` ${DELETE_EFFECT}`}
-        </p>
-      </div>
-      {qualification.canDelete && (
-        <>
-          <div>
-            <Button variant="outline" onClick={() => setOpen(true)} className="max-sm:h-11">
-              <Trash2Icon aria-hidden />
-              Delete lead
-            </Button>
-          </div>
-          <ConfirmDialog
-            open={open}
-            onOpenChange={setOpen}
-            title={`Delete ${name}?`}
-            description={deleteConfirmation(qualification)}
-            confirmLabel="Delete lead"
-            pendingLabel="Deleting…"
-            destructive
-            onConfirm={remove}
-          />
-        </>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" aria-label={`More actions for ${name}`} />}>
+          <EllipsisIcon aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-48">
+          <DropdownMenuItem variant="destructive" className="max-sm:min-h-11" onClick={() => setOpen(true)}>
+            Delete lead
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {qualification.canDelete ? (
+        <ConfirmDialog
+          open={open}
+          onOpenChange={setOpen}
+          title={`Delete ${name}?`}
+          description={deleteConfirmation(qualification)}
+          confirmLabel="Delete lead"
+          cancelLabel="Keep lead"
+          pendingLabel="Deleting…"
+          destructive
+          onConfirm={remove}
+        />
+      ) : (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent data-testid="delete-qualification">
+            <DialogHeader>
+              <DialogTitle>{`${name} cannot be deleted`}</DialogTitle>
+              <DialogDescription>{qualification.detail}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button onClick={() => setOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
-    </div>
+    </>
   );
 }

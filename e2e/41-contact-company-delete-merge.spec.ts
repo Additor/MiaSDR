@@ -1,5 +1,5 @@
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import { MOBILE_DARK, expect, expectNoHorizontalOverflow, seedContact, seedUnlistedCompany, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
+import { chooseFromMoreMenu, expect, expectNoHorizontalOverflow, MOBILE_DARK, seedContact, seedUnlistedCompany, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
 
 /*
  * Contact delete, company merge and company delete ("Contacts and Companies CRUD" in docs/decisions.md). The contact
@@ -18,9 +18,7 @@ async function loseDeal(request: APIRequestContext, dealId: string) {
 }
 
 async function openDeleteDialog(page: Page): Promise<Locator> {
-  const button = page.getByTestId("contact-delete").getByRole("button", { name: "Delete contact" });
-  await waitForHydrated(button);
-  await button.click();
+  await chooseFromMoreMenu(page, "Delete contact");
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByTestId("contact-delete-body")).toBeVisible();
   return dialog;
@@ -49,15 +47,16 @@ test.describe("contact delete", () => {
     });
 
     await page.goto(`/crm/contacts/${personId}`);
-    const row = page.getByTestId("contact-delete");
-    await expect(row.getByTestId("contact-delete-state")).toHaveText("This contact cannot be deleted.");
+    await chooseFromMoreMenu(page, "Delete contact");
+    const row = page.getByTestId("contact-delete-status");
+    await expect(row).toContainText("This contact cannot be deleted.");
     await expect(row).toContainText(`${name} has 1 open deal. Close or delete them first.`);
     await expect(row.getByRole("link", { name: `${open}, New` })).toHaveAttribute("href", new RegExp(`^/crm/deals/${deals.open[0]}\\?from=%2Fcrm%2Fcontacts%2F${personId}$`));
-    await expect(row.getByRole("button", { name: "Delete contact" })).toHaveCount(0);
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Delete contact" })).toBeDisabled();
+    await page.getByRole("dialog").getByRole("button", { name: "Keep contact" }).click();
 
     await loseDeal(page.request, deals.open[0]);
     await page.reload();
-    await expect(row.getByTestId("contact-delete-state")).toHaveText("This contact can be deleted.");
     let dialog = await openDeleteDialog(page);
     await expect(dialog.getByRole("heading", { name: `Delete ${name}?` })).toBeVisible();
     await expect(dialog).toContainText(`This deletes ${name} and cannot be undone.`);
@@ -234,7 +233,7 @@ test.describe("delete and merge at 390px in the dark theme", () => {
     const [row] = await sql()`select id from companies where domain = ${domain}`;
 
     await page.goto(`/crm/contacts/${personId}`);
-    await expect(page.getByTestId("contact-delete")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^More actions for / })).toBeVisible();
     await expectNoHorizontalOverflow(page);
     const dialog = await openDeleteDialog(page);
     await expectInViewport(page, dialog.getByRole("button", { name: "Delete contact" }));

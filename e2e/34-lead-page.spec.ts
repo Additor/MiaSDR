@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { e2eOrganizationId, expect, MOBILE_DARK, expectNoHorizontalOverflow, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
+import { chooseFromMoreMenu, e2eOrganizationId, expect, expectNoHorizontalOverflow, MOBILE_DARK, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
 
 /**
  * The lead page: a record header with the name as h1, one lead status token and reach links that show their state, empty Campaigns and Send
@@ -223,14 +223,13 @@ test.describe("contact and removal", () => {
     await section.getByLabel("Reason").fill("Asked to stop");
     await expect(section.getByRole("alert")).toHaveCount(0);
 
-    // The delete row says it qualifies and the confirmation repeats it with what is protected.
-    await expect(page.getByTestId("delete-qualification")).toContainText("This lead can be deleted.");
-    await section.getByRole("button", { name: "Delete lead" }).click();
+    // Delete lives in the header's More menu; the confirmation says the lead qualifies and what stays protected.
+    await chooseFromMoreMenu(page, "Delete lead");
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("This lead can be deleted.");
     await expect(dialog).toContainText("protected");
     await expect(dialog).toContainText("cannot be undone");
-    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await dialog.getByRole("button", { name: "Keep lead" }).click();
 
     await mark.click();
     await expect(page.getByTestId("lead-header").getByTestId("reach-dnc")).toContainText("Do not contact");
@@ -238,20 +237,20 @@ test.describe("contact and removal", () => {
     await expect(page.getByTestId("lead-header").getByTestId("lead-status")).toHaveAttribute("data-state", "new");
     await expect(section.getByRole("button", { name: "Clear do not contact" })).toBeVisible();
 
-    // A lead in a running campaign gets the reason and no delete button.
+    // A lead in a running campaign: the dialog gives the reason and has nothing to confirm.
     await page.goto(`/leads/${ids[NAMES[4]]}`);
-    await expect(page.getByTestId("delete-qualification")).toContainText("This lead cannot be deleted.");
+    await chooseFromMoreMenu(page, "Delete lead");
+    await expect(page.getByTestId("delete-qualification")).toContainText("cannot be deleted");
     await expect(page.getByTestId("delete-qualification")).toContainText("running or paused campaign");
-    await expect(page.getByTestId("person-stop").getByRole("button", { name: "Delete lead" })).toHaveCount(0);
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Delete lead" })).toHaveCount(0);
+    await page.getByRole("dialog").getByRole("button", { name: "Close" }).first().click();
   });
 
   test("deletes a lead that qualifies and returns to the list it came from", async ({ page }) => {
     await signInAdmin(page);
     await seed();
     await openFromList(page, "/leads?q=S34+Zed", "S34 Zed Throwaway");
-    const section = page.getByTestId("person-stop");
-    await waitForHydrated(section.getByRole("button", { name: "Delete lead" }));
-    await section.getByRole("button", { name: "Delete lead" }).click();
+    await chooseFromMoreMenu(page, "Delete lead");
     await page.getByRole("dialog").getByRole("button", { name: "Delete lead" }).click();
     // The toast names the lead, as the contact delete does.
     await expect(page.getByText("Deleted S34 Zed Throwaway.", { exact: true })).toBeVisible();
@@ -316,7 +315,7 @@ test.describe("at 390px in the dark theme", () => {
       ["phone link", header.getByRole("link", { name: "+15550100123" })],
       ["Edit email", page.getByTestId("person-details").getByRole("button", { name: "Edit Email" })],
       ["Mark do not contact", page.getByRole("button", { name: "Mark do not contact" })],
-      ["Delete lead", page.getByRole("button", { name: "Delete lead" })],
+      ["More actions", page.getByRole("button", { name: /^More actions for / })],
     ];
     for (const [label, locator] of targets) {
       await locator.scrollIntoViewIfNeeded();

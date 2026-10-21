@@ -161,6 +161,23 @@ export function AsideDisclosure({ title, count, open = false, testId, children }
   );
 }
 
+/**
+ * A history in the work column that you open when you need it: a hairline above, the title with its count, then the
+ * content. Several in a row read as one ruled list.
+ */
+export function RecordDisclosure({ title, count, open = false, testId, children }: { title: string; count?: ReactNode; open?: boolean; testId?: string; children: ReactNode }) {
+  return (
+    <details className="group border-t py-group" open={open} data-testid={testId}>
+      <summary className="-mx-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md px-1 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
+      </summary>
+      <div className="stack-group mt-group">{children}</div>
+    </details>
+  );
+}
+
 /** Page frame for a record: header, then body, with the page padding. */
 export function RecordPage({ children }: { children: ReactNode }) {
   return <div className="page stack-section">{children}</div>;

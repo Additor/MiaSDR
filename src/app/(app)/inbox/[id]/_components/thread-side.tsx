@@ -5,11 +5,6 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getCrmRecordDetail } from "@/contexts/conversations/application/crm";
-import type { EventEntry } from "@/contexts/conversations/application/crm-ports";
-import { getRecordSequence } from "@/contexts/conversations/after-reply/application/sequences";
-import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
-import { sequenceDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import { dealSummaryForPeople } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
 import { leadContactPoints } from "@/contexts/leads/domain/lead-activity";
@@ -17,81 +12,52 @@ import { channelLabel, enrollmentStatusLabel, stopReasonNote } from "@/contexts/
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";
 import type { Actor } from "@/shared/errors";
-import { humanizeToken } from "@/shared/humanize";
 import { CreateDealButton } from "@/app/(app)/crm/_components/create-deal-dialog";
 import { dealDialogData } from "@/app/(app)/crm/_components/deal-dialog-data";
 import { dealHref } from "@/app/(app)/crm/_components/deal-href";
-import { eventLabel } from "@/app/(app)/crm/_components/event-labels";
 import { categoryLabel } from "@/app/(app)/crm/_components/labels";
 import { DoNotContactCard } from "@/app/(app)/crm/_components/person/do-not-contact-card";
 import { TasksSection } from "@/app/(app)/crm/_components/person/tasks-section";
 import { personHref } from "@/app/(app)/crm/_components/person/person-href";
 import { ReachLinks } from "@/app/(app)/crm/_components/person/reach-links";
 import { AsideDisclosure, AsideSection } from "@/app/(app)/crm/_components/record/record-header";
-import { toJson } from "@/app/(app)/crm/_components/serialize";
-import { AfterReplyControls } from "./after-reply-controls";
 import { AssigneeControls } from "./assignee-controls";
 import { ChangeCategoryButton } from "./change-category-button";
-import { ClassificationHistory } from "./classification-history";
 import { RecordControls } from "./record-controls";
-
-/** Shown in place of the follow-up controls for a contact. */
-export const CONTACT_FOLLOW_UPS = "The person is a contact, so follow-ups do not apply.";
-
-const ACTIVITY_SHOWN = 12;
-
-/** Draft history wording. It differs from the reply panel's status badge, which names the draft in front of you. */
-const DRAFT_STATUS: Record<string, string> = {
-  awaiting_review: "Waits for review",
-  generating: "Being written",
-  sending: "Sending",
-  sent: "Sent",
-  discarded: "Discarded",
-  stale: "Out of date",
-  failed: "Failed",
-  delivery_uncertain: "Delivery unconfirmed",
-};
+import { recordAfterReply, recordDetail } from "./thread-data";
 
 /** The side panel while it loads: one block per section group inside the panel, so the layout does not jump when it arrives. */
 export function ThreadSideSkeleton() {
   return (
     <div className="divide-y" aria-hidden data-testid="thread-side-loading">
       <div className="p-4">
-        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-28 w-full" />
       </div>
       <div className="p-4">
-        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-16 w-full" />
       </div>
       <div className="p-4">
-        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-20 w-full" />
+      </div>
+      <div className="p-4">
+        <Skeleton className="h-8 w-full" />
       </div>
     </div>
   );
 }
 
-function eventDetail(e: EventEntry): string | null {
-  const meta = e.meta as { note?: unknown; reason?: unknown; title?: unknown };
-  const to = e.toData as { categoryKey?: string | null; lostReason?: unknown } | null;
-  // `reason` is a code token on most events; only the do-not-contact events carry a reason a person typed.
-  const typed = [meta.note, e.eventType.startsWith("contact_policy.") ? meta.reason : null, to?.lostReason, e.eventType.startsWith("deal.") ? meta.title : null];
-  const parts = [to?.categoryKey ? categoryLabel(to.categoryKey) : null, ...typed.filter((v): v is string => typeof v === "string" && v.trim() !== "")].filter(Boolean);
-  return parts.length ? parts.join(". ") : null;
-}
-
-const actorText = (e: EventEntry) => (e.actorType === "human" ? (e.actorName ?? "A person") : e.actorType === "ai" ? "The AI" : humanizeToken(e.actorType));
-
 /**
- * The thread's side column. Open: the person, Assigned to, the reply category, tasks and After a reply, the blocks you act
- * on. Folded, with their counts: classification history (open while an entry waits for review), campaigns, other
- * conversations, drafts, notes and activity. Do not contact and reply handling close the panel, as the stop controls do
- * on every person page. Wrap it in Suspense.
+ * The thread's side column: who the person is and what you decide about them. Open: the person, Assigned to, the reply
+ * category (with the closed state and Reopen), tasks, then the person's campaigns and other conversations folded behind
+ * their counts. Close reply handling and Do not contact end the panel, as the stop controls do on every person page.
+ * Follow-ups and the histories live in the work column (`thread-work.tsx`). Wrap it in Suspense.
  */
 export async function ThreadSide({ actor, conversationId, recordId, personId }: { actor: Actor; conversationId: string; recordId: string; personId: string }) {
   await connection();
   const deps = dealsDeps();
   const [detail, afterReply, people, deals, dialog, reachMap] = await Promise.all([
-    getCrmRecordDetail(crmDeps(), actor, recordId),
-    getRecordSequence(sequenceDeps(), actor, recordId),
+    recordDetail(actor, recordId),
+    recordAfterReply(actor, recordId),
     deps.people.summaries(actor.organizationId, [personId]),
     dealSummaryForPeople(deps, actor, [personId]),
     dealDialogData(actor),
@@ -108,8 +74,12 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
   const contact = leadContactPoints({ email: person.email, linkedinSlug: directory?.linkedinSlug ?? null, linkedinUrl: directory?.linkedinUrl ?? person.linkedinUrl ?? null });
   const closed = record.workflowState === "closed";
   const others = detail.conversations.filter((c) => c.id !== conversationId);
-  const events = detail.events.slice(0, ACTIVITY_SHOWN);
   const dealPerson = { id: personId, name: person.name, email: person.email, companyName: person.company, doNotContact: dnc, suppressed: detail.suppressed, openDeals: summary?.openDeals ?? 0 };
+  // A suggestion the AI holds for review, named next to "Not classified yet" so the two never seem to disagree.
+  const held = !record.categoryKey ? detail.classifications.find((c) => c.status === "proposed" && c.latest) : undefined;
+  // A campaign that hands replies to the Inbox says so in its Campaigns row; the work column then shows no follow-ups.
+  const handoffCampaignId = !afterReply.run && afterReply.campaign?.mode === "handoff" ? afterReply.campaign.id : null;
+  const channel = record.activeChannel ? (record.activeChannel === "email" ? "email" : channelLabel(record.activeChannel)) : null;
 
   return (
     <>
@@ -139,12 +109,13 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
       <AsideSection title="Reply category" testId="reply-category">
         <div className="grid gap-1 text-sm">
           <p className="font-medium">{record.categoryKey ? `${categoryLabel(record.categoryKey)}${record.subcategoryName ? `: ${record.subcategoryName}` : ""}` : "Not classified yet"}</p>
+          {held?.proposed.categoryKey && <p>The AI suggests {categoryLabel(held.proposed.categoryKey)}, waiting in the reply panel.</p>}
           {(record.categorySource || record.lastInboundAt) && (
             <p className="text-muted-foreground">
               {record.categorySource && `Set by ${record.categorySource === "ai" ? "the AI" : "a person"}. `}
               {record.lastInboundAt && (
                 <>
-                  Last reply{record.activeChannel ? ` on ${channelLabel(record.activeChannel)}` : ""} <Time value={record.lastInboundAt} />.
+                  Last reply{channel ? ` on ${channel}` : ""} <Time value={record.lastInboundAt} />.
                 </>
               )}
             </p>
@@ -155,24 +126,20 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
             </Badge>
           )}
         </div>
-        {!closed && (
+        {closed ? (
+          <RecordControls recordId={record.id} closed closedReason={record.closedReason ?? null} />
+        ) : (
           <div>
             <ChangeCategoryButton recordId={record.id} personName={name} contextVersion={record.contextVersion} currentSubcategoryId={record.subcategoryId} categoryLocked={record.categoryLocked} stages={detail.stages} />
           </div>
         )}
       </AsideSection>
 
-      <AsideSection title="Tasks" testId="thread-tasks">
-        <Suspense fallback={<Skeleton className="h-8 w-28" />}>
+      <section className="stack-group p-4" data-testid="thread-tasks">
+        <Suspense fallback={<Skeleton className="h-7 w-full" />}>
           <TasksSection recordId={record.id} actor={actor} heading={false} compact />
         </Suspense>
-      </AsideSection>
-
-      <AsideSection title="After a reply" testId="thread-after-reply">
-        <AfterReplyControls recordId={record.id} state={toJson(afterReply)} disabledReason={isContact ? CONTACT_FOLLOW_UPS : null} />
-      </AsideSection>
-
-      <ClassificationHistory entries={toJson(detail.classifications)} currentConversationId={conversationId} />
+      </section>
 
       {detail.enrollments.length > 0 && (
         <AsideDisclosure title="Campaigns" count={detail.enrollments.length} testId="thread-campaigns">
@@ -189,6 +156,14 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
                     <Badge variant="outline">{status}</Badge>
                   </div>
                   {reason && <span className="text-xs text-muted-foreground">{reason}</span>}
+                  {e.campaignId === handoffCampaignId && (
+                    <span className="text-xs text-muted-foreground" data-testid="campaign-handoff">
+                      Replies go to the Inbox.{" "}
+                      <Link href={`/campaigns/${e.campaignId}#after-reply`} className="underline underline-offset-4 hover:text-foreground">
+                        Turn on AI follow-ups
+                      </Link>
+                    </span>
+                  )}
                 </li>
               );
             })}
@@ -198,8 +173,7 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
 
       {others.length > 0 && (
         <AsideDisclosure title="Other conversations" count={others.length} testId="thread-other-conversations">
-          <p className="text-sm text-muted-foreground">{name} also wrote from another mailbox or channel.</p>
-          <ul className="grid gap-1 text-sm">
+          <ul className="grid gap-1 text-sm" aria-label={`${name} also wrote from another mailbox or channel`}>
             {others.map((c) => (
               <li key={c.id}>
                 <Link href={`/inbox/${c.id}`} title={c.accountRef} className="flex min-h-8 items-center gap-2 underline-offset-4 hover:underline max-sm:min-h-11">
@@ -212,71 +186,13 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
         </AsideDisclosure>
       )}
 
-      {detail.drafts.length > 0 && (
-        <AsideDisclosure title="Drafts" count={detail.drafts.length} testId="thread-drafts">
-          <ul className="grid gap-2 text-sm" aria-label="Drafts, newest first">
-            {detail.drafts.map((d) => (
-              <li key={d.id} className="grid gap-0.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{DRAFT_STATUS[d.status] ?? humanizeToken(d.status)}</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    Revision {d.revision}, <Time value={d.createdAt} />
-                  </span>
-                </div>
-                <p className="line-clamp-2 break-words text-muted-foreground">{d.preview}</p>
-              </li>
-            ))}
-          </ul>
-        </AsideDisclosure>
+      {!closed && (
+        <AsideSection title="Reply handling" testId="thread-reply-handling">
+          <RecordControls recordId={record.id} closed={false} closedReason={null} />
+        </AsideSection>
       )}
 
-      {detail.notes.length > 0 && (
-        <AsideDisclosure title="Notes" count={detail.notes.length} testId="thread-notes">
-          <p className="text-sm text-muted-foreground">
-            Written on this conversation. Add and edit notes on the{" "}
-            <Link href={personHref(personId, directory?.lifecycle)} className="underline underline-offset-4">
-              {isContact ? "contact page" : "lead page"}
-            </Link>
-            .
-          </p>
-          <ul className="divide-y text-sm">
-            {detail.notes.map((n) => (
-              <li key={n.id} className="grid gap-0.5 py-group first:pt-0 last:pb-0">
-                {n.title && <span className="font-medium">{n.title}</span>}
-                <p className="break-words whitespace-pre-wrap">{n.body}</p>
-                <span className="text-xs text-muted-foreground">
-                  {n.authorName ?? "A person"}, <Time value={n.createdAt} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </AsideDisclosure>
-      )}
-
-      <AsideDisclosure title="Activity" count={detail.events.length > ACTIVITY_SHOWN ? `latest ${ACTIVITY_SHOWN}` : events.length || undefined} testId="thread-activity">
-        {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing has happened yet.</p>
-        ) : (
-          <ol className="grid gap-2 text-sm" aria-label="Activity">
-            {events.map((e) => {
-              const extra = eventDetail(e);
-              return (
-                <li key={e.id} className="grid gap-0.5">
-                  <span className="break-words">{eventLabel(e)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {actorText(e)}, <Time value={e.createdAt} />
-                    {extra ? `. ${extra}` : ""}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </AsideDisclosure>
-
-      <DoNotContactCard personId={personId} doNotContact={dnc} reason={detail.policy?.reason ?? null} setAt={detail.policy?.setAt ?? null} suppression={null} testId="thread-dnc">
-        <RecordControls recordId={record.id} closed={closed} closedReason={record.closedReason ?? null} />
-      </DoNotContactCard>
+      <DoNotContactCard personId={personId} doNotContact={dnc} reason={detail.policy?.reason ?? null} setAt={detail.policy?.setAt ?? null} suppression={null} testId="thread-dnc" />
     </>
   );
 }

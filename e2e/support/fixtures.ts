@@ -200,7 +200,7 @@ export function afterReplySettings(page: Page): Locator {
   return page.locator("#after-reply");
 }
 
-/** The "After a reply" card in the side column of an Inbox thread (run status, Pause follow-ups, Skip step, Stop follow-ups, Restart follow-ups). */
+/** The Follow-ups section under the reply panel of an Inbox thread (run status, Pause follow-ups, Skip step, Stop follow-ups, Restart follow-ups). */
 export function threadAfterReply(page: Page): Locator {
   return page.locator("#main-content").getByTestId("thread-after-reply");
 }
@@ -509,6 +509,14 @@ export async function signOut(page: Page): Promise<void> {
  * Waits until React has attached its handlers to the element. Server-rendered inputs show up before
  * hydration, and a change event fired earlier (setInputFiles) is lost because no onChange exists yet.
  */
+/** Opens the record header's More menu and chooses `item` (Delete lead, Delete contact). */
+export async function chooseFromMoreMenu(page: Page, item: string): Promise<void> {
+  const more = page.getByRole("button", { name: /^More actions for / }).first();
+  await waitForHydrated(more);
+  await more.click();
+  await page.getByRole("menuitem", { name: item }).click();
+}
+
 export async function waitForHydrated(locator: Locator): Promise<void> {
   await locator.evaluate(
     (el) =>

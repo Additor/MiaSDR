@@ -11,8 +11,9 @@ import { callApi } from "@/lib/api-client";
 export const CLOSE_REASON_REQUIRED = "Type a reason to close reply handling.";
 
 /**
- * Close reply handling with a reason, or reopen it. It works like do not contact beside it: a quiet button opens the
- * reason field, and only the confirm button is red. Closing stops the person's follow-ups and retires their unsent drafts.
+ * Close reply handling with a reason, or reopen it. Closed, it is one line with Reopen in the Reply category block, where
+ * the missing Change category shows. Open, it is the quiet close at the foot of the panel: the button opens the reason and
+ * what closing does in place, and only the confirm button is red. Closing stops follow-ups and retires unsent drafts.
  */
 export function RecordControls({ recordId, closed, closedReason }: { recordId: string; closed: boolean; closedReason: string | null }) {
   const router = useRouter();
@@ -42,27 +43,22 @@ export function RecordControls({ recordId, closed, closedReason }: { recordId: s
 
   return (
     <div className="grid gap-2" data-testid="reply-handling">
-      <h3 className="text-sm font-medium">Reply handling</h3>
       {closed ? (
-        <>
-          <p className="text-sm text-muted-foreground">Closed{closedReason ? `: ${closedReason}.` : "."}</p>
-          <div>
-            <Button size="sm" variant="outline" disabled={pending} className="max-sm:h-11" onClick={() => void send("reopen")}>
-              {pending ? "Reopening…" : "Reopen"}
-            </Button>
-          </div>
-        </>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm">Reply handling closed{closedReason ? `: ${closedReason}.` : "."}</p>
+          <Button size="sm" variant="outline" disabled={pending} className="max-sm:h-11" onClick={() => void send("reopen")}>
+            {pending ? "Reopening…" : "Reopen"}
+          </Button>
+        </div>
       ) : !open ? (
-        <>
-          <p className="text-sm text-muted-foreground">Closing stops follow-ups on every channel and retires unsent drafts. You can reopen it later.</p>
-          <div>
-            <Button size="sm" variant="outline" className="max-sm:h-11" onClick={() => setOpen(true)}>
-              Close reply handling
-            </Button>
-          </div>
-        </>
+        <div>
+          <Button size="sm" variant="outline" className="max-sm:h-11" onClick={() => setOpen(true)}>
+            Close reply handling
+          </Button>
+        </div>
       ) : (
         <form onSubmit={onSubmit} className="grid gap-2" noValidate>
+          <p className="text-sm">Closing stops follow-ups on every channel and retires unsent drafts. You can reopen it later.</p>
           <div className="stack-field">
             <Label htmlFor={fieldId}>Reason</Label>
             <Input

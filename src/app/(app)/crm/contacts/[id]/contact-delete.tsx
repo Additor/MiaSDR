@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2Icon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -8,13 +8,13 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { useOrgTimeZone } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/shared/format-time";
 import { dealHref } from "../../_components/deal-href";
 import { contactLabel } from "../../_components/labels";
 import { openDncControl } from "../../_components/person/dnc-control";
 import {
-  CAN_DELETE,
   CANNOT_DELETE,
   COUNTS_INTRO,
   blockerText,
@@ -32,36 +32,27 @@ import {
 } from "./contact-delete-copy";
 
 /**
- * The delete row of a contact page, in the Do not contact panel where Delete lead sits on a lead page. The page reads
- * the delete preview on the server, so the row says before any click whether the contact can go: a button, or each blocker with
- * the open deals linked. The dialog reads the preview again and shows the counts the delete takes with it.
+ * The contact's rare actions: a ghost More menu in the header with Delete contact, as company and deal pages keep theirs.
+ * The dialog reads the delete preview when it opens: each blocker with the open deals linked, or the counts the delete
+ * takes with it.
  */
-export function ContactDeleteSection({ preview, returnTo }: { preview: DeletePreview; returnTo: string }) {
+export function ContactMoreMenu({ preview, returnTo }: { preview: DeletePreview; returnTo: string }) {
   const [open, setOpen] = useState(false);
   const name = contactLabel(preview.person);
-  const blocked = preview.blockers.length > 0;
-
   return (
-    <div className="grid gap-3" data-testid="contact-delete" data-can-delete={!blocked}>
-      <div className="grid gap-1">
-        <h3 className="text-sm font-medium">Delete contact</h3>
-        <p className={blocked ? "font-medium" : "text-muted-foreground"} data-testid="contact-delete-state">
-          {blocked ? CANNOT_DELETE : CAN_DELETE}
-        </p>
-        {blocked && <BlockerList blockers={preview.blockers} name={name} personId={preview.person.id} />}
-      </div>
-      {!blocked && (
-        <>
-          <div>
-            <Button variant="outline" className="text-destructive hover:text-destructive max-sm:h-11" onClick={() => setOpen(true)}>
-              <Trash2Icon aria-hidden />
-              Delete contact
-            </Button>
-          </div>
-          <DeleteContactDialog personId={preview.person.id} initialName={name} returnTo={returnTo} open={open} onOpenChange={setOpen} />
-        </>
-      )}
-    </div>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" aria-label={`More actions for ${name}`} />}>
+          <EllipsisIcon aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-48">
+          <DropdownMenuItem variant="destructive" className="max-sm:min-h-11" onClick={() => setOpen(true)}>
+            Delete contact
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DeleteContactDialog personId={preview.person.id} initialName={name} returnTo={returnTo} open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 

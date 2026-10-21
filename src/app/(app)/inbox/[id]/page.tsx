@@ -27,6 +27,7 @@ import { NextUnreadLink } from "./next-unread-link";
 import { LinkedInReplyPanel } from "./linkedin-reply-panel";
 import { ReplyPanel } from "./reply-panel";
 import { ThreadSide, ThreadSideSkeleton } from "./_components/thread-side";
+import { ThreadFollowUps, ThreadHistory } from "./_components/thread-work";
 import { RecordBody } from "@/app/(app)/crm/_components/record/record-header";
 
 export const metadata: Metadata = { title: "Conversation" };
@@ -84,8 +85,8 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
           </>
         }
       />
-      {/* The record frame's body: the work column, then one bordered side panel. On a phone the panel follows the reply, so
-          the person, reply handling and tasks never sit between the person and the approval. */}
+      {/* The record frame's body: the work column (the message, the reply, follow-ups, earlier messages and the histories), then
+          one bordered side panel about the person. On a phone the panel follows the work column. */}
       <div className="page">
         <RecordBody
           asideLabel="Person and reply handling"
@@ -114,6 +115,10 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
                 </Suspense>
               </div>
 
+              <Suspense fallback={null}>
+                <ThreadFollowUps actor={actor} recordId={thread.recordId} personId={person.id} />
+              </Suspense>
+
               {earlier.length > 0 && (
                 <section aria-labelledby="earlier-messages" className="stack-group">
                   <h2 id="earlier-messages" className="text-sm font-semibold">
@@ -124,6 +129,10 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
                   ))}
                 </section>
               )}
+
+              <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+                <ThreadHistory actor={actor} conversationId={thread.conversationId} recordId={thread.recordId} personId={person.id} />
+              </Suspense>
             </div>
           }
           aside={

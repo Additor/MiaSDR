@@ -2,7 +2,7 @@
 
 import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Time } from "@/components/shell/time";
@@ -71,6 +71,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
   const [deleting, setDeleting] = useState<TaskItem | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(!compact);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   async function add(event: React.FormEvent) {
     event.preventDefault();
@@ -89,6 +90,8 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
     setDueDay("");
     toast.success("Task added.");
     router.refresh();
+    // The form stays for the next task.
+    nameRef.current?.focus();
   }
 
   async function patch(id: string, body: Record<string, unknown>) {
@@ -105,68 +108,71 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
     router.refresh();
   }
 
+  function closeForm() {
+    setFormOpen(false);
+    setName("");
+    setDueDay("");
+    setError(null);
+  }
+
+  const openButton = !formOpen && (
+    <Button type="button" variant="outline" size="sm" className="max-sm:h-11" onClick={() => setFormOpen(true)}>
+      <PlusIcon /> New task
+    </Button>
+  );
+
   const content = (
     <div className="stack-group" data-slot="tasks-panel">
-      {!formOpen ? (
-        <div>
-          <Button type="button" variant="outline" size="sm" className="max-sm:h-11" onClick={() => setFormOpen(true)}>
-            <PlusIcon /> New task
-          </Button>
+      {compact ? (
+        // In a side panel the title row carries New task, so an empty list costs one row.
+        <div className="flex min-h-7 items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Tasks</h2>
+          {openButton}
         </div>
       ) : (
-      <form onSubmit={add} className="@container grid gap-2" noValidate>
-        <div className="grid gap-2 @lg:grid-cols-[minmax(0,1fr)_9.5rem_10rem_auto] @lg:items-end">
-          <div className="stack-field">
-            <Label htmlFor={`task-name-${fieldKey}`}>New task</Label>
-            <Input
-              id={`task-name-${fieldKey}`}
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (error) setError(null);
-              }}
-              maxLength={200}
-              placeholder="Call back on Friday"
-              autoFocus={compact}
-              className="max-sm:h-11"
-            />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor={`task-due-${fieldKey}`}>Due date</Label>
-            <Input id={`task-due-${fieldKey}`} type="date" value={dueDay} onChange={(e) => setDueDay(e.target.value)} className="max-sm:h-11" />
-          </div>
-          <div className="stack-field">
-            <Label id={`task-assignee-${fieldKey}`}>Assign to</Label>
-            <MemberSelect labelledBy={`task-assignee-${fieldKey}`} value={assigneeId} members={members} currentUserId={currentUserId} onChange={setAssigneeId} />
+        openButton && <div>{openButton}</div>
+      )}
+      {formOpen && (
+        <form onSubmit={add} className="@container grid gap-group" noValidate>
+          <div className="grid gap-group @lg:grid-cols-2">
+            <div className="stack-field @lg:col-span-2">
+              <Label htmlFor={`task-name-${fieldKey}`}>Task</Label>
+              <Input
+                id={`task-name-${fieldKey}`}
+                ref={nameRef}
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (error) setError(null);
+                }}
+                maxLength={200}
+                placeholder="Call back on Friday"
+                autoFocus={compact}
+                className="max-sm:h-11"
+              />
+            </div>
+            <DueField id={`task-due-${fieldKey}`} value={dueDay} onChange={setDueDay} />
+            <div className="stack-field">
+              <Label id={`task-assignee-${fieldKey}`}>Assign to</Label>
+              <MemberSelect labelledBy={`task-assignee-${fieldKey}`} value={assigneeId} members={members} currentUserId={currentUserId} onChange={setAssigneeId} />
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" variant="outline" disabled={pending || zone === null} className="max-sm:h-11">
-              Add task
+            <Button type="submit" size="sm" disabled={pending || zone === null} className="max-sm:h-11">
+              {pending ? "Adding…" : "Add task"}
             </Button>
             {compact && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending}
-                className="max-sm:h-11"
-                onClick={() => {
-                  setFormOpen(false);
-                  setName("");
-                  setDueDay("");
-                  setError(null);
-                }}
-              >
+              <Button type="button" size="sm" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={closeForm}>
                 Cancel
               </Button>
             )}
           </div>
-        </div>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-      </form>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </form>
       )}
       {tasks.length > 0 && (
         <ul className="divide-y border-t" aria-label="Tasks">
@@ -255,6 +261,50 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
         onConfirm={() => deleting && remove(deleting.id)}
       />
     </>
+  );
+}
+
+/** The browser's calendar day `days` from today, as YYYY-MM-DD. */
+function dayFromToday(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** "Fri, Oct 23", in English whatever the browser's language. */
+const dayText = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+const QUICK_DAYS: Array<[label: string, days: number]> = [
+  ["Today", 0],
+  ["Tomorrow", 1],
+  ["Next week", 7],
+];
+
+/**
+ * The due date as three quick choices and Pick a date. The browser's own date field opens only when you pick, so an
+ * empty form never shows a placeholder in the browser's language; the chosen day reads back in English.
+ */
+function DueField({ id, value, onChange }: { id: string; value: string; onChange: (day: string) => void }) {
+  const [picking, setPicking] = useState(false);
+  const quick = QUICK_DAYS.map(([label, days]) => ({ label, day: dayFromToday(days) }));
+  return (
+    <fieldset className="stack-field min-w-0">
+      <legend className="mb-1.5 text-sm leading-none font-medium">Due</legend>
+      <div className="flex flex-wrap gap-1.5">
+        {quick.map((q) => (
+          <Button key={q.label} type="button" size="sm" variant={value === q.day && !picking ? "secondary" : "outline"} aria-pressed={value === q.day && !picking} className="max-sm:h-11" onClick={() => { setPicking(false); onChange(value === q.day ? "" : q.day); }}>
+            {q.label}
+          </Button>
+        ))}
+        <Button type="button" size="sm" variant={picking ? "secondary" : "outline"} aria-pressed={picking} className="max-sm:h-11" onClick={() => setPicking(!picking)}>
+          Pick a date
+        </Button>
+      </div>
+      {picking && <Input id={id} type="date" aria-label="Due date" value={value} className="w-fit max-sm:h-11" onChange={(e) => onChange(e.target.value)} />}
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        {value ? `Due ${dayText(value)}.` : "No due date."}
+      </p>
+    </fieldset>
   );
 }
 

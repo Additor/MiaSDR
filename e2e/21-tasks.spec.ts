@@ -29,14 +29,18 @@ test.describe("tasks, notes and the important flag", () => {
     // In the side panel the form waits behind New task, and stays open for the next one.
     const panel = page.locator('[data-slot="tasks-panel"]');
     await panel.getByRole("button", { name: "New task" }).click();
-    await panel.getByLabel("New task").fill("Send rollout plan");
+    await panel.getByLabel("Task", { exact: true }).fill("Send rollout plan");
+    // The due date offers Today, Tomorrow and Next week; Pick a date opens the browser's date field.
+    await panel.getByRole("button", { name: "Pick a date" }).click();
     await panel.getByLabel("Due date").fill("2020-01-02");
+    await expect(panel.getByText("Due Thu, Jan 2.")).toBeVisible();
     await pick(page, panel.getByRole("combobox", { name: "Assign to" }), MEMBER.name);
     await panel.getByRole("button", { name: "Add task" }).click();
     await expect(panel.getByText("Send rollout plan")).toBeVisible();
     await expect(panel.getByText("Overdue")).toBeVisible();
 
-    await panel.getByLabel("New task").fill("Call Tess");
+    await expect(panel.getByLabel("Task", { exact: true })).toBeFocused();
+    await panel.getByLabel("Task", { exact: true }).fill("Call Tess");
     await pick(page, panel.getByRole("combobox", { name: "Assign to" }), "Ada Admin (you)");
     await panel.getByRole("button", { name: "Add task" }).click();
     await expect(panel.getByText("Call Tess")).toBeVisible();

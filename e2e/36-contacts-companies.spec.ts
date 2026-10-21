@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { cellUnder } from "./support/table";
-import { e2eOrganizationId, expect, seedContact, seedReply, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
+import { chooseFromMoreMenu, e2eOrganizationId, expect, seedContact, seedReply, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
 
 /**
  * Contacts and Companies ("Leads and CRM" in docs/decisions.md). Seeds its own people under a unique key:
@@ -166,11 +166,14 @@ test.describe("contacts and companies", () => {
     await details.getByRole("button", { name: "Edit Email" }).click();
     await expect(details.getByText("A contact needs an email or a LinkedIn profile.")).toBeVisible();
     await details.getByRole("button", { name: "Cancel" }).click();
-    // Rhea has an open deal, so the delete row names it and offers no button.
-    const deletion = page.getByTestId("contact-delete");
-    await expect(deletion.getByTestId("contact-delete-state")).toHaveText("This contact cannot be deleted.");
+    // Rhea has an open deal: Delete contact in the More menu names it, links it and has nothing to confirm.
+    await chooseFromMoreMenu(page, "Delete contact");
+    const deletion = page.getByTestId("contact-delete-status");
+    await expect(deletion).toContainText("This contact cannot be deleted.");
     await expect(deletion).toContainText(`Rhea Reply ${SUFFIX} has 1 open deal. Close or delete them first.`);
     await expect(deletion.getByRole("link", { name: /, New$/ })).toHaveAttribute("href", new RegExp(`^/crm/deals/${UUID.source}${fromContact}$`));
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Delete contact" })).toBeDisabled();
+    await page.getByRole("dialog").getByRole("button", { name: "Keep contact" }).click();
     await expect(page.getByTestId("person-stop").getByRole("button", { name: "Mark do not contact" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Delete (lead|contact)/ })).toHaveCount(0);
     await history.locator("summary").click();
@@ -203,8 +206,8 @@ test.describe("contacts and companies", () => {
     await page.getByRole("tab", { name: /Tasks/ }).click();
     const panel = page.locator('[data-slot="tasks-panel"]');
     const task = `Send the pricing sheet ${SUFFIX}`;
-    await waitForHydrated(panel.getByLabel("New task"));
-    await panel.getByLabel("New task").fill(task);
+    await waitForHydrated(panel.getByLabel("Task", { exact: true }));
+    await panel.getByLabel("Task", { exact: true }).fill(task);
     await panel.getByRole("button", { name: "Add task" }).click();
     await expect(panel.getByText(task)).toBeVisible();
 

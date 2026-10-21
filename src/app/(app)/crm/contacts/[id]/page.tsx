@@ -37,7 +37,7 @@ import { ReachLinks } from "../../_components/person/reach-links";
 import { RecordBody, RecordHeader, RecordPage, RecordSection } from "../../_components/record/record-header";
 import { contactReturnPath } from "../../_components/return-path";
 import type { DeletePreview } from "./contact-delete-copy";
-import { ContactDeleteSection } from "./contact-delete";
+import { ContactMoreMenu } from "./contact-delete";
 
 export const metadata: Metadata = { title: "Contact" };
 
@@ -173,6 +173,7 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
                   Open conversation
                 </Link>
               )}
+              <ContactMoreMenu preview={deletePreview} returnTo={returnTo} />
             </>
           }
         />
@@ -235,9 +236,7 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
                 reason={policy?.reason ?? null}
                 setAt={policy?.setAt?.toISOString() ?? null}
                 suppression={suppression ? { reason: suppression.reason, note: suppression.note, date: suppression.createdAt.toISOString() } : null}
-              >
-                <ContactDeleteSection preview={deletePreview} returnTo={returnTo} />
-              </DoNotContactCard>
+              />
             </>
           }
         />
