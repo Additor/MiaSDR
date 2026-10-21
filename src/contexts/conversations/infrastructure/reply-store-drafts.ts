@@ -66,6 +66,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
           stopRequested: response.stopRequested === true,
           error: c.error,
           current: c.expectedContextVersion === head.version && c.status !== "stale",
+          acknowledged: c.acknowledgedAt !== null,
         };
       }
     }

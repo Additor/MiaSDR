@@ -74,10 +74,30 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
     return result.data;
   }
 
+  /** A decision taken here: true once it is saved, whatever the response carries. */
+  async function decide(name: string, call: () => Promise<{ ok: boolean; data: unknown; error: string | null }>, done: string) {
+    setBusy(name);
+    setError(null);
+    const result = await call();
+    setBusy(null);
+    if (!result.ok) return setError(result.error);
+    setDecided(done);
+    router.refresh();
+  }
+
   const classification = panel.classification;
   const held = classification?.status === "proposed" && classification.current;
-  // A suggestion to accept or a stop request to confirm needs a decision, so the classification section opens by itself.
-  const classificationNeedsYou = Boolean(held && classification.proposed) || Boolean(classification?.stopRequested && !panel.suppressed);
+  // An applied change nobody has looked at waits for "Looks right", as it does on the Actions row.
+  const unreviewed = classification?.status === "auto_applied" && !classification.acknowledged;
+  // A suggestion to accept, a change to look at or a stop request to confirm needs a decision, so the classification
+  // section opens by itself, and moves above the reply while no draft waits for approval.
+  const classificationNeedsYou = Boolean(held && classification.proposed) || Boolean(unreviewed) || Boolean(classification?.stopRequested && !panel.suppressed);
+  const classificationFirst = classificationNeedsYou && draft?.status !== "awaiting_review";
+  // After a decision taken here, the next item of the queue is one tap away, as after a send.
+  const [decided, setDecided] = useState<string | null>(null);
+  // Hand-typing starts folded while the AI can write the draft; with no AI, or once asked for, it is open.
+  const [composeOpen, setComposeOpen] = useState(false);
+  const composerFolded = panel.aiConfigured && !panel.answered && !composeOpen;
 
   async function discard() {
     if (!draft) return;
@@ -113,8 +133,92 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
     router.refresh();
   }
 
+  const classificationCard = (
+    <>
+      {/* The AI's reading of the last reply. Changing the category lives in one place, Change category in the side panel. */}
+      <Card>
+        <details open={classificationNeedsYou} data-testid="classification" className="group">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-(--card-spacing) text-sm font-semibold outline-none select-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+            Classification
+            {panel.category ? (
+              <Badge variant="secondary" data-testid="category-chip">
+                {panel.category.name} ({categorySourceLabel(panel.category.source)})
+              </Badge>
+            ) : (
+              <Badge variant="outline">Not classified</Badge>
+            )}
+            {panel.suppressed && <ReachFlag kind="suppressed" />}
+            {panel.doNotContact && <ReachFlag kind="do_not_contact" />}
+          </summary>
+          <div className="grid gap-3 px-(--card-spacing) pt-3 text-sm">
+            {/* Confidence and reasoning belong to the reading they describe: the held suggestion when there is one. */}
+            {classification && !held && classification.status !== "failed" && (classification.reasoning || classification.confidence != null) && (
+              <p className="text-muted-foreground">
+                {classification.confidence != null && `${Math.round(classification.confidence * 100)}% confident. `}
+                {classification.reasoning}
+              </p>
+            )}
+            {classification?.status === "failed" && <p className="text-destructive">Classification failed: {classification.error}</p>}
+            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category in the side panel sets one yourself." : "AI is off for this organization. Change category in the side panel sets one."}</p>}
+            {held && classification.proposed && (
+              <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="proposal">
+                <div>
+                  AI suggests <strong>{classification.proposed.name}</strong>
+                  {classification.confidence != null && ` (${Math.round(classification.confidence * 100)}% confident)`}. {classification.holdReason ? HOLD_TEXT[classification.holdReason] : ""}
+                </div>
+                {classification.reasoning && <p className="text-muted-foreground">{classification.reasoning}</p>}
+                <div>
+                  <Button size="sm" disabled={busy !== null} onClick={() => decide("accept", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: panel.contextVersion }), "Suggestion accepted.")}
+                  >
+                    Accept suggestion
+                  </Button>
+                </div>
+              </div>
+            )}
+            {unreviewed && classification && (
+              <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="review-change">
+                <p>The AI set this category. Change category in the side panel if it is wrong.</p>
+                <div>
+                  <Button
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => decide("ack", () => callApi(`/api/crm/classifications/${classification.id}/acknowledge`, "POST"), "Marked as looked at.")}
+                  >
+                    Looks right
+                  </Button>
+                </div>
+              </div>
+            )}
+            {decided && (
+              <div role="status" className="flex flex-wrap items-center gap-2" data-testid="decided">
+                <span>{decided}</span>
+                {fromQueue && next && (
+                  <Link href={next.href} className={cn(buttonVariants({ size: "sm" }), "max-sm:h-11")} data-testid="decided-next" aria-keyshortcuts="]">
+                    Next: {next.name}
+                  </Link>
+                )}
+              </div>
+            )}
+            {classification?.stopRequested && !panel.suppressed && (
+              <div className="grid gap-2 rounded-lg border border-destructive/40 p-3" data-testid="stop-banner">
+                <div>The sender appears to ask us to stop contacting them. Nothing is suppressed until you confirm.</div>
+                <div>
+                  <Button size="sm" variant="destructive" disabled={busy !== null} onClick={() => run("suppress", () => callApi(`/api/inbox/${panel.conversationId}/suppress`, "POST"))}>
+                    Add {panel.recipient ?? "sender"} to the suppression list
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </details>
+      </Card>
+    </>
+  );
+
   return (
     <div className="grid gap-4" data-testid="reply-panel">
+      {classificationFirst && classificationCard}
       {/* overflow-visible lets the action bar stick to the bottom of the screen while the card is taller than the view. */}
       <Card className="overflow-visible">
         <CardHeader>
@@ -169,7 +273,16 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               )}
             </div>
           )}
-          {(!draft || draft.status === "sent") && composer}
+          {(!draft || draft.status === "sent") &&
+            (!draft && composerFolded ? (
+              <div>
+                <Button size="sm" variant="ghost" onClick={() => setComposeOpen(true)} data-testid="write-yourself">
+                  Write it yourself
+                </Button>
+              </div>
+            ) : (
+              composer
+            ))}
 
           {draft?.status === "stale" && (
             <div className="grid gap-3" data-testid="stale-draft">
@@ -324,59 +437,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
         />
       )}
 
-      {/* The AI's reading of the last reply. Changing the category lives in one place, Change category in the side panel. */}
-      <Card>
-        <details open={classificationNeedsYou} data-testid="classification" className="group">
-          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-(--card-spacing) text-sm font-semibold outline-none select-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
-            Classification
-            {panel.category ? (
-              <Badge variant="secondary" data-testid="category-chip">
-                {panel.category.name} ({categorySourceLabel(panel.category.source)})
-              </Badge>
-            ) : (
-              <Badge variant="outline">Not classified</Badge>
-            )}
-            {panel.suppressed && <ReachFlag kind="suppressed" />}
-            {panel.doNotContact && <ReachFlag kind="do_not_contact" />}
-          </summary>
-          <div className="grid gap-3 px-(--card-spacing) pt-3 text-sm">
-            {/* Confidence and reasoning belong to the reading they describe: the held suggestion when there is one. */}
-            {classification && !held && classification.status !== "failed" && (classification.reasoning || classification.confidence != null) && (
-              <p className="text-muted-foreground">
-                {classification.confidence != null && `${Math.round(classification.confidence * 100)}% confident. `}
-                {classification.reasoning}
-              </p>
-            )}
-            {classification?.status === "failed" && <p className="text-destructive">Classification failed: {classification.error}</p>}
-            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category in the side panel sets one yourself." : "AI is off for this organization. Change category in the side panel sets one."}</p>}
-            {held && classification.proposed && (
-              <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="proposal">
-                <div>
-                  AI suggests <strong>{classification.proposed.name}</strong>
-                  {classification.confidence != null && ` (${Math.round(classification.confidence * 100)}% confident)`}. {classification.holdReason ? HOLD_TEXT[classification.holdReason] : ""}
-                </div>
-                {classification.reasoning && <p className="text-muted-foreground">{classification.reasoning}</p>}
-                <div>
-                  <Button size="sm" disabled={busy !== null} onClick={() => run("accept", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: panel.contextVersion }))}>
-                    Accept suggestion
-                  </Button>
-                </div>
-              </div>
-            )}
-            {classification?.stopRequested && !panel.suppressed && (
-              <div className="grid gap-2 rounded-lg border border-destructive/40 p-3" data-testid="stop-banner">
-                <div>The sender appears to ask us to stop contacting them. Nothing is suppressed until you confirm.</div>
-                <div>
-                  <Button size="sm" variant="destructive" disabled={busy !== null} onClick={() => run("suppress", () => callApi(`/api/inbox/${panel.conversationId}/suppress`, "POST"))}>
-                    Add {panel.recipient ?? "sender"} to the suppression list
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </details>
-      </Card>
+      {!classificationFirst && classificationCard}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { inboxHref, type InboxParams } from "@/contexts/conversations/domain/inb
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import type { Actor } from "@/shared/errors";
 import { pickNextUnread } from "./next-unread";
+import { QueueKeys } from "./queue-keys";
 
 /**
  * "Next unread" for the thread header. It reads the list the person came from (same view, search and filters, same
@@ -20,9 +21,15 @@ export async function NextUnreadLink({ currentId, params, actor }: { currentId: 
   if (!nextId && here.view !== "unread") nextId = pickNextUnread((await listInbox(deps, actor, { ...here, view: "unread", page: 1 })).rows, currentId);
   if (!nextId) return <span className="text-sm whitespace-nowrap text-muted-foreground">No other unread</span>;
   const query = inboxHref(here).split("?")[1];
+  const href = `/inbox/${nextId}${query ? `?${query}` : ""}`;
+  // `]` opens it, as Next in queue does from Actions, so the key works on both ways in.
   return (
-    <Link href={`/inbox/${nextId}${query ? `?${query}` : ""}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-      Next unread
-    </Link>
+    <>
+      <QueueKeys href={href} />
+      <Link href={href} className={cn(buttonVariants({ variant: "outline", size: "sm" }))} data-testid="next-unread" aria-keyshortcuts="]" title="Next unread (])">
+        Next unread
+        <kbd aria-hidden className="ml-1 hidden rounded border px-1 font-sans text-[0.7rem] leading-4 text-muted-foreground sm:inline">]</kbd>
+      </Link>
+    </>
   );
 }

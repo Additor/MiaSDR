@@ -60,4 +60,31 @@ test.describe("the conversation page", () => {
     await expect(category).toContainText("Set by a person");
     await expect(card.getByTestId("category-chip")).toContainText("Meeting requested");
   });
+
+  test("a held suggestion with no draft leads the page, and hand-typing waits behind one button", async ({ page }) => {
+    await signInAdmin(page);
+    const lead = { email: "pia@s45c.test", firstName: "Pia", lastName: "Lund", title: "CISO", company: "S45C Co" };
+    await seedReply(page.request, { key: "s45c", mailbox: "sdr-s45c@e2e-corp.test", lead, reply: { bodyText: "Send the security questionnaire when you can." } });
+    const [row] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+    await page.goto(`/inbox/${row.id}`);
+    const panel = page.getByTestId("reply-panel");
+    const card = panel.getByTestId("classification");
+    await expect(card).toHaveAttribute("open", "");
+    // The decision comes before the reply card.
+    const order = await panel.evaluate((el) => {
+      const c = el.querySelector('[data-testid="classification"]');
+      const w = el.querySelector('[data-testid="write-yourself"]');
+      return c && w ? c.compareDocumentPosition(w) & Node.DOCUMENT_POSITION_FOLLOWING : 0;
+    });
+    expect(order, "classification before the reply").toBeGreaterThan(0);
+    await expect(panel.getByTestId("reply-composer")).toHaveCount(0);
+
+    const accept = card.getByRole("button", { name: "Accept suggestion" });
+    await waitForHydrated(accept);
+    await accept.click();
+    await expect(panel.getByTestId("decided")).toContainText("Suggestion accepted.");
+
+    await panel.getByTestId("write-yourself").click();
+    await expect(panel.getByTestId("reply-composer")).toBeVisible();
+  });
 });
