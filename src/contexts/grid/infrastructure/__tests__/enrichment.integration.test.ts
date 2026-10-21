@@ -360,6 +360,51 @@ describeDb("grid enrichment runs", () => {
     for (const key of Object.values(keys)) for (const form of [key, encodeURIComponent(key)]) expect(stored).not.toContain(form);
   });
 
+  it("keeps a paid catch-all verdict across a retry, and saves it when the last attempt fails", async () => {
+    const { actor, table, rows } = await fixture();
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
+    await addFake(d, actor, "fake-b", { defaultCostCents: 3 });
+    const { ProviderError } = await import("../../application/enrichment-ports");
+    let aCalls = 0;
+    f.handler = async (call) => {
+      if (call.provider.key === "fake-b") return { outcome: "miss", primary: "catch_all", outputs: { email: "ada@acme.com", confidence: 40 } };
+      aCalls++;
+      if (aCalls === 1) throw new ProviderError("upstream 503", true);
+      return { outcome: "miss", primary: null, outputs: { email: null, confidence: null } };
+    };
+    await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
+      inputs: { fullName: "name", companyDomain: "domain" },
+      steps: [{ providerKey: "fake-a", actionKey: "find-email" }, { providerKey: "fake-b", actionKey: "find-email" }],
+      selectedOutputs: ["email", "confidence"],
+    });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const [job] = await sql`select status, provider_state from grid_jobs where table_id = ${table} and row_id = ${rows[0]}`;
+    expect(job).toMatchObject({ status: "queued", provider_state: { missed: ["fake-b/find-email"], fallback: { primary: "catch_all" }, spentCents: 3 } });
+
+    await sql`update grid_jobs set run_after = now() - interval '1 minute' where table_id = ${table}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const row = await cells(rows[0]);
+    const main = Object.keys(row.cells).find((k) => !["name", "domain", "email", "confidence"].includes(k))!;
+    expect(row.cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com", confidence: 40 });
+    expect(row.cell_meta[main]).toMatchObject({ outcome: "miss", provider: "fake-b", costCents: 5 });
+
+    // A cell whose last attempt fails still keeps the verdict it paid for.
+    f.handler = async (call) => {
+      if (call.provider.key === "fake-b") return { outcome: "miss", primary: "catch_all", outputs: { email: "ada@acme.com", confidence: 40 } };
+      throw new ProviderError("upstream 503", true);
+    };
+    await sql`delete from grid_jobs where table_id = ${table}`;
+    await m.run.requestRun(d.runDeps, actor, table, { rowIds: [rows[0]] });
+    await sql`update grid_jobs set attempts = 2 where table_id = ${table}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const [last] = await sql`select status from grid_jobs where table_id = ${table} and row_id = ${rows[0]}`;
+    expect(last.status).toBe("succeeded");
+    expect((await cells(rows[0])).cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com" });
+  });
+
   it("holds cells back when a provider's rate limit is used up, without spending their attempts", async () => {
     const { actor, table } = await fixture(Array.from({ length: 5 }, (_, i) => ({ name: `Person${i} Test`, domain: "acme.com" })));
     const f = fake();

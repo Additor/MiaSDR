@@ -4,7 +4,8 @@ import { hasCellValue } from "./enrichment-templates";
  * Waterfall semantics: steps run in order and the first hit wins. A miss moves on. A permanent error
  * (bad key, rejected request) is recorded and moves on. A transient error or a rate-limited provider moves
  * on too, but if nothing hits the cell is retried later, and the steps that already answered with a miss
- * are not asked again. Every attempt is returned so the caller can write one ledger row per attempt.
+ * are not asked again. A retry carries the first miss verdict and the cents spent, so a paid answer and the cost cap
+ * survive it. Every attempt is returned so the caller can write one ledger row per attempt.
  */
 
 export interface WaterfallStep {
@@ -36,7 +37,7 @@ export interface StepAttempt {
 export type WaterfallResult =
   | { status: "hit"; winner: Extract<StepExecution, { kind: "result" }>; winnerStep: WaterfallStep; attempts: StepAttempt[]; spentCents: number; missed: string[] }
   | { status: "miss"; fallback?: MissVerdict; attempts: StepAttempt[]; spentCents: number; missed: string[] }
-  | { status: "retry"; retryAfterMs?: number; attempts: StepAttempt[]; spentCents: number; missed: string[] }
+  | { status: "retry"; retryAfterMs?: number; fallback?: MissVerdict; attempts: StepAttempt[]; spentCents: number; missed: string[] }
   | { status: "failed"; message: string; attempts: StepAttempt[]; spentCents: number; missed: string[] };
 
 /** A miss that still carried a verdict, such as a catch-all address. The first one in step order is kept. */
@@ -53,6 +54,10 @@ export interface WaterfallOptions {
   estimate: (step: WaterfallStep) => number;
   /** Steps that answered with a miss on an earlier try of this cell. */
   alreadyMissed?: ReadonlySet<string>;
+  /** The miss verdict an earlier try of this cell kept. */
+  carriedFallback?: MissVerdict;
+  /** Cents earlier tries of this cell spent, counted against `maxCostCents`. */
+  carriedSpentCents?: number;
   /** Stops early (cancel, deadline). */
   shouldStop?: () => boolean;
 }
@@ -64,12 +69,12 @@ export async function runWaterfall(
 ): Promise<WaterfallResult> {
   const attempts: StepAttempt[] = [];
   const missed = new Set(options.alreadyMissed ?? []);
-  let spent = 0;
+  let spent = options.carriedSpentCents ?? 0;
   let transient = false;
   let limitedAfterMs: number | undefined;
   let permanentMessage: string | null = null;
   let answered = false;
-  let fallback: MissVerdict | undefined;
+  let fallback: MissVerdict | undefined = options.carriedFallback;
 
   for (const step of steps) {
     if (options.shouldStop?.()) {
@@ -112,7 +117,7 @@ export async function runWaterfall(
   }
 
   const base = { attempts, spentCents: spent, missed: [...missed] };
-  if (transient || limitedAfterMs !== undefined) return { status: "retry", retryAfterMs: limitedAfterMs, ...base };
+  if (transient || limitedAfterMs !== undefined) return { status: "retry", retryAfterMs: limitedAfterMs, ...(fallback ? { fallback } : {}), ...base };
   if (!answered && permanentMessage !== null) return { status: "failed", message: permanentMessage, ...base };
   return { status: "miss", ...(fallback ? { fallback } : {}), ...base };
 }

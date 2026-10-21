@@ -7,7 +7,7 @@ import { inputsReady } from "../domain/enrichment-cascade";
 import { sanitizeOutput, sanitizeOutputString } from "../domain/output-sanitize";
 import { boundedAudit, cleanError, redactSecrets } from "../domain/enrichment-redact";
 import { cellText, hasCellValue, normalizeDomain, ownCell, tokensIn, validateInput } from "../domain/enrichment-templates";
-import { runWaterfall, stepId, type StepAttempt, type StepExecution, type WaterfallStep } from "../domain/enrichment-waterfall";
+import { runWaterfall, stepId, type MissVerdict, type StepAttempt, type StepExecution, type WaterfallStep } from "../domain/enrichment-waterfall";
 import {
   GridAiError,
   ProviderError,
@@ -20,6 +20,7 @@ import {
   type GridRunStore,
   type LedgerRun,
   type ProviderStore,
+  type RetryState,
 } from "./enrichment-ports";
 import { cascadeSpecFor, estimateStepCents } from "./enrichment-cost";
 
@@ -172,7 +173,23 @@ async function succeedOnce(deps: WorkerDeps, job: CellJob, write: CellWrite, run
   }
 }
 
-async function finishRetry(deps: WorkerDeps, job: CellJob, attempts: StepAttempt[], missed: string[], retryAfterMs: number | undefined, message: string) {
+/** The job's saved state, read with care: it comes back from a JSON column. */
+function retryStateOf(job: CellJob): { missed: Set<string>; fallback?: MissVerdict; spentCents: number } {
+  const state = job.providerState ?? {};
+  const missed = Array.isArray(state.missed) ? state.missed.filter((id): id is string => typeof id === "string") : [];
+  const f = state.fallback;
+  const fallback =
+    f && typeof f === "object" && f.step && typeof f.step.providerKey === "string" && typeof f.step.actionKey === "string" && f.outputs && typeof f.outputs === "object"
+      ? { step: { providerKey: f.step.providerKey, actionKey: f.step.actionKey }, primary: f.primary, outputs: f.outputs }
+      : undefined;
+  const spentCents = typeof state.spentCents === "number" && Number.isFinite(state.spentCents) && state.spentCents > 0 ? state.spentCents : 0;
+  return { missed: new Set(missed), fallback, spentCents };
+}
+
+/** True when this try used the cell's last attempt on a transient error, so a retry would fail it. */
+const lastAttempt = (job: CellJob, attempts: StepAttempt[]) => attempts.some((a) => a.outcome === "error" && a.retryable) && job.attempts >= job.maxAttempts;
+
+async function finishRetry(deps: WorkerDeps, job: CellJob, attempts: StepAttempt[], state: RetryState, retryAfterMs: number | undefined, message: string) {
   const sawTransientError = attempts.some((a) => a.outcome === "error" && a.retryable);
   // A pure rate-limit wait does not use up an attempt: nothing was wrong with the cell.
   const consumeAttempt = sawTransientError;
@@ -181,7 +198,7 @@ async function finishRetry(deps: WorkerDeps, job: CellJob, attempts: StepAttempt
     return "failed";
   }
   const delay = Math.max(retryAfterMs ?? 0, sawTransientError ? retryDelayMs(job.attempts) : 0, 1000);
-  await deps.store.retryLater(job, { runAfter: new Date(deps.now().getTime() + delay), error: message, consumeAttempt, missed, runs: ledger(attempts) });
+  await deps.store.retryLater(job, { runAfter: new Date(deps.now().getTime() + delay), error: message, consumeAttempt, state, runs: ledger(attempts) });
   return "retried";
 }
 
@@ -213,15 +230,20 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
     estimates.set(stepId(step), provider ? estimateStepCents(provider, action) : 0);
   }
 
+  const carried = retryStateOf(job);
   const result = await runWaterfall(plan.steps, (step) => executeStep(deps, job, step, plan.inputs, cells, gate), {
     maxCostCents: plan.maxCostCents,
     estimate: (step) => estimates.get(stepId(step)) ?? 0,
-    alreadyMissed: new Set(job.providerState?.missed ?? []),
+    alreadyMissed: carried.missed,
+    carriedFallback: carried.fallback,
+    carriedSpentCents: carried.spentCents,
   });
 
-  if (result.status === "retry") {
+  // On the last attempt a paid miss verdict is saved as the cell's answer instead of failing the cell.
+  if (result.status === "retry" && !(result.fallback && lastAttempt(job, result.attempts))) {
     const message = result.attempts.find((a) => a.outcome === "error")?.detail ?? "Every provider was busy or unavailable. The cell will run again soon.";
-    return finishRetry(deps, job, result.attempts, result.missed, result.retryAfterMs, message);
+    const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents };
+    return finishRetry(deps, job, result.attempts, state, result.retryAfterMs, message);
   }
   if (result.status === "failed") {
     await deps.store.fail(job, result.message, ledger(result.attempts));
@@ -270,7 +292,7 @@ async function runAiColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awai
     const transient = error instanceof GridAiError ? error.transient : true;
     const message = cleanError(error instanceof Error ? error.message : String(error));
     const attempt: StepAttempt = { step: { providerKey: "ai", actionKey: "answer" }, outcome: "error", costCents: 0, detail: message, retryable: transient };
-    if (transient) return finishRetry(deps, job, [attempt], [], undefined, message);
+    if (transient) return finishRetry(deps, job, [attempt], {}, undefined, message);
     await deps.store.fail(job, message, ledger([attempt]));
     return "failed";
   }
@@ -360,7 +382,7 @@ export function createGridRunJob(deps: WorkerDeps): Job {
             // A bug or a dropped connection must not strand the cell in `running` until the lease expires.
             const message = cleanError(error instanceof Error ? error.message : String(error));
             if (job.attempts >= job.maxAttempts) await deps.store.fail(job, message, []).catch(() => false);
-            else await deps.store.retryLater(job, { runAfter: new Date(deps.now().getTime() + retryDelayMs(job.attempts)), error: message, consumeAttempt: true, missed: job.providerState?.missed ?? [], runs: [] }).catch(() => false);
+            else await deps.store.retryLater(job, { runAfter: new Date(deps.now().getTime() + retryDelayMs(job.attempts)), error: message, consumeAttempt: true, state: job.providerState ?? {}, runs: [] }).catch(() => false);
             return "error";
           })
           .then((outcome) => {

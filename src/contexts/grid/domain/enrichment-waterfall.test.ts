@@ -54,6 +54,20 @@ describe("waterfall", () => {
     expect(result).toMatchObject({ status: "retry", missed: ["a/find"] });
   });
 
+  it("keeps an earlier try's miss verdict and spend, so a retry neither loses the answer nor resets the cost cap", async () => {
+    const carriedFallback = { step: b, primary: "catch_all", outputs: { status: "catch_all" } };
+    const run = scripted({ "a/find": miss() });
+    const result = await runWaterfall([a, b], run.execute, { estimate: () => 0, alreadyMissed: new Set(["b/find"]), carriedFallback, carriedSpentCents: 4 });
+    expect(result).toMatchObject({ status: "miss", fallback: carriedFallback, spentCents: 5 });
+    const capped = scripted({ "a/find": miss() });
+    const skipped = await runWaterfall([a], capped.execute, { estimate: () => 3, maxCostCents: 5, carriedSpentCents: 4 });
+    expect(capped.asked).toEqual([]);
+    expect(skipped.attempts[0]).toMatchObject({ outcome: "skipped" });
+    // A retry hands the verdict on to the next try.
+    const busy = scripted({ "a/find": { kind: "error", transient: true, message: "502" } });
+    expect(await runWaterfall([a, b], busy.execute, { estimate: () => 0, alreadyMissed: new Set(["b/find"]), carriedFallback })).toMatchObject({ status: "retry", fallback: carriedFallback });
+  });
+
   it("does not ask a step that already missed on an earlier try", async () => {
     const run = scripted({ "b/find": hit("z@acme.test") });
     const result = await runWaterfall([a, b], run.execute, { estimate: () => 0, alreadyMissed: new Set(["a/find"]) });

@@ -82,7 +82,7 @@ A new provider starts with the vendor's published per-minute limit where there i
 | 401, or a body that says the key is wrong | The key is wrong. The step fails and is not retried. |
 | 403 | The key is wrong, or your plan does not include the endpoint. The step fails. Hunter's 403 is its rate limit and retries. |
 | 402, Hunter's 429, or a body that says the credits ran out | Out of credits. The step fails and a waterfall moves on. |
-| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries, and steps that already missed are not asked again. |
+| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries. Steps that already missed are not asked again, and a catch-all or unknown verdict from an earlier try stays. |
 | Hunter's 451 | The person asked Hunter not to process their data. The step fails. |
 | Any other 4xx | The input is wrong for that vendor. The step fails. |
 

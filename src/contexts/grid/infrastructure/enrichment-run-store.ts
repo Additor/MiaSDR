@@ -422,7 +422,7 @@ export const drizzleGridRunStore: GridRunStore = {
           error: sanitizeOutputString(options.error, 1000),
           runAfter: options.runAfter,
           attempts: options.consumeAttempt ? job.attempts : Math.max(0, job.attempts - 1),
-          providerState: options.missed.length > 0 ? { missed: options.missed } : null,
+          providerState: (options.state.missed?.length ?? 0) > 0 || options.state.fallback || (options.state.spentCents ?? 0) > 0 ? options.state : null,
           updatedAt: new Date(),
         })
         .where(fenced(job))

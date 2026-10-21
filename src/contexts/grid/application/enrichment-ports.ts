@@ -1,6 +1,6 @@
 import type { ActionSpec } from "../domain/enrichment-catalog";
 import type { CascadeColumn } from "../domain/enrichment-cascade";
-import type { StepAttempt } from "../domain/enrichment-waterfall";
+import type { MissVerdict, StepAttempt } from "../domain/enrichment-waterfall";
 
 /** A provider as the application sees it. There is deliberately no field for the credential. */
 export interface ProviderRecord {
@@ -144,6 +144,12 @@ export interface EnqueueTarget {
   delaySeconds?: number;
 }
 
+export interface RetryState {
+  missed?: string[];
+  fallback?: MissVerdict;
+  spentCents?: number;
+}
+
 export interface CellJob {
   id: string;
   organizationId: string;
@@ -152,7 +158,8 @@ export interface CellJob {
   columnKey: string;
   attempts: number;
   maxAttempts: number;
-  providerState: { missed?: string[] } | null;
+  /** What earlier tries of this cell left: the steps that missed, the first miss verdict and the cents spent. */
+  providerState: RetryState | null;
   /** The lease token. Every write that finishes the job is fenced by it. */
   lockedAt: Date;
 }
@@ -236,7 +243,7 @@ export interface GridRunStore {
 
   /** Each finisher returns false when the lease was lost, and then writes nothing. */
   succeed(job: CellJob, write: CellWrite, runs: LedgerRun[], cascade: CascadeSpec | false): Promise<boolean>;
-  retryLater(job: CellJob, options: { runAfter: Date; error: string; consumeAttempt: boolean; missed: string[]; runs: LedgerRun[] }): Promise<boolean>;
+  retryLater(job: CellJob, options: { runAfter: Date; error: string; consumeAttempt: boolean; state: RetryState; runs: LedgerRun[] }): Promise<boolean>;
   fail(job: CellJob, error: string, runs: LedgerRun[]): Promise<boolean>;
   /** The cell had nothing to work with. The job ends and the cell returns to idle. */
   skip(job: CellJob, reason: string): Promise<boolean>;
