@@ -479,6 +479,30 @@ describeDb("grid enrichment runs", () => {
     expect(queued.every((j) => j.later)).toBe(true);
   });
 
+  it("stops a verification waterfall at catch-all when the column counts it as settled", async () => {
+    const { actor, table, rows } = await fixture([{ about: "ada@acme.com" }]);
+    const hosts: string[] = [];
+    const vendorFetch = (async (url: URL) => {
+      hosts.push(url.hostname);
+      return new Response(JSON.stringify({ data: { email: "ada@acme.com", status: "accept_all", score: 60 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const d = deps(fake(), { fetch: vendorFetch });
+    for (const adapter of ["hunter", "zerobounce"]) await m.providers.createProvider(d.providerDeps, actor, { adapter, credentials: { apiKey: `${adapter}-key-0123456789` } });
+    await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
+      inputs: { email: "about" },
+      steps: ["hunter", "zerobounce"].map((providerKey) => ({ providerKey, actionKey: "verify-email" })),
+      selectedOutputs: ["status"],
+      settledStatuses: ["valid", "invalid", "disposable", "catch_all"],
+    });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(hosts).toEqual(["api.hunter.io"]);
+    const row = await cells(rows[0]);
+    const main = Object.keys(row.cells).find((k) => !["about", "status"].includes(k))!;
+    expect(row.cell_meta[main]).toMatchObject({ outcome: "hit", provider: "hunter" });
+    expect(row.cells).toMatchObject({ status: "catch_all" });
+  });
+
   it("holds cells back when a provider's rate limit is used up, without spending their attempts", async () => {
     const { actor, table } = await fixture(Array.from({ length: 5 }, (_, i) => ({ name: `Person${i} Test`, domain: "acme.com" })));
     const f = fake();

@@ -27,6 +27,17 @@ export const SETTLED_STATUSES: readonly VerificationStatus[] = ["valid", "invali
 
 export const isSettled = (status: VerificationStatus): boolean => SETTLED_STATUSES.includes(status);
 
+export const VERIFICATION_STATUSES: readonly VerificationStatus[] = ["valid", "invalid", "catch_all", "unknown", "disposable"];
+
+/**
+ * A verify-email answer read against a column's own settled verdicts, for a team that stops at catch-all. Other actions
+ * and answers without a verdict keep the vendor's reading.
+ */
+export function settleVerdict<T extends { outcome: "hit" | "miss"; primary: unknown }>(actionKey: string, answer: T, settled: readonly VerificationStatus[] | undefined): T {
+  if (!settled || actionKey !== "verify-email" || typeof answer.primary !== "string" || !VERIFICATION_STATUSES.includes(answer.primary as VerificationStatus)) return answer;
+  return { ...answer, outcome: settled.includes(answer.primary as VerificationStatus) ? "hit" : "miss" };
+}
+
 /** Maps a vendor's word through its table. Case and surrounding space do not matter; an unknown word is "unknown". */
 export function verificationStatus(raw: unknown, table: Readonly<Record<string, VerificationStatus>>): VerificationStatus {
   if (typeof raw !== "string") return "unknown";

@@ -59,7 +59,7 @@ Every verifier's answer maps to one Status. The vendor's own word stays in Provi
 | catch_all | accept_all | catch-all; valid with sub-status accept_all or role_based_accept_all; do_not_mail with sub-status role_based_catch_all | catch_all | catchall |
 | unknown | unknown, webmail and anything else | unknown | unknown | unknown |
 
-Valid, invalid and disposable settle an address, so a verification waterfall stops there. Catch-all and unknown move on to the next verifier. When no step settles the address, the cell shows the first catch-all or unknown verdict and its columns, marked as a miss, so you keep the answer you paid for.
+Valid, invalid and disposable settle an address, so a verification waterfall stops there. Catch-all and unknown move on to the next verifier. A column can choose its own settled verdicts (`settledStatuses`). The dialog offers "Stop at a catch-all verdict instead of asking the next verifier" for a team that mails catch-all addresses anyway. When no step settles the address, the cell shows the first catch-all or unknown verdict and its columns, marked as a miss, so you keep the answer you paid for.
 
 Hunter's webmail names the mailbox host (Gmail, Outlook) and carries a fixed score of 50, so it moves a waterfall on. ZeroBounce and NeverBounce get a time limit (20 and 10 seconds) under the cell's 30, so a slow server ends as unknown before the call is cut off.
 

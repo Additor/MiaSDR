@@ -4,6 +4,7 @@ import { tokensIn } from "../domain/enrichment-templates";
 import { chainPlacement } from "../domain/column-layout";
 import { normalizeKey, uniqueColumnKey, uniqueColumnName } from "../domain/keys";
 import type { ActionSpec } from "../domain/enrichment-catalog";
+import type { VerificationStatus } from "../domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "../domain/enrichment-inputs";
 import type { AdapterRegistry, ColumnChange, ColumnRow, GridRunStore, NewColumn, ProviderStore } from "./enrichment-ports";
 
@@ -80,6 +81,7 @@ export interface CreateEnrichmentInput extends Placement {
   autoRun?: boolean;
   delaySeconds?: number;
   reuseDays?: number;
+  settledStatuses?: VerificationStatus[];
 }
 
 /** Refuses a mapping that misses a required input or every combination the action accepts. `step` is 0-based. */
@@ -111,6 +113,7 @@ export async function createEnrichmentColumns(deps: ColumnDeps, actor: Actor, ta
       outputs: Object.fromEntries(plan.outputRows.map((r) => [r.o.outputKey, r.key])),
       delaySeconds: input.delaySeconds,
       reuseDays: input.reuseDays,
+      settledStatuses: input.settledStatuses,
     });
     return {
       renumber: plan.renumber,
@@ -133,6 +136,7 @@ export interface CreateWaterfallInput extends Placement {
   maxCredits?: number;
   onRateLimit?: "next" | "wait";
   reuseDays?: number;
+  settledStatuses?: VerificationStatus[];
   autoRun?: boolean;
   delaySeconds?: number;
 }
@@ -163,6 +167,7 @@ export async function createWaterfallColumns(deps: ColumnDeps, actor: Actor, tab
       maxCredits: input.maxCredits,
       onRateLimit: input.onRateLimit,
       reuseDays: input.reuseDays,
+      settledStatuses: input.settledStatuses,
       delaySeconds: input.delaySeconds,
     });
     return {

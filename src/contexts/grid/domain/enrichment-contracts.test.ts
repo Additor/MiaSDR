@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROVIDER_CATALOG } from "./enrichment-catalog";
-import { CONTRACTS, isSettled, percentScore, verificationStatus, type ContractKey } from "./enrichment-contracts";
+import { CONTRACTS, isSettled, percentScore, settleVerdict, verificationStatus, type ContractKey } from "./enrichment-contracts";
 
 describe("action contracts", () => {
   it("every catalog action named after a contract offers the contract's inputs, outputs and primary", () => {
@@ -39,5 +39,16 @@ describe("action contracts", () => {
     expect(percentScore(140)).toBe(100);
     expect(percentScore(null)).toBeNull();
     expect(percentScore("high")).toBeNull();
+  });
+
+  it("reads a verdict against a column's own settled list, and leaves other actions alone", () => {
+    const catchAll = { outcome: "miss" as const, primary: "catch_all" };
+    const settled = ["valid", "invalid", "disposable", "catch_all"] as const;
+    expect(settleVerdict("verify-email", catchAll, [...settled]).outcome).toBe("hit");
+    expect(settleVerdict("verify-email", catchAll, undefined).outcome).toBe("miss");
+    // A team that asks the next verifier on "invalid" too.
+    expect(settleVerdict("verify-email", { outcome: "hit" as const, primary: "invalid" }, ["valid"]).outcome).toBe("miss");
+    expect(settleVerdict("find-work-email", { outcome: "miss" as const, primary: "catch_all" }, [...settled]).outcome).toBe("miss");
+    expect(settleVerdict("verify-email", { outcome: "miss" as const, primary: null }, [...settled]).outcome).toBe("miss");
   });
 });

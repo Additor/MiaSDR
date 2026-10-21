@@ -4,6 +4,7 @@ import { RATE_WINDOW_MS, LocalRateGate } from "../domain/enrichment-rate-limit";
 import { aiConfigSchema, DEFAULT_REUSE_DAYS, enrichmentConfigSchema, waterfallConfigSchema } from "../domain/enrichment-config";
 import { coerceAiOutput } from "../domain/ai-output-coerce";
 import { inputsReady } from "../domain/enrichment-cascade";
+import { settleVerdict, type VerificationStatus } from "../domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "../domain/enrichment-inputs";
 import { sanitizeOutput, sanitizeOutputString } from "../domain/output-sanitize";
 import { boundedAudit, cleanError, redactSecrets } from "../domain/enrichment-redact";
@@ -56,15 +57,15 @@ export { estimateStepCents };
 function stepsOf(
   type: string,
   config: Record<string, unknown>,
-): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number; maxCredits?: number; waitOnRateLimit?: boolean; reuseDays: number } | string {
+): { steps: WaterfallStep[]; inputs: Record<string, string>; outputs: Record<string, string>; maxCostCents?: number; maxCredits?: number; waitOnRateLimit?: boolean; reuseDays: number; settled?: VerificationStatus[] } | string {
   if (type === "enrichment") {
     const parsed = enrichmentConfigSchema.safeParse(config);
     if (!parsed.success) return "This column's configuration is invalid. Save it again.";
-    return { steps: [{ providerKey: parsed.data.providerKey, actionKey: parsed.data.actionKey }], inputs: parsed.data.inputs, outputs: parsed.data.outputs, reuseDays: parsed.data.reuseDays ?? DEFAULT_REUSE_DAYS };
+    return { steps: [{ providerKey: parsed.data.providerKey, actionKey: parsed.data.actionKey }], inputs: parsed.data.inputs, outputs: parsed.data.outputs, reuseDays: parsed.data.reuseDays ?? DEFAULT_REUSE_DAYS, settled: parsed.data.settledStatuses };
   }
   const parsed = waterfallConfigSchema.safeParse(config);
   if (!parsed.success) return "This column's configuration is invalid. Save it again.";
-  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents, maxCredits: parsed.data.maxCredits, waitOnRateLimit: parsed.data.onRateLimit === "wait", reuseDays: parsed.data.reuseDays ?? DEFAULT_REUSE_DAYS };
+  return { steps: parsed.data.steps, inputs: parsed.data.inputs, outputs: parsed.data.outputs, maxCostCents: parsed.data.maxCostCents, maxCredits: parsed.data.maxCredits, waitOnRateLimit: parsed.data.onRateLimit === "wait", reuseDays: parsed.data.reuseDays ?? DEFAULT_REUSE_DAYS, settled: parsed.data.settledStatuses };
 }
 
 /**
@@ -280,7 +281,10 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   }
 
   const carried = retryStateOf(job);
-  const result = await runWaterfall(plan.steps, (step) => executeStep(deps, job, step, plan.inputs, cells, gate, plan.reuseDays), {
+  const result = await runWaterfall(plan.steps, async (step) => {
+    const result = await executeStep(deps, job, step, plan.inputs, cells, gate, plan.reuseDays);
+    return result.kind === "result" ? settleVerdict(step.actionKey, result, plan.settled) : result;
+  }, {
     maxCostCents: plan.maxCostCents,
     estimate: (step) => estimates.get(stepId(step)) ?? 0,
     alreadyMissed: carried.missed,

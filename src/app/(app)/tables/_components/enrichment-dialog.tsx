@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { DEFAULT_REUSE_DAYS } from "@/contexts/grid/domain/enrichment-config";
+import { SETTLED_STATUSES } from "@/contexts/grid/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/domain/enrichment-inputs";
 import { guessColumn, usableProviders, useProviders, type ActionSpec, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
@@ -114,6 +115,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
   const [maxCredits, setMaxCredits] = useState("");
   const [waitOnLimit, setWaitOnLimit] = useState(false);
   const [reuseDays, setReuseDays] = useState(String(DEFAULT_REUSE_DAYS));
+  const [stopAtCatchAll, setStopAtCatchAll] = useState(false);
   const [autoRun, setAutoRun] = useState(false);
   const [delay, setDelay] = useState("0");
   const [busy, setBusy] = useState(false);
@@ -192,6 +194,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
       autoRun,
       delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
       reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
+      ...(stopAtCatchAll && steps[0]?.actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
     };
     const body =
       mode === "single"
@@ -332,6 +335,12 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
                   <Checkbox checked={waitOnLimit} onCheckedChange={(v) => setWaitOnLimit(v === true)} />
                   Wait for a rate-limited step instead of asking the next one
                 </label>
+                {steps[0]?.actionKey === "verify-email" && (
+                  <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                    <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
+                    Stop at a catch-all verdict instead of asking the next verifier
+                  </label>
+                )}
               </div>
             )}
             <RunTiming autoRun={autoRun} setAutoRun={setAutoRun} delay={delay} setDelay={setDelay} />
