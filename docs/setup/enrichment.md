@@ -49,6 +49,10 @@ A cell runs once its row fills the action's required inputs and one combination 
 
 In the Enrichment dialog, choose Waterfall. "Start from" offers Verify email and Find work email with every connected vendor that has the action. After the first step, the dialog lists only vendors that offer the first step's action.
 
+## Reading results
+
+The grid shows verdicts in words (Valid, Invalid, Catch-all, Unknown, Disposable); the cell keeps the code, so filters and exports see `catch_all`. A cell that ran and found or settled nothing carries a dashed-circle marker, and its tooltip names the steps that never answered, such as a provider that was off or out of credits. A cell waiting to run again shows a clock with the reason and the time. Press the "failed" count in the run bar to filter the grid to the rows whose run failed; the filter is the "run failed" condition, which you clear like any other. The cell drawer shows the result, the cost in credits and dollars, and each call, with reused answers marked.
+
 ## Verification status
 
 Every verifier's answer maps to one Status. The vendor's own word stays in Provider status.

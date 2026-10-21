@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addFilter, filtersNarrow, keepsTableOrder, removeFilter, setSort, toggleHidden } from "./view";
+import { addFilter, filtersNarrow, keepsTableOrder, removeFilter, setSort, toggleHidden, withRunFailures } from "./view";
 
 describe("view helpers", () => {
   it("adds and removes filters", () => {
@@ -45,5 +45,13 @@ describe("view helpers", () => {
     expect(filtersNarrow({ filters: { conjunction: "and", conditions: [{ columnKey: "n", operator: "gt", value: "5" }] } }, types)).toBe(true);
     // A condition on a column the table lost applies nothing.
     expect(filtersNarrow({ filters: { conjunction: "and", conditions: [{ columnKey: "gone", operator: "empty" }] } }, types)).toBe(false);
+  });
+});
+
+describe("show the rows whose run failed", () => {
+  it("adds a run failed filter over the runner columns on top of the filters already there", () => {
+    expect(withRunFailures({}, ["find", "verify"]).filters).toEqual({ conjunction: "or", conditions: [{ columnKey: "find", operator: "runFailed" }, { columnKey: "verify", operator: "runFailed" }] });
+    const narrowed = withRunFailures({ filters: { conjunction: "and", conditions: [{ columnKey: "name", operator: "notEmpty" }] } }, ["find"]);
+    expect(narrowed.filters).toEqual({ conjunction: "and", conditions: [{ conjunction: "and", conditions: [{ columnKey: "name", operator: "notEmpty" }] }, { conjunction: "or", conditions: [{ columnKey: "find", operator: "runFailed" }] }] });
   });
 });

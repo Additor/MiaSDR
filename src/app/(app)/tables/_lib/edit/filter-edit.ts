@@ -14,12 +14,14 @@ const TEXT_OPERATORS: FilterOperator[] = ["contains", "notContains", "eq", "neq"
 const ORDERED_OPERATORS: FilterOperator[] = ["eq", "neq", "gt", "gte", "lt", "lte", "empty", "notEmpty"];
 const EXACT_OPERATORS: FilterOperator[] = ["eq", "neq", "empty", "notEmpty"];
 
-/** The operators the panel offers for a column type, best default first. */
-export function operatorsFor(type: string): FilterOperator[] {
-  if (isNumericFilterType(type) || type === "date") return ORDERED_OPERATORS;
-  if (type === "boolean" || type === "select") return EXACT_OPERATORS;
-  return TEXT_OPERATORS;
+/** The operators the panel offers for a column type, best default first. A column a run fills also offers "run failed". */
+export function operatorsFor(type: string, options: { runs?: boolean } = {}): FilterOperator[] {
+  const base = isNumericFilterType(type) || type === "date" ? ORDERED_OPERATORS : type === "boolean" || type === "select" ? EXACT_OPERATORS : TEXT_OPERATORS;
+  return options.runs ? [...base, "runFailed"] : base;
 }
+
+/** Column types a run fills: the runner columns and their output columns. */
+export const RUN_FILLED_TYPES: ReadonlySet<string> = new Set(["enrichment", "waterfall", "ai", "integration_output", "ai_output"]);
 
 export const defaultOperatorFor = (type: string): FilterOperator => operatorsFor(type)[0];
 

@@ -500,7 +500,8 @@ export const drizzleGridRunStore: GridRunStore = {
         .where(fenced(job))
         .returning({ id: gridJobs.id });
       if (done.length === 0) return false;
-      await patchRow(tx, job.organizationId, job.tableId, job.rowId, {}, { [job.columnKey]: { status: "queued" } });
+      // The cell says why it waits and until when, so a long vendor wait is not a spinner without a reason.
+      await patchRow(tx, job.organizationId, job.tableId, job.rowId, {}, { [job.columnKey]: { status: "queued", reason: sanitizeOutputString(options.error, 300), runAfter: options.runAfter.toISOString() } });
       await writeRuns(tx, job, options.runs);
       return true;
     });

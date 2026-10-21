@@ -178,6 +178,10 @@
   ::selection {
     background-color: color-mix(in oklab, var(--foreground) 14%, transparent);
   }
+  /* Native radios take the primary color, like the drawn checkboxes beside them. */
+  input[type="radio"] {
+    accent-color: var(--primary);
+  }
   /* Counts, dates and amounts line up in every table and fact list. */
   table,
   dl {

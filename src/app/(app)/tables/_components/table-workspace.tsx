@@ -14,7 +14,7 @@ import { useGridTable } from "../_lib/data/use-grid-table";
 import { cellRunBody, recalcSummary, retrySummary, runCellSource } from "../_lib/data/run-request";
 import { withGridFocus } from "../_lib/edit/history-focus";
 import { layoutPins, pinPhoneNotice, withPin } from "../_lib/view/pin-layout";
-import { filtersNarrow, keepsTableOrder, setSort, toggleHidden } from "../_lib/view/view";
+import { filtersNarrow, keepsTableOrder, setSort, toggleHidden, withRunFailures } from "../_lib/view/view";
 import { activeConditionCount } from "@/contexts/grid/domain/view-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
@@ -350,6 +350,7 @@ export function TableWorkspace({ tableId }: Props) {
         activeFilters={activeConditionCount(view.filters, types)}
         sortCount={view.sorts?.length ?? 0}
         onJobsChanged={() => void grid.reload()}
+        onShowFailed={() => void grid.saveView(withRunFailures(view, columns.filter((c) => c.type === "enrichment" || c.type === "waterfall" || c.type === "ai").map((c) => c.key)))}
       />
 
       <ViewBar view={view} nameOf={nameOf} saveView={grid.saveView} personalView={grid.personalView} canEditDefault={grid.canEditDefault} onResetView={grid.resetView} onSaveDefaultView={grid.saveDefaultView} />

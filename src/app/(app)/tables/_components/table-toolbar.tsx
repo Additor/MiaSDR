@@ -46,6 +46,8 @@ interface Props {
   activeFilters: number;
   sortCount: number;
   onJobsChanged: () => void;
+  /** Filters the grid to the rows whose run failed. */
+  onShowFailed?: () => void;
 }
 
 /** The row of controls above the grid: search, add, import and export, column visibility, run, row count. */
@@ -133,7 +135,7 @@ export function TableToolbar(props: Props) {
           </DropdownMenu>
         </>
       )}
-      <RunProgress tableId={props.tableId} jobs={props.jobs} activeJobs={props.activeJobs} onChanged={props.onJobsChanged} />
+      <RunProgress tableId={props.tableId} jobs={props.jobs} activeJobs={props.activeJobs} onChanged={props.onJobsChanged} onShowFailed={props.onShowFailed} />
 
       <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
         <Button variant="ghost" size="icon-sm" aria-label="Undo" title="Undo (Ctrl+Z or Cmd+Z)" disabled={!props.canUndo} onClick={props.onUndo}>

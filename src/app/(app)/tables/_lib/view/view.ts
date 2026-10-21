@@ -12,11 +12,22 @@ export const OPERATOR_LABELS: Record<FilterOperator, string> = {
   notEmpty: "is not empty",
   contains: "contains",
   notContains: "does not contain",
+  runFailed: "run failed",
 };
 
-export const operatorNeedsValue = (op: FilterOperator) => op !== "empty" && op !== "notEmpty";
+export const operatorNeedsValue = (op: FilterOperator) => op !== "empty" && op !== "notEmpty" && op !== "runFailed";
 
 const topGroup = (view: TableView): FilterGroup => view.filters ?? { conjunction: "and", conditions: [] };
+
+/**
+ * The view narrowed to the rows where any of `columnKeys` failed its run, on top of the filters already there. The
+ * person clears it like any filter.
+ */
+export function withRunFailures(view: TableView, columnKeys: readonly string[]): TableView {
+  const failed: FilterGroup = { conjunction: "or", conditions: columnKeys.map((columnKey) => ({ columnKey, operator: "runFailed" as const })) };
+  const current = topGroup(view);
+  return { ...view, filters: current.conditions.length === 0 ? failed : { conjunction: "and", conditions: [current, failed] } };
+}
 
 export function addFilter(view: TableView, condition: FilterCondition): TableView {
   const group = topGroup(view);

@@ -5,7 +5,8 @@ import { parseNumericText } from "./cell-values";
  * Pure shape handling. The SQL for a query lives in infrastructure.
  */
 
-export const FILTER_OPERATORS = ["eq", "neq", "gt", "gte", "lt", "lte", "empty", "notEmpty", "contains", "notContains"] as const;
+/** `runFailed` reads the cell's run state, not its value: the rows whose enrichment, waterfall or AI cell failed. */
+export const FILTER_OPERATORS = ["eq", "neq", "gt", "gte", "lt", "lte", "empty", "notEmpty", "contains", "notContains", "runFailed"] as const;
 export type FilterOperator = (typeof FILTER_OPERATORS)[number];
 
 export type FilterCondition = { columnKey: string; operator: FilterOperator; value?: string; disabled?: boolean };
@@ -181,8 +182,8 @@ export function validateView(view: unknown, known: ReadonlySet<string>, types?: 
   return null;
 }
 
-/** Operators that compare with the filter value. "empty" and "notEmpty" read the cell alone. */
-export const filterNeedsValue = (operator: FilterOperator) => operator !== "empty" && operator !== "notEmpty";
+/** Operators that compare with the filter value. "empty", "notEmpty" and "runFailed" read the cell alone. */
+export const filterNeedsValue = (operator: FilterOperator) => operator !== "empty" && operator !== "notEmpty" && operator !== "runFailed";
 
 /**
  * Whether the SQL builder applies this condition. A muted condition, a comparison with a blank value and a

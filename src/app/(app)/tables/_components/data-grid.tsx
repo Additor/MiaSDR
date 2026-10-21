@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircleIcon, ArrowDownIcon, ArrowUpIcon, ExpandIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from "lucide-react";
+import { AlertCircleIcon, ArrowDownIcon, ArrowUpIcon, CircleDashedIcon, Clock3Icon, ExpandIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -555,7 +555,21 @@ const GridCell = memo(function GridCell(p: CellProps) {
         <div className="flex w-full min-w-0 items-center gap-1 px-2">
           <CellContent value={value} column={column} onToggle={p.onToggle} />
           {status.state === "running" && <Loader2Icon className="ml-auto size-3.5 shrink-0 animate-spin text-muted-foreground" aria-label="Running" />}
-          {status.state === "skipped" && <AlertCircleIcon className="ml-auto size-3.5 shrink-0 text-warning" aria-label={status.message} />}
+          {status.state === "waiting" && (
+            <span className="ml-auto shrink-0" title={status.message}>
+              <Clock3Icon className="size-3.5 text-muted-foreground" aria-label={`Waiting: ${status.message}`} />
+            </span>
+          )}
+          {status.state === "miss" && (
+            <span className="ml-auto shrink-0" title={status.message}>
+              <CircleDashedIcon className="size-3.5 text-muted-foreground" aria-label={status.message} />
+            </span>
+          )}
+          {status.state === "skipped" && (
+            <span className="ml-auto shrink-0" title={status.message}>
+              <AlertCircleIcon className="size-3.5 text-warning" aria-label={status.message} />
+            </span>
+          )}
           {status.state === "error" && (
             <span className="ml-auto shrink-0" title={status.message}>
               <AlertCircleIcon className="size-3.5 text-destructive" aria-label={status.message} />

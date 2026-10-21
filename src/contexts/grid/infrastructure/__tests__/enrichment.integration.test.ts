@@ -387,6 +387,9 @@ describeDb("grid enrichment runs", () => {
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     const [job] = await sql`select status, provider_state from grid_jobs where table_id = ${table} and row_id = ${rows[0]}`;
     expect(job).toMatchObject({ status: "queued", provider_state: { missed: ["fake-b/find-email"], fallback: { primary: "catch_all" }, spentCents: 3 } });
+    // The waiting cell says why and until when.
+    const waiting = (await cells(rows[0])).cell_meta;
+    expect(Object.values(waiting).find((m) => (m as { status?: string }).status === "queued")).toMatchObject({ reason: "upstream 503", runAfter: expect.any(String) });
 
     await sql`update grid_jobs set run_after = now() - interval '1 minute' where table_id = ${table}`;
     await tick(m.worker.createGridRunJob(d.worker("w1")));
@@ -406,7 +409,10 @@ describeDb("grid enrichment runs", () => {
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     const [last] = await sql`select status from grid_jobs where table_id = ${table} and row_id = ${rows[0]}`;
     expect(last.status).toBe("succeeded");
-    expect((await cells(rows[0])).cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com" });
+    const saved = await cells(rows[0]);
+    expect(saved.cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com" });
+    // The miss names the step that never answered.
+    expect(saved.cell_meta[main]).toMatchObject({ outcome: "miss", unanswered: ["fake-a: upstream 503"] });
   });
 
   it("finds a work email from a company name when the row has no domain, and refuses a column that maps neither", async () => {

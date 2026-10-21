@@ -327,7 +327,17 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   const hit = result.status === "hit";
   // With no hit, the first verdict a vendor gave (a catch-all address) still fills the cells, so a paid answer is kept.
   const answer = hit ? { step: result.winnerStep, primary: result.winner.primary, outputs: result.winner.outputs } : result.fallback;
-  const base = { status: "success", outcome: hit ? "hit" : "miss", provider: answer?.step.providerKey, costCents: result.spentCents, ...(result.attempts.some((a) => typeof a.credits === "number") || result.spentCredits > 0 ? { credits: result.spentCredits } : {}), runAt };
+  // On a miss, the steps that never answered (off, out of credits, over a cap) are named, so "Not found" does not hide them.
+  const unanswered = hit ? [] : result.attempts.filter((a) => a.outcome === "skipped" || a.outcome === "error").map((a) => sanitizeOutputString(`${a.step.providerKey}: ${a.detail ?? a.outcome}`, 160));
+  const base = {
+    status: "success",
+    outcome: hit ? "hit" : "miss",
+    provider: answer?.step.providerKey,
+    costCents: result.spentCents,
+    ...(result.attempts.some((a) => typeof a.credits === "number") || result.spentCredits > 0 ? { credits: result.spentCredits } : {}),
+    ...(unanswered.length > 0 ? { unanswered } : {}),
+    runAt,
+  };
   cells2[column.key] = answer ? sanitizeOutputString(cellText(answer.primary)) : "Not found";
   meta[column.key] = base;
   for (const [outputKey, columnKey] of Object.entries(plan.outputs)) {

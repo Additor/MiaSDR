@@ -152,7 +152,22 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
 }
 
 /** Progress of the queue with Stop and Retry failed. Hidden when the table has never run anything. */
-export function RunProgress({ tableId, jobs, activeJobs, columnKey, onChanged }: { tableId: string; jobs: JobCounts | null; activeJobs: number; columnKey?: string; onChanged: () => void }) {
+export function RunProgress({
+  tableId,
+  jobs,
+  activeJobs,
+  columnKey,
+  onChanged,
+  onShowFailed,
+}: {
+  tableId: string;
+  jobs: JobCounts | null;
+  activeJobs: number;
+  columnKey?: string;
+  onChanged: () => void;
+  /** Filters the grid to the rows whose run failed. */
+  onShowFailed?: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   if (!jobs) return null;
   const pending = jobs.queued + jobs.running + jobs.waiting;
@@ -184,7 +199,16 @@ export function RunProgress({ tableId, jobs, activeJobs, columnKey, onChanged }:
         <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
       </div>
       <span className="tabular-nums">
-        {pending > 0 ? `${pending.toLocaleString("en-US")} left` : "Done"} · {done.toLocaleString("en-US")} succeeded{jobs.failed > 0 ? ` · ${jobs.failed.toLocaleString("en-US")} failed` : ""}
+        {pending > 0 ? `${pending.toLocaleString("en-US")} left` : "Done"} · {done.toLocaleString("en-US")} succeeded
+        {jobs.failed > 0 && " · "}
+        {jobs.failed > 0 &&
+          (onShowFailed ? (
+            <button type="button" className="font-medium text-destructive underline underline-offset-2 hover:no-underline" title="Show only the rows whose run failed" onClick={onShowFailed}>
+              {jobs.failed.toLocaleString("en-US")} failed
+            </button>
+          ) : (
+            `${jobs.failed.toLocaleString("en-US")} failed`
+          ))}
       </span>
       {pending > 0 && (
         <Button type="button" size="xs" variant="outline" onClick={stop} disabled={busy}>

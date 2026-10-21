@@ -5,7 +5,7 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { gridRequest, gridUrl } from "../_lib/data/client";
-import { displayValue, editorText, runCost, typeLabel } from "../_lib/view/format";
+import { cellResultText, displayValue, editorText, RUN_OUTCOME_LABELS, runCost, typeLabel } from "../_lib/view/format";
 import type { GridColumn, GridRow } from "../_lib/data/types";
 
 interface Props {
@@ -74,7 +74,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
         <SheetHeader>
           <SheetTitle>{column.name}</SheetTitle>
           <SheetDescription>
-            Row {rowNumber} · {typeLabel(column.type)} · version {row.version}
+            Row {rowNumber} · {typeLabel(column.type)}
           </SheetDescription>
         </SheetHeader>
         <div className="grid gap-5 px-4 pb-6 text-sm">
@@ -91,16 +91,34 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
                 State
               </h3>
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                {meta.status && (
+                {cellResultText(meta) && (
                   <>
-                    <dt className="text-muted-foreground">Status</dt>
-                    <dd>{meta.status}</dd>
+                    <dt className="text-muted-foreground">Result</dt>
+                    <dd>{cellResultText(meta)}</dd>
                   </>
                 )}
-                {meta.outcome && (
+                {(meta.costCents !== undefined || meta.credits !== undefined) && (
                   <>
-                    <dt className="text-muted-foreground">Outcome</dt>
-                    <dd>{meta.outcome}</dd>
+                    <dt className="text-muted-foreground">Cost</dt>
+                    <dd className="tabular-nums">{runCost({ costCents: meta.costCents ?? 0, credits: meta.credits ?? null })}</dd>
+                  </>
+                )}
+                {meta.unanswered && meta.unanswered.length > 0 && (
+                  <>
+                    <dt className="text-muted-foreground">Did not answer</dt>
+                    <dd>
+                      <ul className="grid gap-0.5">
+                        {meta.unanswered.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </dd>
+                  </>
+                )}
+                {meta.reason && meta.status === "queued" && (
+                  <>
+                    <dt className="text-muted-foreground">Waiting for</dt>
+                    <dd>{meta.reason}</dd>
                   </>
                 )}
                 {meta.provider && (
@@ -143,7 +161,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
                   {runs?.map((r) => (
                     <li key={r.id} className="rounded-lg border p-2.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "outline"}>{r.outcome}</Badge>
+                        <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "outline"}>{RUN_OUTCOME_LABELS[r.outcome] ?? r.outcome}</Badge>
                         {r.reused && <Badge variant="outline">Reused</Badge>}
                         {r.provider && <span>{r.provider}</span>}
                         <Time value={r.createdAt} className="text-xs text-muted-foreground" />

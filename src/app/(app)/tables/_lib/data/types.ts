@@ -24,6 +24,10 @@ export interface CellMeta {
   costCents?: number;
   /** Vendor credits the cell used across its steps, when its providers count credits. */
   credits?: number;
+  /** On a miss: the steps that never answered, as "provider: why". */
+  unanswered?: string[];
+  /** When a waiting cell runs again (ISO time). */
+  runAfter?: string;
   runAt?: string;
 }
 

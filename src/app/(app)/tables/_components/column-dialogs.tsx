@@ -11,6 +11,7 @@ import { FILTER_OPERATORS, type FilterOperator, type TableView } from "@/context
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { EDITABLE_TYPE_OPTIONS, selectOptions, typeLabel } from "../_lib/view/format";
 import type { GridColumn } from "../_lib/data/types";
+import { RUN_FILLED_TYPES } from "../_lib/edit/filter-edit";
 import { addFilter, OPERATOR_LABELS, operatorNeedsValue } from "../_lib/view/view";
 import type { ColumnAction } from "./column-menu";
 import { Choice, ErrorText, Field } from "./form-bits";
@@ -248,7 +249,7 @@ function FilterDialog({ column, view, saveView, onClose }: { column: GridColumn;
   const [operator, setOperator] = useState<FilterOperator>("contains");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
-  const items = FILTER_OPERATORS.map((o) => ({ value: o, label: OPERATOR_LABELS[o] }));
+  const items = FILTER_OPERATORS.filter((o) => o !== "runFailed" || RUN_FILLED_TYPES.has(column.type)).map((o) => ({ value: o, label: OPERATOR_LABELS[o] }));
   const submit = async () => {
     setBusy(true);
     const ok = await saveView(addFilter(view, { columnKey: column.key, operator, ...(operatorNeedsValue(operator) ? { value } : {}) }));

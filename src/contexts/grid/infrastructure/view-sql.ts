@@ -32,6 +32,7 @@ function conditionSql(c: FilterCondition, types: Map<string, string>): SQL | nul
   const raw = sql`${gridRows.cells} ->> ${c.columnKey}`;
   if (c.operator === "empty") return sql`(${raw} is null or ${raw} = '')`;
   if (c.operator === "notEmpty") return sql`(${raw} is not null and ${raw} <> '')`;
+  if (c.operator === "runFailed") return sql`(${gridRows.cellMeta} -> ${c.columnKey} ->> 'status') = 'error'`;
   // A blank value means "no filter yet". Treating it as an empty-text comparison would hide every row while the person types.
   const value = c.value ?? "";
   if (value.trim() === "") return null;

@@ -21,6 +21,7 @@ import {
   normalizeFilters,
   operatorAfterColumnChange,
   operatorsFor,
+  RUN_FILLED_TYPES,
   removeNode,
   removeSortAt,
   setGroupConjunction,
@@ -225,6 +226,7 @@ interface RowProps {
 function ConditionRow({ condition, path, root, columns, types, onChange }: RowProps) {
   const name = path.map((p) => p + 1).join(".");
   const type = types.get(condition.columnKey) ?? "text";
+  const runs = RUN_FILLED_TYPES.has(columns.find((c) => c.key === condition.columnKey)?.type ?? "");
   const muted = condition.disabled === true;
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${muted ? "opacity-60" : ""}`} role="group" aria-label={`Condition ${name}${muted ? " (muted)" : ""}`}>
@@ -240,8 +242,8 @@ function ConditionRow({ condition, path, root, columns, types, onChange }: RowPr
         <Choice
           label={`Condition ${name} operator`}
           value={condition.operator}
-          items={operatorsFor(type).map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))}
-          onChange={(op) => onChange(updateCondition(root, path, { operator: operatorsFor(type).find((o) => o === op) ?? condition.operator }))}
+          items={operatorsFor(type, { runs }).map((op) => ({ value: op, label: OPERATOR_LABELS[op] }))}
+          onChange={(op) => onChange(updateCondition(root, path, { operator: operatorsFor(type, { runs }).find((o) => o === op) ?? condition.operator }))}
         />
       </div>
       {operatorNeedsValue(condition.operator) && (

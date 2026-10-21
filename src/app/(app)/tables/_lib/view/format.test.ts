@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellStatus, displayValue, editorText, parseEditorText, runCost, selectOptions } from "./format";
+import { cellResultText, cellStatus, displayValue, editorText, parseEditorText, runCost, selectOptions } from "./format";
 import type { GridColumn, GridRow } from "../data/types";
 
 const col = (type: GridColumn["type"], config: Record<string, unknown> = {}): GridColumn => ({ id: "c", tableId: "t", key: "k", name: "K", type, config, dependsOn: [], position: 0, autoRun: false });
@@ -39,5 +39,27 @@ describe("run cost in the cell drawer", () => {
     expect(runCost({ costCents: 0, credits: 0 })).toBe("No charge");
     expect(runCost({ costCents: 0, credits: null })).toBe("No charge");
     expect(runCost({ costCents: 0, credits: 0, reused: true })).toBe("Reused, no charge");
+  });
+});
+
+describe("enrichment results in words", () => {
+  const verify = { type: "enrichment", config: { actionKey: "verify-email" } };
+  const statusOut = { type: "integration_output", config: { outputKey: "status", valueType: "text" } };
+  const emailOut = { type: "integration_output", config: { outputKey: "email", valueType: "text" } };
+
+  it("names verification verdicts and leaves other values alone", () => {
+    expect(displayValue("catch_all", verify as never)).toBe("Catch-all");
+    expect(displayValue("valid", statusOut as never)).toBe("Valid");
+    expect(displayValue("catch_all", emailOut as never)).toBe("catch_all");
+    expect(displayValue("Not found", verify as never)).toBe("Not found");
+  });
+
+  it("says why a cell waits, and which steps never answered a miss", () => {
+    const row = (meta: Record<string, unknown>) => ({ id: "r", version: 1, cells: {}, cellMeta: { c: meta } }) as never;
+    expect(cellStatus(row({ status: "queued", reason: "Hunter returned 429.", runAfter: "2026-10-21T10:00:00Z" }), "c")).toMatchObject({ state: "waiting", message: expect.stringContaining("Hunter returned 429.") });
+    expect(cellStatus(row({ status: "queued" }), "c")).toEqual({ state: "running" });
+    expect(cellStatus(row({ status: "success", outcome: "miss", unanswered: ["zerobounce: off"] }), "c")).toMatchObject({ state: "miss", message: expect.stringContaining("zerobounce: off") });
+    expect(cellResultText({ status: "success", outcome: "hit" })).toBe("Found");
+    expect(cellResultText({ status: "skipped: cap" })).toBe("Held back by the auto-run limit");
   });
 });

@@ -144,6 +144,18 @@ describeDb("grid core", () => {
       await expect(structure.deleteTable(deps, actor, first.id)).rejects.toBeInstanceOf(ConflictError);
     });
 
+    it("filters to the rows whose run failed in a column", async () => {
+      const { actor } = await org();
+      const { table: t } = await table(actor);
+      const [a] = await withColumns(actor, t.id, [["Alpha", "text"]]);
+      await rowsUc.addRows(deps, actor, t.id, 2);
+      const [bad] = (await sql`select id from grid_rows where table_id = ${t.id} order by position limit 1`) as unknown as Array<{ id: string }>;
+      await sql`update grid_rows set cell_meta = ${sql.json({ [a]: { status: "error", error: "boom" } } as never)} where id = ${bad.id}`;
+      await structure.updateTable(deps, { ...actor, role: "owner" }, t.id, { view: { filters: { conjunction: "and", conditions: [{ columnKey: a, operator: "runFailed" }] } } });
+      const page = await rowsUc.getTablePage(deps, actor, t.id);
+      expect(page.rows.map((r: { id: string }) => r.id)).toEqual([bad.id]);
+    });
+
     it("saves a view and drops what a deleted column leaves behind", async () => {
       const { actor } = await org();
       const { table: t } = await table(actor);
