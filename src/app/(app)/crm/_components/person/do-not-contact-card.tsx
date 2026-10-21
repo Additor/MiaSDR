@@ -21,8 +21,8 @@ export function DoNotContactNote({ doNotContact, reason, setAt }: { doNotContact
 }
 
 /**
- * The stop controls at the foot of a person's side column: do not contact, the suppression state, and what the page
- * adds below (the lead's or the contact's delete row). The contact delete dialog can open
+ * The stop controls at the foot of every person side column (lead, contact, deal, Inbox thread): do not contact, the
+ * suppression state, and what the page adds below (the delete row, or the thread's reply handling). The contact delete dialog can open
  * the do not contact control here (`openDncControl`).
  */
 export function DoNotContactCard({
@@ -31,18 +31,20 @@ export function DoNotContactCard({
   reason,
   setAt,
   suppression,
+  testId = "person-stop",
   children,
 }: {
   personId: string;
   doNotContact: boolean;
   reason: string | null;
   /** ISO timestamp of the flag, or null when the person was never marked. */
-  setAt: string | null;
+  setAt: Date | string | null;
   suppression: { reason: string; note: string | null; date: string } | null;
+  testId?: string;
   children?: ReactNode;
 }) {
   return (
-    <AsideSection title="Do not contact" testId="person-stop">
+    <AsideSection title="Do not contact" testId={testId}>
       <DoNotContactNote doNotContact={doNotContact} reason={reason} setAt={setAt} />
       {suppression && (
         <p className="text-sm text-muted-foreground">

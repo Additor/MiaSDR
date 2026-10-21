@@ -33,7 +33,8 @@ test.describe("who handles a reply", () => {
     const threadUrl = page.url();
     const assignee = page.getByTestId("thread-assignee");
     await expect(assignee.getByText("You handle this conversation.")).toBeVisible();
-    await expect(page.getByText("Assigned to Ada Admin")).toBeVisible();
+    // The assignment is an Activity line; Activity folds behind its count.
+    await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Assigned to Ada Admin");
 
     await page.goto("/actions");
     await expect(page.getByRole("link", { name: /^Mine \d+/ })).toBeVisible();
@@ -50,7 +51,7 @@ test.describe("who handles a reply", () => {
     await page.goto(threadUrl);
     await pick(page, assignee.getByRole("combobox", { name: "Assign to" }), MEMBER.name);
     await expect(assignee.getByRole("combobox", { name: "Assign to" })).toContainText(MEMBER.name);
-    await expect(page.getByText(`Assigned to ${MEMBER.name}`)).toBeVisible();
+    await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText(`Assigned to ${MEMBER.name}`);
     await page.goto("/actions");
     await expect(page.getByTestId("queue-item").filter({ hasText: "Cora Vance" })).toHaveCount(0);
     await page.goto("/actions?scope=others");

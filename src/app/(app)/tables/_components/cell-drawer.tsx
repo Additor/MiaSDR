@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { PlayIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { cellResultText, displayValue, editorText, RUN_OUTCOME_LABELS, runCost, typeLabel } from "../_lib/view/format";
@@ -13,6 +15,8 @@ interface Props {
   row: GridRow;
   column: GridColumn;
   rowNumber: number;
+  /** Runs the cell again, for a cell a run fills. */
+  onRun?: () => void;
   onClose: () => void;
 }
 
@@ -40,12 +44,22 @@ const OUTCOME_VARIANT: Record<string, "secondary" | "destructive" | "outline"> =
 
 const pretty = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
 
+/** The reason a failed run gave, from its stored response. */
+function runError(run: Run): string | null {
+  if (run.outcome !== "error" && run.outcome !== "failed") return null;
+  const r = run.response as { error?: unknown; detail?: unknown } | null;
+  const text = typeof r?.error === "string" ? r.error : typeof r?.detail === "string" ? r.detail : null;
+  return text?.trim() || null;
+}
 
 /** Everything known about one cell: its value, the state of its last run and the history of attempts. */
-export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) {
+export function CellDrawer({ tableId, row, column, rowNumber, onRun, onClose }: Props) {
   const [details, setDetails] = useState<Details | null>(null);
   const [runs, setRuns] = useState<Run[] | null>(null);
-  const [state, setState] = useState<"loading" | "none" | "ready">("loading");
+  const [state, setState] = useState<"loading" | "none" | "failed" | "ready">("loading");
+  const [attempt, setAttempt] = useState(0);
+  // Focus lands on the drawer's body, not on Run this cell, so a stray Enter never starts a paid run.
+  const body = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,135 +67,172 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
       const params = new URLSearchParams({ rowId: row.id, columnKey: column.key });
       const d = await gridRequest<Details>(`${gridUrl.sub(tableId, "cell-details")}?${params}`, "GET");
       if (cancelled) return;
-      if (!d.ok || !d.data) return setState("none");
+      // 404 means no run fills this cell; anything else is a failed load the person can retry.
+      if (!d.ok || !d.data) return setState(d.status === 404 ? "none" : "failed");
       setDetails(d.data);
       const h = await gridRequest<{ runs: Run[] }>(`${gridUrl.sub(tableId, "cell-runs")}?${params}`, "GET");
       if (cancelled) return;
-      setRuns(h.ok && h.data ? h.data.runs : []);
+      if (!h.ok || !h.data) return setState("failed");
+      setRuns(h.data.runs);
       setState("ready");
     })();
     return () => {
       cancelled = true;
     };
-  }, [tableId, row.id, column.key]);
+  }, [tableId, row.id, column.key, attempt]);
 
   const value = row.cells[column.key];
-  const meta = row.cellMeta[column.key];
+  // An output column's run state sits on the column that ran.
+  const meta = row.cellMeta[column.key] ?? (details ? row.cellMeta[details.sourceColumnKey] : undefined);
   // Verdicts read in words (Catch-all); the stored code shows underneath when it differs.
   const shown = typeof value === "string" ? displayValue(value, column) : "";
+  const text = shown || editorText(value);
+  const latestError = meta?.error ?? (runs?.[0] ? runError(runs[0]) : null);
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+      <SheetContent initialFocus={body} className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>{column.name}</SheetTitle>
           <SheetDescription>
             Row {rowNumber} · {typeLabel(column.type)}
           </SheetDescription>
         </SheetHeader>
-        <div className="grid gap-5 px-4 pb-6 text-sm">
-          <section aria-labelledby="cd-value">
-            <h3 id="cd-value" className="mb-1 text-xs font-medium text-muted-foreground">
-              Value
-            </h3>
-            <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2.5 text-xs break-words whitespace-pre-wrap">{shown || editorText(value) || "(empty)"}</pre>
-            {typeof value === "string" && shown !== value && <p className="mt-1 text-xs text-muted-foreground">Stored as {value}</p>}
+        <div ref={body} tabIndex={-1} className="grid gap-section px-4 pb-6 text-sm outline-none">
+          <section aria-labelledby="cd-value" className="stack-group">
+            <div className="flex min-h-7 items-center justify-between gap-3">
+              <h3 id="cd-value" className="text-sm font-semibold">
+                Value
+              </h3>
+              {onRun && (
+                <Button size="sm" variant="outline" className="max-sm:h-11" onClick={onRun}>
+                  <PlayIcon /> Run this cell
+                </Button>
+              )}
+            </div>
+            <p className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2.5 [overflow-wrap:anywhere] whitespace-pre-wrap">{text || <span className="text-muted-foreground">Empty</span>}</p>
+            {typeof value === "string" && shown !== value && <p className="text-xs text-muted-foreground">Stored as {value}</p>}
           </section>
 
-          {meta && (
-            <section aria-labelledby="cd-state">
-              <h3 id="cd-state" className="mb-1 text-xs font-medium text-muted-foreground">
-                State
+          {(meta || latestError) && (
+            <section aria-labelledby="cd-state" className="stack-group">
+              <h3 id="cd-state" className="text-sm font-semibold">
+                Last run
               </h3>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                {cellResultText(meta, shown !== "") && (
-                  <>
-                    <dt className="text-muted-foreground">Result</dt>
-                    <dd>{cellResultText(meta, shown !== "")}</dd>
-                  </>
-                )}
-                {(meta.costCents !== undefined || meta.credits !== undefined) && (
-                  <>
-                    <dt className="text-muted-foreground">Cost</dt>
-                    <dd className="tabular-nums">{runCost({ costCents: meta.costCents ?? 0, credits: meta.credits ?? null })}</dd>
-                  </>
-                )}
-                {meta.unanswered && meta.unanswered.length > 0 && (
-                  <>
-                    <dt className="text-muted-foreground">Did not answer</dt>
-                    <dd>
-                      <ul className="grid gap-0.5">
-                        {meta.unanswered.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    </dd>
-                  </>
-                )}
-                {meta.reason && meta.status === "queued" && (
-                  <>
-                    <dt className="text-muted-foreground">Waiting for</dt>
-                    <dd>{meta.reason}</dd>
-                  </>
-                )}
-                {meta.provider && (
-                  <>
-                    <dt className="text-muted-foreground">Provider</dt>
-                    <dd>{meta.provider}</dd>
-                  </>
-                )}
-                {meta.runAt && (
-                  <>
-                    <dt className="text-muted-foreground">Ran at</dt>
-                    <dd>
-                      <Time value={meta.runAt} />
-                    </dd>
-                  </>
-                )}
-                {meta.error && (
-                  <>
-                    <dt className="text-muted-foreground">Error</dt>
-                    <dd className="text-destructive">{meta.error}</dd>
-                  </>
-                )}
-              </dl>
+              {latestError && (
+                <p role="status" className="text-destructive">
+                  {latestError}
+                </p>
+              )}
+              {meta && (
+                <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1">
+                  {cellResultText(meta, shown !== "") && (
+                    <>
+                      <dt className="text-muted-foreground">Result</dt>
+                      <dd>{cellResultText(meta, shown !== "")}</dd>
+                    </>
+                  )}
+                  {(meta.costCents !== undefined || meta.credits !== undefined) && (
+                    <>
+                      <dt className="text-muted-foreground">Cost</dt>
+                      <dd className="tabular-nums">{runCost({ costCents: meta.costCents ?? 0, credits: meta.credits ?? null })}</dd>
+                    </>
+                  )}
+                  {meta.unanswered && meta.unanswered.length > 0 && (
+                    <>
+                      <dt className="text-muted-foreground">Did not answer</dt>
+                      <dd>
+                        <ul className="grid gap-0.5">
+                          {meta.unanswered.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      </dd>
+                    </>
+                  )}
+                  {meta.reason && meta.status === "queued" && (
+                    <>
+                      <dt className="text-muted-foreground">Waiting for</dt>
+                      <dd>{meta.reason}</dd>
+                    </>
+                  )}
+                  {meta.provider && (
+                    <>
+                      <dt className="text-muted-foreground">Provider</dt>
+                      <dd>{meta.provider}</dd>
+                    </>
+                  )}
+                  {meta.runAt && (
+                    <>
+                      <dt className="text-muted-foreground">Ran at</dt>
+                      <dd>
+                        <Time value={meta.runAt} />
+                      </dd>
+                    </>
+                  )}
+                </dl>
+              )}
             </section>
           )}
 
-          <section aria-labelledby="cd-runs">
-            <h3 id="cd-runs" className="mb-1 text-xs font-medium text-muted-foreground">
+          <section aria-labelledby="cd-runs" className="stack-group">
+            <h3 id="cd-runs" className="text-sm font-semibold">
               Run history
             </h3>
-            {state === "loading" && <p className="text-muted-foreground">Loading...</p>}
+            {state === "loading" && <p className="text-muted-foreground">Loading…</p>}
             {state === "none" && <p className="text-muted-foreground">This cell was typed or imported, so it has no runs.</p>}
+            {state === "failed" && (
+              <div role="alert" className="grid gap-2">
+                <p>The run history did not load.</p>
+                <div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="max-sm:h-11"
+                    onClick={() => {
+                      setState("loading");
+                      setAttempt((n) => n + 1);
+                    }}
+                  >
+                    Try again
+                  </Button>
+                </div>
+              </div>
+            )}
             {state === "ready" && details && (
               <>
-                <p className="mb-2 text-muted-foreground">
+                <p className="text-muted-foreground">
                   Produced by {details.sourceColumnName} ({typeLabel(details.sourceColumnType)}).
                 </p>
                 {runs && runs.length === 0 && <p className="text-muted-foreground">No recorded runs yet.</p>}
-                <ol className="grid gap-2">
-                  {runs?.map((r) => (
-                    <li key={r.id} className="rounded-lg border p-2.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "outline"}>{RUN_OUTCOME_LABELS[r.outcome] ?? r.outcome}</Badge>
-                        {r.reused && <Badge variant="outline">Reused</Badge>}
-                        {r.provider && <span>{r.provider}</span>}
-                        <Time value={r.createdAt} className="text-xs text-muted-foreground" />
-                        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                          {runCost(r)}
-                          {r.latencyMs !== null && !r.reused ? ` · ${r.latencyMs} ms` : ""}
-                        </span>
-                      </div>
-                      {r.response !== null && r.response !== undefined && (
-                        <details className="mt-2">
-                          <summary className="cursor-pointer text-xs text-muted-foreground">Response</summary>
-                          <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/40 p-2 text-xs break-words whitespace-pre-wrap">{pretty(r.response)}</pre>
-                        </details>
-                      )}
-                    </li>
-                  ))}
-                </ol>
+                {runs && runs.length > 0 && (
+                  <ol className="divide-y border-t">
+                    {runs.map((r) => {
+                      const error = runError(r);
+                      return (
+                        <li key={r.id} className="grid gap-1 py-2.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "outline"}>{RUN_OUTCOME_LABELS[r.outcome] ?? r.outcome}</Badge>
+                            {r.reused && <Badge variant="outline">Reused</Badge>}
+                            {r.provider && <span>{r.provider}</span>}
+                            <Time value={r.createdAt} className="text-xs text-muted-foreground" />
+                            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                              {runCost(r)}
+                              {r.latencyMs !== null && !r.reused ? ` · ${r.latencyMs} ms` : ""}
+                            </span>
+                          </div>
+                          {error && <p className="text-destructive">{error}</p>}
+                          {r.response !== null && r.response !== undefined && (
+                            <details>
+                              <summary className="w-fit cursor-pointer rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:py-2">Response</summary>
+                              <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/40 p-2 font-mono text-xs break-words whitespace-pre-wrap">{pretty(r.response)}</pre>
+                            </details>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
               </>
             )}
           </section>

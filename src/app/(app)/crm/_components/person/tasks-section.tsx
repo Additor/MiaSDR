@@ -11,7 +11,7 @@ import { TasksPanel, type TaskTarget } from "./tasks-panel";
  * the person, and new tasks get no record. `heading={false}` drops the panel's own title for a section that names it. Wrap
  * it in Suspense.
  */
-export async function TasksSection({ actor, heading, ...target }: TaskTarget & { actor: Actor; heading?: boolean }) {
+export async function TasksSection({ actor, heading, compact, ...target }: TaskTarget & { actor: Actor; heading?: boolean; compact?: boolean }) {
   await connection();
   const deps = taskDeps();
   const scope = target.recordId !== undefined ? { recordId: target.recordId } : { personId: target.personId };
@@ -21,6 +21,7 @@ export async function TasksSection({ actor, heading, ...target }: TaskTarget & {
     <TasksPanel
       {...target}
       heading={heading}
+      compact={compact}
       currentUserId={actor.userId}
       nowMs={deps.now().getTime()}
       members={members}

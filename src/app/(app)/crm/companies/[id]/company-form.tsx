@@ -1,14 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent, type ReactNode } from "react";
-import { toast } from "sonner";
 import { Time } from "@/components/shell/time";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { callApi } from "@/lib/api-client";
+import { AddField } from "../../_components/person/person-details";
+import { EditableFact, NotSet, type SaveResult } from "../../_components/record/inline-field";
 import { AsideSection } from "../../_components/record/record-header";
 
 interface CustomField {
@@ -18,9 +14,10 @@ interface CustomField {
 }
 
 /**
- * The company's facts, read first, and Edit for the name, LinkedIn page and company fields. The header already shows the
- * domain and LinkedIn page, so the panel lists the rest. The domain is the company's identity and has no edit: a person
- * moves to another company through their own form.
+ * The company's facts, each one edited and saved on its own row: the name, the LinkedIn page and the company fields. The
+ * domain is the company's identity and has no edit: a person moves to another company from their own Details. What
+ * nobody edits here (the domains a merge brought, values of removed fields, when the company was added) closes the panel
+ * in muted text.
  */
 export function CompanyDetails({
   id,
@@ -29,6 +26,7 @@ export function CompanyDetails({
   initial,
   customFields,
   otherDomains = [],
+  staleFields = [],
 }: {
   id: string;
   domain: string;
@@ -39,155 +37,87 @@ export function CompanyDetails({
   initial: { name: string; linkedin: string };
   /** The organization's company fields, in Settings order, with this company's values. */
   customFields: CustomField[];
+  /** Values under fields that were archived or removed. They stay, and no row edits them. */
+  staleFields?: CustomField[];
 }) {
-  const [editing, setEditing] = useState(false);
+  const save = (body: Record<string, unknown>) => saveCompany(id, body);
   const filled = customFields.filter((c) => c.value.trim() !== "");
 
   return (
-    <AsideSection
-      title="Details"
-      testId="company-details"
-      action={
-        !editing && (
-          <Button variant="ghost" size="sm" className="max-sm:h-11" onClick={() => setEditing(true)}>
-            Edit
-          </Button>
-        )
-      }
-    >
-      {editing ? (
-        <CompanyForm id={id} domain={domain} initial={initial} customFields={customFields} onDone={() => setEditing(false)} />
-      ) : (
-        <dl className="stack-group text-sm">
-          <Fact label="Name">{initial.name || <span className="text-muted-foreground">Not set, the domain stands in</span>}</Fact>
-          {otherDomains.length > 0 && (
-            <Fact label="Other domains">
-              <ul className="grid gap-1" data-testid="company-other-domains">
-                {otherDomains.map((alias) => (
-                  <li key={alias.domain}>
-                    {alias.domain}
-                    {alias.mergedName && <span className="text-muted-foreground">{` (was ${alias.mergedName})`}</span>}
-                  </li>
-                ))}
-              </ul>
-            </Fact>
+    <AsideSection title="Details" testId="company-details">
+      <dl className="stack-group text-sm">
+        <EditableFact label="Name" saved="Company name saved." inputs={[{ key: "name", value: initial.name, placeholder: domain, help: "Empty shows the domain in its place." }]} onSave={save}>
+          {initial.name || <NotSet>Not set, the domain stands in</NotSet>}
+        </EditableFact>
+        <EditableFact label="LinkedIn" saved="LinkedIn page saved." inputs={[{ key: "linkedin", value: initial.linkedin, inputMode: "url", placeholder: "https://www.linkedin.com/company/name" }]} onSave={save}>
+          {initial.linkedin ? (
+            <a href={initial.linkedin} target="_blank" rel="noopener noreferrer" aria-label="LinkedIn page (opens in a new tab)" className="underline-offset-4 hover:underline">
+              Page
+            </a>
+          ) : (
+            <NotSet />
           )}
-          {filled.map((c) => (
-            <Fact key={c.key} label={c.name}>
-              {c.value}
-            </Fact>
-          ))}
-          {filled.length === 0 && (
-            <Fact label="Fields">
-              <span className="text-muted-foreground">None filled in</span>
-            </Fact>
-          )}
-          <Fact label="Added">
-            <Time value={created} dateOnly />
-          </Fact>
-        </dl>
-      )}
+        </EditableFact>
+        {filled.map((c) => (
+          <EditableFact key={c.key} label={c.name} saved={`${c.name} saved.`} inputs={[{ key: c.key, value: c.value, help: "Empty removes the value." }]} onSave={(v) => save({ custom: { [c.key]: v[c.key] } })}>
+            {c.value}
+          </EditableFact>
+        ))}
+      </dl>
+      <AddField
+        fields={customFields}
+        onSave={(field, value) => save({ custom: { [field.key]: value } })}
+        settingsHint={
+          customFields.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              <Link href="/settings/columns" className="underline underline-offset-4 hover:text-foreground">
+                Custom fields
+              </Link>{" "}
+              in Settings adds company fields.
+            </p>
+          ) : null
+        }
+      />
+      <div className="grid gap-1 text-xs text-muted-foreground" data-testid="company-origin">
+        {otherDomains.length > 0 && (
+          <p data-testid="company-other-domains">
+            Also uses{" "}
+            {otherDomains.map((alias, index) => (
+              <span key={alias.domain}>
+                {index > 0 && ", "}
+                <span className="text-foreground">{alias.domain}</span>
+                {alias.mergedName && ` (was ${alias.mergedName})`}
+              </span>
+            ))}
+            , from a merge.
+          </p>
+        )}
+        <p>
+          Added <Time value={created} dateOnly />.
+        </p>
+        {staleFields.length > 0 && (
+          <details data-testid="company-other-values">
+            <summary className="w-fit cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:py-3">
+              {staleFields.length === 1 ? "1 value" : `${staleFields.length} values`} from removed fields
+            </summary>
+            <dl className="mt-2 grid gap-1 text-sm">
+              {staleFields.map((field) => (
+                <div key={field.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-baseline gap-3">
+                  <dt className="text-muted-foreground">{field.name}</dt>
+                  <dd className="break-words text-foreground">{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        )}
+      </div>
     </AsideSection>
   );
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-baseline gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words">{children}</dd>
-    </div>
-  );
-}
-
-function CompanyForm({
-  id,
-  domain,
-  initial,
-  customFields,
-  onDone,
-}: {
-  id: string;
-  domain: string;
-  initial: { name: string; linkedin: string };
-  customFields: CustomField[];
-  onDone: () => void;
-}) {
-  const router = useRouter();
-  const [name, setName] = useState(initial.name);
-  const [linkedin, setLinkedin] = useState(initial.linkedin);
-  const [custom, setCustom] = useState<Record<string, string>>(Object.fromEntries(customFields.map((c) => [c.key, c.value])));
-  const [pending, setPending] = useState(false);
-  const [errors, setErrors] = useState<string[]>([]);
-
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setErrors([]);
-    const result = await callApi(`/api/companies/${id}`, "PATCH", { name, linkedin, custom });
-    setPending(false);
-    if (!result.ok) {
-      setErrors(result.issues.length > 0 ? result.issues.map((i) => i.message) : [result.error ?? "Could not save."]);
-      return;
-    }
-    toast.success("Company saved.");
-    onDone();
-    router.refresh();
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="stack-group" data-testid="company-form">
-      <p className="text-sm text-muted-foreground">An empty field is cleared. The domain identifies the company and stays as it is.</p>
-      <div className="stack-field">
-        <Label htmlFor="company-name">Name</Label>
-        <Input id="company-name" value={name} autoComplete="off" placeholder={domain} className="max-sm:h-11" onChange={(e) => setName(e.target.value)} />
-      </div>
-      <div className="stack-field">
-        <Label htmlFor="company-linkedin">LinkedIn page</Label>
-        <Input
-          id="company-linkedin"
-          value={linkedin}
-          inputMode="url"
-          autoComplete="off"
-          placeholder="https://www.linkedin.com/company/name"
-          className="max-sm:h-11"
-          onChange={(e) => setLinkedin(e.target.value)}
-        />
-      </div>
-      <fieldset className="stack-group min-w-0">
-        <legend className="mb-1 text-sm font-medium">Company fields</legend>
-        {customFields.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            None yet.{" "}
-            <Link href="/settings/columns" className="underline underline-offset-4 hover:text-foreground">
-              Custom fields
-            </Link>{" "}
-            in Settings adds them.
-          </p>
-        ) : (
-          customFields.map((c) => (
-            <div key={c.key} className="stack-field">
-              <Label htmlFor={`company-custom-${c.key}`}>{c.name}</Label>
-              <Input id={`company-custom-${c.key}`} value={custom[c.key] ?? ""} className="max-sm:h-11" onChange={(e) => setCustom({ ...custom, [c.key]: e.target.value })} />
-            </div>
-          ))
-        )}
-      </fieldset>
-      {errors.length > 0 && (
-        <ul role="alert" className="grid gap-1 text-sm text-destructive">
-          {errors.map((message) => (
-            <li key={message}>{message}</li>
-          ))}
-        </ul>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending} className="max-sm:h-11">
-          {pending ? "Saving…" : "Save changes"}
-        </Button>
-        <Button type="button" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
+/** PATCH one change to the company. Leaves every field the body does not name as it is. */
+async function saveCompany(id: string, body: Record<string, unknown>): Promise<SaveResult> {
+  const result = await callApi(`/api/companies/${id}`, "PATCH", body);
+  if (result.ok) return null;
+  return result.issues[0]?.message ?? result.error ?? "Could not save.";
 }

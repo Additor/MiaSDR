@@ -42,14 +42,17 @@ test.describe("reply handling on the thread and After a reply", () => {
     // A reply asking for a demo is classified and starts the run. The thread's side column holds what the record page had.
     await expect(replyCategory(page)).toContainText("Demo request");
     await expect(page.locator("#main-content").getByTestId("thread-person").getByRole("link", { name: "Open lead" })).toBeVisible();
-    await expect(page.locator("#main-content").getByTestId("thread-campaigns").getByRole("link", { name: "S7 campaign" })).toBeVisible();
+    // Campaigns, like the other histories, folds behind its count.
+    const campaigns = page.locator("#main-content").getByTestId("thread-campaigns");
+    await campaigns.locator("summary").click();
+    await expect(campaigns.getByRole("link", { name: "S7 campaign" })).toBeVisible();
 
     // The After a reply card names the campaign and the run is going. Pause, resume, skip, stop and restart.
     const card = threadAfterReply(page);
     await expect(card.getByRole("link", { name: "S7 campaign" })).toBeVisible();
     await expect(card.locator('[data-slot="badge"]').getByText("Running", { exact: true })).toBeVisible();
     await expect(card.getByRole("listitem").filter({ hasText: "2. Follow-up" })).toHaveCount(1);
-    await expect(page.getByText("Started follow-ups").first()).toBeVisible();
+    await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Started follow-ups");
 
     await card.getByRole("button", { name: "Pause follow-ups" }).click();
     await expect(page.getByText("Follow-ups paused.", { exact: true })).toBeVisible();
@@ -73,7 +76,7 @@ test.describe("reply handling on the thread and After a reply", () => {
     await dialog.getByRole("button", { name: "Stop follow-ups" }).click();
     await expect(page.getByText("Follow-ups stopped.", { exact: true })).toBeVisible();
     await expect(card.getByText("Cancelled", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Stopped follow-ups").first()).toBeVisible();
+    await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Stopped follow-ups");
 
     // The campaign is in ai_drafts mode, so the thread offers a restart.
     await card.getByRole("button", { name: "Restart follow-ups" }).click();
@@ -135,16 +138,20 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(card.getByRole("button", { name: /follow-ups|Skip step|Resume/ })).toHaveCount(0);
     await expect(page.getByText("Started follow-ups")).toHaveCount(0);
 
-    // Close reply handling with a reason, then reopen it.
+    // Close reply handling with a reason, then reopen it. It sits with do not contact at the foot of the panel and works
+    // the same way: a quiet button opens the reason, and a missing reason is said on confirm.
     const category = replyCategory(page);
-    await expect(category.getByText("Closes reply handling for this person on every channel.")).toBeVisible();
-    await category.getByLabel("Close with a reason").fill("Talking on the phone now");
-    await category.getByRole("button", { name: "Close reply handling" }).click();
-    await page.getByRole("dialog", { name: "Close reply handling for Hal Ortiz?" }).getByRole("button", { name: "Close reply handling" }).click();
+    const handling = page.locator("#main-content").getByTestId("reply-handling");
+    await expect(handling.getByText("Closing stops follow-ups on every channel and retires unsent drafts.", { exact: false })).toBeVisible();
+    await handling.getByRole("button", { name: "Close reply handling" }).click();
+    await handling.getByRole("button", { name: "Confirm close" }).click();
+    await expect(handling.getByRole("alert")).toHaveText("Type a reason to close reply handling.");
+    await handling.getByLabel("Reason").fill("Talking on the phone now");
+    await handling.getByRole("button", { name: "Confirm close" }).click();
     await expect(page.getByText("Reply handling closed.", { exact: true })).toBeVisible();
-    await expect(category).toContainText("Reply handling closed: Talking on the phone now");
+    await expect(handling).toContainText("Closed: Talking on the phone now.");
     await expect(category.getByRole("button", { name: "Change category" })).toHaveCount(0);
-    await category.getByRole("button", { name: "Reopen" }).click();
+    await handling.getByRole("button", { name: "Reopen" }).click();
     await expect(page.getByText("Reply handling reopened.", { exact: true })).toBeVisible();
     await expect(category.getByRole("button", { name: "Change category" })).toBeVisible();
   });

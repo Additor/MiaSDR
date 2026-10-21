@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { callApi } from "@/lib/api-client";
 import { categoryLabel } from "@/app/(app)/crm/_components/labels";
-import { AsideSection } from "@/app/(app)/crm/_components/record/record-header";
+import { AsideDisclosure } from "@/app/(app)/crm/_components/record/record-header";
 
 interface Entry {
   id: string;
@@ -58,8 +58,9 @@ export function ClassificationHistory({ entries, currentConversationId }: { entr
   }
 
   return (
-    <AsideSection title="Classification history" testId="thread-classifications">
-      <p className="text-sm text-muted-foreground">Undo restores the category this person had before the AI changed it. Held suggestions are accepted or changed in the reply panel.</p>
+    // Open while an entry waits for a person: a suggestion on hold or an AI change nobody reviewed.
+    <AsideDisclosure title="Classification history" count={entries.length || undefined} open={entries.some((e) => e.status === "proposed" || (!e.acknowledged && e.status === "auto_applied"))} testId="thread-classifications">
+      <p className="text-sm text-muted-foreground">Undo restores the category from before the AI changed it. Accept or change a held suggestion in the reply panel.</p>
       {entries.length === 0 && <p className="text-sm text-muted-foreground">Nothing classified yet.</p>}
       {entries.length > 0 && (
         <ul className="divide-y">
@@ -67,7 +68,7 @@ export function ClassificationHistory({ entries, currentConversationId }: { entr
             <li key={e.id} className="grid gap-1 py-group text-sm first:pt-0 last:pb-0" data-testid="classification-entry">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={e.status === "failed" ? "destructive" : e.status === "proposed" ? "outline" : "secondary"}>{STATUS[e.status] ?? e.status}</Badge>
-                {e.confidence !== null && e.status !== "failed" && <Badge variant="outline">{Math.round(e.confidence * 100)}%</Badge>}
+                {e.confidence !== null && e.status !== "failed" && <Badge variant="outline">{Math.round(e.confidence * 100)}% confident</Badge>}
                 {e.latest && <Badge variant="outline">Latest reply</Badge>}
                 {!e.acknowledged && e.status === "auto_applied" && <Badge variant="outline">Not reviewed</Badge>}
                 <Time value={e.createdAt} className="text-xs text-muted-foreground" />
@@ -84,12 +85,12 @@ export function ClassificationHistory({ entries, currentConversationId }: { entr
                   </Link>
                 )}
                 {e.canAcknowledge && (
-                  <Button size="xs" variant="outline" disabled={busy !== null} onClick={() => act(e.id, "acknowledge")}>
+                  <Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} onClick={() => act(e.id, "acknowledge")}>
                     Mark reviewed
                   </Button>
                 )}
                 {e.canUndo && (
-                  <Button size="xs" variant="outline" disabled={busy !== null} onClick={() => act(e.id, "undo")}>
+                  <Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} onClick={() => act(e.id, "undo")}>
                     Undo
                   </Button>
                 )}
@@ -103,6 +104,6 @@ export function ClassificationHistory({ entries, currentConversationId }: { entr
           {error}
         </p>
       )}
-    </AsideSection>
+    </AsideDisclosure>
   );
 }

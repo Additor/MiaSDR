@@ -1,6 +1,24 @@
 import type { LeadDetail } from "@/contexts/leads/application/lead-ports";
 import { canonicalProfileUrl } from "@/contexts/leads/domain/linkedin-url";
-import type { CustomField, LeadFormValues } from "./lead-form";
+
+/** A person's own fields, as the Details rows read and save them. */
+export interface LeadFormValues {
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  linkedin: string;
+  title: string;
+  companyDomain: string;
+  companyName: string;
+}
+
+export interface CustomField {
+  key: string;
+  name: string;
+  value: string;
+}
 
 /**
  * The form values and custom fields `PersonDetails` takes, for the lead and the contact page. The custom fields list the

@@ -94,17 +94,25 @@ test.describe("lead page header, collapsed cards and groups", () => {
     await expect(page.getByTestId("campaigns")).toHaveCount(0);
     await expect(page.getByText("The last 1 attempts")).toHaveCount(0);
 
-    // Details starts high on the page and reads first; Edit opens three groups with short labels.
+    // Details starts high on the page and reads first; each fact opens its own editor in its row.
     const details = page.getByTestId("person-details");
     const top = (await details.getByRole("heading", { name: "Details" }).boundingBox())!.y;
     expect(top, "Details starts above the fold at 1440x900").toBeLessThan(450);
     await expect(details.getByRole("link", { name: "bea@s34.test" })).toBeVisible();
-    await waitForHydrated(details.getByRole("button", { name: "Edit" }));
-    await details.getByRole("button", { name: "Edit" }).click();
-    for (const group of ["Identity", "Contact", "Company"]) await expect(page.locator("fieldset legend", { hasText: group })).toBeVisible();
-    await expect(page.getByLabel("Company name", { exact: true })).toBeVisible();
-    await expect(page.getByText("Names the company when the domain is new.")).toBeVisible();
-    await expect(page.getByLabel("Phone")).toHaveAttribute("placeholder", "+1 555 0100");
+    const editPhone = details.getByRole("button", { name: "Edit Phone" });
+    await waitForHydrated(editPhone);
+    await editPhone.click();
+    await expect(details.getByRole("textbox", { name: "Phone" })).toHaveAttribute("placeholder", "+1 555 0100");
+    // Escape leaves the row as it was and hands focus back to its pencil.
+    await page.keyboard.press("Escape");
+    await expect(details.getByRole("textbox", { name: "Phone" })).toHaveCount(0);
+    await expect(editPhone).toBeFocused();
+    // A new domain asks for the company name.
+    await details.getByRole("button", { name: "Edit Company" }).click();
+    await details.getByLabel("Website or domain").fill("s34-new-co.test");
+    await expect(details.getByLabel("Company name", { exact: true })).toBeVisible();
+    await expect(details.getByText("Names the company when the domain is new.")).toBeVisible();
+    await details.getByRole("button", { name: "Cancel" }).click();
   });
 
   test("keeps the sections when they hold rows, names the status and shows a suppressed address in place", async ({ page }) => {
@@ -306,7 +314,7 @@ test.describe("at 390px in the dark theme", () => {
       ["email link", header.getByRole("link", { name: "bea@s34.test" })],
       ["LinkedIn link", header.getByRole("link", { name: /LinkedIn profile/ })],
       ["phone link", header.getByRole("link", { name: "+15550100123" })],
-      ["Edit details", page.getByTestId("person-details").getByRole("button", { name: "Edit" })],
+      ["Edit email", page.getByTestId("person-details").getByRole("button", { name: "Edit Email" })],
       ["Mark do not contact", page.getByRole("button", { name: "Mark do not contact" })],
       ["Delete lead", page.getByRole("button", { name: "Delete lead" })],
     ];

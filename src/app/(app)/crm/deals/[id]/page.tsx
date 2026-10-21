@@ -13,15 +13,16 @@ import { personReplyHandling } from "@/contexts/conversations/infrastructure/com
 import { getDeal, type DealView } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { getLead } from "@/contexts/leads/application/lead-management";
 import { leadContactPoints } from "@/contexts/leads/domain/lead-activity";
+import { leadDeps } from "@/contexts/leads/infrastructure/composition";
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";
-import { cn } from "@/lib/utils";
 import { toActor } from "@/shared/api";
 import { NotFoundError } from "@/shared/errors";
 import { formatDate } from "@/shared/format-time";
 import { dealDialogData } from "../../_components/deal-dialog-data";
-import { DncControl } from "../../_components/person/dnc-control";
+import { DoNotContactCard } from "../../_components/person/do-not-contact-card";
 import { PersonActivity } from "../../_components/person/activity";
 import { ReachIcons } from "../../_components/person/reach-icons";
 import { stageVariant } from "../../_components/deals-list";
@@ -29,6 +30,8 @@ import { formatAmount, isOverdue, ownerText } from "../../pipeline/deal-format";
 import { AsideSection, MetaLine, RecordBody, RecordHeader, RecordPage, RecordSection } from "../../_components/record/record-header";
 import { dealReturnPath } from "../../_components/return-path";
 import { DealActions } from "./deal-actions";
+import { DealSummaryFields } from "./deal-summary";
+import { Fact } from "../../_components/record/inline-field";
 
 export const metadata: Metadata = { title: "Deal" };
 
@@ -72,11 +75,16 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
     throw error;
   }
   const { person } = deal;
-  const [dialog, conversation, zone, reachMap] = await Promise.all([
+  const [dialog, conversation, zone, reachMap, stop] = await Promise.all([
     dealDialogData(actor),
     personReplyHandling.activeConversationOfPerson(actor.organizationId, person.id),
     getOrgTimeZone(),
     readReachability(actor.organizationId, [person.id]),
+    // The do not contact reason and date, and the suppression, for the stop block every person page ends with.
+    getLead(leadDeps(), actor, person.id).then(
+      (lead) => ({ policy: lead.policy, suppression: lead.suppression }),
+      () => ({ policy: null, suppression: null }),
+    ),
   ]);
   const reach = reachMap.get(person.id) ?? NO_REACH;
   const today = formatDate(deps.now(), zone);
@@ -153,42 +161,45 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
           main={
             <>
               <RecordSection title="Summary" testId="deal-summary">
-                <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-                  <Fact label="Amount">{deal.amountMinor !== null && deal.currency ? <span className="tabular-nums">{formatAmount(deal.amountMinor, deal.currency)}</span> : "Not set"}</Fact>
-                  <Fact label="Owner">{ownerText(deal.owner)}</Fact>
-                  <Fact label="Expected close">
-                    {deal.expectedCloseOn ? (
-                      <span className={cn("tabular-nums", overdue && "font-medium")}>
-                        {deal.expectedCloseOn}
-                        {overdue && <span className="text-muted-foreground">, overdue</span>}
-                      </span>
-                    ) : (
-                      "Not set"
-                    )}
-                  </Fact>
-                  <Fact label="Source">
-                    {deal.source ? (
-                      <Link href={`/campaigns/${deal.source.campaignId}`} className="underline-offset-4 hover:underline">
-                        From {deal.source.campaignName}
-                      </Link>
-                    ) : (
-                      "No campaign"
-                    )}
-                  </Fact>
-                  <Fact label="In this stage since">
-                    <Time value={deal.stageChangedAt} />
-                  </Fact>
-                  {deal.closedAt && (
-                    <Fact label={deal.stage.kind === "won" ? "Won" : "Lost"}>
-                      <Time value={deal.closedAt} />
-                    </Fact>
-                  )}
-                  {deal.lostReason && (
-                    <Fact label="Lost reason" wide>
-                      {deal.lostReason}
-                    </Fact>
-                  )}
+                <dl className="grid max-w-xl gap-y-3 text-sm">
+                  <DealSummaryFields
+                    deal={{
+                      id: deal.id,
+                      version: deal.version,
+                      amountMinor: deal.amountMinor,
+                      currency: deal.currency,
+                      amountText: deal.amountMinor !== null && deal.currency ? formatAmount(deal.amountMinor, deal.currency) : null,
+                      ownerId: deal.owner?.userId ?? null,
+                      ownerIsMember: deal.owner?.isMember ?? false,
+                      ownerText: ownerText(deal.owner),
+                      expectedCloseOn: deal.expectedCloseOn,
+                      overdue,
+                    }}
+                    members={dialog.members}
+                    currentUserId={dialog.currentUserId}
+                  />
+                  {deal.lostReason && <Fact label="Lost reason">{deal.lostReason}</Fact>}
                 </dl>
+                <p className="text-xs text-muted-foreground" data-testid="deal-origin">
+                  {deal.source ? (
+                    <>
+                      From{" "}
+                      <Link href={`/campaigns/${deal.source.campaignId}`} className="underline underline-offset-4 hover:text-foreground">
+                        {deal.source.campaignName}
+                      </Link>
+                      .{" "}
+                    </>
+                  ) : (
+                    "No campaign. "
+                  )}
+                  In {deal.stage.name} since <Time value={deal.stageChangedAt} />.
+                  {deal.closedAt && (
+                    <>
+                      {" "}
+                      {deal.stage.kind === "won" ? "Won" : "Lost"} <Time value={deal.closedAt} />.
+                    </>
+                  )}
+                </p>
               </RecordSection>
               <Suspense fallback={<Skeleton className="h-64 w-full" />}>
                 <PersonActivity actor={actor} personId={person.id} first="tasks" />
@@ -199,49 +210,46 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
             <>
               <AsideSection title="Contact" testId="deal-contact">
                 <div className="grid gap-0.5 text-sm">
-                  <Link href={contactHref} className="font-medium underline-offset-4 hover:underline">
+                  <Link href={contactHref} className="font-medium underline underline-offset-4">
                     {contactName}
                   </Link>
-                  {person.title && <span className="text-muted-foreground">{person.title}</span>}
-                  <span className="break-all text-muted-foreground">{person.email ?? "No email"}</span>
+                  {(person.title || person.companyName) && (
+                    <span className="text-muted-foreground">
+                      {person.title}
+                      {person.title && person.companyName && " at "}
+                      {person.companyName &&
+                        (person.companyId ? (
+                          <Link href={`/crm/companies/${person.companyId}`} className="underline underline-offset-4 hover:text-foreground">
+                            {person.companyName}
+                          </Link>
+                        ) : (
+                          person.companyName
+                        ))}
+                    </span>
+                  )}
+                  <span className="[overflow-wrap:anywhere] text-muted-foreground">{person.email ?? "No email"}</span>
                 </div>
                 <ReachIcons reach={reach} contact={leadContactPoints(person)} person={contactName} />
-                <div className="flex flex-wrap gap-2">
-                  <Link href={contactHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                    Open contact
-                  </Link>
-                  {conversation && (
-                    <Link href={`/inbox/${conversation.conversationId}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                {conversation && (
+                  <div>
+                    <Link href={`/inbox/${conversation.conversationId}`} className={buttonVariants({ variant: "outline", size: "sm", className: "max-sm:h-11" })}>
                       Open conversation
                     </Link>
-                  )}
-                </div>
-              </AsideSection>
-              <AsideSection title="Do not contact" testId="deal-dnc">
-                <DncControl personId={person.id} doNotContact={person.doNotContact} />
-              </AsideSection>
-              <AsideSection title="Company">
-                {person.companyId ? (
-                  <Link href={`/crm/companies/${person.companyId}`} className="text-sm underline-offset-4 hover:underline">
-                    {person.companyName ?? "Company"}
-                  </Link>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No company</p>
+                  </div>
                 )}
               </AsideSection>
+              <DoNotContactCard
+                personId={person.id}
+                doNotContact={person.doNotContact}
+                reason={stop.policy?.reason ?? null}
+                setAt={stop.policy?.setAt ?? null}
+                suppression={stop.suppression ? { reason: stop.suppression.reason, note: stop.suppression.note, date: stop.suppression.createdAt.toISOString() } : null}
+                testId="deal-dnc"
+              />
             </>
           }
         />
       </RecordPage>
     </>
-  );
-}
-
-function Fact({ label, wide = false, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
-  return (
-    <div className={cn("grid gap-0.5", wide && "sm:col-span-2")}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words">{children}</dd>
-    </div>
   );
 }

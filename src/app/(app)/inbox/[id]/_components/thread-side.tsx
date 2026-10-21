@@ -23,12 +23,11 @@ import { dealDialogData } from "@/app/(app)/crm/_components/deal-dialog-data";
 import { dealHref } from "@/app/(app)/crm/_components/deal-href";
 import { eventLabel } from "@/app/(app)/crm/_components/event-labels";
 import { categoryLabel } from "@/app/(app)/crm/_components/labels";
-import { DncControl } from "@/app/(app)/crm/_components/person/dnc-control";
-import { DoNotContactNote } from "@/app/(app)/crm/_components/person/do-not-contact-card";
+import { DoNotContactCard } from "@/app/(app)/crm/_components/person/do-not-contact-card";
 import { TasksSection } from "@/app/(app)/crm/_components/person/tasks-section";
 import { personHref } from "@/app/(app)/crm/_components/person/person-href";
 import { ReachLinks } from "@/app/(app)/crm/_components/person/reach-links";
-import { AsideSection } from "@/app/(app)/crm/_components/record/record-header";
+import { AsideDisclosure, AsideSection } from "@/app/(app)/crm/_components/record/record-header";
 import { toJson } from "@/app/(app)/crm/_components/serialize";
 import { AfterReplyControls } from "./after-reply-controls";
 import { AssigneeControls } from "./assignee-controls";
@@ -82,9 +81,10 @@ function eventDetail(e: EventEntry): string | null {
 const actorText = (e: EventEntry) => (e.actorType === "human" ? (e.actorName ?? "A person") : e.actorType === "ai" ? "The AI" : humanizeToken(e.actorType));
 
 /**
- * The thread's side column: the person, do not contact, the reply category, tasks, After a reply,
- * classification history, campaigns, the person's other conversations, drafts, activity and the conversation's notes.
- * Each block is an AsideSection inside the one bordered panel that `RecordBody` draws. Wrap it in Suspense.
+ * The thread's side column. Open: the person, Assigned to, the reply category, tasks and After a reply, the blocks you act
+ * on. Folded, with their counts: classification history (open while an entry waits for review), campaigns, other
+ * conversations, drafts, notes and activity. Do not contact and reply handling close the panel, as the stop controls do
+ * on every person page. Wrap it in Suspense.
  */
 export async function ThreadSide({ actor, conversationId, recordId, personId }: { actor: Actor; conversationId: string; recordId: string; personId: string }) {
   await connection();
@@ -136,54 +136,46 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
         <AssigneeControls recordId={record.id} assignedTo={record.assignedTo} members={dialog.members} currentUserId={dialog.currentUserId} />
       </AsideSection>
 
-      <AsideSection title="Do not contact" testId="thread-dnc">
-        <DoNotContactNote doNotContact={dnc} reason={detail.policy?.reason ?? null} setAt={detail.policy?.setAt ?? null} />
-        <DncControl personId={personId} doNotContact={dnc} />
-      </AsideSection>
-
       <AsideSection title="Reply category" testId="reply-category">
         <div className="grid gap-1 text-sm">
           <p className="font-medium">{record.categoryKey ? `${categoryLabel(record.categoryKey)}${record.subcategoryName ? `: ${record.subcategoryName}` : ""}` : "Not classified yet"}</p>
-          {record.categorySource && <p className="text-muted-foreground">Set by {record.categorySource === "ai" ? "the AI" : "a person"}</p>}
+          {(record.categorySource || record.lastInboundAt) && (
+            <p className="text-muted-foreground">
+              {record.categorySource && `Set by ${record.categorySource === "ai" ? "the AI" : "a person"}. `}
+              {record.lastInboundAt && (
+                <>
+                  Last reply{record.activeChannel ? ` on ${channelLabel(record.activeChannel)}` : ""} <Time value={record.lastInboundAt} />.
+                </>
+              )}
+            </p>
+          )}
           {record.categoryLocked && (
             <Badge variant="outline" className="w-fit" title="The AI cannot move this person out of Existing customer">
               Locked as Existing customer
             </Badge>
           )}
-          {record.activeChannel && <p className="text-muted-foreground">Last reply on {channelLabel(record.activeChannel)}</p>}
-          {record.lastInboundAt && (
-            <p className="text-muted-foreground">
-              Last reply <Time value={record.lastInboundAt} />
-            </p>
-          )}
-          {closed && <p className="text-muted-foreground">Reply handling closed{record.closedReason ? `: ${record.closedReason}` : "."}</p>}
         </div>
         {!closed && (
           <div>
             <ChangeCategoryButton recordId={record.id} personName={name} contextVersion={record.contextVersion} currentSubcategoryId={record.subcategoryId} categoryLocked={record.categoryLocked} stages={detail.stages} />
           </div>
         )}
-        <div className="border-t pt-group">
-          <RecordControls recordId={record.id} personName={name} closed={closed} />
-        </div>
       </AsideSection>
 
       <AsideSection title="Tasks" testId="thread-tasks">
-        <p className="text-sm text-muted-foreground">Follow-ups for this person. Open tasks also appear in Actions.</p>
-        <Suspense fallback={<Skeleton className="h-24 w-full" />}>
-          <TasksSection recordId={record.id} actor={actor} heading={false} />
+        <Suspense fallback={<Skeleton className="h-8 w-28" />}>
+          <TasksSection recordId={record.id} actor={actor} heading={false} compact />
         </Suspense>
       </AsideSection>
 
       <AsideSection title="After a reply" testId="thread-after-reply">
-        <p className="text-sm text-muted-foreground">Drafts the next steps for you to approve. Nothing sends by itself.</p>
         <AfterReplyControls recordId={record.id} state={toJson(afterReply)} disabledReason={isContact ? CONTACT_FOLLOW_UPS : null} />
       </AsideSection>
 
       <ClassificationHistory entries={toJson(detail.classifications)} currentConversationId={conversationId} />
 
       {detail.enrollments.length > 0 && (
-        <AsideSection title="Campaigns" testId="thread-campaigns">
+        <AsideDisclosure title="Campaigns" count={detail.enrollments.length} testId="thread-campaigns">
           <ul className="grid gap-2 text-sm">
             {detail.enrollments.map((e) => {
               const status = enrollmentStatusLabel(e.status);
@@ -191,7 +183,7 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
               return (
                 <li key={e.id} className="grid gap-0.5">
                   <div className="flex items-center justify-between gap-2">
-                    <Link href={`/campaigns/${e.campaignId}`} className="min-w-0 truncate underline-offset-4 hover:underline">
+                    <Link href={`/campaigns/${e.campaignId}`} title={e.campaignName} className="min-w-0 truncate underline-offset-4 hover:underline">
                       {e.campaignName}
                     </Link>
                     <Badge variant="outline">{status}</Badge>
@@ -201,29 +193,28 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
               );
             })}
           </ul>
-        </AsideSection>
+        </AsideDisclosure>
       )}
 
       {others.length > 0 && (
-        <AsideSection title="Other conversations" testId="thread-other-conversations">
+        <AsideDisclosure title="Other conversations" count={others.length} testId="thread-other-conversations">
           <p className="text-sm text-muted-foreground">{name} also wrote from another mailbox or channel.</p>
           <ul className="grid gap-1 text-sm">
             {others.map((c) => (
               <li key={c.id}>
-                <Link href={`/inbox/${c.id}`} className="flex min-h-8 items-center gap-2 underline-offset-4 hover:underline max-sm:min-h-11">
+                <Link href={`/inbox/${c.id}`} title={c.accountRef} className="flex min-h-8 items-center gap-2 underline-offset-4 hover:underline max-sm:min-h-11">
                   <Badge variant="outline">{channelLabel(c.channel)}</Badge>
                   <span className="min-w-0 truncate">{c.accountRef}</span>
                 </Link>
               </li>
             ))}
           </ul>
-        </AsideSection>
+        </AsideDisclosure>
       )}
 
       {detail.drafts.length > 0 && (
-        <AsideSection title="Drafts" testId="thread-drafts">
-          <p className="text-sm text-muted-foreground">Every draft written for this person, newest first.</p>
-          <ul className="grid gap-2 text-sm">
+        <AsideDisclosure title="Drafts" count={detail.drafts.length} testId="thread-drafts">
+          <ul className="grid gap-2 text-sm" aria-label="Drafts, newest first">
             {detail.drafts.map((d) => (
               <li key={d.id} className="grid gap-0.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -236,33 +227,11 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
               </li>
             ))}
           </ul>
-        </AsideSection>
+        </AsideDisclosure>
       )}
 
-      <AsideSection title="Activity" testId="thread-activity">
-        {detail.events.length > ACTIVITY_SHOWN && <p className="text-sm text-muted-foreground">The latest {ACTIVITY_SHOWN} events.</p>}
-        {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing has happened yet.</p>
-        ) : (
-          <ol className="grid gap-2 text-sm" aria-label="Activity">
-            {events.map((e) => {
-              const extra = eventDetail(e);
-              return (
-                <li key={e.id} className="grid gap-0.5">
-                  <span className="break-words">{eventLabel(e)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {actorText(e)}, <Time value={e.createdAt} />
-                    {extra ? `. ${extra}` : ""}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </AsideSection>
-
       {detail.notes.length > 0 && (
-        <AsideSection title="Notes" testId="thread-notes">
+        <AsideDisclosure title="Notes" count={detail.notes.length} testId="thread-notes">
           <p className="text-sm text-muted-foreground">
             Written on this conversation. Add and edit notes on the{" "}
             <Link href={personHref(personId, directory?.lifecycle)} className="underline underline-offset-4">
@@ -281,8 +250,33 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
               </li>
             ))}
           </ul>
-        </AsideSection>
+        </AsideDisclosure>
       )}
+
+      <AsideDisclosure title="Activity" count={detail.events.length > ACTIVITY_SHOWN ? `latest ${ACTIVITY_SHOWN}` : events.length || undefined} testId="thread-activity">
+        {events.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing has happened yet.</p>
+        ) : (
+          <ol className="grid gap-2 text-sm" aria-label="Activity">
+            {events.map((e) => {
+              const extra = eventDetail(e);
+              return (
+                <li key={e.id} className="grid gap-0.5">
+                  <span className="break-words">{eventLabel(e)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {actorText(e)}, <Time value={e.createdAt} />
+                    {extra ? `. ${extra}` : ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </AsideDisclosure>
+
+      <DoNotContactCard personId={personId} doNotContact={dnc} reason={detail.policy?.reason ?? null} setAt={detail.policy?.setAt ?? null} suppression={null} testId="thread-dnc">
+        <RecordControls recordId={record.id} closed={closed} closedReason={record.closedReason ?? null} />
+      </DoNotContactCard>
     </>
   );
 }

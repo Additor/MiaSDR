@@ -1,77 +1,111 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { callApi } from "@/lib/api-client";
 
-/** Close reply handling with a reason, or reopen it. Closing asks first because it stops the person's follow-ups and retires their unsent drafts. */
-export function RecordControls({ recordId, personName, closed }: { recordId: string; personName: string; closed: boolean }) {
+export const CLOSE_REASON_REQUIRED = "Type a reason to close reply handling.";
+
+/**
+ * Close reply handling with a reason, or reopen it. It works like do not contact beside it: a quiet button opens the
+ * reason field, and only the confirm button is red. Closing stops the person's follow-ups and retires their unsent drafts.
+ */
+export function RecordControls({ recordId, closed, closedReason }: { recordId: string; closed: boolean; closedReason: string | null }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [confirmClose, setConfirmClose] = useState(false);
+  const fieldId = `close-reason-${recordId}`;
 
-  async function reopen() {
+  async function send(path: "close" | "reopen") {
     setPending(true);
     setError(null);
-    const result = await callApi(`/api/crm/records/${recordId}/reopen`, "POST");
+    const result = await callApi(`/api/crm/records/${recordId}/${path}`, "POST", path === "close" ? { reason: reason.trim() } : undefined);
     setPending(false);
-    if (!result.ok) return setError(result.error);
-    toast.success("Reply handling reopened.");
+    if (!result.ok) return setError(result.error ?? "Could not change reply handling. Try again.");
+    setReason("");
+    setOpen(false);
+    toast.success(path === "close" ? "Reply handling closed." : "Reply handling reopened.");
     router.refresh();
   }
 
-  async function close() {
-    const result = await callApi(`/api/crm/records/${recordId}/close`, "POST", { reason: reason.trim() });
-    if (!result.ok) throw new Error(result.error ?? "Could not close reply handling. Try again.");
-    setReason("");
-    toast.success("Reply handling closed.");
-    router.refresh();
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (reason.trim() === "") return setError(CLOSE_REASON_REQUIRED);
+    void send("close");
   }
 
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-2" data-testid="reply-handling">
+      <h3 className="text-sm font-medium">Reply handling</h3>
       {closed ? (
-        <div>
-          <Button size="sm" variant="outline" disabled={pending} onClick={reopen}>
-            {pending ? "Reopening…" : "Reopen"}
-          </Button>
-        </div>
-      ) : (
-        <div className="grid gap-2">
-          <div className="grid gap-1">
-            <Label htmlFor="close-reason">Close with a reason</Label>
-            <Input id="close-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="Went with a competitor" className="w-full" />
+        <>
+          <p className="text-sm text-muted-foreground">Closed{closedReason ? `: ${closedReason}.` : "."}</p>
+          <div>
+            <Button size="sm" variant="outline" disabled={pending} className="max-sm:h-11" onClick={() => void send("reopen")}>
+              {pending ? "Reopening…" : "Reopen"}
+            </Button>
           </div>
-          <Button size="sm" variant="outline" className="w-fit" disabled={reason.trim() === ""} onClick={() => setConfirmClose(true)}>
-            Close reply handling
-          </Button>
-        </div>
+        </>
+      ) : !open ? (
+        <>
+          <p className="text-sm text-muted-foreground">Closing stops follow-ups on every channel and retires unsent drafts. You can reopen it later.</p>
+          <div>
+            <Button size="sm" variant="outline" className="max-sm:h-11" onClick={() => setOpen(true)}>
+              Close reply handling
+            </Button>
+          </div>
+        </>
+      ) : (
+        <form onSubmit={onSubmit} className="grid gap-2" noValidate>
+          <div className="stack-field">
+            <Label htmlFor={fieldId}>Reason</Label>
+            <Input
+              id={fieldId}
+              autoFocus
+              value={reason}
+              maxLength={500}
+              placeholder="Went with a competitor"
+              aria-invalid={error === CLOSE_REASON_REQUIRED ? true : undefined}
+              aria-describedby={error ? `${fieldId}-error` : undefined}
+              className="max-sm:h-11"
+              onChange={(e) => {
+                setReason(e.target.value);
+                if (error === CLOSE_REASON_REQUIRED) setError(null);
+              }}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" size="sm" variant="destructive" disabled={pending} className="max-sm:h-11">
+              {pending ? "Closing…" : "Confirm close"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              className="max-sm:h-11"
+              onClick={() => {
+                setOpen(false);
+                setReason("");
+                setError(null);
+              }}
+            >
+              Keep reply handling
+            </Button>
+          </div>
+        </form>
       )}
-      <p className="text-xs text-muted-foreground">Closes reply handling for this person on every channel.</p>
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={`${fieldId}-error`} role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
-      <ConfirmDialog
-        open={confirmClose}
-        onOpenChange={setConfirmClose}
-        title={`Close reply handling for ${personName}?`}
-        description="Follow-ups stop and drafts that were not sent are retired. You can reopen reply handling later."
-        confirmLabel="Close reply handling"
-        pendingLabel="Closing…"
-        destructive
-        onConfirm={close}
-      >
-        <p className="text-sm text-muted-foreground">Reason: {reason.trim()}</p>
-      </ConfirmDialog>
     </div>
   );
 }

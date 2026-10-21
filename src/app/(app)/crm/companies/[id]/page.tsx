@@ -27,7 +27,7 @@ import { AddContactButton } from "../../_components/add-contact-dialog";
 import { dealDialogData } from "../../_components/deal-dialog-data";
 import { DealsList } from "../../_components/deals-list";
 import { EventList } from "../../_components/person/activity";
-import { AsideSection, MetaLine, RecordBody, RecordHeader, RecordPage, RecordSection } from "../../_components/record/record-header";
+import { MetaLine, RecordBody, RecordHeader, RecordPage, RecordSection } from "../../_components/record/record-header";
 import { formatTotals } from "../../pipeline/deal-format";
 import { CompanyActions } from "./company-actions";
 import { CompanyCreateDeal } from "./company-create-deal";
@@ -232,20 +232,8 @@ async function Company({ params }: { params: PageProps<"/crm/companies/[id]">["p
                 created={new Date(company.createdAt).toISOString()}
                 initial={{ name: company.name ?? "", linkedin: linkedin ?? "" }}
                 customFields={editable}
+                staleFields={stale}
               />
-              {stale.length > 0 && (
-                <AsideSection title="Other values" testId="company-other-values">
-                  <p className="text-sm text-muted-foreground">Values of archived or removed fields. Saving the form keeps them.</p>
-                  <dl className="stack-group text-sm">
-                    {stale.map((field) => (
-                      <div key={field.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-baseline gap-3">
-                        <dt className="text-muted-foreground">{field.name}</dt>
-                        <dd className="break-words">{field.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </AsideSection>
-              )}
             </>
           }
         />

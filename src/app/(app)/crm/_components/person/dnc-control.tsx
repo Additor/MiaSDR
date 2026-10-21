@@ -30,6 +30,7 @@ export function openDncControl(personId: string) {
  * The do-not-contact toggle every page shares (lead, contact, deal, Inbox thread). Setting it stops the person's campaign
  * enrollments and retires open drafts. A quiet button opens the reason field, and only the confirm button is red, so the
  * rarest action is not the loudest thing on the page. The confirm button stays enabled; a missing reason is said on click.
+ * Clearing it asks too, in the same place: campaigns can add the person again once it is clear.
  */
 export function DncControl({ personId, doNotContact }: { personId: string; doNotContact: boolean }) {
   const router = useRouter();
@@ -86,11 +87,23 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
 
   return (
     <div className="grid gap-2">
-      {doNotContact ? (
+      {doNotContact && !open ? (
         <div>
-          <Button variant="outline" size="sm" disabled={pending} className="max-sm:h-11" onClick={() => void submit(false)}>
+          <Button variant="outline" size="sm" className="max-sm:h-11" onClick={() => setOpen(true)}>
             Clear do not contact
           </Button>
+        </div>
+      ) : doNotContact ? (
+        <div className="grid gap-2">
+          <p className="text-sm">Campaigns can add this person again.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={pending} className="max-sm:h-11" onClick={() => void submit(false)}>
+              Confirm clear
+            </Button>
+            <Button size="sm" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={() => setOpen(false)}>
+              Keep do not contact
+            </Button>
+          </div>
         </div>
       ) : !open ? (
         <div>

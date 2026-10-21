@@ -1,5 +1,6 @@
 "use client";
 
+import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -51,9 +52,11 @@ export type TasksPanelProps = TaskTarget & {
   nowMs: number;
   /** False inside a page section that already names it, such as the Activity tabs. */
   heading?: boolean;
+  /** The form waits behind a New task button, for a side panel where the list matters more than the form. */
+  compact?: boolean;
 };
 
-export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = true, ...target }: TasksPanelProps) {
+export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = true, compact = false, ...target }: TasksPanelProps) {
   const router = useRouter();
   const createUrl = target.recordId !== undefined ? `/api/crm/records/${target.recordId}/tasks` : `/api/people/${target.personId}/tasks`;
   // Ids of the form fields: unique per panel, so two panels on one page keep their labels apart.
@@ -67,6 +70,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
   // The target stays set while the dialog closes, so its title does not change mid-animation.
   const [deleting, setDeleting] = useState<TaskItem | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(!compact);
 
   async function add(event: React.FormEvent) {
     event.preventDefault();
@@ -103,6 +107,13 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
 
   const content = (
     <div className="stack-group" data-slot="tasks-panel">
+      {!formOpen ? (
+        <div>
+          <Button type="button" variant="outline" size="sm" className="max-sm:h-11" onClick={() => setFormOpen(true)}>
+            <PlusIcon /> New task
+          </Button>
+        </div>
+      ) : (
       <form onSubmit={add} className="@container grid gap-2" noValidate>
         <div className="grid gap-2 @lg:grid-cols-[minmax(0,1fr)_9.5rem_10rem_auto] @lg:items-end">
           <div className="stack-field">
@@ -116,6 +127,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
               }}
               maxLength={200}
               placeholder="Call back on Friday"
+              autoFocus={compact}
               className="max-sm:h-11"
             />
           </div>
@@ -127,9 +139,27 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
             <Label id={`task-assignee-${fieldKey}`}>Assign to</Label>
             <MemberSelect labelledBy={`task-assignee-${fieldKey}`} value={assigneeId} members={members} currentUserId={currentUserId} onChange={setAssigneeId} />
           </div>
-          <Button type="submit" variant="outline" disabled={pending || zone === null} className="max-sm:h-11">
-            Add task
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="outline" disabled={pending || zone === null} className="max-sm:h-11">
+              Add task
+            </Button>
+            {compact && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={pending}
+                className="max-sm:h-11"
+                onClick={() => {
+                  setFormOpen(false);
+                  setName("");
+                  setDueDay("");
+                  setError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            )}
+          </div>
         </div>
         {error && (
           <p role="alert" className="text-sm text-destructive">
@@ -137,6 +167,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
           </p>
         )}
       </form>
+      )}
       {tasks.length > 0 && (
         <ul className="divide-y border-t" aria-label="Tasks">
           {tasks.map((t) => {

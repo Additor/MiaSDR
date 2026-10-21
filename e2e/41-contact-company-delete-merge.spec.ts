@@ -171,7 +171,7 @@ test.describe("company merge and delete", () => {
 
     await expect(page.getByText(`Merged ${other} into ${kept}.`)).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/crm/companies/${row.id}$`));
-    await expect(page.getByTestId("company-other-domains")).toHaveText(`${otherDomain} (was ${other})`);
+    await expect(page.getByTestId("company-other-domains")).toHaveText(`Also uses ${otherDomain} (was ${other}), from a merge.`);
     const [moved] = await sql()`select count(*)::int as n from people where company_id = ${row.id}`;
     expect(moved.n, "Kim and Lou share the kept company").toBe(2);
   });

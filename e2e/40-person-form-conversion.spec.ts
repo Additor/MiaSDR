@@ -15,13 +15,13 @@ async function companyOf(personId: string): Promise<{ domain: string | null; nam
 
 async function openEditForm(page: Page) {
   const details = page.getByTestId("person-details");
-  await waitForHydrated(details.getByRole("button", { name: "Edit" }));
-  await details.getByRole("button", { name: "Edit" }).click();
-  return details.getByTestId("lead-form-company");
+  await waitForHydrated(details.getByRole("button", { name: "Edit Company" }));
+  await details.getByRole("button", { name: "Edit Company" }).click();
+  return details.getByTestId("person-company");
 }
 
-test.describe("person form company", () => {
-  test("shows the company as a link, asks before a move, and Keep saves the other edits", async ({ page }) => {
+test.describe("person company row", () => {
+  test("shows the company as a link, asks before a move, and Keep leaves it as it was", async ({ page }) => {
     await signInAdmin(page);
     const tag = unique("s40");
     const acme = `${tag}-acme.test`;
@@ -36,13 +36,12 @@ test.describe("person form company", () => {
     const company = await openEditForm(page);
     // An existing company reads as a link to its page; the form has no name field for it.
     await expect(company.getByRole("link", { name: `S40 Acme ${tag}` })).toHaveAttribute("href", `/crm/companies/${acmeRow.id}`);
-    await expect(company).toContainText(`(${acme})`);
+    const domain = company.getByLabel("Website or domain");
+    await expect(domain).toHaveValue(acme);
     await expect(company.getByText("Rename the company on its page.")).toBeVisible();
     await expect(company.getByLabel("Company name", { exact: true })).toHaveCount(0);
 
-    // Change company: a new domain asks for the name, a known one joins its company and hides the name field.
-    await company.getByRole("button", { name: "Change company" }).click();
-    const domain = company.getByLabel("Website or domain");
+    // A new domain asks for the name, a known one joins its company and hides the name field.
     await domain.fill(`${tag}-new.test`);
     await expect(company.getByLabel("Company name", { exact: true })).toBeVisible();
     await expect(company.getByText("Names the company when the domain is new.")).toBeVisible();
@@ -50,31 +49,24 @@ test.describe("person form company", () => {
     await expect(company.getByTestId("company-join")).toContainText(`Joins S40 Globex ${tag} (${globex}).`);
     await expect(company.getByLabel("Company name", { exact: true })).toHaveCount(0);
 
-    // Save asks first. Keep restores the old company and saves the job title.
-    await page.getByLabel("Job title").fill("S40 Buyer");
-    await page.getByRole("button", { name: "Save changes" }).click();
+    // Save asks first. Keep leaves the company as it was and the editor open.
+    await company.getByRole("button", { name: "Save", exact: true }).click();
     const move = page.getByRole("dialog", { name: `Move ${name} to S40 Globex ${tag}?` });
     await expect(move).toContainText(`${name} leaves S40 Acme ${tag}.`);
     await move.getByRole("button", { name: `Keep S40 Acme ${tag}` }).click();
     await expect(move).toBeHidden();
-    await expect(page.getByText("Contact saved.")).toBeVisible();
-    await expect(page.getByTestId("person-details")).toContainText("S40 Buyer");
     expect(await companyOf(personId)).toEqual({ domain: acme, name: `S40 Acme ${tag}` });
 
-    // Move goes through, and the form sends no name for the existing company, so its name stays.
-    const again = await openEditForm(page);
-    await again.getByRole("button", { name: "Change company" }).click();
-    await again.getByLabel("Website or domain").fill(globex);
-    await expect(again.getByTestId("company-join")).toBeVisible();
-    await page.getByRole("button", { name: "Save changes" }).click();
+    // Move goes through, and the row sends no name for the existing company, so its name stays.
+    await expect(company.getByTestId("company-join")).toBeVisible();
+    await company.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("dialog", { name: `Move ${name} to S40 Globex ${tag}?` }).getByRole("button", { name: "Move", exact: true }).click();
-    await expect(page.getByText("Contact saved.").first()).toBeVisible();
+    await expect(page.getByText("Company saved.").first()).toBeVisible();
     await expect.poll(() => companyOf(personId)).toEqual({ domain: globex, name: `S40 Globex ${tag}` });
 
     // Remove company asks with its own title.
     const third = await openEditForm(page);
     await third.getByRole("button", { name: "Remove company" }).click();
-    await page.getByRole("button", { name: "Save changes" }).click();
     const remove = page.getByRole("dialog", { name: `Remove ${name} from S40 Globex ${tag}?` });
     await remove.getByRole("button", { name: "Remove", exact: true }).click();
     await expect.poll(() => companyOf(personId)).toEqual({ domain: null, name: null });

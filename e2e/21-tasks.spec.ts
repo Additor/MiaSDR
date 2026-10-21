@@ -26,7 +26,9 @@ test.describe("tasks, notes and the important flag", () => {
     await page.getByRole("link", { name: /Tess Aldrin/ }).click();
 
     // Two tasks: one long overdue and assigned to Bea, one with no date for the admin.
+    // In the side panel the form waits behind New task, and stays open for the next one.
     const panel = page.locator('[data-slot="tasks-panel"]');
+    await panel.getByRole("button", { name: "New task" }).click();
     await panel.getByLabel("New task").fill("Send rollout plan");
     await panel.getByLabel("Due date").fill("2020-01-02");
     await pick(page, panel.getByRole("combobox", { name: "Assign to" }), MEMBER.name);

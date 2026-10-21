@@ -433,7 +433,14 @@ export function TableWorkspace({ tableId }: Props) {
       {dialog?.kind === "column" && (
         <ColumnDialogs tableId={tableId} columns={columns} view={view} request={dialog.request} onClose={closeDialog} onChanged={grid.reload} saveView={grid.saveView} />
       )}
-      {dialog?.kind === "details" && detailsRow && detailsColumn && <CellDrawer tableId={tableId} row={detailsRow} column={detailsColumn} rowNumber={rowNumbers.get(detailsRow.id) ?? 0} onClose={closeDialog} />}
+      {dialog?.kind === "details" && detailsRow && detailsColumn && <CellDrawer
+          tableId={tableId}
+          row={detailsRow}
+          column={detailsColumn}
+          rowNumber={rowNumbers.get(detailsRow.id) ?? 0}
+          onRun={runCellSource(detailsColumn, columns) !== null ? () => void runCell(detailsColumn, detailsRow.id) : undefined}
+          onClose={closeDialog}
+        />}
       {dialog?.kind === "deleteRows" && (
         <ConfirmDialog
           open

@@ -162,8 +162,8 @@ test.describe("contacts and companies", () => {
     await expect(page.getByRole("tab", { name: /History/ })).toBeVisible();
     const details = page.getByTestId("person-details");
     await expect(details.getByRole("heading", { level: 2, name: "Details" })).toBeVisible();
-    await waitForHydrated(details.getByRole("button", { name: "Edit" }));
-    await details.getByRole("button", { name: "Edit" }).click();
+    await waitForHydrated(details.getByRole("button", { name: "Edit Email" }));
+    await details.getByRole("button", { name: "Edit Email" }).click();
     await expect(details.getByText("A contact needs an email or a LinkedIn profile.")).toBeVisible();
     await details.getByRole("button", { name: "Cancel" }).click();
     // Rhea has an open deal, so the delete row names it and offers no button.
@@ -291,12 +291,18 @@ test.describe("contacts and companies", () => {
 
     await page.goto(`/crm/companies/${w.nimbus}`);
     const form = page.getByTestId("company-details");
-    await waitForHydrated(form.getByRole("button", { name: "Edit" }));
-    await form.getByRole("button", { name: "Edit" }).click();
-    await form.getByLabel("LinkedIn page").fill("linkedin.com/company/Nimbus-S36");
-    await form.getByLabel(field).fill("Gold");
-    await form.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.getByText("Company saved.")).toBeVisible();
+    // Each fact saves on its own: the LinkedIn page with Enter, then a value for the company field through Add field.
+    await waitForHydrated(form.getByRole("button", { name: "Edit LinkedIn" }));
+    await form.getByRole("button", { name: "Edit LinkedIn" }).click();
+    await form.getByRole("textbox", { name: "LinkedIn" }).fill("linkedin.com/company/Nimbus-S36");
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("LinkedIn page saved.")).toBeVisible();
+    await expect(form.getByRole("textbox", { name: "LinkedIn" })).toHaveCount(0);
+    await form.getByRole("button", { name: "Add field" }).click();
+    await form.getByLabel("Field").fill(field);
+    await form.getByLabel("Value").fill("Gold");
+    await form.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText(`${field} saved.`)).toBeVisible();
 
     await page.reload();
     // The header carries the domain and LinkedIn links; Details lists the fields.
