@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextStep, presetSteps, providersForStep } from "./waterfall-steps";
+import { nextStep, presetSteps, providersForStep, spendSummary } from "./waterfall-steps";
 
 const provider = (key: string, ...actions: string[]) => ({ key, actions: actions.map((a) => ({ key: a })) });
 const hunter = provider("hunter", "verify-email", "find-work-email", "find-emails-by-company");
@@ -28,5 +28,12 @@ describe("waterfall steps", () => {
       { providerKey: "zerobounce", actionKey: "verify-email" },
     ]);
     expect(presetSteps(usable, "enrich-company")).toHaveLength(1);
+  });
+});
+
+describe("spend and timing summary", () => {
+  it("says how the column runs, what it reuses and what caps it", () => {
+    expect(spendSummary({ autoRun: false, delay: "0", reuseDays: "30" })).toBe("Manual runs · reuse 30 days");
+    expect(spendSummary({ autoRun: true, delay: "2", reuseDays: "0", maxCredits: "1.5", maxCost: "", waitOnLimit: true })).toBe("Runs automatically · 2 s between calls · no reuse · up to 1.5 credits a cell · waits for rate limits");
   });
 });

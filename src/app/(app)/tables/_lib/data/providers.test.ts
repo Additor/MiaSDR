@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { impactText, usageLine } from "./providers";
+import { catalogGroups, impactText, usageLine } from "./providers";
 
 describe("provider usage line", () => {
   it("names calls, the found rate, errors, reuses, credits and the typical latency", () => {
@@ -18,5 +18,18 @@ describe("turn off and disconnect confirmation", () => {
     expect(impactText("off", impact)).toBe("1 column uses it. 3 cells are waiting to run. Their cells wait until you turn it back on, without using an attempt; a waterfall asks its other steps meanwhile.");
     expect(impactText("disconnect", impact)).toBe("The saved key is deleted. 1 column uses it. 3 cells are waiting to run. Their cells fail until you connect it again; a waterfall asks its other steps.");
     expect(impactText("off", { columns: [], pendingCells: 0 })).toBe("No column uses it. You can turn it back on at any time.");
+  });
+});
+
+describe("catalog groups", () => {
+  const entry = (key: string, action: string | null, adapter: string | null = key, status: "available" | "catalog_only" = "available") => ({ key, name: key, description: "", status, adapter, credentialFields: [], actions: action ? [{ key: action, name: action, inputs: [], outputs: [], primaryOutput: "", defaultCostCents: 0 }] : [] });
+  it("puts verifiers, finders and enrichers first, and Custom HTTP and the fake provider last", () => {
+    const groups = catalogGroups([entry("http", null, "http"), entry("fake", "find-email", "fake"), entry("hunter", "verify-email"), entry("prospeo", "find-work-email"), entry("apollo", "enrich-person"), entry("zerobounce", "verify-email")]);
+    expect(groups.map((g) => [g.label, g.entries.map((e) => e.key)])).toEqual([
+      ["Verify email", ["hunter", "zerobounce"]],
+      ["Find work email", ["prospeo"]],
+      ["Enrich people and companies", ["apollo"]],
+      ["Other", ["http", "fake"]],
+    ]);
   });
 });

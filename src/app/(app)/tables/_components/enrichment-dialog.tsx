@@ -12,7 +12,7 @@ import { SETTLED_STATUSES } from "@/contexts/grid/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/domain/enrichment-inputs";
 import { guessColumn, usableProviders, useProviders, type ActionSpec, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
-import { nextStep, presetSteps, providersForStep, WATERFALL_PRESETS, type WaterfallStep } from "../_lib/data/waterfall-steps";
+import { nextStep, presetSteps, providersForStep, spendSummary, WATERFALL_PRESETS, type WaterfallStep } from "../_lib/data/waterfall-steps";
 import { ColumnChoice, Choice, ErrorText, Field } from "./form-bits";
 import { ProviderManager } from "./provider-manager";
 
@@ -187,7 +187,8 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
   const { catalog, providers, loading, error: loadError, refresh } = useProviders();
   const usable = useMemo(() => usableProviders(providers, catalog), [providers, catalog]);
   const [mode, setMode] = useState<"single" | "waterfall">("single");
-  const [showProviders, setShowProviders] = useState(false);
+  // Unset follows the providers: the list opens by itself while none is ready, since connecting one is the next step.
+  const [showProviders, setShowProviders] = useState<boolean | null>(null);
 
   const [steps, setSteps] = useState<Step[]>([]);
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -203,6 +204,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const providersOpen = showProviders ?? (!loading && usable.length === 0);
   const actionOf = (step: Step): ActionSpec | undefined => usable.find((p) => p.key === step.providerKey)?.actions.find((a) => a.key === step.actionKey);
   const chosen = steps.map(actionOf).filter((a): a is ActionSpec => !!a);
 
@@ -298,13 +300,28 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
         <DialogDescription>Fill columns from a data provider. Nothing runs until you press Run. Provider calls use your own account and key.</DialogDescription>
       </DialogHeader>
       <div className="grid gap-4">
-        <div role="tablist" aria-label="Kind" className="inline-flex w-fit rounded-lg border p-0.5">
+        <div
+          role="tablist"
+          aria-label="Kind"
+          className="inline-flex w-fit rounded-lg border p-0.5"
+          onKeyDown={(e) => {
+            // Arrow keys move between the two kinds, as a tab list does.
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            e.preventDefault();
+            const next = mode === "single" ? "waterfall" : "single";
+            switchMode(next);
+            document.getElementById(`enrichment-tab-${next}`)?.focus();
+          }}
+        >
           {(["single", "waterfall"] as const).map((m) => (
             <button
               key={m}
+              id={`enrichment-tab-${m}`}
               type="button"
               role="tab"
               aria-selected={mode === m}
+              aria-controls="enrichment-panel"
+              tabIndex={mode === m ? 0 : -1}
               className={`rounded-md px-3 py-1 text-sm ${mode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => switchMode(m)}
             >
@@ -312,138 +329,151 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
             </button>
           ))}
         </div>
-        {mode === "waterfall" && <p className="text-xs text-muted-foreground">A waterfall tries each step in order and stops at the first hit. Every step runs the same action, so their answers fill the same columns.</p>}
-        {mode === "waterfall" && presets.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">Start from</span>
-            {presets.map((preset) => (
-              <Button key={preset.actionKey} type="button" variant="outline" size="sm" onClick={() => applySteps(preset.steps)}>
-                {preset.label} ({preset.steps.length} providers)
-              </Button>
-            ))}
-          </div>
-        )}
+        <div role="tabpanel" id="enrichment-panel" aria-labelledby={`enrichment-tab-${mode}`} className="grid gap-3">
+          {mode === "waterfall" && <p className="text-xs text-muted-foreground">A waterfall tries each step in order and stops at the first hit. Every step runs the same action, so their answers fill the same columns.</p>}
+          {mode === "waterfall" && presets.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Start from</span>
+              {presets.map((preset) => (
+                <Button key={preset.actionKey} type="button" variant="outline" size="sm" onClick={() => applySteps(preset.steps)}>
+                  {preset.label} ({preset.steps.length} providers)
+                </Button>
+              ))}
+            </div>
+          )}
 
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading providers...</p>
-        ) : (
-          <>
-            <ErrorText>{loadError}</ErrorText>
-            {usable.length === 0 && <p className="rounded-lg border border-dashed p-3 text-sm">No provider is ready. Connect one and save its key below.</p>}
-            {steps.map((step, i) => {
-              const provider = usable.find((p) => p.key === step.providerKey);
-              const later = mode === "waterfall" && i > 0;
-              return (
-                <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_auto]">
-                  <Field label={mode === "waterfall" ? `Step ${i + 1} provider` : "Provider"} htmlFor={`step-p-${i}`}>
-                    <Choice
-                      id={`step-p-${i}`}
-                      items={providersForStep(usable, steps, later ? i : 0).map((p) => ({ value: p.key, label: p.name }))}
-                      value={step.providerKey}
-                      onChange={(k) => {
-                        const p = usable.find((x) => x.key === k);
-                        if (p) setStep(i, later ? { providerKey: p.key, actionKey: steps[0].actionKey } : defaultStep(p));
-                      }}
-                    />
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading providers...</p>
+          ) : (
+            <>
+              <ErrorText>{loadError}</ErrorText>
+              {usable.length === 0 && <p className="rounded-lg border border-dashed p-3 text-sm">No provider is ready yet. Connect one in the list below; MiaSDR checks the key before it saves it.</p>}
+              {steps.map((step, i) => {
+                const provider = usable.find((p) => p.key === step.providerKey);
+                const later = mode === "waterfall" && i > 0;
+                return (
+                  <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_auto]">
+                    <Field label={mode === "waterfall" ? `Step ${i + 1} provider` : "Provider"} htmlFor={`step-p-${i}`}>
+                      <Choice
+                        id={`step-p-${i}`}
+                        items={providersForStep(usable, steps, later ? i : 0).map((p) => ({ value: p.key, label: p.name }))}
+                        value={step.providerKey}
+                        onChange={(k) => {
+                          const p = usable.find((x) => x.key === k);
+                          if (p) setStep(i, later ? { providerKey: p.key, actionKey: steps[0].actionKey } : defaultStep(p));
+                        }}
+                      />
+                    </Field>
+                    <Field label="Action" htmlFor={`step-a-${i}`}>
+                      <Choice
+                        id={`step-a-${i}`}
+                        items={(provider?.actions ?? []).filter((a) => !later || a.key === steps[0].actionKey).map((a) => ({ value: a.key, label: a.name }))}
+                        value={step.actionKey}
+                        onChange={(a) => setStep(i, { ...step, actionKey: a })}
+                      />
+                    </Field>
+                    {mode === "waterfall" && (
+                      <div className="flex items-end gap-1">
+                        <Button type="button" size="icon" variant="ghost" aria-label="Move step up" disabled={i === 0} onClick={() => move(i, -1)}>
+                          <ArrowUpIcon />
+                        </Button>
+                        <Button type="button" size="icon" variant="ghost" aria-label="Move step down" disabled={i === steps.length - 1} onClick={() => move(i, 1)}>
+                          <ArrowDownIcon />
+                        </Button>
+                        <Button type="button" size="icon" variant="ghost" aria-label="Remove step" onClick={() => applySteps(steps.filter((_, j) => j !== i))}>
+                          <Trash2Icon />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {usable.length > 0 && (mode === "waterfall" || steps.length === 0) && (
+                <div>
+                  <Button type="button" variant="outline" size="sm" onClick={addStep} disabled={!canAdd}>
+                    <PlusIcon /> {steps.length === 0 ? "Choose provider" : "Add step"}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+
+          {chosen.length > 0 && (
+            <>
+              <fieldset className="grid gap-2">
+                <legend className="mb-1 text-sm font-medium">Inputs</legend>
+                {inputSpecs.map((input) => (
+                  <Field key={input.key} label={`${input.name}${input.required ? " (required)" : ""}`} htmlFor={`in-${input.key}`}>
+                    <ColumnChoice id={`in-${input.key}`} value={inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => setInputs((s) => ({ ...s, [input.key]: v ?? "" }))} columns={columns} />
                   </Field>
-                  <Field label="Action" htmlFor={`step-a-${i}`}>
-                    <Choice
-                      id={`step-a-${i}`}
-                      items={(provider?.actions ?? []).filter((a) => !later || a.key === steps[0].actionKey).map((a) => ({ value: a.key, label: a.name }))}
-                      value={step.actionKey}
-                      onChange={(a) => setStep(i, { ...step, actionKey: a })}
-                    />
+                ))}
+                {!missingInput && uncovered && <p className="text-sm text-muted-foreground">Map {acceptsText(uncovered)}.</p>}
+              </fieldset>
+              <fieldset className="stack-field">
+                <legend className="mb-1 text-sm font-medium">Columns to add</legend>
+                {outputSpecs.length === 0 && <p className="text-sm text-muted-foreground">These steps share no output. Pick actions that return the same fields.</p>}
+                {outputSpecs.map((o) => (
+                  <label key={o.key} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={outputs.includes(o.key)} onCheckedChange={(v) => setOutputs((s) => (v === true ? [...s, o.key] : s.filter((k) => k !== o.key)))} />
+                    {o.name}
+                  </label>
+                ))}
+              </fieldset>
+              {mode === "waterfall" && (
+                <div className="grid gap-3">
+                  <Field label="Column name" htmlFor="wf-name">
+                    <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Waterfall" />
                   </Field>
-                  {mode === "waterfall" && (
-                    <div className="flex items-end gap-1">
-                      <Button type="button" size="icon" variant="ghost" aria-label="Move step up" disabled={i === 0} onClick={() => move(i, -1)}>
-                        <ArrowUpIcon />
-                      </Button>
-                      <Button type="button" size="icon" variant="ghost" aria-label="Move step down" disabled={i === steps.length - 1} onClick={() => move(i, 1)}>
-                        <ArrowDownIcon />
-                      </Button>
-                      <Button type="button" size="icon" variant="ghost" aria-label="Remove step" onClick={() => applySteps(steps.filter((_, j) => j !== i))}>
-                        <Trash2Icon />
-                      </Button>
-                    </div>
+                  {steps[0]?.actionKey === "verify-email" && (
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
+                      Stop at a catch-all verdict instead of asking the next verifier
+                    </label>
                   )}
                 </div>
-              );
-            })}
-            {usable.length > 0 && (mode === "waterfall" || steps.length === 0) && (
-              <div>
-                <Button type="button" variant="outline" size="sm" onClick={addStep} disabled={!canAdd}>
-                  <PlusIcon /> {steps.length === 0 ? "Choose provider" : "Add step"}
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-
-        {chosen.length > 0 && (
-          <>
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Inputs</legend>
-              {inputSpecs.map((input) => (
-                <Field key={input.key} label={`${input.name}${input.required ? " (required)" : ""}`} htmlFor={`in-${input.key}`}>
-                  <ColumnChoice id={`in-${input.key}`} value={inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => setInputs((s) => ({ ...s, [input.key]: v ?? "" }))} columns={columns} />
-                </Field>
-              ))}
-              {!missingInput && uncovered && <p className="text-sm text-muted-foreground">Map {acceptsText(uncovered)}.</p>}
-            </fieldset>
-            <fieldset className="stack-field">
-              <legend className="mb-1 text-sm font-medium">Columns to add</legend>
-              {outputSpecs.length === 0 && <p className="text-sm text-muted-foreground">These steps share no output. Pick actions that return the same fields.</p>}
-              {outputSpecs.map((o) => (
-                <label key={o.key} className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={outputs.includes(o.key)} onCheckedChange={(v) => setOutputs((s) => (v === true ? [...s, o.key] : s.filter((k) => k !== o.key)))} />
-                  {o.name}
-                  <span className="text-xs text-muted-foreground">{o.type}</span>
-                </label>
-              ))}
-            </fieldset>
-            {mode === "waterfall" && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Column name" htmlFor="wf-name">
-                  <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Waterfall" />
-                </Field>
-                <Field
-                  label="Spend cap per cell (cents)"
-                  htmlFor="wf-cap"
-                  hint={
-                    maxCost.trim() !== "" && steps.every((s) => (usable.find((p) => p.key === s.providerKey)?.defaultCostCents ?? 0) === 0)
-                      ? "These providers have no price, so a cents cap never stops a call. Use the credit cap."
-                      : "Optional. A step that would pass it is skipped."
-                  }
-                >
-                  <Input id="wf-cap" type="number" min={0} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} className="w-28" />
-                </Field>
-                <Field label="Credit cap per cell" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">
-                  <Input id="wf-credits" type="number" min={0} step={0.5} value={maxCredits} onChange={(e) => setMaxCredits(e.target.value)} className="w-28" />
-                </Field>
-                <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                  <Checkbox checked={waitOnLimit} onCheckedChange={(v) => setWaitOnLimit(v === true)} />
-                  Wait for a rate-limited step instead of asking the next one
-                </label>
-                {steps[0]?.actionKey === "verify-email" && (
-                  <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                    <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
-                    Stop at a catch-all verdict instead of asking the next verifier
-                  </label>
-                )}
-              </div>
-            )}
-            <RunTiming autoRun={autoRun} setAutoRun={setAutoRun} delay={delay} setDelay={setDelay} />
-            <Field label="Reuse an answer for the same lookup (days)" htmlFor="reuse-days" hint="A vendor answered the same input within this many days: the cell takes that answer and pays nothing. 0 always asks.">
-              <Input id="reuse-days" type="number" min={0} max={365} value={reuseDays} onChange={(e) => setReuseDays(e.target.value)} className="w-28" />
-            </Field>
-          </>
-        )}
+              )}
+              <details className="group rounded-lg border">
+                <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3 px-3 py-2 text-sm">
+                  <span className="font-medium">Spend and timing</span>
+                  <span className="truncate text-xs text-muted-foreground">{spendSummary({ autoRun, delay, reuseDays, ...(mode === "waterfall" ? { maxCost, maxCredits, waitOnLimit } : {}) })}</span>
+                </summary>
+                <div className="grid gap-3 border-t px-3 py-3">
+                  {mode === "waterfall" && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field
+                        label="Spend cap per cell (cents)"
+                        htmlFor="wf-cap"
+                        hint={
+                          maxCost.trim() !== "" && steps.every((s) => (usable.find((p) => p.key === s.providerKey)?.defaultCostCents ?? 0) === 0)
+                            ? "These providers have no price, so a cents cap never stops a call. Use the credit cap."
+                            : "Optional. A step that would pass it is skipped."
+                        }
+                      >
+                        <Input id="wf-cap" type="number" min={0} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} className="w-28" />
+                      </Field>
+                      <Field label="Credit cap per cell" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">
+                        <Input id="wf-credits" type="number" min={0} step={0.5} value={maxCredits} onChange={(e) => setMaxCredits(e.target.value)} className="w-28" />
+                      </Field>
+                      <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                        <Checkbox checked={waitOnLimit} onCheckedChange={(v) => setWaitOnLimit(v === true)} />
+                        Wait for a rate-limited step instead of asking the next one
+                      </label>
+                    </div>
+                  )}
+                  <RunTiming autoRun={autoRun} setAutoRun={setAutoRun} delay={delay} setDelay={setDelay} />
+                  <Field label="Reuse an answer for the same lookup (days)" htmlFor="reuse-days" hint="A vendor answered the same input within this many days: the cell takes that answer and pays nothing. 0 always asks.">
+                    <Input id="reuse-days" type="number" min={0} max={365} value={reuseDays} onChange={(e) => setReuseDays(e.target.value)} className="w-28" />
+                  </Field>
+                </div>
+              </details>
+            </>
+          )}
+        </div>
         <div>
-          <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setShowProviders((s) => !s)} aria-expanded={showProviders}>
-            {showProviders ? "Hide providers" : "Connect or manage providers"}
+          <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setShowProviders(!providersOpen)} aria-expanded={providersOpen}>
+            {providersOpen ? "Hide providers" : usable.length === 0 ? "Connect a provider" : "Connect or manage providers"}
           </Button>
-          {showProviders && (
+          {providersOpen && (
             <div className="mt-2">
               <ProviderManager catalog={catalog} providers={providers} onChanged={refresh} />
             </div>

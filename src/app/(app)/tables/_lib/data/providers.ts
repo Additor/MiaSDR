@@ -48,6 +48,23 @@ export interface ProviderView {
   actions: ActionSpec[];
 }
 
+/**
+ * The catalog by what a vendor does first: verifiers, finders, enrichers, then everything else (Custom HTTP, the fake
+ * provider, catalog-only entries). Catalog order holds inside a group, and empty groups are left out.
+ */
+export function catalogGroups(catalog: CatalogEntry[]): Array<{ label: string; entries: CatalogEntry[] }> {
+  const groups = [
+    { label: "Verify email", test: (key: string) => key === "verify-email" },
+    { label: "Find work email", test: (key: string) => key === "find-work-email" },
+    { label: "Enrich people and companies", test: (key: string) => key === "enrich-person" || key === "enrich-company" },
+  ];
+  const vendor = (e: CatalogEntry) => e.status === "available" && e.adapter !== "http" && e.adapter !== "fake";
+  const out = groups.map((g) => ({ label: g.label, entries: catalog.filter((e) => vendor(e) && g.test(e.actions[0]?.key ?? "")) }));
+  const placed = new Set(out.flatMap((g) => g.entries.map((e) => e.key)));
+  out.push({ label: "Other", entries: catalog.filter((e) => !placed.has(e.key)) });
+  return out.filter((g) => g.entries.length > 0);
+}
+
 /** What turning a provider off or disconnecting it touches, as `/api/grid/providers/<id>/impact` returns it. */
 export interface ProviderImpact {
   columns: Array<{ tableId: string; tableName: string; columnName: string; waterfall: boolean }>;

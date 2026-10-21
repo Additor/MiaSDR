@@ -18,7 +18,7 @@ Tables enrichment columns call data vendors with your organization's own API key
 
 Every vendor has a fixed host, so none needs an entry in `GRID_HTTP_ALLOWED_HOSTS`. For any other vendor, use the Custom HTTP API provider and allow-list its host.
 
-MiaSDR records a call that the vendor does not bill at 0 cents. Every other call costs the price you set on the provider (`defaultCostCents`, 0 by default), because vendor credits are not money.
+MiaSDR records a call that the vendor does not bill at 0 cents. Every other call costs the price you set on the provider (Settings, Price per call; `defaultCostCents`, 0 by default), because vendor credits are not money.
 
 Each ledger row also keeps the vendor credits the call used: LeadMagic's `credits_consumed` and PDL's `x-call-credits-spent` when they send them, otherwise one credit per billed call (Hunter: half a credit per verification) and 0 for a call the vendor does not bill. The cell drawer shows them beside the cost. A waterfall can cap a cell's credits (`maxCredits`) as well as its cents; a step that would pass a cap is skipped. A Custom HTTP API provider has no credits.
 
@@ -31,6 +31,8 @@ The Run dialog shows the worst case before anything is queued: rows, calls and c
 3. MiaSDR checks the key with the vendor's key-check call before it saves anything. A rejected key is not stored. The key is encrypted with `INTEGRATION_CREDENTIALS_KEY` and never appears in cells, audit rows or logs, in any encoding.
 
 Turn off pauses a provider: its cells wait without using an attempt and run once you turn it back on, and a waterfall asks its other steps meanwhile. Disconnect deletes the key, and the cells that need it fail until you connect it again. Both first list the columns that use the provider and the cells waiting on it.
+
+The Add enrichment dialog keeps the provider, the inputs and the columns to add in view, and folds caps, the rate-limit choice, auto-run, the delay and reuse days under "Spend and timing", whose one-line summary shows what they are set to. A column the dialog adds starts with auto-run off, so nothing spends until you press Run or turn it on; a column added through the API starts with it on unless the request says `autoRun: false`.
 
 Every setting of an enrichment or waterfall column can change later from its Edit dialog: the inputs (an optional one can go back to "Not used"), the caps and the rate-limit choice of a waterfall, reuse days, the catch-all choice of a verification, auto-run and the delay. A column whose provider is off stays editable.
 
@@ -103,7 +105,7 @@ The provider list shows each connected vendor's last 30 days: calls, the share t
 
 ## Rate limits
 
-A new provider starts with the vendor's published per-minute limit where there is one: Hunter 300 (Email Verifier), Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin` to match your plan. When a vendor answers 429, the cell waits as the vendor asks and runs again: `retry-after` first, then Prospeo's reset seconds (the daily one once the day's requests are gone) or PDL's `x-ratelimit-reset`, up to an hour. The other cells that worker runs at the same time hold off for the same wait, so one 429 does not turn into a burst of them.
+A new provider starts with the vendor's published per-minute limit where there is one: Hunter 300 (Email Verifier), Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it under the provider's Settings (Calls per minute), or with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin`, to match your plan. When a vendor answers 429, the cell waits as the vendor asks and runs again: `retry-after` first, then Prospeo's reset seconds (the daily one once the day's requests are gone) or PDL's `x-ratelimit-reset`, up to an hour. The other cells that worker runs at the same time hold off for the same wait, so one 429 does not turn into a burst of them.
 
 When a waterfall step is rate limited, the cell asks the next step by default. Tick "Wait for a rate-limited step instead of asking the next one" (`onRateLimit: "wait"`) to keep the order: the cell waits for the preferred vendor and asks no later, maybe pricier, step meanwhile. A rate-limit wait uses no attempt either way.
 

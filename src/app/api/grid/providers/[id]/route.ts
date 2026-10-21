@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { deleteProvider, updateProvider } from "@/contexts/grid/application/enrichment-providers";
 import { gridProviderDeps } from "@/contexts/grid/infrastructure/enrichment-composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withAdmin } from "@/shared/api";
 
 const body = z.object({
   name: z.string().optional(),
@@ -20,5 +20,5 @@ export const PATCH = async (request: Request, { params }: RouteContext<"/api/gri
 
 export const DELETE = async (_request: Request, { params }: RouteContext<"/api/grid/providers/[id]">) => {
   const { id } = await params;
-  return withActor((actor) => deleteProvider(gridProviderDeps(), actor, id));
+  return withAdmin("Only an owner or admin can manage enrichment providers.", (actor) => deleteProvider(gridProviderDeps(), actor, id));
 };

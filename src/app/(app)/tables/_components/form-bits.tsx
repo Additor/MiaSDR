@@ -1,17 +1,25 @@
 "use client";
 
+import { cloneElement, isValidElement } from "react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { typeLabel } from "../_lib/view/format";
 import type { GridColumn } from "../_lib/data/types";
 
+/** A labelled control with an optional hint. The hint is tied to a single control child with aria-describedby, so a screen reader reads it with the field. */
 export function Field({ label, htmlFor, hint, children, className }: { label: string; htmlFor?: string; hint?: string; children: React.ReactNode; className?: string }) {
+  const hintId = hint && htmlFor ? `${htmlFor}-hint` : undefined;
+  const control = hintId && isValidElement<{ "aria-describedby"?: string }>(children) ? cloneElement(children, { "aria-describedby": hintId }) : children;
   return (
     <div className={cn("stack-field", className)}>
       <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {control}
+      {hint && (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
