@@ -183,7 +183,7 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
             <>
               <RecordSection title="Deals" count={summary.deals.length === 0 ? undefined : `${summary.openDeals} open of ${summary.deals.length}`} testId="contact-deals">
                 {summary.deals.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No deals. Deleting a deal leaves the person a contact; use Create deal above for a new opportunity.</p>
+                  <p className="text-sm text-muted-foreground">No deals</p>
                 ) : (
                   <DealsList deals={summary.deals} />
                 )}
@@ -193,17 +193,20 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
                 <PersonActivity actor={actor} personId={id} first="tasks" />
               </Suspense>
 
-              <details data-testid="outreach-history" className="group border-t py-section">
-                <summary className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11">
-                  <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
-                  <h2 className="text-sm font-semibold">Outreach history</h2>
-                  <span className="text-sm text-muted-foreground tabular-nums">{outreachCount}</span>
-                </summary>
-                <div className="mt-2 grid">
-                  <CampaignsTable enrollments={enrollments} level="h3" emptyText="This contact was in no campaign." />
-                  <SendHistoryTable sends={sends} level="h3" emptyText="Nothing sent to this contact yet." />
-                </div>
-              </details>
+              {/* A contact who was in no campaign and got no sends has no history to open. */}
+              {(enrollments.length > 0 || sends.length > 0) && (
+                <details data-testid="outreach-history" className="group border-t py-section">
+                  <summary className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11">
+                    <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
+                    <h2 className="text-sm font-semibold">Outreach history</h2>
+                    <span className="text-sm text-muted-foreground tabular-nums">{outreachCount}</span>
+                  </summary>
+                  <div className="mt-2 grid">
+                    <CampaignsTable enrollments={enrollments} level="h3" emptyText="This contact was in no campaign." />
+                    <SendHistoryTable sends={sends} level="h3" emptyText="Nothing sent to this contact yet." />
+                  </div>
+                </details>
+              )}
 
               <SourceDataCard person={toEntries(person.raw)} company={toEntries(person.companyRaw)} companyName={person.companyName} />
             </>

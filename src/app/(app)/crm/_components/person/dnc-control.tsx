@@ -16,6 +16,9 @@ interface DncResult {
 
 export const DNC_REASON_REQUIRED = "Type a reason to mark this person do not contact.";
 
+/** What marking does, said in the confirm step and in the bulk dialog. */
+export const DNC_CONSEQUENCE = "Stops every channel, ends their campaign enrollments and retires open drafts.";
+
 const OPEN_DNC_EVENT = "miasdr:open-dnc";
 
 /**
@@ -113,6 +116,7 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
         </div>
       ) : (
         <form onSubmit={onSubmit} className="grid gap-2" noValidate>
+          <p className="text-sm">{DNC_CONSEQUENCE}</p>
           <div className="stack-field">
             <Label htmlFor={fieldId}>Reason</Label>
             <Input

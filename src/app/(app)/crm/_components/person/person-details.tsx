@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { PlusIcon } from "lucide-react";
+import { HistoryIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -12,9 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { callApi } from "@/lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "../company-domain-field";
-import { EditableFact, InlineForm, NotSet, type EditorProps, type SaveResult } from "../record/inline-field";
+import { EditableFact, Fact, InlineForm, NotSet, type EditorProps, type SaveResult } from "../record/inline-field";
 import { AsideSection } from "../record/record-header";
 import type { CustomField, LeadFormValues } from "./person-fields";
+import { StateTip, TipLines } from "./state-tip";
 
 export interface PersonFacts {
   emailHref: string | null;
@@ -60,7 +61,7 @@ export function PersonDetails({
   const name = values.fullName || [values.firstName, values.lastName].filter(Boolean).join(" ");
 
   return (
-    <AsideSection title="Details" testId="person-details">
+    <AsideSection title="Details" testId="person-details" action={<PersonOrigin facts={facts} />}>
       <dl className="stack-group text-sm">
         <EditableFact
           label="Name"
@@ -95,6 +96,13 @@ export function PersonDetails({
         <EditableFact label="Company" saved="Company saved." testId="person-company" editor={(props) => <CompanyEditor {...props} id={id} person={person} values={values} companyHref={facts.companyHref} dealCount={dealCount} />}>
           <CompanyValue values={values} href={facts.companyHref} />
         </EditableFact>
+        {facts.sourceCampaign && (
+          <Fact label="Source">
+            <Link href={facts.sourceCampaign.href} className="underline-offset-4 hover:underline" data-testid="contact-source">
+              {facts.sourceCampaign.name}
+            </Link>
+          </Fact>
+        )}
         {filled.map((c) => (
           <EditableFact key={c.key} label={c.name} saved={`${c.name} saved.`} inputs={[{ key: c.key, value: c.value, help: "Empty removes the value." }]} onSave={(v) => save({ custom: { [c.key]: v[c.key] } })}>
             {c.value}
@@ -106,7 +114,6 @@ export function PersonDetails({
         allowNew
         onSave={(field, value) => save(field.key ? { custom: { [field.key]: value } } : { newCustom: [{ label: field.name, value }] })}
       />
-      <PersonOrigin facts={facts} />
     </AsideSection>
   );
 }
@@ -136,27 +143,35 @@ function CompanyValue({ values, href }: { values: LeadFormValues; href: string |
   );
 }
 
-/** Where the person came from and when, in one line: nothing here is editable. */
+/**
+ * When the person was added, changed and made a contact, on a clock mark in the Details title row: nothing here is
+ * editable, so it stays out of the rows until someone asks. Screen readers hear the facts as the mark's text.
+ */
 function PersonOrigin({ facts }: { facts: PersonFacts }) {
   return (
-    <p className="text-xs text-muted-foreground" data-testid="person-origin">
-      {facts.contactSince && (
-        <>
-          Contact since <Time value={facts.contactSince} dateOnly />
-          {facts.sourceCampaign && (
+    <StateTip
+      trigger={<span tabIndex={0} aria-label="Record history" className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:size-11" data-testid="person-origin" />}
+      tip={
+        <TipLines
+          lines={[
+            facts.contactSince && (
+              <>
+                Contact since <Time value={facts.contactSince} dateOnly />
+              </>
+            ),
             <>
-              {" from "}
-              <Link href={facts.sourceCampaign.href} className="underline underline-offset-4 hover:text-foreground" data-testid="contact-source">
-                {facts.sourceCampaign.name}
-              </Link>
-            </>
-          )}
-          {". "}
-        </>
-      )}
-      Added <Time value={facts.created} />
-      {facts.source ? ` (${facts.source.toLowerCase()})` : ""}. Changed <Time value={facts.updated} />.
-    </p>
+              Added <Time value={facts.created} />
+              {facts.source ? ` (${facts.source.toLowerCase()})` : ""}
+            </>,
+            <>
+              Changed <Time value={facts.updated} />
+            </>,
+          ]}
+        />
+      }
+    >
+      <HistoryIcon aria-hidden className="size-4" />
+    </StateTip>
   );
 }
 

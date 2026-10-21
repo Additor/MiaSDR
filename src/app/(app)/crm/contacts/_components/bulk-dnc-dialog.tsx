@@ -5,12 +5,11 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { callApi } from "@/lib/api-client";
-import { DNC_REASON_REQUIRED } from "../../_components/person/dnc-control";
+import { DNC_CONSEQUENCE, DNC_REASON_REQUIRED } from "../../_components/person/dnc-control";
 import { chunks } from "../../_components/chunks";
 import { bulkDncTitle, DNC_CHUNK, dncReportText, mergeDncReports, type DncReport } from "./contacts-bulk";
 
-/** The single control's line (`DoNotContactNote` for a person who is not marked). */
-const DESCRIPTION = "Stops every channel, ends their campaign enrollments and retires open drafts.";
+const DESCRIPTION = DNC_CONSEQUENCE;
 
 /**
  * Bulk Mark do not contact: one reason for every ticked contact. The dialog sends chunks of 200 one after another and

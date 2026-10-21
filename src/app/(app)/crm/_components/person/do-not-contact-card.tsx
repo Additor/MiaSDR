@@ -4,18 +4,16 @@ import { suppressionReasonLabel } from "@/contexts/outreach/domain/reachability"
 import { AsideSection } from "../record/record-header";
 import { DncControl } from "./dnc-control";
 
-/** What do not contact means for this person: when and why they were marked, or what marking them does. */
+/**
+ * When and why a marked person was marked. An unmarked person has no line: what marking does is said in the control's
+ * confirm step, where it applies.
+ */
 export function DoNotContactNote({ doNotContact, reason, setAt }: { doNotContact: boolean; reason: string | null; setAt: Date | string | null }) {
+  if (!doNotContact) return null;
   return (
     <p className="text-sm text-muted-foreground">
-      {doNotContact ? (
-        <>
-          Marked {setAt && <Time value={setAt} />}
-          {reason ? `: ${reason}` : ""}. Email and LinkedIn sends skip this person, and campaigns do not add them.
-        </>
-      ) : (
-        "Stops every channel, ends their campaign enrollments and retires open drafts."
-      )}
+      Marked {setAt && <Time value={setAt} />}
+      {reason ? `: ${reason}` : ""}.
     </p>
   );
 }
