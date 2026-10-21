@@ -1,5 +1,6 @@
 "use client";
 
+import { StarIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -27,8 +28,18 @@ export function ImportantStar({ messageId, important }: { messageId: string; imp
           {error}
         </span>
       )}
-      <Button type="button" size="xs" variant={important ? "secondary" : "ghost"} onClick={toggle} disabled={pending} aria-pressed={important} aria-label={important ? "Remove important mark" : "Mark as important"}>
-        {important ? "★ Important" : "☆ Mark important"}
+      <Button
+        type="button"
+        size="xs"
+        variant={important ? "secondary" : "ghost"}
+        onClick={toggle}
+        disabled={pending}
+        aria-pressed={important}
+        aria-label={important ? "Remove important mark" : "Mark as important"}
+        className="max-sm:h-11 max-sm:px-3"
+      >
+        <StarIcon aria-hidden className={important ? "fill-current" : undefined} />
+        {important ? "Important" : "Mark important"}
       </Button>
     </span>
   );

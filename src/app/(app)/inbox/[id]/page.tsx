@@ -101,7 +101,7 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
               />
               <DraftWatch contextVersion={thread.contextVersion} draftStatus={thread.latestDraftStatus} workflowState={thread.workflowState} />
 
-              {latest && <MessageCard message={latest} channel={thread.channel} />}
+              {latest && <MessageCard message={latest} channel={thread.channel} person={person} />}
 
               <div data-slot="reply-draft">
                 <Suspense fallback={<Skeleton className="h-48 w-full" />}>
@@ -123,7 +123,7 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
                     Earlier messages ({earlier.length}), newest first
                   </h2>
                   {earlier.map((m) => (
-                    <MessageCard key={`${m.source}-${m.id}`} message={m} channel={thread.channel} />
+                    <MessageCard key={`${m.source}-${m.id}`} message={m} channel={thread.channel} person={person} />
                   ))}
                 </section>
               )}
@@ -144,12 +144,25 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
   );
 }
 
-function MessageCard({ message: m, channel }: { message: ThreadDetail["messages"][number]; channel: string }) {
+/**
+ * One message. An inbound message from the person names them, with their title and company, so you see who you answer
+ * before the side panel, which a phone shows last. The address follows when it differs from the name.
+ */
+function MessageCard({ message: m, channel, person }: { message: ThreadDetail["messages"][number]; channel: string; person: ThreadDetail["person"] }) {
+  const fromPerson = m.direction === "inbound" && person.name !== null && (m.from === null || m.from === person.email);
+  const role = [person.title, person.company].filter(Boolean).join(" at ");
   return (
     <Card className={m.direction === "outbound" ? "bg-muted/40" : undefined}>
       <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
-          <span>{m.direction === "outbound" ? "You" : (m.from ?? "Sender")}</span>
+        <CardTitle className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          {fromPerson ? (
+            <span className="min-w-0">
+              {person.name}
+              {role && <span className="ml-2 font-normal text-muted-foreground">{role}</span>}
+            </span>
+          ) : (
+            <span className="min-w-0 break-all">{m.direction === "outbound" ? "You" : (m.from ?? "Sender")}</span>
+          )}
           {m.source === "sequence" && <Badge variant="outline">{channel === "linkedin" ? "Sequence message" : "Sequence email"}</Badge>}
           {m.possibleBounce ? (
             <span className="inline-flex items-center gap-1 text-xs font-normal">
@@ -163,8 +176,9 @@ function MessageCard({ message: m, channel }: { message: ThreadDetail["messages"
           {m.source === "message" && <ImportantStar messageId={m.id} important={m.important} />}
         </CardTitle>
         <CardDescription>
+          {fromPerson && m.from && <span className="break-all">{m.from}, </span>}
           <Time value={m.at} />
-          {m.to ? `, to ${m.to}` : ""}
+          {m.to ? <span className="break-all">{`, to ${m.to}`}</span> : ""}
           {m.cc?.length ? `, cc ${m.cc.join(", ")}` : ""}
         </CardDescription>
       </CardHeader>
