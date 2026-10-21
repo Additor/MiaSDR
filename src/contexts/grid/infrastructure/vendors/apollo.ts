@@ -24,13 +24,15 @@ export const apollo: VendorDefinition = {
       const linkedin = text(inputs.linkedinUrl);
       const name = text(inputs.fullName);
       const domain = text(inputs.companyDomain);
-      if (!email && !linkedin && !(name && domain)) throw new ProviderError("Apollo needs an email, a LinkedIn URL, or a full name with a company domain.", false);
+      const company = text(inputs.companyName);
+      if (!email && !linkedin && !(name && (domain || company))) throw new ProviderError("Apollo needs an email, a LinkedIn URL, or a full name with a company domain or name.", false);
       method = "POST";
       url.pathname = "/api/v1/people/match";
       if (email) url.searchParams.set("email", email);
       if (linkedin) url.searchParams.set("linkedin_url", linkedin);
       if (name) url.searchParams.set("name", name);
       if (domain) url.searchParams.set("domain", domain);
+      else if (company) url.searchParams.set("organization_name", company);
     } else if (call.action === "enrich-company") {
       const domain = text(inputs.companyDomain);
       if (!domain) throw new ProviderError("Apollo needs a company domain.", false);

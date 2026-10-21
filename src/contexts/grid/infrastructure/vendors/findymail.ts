@@ -19,8 +19,9 @@ export const findymail: VendorDefinition = {
     if (!apiKey) throw new ProviderError("The Findymail API key is missing.", false);
     if (call.action !== "find-work-email") throw new ProviderError(`Unknown Findymail action: ${call.action}`, false);
     const name = text(call.inputs.fullName);
-    const domain = text(call.inputs.companyDomain);
-    if (!name || !domain) throw new ProviderError("Findymail needs a full name and a company domain.", false);
+    // Findymail's `domain` takes a company domain (best) or a company name.
+    const domain = text(call.inputs.companyDomain) ?? text(call.inputs.companyName);
+    if (!name || !domain) throw new ProviderError("Findymail needs a full name and a company domain or name.", false);
     const url = new URL(SEARCH_URL);
     const request = { method: "POST", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
     const response = await safeRequest(

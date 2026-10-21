@@ -20,12 +20,13 @@ export const leadmagic: VendorDefinition = {
     if (call.action !== "find-work-email") throw new ProviderError(`Unknown LeadMagic action: ${call.action}`, false);
     const fullName = text(call.inputs.fullName);
     const domain = text(call.inputs.companyDomain);
-    if (!fullName || !domain) throw new ProviderError("LeadMagic needs a full name and a company domain.", false);
+    const company = text(call.inputs.companyName);
+    if (!fullName || !(domain || company)) throw new ProviderError("LeadMagic needs a full name and a company domain or name.", false);
     const url = new URL(FINDER_URL);
     const request = { method: "POST", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
     const response = await safeRequest(
       url,
-      { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-API-Key": stripLineBreaks(apiKey) }, body: JSON.stringify({ full_name: fullName, domain }) },
+      { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-API-Key": stripLineBreaks(apiKey) }, body: JSON.stringify({ full_name: fullName, ...(domain ? { domain } : { company_name: company }) }) },
       call.timeoutMs,
       net,
     );

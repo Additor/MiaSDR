@@ -4,6 +4,7 @@ import { tokensIn } from "../domain/enrichment-templates";
 import { chainPlacement } from "../domain/column-layout";
 import { normalizeKey, uniqueColumnKey, uniqueColumnName } from "../domain/keys";
 import type { ActionSpec } from "../domain/enrichment-catalog";
+import { acceptsText, inputsCovered } from "../domain/enrichment-inputs";
 import type { AdapterRegistry, ColumnChange, ColumnRow, GridRunStore, NewColumn, ProviderStore } from "./enrichment-ports";
 
 export interface ColumnDeps {
@@ -80,11 +81,21 @@ export interface CreateEnrichmentInput extends Placement {
   delaySeconds?: number;
 }
 
+/** Refuses a mapping that misses a required input or every combination the action accepts. `step` is 0-based. */
+function requireMapped(action: ActionSpec, mapped: Record<string, string>, step?: number): void {
+  for (const spec of action.inputs) {
+    if (spec.required && !mapped[spec.key]) throw new ValidationError(step === undefined ? `Map the "${spec.name}" input to a column.` : `Step ${step + 1} (${action.name}) needs the "${spec.name}" input mapped.`);
+  }
+  if (!inputsCovered(action, (key) => !!mapped[key])) {
+    throw new ValidationError(step === undefined ? `Map ${acceptsText(action)} to columns.` : `Step ${step + 1} (${action.name}) needs ${acceptsText(action)} mapped.`);
+  }
+}
+
 export async function createEnrichmentColumns(deps: ColumnDeps, actor: Actor, tableId: string, input: CreateEnrichmentInput): Promise<ColumnRow[]> {
   const action = await loadAction(deps, actor.organizationId, input.providerKey, input.actionKey);
   const selected = action.outputs.filter((o) => input.selectedOutputs.includes(o.key));
   if (selected.length === 0 || selected.length !== new Set(input.selectedOutputs).size) throw new ValidationError("Select at least one valid output.");
-  for (const spec of action.inputs) if (spec.required && !input.inputs[spec.key]) throw new ValidationError(`Map the "${spec.name}" input to a column.`);
+  requireMapped(action, input.inputs);
   const unknown = Object.keys(input.inputs).find((k) => !action.inputs.some((i) => i.key === k));
   if (unknown) throw new ValidationError(`"${unknown}" is not an input of this action.`);
 
@@ -131,7 +142,7 @@ export async function createWaterfallColumns(deps: ColumnDeps, actor: Actor, tab
   if (selected.length === 0 || selected.length !== new Set(input.selectedOutputs).size) throw new ValidationError("Select at least one valid output.");
   for (const [i, action] of actions.entries()) {
     for (const o of selected) if (!action.outputs.some((x) => x.key === o.key)) throw new ValidationError(`Step ${i + 1} (${action.name}) has no "${o.key}" output.`);
-    for (const spec of action.inputs) if (spec.required && !input.inputs[spec.key]) throw new ValidationError(`Step ${i + 1} (${action.name}) needs the "${spec.name}" input mapped.`);
+    requireMapped(action, input.inputs, i);
   }
 
   const label = input.name?.trim() || `Waterfall ${first.name}`;
@@ -288,7 +299,7 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
       if (input.inputs) {
         checkInputColumns(columns, input.inputs);
         for (const action of inputActions) {
-          for (const spec of action.inputs) if (spec.required && !input.inputs[spec.key]) throw new ValidationError(`Map the "${spec.name}" input to a column.`);
+          requireMapped(action, input.inputs);
         }
         config.inputs = input.inputs;
       }
@@ -299,7 +310,7 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
         const mapped = (config.inputs ?? {}) as Record<string, string>;
         for (const [i, action] of stepActions.entries()) {
           for (const key of exposed) if (!action.outputs.some((o) => o.key === key)) throw new ValidationError(`Step ${i + 1} (${action.name}) has no "${key}" output.`);
-          for (const spec of action.inputs) if (spec.required && !mapped[spec.key]) throw new ValidationError(`Step ${i + 1} (${action.name}) needs the "${spec.name}" input mapped.`);
+          requireMapped(action, mapped, i);
         }
         config.steps = input.steps;
       }

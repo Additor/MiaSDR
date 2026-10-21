@@ -35,13 +35,13 @@ Vendors that offer the same action take the same inputs and fill the same column
 | Action | Inputs | Columns every vendor fills |
 | --- | --- | --- |
 | Verify email | Email | Status, Provider status, Score |
-| Find work email | Full name, Company domain | Work email, Confidence, Verification status |
-| Enrich person | Email, or LinkedIn URL, or Full name with Company domain | Work email, Title, Company, LinkedIn URL |
+| Find work email | Full name with Company domain or Company name | Work email, Confidence, Verification status |
+| Enrich person | Email, or LinkedIn URL, or Full name with Company domain or Company name | Work email, Title, Company, LinkedIn URL |
 | Enrich company | Company domain | Company name, Industry, Employees, Website, LinkedIn URL, City, Country |
 
 A vendor can add columns of its own, such as ZeroBounce's Sub-status or Hunter's Position. Those columns stay empty when another step of the waterfall answers.
 
-A cell runs once every input its action requires has a value. Enrich person requires none of its four, so a row runs when any mapped identity has a value, and each vendor uses the combination it can match on. A Custom HTTP API action needs every mapped input.
+A cell runs once its row fills the action's required inputs and one combination the action accepts. Find work email runs on a name with a domain, or with a company name when the row has no domain; the domain wins when both are there, because it matches better. Enrich person runs on any one identity. The dialog and the API refuse a column that maps none of the combinations. A Custom HTTP API action needs every mapped input.
 
 In the Enrichment dialog, choose Waterfall. "Start from" offers Verify email and Find work email with every connected vendor that has the action. After the first step, the dialog lists only vendors that offer the first step's action.
 

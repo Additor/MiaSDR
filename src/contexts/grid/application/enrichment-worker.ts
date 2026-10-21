@@ -4,6 +4,7 @@ import { RATE_WINDOW_MS, LocalRateGate } from "../domain/enrichment-rate-limit";
 import { aiConfigSchema, enrichmentConfigSchema, waterfallConfigSchema } from "../domain/enrichment-config";
 import { coerceAiOutput } from "../domain/ai-output-coerce";
 import { inputsReady } from "../domain/enrichment-cascade";
+import { acceptsText, inputsCovered } from "../domain/enrichment-inputs";
 import { sanitizeOutput, sanitizeOutputString } from "../domain/output-sanitize";
 import { boundedAudit, cleanError, redactSecrets } from "../domain/enrichment-redact";
 import { cellText, hasCellValue, normalizeDomain, ownCell, tokensIn, validateInput } from "../domain/enrichment-templates";
@@ -90,6 +91,7 @@ async function executeStep(
     if (problem) return { kind: "unavailable", message: `${input.name}: ${problem}` };
     inputs[input.key] = input.type === "domain" && typeof value === "string" ? normalizeDomain(value) : value;
   }
+  if (!inputsCovered(action, (key) => key in inputs)) return { kind: "unavailable", message: `${action.name} needs ${acceptsText(action)}.` };
 
   let credentials: Record<string, string> = {};
   const envelope = await deps.providers.encryptedCredential(job.organizationId, provider.id);

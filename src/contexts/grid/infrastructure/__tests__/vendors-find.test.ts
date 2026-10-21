@@ -7,6 +7,25 @@ const noKey = (value: unknown) => {
   for (const form of keyForms) expect(json).not.toContain(form);
 };
 
+describe("a company name in place of a domain", () => {
+  const byName = { fullName: "John Doe", companyName: "Website Inc" };
+  it.each([
+    ["findymail", { email: null }, (body: Record<string, unknown>) => expect(body).toEqual({ name: "John Doe", domain: "Website Inc" })],
+    ["prospeo", { error: true, error_code: "NO_MATCH" }, (body: Record<string, unknown>) => expect(body.data).toEqual({ full_name: "John Doe", company_name: "Website Inc" })],
+    ["leadmagic", { email: null, credits_consumed: 0 }, (body: Record<string, unknown>) => expect(body).toEqual({ full_name: "John Doe", company_name: "Website Inc" })],
+  ])("%s sends the company name when the row has no domain", async (vendor, answer, check) => {
+    const { seen } = await ask(vendor, 200, answer, "find-work-email", byName);
+    check(JSON.parse(String(seen[0].init.body)));
+  });
+
+  it("Hunter sends company= instead of domain=", async () => {
+    const { seen } = await ask("hunter", 200, { data: { email: null } }, "find-work-email", byName);
+    const url = new URL(seen[0].url);
+    expect(url.searchParams.get("company")).toBe("Website Inc");
+    expect(url.searchParams.has("domain")).toBe(false);
+  });
+});
+
 describe("Findymail", () => {
   // https://app.findymail.com/docs/openapi.yaml, read 2026-10-20.
   const find = (status: number, body: unknown) => ask("findymail", status, body, "find-work-email", inputs);

@@ -32,7 +32,9 @@ export const hunter: VendorDefinition = {
       url.searchParams.set("limit", "10");
     } else if (call.action === "find-work-email") {
       url.pathname = "/v2/email-finder";
-      url.searchParams.set("domain", String(inputs.companyDomain));
+      // Hunter takes a domain or a company name; the domain matches better.
+      if (inputs.companyDomain) url.searchParams.set("domain", String(inputs.companyDomain));
+      else url.searchParams.set("company", String(inputs.companyName));
       url.searchParams.set("full_name", String(inputs.fullName));
     } else {
       throw new ProviderError(`Unknown Hunter action: ${call.action}`, false);

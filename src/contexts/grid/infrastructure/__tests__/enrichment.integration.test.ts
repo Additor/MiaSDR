@@ -405,6 +405,25 @@ describeDb("grid enrichment runs", () => {
     expect((await cells(rows[0])).cells).toMatchObject({ [main]: "catch_all", email: "ada@acme.com" });
   });
 
+  it("finds a work email from a company name when the row has no domain, and refuses a column that maps neither", async () => {
+    const { actor, table, rows } = await fixture([{ name: "Ada Lovelace", about: "Acme" }]);
+    const seen: URL[] = [];
+    const vendorFetch = (async (url: URL) => {
+      seen.push(url);
+      return new Response(JSON.stringify({ data: { email: "ada@acme.com", score: 91 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const d = deps(fake(), { fetch: vendorFetch });
+    await m.providers.createProvider(d.providerDeps, actor, { adapter: "hunter", credentials: { apiKey: "hunter-key-0123456789" } });
+    await expect(m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "hunter", actionKey: "find-work-email", inputs: { fullName: "name" }, selectedOutputs: ["email"] })).rejects.toThrow(
+      "Map Company domain, or Company name to columns.",
+    );
+    await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "hunter", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain", companyName: "about" }, selectedOutputs: ["email"] });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(seen[0].searchParams.get("company")).toBe("Acme");
+    expect((await cells(rows[0])).cells).toMatchObject({ workEmail: "ada@acme.com" });
+  });
+
   it("holds cells back when a provider's rate limit is used up, without spending their attempts", async () => {
     const { actor, table } = await fixture(Array.from({ length: 5 }, (_, i) => ({ name: `Person${i} Test`, domain: "acme.com" })));
     const f = fake();

@@ -20,12 +20,13 @@ export const prospeo: VendorDefinition = {
     if (call.action !== "find-work-email") throw new ProviderError(`Unknown Prospeo action: ${call.action}`, false);
     const fullName = text(call.inputs.fullName);
     const domain = text(call.inputs.companyDomain);
-    if (!fullName || !domain) throw new ProviderError("Prospeo needs a full name and a company domain.", false);
+    const company = text(call.inputs.companyName);
+    if (!fullName || !(domain || company)) throw new ProviderError("Prospeo needs a full name and a company domain or name.", false);
     const url = new URL(ENRICH_URL);
     const request = { method: "POST", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
     const response = await safeRequest(
       url,
-      { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-KEY": stripLineBreaks(apiKey) }, body: JSON.stringify({ only_verified_email: true, data: { full_name: fullName, company_website: domain } }) },
+      { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-KEY": stripLineBreaks(apiKey) }, body: JSON.stringify({ only_verified_email: true, data: { full_name: fullName, ...(domain ? { company_website: domain } : { company_name: company }) } }) },
       call.timeoutMs,
       net,
     );

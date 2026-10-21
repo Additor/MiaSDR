@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gridRequest, gridUrl } from "../_lib/data/client";
+import { acceptsText, inputsCovered } from "@/contexts/grid/domain/enrichment-inputs";
 import { guessColumn, usableProviders, useProviders, type ActionSpec, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
 import { nextStep, presetSteps, providersForStep, WATERFALL_PRESETS, type WaterfallStep } from "../_lib/data/waterfall-steps";
@@ -172,7 +173,9 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
   }
 
   const missingInput = inputSpecs.find((i) => i.required && !inputs[i.key]);
-  const ready = steps.length > 0 && chosen.length === steps.length && !missingInput && outputs.length > 0 && (mode === "single" || steps.length >= 2);
+  // An action that matches on several identities needs one of its combinations mapped.
+  const uncovered = chosen.find((a) => !inputsCovered(a, (key) => !!inputs[key]));
+  const ready = steps.length > 0 && chosen.length === steps.length && !missingInput && !uncovered && outputs.length > 0 && (mode === "single" || steps.length >= 2);
 
   async function save() {
     setBusy(true);
@@ -290,6 +293,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
                   <ColumnChoice id={`in-${input.key}`} value={inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => setInputs((s) => ({ ...s, [input.key]: v ?? "" }))} columns={columns} />
                 </Field>
               ))}
+              {!missingInput && uncovered && <p className="text-sm text-muted-foreground">Map {acceptsText(uncovered)}.</p>}
             </fieldset>
             <fieldset className="stack-field">
               <legend className="mb-1 text-sm font-medium">Columns to add</legend>

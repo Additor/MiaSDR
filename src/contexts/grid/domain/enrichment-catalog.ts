@@ -32,6 +32,11 @@ export interface ActionSpec {
   primaryOutput: string;
   /** Provider credits are not money; this is the cents a hit costs when the provider row sets no price. */
   defaultCostCents: number;
+  /**
+   * Input combinations the action can match on, beyond its required inputs. A cell runs when one combination is
+   * filled. Empty or absent means the required inputs are enough.
+   */
+  accepts?: string[][];
 }
 
 export interface CredentialField {

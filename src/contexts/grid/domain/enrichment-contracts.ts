@@ -12,6 +12,8 @@ interface Contract {
   inputs: ActionInput[];
   outputs: ActionOutput[];
   primaryOutput: string;
+  /** Input combinations every vendor of the contract can match on; see ActionSpec.accepts. */
+  accepts?: string[][];
 }
 
 /** A verdict every verification vendor maps onto. The vendor's own word stays in `providerStatus`. */
@@ -41,6 +43,7 @@ export function percentScore(raw: unknown, scale = 100): number | null {
 const email: ActionInput = { key: "email", name: "Email", type: "email", required: true };
 const fullName: ActionInput = { key: "fullName", name: "Full name", type: "text", required: true };
 const companyDomain: ActionInput = { key: "companyDomain", name: "Company domain", type: "domain", required: true };
+const companyName: ActionInput = { key: "companyName", name: "Company name", type: "text", required: false };
 const optional = (input: ActionInput): ActionInput => ({ ...input, required: false });
 
 export const CONTRACTS: Readonly<Record<ContractKey, Contract>> = {
@@ -55,9 +58,11 @@ export const CONTRACTS: Readonly<Record<ContractKey, Contract>> = {
     ],
     primaryOutput: "status",
   },
+  // Every finder takes a company name when a row has no domain; the domain matches better and wins when both are there.
   "find-work-email": {
     name: "Find work email",
-    inputs: [fullName, companyDomain],
+    inputs: [fullName, optional(companyDomain), companyName],
+    accepts: [["companyDomain"], ["companyName"]],
     outputs: [
       { key: "email", name: "Work email", type: "email" },
       { key: "confidence", name: "Confidence", type: "number" },
@@ -65,11 +70,11 @@ export const CONTRACTS: Readonly<Record<ContractKey, Contract>> = {
     ],
     primaryOutput: "email",
   },
-  // Inputs are optional because vendors match on any of several identities; each adapter refuses a call that has none
-  // of the combinations it can use.
+  // Inputs are optional because vendors match on any of several identities.
   "enrich-person": {
     name: "Enrich person",
-    inputs: [optional(email), optional(fullName), optional(companyDomain), { key: "linkedinUrl", name: "LinkedIn URL", type: "url", required: false }],
+    inputs: [optional(email), optional(fullName), optional(companyDomain), companyName, { key: "linkedinUrl", name: "LinkedIn URL", type: "url", required: false }],
+    accepts: [["email"], ["linkedinUrl"], ["fullName", "companyDomain"], ["fullName", "companyName"]],
     outputs: [
       { key: "email", name: "Work email", type: "email" },
       { key: "title", name: "Title", type: "text" },
@@ -104,5 +109,6 @@ export function contractAction(key: ContractKey, options: { extraOutputs?: Actio
     outputs: [...contract.outputs, ...(options.extraOutputs ?? [])],
     primaryOutput: contract.primaryOutput,
     defaultCostCents: options.defaultCostCents ?? 0,
+    ...(contract.accepts ? { accepts: contract.accepts } : {}),
   };
 }

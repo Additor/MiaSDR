@@ -39,14 +39,15 @@ export const peopledatalabs: VendorDefinition = {
       const email = text(inputs.email);
       const profile = text(inputs.linkedinUrl);
       const name = text(inputs.fullName);
-      const domain = text(inputs.companyDomain);
-      if (!email && !profile && !(name && domain)) throw new ProviderError("People Data Labs needs an email, a LinkedIn URL, or a full name with a company domain.", false);
+      // PDL's `company` takes a domain or a name; the domain matches better.
+      const company = text(inputs.companyDomain) ?? text(inputs.companyName);
+      if (!email && !profile && !(name && company)) throw new ProviderError("People Data Labs needs an email, a LinkedIn URL, or a full name with a company domain or name.", false);
       url.pathname = "/v5/person/enrich";
       if (email) url.searchParams.set("email", email);
       if (profile) url.searchParams.set("profile", profile);
-      if (name && domain) {
+      if (name && company) {
         url.searchParams.set("name", name);
-        url.searchParams.set("company", domain);
+        url.searchParams.set("company", company);
       }
       url.searchParams.set("min_likelihood", PDL_MIN_LIKELIHOOD);
       url.searchParams.set("data_include", PERSON_FIELDS);

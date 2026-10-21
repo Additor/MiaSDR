@@ -17,6 +17,13 @@ describe("People Data Labs", () => {
   const docNotFound = { status: 404, error: { type: "not_found", message: "No records were found matching your request" } };
   const person = (status: number, body: unknown, inputs: Record<string, unknown> = { fullName: "Kimberly Patton", companyDomain: "hall-rios-and-miller.com" }, headers?: Record<string, string>) => ask("peopledatalabs", status, body, "enrich-person", inputs, headers);
 
+  it("matches a name with a company name when the row has no domain", async () => {
+    const { seen } = await person(200, docPerson, { fullName: "Kimberly Patton", companyName: "Hall, Rios and Miller" });
+    expect(new URL(seen[0].url).searchParams.get("company")).toBe("Hall, Rios and Miller");
+    const apollo = await ask("apollo", 200, { person: {} }, "enrich-person", { fullName: "Kimberly Patton", companyName: "Hall, Rios and Miller" });
+    expect(new URL(apollo.seen[0].url).searchParams.get("organization_name")).toBe("Hall, Rios and Miller");
+  });
+
   it("reads the billed credits from x-call-credits-spent and waits for x-ratelimit-reset", async () => {
     const json = { "content-type": "application/json" };
     expect((await person(200, docPerson, undefined, { ...json, "x-call-credits-spent": "0" })).result).toMatchObject({ outcome: "hit", billable: false });

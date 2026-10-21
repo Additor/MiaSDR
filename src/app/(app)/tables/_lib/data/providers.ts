@@ -21,6 +21,8 @@ export interface ActionSpec {
   outputs: ActionOutput[];
   primaryOutput: string;
   defaultCostCents: number;
+  /** Input combinations the action can match on, beyond its required inputs. */
+  accepts?: string[][];
 }
 export interface CatalogEntry {
   key: string;

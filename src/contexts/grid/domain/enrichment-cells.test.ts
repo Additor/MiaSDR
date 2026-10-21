@@ -84,6 +84,10 @@ describe("cascade", () => {
     const find = col("find2", "waterfall", { steps: [{ providerKey: "hunter", actionKey: "find-work-email" }, { providerKey: "prospeo", actionKey: "find-work-email" }], inputs: { fullName: "name", companyDomain: "domain" } }, ["name", "domain"]);
     expect(inputsReady(find, { name: "Ada" })).toBe(false);
     expect(inputsReady(find, { name: "Ada", domain: "acme.com" })).toBe(true);
+    const byCompany = col("find3", "enrichment", { providerKey: "hunter", actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain", companyName: "company" } }, ["name", "domain", "company"]);
+    expect(inputsReady(byCompany, { name: "Ada", company: "Acme" })).toBe(true);
+    expect(inputsReady(byCompany, { company: "Acme" })).toBe(false);
+    expect(inputsReady(person, { name: "Ada" })).toBe(false);
     // A custom action carries no contract, so every mapped input counts.
     const custom = col("custom", "enrichment", { providerKey: "http", actionKey: "lookup", inputs: { email: "email", fullName: "name" } }, ["email", "name"]);
     expect(inputsReady(custom, { email: "ada@acme.com" })).toBe(false);
