@@ -72,7 +72,12 @@ export interface ProviderImpact {
 }
 
 /** The confirmation's sentence: what happens to the columns and the waiting cells. */
-export function impactText(kind: "off" | "disconnect", impact: ProviderImpact): string {
+export function impactText(kind: "off" | "disconnect", impact: ProviderImpact | null): string {
+  if (!impact) {
+    return kind === "off"
+      ? "MiaSDR could not check which columns use it. Their cells would wait until you turn it back on."
+      : "MiaSDR could not check which columns use it. The saved key is deleted, and any column that uses it fails until you connect it again.";
+  }
   const n = impact.columns.length;
   const cols = `${n} ${n === 1 ? "column uses" : "columns use"} it`;
   const waiting = impact.pendingCells > 0 ? ` ${impact.pendingCells.toLocaleString("en-US")} ${impact.pendingCells === 1 ? "cell is" : "cells are"} waiting to run.` : "";

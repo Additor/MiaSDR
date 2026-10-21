@@ -52,6 +52,9 @@ describe("show the rows whose run failed", () => {
   it("adds a run failed filter over the runner columns on top of the filters already there", () => {
     expect(withRunFailures({}, ["find", "verify"]).filters).toEqual({ conjunction: "or", conditions: [{ columnKey: "find", operator: "runFailed" }, { columnKey: "verify", operator: "runFailed" }] });
     const narrowed = withRunFailures({ filters: { conjunction: "and", conditions: [{ columnKey: "name", operator: "notEmpty" }] } }, ["find"]);
+    // Pressing again replaces the run-failed group instead of nesting another.
+    expect(withRunFailures(narrowed, ["find"])).toEqual(narrowed);
+    expect(withRunFailures(withRunFailures({}, ["find"]), ["find"])).toEqual(withRunFailures({}, ["find"]));
     expect(narrowed.filters).toEqual({ conjunction: "and", conditions: [{ conjunction: "and", conditions: [{ columnKey: "name", operator: "notEmpty" }] }, { conjunction: "or", conditions: [{ columnKey: "find", operator: "runFailed" }] }] });
   });
 });

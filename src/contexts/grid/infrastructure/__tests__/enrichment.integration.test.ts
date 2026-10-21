@@ -550,8 +550,9 @@ describeDb("grid enrichment runs", () => {
     // A cap the dependents push it over comes back as a problem, not an error.
     expect((await m.run.requestRun(d.runDeps, actor, table, { dryRun: true, maxCostCents: 5 })).problem).toMatch(/worst-case cost/);
 
-    // With fake-b off, the dependent reaches no provider: the finished cell does not queue it to fail.
-    await m.providers.updateProvider(d.providerDeps, actor, b.id, { enabled: false });
+    // With fake-b disconnected, the dependent reaches no provider: the finished cell does not queue it to fail. (Switched
+    // off would pause it instead, and it would be queued to wait.)
+    await m.providers.deleteProvider(d.providerDeps, actor, b.id);
     await m.run.requestRun(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     const queuedColumns = await sql`select distinct column_key from grid_jobs where table_id = ${table}`;
@@ -602,6 +603,39 @@ describeDb("grid enrichment runs", () => {
     await sql`update grid_jobs set run_after = now() - interval '1 minute' where row_id = ${rows[0]}`;
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     expect(f.calls).toHaveLength(1);
+  });
+
+  it("a fresh run stays fresh across a vendor's wait, and a vendor that keeps answering 429 ends up using attempts", async () => {
+    const { actor, table, rows } = await fixture();
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor);
+    const [col] = await findColumn(d, actor, table);
+    const { ProviderError } = await import("../../application/enrichment-ports");
+    f.handler = async () => {
+      throw new ProviderError("fake returned 429: slow down", true, undefined, 30_000);
+    };
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: col.key, rowIds: [rows[0]], onlyEmpty: false, fresh: true });
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const [first] = await sql`select attempts, provider_state from grid_jobs where row_id = ${rows[0]}`;
+    expect(first).toMatchObject({ attempts: 0, provider_state: { fresh: true, waits: 1 } });
+
+    // Past the free waits, the 429 uses an attempt.
+    await sql`update grid_jobs set run_after = now() - interval '1 minute', provider_state = provider_state || '{"waits":24}'::jsonb where row_id = ${rows[0]}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const [later] = await sql`select attempts, provider_state from grid_jobs where row_id = ${rows[0]}`;
+    expect(later).toMatchObject({ attempts: 1, provider_state: { fresh: true, waits: 25 } });
+  });
+
+  it("queues an auto-run column whose provider is switched off, so its cells wait instead of never running", async () => {
+    const { actor, table, rows } = await fixture();
+    const f = fake();
+    const d = deps(f);
+    const p = await addFake(d, actor);
+    await findColumn(d, actor, table);
+    await m.providers.updateProvider(d.providerDeps, actor, p.id, { enabled: false });
+    const report = await m.run.cascadeFromEdits(d.runDeps, (await sql`select organization_id from grid_tables where id = ${table}`)[0].organization_id, table, new Map([[rows[0], ["name"]]]));
+    expect(report.queued).toBe(1);
   });
 
   it("holds the other cells of a tick once the vendor answers 429, and no cell spends an attempt on the wait", async () => {

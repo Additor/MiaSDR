@@ -52,6 +52,8 @@ export const GRID_CALL_TIMEOUT_MS = 30_000;
 export const GRID_RUN_JOB = "grid.run";
 /** How often a cell held by a switched-off provider looks again. */
 const PAUSED_RETRY_MS = 10 * 60_000;
+/** Vendor 429 waits a cell sits through for free. A vendor that keeps answering 429 then uses up attempts, so the cell ends. */
+const MAX_FREE_WAITS = 24;
 const retryDelayMs = (attempts: number) => Math.min(5 * 60_000, 2000 * 4 ** Math.max(0, attempts - 1));
 
 export { estimateStepCents };
@@ -86,7 +88,7 @@ async function executeStep(
 ): Promise<StepExecution> {
   const provider = await deps.providers.getByKey(job.organizationId, step.providerKey);
   if (!provider) return { kind: "unavailable", message: `Provider "${step.providerKey}" is not connected.` };
-  // Switched off is a pause, not a failure: the cell waits, uses no attempt, and runs once the provider is on again.
+  // Switched off pauses the cell: it waits, uses no attempt, and runs once the provider is on again.
   if (!provider.enabled) return { kind: "rate_limited", retryAfterMs: PAUSED_RETRY_MS, message: `${provider.name} is switched off. The cell runs once it is on again.` };
   const adapter = deps.adapters.adapterFor(provider);
   if (!adapter) return { kind: "unavailable", message: `Provider "${step.providerKey}" has no adapter on this server.` };
@@ -216,7 +218,8 @@ async function succeedOnce(deps: WorkerDeps, job: CellJob, write: CellWrite, run
     const message = sanitizeOutputString(`The provider answered and was paid, but the result could not be saved: ${reason}. It was not run again. Retry failed saves it without paying again when the column reuses answers; running the cell asks the provider again.`, 500);
     console.error(`[grid] result of ${job.columnKey} could not be saved after a paid call:`, reason);
     try {
-      await deps.store.fail(job, message, runs);
+      // The paid answer sits in the ledger: Retry failed takes it without paying, so no fresh flag may survive.
+      await deps.store.fail(job, message, runs, {});
     } catch (failure) {
       // The ledger row may be the part that failed. Record the cell error alone; only a dead database leaves the job running.
       await deps.store.fail(job, message, []).catch(() => false);
@@ -256,8 +259,11 @@ const lastAttempt = (job: CellJob, attempts: StepAttempt[]) => failedTry(attempt
 
 async function finishRetry(deps: WorkerDeps, job: CellJob, attempts: StepAttempt[], state: RetryState, retryAfterMs: number | undefined, message: string) {
   const sawTransientError = failedTry(attempts);
-  // A rate-limit wait, ours or the vendor's, does not use up an attempt: nothing was wrong with the cell.
-  const consumeAttempt = sawTransientError;
+  // A rate-limit wait, ours or the vendor's, does not use up an attempt, up to MAX_FREE_WAITS vendor waits.
+  const waited = attempts.some((a) => a.waited);
+  const waits = (job.providerState?.waits ?? 0) + (waited ? 1 : 0);
+  if (waited) state = { ...state, waits };
+  const consumeAttempt = sawTransientError || (waited && waits > MAX_FREE_WAITS);
   if (consumeAttempt && job.attempts >= job.maxAttempts) {
     await deps.store.fail(job, message, ledger(attempts), state);
     return "failed";

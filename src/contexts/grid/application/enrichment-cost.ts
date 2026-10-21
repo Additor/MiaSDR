@@ -20,7 +20,7 @@ export interface ColumnEstimate {
   cents: number;
   credits: number;
   providers: ProviderEstimate[];
-  /** False when no step can call anyone (every provider off, missing or without its key). */
+  /** False when no step can ever call anyone (every provider disconnected or without its key). */
   reachable: boolean;
 }
 
@@ -34,7 +34,8 @@ export interface ProviderEstimate {
 
 /**
  * Worst-case spend of one cell. `strict` refuses a column with a provider that is off, missing or without its key (a
- * person's run); otherwise those steps are left out, as the worker skips them (an auto-run cascade).
+ * person's run). Otherwise a missing provider or key is left out, as the worker skips it, and a switched-off provider
+ * counts, because its cells wait and call it later (an auto-run cascade).
  */
 export async function estimateColumn(deps: CostDeps, organizationId: string, column: ColumnRow, strict: boolean): Promise<ColumnEstimate> {
   if (column.type === "ai") {
@@ -50,7 +51,8 @@ export async function estimateColumn(deps: CostDeps, organizationId: string, col
       if (strict) throw new ValidationError(message);
     };
     const provider = await deps.providers.getByKey(organizationId, step.providerKey);
-    if (!provider || !provider.enabled) {
+    // A switched-off provider pauses its cells and is called once it is on, so the lenient estimate still counts it.
+    if (!provider || (!provider.enabled && strict)) {
       refuse(`Connect and enable the "${step.providerKey}" provider before running “${column.name}”.`);
       continue;
     }
@@ -109,7 +111,7 @@ export async function cascadeSpecFor(deps: CostDeps, organizationId: string, col
   for (const column of columns) {
     if (!column.autoRun || !RUNNABLE_TYPES.has(column.type) || !column.dependsOn.some((d) => writtenKeys.includes(d))) continue;
     const estimate = await cellEstimate(deps, organizationId, column);
-    // A column whose every provider is off would only queue a cell that fails.
+    // A column whose every provider is disconnected would only queue a cell that fails.
     if (!estimate.reachable) unreachable.push(column.key);
     else centsByColumn[column.key] = estimate.cents;
   }

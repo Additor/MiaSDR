@@ -99,13 +99,14 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
     await onChanged();
   }
 
-  const [confirm, setConfirm] = useState<{ kind: "off" | "disconnect"; impact: ProviderImpact } | null>(null);
+  // A null impact means the check failed; the confirmation says so instead of claiming nothing uses the provider.
+  const [confirm, setConfirm] = useState<{ kind: "off" | "disconnect"; impact: ProviderImpact | null } | null>(null);
 
   // Turning on needs no warning. Turning off and disconnecting first show which columns and waiting cells they touch.
   async function ask(kind: "off" | "disconnect") {
     if (!provider) return;
     const res = await gridRequest<ProviderImpact>(`/api/grid/providers/${provider.id}/impact`, "GET");
-    setConfirm({ kind, impact: res.ok && res.data ? res.data : { columns: [], pendingCells: 0 } });
+    setConfirm({ kind, impact: res.ok && res.data ? res.data : null });
   }
 
   async function toggle() {
@@ -217,7 +218,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
               <DialogTitle>{confirm.kind === "off" ? `Turn off ${entry.name}?` : `Disconnect ${entry.name}?`}</DialogTitle>
               <DialogDescription>{impactText(confirm.kind, confirm.impact)}</DialogDescription>
             </DialogHeader>
-            {confirm.impact.columns.length > 0 && (
+            {confirm.impact && confirm.impact.columns.length > 0 && (
               <ul className="grid max-h-48 gap-1 overflow-y-auto text-sm">
                 {confirm.impact.columns.map((c) => (
                   <li key={`${c.tableId}:${c.columnName}`}>

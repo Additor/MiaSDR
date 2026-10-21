@@ -203,7 +203,7 @@ export async function cascadeFromEdits(deps: RunDeps, organizationId: string, ta
         const estimate = await cellEstimate(deps, organizationId, byKey.get(column.key)!);
         centsByColumn.set(column.key, estimate.reachable ? estimate.cents : -1);
       }
-      // Every provider of the column is off or missing: queuing it would only fail.
+      // Every provider of the column is disconnected or lacks its key: queuing it would only fail.
       if ((centsByColumn.get(column.key) ?? 0) < 0) continue;
       const delay = Number((column.config as { delaySeconds?: unknown }).delaySeconds ?? 0);
       candidates.push({ rowId: row.id, columnKey: column.key, cents: centsByColumn.get(column.key) ?? 0, delaySeconds: Number.isFinite(delay) && delay > 0 ? delay : 0 });

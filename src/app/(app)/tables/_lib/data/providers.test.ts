@@ -18,6 +18,7 @@ describe("turn off and disconnect confirmation", () => {
     expect(impactText("off", impact)).toBe("1 column uses it. 3 cells are waiting to run. Their cells wait until you turn it back on, without using an attempt; a waterfall asks its other steps meanwhile.");
     expect(impactText("disconnect", impact)).toBe("The saved key is deleted. 1 column uses it. 3 cells are waiting to run. Their cells fail until you connect it again; a waterfall asks its other steps.");
     expect(impactText("off", { columns: [], pendingCells: 0 })).toBe("No column uses it. You can turn it back on at any time.");
+    expect(impactText("disconnect", null)).toMatch(/^MiaSDR could not check which columns use it\./);
   });
 });
 

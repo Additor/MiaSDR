@@ -155,6 +155,8 @@ export interface RetryState {
   inputsKey?: string;
   /** Set by a person's fresh run: every step asks its provider, with no reused answer. */
   fresh?: boolean;
+  /** Tries that waited on a vendor's 429 without using an attempt; past a bound they use attempts again. */
+  waits?: number;
 }
 
 export interface CellJob {

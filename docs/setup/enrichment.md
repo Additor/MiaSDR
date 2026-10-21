@@ -22,7 +22,7 @@ MiaSDR records a call that the vendor does not bill at 0 cents. Every other call
 
 Each ledger row also keeps the vendor credits the call used: LeadMagic's `credits_consumed` and PDL's `x-call-credits-spent` when they send them, otherwise one credit per billed call (Hunter: half a credit per verification) and 0 for a call the vendor does not bill. The cell drawer shows them beside the cost. A waterfall can cap a cell's credits (`maxCredits`) as well as its cents; a step that would pass a cap is skipped. A Custom HTTP API provider has no credits.
 
-The Run dialog shows the worst case before anything is queued: rows, calls and credits, per provider, and dollars once a provider has a price. It counts the auto-run columns the run sets off, because they fill and spend after it, and names them. A run that would pass the row limit or the cost cap says so there and cannot start. While no provider has a price, a cents cap cannot stop a call, and both dialogs say so. An auto-run column whose providers are all off is not queued after an edit or a finished cell; it would only fail.
+The Run dialog shows the worst case before anything is queued: rows, calls and credits, per provider, and dollars once a provider has a price. It counts the auto-run columns the run sets off, because they fill and spend after it, and names them. A run that would pass the row limit or the cost cap says so there and cannot start. While no provider has a price, a cents cap cannot stop a call, and both dialogs say so. An auto-run column whose providers are all disconnected is not queued after an edit or a finished cell; it would only fail. A switched-off provider still counts: its cells queue and wait.
 
 ## Connect a vendor
 
@@ -116,7 +116,7 @@ When a waterfall step is rate limited, the cell asks the next step by default. T
 | 401, or a body that says the key is wrong | The key is wrong. The step fails and is not retried. |
 | 403 | The key is wrong, or your plan does not include the endpoint. The step fails. Hunter's 403 is its rate limit and retries. |
 | 402, Hunter's 429, or a body that says the credits ran out | Out of credits. The step fails and a waterfall moves on. |
-| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries. Steps that already missed are not asked again, and a catch-all or unknown verdict and the spend of earlier tries stay, also when you run the table again or press Retry failed. Once you change the row's inputs, the cell starts over. A 429 uses no attempt. |
+| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries. Steps that already missed are not asked again, and a catch-all or unknown verdict and the spend of earlier tries stay, also when you run the table again or press Retry failed. Once you change the row's inputs, the cell starts over. A vendor's 429 uses no attempt for its first 24 waits; a vendor that keeps answering 429 then uses attempts, so the cell ends. |
 | Hunter's 451 | The person asked Hunter not to process their data. The step fails. |
 | Any other 4xx | The input is wrong for that vendor. The step fails. |
 

@@ -37,19 +37,21 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
   const [maxCost, setMaxCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [answer, setAnswer] = useState<{ draft: string; report: RunReport | null } | null>(null);
+  const [answer, setAnswer] = useState<{ draft: string; report: RunReport | null; error?: string } | null>(null);
 
   // The worst case of the run as the form stands, asked of the server without queuing anything. An answer for an
   // older form never shows.
   const built = buildRunBody({ columnKey: column?.key, scope, selectedRowIds, onlyEmpty, maxRows, firstN, maxCost });
   const draft = "body" in built ? JSON.stringify(built.body) : null;
   const estimate = answer && answer.draft === draft ? answer.report : null;
+  // The real run would refuse with the same words, such as a provider that is off or has no key.
+  const estimateError = answer && answer.draft === draft ? answer.error : undefined;
   useEffect(() => {
     if (draft === null) return;
     let live = true;
     const timer = setTimeout(() => {
       void gridRequest<RunReport>(gridUrl.sub(tableId, "run"), "POST", { ...JSON.parse(draft), dryRun: true }).then((res) => {
-        if (live) setAnswer({ draft, report: res.ok && res.data ? res.data : null });
+        if (live) setAnswer({ draft, report: res.ok && res.data ? res.data : null, ...(res.ok ? {} : { error: res.error ?? "The estimate did not load." }) });
       });
     }, 250);
     return () => {
@@ -133,7 +135,7 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
                 {estimate.problem && <p className="text-xs text-destructive">{estimate.problem}</p>}
               </>
             ) : (
-              <p className="text-muted-foreground">{draft === null ? "Fix the field above to see what this run costs." : "Counting what this run can cost..."}</p>
+              <p className={estimateError ? "text-destructive" : "text-muted-foreground"}>{draft === null ? "Fix the field above to see what this run costs." : (estimateError ?? "Counting what this run can cost...")}</p>
             )}
           </section>
           <ErrorText>{error}</ErrorText>

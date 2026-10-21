@@ -519,7 +519,8 @@ export const drizzleGridRunStore: GridRunStore = {
           error: sanitizeOutputString(options.error, 1000),
           runAfter: options.runAfter,
           attempts: options.consumeAttempt ? job.attempts : Math.max(0, job.attempts - 1),
-          providerState: (options.state.missed?.length ?? 0) > 0 || options.state.fallback || (options.state.spentCents ?? 0) > 0 || (options.state.spentCredits ?? 0) > 0 ? options.state : null,
+          // Any key counts, `fresh` and `inputsKey` too: a fresh run that waits must still skip reuse on its next try.
+          providerState: Object.keys(options.state).length > 0 ? options.state : null,
           updatedAt: new Date(),
         })
         .where(fenced(job))
