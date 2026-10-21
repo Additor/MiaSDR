@@ -8,9 +8,10 @@ import { answerWith, asRecord, statusError, text, type VendorDefinition } from "
 // MillionVerifier (https://developer.millionverifier.com/, help.millionverifier.com email-verification-results and
 // refund-for-risky-emails). Docs read 2026-10-20. The API takes the key only as the `api` query parameter. The audit
 // records the path, and the worker redacts the key in every encoded form.
-// Run live on 2026-10-20: an invalid key was refused as the code expects, and the docs' test key API_KEY_FOR_TEST
-// (random verdicts, no credits) returned invalid, unknown, catch_all and disposable answers that read correctly. The
-// credits endpoint refuses that test key.
+// Run live on 2026-10-20: an invalid key was refused as the code expects. The docs' test key API_KEY_FOR_TEST answers
+// with random verdicts and `livemode: false`; its invalid, unknown, catch_all and disposable bodies match the shapes
+// read here. A test-mode answer fails the step, so a random verdict never fills a cell. The credits endpoint refuses
+// that test key, and no call has run with a paid key, so the ok verdict and the key check rest on the docs.
 const VERIFY_URL = "https://api.millionverifier.com/api/v3/";
 const CREDITS_URL = "https://api.millionverifier.com/api/v3/credits";
 
@@ -37,8 +38,11 @@ export const millionverifier: VendorDefinition = {
     const error = text(body.error);
     if (error || body.result === "error") throw new ProviderError(`MillionVerifier refused the request: ${(error ?? "error").slice(0, 300)}`, false, { request, response: { result: body.result, error } });
 
+    // A test key answers with random verdicts and livemode false.
+    if (body.livemode === false) throw new ProviderError("MillionVerifier answered in test mode, so its verdict is random. Use a live API key.", false, { request, response: { result: body.result, livemode: false } });
+
     const status = body.result === undefined || body.result === null ? null : verificationStatus(body.result, STATUS);
-    const outputs = { email: body.email, status, providerStatus: body.result, score: null, subStatus: body.subresult, quality: body.quality, freeEmail: body.free, role: body.role, didYouMean: text(body.didyoumean) };
+    const outputs = { email: body.email, status, providerStatus: body.result, score: null, subStatus: body.subresult, quality: body.quality, freeEmail: body.free, role: body.role, didYouMean: body.didyoumean };
     const kept = { email: body.email, result: body.result, subresult: body.subresult, quality: body.quality, free: body.free, role: body.role, didyoumean: body.didyoumean };
     // MillionVerifier refunds unknown and catch-all results as goodwill credits.
     return answerWith(outputs, status, request, kept, { hit: status !== null && isSettled(status), billable: status !== "unknown" && status !== "catch_all" });

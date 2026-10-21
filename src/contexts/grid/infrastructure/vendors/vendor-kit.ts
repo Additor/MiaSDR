@@ -45,7 +45,8 @@ export function retryAfterMs(header: string | null): number {
 
 /**
  * A hit when `primary` holds a value, a miss otherwise. `hit: false` makes a miss that keeps its verdict (a catch-all
- * address). Every output the vendor left out becomes null.
+ * address). Every output the vendor left out or sent blank becomes null, and strings lose their outer spaces. `response`
+ * stays as the vendor sent it, so the ledger shows the raw answer.
  */
 export function answerWith(outputs: Record<string, unknown>, primary: unknown, request: unknown, response: unknown, options: { hit?: boolean; billable?: boolean } = {}): ProviderAnswer {
   const present = hasCellValue(primary);
@@ -53,7 +54,7 @@ export function answerWith(outputs: Record<string, unknown>, primary: unknown, r
   return {
     outcome: found ? "hit" : "miss",
     primary: present ? primary : null,
-    outputs: Object.fromEntries(Object.entries(outputs).map(([k, v]) => [k, v ?? null])),
+    outputs: Object.fromEntries(Object.entries(outputs).map(([k, v]) => [k, typeof v === "string" ? text(v) : (v ?? null)])),
     ...(options.billable === false ? { billable: false } : {}),
     request,
     response,

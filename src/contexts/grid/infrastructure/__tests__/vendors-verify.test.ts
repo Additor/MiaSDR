@@ -23,6 +23,11 @@ describe("ZeroBounce", () => {
     noKey([result.request, result.response]);
   });
 
+  it("stores a blank suggestion or sub-status as empty", async () => {
+    const { result } = await verify(200, { ...docValid, did_you_mean: "", sub_status: " " });
+    expect(result.outputs).toMatchObject({ didYouMean: null, subStatus: null });
+  });
+
   it.each([
     ["valid", "", "valid", "hit", true],
     ["invalid", "mailbox_not_found", "invalid", "hit", true],
@@ -94,14 +99,31 @@ describe("MillionVerifier", () => {
     expect(result.billable === false).toBe(!billable);
   });
 
+  // Seen live on 2026-10-20 with the docs' test key API_KEY_FOR_TEST, which answers with livemode false.
+  const testKey = { free: false, role: false, didyoumean: "", credits: 0, executiontime: 0, error: "", livemode: false };
+  const liveSamples = [
+    { email: "user0@example.com", quality: "bad", result: "invalid", resultcode: 6, subresult: "bad_domain", ...testKey },
+    { email: "user1@example.com", quality: "risky", result: "unknown", resultcode: 5, subresult: "no_local_ip_available", ...testKey },
+    { email: "user2@example.com", quality: "risky", result: "catch_all", resultcode: 2, subresult: "ok", ...testKey },
+    { email: "user4@example.com", quality: "bad", result: "disposable", resultcode: 3, subresult: "ok", ...testKey },
+  ];
+
   it.each([
-    // Seen live on 2026-10-20 with the docs' test key API_KEY_FOR_TEST.
-    [{ email: "user1@example.com", quality: "risky", result: "unknown", resultcode: 5, subresult: "no_local_ip_available", free: false, role: false, didyoumean: "", credits: 0, executiontime: 0, error: "", livemode: false }, "miss", "unknown"],
-    [{ email: "user2@example.com", quality: "risky", result: "catch_all", resultcode: 2, subresult: "ok", free: false, role: false, didyoumean: "", credits: 0, executiontime: 0, error: "", livemode: false }, "miss", "catch_all"],
-    [{ email: "user4@example.com", quality: "bad", result: "disposable", resultcode: 3, subresult: "ok", free: false, role: false, didyoumean: "", credits: 0, executiontime: 0, error: "", livemode: false }, "hit", "disposable"],
-  ])("reads a live test-key answer %#", async (body, outcome, status) => {
+    ["invalid", "hit", "invalid"],
+    ["unknown", "miss", "unknown"],
+    ["catch_all", "miss", "catch_all"],
+    ["disposable", "hit", "disposable"],
+  ])("reads the live %s body as a %s with status %s once it is live", async (raw, outcome, status) => {
+    const body = { ...liveSamples.find((sample) => sample.result === raw)!, livemode: true };
     const { result } = await verify(200, body);
-    expect(result).toMatchObject({ outcome, primary: status, outputs: { status, didYouMean: null, quality: body.quality } });
+    expect(result).toMatchObject({ outcome, primary: status, outputs: { status, subStatus: body.subresult, didYouMean: null, quality: body.quality } });
+    // The ledger keeps the vendor's own blank.
+    expect(result.response).toMatchObject({ didyoumean: "" });
+  });
+
+  it.each(liveSamples.map((sample) => [sample.result, sample]))("fails a test-mode %s answer, so a random verdict fills no cell", async (_raw, body) => {
+    const { result } = await verify(200, body);
+    expect(result).toMatchObject({ transient: false, message: "MillionVerifier answered in test mode, so its verdict is random. Use a live API key." });
   });
 
   it("reads the live bad-key answer as a permanent error", async () => {
