@@ -1,14 +1,14 @@
 "use client";
 
 import { CheckCircle2Icon, KeyRoundIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { gridRequest } from "../_lib/data/client";
-import type { CatalogEntry, ProviderView } from "../_lib/data/providers";
+import { usageLine, type CatalogEntry, type ProviderUsage, type ProviderView } from "../_lib/data/providers";
 import { ErrorText, Field } from "./form-bits";
 
 interface Props {
@@ -19,18 +19,32 @@ interface Props {
 
 /** The provider catalog with connect, replace key and disconnect. A saved key is never shown again. */
 export function ProviderManager({ catalog, providers, onChanged }: Props) {
+  const [usage, setUsage] = useState<{ days: number; usage: ProviderUsage[] } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void gridRequest<{ days: number; usage: ProviderUsage[] }>("/api/grid/providers/usage", "GET").then((res) => {
+      if (live && res.ok && res.data) setUsage(res.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [providers]);
   return (
     <ul className="grid gap-2">
-      {catalog.map((entry) => (
-        <li key={entry.key}>
-          <ProviderRow entry={entry} provider={providers.find((p) => p.key === entry.key)} onChanged={onChanged} />
-        </li>
-      ))}
+      {catalog.map((entry) => {
+        const provider = providers.find((p) => p.key === entry.key);
+        const used = provider && usage?.usage.find((u) => u.provider === provider.key);
+        return (
+          <li key={entry.key}>
+            <ProviderRow entry={entry} provider={provider} usage={used && usage ? { ...used, days: usage.days } : undefined} onChanged={onChanged} />
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-function ProviderRow({ entry, provider, onChanged }: { entry: CatalogEntry; provider: ProviderView | undefined; onChanged: () => Promise<void> }) {
+function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntry; provider: ProviderView | undefined; usage?: ProviderUsage & { days: number }; onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [baseUrl, setBaseUrl] = useState("");
@@ -95,6 +109,7 @@ function ProviderRow({ entry, provider, onChanged }: { entry: CatalogEntry; prov
             {provider && !provider.enabled && <Badge variant="outline">Off</Badge>}
           </p>
           <p className="text-xs text-muted-foreground">{entry.description}</p>
+          {usage && <p className="mt-1 text-xs text-muted-foreground tabular-nums">{usageLine(usage)}</p>}
         </div>
         {available && (
           <div className="flex shrink-0 gap-1.5">

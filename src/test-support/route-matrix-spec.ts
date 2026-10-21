@@ -150,6 +150,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "grid/folders/[folderId]": { ids: { folderId: "grid_folders" }, handlers: { GET: ok(), PATCH: ok(), DELETE: ok() } },
   "grid/providers": { handlers: { GET: ok(), POST: admin({ adapter: "fake" }) } },
   "grid/providers/[id]": { ids: { id: "grid_providers" }, handlers: { PATCH: admin({ name: "renamed" }), DELETE: admin() } },
+  "grid/providers/usage": { handlers: { GET: ok() } },
   "grid/tables": { handlers: { GET: ok(), POST: ok() } },
   "grid/tables/[tableId]": { ids: { tableId: "grid_tables" }, handlers: { GET: ok(), PATCH: ok(), DELETE: ok() } },
   "grid/tables/[tableId]/ai": { ids: { tableId: "grid_tables" }, handlers: { POST: ok({ prompt: "summarize", outputs: [{ key: "summary", type: "text" }] }), PATCH: { valid: { columnId: "00000000-0000-4000-8000-000000000001" }, mayNotFindOwnRow: true } } },

@@ -186,6 +186,20 @@ export interface LedgerRun {
   reused?: boolean;
 }
 
+/** One provider's ledger totals over a window. A reused answer is counted apart and is not a call. */
+export interface ProviderUsage {
+  provider: string;
+  calls: number;
+  hits: number;
+  misses: number;
+  errors: number;
+  reused: number;
+  credits: number;
+  costCents: number;
+  /** Median latency of the calls that reached the vendor, or null when none did. */
+  p50LatencyMs: number | null;
+}
+
 /** The part of a vendor answer a later cell reuses. */
 export interface ReusableAnswer {
   primary: unknown;
@@ -257,6 +271,8 @@ export interface GridRunStore {
   loadCell(job: CellJob): Promise<{ column: ColumnRow; columns: ColumnRow[]; cells: Record<string, unknown>; tableAutoRun: boolean } | null>;
   /** Call times (epoch ms) of this provider's calls since `since`, for the rate limit. Reused answers are not calls. */
   recentCalls(organizationId: string, providerKey: string, since: Date): Promise<number[]>;
+  /** Per-provider totals of this organization's ledger since `since`, for the provider list. */
+  providerUsage(organizationId: string, since: Date): Promise<ProviderUsage[]>;
   /** The newest stored answer to the same lookup since `since`, in this organization, or null. */
   reusableAnswer(organizationId: string, lookupKey: string, since: Date): Promise<{ id: string; createdAt: Date; outcome: "hit" | "miss"; answer: ReusableAnswer } | null>;
 

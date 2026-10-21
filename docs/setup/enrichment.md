@@ -83,6 +83,10 @@ The stored answer lives in the ledger row of the call that paid for it, under a 
 
 NeverBounce's usage guidelines say: "Do NOT use single verification for verifying emails in an existing list or database one-by-one", and warn that the account "may be locked and API access disabled". MiaSDR calls NeverBounce's single check, one call per cell. Use NeverBounce for rows that arrive over time (an auto-run column on new rows), and verify a whole existing table in NeverBounce's bulk tool or with another verifier.
 
+## Usage
+
+The provider list shows each connected vendor's last 30 days: calls, the share that found something, errors, reused answers, credits and the typical latency. `GET /api/grid/providers/usage?days=<1-365>` returns the same totals per provider, with misses and cents too.
+
 ## Rate limits
 
 A new provider starts with the vendor's published per-minute limit where there is one: Hunter 300 (Email Verifier), Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin` to match your plan. When a vendor answers 429, the cell waits as the vendor asks and runs again: `retry-after` first, then Prospeo's reset seconds (the daily one once the day's requests are gone) or PDL's `x-ratelimit-reset`, up to an hour. The other cells that worker runs at the same time hold off for the same wait, so one 429 does not turn into a burst of them.

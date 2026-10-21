@@ -1,0 +1,13 @@
+import { describe, expect, it } from "vitest";
+import { usageLine } from "./providers";
+
+describe("provider usage line", () => {
+  it("names calls, the found rate, errors, reuses, credits and the typical latency", () => {
+    expect(usageLine({ days: 30, provider: "hunter", calls: 120, hits: 101, errors: 3, reused: 12, credits: 60.5, p50LatencyMs: 420 })).toBe("Last 30 days: 120 calls, 84% found, 3 errors, 12 reused, 60.5 credits, 420 ms typical");
+  });
+
+  it("leaves out what is zero or unknown", () => {
+    expect(usageLine({ days: 30, provider: "fake", calls: 0, hits: 0, errors: 0, reused: 2, credits: 0, p50LatencyMs: null })).toBe("Last 30 days: 0 calls, 2 reused");
+    expect(usageLine({ days: 7, provider: "apollo", calls: 1, hits: 1, errors: 1, reused: 0, credits: 1, p50LatencyMs: 90 })).toBe("Last 7 days: 1 call, 100% found, 1 error, 1 credit, 90 ms typical");
+  });
+});

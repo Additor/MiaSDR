@@ -48,6 +48,28 @@ export interface ProviderView {
   actions: ActionSpec[];
 }
 
+/** One provider's ledger totals, as `/api/grid/providers/usage` returns them. */
+export interface ProviderUsage {
+  provider: string;
+  calls: number;
+  hits: number;
+  errors: number;
+  reused: number;
+  credits: number;
+  p50LatencyMs: number | null;
+}
+
+/** "Last 30 days: 120 calls, 84% found, 3 errors, 12 reused, 60 credits, 420 ms typical". */
+export function usageLine(u: ProviderUsage & { days: number }): string {
+  const parts = [`${u.calls} ${u.calls === 1 ? "call" : "calls"}`];
+  if (u.calls > 0) parts.push(`${Math.round((u.hits / u.calls) * 100)}% found`);
+  if (u.errors > 0) parts.push(`${u.errors} ${u.errors === 1 ? "error" : "errors"}`);
+  if (u.reused > 0) parts.push(`${u.reused} reused`);
+  if (u.credits > 0) parts.push(`${Number(u.credits.toFixed(2))} ${u.credits === 1 ? "credit" : "credits"}`);
+  if (u.p50LatencyMs !== null) parts.push(`${u.p50LatencyMs} ms typical`);
+  return `Last ${u.days} days: ${parts.join(", ")}`;
+}
+
 export function useProviders() {
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);

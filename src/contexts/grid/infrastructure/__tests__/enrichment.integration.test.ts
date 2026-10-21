@@ -449,6 +449,8 @@ describeDb("grid enrichment runs", () => {
       ["hit", 1, 1, false, true],
       ["hit", 0, 0, true, false],
     ]);
+    // The usage rollup counts one call and one reuse.
+    expect((await m.run.providerUsage(d.runDeps, actor)).usage).toEqual([{ provider: "zerobounce", calls: 1, hits: 1, misses: 0, errors: 0, reused: 1, credits: 1, costCents: 1, p50LatencyMs: expect.any(Number) }]);
 
     await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "zerobounce", actionKey: "verify-email", inputs: { email: "about" }, selectedOutputs: ["status"], reuseDays: 0 });
     await sql`update grid_providers set rate_limit_per_min = null where organization_id = ${(await sql`select organization_id from grid_tables where id = ${table}`)[0].organization_id}`;

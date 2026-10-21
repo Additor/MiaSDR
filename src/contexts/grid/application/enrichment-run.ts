@@ -2,7 +2,7 @@ import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { cascadeTargets, inputsReady, RUNNABLE_TYPES, runRoots } from "../domain/enrichment-cascade";
 import { assertWithinLimits, DEFAULT_CASCADE_LIMITS, MAX_SCAN_ROWS, ORG_MAX_PENDING_CELLS, planCascade, resolveFirstN, resolveMaxRows, SCAN_PAGE_ROWS, type CascadeCandidate, type RunRequest } from "../domain/enrichment-run-limits";
 import { hasCellValue } from "../domain/enrichment-templates";
-import type { AdapterRegistry, CellRunView, EnqueueTarget, GridRunStore, JobCounts, ProviderStore } from "./enrichment-ports";
+import type { AdapterRegistry, CellRunView, EnqueueTarget, GridRunStore, JobCounts, ProviderStore, ProviderUsage } from "./enrichment-ports";
 import { cellCents, preflight } from "./enrichment-cost";
 
 export interface RunDeps {
@@ -175,6 +175,14 @@ export async function cascadeFromEdits(deps: RunDeps, organizationId: string, ta
 }
 
 /** Run ledger of one cell, newest first. Output columns resolve to the column that produced them. */
+export const USAGE_DAYS = 30;
+
+/** Each provider's calls, results, credits and cost in the organization over the last `days` days. */
+export async function providerUsage(deps: RunDeps, actor: Actor, days = USAGE_DAYS): Promise<{ days: number; usage: ProviderUsage[] }> {
+  const span = Math.max(1, Math.min(365, Math.floor(days)));
+  return { days: span, usage: await deps.store.providerUsage(actor.organizationId, new Date(deps.now().getTime() - span * 86_400_000)) };
+}
+
 export async function cellRuns(deps: RunDeps, actor: Actor, tableId: string, rowId: string, columnKey: string): Promise<{ sourceColumnKey: string; runs: CellRunView[] }> {
   await requireTable(deps, actor, tableId);
   const columns = await deps.store.listColumns(actor.organizationId, tableId);

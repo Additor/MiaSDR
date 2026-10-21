@@ -377,6 +377,35 @@ export const drizzleGridRunStore: GridRunStore = {
     return rows.map((r) => r.at.getTime());
   },
 
+  async providerUsage(organizationId, since) {
+    const rows = (await db.execute(sql`
+      select provider,
+        count(*) filter (where not reused and outcome in ('hit', 'miss', 'error'))::int as calls,
+        count(*) filter (where not reused and outcome = 'hit')::int as hits,
+        count(*) filter (where not reused and outcome = 'miss')::int as misses,
+        count(*) filter (where outcome = 'error')::int as errors,
+        count(*) filter (where reused)::int as reused,
+        coalesce(sum(credits), 0)::float as credits,
+        coalesce(sum(cost_cents), 0)::float as cost_cents,
+        percentile_cont(0.5) within group (order by latency_ms) filter (where not reused and latency_ms is not null) as p50
+      from ${gridCellRuns}
+      where organization_id = ${organizationId} and provider is not null and created_at > ${since.toISOString()}::timestamptz
+      group by provider
+      order by provider
+    `)) as unknown as Array<{ provider: string; calls: number; hits: number; misses: number; errors: number; reused: number; credits: number; cost_cents: number; p50: number | null }>;
+    return rows.map((r) => ({
+      provider: r.provider,
+      calls: r.calls,
+      hits: r.hits,
+      misses: r.misses,
+      errors: r.errors,
+      reused: r.reused,
+      credits: r.credits,
+      costCents: r.cost_cents,
+      p50LatencyMs: r.p50 === null ? null : Math.round(Number(r.p50)),
+    }));
+  },
+
   async reusableAnswer(organizationId, lookupKey, since) {
     const [row] = await db
       .select({ id: gridCellRuns.id, createdAt: gridCellRuns.createdAt, outcome: gridCellRuns.outcome, answer: gridCellRuns.answer })
