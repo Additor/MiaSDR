@@ -87,14 +87,14 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
         {(person.title || person.company) && <p className="text-sm text-muted-foreground">{[person.title, person.company].filter(Boolean).join(" at ")}</p>}
         <ReachLinks reach={reach} contact={contact} phone={null} phoneHref={null} />
         <div className="flex flex-wrap gap-2 max-sm:[&>*]:h-11">
-          {!isContact && <CreateDealButton mode="lead" size="sm" person={dealPerson} members={dialog.members} currentUserId={dialog.currentUserId} stages={dialog.stages} />}
+          {!isContact && <CreateDealButton mode="lead" size="sm" variant="outline" person={dealPerson} members={dialog.members} currentUserId={dialog.currentUserId} stages={dialog.stages} />}
           {isContact && latestDealId && (
-            <Link href={dealHref(latestDealId, `/inbox/${conversationId}`)} className={buttonVariants({ size: "sm" })}>
+            <Link href={dealHref(latestDealId, `/inbox/${conversationId}`)} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Open deal
             </Link>
           )}
           {isContact && !latestDealId && (
-            <CreateDealButton mode="contact" size="sm" person={dealPerson} members={dialog.members} currentUserId={dialog.currentUserId} stages={dialog.stages} />
+            <CreateDealButton mode="contact" size="sm" variant="outline" person={dealPerson} members={dialog.members} currentUserId={dialog.currentUserId} stages={dialog.stages} />
           )}
           <Link href={personHref(personId, directory?.lifecycle)} className={buttonVariants({ variant: "outline", size: "sm" })}>
             {isContact ? "Open contact" : "Open lead"}

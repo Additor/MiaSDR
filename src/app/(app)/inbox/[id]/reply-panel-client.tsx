@@ -169,7 +169,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
                 </div>
                 {classification.reasoning && <p className="text-muted-foreground">{classification.reasoning}</p>}
                 <div>
-                  <Button size="sm" disabled={busy !== null} onClick={() => decide("accept", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: panel.contextVersion }), "Suggestion accepted.")}
+                  <Button size="sm" variant={classificationFirst ? "default" : "outline"} disabled={busy !== null} onClick={() => decide("accept", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: panel.contextVersion }), "Suggestion accepted.")}
                   >
                     Accept suggestion
                   </Button>
@@ -182,6 +182,8 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
                 <div>
                   <Button
                     size="sm"
+                    // Under a draft that waits for approval, Approve and send stays the one filled button.
+                    variant={classificationFirst ? "default" : "outline"}
                     disabled={busy !== null}
                     onClick={() => decide("ack", () => callApi(`/api/crm/classifications/${classification.id}/acknowledge`, "POST"), "Marked as looked at.")}
                   >
