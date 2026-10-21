@@ -1,8 +1,6 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
-import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, rateLimitWaitMs, statusError, text, type VendorDefinition } from "./vendor-kit";
+import { answerWith, apiKeyOf, asRecord, assertAction, rateLimitWaitMs, send, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // Prospeo (https://prospeo.io/api-docs/enrich-person, person-object, account-information, rate-limits). Docs read
 // 2026-10-20. Most errors share HTTP 400 and differ by `error_code`. The request asks for verified emails only, and
@@ -15,22 +13,19 @@ export const prospeo: VendorDefinition = {
   key: "prospeo",
 
   async execute(call, net): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The Prospeo API key is missing.", false);
-    if (call.action !== "find-work-email") throw new ProviderError(`Unknown Prospeo action: ${call.action}`, false);
+    const apiKey = apiKeyOf(call, "Prospeo");
+    assertAction(call, "Prospeo", "find-work-email");
     const fullName = text(call.inputs.fullName);
     const domain = text(call.inputs.companyDomain);
     const company = text(call.inputs.companyName);
     if (!fullName || !(domain || company)) throw new ProviderError("Prospeo needs a full name and a company domain or name.", false);
-    const url = new URL(ENRICH_URL);
-    const request = { method: "POST", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
-    const response = await safeRequest(
-      url,
-      { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-KEY": stripLineBreaks(apiKey) }, body: JSON.stringify({ only_verified_email: true, data: { full_name: fullName, ...(domain ? { company_website: domain } : { company_name: company }) } }) },
-      call.timeoutMs,
-      net,
-    );
-    const body = asRecord(parseBody(response));
+    const sent = await send(call, net, new URL(ENRICH_URL), {
+      method: "POST",
+      headers: { "X-KEY": apiKey },
+      json: { only_verified_email: true, data: { full_name: fullName, ...(domain ? { company_website: domain } : { company_name: company }) } },
+    });
+    const { request, response } = sent;
+    const body = asRecord(sent.body);
     const code = text(body.error_code);
     const audit = { request, response: { error: body.error, error_code: code } };
     const none = { email: null, confidence: null, verificationStatus: null };

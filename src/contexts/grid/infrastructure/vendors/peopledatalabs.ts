@@ -1,8 +1,7 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
-import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest, type SafeResponse } from "../enrichment-http";
-import { answerWith, asRecord, statusError, text, withScheme, type VendorDefinition } from "./vendor-kit";
+import type { SafeResponse } from "../enrichment-http";
+import { answerWith, apiKeyOf, asRecord, send, statusError, text, withScheme, type VendorDefinition } from "./vendor-kit";
 
 // People Data Labs (https://docs.peopledatalabs.com/docs/reference-person-enrichment-api, input-parameters-person-
 // enrichment-api, reference-company-enrichment-api, errors, usage-limits). Docs read 2026-10-20. PDL charges per match,
@@ -40,8 +39,7 @@ export const peopledatalabs: VendorDefinition = {
   key: "peopledatalabs",
 
   async execute(call, net): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The People Data Labs API key is missing.", false);
+    const apiKey = apiKeyOf(call, "People Data Labs");
     const { inputs } = call;
     const url = new URL(BASE);
     if (call.action === "enrich-person") {
@@ -69,9 +67,9 @@ export const peopledatalabs: VendorDefinition = {
     } else {
       throw new ProviderError(`Unknown People Data Labs action: ${call.action}`, false);
     }
-    const request = { method: "GET", endpoint: url.pathname, inputKeys: Object.keys(inputs) };
-    const response = await safeRequest(url, { method: "GET", headers: { Accept: "application/json", "X-Api-Key": stripLineBreaks(apiKey) } }, call.timeoutMs, net);
-    const body = asRecord(parseBody(response));
+    const sent = await send(call, net, url, { method: "GET", headers: { "X-Api-Key": apiKey } });
+    const { request, response } = sent;
+    const body = asRecord(sent.body);
     if (call.action === "enrich-person") {
       const none = { email: null, title: null, company: null, linkedinUrl: null, likelihood: null };
       if (response.status === 404) return answerWith(none, null, request, { status: 404 }, { billable: false });

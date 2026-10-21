@@ -1,8 +1,6 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
-import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
+import { answerWith, apiKeyOf, asRecord, send, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // Apollo (https://docs.apollo.io/reference/people-enrichment, .../organization-enrichment).
 // The caller brings their own key. Docs read 2026-10-16; not exercised against a live key.
@@ -14,8 +12,7 @@ export const apollo: VendorDefinition = {
   key: "apollo",
 
   async execute(call, net): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The Apollo API key is missing.", false);
+    const apiKey = apiKeyOf(call, "Apollo");
     const { inputs } = call;
     const url = new URL(APOLLO_BASE);
     let method: "GET" | "POST";
@@ -42,9 +39,7 @@ export const apollo: VendorDefinition = {
     } else {
       throw new ProviderError(`Unknown Apollo action: ${call.action}`, false);
     }
-    const request = { method, endpoint: url.pathname, inputKeys: Object.keys(inputs) };
-    const response = await safeRequest(url, { method, headers: { Accept: "application/json", "Cache-Control": "no-cache", "x-api-key": stripLineBreaks(apiKey) } }, call.timeoutMs, net);
-    const body = parseBody(response);
+    const { request, response, body } = await send(call, net, url, { method, headers: { "Cache-Control": "no-cache", "x-api-key": apiKey } });
     // 403 also covers a key without access to the endpoint (API_INACCESSIBLE).
     if (response.status < 200 || response.status >= 300) throw statusError("Apollo", response, body, request);
     // The ledger keeps the fields read here, not the person's or the company's whole record.

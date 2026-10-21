@@ -1,9 +1,7 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
 import { isSettled, percentScore, verificationStatus, type VerificationStatus } from "../../domain/enrichment-contracts";
-import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, errorSnippet, statusError, type VendorDefinition } from "./vendor-kit";
+import { answerWith, apiKeyOf, asRecord, errorSnippet, send, statusError, type VendorDefinition } from "./vendor-kit";
 
 // Hunter (https://hunter.io/api-documentation/v2, help.hunter.io/en/articles/12631167). The caller brings their own key.
 // Docs read 2026-10-21: 403 is the rate limit, 429 the spent usage quota, and a lookup that finds nothing or a
@@ -19,8 +17,7 @@ export const hunter: VendorDefinition = {
   key: "hunter",
 
   async execute(call, net): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The Hunter API key is missing.", false);
+    const apiKey = apiKeyOf(call, "Hunter");
     const url = new URL(HUNTER_BASE);
     const { inputs } = call;
     if (call.action === "verify-email") {
@@ -39,9 +36,7 @@ export const hunter: VendorDefinition = {
     } else {
       throw new ProviderError(`Unknown Hunter action: ${call.action}`, false);
     }
-    const request = { method: "GET", endpoint: url.pathname, inputKeys: Object.keys(inputs) };
-    const response = await safeRequest(url, { method: "GET", headers: { Accept: "application/json", "X-API-KEY": stripLineBreaks(apiKey) } }, call.timeoutMs, net);
-    const body = parseBody(response);
+    const { request, response, body } = await send(call, net, url, { method: "GET", headers: { "X-API-KEY": apiKey } });
     if (response.status === 202) throw new ProviderError("Hunter is still verifying this address. It will be asked again.", true, { request, response: body });
     // 222: the mail server gave Hunter an unexpected answer. Hunter advises asking again later.
     if (response.status === 222) throw new ProviderError("Hunter could not verify this address right now. It will be asked again.", true, { request, response: body });

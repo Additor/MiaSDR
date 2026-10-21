@@ -1,8 +1,6 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
-import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
+import { answerWith, apiKeyOf, asRecord, assertAction, send, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // LeadMagic (https://leadmagic.io/docs/api-reference/email-finder, openapi.json, docs/v1/making-api-calls, docs/v1/credits).
 // Docs read 2026-10-20. A no-match is HTTP 200 with a null email and costs nothing. LeadMagic pauses a key after ten
@@ -15,22 +13,15 @@ export const leadmagic: VendorDefinition = {
   key: "leadmagic",
 
   async execute(call, net): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The LeadMagic API key is missing.", false);
-    if (call.action !== "find-work-email") throw new ProviderError(`Unknown LeadMagic action: ${call.action}`, false);
+    const apiKey = apiKeyOf(call, "LeadMagic");
+    assertAction(call, "LeadMagic", "find-work-email");
     const fullName = text(call.inputs.fullName);
     const domain = text(call.inputs.companyDomain);
     const company = text(call.inputs.companyName);
     if (!fullName || !(domain || company)) throw new ProviderError("LeadMagic needs a full name and a company domain or name.", false);
-    const url = new URL(FINDER_URL);
-    const request = { method: "POST", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
-    const response = await safeRequest(
-      url,
-      { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-API-Key": stripLineBreaks(apiKey) }, body: JSON.stringify({ full_name: fullName, ...(domain ? { domain } : { company_name: company }) }) },
-      call.timeoutMs,
-      net,
-    );
-    const body = asRecord(parseBody(response));
+    const sent = await send(call, net, new URL(FINDER_URL), { method: "POST", headers: { "X-API-Key": apiKey }, json: { full_name: fullName, ...(domain ? { domain } : { company_name: company }) } });
+    const { request, response } = sent;
+    const body = asRecord(sent.body);
     if (response.status < 200 || response.status >= 300) {
       const first = asRecord(Array.isArray(body.errors) ? body.errors[0] : undefined);
       throw statusError("LeadMagic", response, { message: text(first.title) ?? text(first.code) ?? body.message }, request);

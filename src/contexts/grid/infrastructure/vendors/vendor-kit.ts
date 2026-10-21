@@ -1,9 +1,10 @@
 import type { VerifyResult } from "@/contexts/integrations/application/credential-verifier";
 import type { KeyCheck } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer, type ProviderCall } from "../../application/enrichment-ports";
+import { stripLineBreaks } from "../../domain/enrichment-url-policy";
 import type { VendorAdapterKey } from "../../domain/enrichment-catalog";
 import { hasCellValue } from "../../domain/enrichment-templates";
-import { isTransientStatus, type SafeFetchDeps, type SafeResponse } from "../enrichment-http";
+import { isTransientStatus, parseBody, safeRequest, type SafeFetchDeps, type SafeResponse } from "../enrichment-http";
 
 /**
  * One enrichment vendor with a fixed host. Each definition builds its own requests and reads its own answers, so a
@@ -15,6 +16,43 @@ export interface VendorDefinition {
   execute(call: ProviderCall, net: SafeFetchDeps): Promise<ProviderAnswer>;
   /** Checks a key with one call that spends no credits. The key is printable ASCII by the time it gets here. */
   checkKey(apiKey: string, check: KeyCheck): Promise<VerifyResult>;
+}
+
+/** The call's API key with line breaks removed, so it cannot split a header. Missing, the step fails for good. */
+export function apiKeyOf(call: ProviderCall, vendor: string): string {
+  const apiKey = call.credentials.apiKey;
+  if (!apiKey) throw new ProviderError(`The ${vendor} API key is missing.`, false);
+  return stripLineBreaks(apiKey);
+}
+
+/** Refuses an action the vendor does not offer. */
+export function assertAction(call: ProviderCall, vendor: string, ...actions: string[]): void {
+  if (!actions.includes(call.action)) throw new ProviderError(`Unknown ${vendor} action: ${call.action}`, false);
+}
+
+/** The audit record of a vendor request: the method, the path and the input names, never values or the key. */
+export interface VendorRequest {
+  method: "GET" | "POST";
+  endpoint: string;
+  inputKeys: string[];
+}
+
+/**
+ * Sends one vendor request that asks for JSON. `json` or `form` becomes the body with its content type. Returns the
+ * audit record, the response and its parsed body.
+ */
+export async function send(
+  call: ProviderCall,
+  net: SafeFetchDeps,
+  url: URL,
+  init: { method: "GET" | "POST"; headers?: Record<string, string>; json?: unknown; form?: URLSearchParams },
+): Promise<{ request: VendorRequest; response: SafeResponse; body: unknown }> {
+  const request: VendorRequest = { method: init.method, endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
+  const type = init.json !== undefined ? "application/json" : init.form ? "application/x-www-form-urlencoded" : null;
+  const body = init.json !== undefined ? JSON.stringify(init.json) : init.form?.toString();
+  const headers = { Accept: "application/json", ...(type ? { "Content-Type": type } : {}), ...init.headers };
+  const response = await safeRequest(url, { method: init.method, headers, ...(body !== undefined ? { body } : {}) }, call.timeoutMs, net);
+  return { request, response, body: parseBody(response) };
 }
 
 export const asRecord = (value: unknown): Record<string, unknown> => (value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {});

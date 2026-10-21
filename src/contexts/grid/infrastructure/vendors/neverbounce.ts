@@ -1,9 +1,7 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
 import { isSettled, verificationStatus, type VerificationStatus } from "../../domain/enrichment-contracts";
-import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
+import { answerWith, apiKeyOf, asRecord, assertAction, send, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // NeverBounce (https://developers.neverbounce.com/reference/single-check, account-info, error-handling,
 // usage-guidelines). Docs read 2026-10-20. The key goes in the `key` query parameter, and a bad-key message repeats it,
@@ -19,19 +17,18 @@ export const neverbounce: VendorDefinition = {
   key: "neverbounce",
 
   async execute(call, net): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The NeverBounce API key is missing.", false);
-    if (call.action !== "verify-email") throw new ProviderError(`Unknown NeverBounce action: ${call.action}`, false);
+    const apiKey = apiKeyOf(call, "NeverBounce");
+    assertAction(call, "NeverBounce", "verify-email");
     const email = text(call.inputs.email);
     if (!email) throw new ProviderError("NeverBounce needs an email.", false);
     const url = new URL(CHECK_URL);
-    url.searchParams.set("key", stripLineBreaks(apiKey));
+    url.searchParams.set("key", apiKey);
     url.searchParams.set("email", email);
     // NeverBounce advises about ten seconds and reads a timeout as unknown, which moves a waterfall on.
     url.searchParams.set("timeout", "10");
-    const request = { method: "GET", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
-    const response = await safeRequest(url, { method: "GET", headers: { Accept: "application/json" } }, call.timeoutMs, net);
-    const body = asRecord(parseBody(response));
+    const sent = await send(call, net, url, { method: "GET" });
+    const { request, response } = sent;
+    const body = asRecord(sent.body);
     if (response.status < 200 || response.status >= 300) throw statusError("NeverBounce", response, body, request);
     // API errors come back with HTTP 200 and a status other than "success".
     if (body.status !== "success") {

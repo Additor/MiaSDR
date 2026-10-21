@@ -1,9 +1,7 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
 import { isSettled, verificationStatus, type VerificationStatus } from "../../domain/enrichment-contracts";
-import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
+import { answerWith, apiKeyOf, asRecord, assertAction, send, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // ZeroBounce (https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-validate-emails, v2-status-codes,
 // v2-credit-balance). Docs read 2026-10-20. The key goes in a form body, so it never sits in a URL; the credit check is a
@@ -31,16 +29,13 @@ export const zerobounce: VendorDefinition = {
   key: "zerobounce",
 
   async execute(call, net): Promise<ProviderAnswer> {
-    const apiKey = call.credentials.apiKey;
-    if (!apiKey) throw new ProviderError("The ZeroBounce API key is missing.", false);
-    if (call.action !== "verify-email") throw new ProviderError(`Unknown ZeroBounce action: ${call.action}`, false);
+    const apiKey = apiKeyOf(call, "ZeroBounce");
+    assertAction(call, "ZeroBounce", "verify-email");
     const email = text(call.inputs.email);
     if (!email) throw new ProviderError("ZeroBounce needs an email.", false);
-    const url = new URL(VALIDATE_URL);
-    const request = { method: "POST", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
-    const form = new URLSearchParams({ api_key: stripLineBreaks(apiKey), email, ip_address: "", timeout: "20" }).toString();
-    const response = await safeRequest(url, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" }, body: form }, call.timeoutMs, net);
-    const body = asRecord(parseBody(response));
+    const sent = await send(call, net, new URL(VALIDATE_URL), { method: "POST", form: new URLSearchParams({ api_key: apiKey, email, ip_address: "", timeout: "20" }) });
+    const { request, response } = sent;
+    const body = asRecord(sent.body);
     if (response.status < 200 || response.status >= 300) throw statusError("ZeroBounce", response, body, request);
     // ZeroBounce answers a bad key and an empty balance with one error body, often with HTTP 200.
     const error = text(body.error);
