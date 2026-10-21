@@ -525,6 +525,35 @@ describeDb("grid enrichment runs", () => {
     expect(calls).toBe(2);
   });
 
+  it("a dry run counts calls, credits and cents per provider with the auto-run columns it sets off, and queues nothing", async () => {
+    const { actor, table, rows } = await fixture([{ name: "Ada Lovelace", domain: "acme.com" }, { name: "Bob Ray", domain: "beta.com" }]);
+    const d = deps(fake());
+    const a = await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
+    const b = await addFake(d, actor, "fake-b", { defaultCostCents: 3 });
+    const found = await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake-a", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"], autoRun: false });
+    const emailKey = found.find((c) => c.type === "integration_output")!.key;
+    await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake-b", actionKey: "verify-email", inputs: { email: emailKey }, selectedOutputs: ["status"], autoRun: true });
+
+    const dry = await m.run.requestRun(d.runDeps, actor, table, { dryRun: true });
+    expect(dry).toMatchObject({ queued: 0, cells: 2, rows: 2, worstCaseCostCents: 10, dependents: [expect.stringMatching(/verify/i)] });
+    expect(dry.providers).toEqual([
+      { key: "fake-a", name: "fake-a", calls: 2, credits: 0, cents: 4 },
+      { key: "fake-b", name: "fake-b", calls: 2, credits: 2, cents: 6 },
+    ]);
+    expect(await jobs(table)).toEqual({});
+    // A cap the dependents push it over comes back as a problem, not an error.
+    expect((await m.run.requestRun(d.runDeps, actor, table, { dryRun: true, maxCostCents: 5 })).problem).toMatch(/worst-case cost/);
+
+    // With fake-b off, the dependent reaches no provider: the finished cell does not queue it to fail.
+    await m.providers.updateProvider(d.providerDeps, actor, b.id, { enabled: false });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const queuedColumns = await sql`select distinct column_key from grid_jobs where table_id = ${table}`;
+    expect(queuedColumns.map((r) => r.column_key)).toEqual([found[0].key]);
+    expect(a.id).toBeTruthy();
+    expect(rows).toHaveLength(2);
+  });
+
   it("holds the other cells of a tick once the vendor answers 429, and no cell spends an attempt on the wait", async () => {
     const { actor, table } = await fixture([1, 2, 3, 4, 5, 6].map((i) => ({ name: `Person ${i}`, domain: "acme.com" })));
     const f = fake();

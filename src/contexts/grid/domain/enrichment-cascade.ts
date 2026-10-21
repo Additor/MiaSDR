@@ -52,6 +52,31 @@ export function cascadeTargets(columns: readonly CascadeColumn[], cells: Record<
   );
 }
 
+/**
+ * Auto-run columns that fill after `keys` do, directly or through other auto-run columns: they read one of those
+ * columns or one of their output columns. Used to count what a run sets off, not only what it queues.
+ */
+export function autoRunDescendants(columns: readonly CascadeColumn[], keys: readonly string[]): CascadeColumn[] {
+  const ownerOf = new Map<string, string>();
+  for (const c of columns) {
+    const source = (c.config as { sourceColumnKey?: unknown }).sourceColumnKey;
+    if ((c.type === "integration_output" || c.type === "ai_output") && typeof source === "string") ownerOf.set(c.key, source);
+  }
+  const done = new Set(keys);
+  const found: CascadeColumn[] = [];
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const c of columns) {
+      if (done.has(c.key) || !c.autoRun || !RUNNABLE_TYPES.has(c.type)) continue;
+      if (!c.dependsOn.some((d) => done.has(ownerOf.get(d) ?? d))) continue;
+      done.add(c.key);
+      found.push(c);
+      grew = true;
+    }
+  }
+  return found;
+}
+
 /** Roots of the run graph: runnable columns that do not read another runnable column's output. */
 export function runRoots(columns: readonly (CascadeColumn & { id?: string })[]): CascadeColumn[] {
   const runnable = columns.filter((c) => RUNNABLE_TYPES.has(c.type));

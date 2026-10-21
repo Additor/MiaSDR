@@ -120,3 +120,10 @@ export const columnWidth = (column: Pick<GridColumn, "type">) => DEFAULT_WIDTH[c
 
 /** Column key for a freshly typed name, only for display hints. The server derives the real key. */
 export const isRunnerType = (type: ColumnType | string) => !isStaticColumnType(type) && type !== "formula";
+
+/** "Reused, no charge", "$0.03 · 1 credit", "1 credit" or "No charge": a billed call is never called free. */
+export function runCost(r: { costCents: number; credits: number | null; reused?: boolean }): string {
+  if (r.reused) return "Reused, no charge";
+  const parts = [r.costCents > 0 ? `$${(r.costCents / 100).toFixed(2)}` : null, r.credits !== null && r.credits > 0 ? `${Number(r.credits.toFixed(2))} ${r.credits === 1 ? "credit" : "credits"}` : null].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "No charge";
+}

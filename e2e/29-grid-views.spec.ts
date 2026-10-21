@@ -180,10 +180,10 @@ test.describe("partial runs", () => {
 
     // A bad count is refused in the dialog, before any request.
     await dialog.getByLabel("Number of first rows").fill("0");
-    await dialog.getByRole("button", { name: "Run", exact: true }).click();
+    await dialog.getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
     await expect(dialog.getByRole("alert")).toContainText("whole number");
     await dialog.getByLabel("Number of first rows").fill("3");
-    await dialog.getByRole("button", { name: "Run", exact: true }).click();
+    await dialog.getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
     await expect(page.getByText(/Queued 3 cells across 3 rows/)).toBeVisible();
     await settle(page.request, t.tableId);
     expect(await t.filled()).toEqual([1, 2, 3]);
@@ -193,7 +193,7 @@ test.describe("partial runs", () => {
     await page.getByRole("menuitem", { name: "Run first 10 rows" }).click();
     const again = page.getByRole("dialog", { name: `Run ${t.source.name}` });
     await again.getByLabel("Number of first rows").fill("3");
-    await again.getByRole("button", { name: "Run", exact: true }).click();
+    await again.getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
     await expect(page.getByText(/Queued 3 cells across 3 rows/)).toBeVisible();
     await settle(page.request, t.tableId);
     expect(await t.filled()).toEqual([1, 2, 3, 4, 5, 6]);
@@ -239,7 +239,7 @@ test.describe("partial runs", () => {
       const dialog = page.getByRole("dialog", { name: "Run enrichments" });
       await dialog.getByLabel("Number of first rows").fill("2");
       await expectNoHorizontalOverflow(page);
-      await dialog.getByRole("button", { name: "Run", exact: true }).click();
+      await dialog.getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
       await expect(page.getByText(/Queued 2 cells across 2 rows/)).toBeVisible();
       await settle(page.request, t.tableId);
       expect(await t.filled()).toEqual([1, 2]);
@@ -269,7 +269,7 @@ test.describe("AI column output types and editing", () => {
     await expect(page.getByRole("columnheader", { name: /mail/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Run", exact: true }).first().click();
-    await page.getByRole("dialog", { name: "Run enrichments" }).getByRole("button", { name: "Run", exact: true }).click();
+    await page.getByRole("dialog", { name: "Run enrichments" }).getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
     await expect(page.getByText(/Queued 2 cells across 2 rows/)).toBeVisible();
     await settle(page.request, tableId);
     await expect(page.getByRole("gridcell", { name: "mail: fake@example.test" }).first()).toBeVisible({ timeout: 20_000 });

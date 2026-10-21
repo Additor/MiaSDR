@@ -15,36 +15,89 @@ export function estimateStepCents(provider: ProviderRecord, action: ActionSpec |
   return Math.max(provider.defaultCostCents, action?.defaultCostCents ?? 0);
 }
 
-/** Checks that every provider a column calls is connected, switched on and has its key. Returns the worst-case cents per cell. */
-export async function preflight(deps: CostDeps, organizationId: string, column: ColumnRow): Promise<number> {
+/** What one cell of a column can spend at worst, in cents and vendor credits, and with which providers. */
+export interface ColumnEstimate {
+  cents: number;
+  credits: number;
+  providers: ProviderEstimate[];
+  /** False when no step can call anyone (every provider off, missing or without its key). */
+  reachable: boolean;
+}
+
+export interface ProviderEstimate {
+  key: string;
+  name: string;
+  calls: number;
+  credits: number;
+  cents: number;
+}
+
+/**
+ * Worst-case spend of one cell. `strict` refuses a column with a provider that is off, missing or without its key (a
+ * person's run); otherwise those steps are left out, as the worker skips them (an auto-run cascade).
+ */
+export async function estimateColumn(deps: CostDeps, organizationId: string, column: ColumnRow, strict: boolean): Promise<ColumnEstimate> {
   if (column.type === "ai") {
     if (!aiConfigSchema.safeParse(column.config).success) throw new ValidationError(`“${column.name}” has an invalid configuration. Save it again.`);
-    return 0;
+    return { cents: 0, credits: 0, providers: [], reachable: true };
   }
   const parsed = column.type === "enrichment" ? enrichmentConfigSchema.safeParse(column.config) : waterfallConfigSchema.safeParse(column.config);
   if (!parsed.success) throw new ValidationError(`“${column.name}” has an invalid configuration. Save it again.`);
   const steps = "steps" in parsed.data ? parsed.data.steps : [{ providerKey: parsed.data.providerKey, actionKey: parsed.data.actionKey }];
-  let worst = 0;
+  const providers: ProviderEstimate[] = [];
   for (const step of steps) {
+    const refuse = (message: string) => {
+      if (strict) throw new ValidationError(message);
+    };
     const provider = await deps.providers.getByKey(organizationId, step.providerKey);
-    if (!provider || !provider.enabled) throw new ValidationError(`Connect and enable the "${step.providerKey}" provider before running “${column.name}”.`);
+    if (!provider || !provider.enabled) {
+      refuse(`Connect and enable the "${step.providerKey}" provider before running “${column.name}”.`);
+      continue;
+    }
     const adapter = deps.adapters.adapterFor(provider);
     const action = adapter?.actions(provider).find((a) => a.key === step.actionKey);
-    if (!adapter || !action) throw new ValidationError(`“${column.name}” uses an action that provider "${step.providerKey}" does not offer.`);
+    if (!adapter || !action) {
+      refuse(`“${column.name}” uses an action that provider "${step.providerKey}" does not offer.`);
+      continue;
+    }
     const needsKey = catalogEntry(adapter.adapter)?.credentialFields.some((f) => f.required);
-    if (needsKey && !provider.hasCredential) throw new ValidationError(`Add the API key for "${step.providerKey}" before running “${column.name}”.`);
-    worst += estimateStepCents(provider, action);
+    if (needsKey && !provider.hasCredential) {
+      refuse(`Add the API key for "${step.providerKey}" before running “${column.name}”.`);
+      continue;
+    }
+    providers.push({ key: provider.key, name: provider.name, calls: 1, credits: action.creditsPerCall ?? 0, cents: estimateStepCents(provider, action) });
   }
-  const cap = "maxCostCents" in parsed.data ? parsed.data.maxCostCents : undefined;
-  return cap === undefined ? worst : Math.min(worst, cap);
+  const cents = providers.reduce((sum, p) => sum + p.cents, 0);
+  const credits = providers.reduce((sum, p) => sum + p.credits, 0);
+  const capCents = "maxCostCents" in parsed.data ? parsed.data.maxCostCents : undefined;
+  const capCredits = "maxCredits" in parsed.data ? parsed.data.maxCredits : undefined;
+  return {
+    cents: capCents === undefined ? cents : Math.min(cents, capCents),
+    credits: capCredits === undefined ? credits : Math.min(credits, capCredits),
+    providers,
+    reachable: providers.length > 0,
+  };
 }
 
-/** Worst-case cents of one cell of this column. A column that would fail before calling anyone costs nothing. */
+/** Checks that every provider a column calls is connected, switched on and has its key. Returns the worst-case cents per cell. */
+export async function preflight(deps: CostDeps, organizationId: string, column: ColumnRow): Promise<number> {
+  return (await estimateColumn(deps, organizationId, column, true)).cents;
+}
+
+/** Worst-case cents of one cell of this column, counting only the steps that can run. A broken column costs nothing. */
 export async function cellCents(deps: CostDeps, organizationId: string, column: ColumnRow): Promise<number> {
+  return (await cellEstimate(deps, organizationId, column)).cents;
+}
+
+/**
+ * The lenient estimate. An invalid configuration costs nothing and still counts as reachable: its cell fails with
+ * "Save it again", which tells the person what to fix, where a column whose providers are all off would only fail.
+ */
+export async function cellEstimate(deps: CostDeps, organizationId: string, column: ColumnRow): Promise<ColumnEstimate> {
   try {
-    return await preflight(deps, organizationId, column);
+    return await estimateColumn(deps, organizationId, column, false);
   } catch (error) {
-    if (error instanceof ValidationError) return 0;
+    if (error instanceof ValidationError) return { cents: 0, credits: 0, providers: [], reachable: true };
     throw error;
   }
 }
@@ -52,9 +105,13 @@ export async function cellCents(deps: CostDeps, organizationId: string, column: 
 /** Worst-case cents per runnable column that reads one of `writtenKeys`, for the finishing write's own cascade. */
 export async function cascadeSpecFor(deps: CostDeps, organizationId: string, columns: readonly ColumnRow[], writtenKeys: readonly string[]): Promise<CascadeSpec> {
   const centsByColumn: Record<string, number> = {};
+  const unreachable: string[] = [];
   for (const column of columns) {
     if (!column.autoRun || !RUNNABLE_TYPES.has(column.type) || !column.dependsOn.some((d) => writtenKeys.includes(d))) continue;
-    centsByColumn[column.key] = await cellCents(deps, organizationId, column);
+    const estimate = await cellEstimate(deps, organizationId, column);
+    // A column whose every provider is off would only queue a cell that fails.
+    if (!estimate.reachable) unreachable.push(column.key);
+    else centsByColumn[column.key] = estimate.cents;
   }
-  return { centsByColumn };
+  return { centsByColumn, unreachable };
 }

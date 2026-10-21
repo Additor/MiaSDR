@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRunBody, cellRunBody, runCellSource, wholeNumber, type RunForm, recalcSummary, retrySummary, stopSummary } from "./run-request";
+import { buildRunBody, cellRunBody, centsCapIsInert, estimateByProvider, estimateHeadline, runCellSource, runSummary, wholeNumber, type RunForm, recalcSummary, retrySummary, stopSummary } from "./run-request";
 
 const col = (key: string, type: string, config: Record<string, unknown> = {}) => ({ key, name: key.toUpperCase(), type, config });
 const columns = [col("name", "text"), col("find", "enrichment"), col("email", "integration_output", { sourceColumnKey: "find" }), col("ask", "ai"), col("answer", "ai_output", { sourceColumnKey: "ask" }), col("orphan", "ai_output", { sourceColumnKey: "gone" }), col("bad", "ai_output", { sourceColumnKey: "name" })];
@@ -67,5 +67,36 @@ describe("toast texts", () => {
     expect(stopSummary(1)).toBe("Stopped the run. 1 queued cell was removed.");
     expect(stopSummary(0)).toBe("Stopped the run. 0 queued cells were removed.");
     expect(recalcSummary("Score x2", 1)).toBe('Recalculated "Score x2". 1 cell changed.');
+  });
+});
+
+describe("run estimate", () => {
+  const estimate = {
+    cells: 8,
+    rows: 4,
+    worstCaseCostCents: 0,
+    worstCaseCredits: 6,
+    providers: [
+      { key: "hunter", name: "Hunter", calls: 4, credits: 2, cents: 0 },
+      { key: "zerobounce", name: "ZeroBounce", calls: 4, credits: 4, cents: 0 },
+    ],
+    dependents: [],
+  };
+
+  it("leads with rows, calls and credits, and shows dollars once a provider has a price", () => {
+    expect(estimateHeadline(estimate)).toBe("4 rows · up to 8 calls · up to 6 credits");
+    expect(estimateHeadline({ ...estimate, worstCaseCostCents: 8 })).toBe("4 rows · up to 8 calls · up to 6 credits · up to $0.08");
+    expect(estimateByProvider(estimate)).toBe("Hunter 4 calls, 2 credits · ZeroBounce 4 calls, 4 credits");
+  });
+
+  it("says a cents cap cannot stop a run on unpriced providers", () => {
+    expect(centsCapIsInert(estimate)).toBe(true);
+    expect(centsCapIsInert({ ...estimate, worstCaseCostCents: 8 })).toBe(false);
+  });
+
+  it("names the credits in the toast", () => {
+    expect(runSummary({ ...estimate, queued: 8 })).toBe("Queued 8 cells across 4 rows. Up to 6 credits.");
+    expect(runSummary({ ...estimate, queued: 8, worstCaseCredits: 0 })).toBe("Queued 8 cells across 4 rows.");
+    expect(runSummary({ ...estimate, queued: 0 })).toBe("Nothing to run. Inputs are empty or the cells are already filled.");
   });
 });

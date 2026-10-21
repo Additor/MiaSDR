@@ -5,7 +5,7 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { gridRequest, gridUrl } from "../_lib/data/client";
-import { displayValue, editorText, typeLabel } from "../_lib/view/format";
+import { displayValue, editorText, runCost, typeLabel } from "../_lib/view/format";
 import type { GridColumn, GridRow } from "../_lib/data/types";
 
 interface Props {
@@ -22,6 +22,7 @@ interface Run {
   outcome: string;
   costCents: number;
   credits: number | null;
+  reused?: boolean;
   latencyMs: number | null;
   request: unknown;
   response: unknown;
@@ -38,6 +39,7 @@ interface Details {
 const OUTCOME_VARIANT: Record<string, "secondary" | "destructive" | "outline"> = { hit: "secondary", miss: "outline", error: "destructive", failed: "destructive" };
 
 const pretty = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
+
 
 /** Everything known about one cell: its value, the state of its last run and the history of attempts. */
 export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) {
@@ -142,12 +144,12 @@ export function CellDrawer({ tableId, row, column, rowNumber, onClose }: Props) 
                     <li key={r.id} className="rounded-lg border p-2.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "outline"}>{r.outcome}</Badge>
+                        {r.reused && <Badge variant="outline">Reused</Badge>}
                         {r.provider && <span>{r.provider}</span>}
                         <Time value={r.createdAt} className="text-xs text-muted-foreground" />
                         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                          {r.costCents > 0 ? `${r.costCents}c` : "free"}
-                          {r.credits !== null ? ` · ${r.credits} ${r.credits === 1 ? "credit" : "credits"}` : ""}
-                          {r.latencyMs !== null ? ` · ${r.latencyMs} ms` : ""}
+                          {runCost(r)}
+                          {r.latencyMs !== null && !r.reused ? ` · ${r.latencyMs} ms` : ""}
                         </span>
                       </div>
                       {r.response !== null && r.response !== undefined && (

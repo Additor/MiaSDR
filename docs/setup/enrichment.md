@@ -22,6 +22,8 @@ MiaSDR records a call that the vendor does not bill at 0 cents. Every other call
 
 Each ledger row also keeps the vendor credits the call used: LeadMagic's `credits_consumed` and PDL's `x-call-credits-spent` when they send them, otherwise one credit per billed call (Hunter: half a credit per verification) and 0 for a call the vendor does not bill. The cell drawer shows them beside the cost. A waterfall can cap a cell's credits (`maxCredits`) as well as its cents; a step that would pass a cap is skipped. A Custom HTTP API provider has no credits.
 
+The Run dialog shows the worst case before anything is queued: rows, calls and credits, per provider, and dollars once a provider has a price. It counts the auto-run columns the run sets off, because they fill and spend after it, and names them. A run that would pass the row limit or the cost cap says so there and cannot start. While no provider has a price, a cents cap cannot stop a call, and both dialogs say so. An auto-run column whose providers are all off is not queued after an edit or a finished cell; it would only fail.
+
 ## Connect a vendor
 
 1. Create an API key in the vendor's dashboard.

@@ -11,6 +11,7 @@ const body = z.object({
   firstN: z.number().int().optional(),
   maxCostCents: z.number().optional(),
   fresh: z.boolean().optional(),
+  dryRun: z.boolean().optional(),
 });
 
 /** Job counts for the toolbar. */

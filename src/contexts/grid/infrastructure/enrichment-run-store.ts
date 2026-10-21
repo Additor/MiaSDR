@@ -466,7 +466,7 @@ export const drizzleGridRunStore: GridRunStore = {
             const [fresh] = await savepoint.select({ cells: gridRows.cells }).from(gridRows).where(and(eq(gridRows.organizationId, job.organizationId), eq(gridRows.tableId, job.tableId), eq(gridRows.id, job.rowId)));
             if (!fresh) return;
             const columns = (await savepoint.select().from(gridColumns).where(and(eq(gridColumns.organizationId, job.organizationId), eq(gridColumns.tableId, job.tableId)))).map(toColumn);
-            const ready = cascadeTargets(columns, fresh.cells, Object.keys(cells)).filter((c) => c.key !== job.columnKey);
+            const ready = cascadeTargets(columns, fresh.cells, Object.keys(cells)).filter((c) => c.key !== job.columnKey && !cascade.unreachable?.includes(c.key));
             if (ready.length === 0) return;
             // The same caps as an edit's cascade: worst-case cost of this row's dependents and the room left in the organization's queue.
             const plan = planCascade(
@@ -537,6 +537,6 @@ export const drizzleGridRunStore: GridRunStore = {
       .where(and(eq(gridCellRuns.organizationId, organizationId), eq(gridCellRuns.tableId, tableId), eq(gridCellRuns.rowId, rowId), eq(gridCellRuns.columnKey, columnKey)))
       .orderBy(desc(gridCellRuns.createdAt))
       .limit(limit);
-    return rows.map((r) => ({ id: r.id, provider: r.provider, outcome: r.outcome, costCents: Number(r.costCents), credits: r.credits === null ? null : Number(r.credits), latencyMs: r.latencyMs, request: r.request, response: r.response, createdAt: r.createdAt }));
+    return rows.map((r) => ({ id: r.id, provider: r.provider, outcome: r.outcome, costCents: Number(r.costCents), credits: r.credits === null ? null : Number(r.credits), reused: r.reused, latencyMs: r.latencyMs, request: r.request, response: r.response, createdAt: r.createdAt }));
   },
 };

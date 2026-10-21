@@ -1,25 +1,21 @@
 "use client";
 
 import { PlayIcon, RotateCcwIcon, SquareIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gridRequest, gridUrl } from "../_lib/data/client";
-import { buildRunBody, DEFAULT_FIRST_N, retrySummary, runSummary, stopSummary, type RunScope } from "../_lib/data/run-request";
+import { buildRunBody, centsCapIsInert, DEFAULT_FIRST_N, estimateByProvider, estimateHeadline, retrySummary, runSummary, stopSummary, type RunEstimate, type RunScope } from "../_lib/data/run-request";
 import type { GridColumn, JobCounts } from "../_lib/data/types";
 import { ErrorText, Field } from "./form-bits";
 
-interface RunReport {
+interface RunReport extends RunEstimate {
   queued: number;
-  rows: number;
   columns: string[];
-  worstCaseCostCents: number;
 }
-
-const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 interface DialogProps {
   tableId: string;
@@ -41,9 +37,28 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
   const [maxCost, setMaxCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<{ draft: string; report: RunReport | null } | null>(null);
+
+  // The worst case of the run as the form stands, asked of the server without queuing anything. An answer for an
+  // older form never shows.
+  const built = buildRunBody({ columnKey: column?.key, scope, selectedRowIds, onlyEmpty, maxRows, firstN, maxCost });
+  const draft = "body" in built ? JSON.stringify(built.body) : null;
+  const estimate = answer && answer.draft === draft ? answer.report : null;
+  useEffect(() => {
+    if (draft === null) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      void gridRequest<RunReport>(gridUrl.sub(tableId, "run"), "POST", { ...JSON.parse(draft), dryRun: true }).then((res) => {
+        if (live) setAnswer({ draft, report: res.ok && res.data ? res.data : null });
+      });
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [draft, tableId]);
 
   async function start() {
-    const built = buildRunBody({ columnKey: column?.key, scope, selectedRowIds, onlyEmpty, maxRows, firstN, maxCost });
     if ("error" in built) return setError(built.error);
     setBusy(true);
     setError(null);
@@ -52,7 +67,7 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
       setBusy(false);
       return setError(res.error);
     }
-    toast.success(runSummary(res.data, dollars));
+    toast.success(runSummary(res.data));
     onStarted();
     onClose();
   }
@@ -101,18 +116,34 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
             <Field label="Row limit" htmlFor="run-rows" hint="Up to 10,000. A run that would cover more rows does not start. To run part of a table, choose the first rows option.">
               <Input id="run-rows" type="number" min={1} max={10000} value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
             </Field>
-            <Field label="Cost cap (cents)" htmlFor="run-cost" hint="Optional. The run does not start if its worst case cost is above this.">
+            <Field
+              label="Cost cap (cents)"
+              htmlFor="run-cost"
+              hint={estimate && centsCapIsInert(estimate) ? "Your providers have no price, so a cents cap cannot stop this run. Give a provider a price, or cap credits on the column." : "Optional. The run does not start if its worst case cost is above this."}
+            >
               <Input id="run-cost" type="number" min={0} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} />
             </Field>
           </div>
+          <section aria-live="polite" aria-label="Worst case of this run" className="grid gap-1 rounded-md border bg-muted/40 p-3 text-sm">
+            {estimate ? (
+              <>
+                <p className="font-medium tabular-nums">{estimate.cells === 0 ? "Nothing to run. Inputs are empty or the cells are already filled." : estimateHeadline(estimate)}</p>
+                {estimate.cells > 0 && estimate.providers.length > 0 && <p className="text-xs text-muted-foreground tabular-nums">{estimateByProvider(estimate)}</p>}
+                {estimate.dependents.length > 0 && <p className="text-xs text-muted-foreground">Includes the auto-run {estimate.dependents.length === 1 ? "column" : "columns"} {estimate.dependents.join(", ")}, which fill after this run.</p>}
+                {estimate.problem && <p className="text-xs text-destructive">{estimate.problem}</p>}
+              </>
+            ) : (
+              <p className="text-muted-foreground">{draft === null ? "Fix the field above to see what this run costs." : "Counting what this run can cost..."}</p>
+            )}
+          </section>
           <ErrorText>{error}</ErrorText>
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="button" onClick={start} disabled={busy}>
-            <PlayIcon /> {busy ? "Queueing..." : "Run"}
+          <Button type="button" onClick={start} disabled={busy || estimate?.cells === 0 || !!estimate?.problem}>
+            <PlayIcon /> {busy ? "Queueing..." : estimate && estimate.cells > 0 ? `Run ${estimate.rows.toLocaleString("en-US")} ${estimate.rows === 1 ? "row" : "rows"}` : "Run"}
           </Button>
         </DialogFooter>
       </DialogContent>

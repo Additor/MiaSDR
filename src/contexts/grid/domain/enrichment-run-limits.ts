@@ -26,6 +26,8 @@ export interface RunRequest {
   maxCostCents?: number;
   /** Ask the providers again: no reused answer, and no state from an earlier try. A person's press on one cell sets it. */
   fresh?: boolean;
+  /** Only estimate: nothing is queued, and a limit the run would break comes back as `problem` instead of an error. */
+  dryRun?: boolean;
 }
 
 export function resolveMaxRows(requested: number | undefined): number {

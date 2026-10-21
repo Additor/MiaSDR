@@ -77,10 +77,43 @@ export function buildRunBody(form: RunForm): { body: Record<string, unknown> } |
 
 const count = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
+/** The worst case of a run, from POST /run, real or dry. */
+export interface RunEstimate {
+  cells: number;
+  rows: number;
+  worstCaseCostCents: number;
+  worstCaseCredits: number;
+  providers: Array<{ key: string; name: string; calls: number; credits: number; cents: number }>;
+  dependents: string[];
+  problem?: string;
+}
+
+export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+const credits = (n: number) => `${Number(n.toFixed(2)).toLocaleString("en-US")} ${n === 1 ? "credit" : "credits"}`;
+
+/** "4 rows · up to 8 calls · up to 6 credits · up to $0.08". Credits lead, because vendors bill in credits; $ shows once a provider has a price. */
+export function estimateHeadline(e: RunEstimate): string {
+  const calls = e.providers.reduce((sum, p) => sum + p.calls, 0);
+  const parts = [count(e.rows, "row", "rows")];
+  if (calls > 0) parts.push(`up to ${count(calls, "call", "calls")}`);
+  if (e.worstCaseCredits > 0) parts.push(`up to ${credits(e.worstCaseCredits)}`);
+  if (e.worstCaseCostCents > 0) parts.push(`up to ${dollars(e.worstCaseCostCents)}`);
+  return parts.join(" · ");
+}
+
+/** "Hunter 4 calls, 2 credits · ZeroBounce 4 calls, 4 credits". */
+export function estimateByProvider(e: RunEstimate): string {
+  return e.providers.map((p) => `${p.name} ${count(p.calls, "call", "calls")}${p.credits > 0 ? `, ${credits(p.credits)}` : ""}${p.cents > 0 ? `, ${dollars(p.cents)}` : ""}`).join(" · ");
+}
+
+/** True when a cents cap cannot stop this run: it uses credits, and no provider has a price. */
+export const centsCapIsInert = (e: RunEstimate) => e.worstCaseCostCents === 0 && e.worstCaseCredits > 0;
+
 /** Toast text for a finished request. */
-export function runSummary(report: { queued: number; rows: number; worstCaseCostCents: number }, dollars: (cents: number) => string): string {
+export function runSummary(report: RunEstimate & { queued: number }): string {
   if (report.queued === 0) return "Nothing to run. Inputs are empty or the cells are already filled.";
-  return `Queued ${count(report.queued, "cell", "cells")} across ${count(report.rows, "row", "rows")}. Worst case cost ${dollars(report.worstCaseCostCents)}.`;
+  const spend = [report.worstCaseCredits > 0 ? credits(report.worstCaseCredits) : null, report.worstCaseCostCents > 0 ? dollars(report.worstCaseCostCents) : null].filter(Boolean).join(" and ");
+  return `Queued ${count(report.queued, "cell", "cells")} across ${count(report.rows, "row", "rows")}.${spend ? ` Up to ${spend}.` : ""}`;
 }
 
 /** Toast text after Retry failed. Nothing failed is not an error, so it says so. */

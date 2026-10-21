@@ -325,7 +325,15 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
                 <Field label="Column name" htmlFor="wf-name">
                   <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Waterfall" />
                 </Field>
-                <Field label="Spend cap per cell (cents)" htmlFor="wf-cap" hint="Optional. A step that would pass it is skipped.">
+                <Field
+                  label="Spend cap per cell (cents)"
+                  htmlFor="wf-cap"
+                  hint={
+                    maxCost.trim() !== "" && steps.every((s) => (usable.find((p) => p.key === s.providerKey)?.defaultCostCents ?? 0) === 0)
+                      ? "These providers have no price, so a cents cap never stops a call. Use the credit cap."
+                      : "Optional. A step that would pass it is skipped."
+                  }
+                >
                   <Input id="wf-cap" type="number" min={0} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} className="w-28" />
                 </Field>
                 <Field label="Credit cap per cell" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">

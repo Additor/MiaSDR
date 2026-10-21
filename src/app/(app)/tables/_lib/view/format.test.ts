@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellStatus, displayValue, editorText, parseEditorText, selectOptions } from "./format";
+import { cellStatus, displayValue, editorText, parseEditorText, runCost, selectOptions } from "./format";
 import type { GridColumn, GridRow } from "../data/types";
 
 const col = (type: GridColumn["type"], config: Record<string, unknown> = {}): GridColumn => ({ id: "c", tableId: "t", key: "k", name: "K", type, config, dependsOn: [], position: 0, autoRun: false });
@@ -29,5 +29,15 @@ describe("format", () => {
     expect(cellStatus(row({ k: { status: "error", error: "boom" } }), "k")).toEqual({ state: "error", message: "boom" });
     expect(cellStatus(row({ k: { status: "success", outcome: "miss" } }), "k").state).toBe("miss");
     expect(cellStatus(row({}), "k").state).toBe("idle");
+  });
+});
+
+describe("run cost in the cell drawer", () => {
+  it("never calls a billed call free, and marks a reused answer", () => {
+    expect(runCost({ costCents: 0, credits: 1 })).toBe("1 credit");
+    expect(runCost({ costCents: 3, credits: 0.5 })).toBe("$0.03 · 0.5 credits");
+    expect(runCost({ costCents: 0, credits: 0 })).toBe("No charge");
+    expect(runCost({ costCents: 0, credits: null })).toBe("No charge");
+    expect(runCost({ costCents: 0, credits: 0, reused: true })).toBe("Reused, no charge");
   });
 });

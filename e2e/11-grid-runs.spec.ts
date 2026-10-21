@@ -37,7 +37,7 @@ test.describe("grid runs", () => {
     // Run the whole table. The jobs run on the job tick.
     await page.getByRole("button", { name: "Run", exact: true }).first().click();
     const run = page.getByRole("dialog", { name: "Run enrichments" });
-    await run.getByRole("button", { name: "Run", exact: true }).click();
+    await run.getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
     await expect(page.getByText(/Queued 3 cells across 3 rows/)).toBeVisible();
     await settle(page.request, tableId);
     expect((await jobCounts(page.request, tableId)).failed).toBe(1);
@@ -128,7 +128,7 @@ test.describe("grid runs", () => {
 
     await page.getByRole("button", { name: "Run", exact: true }).first().click();
     const run = page.getByRole("dialog", { name: "Run enrichments" });
-    await run.getByRole("button", { name: "Run", exact: true }).click();
+    await run.getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
     await expect(page.getByText(/Queued 3 cells across 3 rows/)).toBeVisible();
     await settle(page.request, tableId);
     expect(await cellValue(page.request, tableId, "Company", "Acme", "answer")).toBe("fake: Acme");

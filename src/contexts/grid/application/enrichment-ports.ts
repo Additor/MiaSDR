@@ -215,6 +215,8 @@ export interface ReusableAnswer {
 /** Worst-case cents per cell of each runnable column, so the store can apply the cost cap inside the finishing transaction. */
 export interface CascadeSpec {
   centsByColumn: Record<string, number>;
+  /** Auto-run columns that reach no provider; the cascade leaves them alone instead of queuing a failure. */
+  unreachable?: string[];
 }
 
 export interface CellWrite {
@@ -236,6 +238,8 @@ export interface CellRunView {
   outcome: string;
   costCents: number;
   credits: number | null;
+  /** True when the answer came from an earlier call, so nothing was paid. */
+  reused: boolean;
   latencyMs: number | null;
   request: unknown;
   response: unknown;
