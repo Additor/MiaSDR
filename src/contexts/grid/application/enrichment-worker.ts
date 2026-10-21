@@ -50,6 +50,8 @@ export const GRID_JOB_LEASE_MS = 5 * 60_000;
 export const GRID_CALL_TIMEOUT_MS = 30_000;
 /** Name of the scheduler job, shared with the kick. */
 export const GRID_RUN_JOB = "grid.run";
+/** How often a cell held by a switched-off provider looks again. */
+const PAUSED_RETRY_MS = 10 * 60_000;
 const retryDelayMs = (attempts: number) => Math.min(5 * 60_000, 2000 * 4 ** Math.max(0, attempts - 1));
 
 export { estimateStepCents };
@@ -83,7 +85,9 @@ async function executeStep(
   reuse: { days: number; fresh: boolean },
 ): Promise<StepExecution> {
   const provider = await deps.providers.getByKey(job.organizationId, step.providerKey);
-  if (!provider || !provider.enabled) return { kind: "unavailable", message: `Provider "${step.providerKey}" is not connected or is switched off.` };
+  if (!provider) return { kind: "unavailable", message: `Provider "${step.providerKey}" is not connected.` };
+  // Switched off is a pause, not a failure: the cell waits, uses no attempt, and runs once the provider is on again.
+  if (!provider.enabled) return { kind: "rate_limited", retryAfterMs: PAUSED_RETRY_MS, message: `${provider.name} is switched off. The cell runs once it is on again.` };
   const adapter = deps.adapters.adapterFor(provider);
   if (!adapter) return { kind: "unavailable", message: `Provider "${step.providerKey}" has no adapter on this server.` };
   const action = adapter.actions(provider).find((a) => a.key === step.actionKey);
@@ -312,7 +316,8 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
 
   // On the last attempt a paid miss verdict is saved as the cell's answer instead of failing the cell.
   if (result.status === "retry" && !(result.fallback && lastAttempt(job, result.attempts))) {
-    const message = result.attempts.find((a) => a.outcome === "error")?.detail ?? "Every provider was busy or unavailable. The cell will run again soon.";
+    // The error, else the reason a step was held (a rate limit, a switched-off provider), else the general word.
+    const message = result.attempts.find((a) => a.outcome === "error")?.detail ?? result.attempts.find((a) => a.outcome === "skipped" && a.retryable)?.detail ?? "Every provider was busy or unavailable. The cell will run again soon.";
     const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents, spentCredits: result.spentCredits, inputsKey, ...(carried.fresh ? { fresh: true } : {}) };
     return finishRetry(deps, job, result.attempts, state, result.retryAfterMs, message);
   }

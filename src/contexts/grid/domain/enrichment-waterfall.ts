@@ -18,7 +18,7 @@ export const stepId = (step: WaterfallStep) => `${step.providerKey}/${step.actio
 export type StepExecution =
   | { kind: "result"; outcome: "hit" | "miss"; primary: unknown; outputs: Record<string, unknown>; costCents: number; credits?: number | null; latencyMs?: number; request?: unknown; response?: unknown; reuse?: ReuseNote }
   | { kind: "error"; transient: boolean; message: string; costCents?: number; request?: unknown; response?: unknown; retryAfterMs?: number }
-  | { kind: "rate_limited"; retryAfterMs: number }
+  | { kind: "rate_limited"; retryAfterMs: number; message?: string }
   | { kind: "unavailable"; message: string };
 
 /** How an answer relates to reuse: stored under `lookupKey` for later cells, or `reused` from an earlier call. */
@@ -158,7 +158,7 @@ export async function runWaterfall(
         if (result.retryAfterMs !== undefined && options.waitOnRateLimit) break;
       } else permanentMessage ??= result.message;
     } else if (result.kind === "rate_limited") {
-      attempts.push({ step, outcome: "skipped", costCents: 0, detail: "The provider's rate limit is used up for now.", retryable: true });
+      attempts.push({ step, outcome: "skipped", costCents: 0, detail: result.message ?? "The provider's rate limit is used up for now.", retryable: true });
       limitedAfterMs = Math.min(limitedAfterMs ?? Infinity, result.retryAfterMs);
       if (options.waitOnRateLimit) break;
     } else {

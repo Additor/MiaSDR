@@ -28,9 +28,10 @@ const outputColumn = (plan: ReturnType<typeof planChain>, mainKey: string, r: Re
   autoRun: false,
 });
 
-async function loadAction(deps: ColumnDeps, organizationId: string, providerKey: string, actionKey: string): Promise<ActionSpec> {
+/** The action a step runs. A new column needs its provider on; an edit only needs it connected, so a paused column stays editable. */
+async function loadAction(deps: ColumnDeps, organizationId: string, providerKey: string, actionKey: string, options: { allowOff?: boolean } = {}): Promise<ActionSpec> {
   const provider = await deps.providers.getByKey(organizationId, providerKey);
-  if (!provider || !provider.enabled) throw new ValidationError(`Provider "${providerKey}" is not connected or is switched off.`);
+  if (!provider || (!provider.enabled && !options.allowOff)) throw new ValidationError(`Provider "${providerKey}" is not connected or is switched off.`);
   const action = deps.adapters.adapterFor(provider)?.actions(provider).find((a) => a.key === actionKey);
   if (!action) throw new ValidationError(`Provider "${providerKey}" has no action "${actionKey}".`);
   return action;
@@ -263,6 +264,13 @@ interface UpdateRunnableInput {
   outputs?: AiOutputInput[];
   /** Waterfall columns: the full list of steps, 1 to 8. */
   steps?: Array<{ providerKey: string; actionKey: string }>;
+  /** Waterfall columns: the caps and the rate-limit choice. Null removes a cap. */
+  maxCostCents?: number | null;
+  maxCredits?: number | null;
+  onRateLimit?: "next" | "wait";
+  /** Enrichment and waterfall columns: days to reuse an answer, and the verdicts that end a verification (null: the default). */
+  reuseDays?: number;
+  settledStatuses?: VerificationStatus[] | null;
 }
 
 /** Re-saves the settings of an existing runnable column, in one locked write with any output columns it adds or retypes. */
@@ -270,18 +278,18 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
   const org = actor.organizationId;
   // Provider lookups are network-free store reads; do them before the lock.
   const stepActions: ActionSpec[] = [];
-  for (const step of input.steps ?? []) stepActions.push(await loadAction(deps, org, step.providerKey, step.actionKey));
+  for (const step of input.steps ?? []) stepActions.push(await loadAction(deps, org, step.providerKey, step.actionKey, { allowOff: true }));
   // An inputs edit is checked against the actions the column runs now (or the new steps), as create does.
   let inputActions: ActionSpec[] = stepActions;
   if (input.inputs !== undefined && input.steps === undefined) {
     const current = (await deps.store.listColumns(org, tableId)).find((c) => c.id === columnId);
     if (current?.type === "enrichment") {
       const { providerKey, actionKey } = current.config as { providerKey?: string; actionKey?: string };
-      inputActions = providerKey && actionKey ? [await loadAction(deps, org, providerKey, actionKey)] : [];
+      inputActions = providerKey && actionKey ? [await loadAction(deps, org, providerKey, actionKey, { allowOff: true })] : [];
     } else if (current?.type === "waterfall") {
       const steps = ((current.config as { steps?: Array<{ providerKey: string; actionKey: string }> }).steps ?? []);
       inputActions = [];
-      for (const step of steps) inputActions.push(await loadAction(deps, org, step.providerKey, step.actionKey));
+      for (const step of steps) inputActions.push(await loadAction(deps, org, step.providerKey, step.actionKey, { allowOff: true }));
     }
   }
 
@@ -293,6 +301,19 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
     let dependsOn = column.dependsOn;
     const change: ColumnChange = { inserts: [], updates: [] };
     if (input.delaySeconds !== undefined) config.delaySeconds = input.delaySeconds;
+    const waterfallOnly = input.maxCostCents !== undefined || input.maxCredits !== undefined || input.onRateLimit !== undefined;
+    if (waterfallOnly && column.type !== "waterfall") throw new ValidationError("Only waterfall columns have caps and a rate-limit choice.");
+    if ((input.reuseDays !== undefined || input.settledStatuses !== undefined) && column.type === "ai") throw new ValidationError("AI columns do not reuse answers or settle verdicts.");
+    const setOrClear = (key: string, value: unknown) => {
+      if (value === undefined) return;
+      if (value === null) delete config[key];
+      else config[key] = value;
+    };
+    setOrClear("maxCostCents", input.maxCostCents);
+    setOrClear("maxCredits", input.maxCredits);
+    setOrClear("onRateLimit", input.onRateLimit);
+    setOrClear("reuseDays", input.reuseDays);
+    setOrClear("settledStatuses", input.settledStatuses);
     if (column.type === "ai") {
       if (input.inputs !== undefined) throw new ValidationError("AI columns read their columns from the prompt, so they have no inputs to edit.");
       if (input.steps !== undefined) throw new ValidationError("Only waterfall columns have steps.");

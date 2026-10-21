@@ -32,7 +32,19 @@ export const POST = async (request: Request, { params }: RouteContext<"/api/grid
   }, 201);
 };
 
-const patch = z.object({ columnId: z.string().uuid(), inputs: z.record(z.string(), z.string()).optional(), autoRun: z.boolean().optional(), delaySeconds: z.number().int().min(0).max(3600).optional(), steps: z.array(z.object({ providerKey: z.string(), actionKey: z.string() })).min(1).max(8).optional() });
+// Strict: a field this route does not change is refused, never dropped with a 200.
+const patch = z.strictObject({
+  columnId: z.string().uuid(),
+  inputs: z.record(z.string(), z.string()).optional(),
+  autoRun: z.boolean().optional(),
+  delaySeconds: z.number().int().min(0).max(3600).optional(),
+  steps: z.array(z.strictObject({ providerKey: z.string(), actionKey: z.string() })).min(1).max(8).optional(),
+  maxCostCents: z.number().min(0).max(100_000).nullable().optional(),
+  maxCredits: z.number().min(0).max(100_000).nullable().optional(),
+  onRateLimit: z.enum(["next", "wait"]).optional(),
+  reuseDays: z.number().int().min(0).max(365).optional(),
+  settledStatuses: z.array(z.enum(["valid", "invalid", "catch_all", "unknown", "disposable"])).min(1).max(5).nullable().optional(),
+});
 
 export const PATCH = async (request: Request, { params }: RouteContext<"/api/grid/tables/[tableId]/enrichments">) => {
   const { tableId } = await params;

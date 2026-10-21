@@ -39,19 +39,75 @@ export function EnrichmentDialog(props: Props) {
   );
 }
 
+/** "companyDomain" to "Company domain", for an input whose action is not available (its provider is gone). */
+const inputLabel = (key: string) => key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()).replace(/ ([A-Z])/g, (_, c: string) => ` ${c.toLowerCase()}`);
+
 function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { column: GridColumn }) {
-  const inputsConfig = (column.config.inputs ?? {}) as Record<string, string>;
-  const [inputs, setInputs] = useState<Record<string, string>>(inputsConfig);
-  const [autoRun, setAutoRun] = useState(column.autoRun);
-  const [delay, setDelay] = useState(String(column.config.delaySeconds ?? 0));
+  const { providers, catalog } = useProviders();
+  const config = column.config as {
+    inputs?: Record<string, string>;
+    providerKey?: string;
+    actionKey?: string;
+    steps?: Step[];
+    delaySeconds?: number;
+    reuseDays?: number;
+    settledStatuses?: string[];
+    maxCostCents?: number;
+    maxCredits?: number;
+    onRateLimit?: "next" | "wait";
+  };
+  const isWaterfall = column.type === "waterfall";
+  const steps: Step[] = isWaterfall ? (config.steps ?? []) : config.providerKey && config.actionKey ? [{ providerKey: config.providerKey, actionKey: config.actionKey }] : [];
+  const actionKey = steps[0]?.actionKey;
+  const initial = {
+    inputs: config.inputs ?? {},
+    autoRun: column.autoRun,
+    delay: String(config.delaySeconds ?? 0),
+    reuseDays: String(config.reuseDays ?? DEFAULT_REUSE_DAYS),
+    stopAtCatchAll: config.settledStatuses?.includes("catch_all") ?? false,
+    maxCost: config.maxCostCents === undefined ? "" : String(config.maxCostCents),
+    maxCredits: config.maxCredits === undefined ? "" : String(config.maxCredits),
+    waitOnLimit: config.onRateLimit === "wait",
+  };
+  const [form, setForm] = useState(initial);
+  const set = <K extends keyof typeof initial>(key: K, value: (typeof initial)[K]) => setForm((f) => ({ ...f, [key]: value }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sources = columns.filter((c) => c.id !== column.id);
 
+  // The inputs of every step's action, with names and whether they are required. Without the action (its provider is
+  // gone), the mapped keys still show, so the column stays editable.
+  const usable = useMemo(() => usableProviders(providers, catalog), [providers, catalog]);
+  const specs = useMemo(() => {
+    const map = new Map<string, { key: string; name: string; required: boolean }>();
+    for (const step of steps) {
+      const action = usable.find((p) => p.key === step.providerKey)?.actions.find((a) => a.key === step.actionKey) ?? providers.find((p) => p.key === step.providerKey)?.actions.find((a) => a.key === step.actionKey);
+      for (const i of action?.inputs ?? []) map.set(i.key, { key: i.key, name: i.name, required: (map.get(i.key)?.required ?? false) || i.required });
+    }
+    for (const key of Object.keys(initial.inputs)) if (!map.has(key)) map.set(key, { key, name: inputLabel(key), required: false });
+    return [...map.values()];
+    // Steps come from the saved column and do not change while the dialog is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usable, providers]);
+
   async function save() {
+    const patch: Record<string, unknown> = { columnId: column.id };
+    const inputs = Object.fromEntries(Object.entries(form.inputs).filter(([, v]) => v));
+    if (JSON.stringify(inputs) !== JSON.stringify(initial.inputs)) patch.inputs = inputs;
+    if (form.autoRun !== initial.autoRun) patch.autoRun = form.autoRun;
+    if (form.delay !== initial.delay) patch.delaySeconds = Math.max(0, Math.min(3600, Math.floor(Number(form.delay) || 0)));
+    if (form.reuseDays !== initial.reuseDays) patch.reuseDays = Math.max(0, Math.min(365, Math.floor(Number(form.reuseDays) || 0)));
+    if (form.stopAtCatchAll !== initial.stopAtCatchAll) patch.settledStatuses = form.stopAtCatchAll ? [...SETTLED_STATUSES, "catch_all"] : null;
+    if (isWaterfall) {
+      const cap = (text: string) => (text.trim() === "" ? null : Math.max(0, Number(text) || 0));
+      if (form.maxCost !== initial.maxCost) patch.maxCostCents = cap(form.maxCost);
+      if (form.maxCredits !== initial.maxCredits) patch.maxCredits = cap(form.maxCredits);
+      if (form.waitOnLimit !== initial.waitOnLimit) patch.onRateLimit = form.waitOnLimit ? "wait" : "next";
+    }
+    if (Object.keys(patch).length === 1) return onClose();
     setBusy(true);
     setError(null);
-    const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "PATCH", { columnId: column.id, inputs, autoRun, delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))) });
+    const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "PATCH", patch);
     if (!res.ok) {
       setBusy(false);
       return setError(res.error);
@@ -64,15 +120,41 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
     <>
       <DialogHeader>
         <DialogTitle>Edit {column.name}</DialogTitle>
-        <DialogDescription>Change which columns feed the provider and when it runs. Existing results stay until you run the column again.</DialogDescription>
+        <DialogDescription>Change which columns feed the provider, what a cell may spend and when it runs. Existing results stay until you run the column again.</DialogDescription>
       </DialogHeader>
       <div className="grid gap-3">
-        {Object.keys(inputsConfig).map((key) => (
-          <Field key={key} label={key} htmlFor={`edit-in-${key}`}>
-            <ColumnChoice id={`edit-in-${key}`} value={inputs[key] ?? null} onChange={(v) => v && setInputs((s) => ({ ...s, [key]: v }))} columns={sources} />
-          </Field>
-        ))}
-        <RunTiming autoRun={autoRun} setAutoRun={setAutoRun} delay={delay} setDelay={setDelay} />
+        <fieldset className="grid gap-2">
+          <legend className="mb-1 text-sm font-medium">Inputs</legend>
+          {specs.map((input) => (
+            <Field key={input.key} label={`${input.name}${input.required ? " (required)" : ""}`} htmlFor={`edit-in-${input.key}`}>
+              <ColumnChoice id={`edit-in-${input.key}`} value={form.inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => set("inputs", { ...form.inputs, [input.key]: v ?? "" })} columns={sources} />
+            </Field>
+          ))}
+        </fieldset>
+        {actionKey === "verify-email" && (
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={form.stopAtCatchAll} onCheckedChange={(v) => set("stopAtCatchAll", v === true)} />
+            {isWaterfall ? "Stop at a catch-all verdict instead of asking the next verifier" : "Count a catch-all verdict as found"}
+          </label>
+        )}
+        {isWaterfall && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Spend cap per cell (cents)" htmlFor="edit-cap" hint="Optional. A step that would pass it is skipped. Leave empty for no cap.">
+              <Input id="edit-cap" type="number" min={0} value={form.maxCost} onChange={(e) => set("maxCost", e.target.value)} className="w-28" />
+            </Field>
+            <Field label="Credit cap per cell" htmlFor="edit-credits" hint="Optional. Counts vendor credits. Leave empty for no cap.">
+              <Input id="edit-credits" type="number" min={0} step={0.5} value={form.maxCredits} onChange={(e) => set("maxCredits", e.target.value)} className="w-28" />
+            </Field>
+            <label className="flex items-center gap-2 text-sm sm:col-span-2">
+              <Checkbox checked={form.waitOnLimit} onCheckedChange={(v) => set("waitOnLimit", v === true)} />
+              Wait for a rate-limited step instead of asking the next one
+            </label>
+          </div>
+        )}
+        <Field label="Reuse an answer for the same lookup (days)" htmlFor="edit-reuse" hint="0 always asks the provider.">
+          <Input id="edit-reuse" type="number" min={0} max={365} value={form.reuseDays} onChange={(e) => set("reuseDays", e.target.value)} className="w-28" />
+        </Field>
+        <RunTiming autoRun={form.autoRun} setAutoRun={(v) => set("autoRun", v)} delay={form.delay} setDelay={(v) => set("delay", v)} />
         <ErrorText>{error}</ErrorText>
       </div>
       <DialogFooter>
@@ -194,7 +276,7 @@ function CreateBody({ tableId, columns, afterColumnId, onClose, onSaved }: Props
       autoRun,
       delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
       reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
-      ...(stopAtCatchAll && steps[0]?.actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
+      ...(mode === "waterfall" && stopAtCatchAll && steps[0]?.actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
     };
     const body =
       mode === "single"

@@ -560,6 +560,50 @@ describeDb("grid enrichment runs", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("edits a waterfall's caps, reuse and settled verdicts later, and refuses settings a column type does not have", async () => {
+    const { actor, table } = await fixture([{ about: "ada@acme.com" }]);
+    const d = deps(fake());
+    await addFake(d, actor, "fake-a");
+    await addFake(d, actor, "fake-b");
+    const [wf] = await m.columns.createWaterfallColumns(d.columnDeps, actor, table, { inputs: { email: "about" }, steps: ["fake-a", "fake-b"].map((providerKey) => ({ providerKey, actionKey: "verify-email" })), selectedOutputs: ["status"], maxCostCents: 5 });
+    const edited = await m.columns.updateRunnableColumn(d.columnDeps, actor, table, wf.id, { maxCostCents: null, maxCredits: 1.5, onRateLimit: "wait", reuseDays: 0, settledStatuses: ["valid", "invalid", "disposable", "catch_all"] });
+    expect(edited.config).toMatchObject({ maxCredits: 1.5, onRateLimit: "wait", reuseDays: 0, settledStatuses: ["valid", "invalid", "disposable", "catch_all"] });
+    expect(edited.config).not.toHaveProperty("maxCostCents");
+    const back = await m.columns.updateRunnableColumn(d.columnDeps, actor, table, wf.id, { settledStatuses: null });
+    expect(back.config).not.toHaveProperty("settledStatuses");
+
+    const [single] = await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake-a", actionKey: "verify-email", inputs: { email: "about" }, selectedOutputs: ["status"] });
+    await expect(m.columns.updateRunnableColumn(d.columnDeps, actor, table, single.id, { maxCredits: 1 })).rejects.toThrow("Only waterfall columns have caps and a rate-limit choice.");
+    expect((await m.columns.updateRunnableColumn(d.columnDeps, actor, table, single.id, { reuseDays: 7 })).config).toMatchObject({ reuseDays: 7 });
+  });
+
+  it("keeps a column on a switched-off provider editable, holds its cells without attempts, and counts what turning it off touches", async () => {
+    const { actor, table, rows } = await fixture();
+    const f = fake();
+    const d = deps(f);
+    const p = await addFake(d, actor);
+    const [col] = await findColumn(d, actor, table);
+    await m.run.requestRun(d.runDeps, actor, table);
+    expect(await m.run.providerImpact(d.runDeps, actor, p.id)).toEqual({ columns: [{ tableId: table, tableName: "t", columnName: col.name, waterfall: false }], pendingCells: 1 });
+
+    await m.providers.updateProvider(d.providerDeps, actor, p.id, { enabled: false });
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(f.calls).toHaveLength(0);
+    const [job] = await sql`select status, attempts, run_after > now() + interval '5 minutes' as later from grid_jobs where row_id = ${rows[0]}`;
+    expect(job).toMatchObject({ status: "queued", attempts: 0, later: true });
+    expect(Object.values((await cells(rows[0])).cell_meta)[0]).toMatchObject({ status: "queued", reason: expect.stringContaining("switched off") });
+
+    // Still editable while off: auto-run and the inputs.
+    expect((await m.columns.updateRunnableColumn(d.columnDeps, actor, table, col.id, { autoRun: false })).autoRun).toBe(false);
+    expect((await m.columns.updateRunnableColumn(d.columnDeps, actor, table, col.id, { inputs: { fullName: "name", companyDomain: "domain" } })).config).toMatchObject({ inputs: { fullName: "name" } });
+
+    // On again, the held cell runs.
+    await m.providers.updateProvider(d.providerDeps, actor, p.id, { enabled: true });
+    await sql`update grid_jobs set run_after = now() - interval '1 minute' where row_id = ${rows[0]}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(f.calls).toHaveLength(1);
+  });
+
   it("holds the other cells of a tick once the vendor answers 429, and no cell spends an attempt on the wait", async () => {
     const { actor, table } = await fixture([1, 2, 3, 4, 5, 6].map((i) => ({ name: `Person ${i}`, domain: "acme.com" })));
     const f = fake();

@@ -2,7 +2,7 @@ import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { autoRunDescendants, cascadeTargets, inputsReady, RUNNABLE_TYPES, runRoots } from "../domain/enrichment-cascade";
 import { assertWithinLimits, DEFAULT_CASCADE_LIMITS, MAX_SCAN_ROWS, ORG_MAX_PENDING_CELLS, planCascade, resolveFirstN, resolveMaxRows, SCAN_PAGE_ROWS, type CascadeCandidate, type RunRequest } from "../domain/enrichment-run-limits";
 import { hasCellValue } from "../domain/enrichment-templates";
-import type { AdapterRegistry, CellRunView, EnqueueTarget, GridRunStore, JobCounts, ProviderStore, ProviderUsage } from "./enrichment-ports";
+import type { AdapterRegistry, CellRunView, EnqueueTarget, GridRunStore, JobCounts, ProviderImpact, ProviderStore, ProviderUsage } from "./enrichment-ports";
 import { cellEstimate, estimateColumn, type ColumnEstimate, type ProviderEstimate } from "./enrichment-cost";
 
 export interface RunDeps {
@@ -220,6 +220,13 @@ export async function cascadeFromEdits(deps: RunDeps, organizationId: string, ta
 }
 
 /** Run ledger of one cell, newest first. Output columns resolve to the column that produced them. */
+/** What turning a provider off or disconnecting it touches, for the confirmation. */
+export async function providerImpact(deps: RunDeps, actor: Actor, providerId: string): Promise<ProviderImpact> {
+  const provider = await deps.providers.get(actor.organizationId, providerId);
+  if (!provider) throw new NotFoundError("Provider not found");
+  return deps.store.providerImpact(actor.organizationId, provider.key);
+}
+
 export const USAGE_DAYS = 30;
 
 /** Each provider's calls, results, credits and cost in the organization over the last `days` days. */

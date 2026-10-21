@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { usageLine } from "./providers";
+import { impactText, usageLine } from "./providers";
 
 describe("provider usage line", () => {
   it("names calls, the found rate, errors, reuses, credits and the typical latency", () => {
@@ -9,5 +9,14 @@ describe("provider usage line", () => {
   it("leaves out what is zero or unknown", () => {
     expect(usageLine({ days: 30, provider: "fake", calls: 0, hits: 0, errors: 0, reused: 2, credits: 0, p50LatencyMs: null })).toBe("Last 30 days: 0 calls, 2 reused");
     expect(usageLine({ days: 7, provider: "apollo", calls: 1, hits: 1, errors: 1, reused: 0, credits: 1, p50LatencyMs: 90 })).toBe("Last 7 days: 1 call, 100% found, 1 error, 1 credit, 90 ms typical");
+  });
+});
+
+describe("turn off and disconnect confirmation", () => {
+  const impact = { columns: [{ tableId: "t", tableName: "Leads", columnName: "Verify", waterfall: false }], pendingCells: 3 };
+  it("says what happens to the columns and the waiting cells", () => {
+    expect(impactText("off", impact)).toBe("1 column uses it. 3 cells are waiting to run. Their cells wait until you turn it back on, without using an attempt; a waterfall asks its other steps meanwhile.");
+    expect(impactText("disconnect", impact)).toBe("The saved key is deleted. 1 column uses it. 3 cells are waiting to run. Their cells fail until you connect it again; a waterfall asks its other steps.");
+    expect(impactText("off", { columns: [], pendingCells: 0 })).toBe("No column uses it. You can turn it back on at any time.");
   });
 });

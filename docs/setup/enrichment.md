@@ -30,6 +30,10 @@ The Run dialog shows the worst case before anything is queued: rows, calls and c
 2. In MiaSDR, open a table, press Enrichment, then "Connect or manage providers". Press Connect on the vendor and paste the key. Owners and admins can do this.
 3. MiaSDR checks the key with the vendor's key-check call before it saves anything. A rejected key is not stored. The key is encrypted with `INTEGRATION_CREDENTIALS_KEY` and never appears in cells, audit rows or logs, in any encoding.
 
+Turn off pauses a provider: its cells wait without using an attempt and run once you turn it back on, and a waterfall asks its other steps meanwhile. Disconnect deletes the key, and the cells that need it fail until you connect it again. Both first list the columns that use the provider and the cells waiting on it.
+
+Every setting of an enrichment or waterfall column can change later from its Edit dialog: the inputs (an optional one can go back to "Not used"), the caps and the rate-limit choice of a waterfall, reuse days, the catch-all choice of a verification, auto-run and the delay. A column whose provider is off stays editable.
+
 Some vendors block a key after repeated failed checks: ZeroBounce after 200 bad-key calls in an hour, LeadMagic after 10 in ten minutes. MiaSDR checks once per save and never retries a check.
 
 ## Shared actions and waterfalls

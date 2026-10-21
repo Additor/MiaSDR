@@ -48,6 +48,26 @@ export interface ProviderView {
   actions: ActionSpec[];
 }
 
+/** What turning a provider off or disconnecting it touches, as `/api/grid/providers/<id>/impact` returns it. */
+export interface ProviderImpact {
+  columns: Array<{ tableId: string; tableName: string; columnName: string; waterfall: boolean }>;
+  pendingCells: number;
+}
+
+/** The confirmation's sentence: what happens to the columns and the waiting cells. */
+export function impactText(kind: "off" | "disconnect", impact: ProviderImpact): string {
+  const n = impact.columns.length;
+  const cols = `${n} ${n === 1 ? "column uses" : "columns use"} it`;
+  const waiting = impact.pendingCells > 0 ? ` ${impact.pendingCells.toLocaleString("en-US")} ${impact.pendingCells === 1 ? "cell is" : "cells are"} waiting to run.` : "";
+  if (kind === "off") {
+    if (n === 0) return "No column uses it. You can turn it back on at any time.";
+    return `${cols}.${waiting} Their cells wait until you turn it back on, without using an attempt; a waterfall asks its other steps meanwhile.`;
+  }
+  const key = "The saved key is deleted.";
+  if (n === 0) return `${key} No column uses it.`;
+  return `${key} ${cols}.${waiting} Their cells fail until you connect it again; a waterfall asks its other steps.`;
+}
+
 /** One provider's ledger totals, as `/api/grid/providers/usage` returns them. */
 export interface ProviderUsage {
   provider: string;

@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { gridRequest } from "../_lib/data/client";
-import { usageLine, type CatalogEntry, type ProviderUsage, type ProviderView } from "../_lib/data/providers";
+import { impactText, usageLine, type CatalogEntry, type ProviderImpact, type ProviderUsage, type ProviderView } from "../_lib/data/providers";
 import { ErrorText, Field } from "./form-bits";
 
 interface Props {
@@ -79,8 +80,18 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
     await onChanged();
   }
 
+  const [confirm, setConfirm] = useState<{ kind: "off" | "disconnect"; impact: ProviderImpact } | null>(null);
+
+  // Turning on needs no warning. Turning off and disconnecting first show which columns and waiting cells they touch.
+  async function ask(kind: "off" | "disconnect") {
+    if (!provider) return;
+    const res = await gridRequest<ProviderImpact>(`/api/grid/providers/${provider.id}/impact`, "GET");
+    setConfirm({ kind, impact: res.ok && res.data ? res.data : { columns: [], pendingCells: 0 } });
+  }
+
   async function toggle() {
     if (!provider) return;
+    setConfirm(null);
     const res = await gridRequest(`/api/grid/providers/${provider.id}`, "PATCH", { enabled: !provider.enabled });
     if (!res.ok) toast.error(res.error ?? "Could not update the provider.");
     await onChanged();
@@ -88,6 +99,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
 
   async function disconnect() {
     if (!provider) return;
+    setConfirm(null);
     const res = await gridRequest(`/api/grid/providers/${provider.id}`, "DELETE");
     if (!res.ok) toast.error(res.error ?? "Could not disconnect the provider.");
     else toast.success(`${entry.name} disconnected.`);
@@ -114,7 +126,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
         {available && (
           <div className="flex shrink-0 gap-1.5">
             {provider && (
-              <Button type="button" size="sm" variant="ghost" onClick={toggle}>
+              <Button type="button" size="sm" variant="ghost" onClick={() => (provider.enabled ? void ask("off") : void toggle())}>
                 {provider.enabled ? "Turn off" : "Turn on"}
               </Button>
             )}
@@ -122,7 +134,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
               <KeyRoundIcon /> {provider ? (entry.credentialFields.length > 0 ? "Replace key" : "Edit") : "Connect"}
             </Button>
             {provider && (
-              <Button type="button" size="sm" variant="ghost" onClick={disconnect}>
+              <Button type="button" size="sm" variant="ghost" onClick={() => void ask("disconnect")}>
                 Disconnect
               </Button>
             )}
@@ -168,6 +180,34 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
             </Button>
           </div>
         </form>
+      )}
+      {confirm && provider && (
+        <Dialog open onOpenChange={(o) => !o && setConfirm(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{confirm.kind === "off" ? `Turn off ${entry.name}?` : `Disconnect ${entry.name}?`}</DialogTitle>
+              <DialogDescription>{impactText(confirm.kind, confirm.impact)}</DialogDescription>
+            </DialogHeader>
+            {confirm.impact.columns.length > 0 && (
+              <ul className="grid max-h-48 gap-1 overflow-y-auto text-sm">
+                {confirm.impact.columns.map((c) => (
+                  <li key={`${c.tableId}:${c.columnName}`}>
+                    {c.tableName} › {c.columnName}
+                    {c.waterfall && <span className="text-muted-foreground"> (waterfall)</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setConfirm(null)}>
+                Cancel
+              </Button>
+              <Button type="button" variant={confirm.kind === "disconnect" ? "destructive" : "default"} onClick={() => void (confirm.kind === "off" ? toggle() : disconnect())}>
+                {confirm.kind === "off" ? "Turn off" : "Disconnect"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

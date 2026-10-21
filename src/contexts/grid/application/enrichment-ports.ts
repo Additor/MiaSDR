@@ -190,6 +190,12 @@ export interface LedgerRun {
   reused?: boolean;
 }
 
+/** What turning a provider off or disconnecting it touches. */
+export interface ProviderImpact {
+  columns: Array<{ tableId: string; tableName: string; columnName: string; waterfall: boolean }>;
+  pendingCells: number;
+}
+
 /** One provider's ledger totals over a window. A reused answer is counted apart and is not a call. */
 export interface ProviderUsage {
   provider: string;
@@ -285,6 +291,8 @@ export interface GridRunStore {
   loadCell(job: CellJob): Promise<{ column: ColumnRow; columns: ColumnRow[]; cells: Record<string, unknown>; tableAutoRun: boolean } | null>;
   /** Call times (epoch ms) of this provider's calls since `since`, for the rate limit. Reused answers are not calls. */
   recentCalls(organizationId: string, providerKey: string, since: Date): Promise<number[]>;
+  /** The columns that call this provider, with their table, and the cells of those columns still waiting to run. */
+  providerImpact(organizationId: string, providerKey: string): Promise<ProviderImpact>;
   /** Per-provider totals of this organization's ledger since `since`, for the provider list. */
   providerUsage(organizationId: string, since: Date): Promise<ProviderUsage[]>;
   /** The newest stored answer to the same lookup since `since`, in this organization, or null. */

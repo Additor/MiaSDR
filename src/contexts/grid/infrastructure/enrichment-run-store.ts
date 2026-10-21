@@ -402,6 +402,31 @@ export const drizzleGridRunStore: GridRunStore = {
     return rows.map((r) => r.at.getTime());
   },
 
+  async providerImpact(organizationId, providerKey) {
+    const columns = await db
+      .select({ tableId: gridColumns.tableId, tableName: gridTables.name, columnName: gridColumns.name, key: gridColumns.key, type: gridColumns.type })
+      .from(gridColumns)
+      .innerJoin(gridTables, and(eq(gridTables.id, gridColumns.tableId), eq(gridTables.organizationId, gridColumns.organizationId)))
+      .where(
+        and(
+          eq(gridColumns.organizationId, organizationId),
+          inArray(gridColumns.type, ["enrichment", "waterfall"]),
+          sql`(${gridColumns.config} ->> 'providerKey' = ${providerKey} or ${gridColumns.config} -> 'steps' @> ${JSON.stringify([{ providerKey }])}::jsonb)`,
+        ),
+      )
+      .orderBy(asc(gridTables.name), asc(gridColumns.name));
+    let pendingCells = 0;
+    if (columns.length > 0) {
+      const [row] = (await db.execute(sql`
+        select count(*)::int as n from ${gridJobs}
+        where organization_id = ${organizationId} and status in ('queued', 'running', 'waiting')
+          and (table_id, column_key) in (${sql.join(columns.map((c) => sql`(${c.tableId}::uuid, ${c.key})`), sql`, `)})
+      `)) as unknown as Array<{ n: number }>;
+      pendingCells = row?.n ?? 0;
+    }
+    return { columns: columns.map((c) => ({ tableId: c.tableId, tableName: c.tableName, columnName: c.columnName, waterfall: c.type === "waterfall" })), pendingCells };
+  },
+
   async providerUsage(organizationId, since) {
     const rows = (await db.execute(sql`
       select provider,
