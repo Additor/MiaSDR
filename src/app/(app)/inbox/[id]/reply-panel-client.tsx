@@ -1,6 +1,6 @@
 "use client";
 
-import { TriangleAlertIcon } from "lucide-react";
+import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -10,10 +10,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
-import { categoryLabel } from "@/contexts/conversations/domain/crm";
 import type { ReplyPanel } from "@/contexts/conversations/application/reply-management";
 import { callApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -42,7 +40,6 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
   const [cc, setCc] = useState<string[]>(draft?.cc ?? []);
   const [note, setNote] = useState("");
   const [showRegenerate, setShowRegenerate] = useState(false);
-  const [override, setOverride] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // An out-of-date draft cannot send. "Edit and send anyway" copies its text into the composer as a new draft.
   const [editStale, setEditStale] = useState(false);
@@ -63,7 +60,6 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
   const composerBlocked = panel.suppressed ? "This address is on the suppression list." : panel.doNotContact ? "This person is marked do not contact." : panel.recipient === null ? "This person has no email address." : null;
   const composerSubject = panel.lastSubject ? (/^re:/i.test(panel.lastSubject) ? panel.lastSubject : `Re: ${panel.lastSubject}`) : "";
   const composer = <ReplyComposer conversationId={panel.conversationId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
-  const items = panel.taxonomy.map((t) => ({ value: t.key, label: `${categoryLabel(t.categoryKey)}: ${t.name}` }));
 
   async function run<T>(name: string, call: () => Promise<{ ok: boolean; data: T | null; error: string | null }>): Promise<T | null> {
     setBusy(name);
@@ -328,9 +324,11 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
         />
       )}
 
+      {/* The AI's reading of the last reply. Changing the category lives in one place, Change category in the side panel. */}
       <Card>
-        <details open={classificationNeedsYou} data-testid="classification">
-          <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-(--card-spacing) text-sm font-semibold select-none">
+        <details open={classificationNeedsYou} data-testid="classification" className="group">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-(--card-spacing) text-sm font-semibold outline-none select-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-90" />
             Classification
             {panel.category ? (
               <Badge variant="secondary" data-testid="category-chip">
@@ -339,19 +337,26 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             ) : (
               <Badge variant="outline">Not classified</Badge>
             )}
-            {classification?.confidence != null && classification.status !== "failed" && <Badge variant="outline">{Math.round(classification.confidence * 100)}% confidence</Badge>}
             {panel.suppressed && <ReachFlag kind="suppressed" />}
             {panel.doNotContact && <ReachFlag kind="do_not_contact" />}
           </summary>
           <div className="grid gap-3 px-(--card-spacing) pt-3 text-sm">
-            {classification?.reasoning && classification.status !== "failed" && <p className="text-muted-foreground">{classification.reasoning}</p>}
+            {/* Confidence and reasoning belong to the reading they describe: the held suggestion when there is one. */}
+            {classification && !held && classification.status !== "failed" && (classification.reasoning || classification.confidence != null) && (
+              <p className="text-muted-foreground">
+                {classification.confidence != null && `${Math.round(classification.confidence * 100)}% confident. `}
+                {classification.reasoning}
+              </p>
+            )}
             {classification?.status === "failed" && <p className="text-destructive">Classification failed: {classification.error}</p>}
-            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run, or choose a category below." : "AI is off for this organization. Choose a category yourself."}</p>}
+            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category in the side panel sets one yourself." : "AI is off for this organization. Change category in the side panel sets one."}</p>}
             {held && classification.proposed && (
-              <div className="grid gap-2 rounded-lg border bg-muted/40 p-3" data-testid="proposal">
+              <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="proposal">
                 <div>
-                  AI suggests <strong>{classification.proposed.name}</strong>. {classification.holdReason ? HOLD_TEXT[classification.holdReason] : ""}
+                  AI suggests <strong>{classification.proposed.name}</strong>
+                  {classification.confidence != null && ` (${Math.round(classification.confidence * 100)}% confident)`}. {classification.holdReason ? HOLD_TEXT[classification.holdReason] : ""}
                 </div>
+                {classification.reasoning && <p className="text-muted-foreground">{classification.reasoning}</p>}
                 <div>
                   <Button size="sm" disabled={busy !== null} onClick={() => run("accept", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: panel.contextVersion }))}>
                     Accept suggestion
@@ -369,33 +374,6 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
                 </div>
               </div>
             )}
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="grid gap-1">
-                <Label htmlFor="override">Set category</Label>
-                <Select items={items} value={override} onValueChange={(v) => setOverride(v)}>
-                  <SelectTrigger id="override" className="w-72 max-w-full">
-                    <SelectValue placeholder="Choose a category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {items.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!override || busy !== null}
-                onClick={async () => {
-                  if (await run("override", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { subcategoryKey: override, expectedContextVersion: panel.contextVersion }))) setOverride(null);
-                }}
-              >
-                Apply
-              </Button>
-            </div>
           </div>
         </details>
       </Card>

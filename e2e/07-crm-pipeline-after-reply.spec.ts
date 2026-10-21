@@ -98,6 +98,7 @@ test.describe("reply handling on the thread and After a reply", () => {
     // Change the reply category on the thread. The Pipeline board holds deals now (e2e/35).
     await replyCategory(page).getByRole("button", { name: "Change category" }).click();
     const change = page.getByRole("dialog", { name: "Change the category of Rae Costa" });
+    await change.getByRole("radio", { name: /Something happened off the thread/ }).check();
     await change.getByRole("combobox", { name: "New category" }).click();
     await page.getByRole("option", { name: "Interested: Meeting requested" }).click();
     await change.getByLabel("Note (optional)").fill("Booked for Thursday");

@@ -237,7 +237,7 @@ export const drizzleCrmStore: CrmStore = {
       stages: subs
         .filter((s) => s.active)
         .sort((a, b) => (CATEGORY_ORDER.get(a.categoryKey) ?? 9) - (CATEGORY_ORDER.get(b.categoryKey) ?? 9) || (a.stageRank ?? 1000) - (b.stageRank ?? 1000) || a.sortOrder - b.sortOrder)
-        .map((s) => ({ id: s.id, categoryKey: s.categoryKey as CategoryKey, name: s.name, stageRank: s.stageRank })),
+        .map((s) => ({ id: s.id, key: s.key, categoryKey: s.categoryKey as CategoryKey, name: s.name, stageRank: s.stageRank })),
     };
   },
 

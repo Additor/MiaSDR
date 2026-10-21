@@ -128,7 +128,7 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
           <RecordControls recordId={record.id} closed closedReason={record.closedReason ?? null} />
         ) : (
           <div>
-            <ChangeCategoryButton recordId={record.id} personName={name} contextVersion={record.contextVersion} currentSubcategoryId={record.subcategoryId} categoryLocked={record.categoryLocked} stages={detail.stages} />
+            <ChangeCategoryButton recordId={record.id} conversationId={conversationId} personName={name} contextVersion={record.contextVersion} currentSubcategoryId={record.subcategoryId} categoryLocked={record.categoryLocked} stages={detail.stages} />
           </div>
         )}
       </AsideSection>

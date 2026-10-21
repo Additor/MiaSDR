@@ -14,14 +14,21 @@ import { categoryLabel } from "@/app/(app)/crm/_components/labels";
 
 export interface StageOption {
   id: string;
+  /** The taxonomy key, which a correction of the reply's reading names. */
+  key: string;
   categoryKey: string;
   name: string;
   stageRank: number | null;
 }
 
-/** A person changes the reply category: something happened off the thread, so the reply handling moves to another category. */
+/**
+ * The one place to change the reply category. The person says why: the AI read the last reply wrong (a correction of that
+ * reading, recorded as a human classification of this conversation), or something happened off the thread (the record
+ * moves; the reading stays and open drafts retire).
+ */
 export function ChangeCategoryButton({
   recordId,
+  conversationId,
   personName,
   contextVersion,
   currentSubcategoryId,
@@ -30,6 +37,8 @@ export function ChangeCategoryButton({
   size = "sm",
 }: {
   recordId: string;
+  /** The conversation on screen. Without it only an off-thread change is offered. */
+  conversationId?: string;
   personName: string;
   contextVersion: number;
   currentSubcategoryId: string | null;
@@ -42,25 +51,30 @@ export function ChangeCategoryButton({
   const [target, setTarget] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [unlock, setUnlock] = useState(false);
+  const [why, setWhy] = useState<"reply" | "offThread">(conversationId ? "reply" : "offThread");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const options = stages.filter((s) => s.id !== currentSubcategoryId).map((s) => ({ value: s.id, label: `${categoryLabel(s.categoryKey)}: ${s.name}` }));
+  const correcting = why === "reply" && conversationId !== undefined;
+  // A correction may name the category the record already has, to confirm the reading; a move goes somewhere else.
+  const options = stages.filter((s) => correcting || s.id !== currentSubcategoryId).map((s) => ({ value: s.id, label: `${categoryLabel(s.categoryKey)}: ${s.name}` }));
   const chosen = stages.find((s) => s.id === target);
-  const leavesCustomer = categoryLocked && chosen !== undefined && chosen.categoryKey !== "customer";
+  const leavesCustomer = !correcting && categoryLocked && chosen !== undefined && chosen.categoryKey !== "customer";
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!chosen) return;
     setPending(true);
     setError(null);
-    const result = await callApi(`/api/crm/records/${recordId}/stage`, "POST", {
-      categoryKey: chosen.categoryKey,
-      subcategoryId: chosen.id,
-      expectedContextVersion: contextVersion,
-      confirmUnlock: unlock,
-      note: note.trim() || null,
-    });
+    const result = correcting
+      ? await callApi(`/api/inbox/${conversationId}/classification`, "POST", { subcategoryKey: chosen.key, expectedContextVersion: contextVersion })
+      : await callApi(`/api/crm/records/${recordId}/stage`, "POST", {
+          categoryKey: chosen.categoryKey,
+          subcategoryId: chosen.id,
+          expectedContextVersion: contextVersion,
+          confirmUnlock: unlock,
+          note: note.trim() || null,
+        });
     setPending(false);
     if (!result.ok) return setError(result.error);
     toast.success(`Changed the category of ${personName} to ${chosen.name}.`);
@@ -78,8 +92,23 @@ export function ChangeCategoryButton({
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Change the category of {personName}</DialogTitle>
-            <DialogDescription>Use this when something happened off the thread, like a meeting or a trial start. The AI&apos;s reading of the last reply stays as it was. Open drafts are retired because they no longer fit.</DialogDescription>
+            <DialogDescription>
+              {correcting ? "The last reply moves to the category you choose, as your reading of it." : "The AI's reading of the last reply stays as it was. Open drafts are retired because they no longer fit."}
+            </DialogDescription>
           </DialogHeader>
+          {conversationId && (
+            <fieldset className="grid gap-2 text-sm">
+              <legend className="mb-1 text-sm font-medium">What changed?</legend>
+              <label className="flex items-center gap-2">
+                <input type="radio" name={`why-${recordId}`} checked={why === "reply"} onChange={() => setWhy("reply")} />
+                The AI read the last reply wrong
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name={`why-${recordId}`} checked={why === "offThread"} onChange={() => setWhy("offThread")} />
+                Something happened off the thread, like a meeting
+              </label>
+            </fieldset>
+          )}
           <div className="grid gap-1">
             <Label htmlFor={`category-${recordId}`}>New category</Label>
             <Select items={options} value={target} onValueChange={(v) => setTarget(v)}>
@@ -95,10 +124,12 @@ export function ChangeCategoryButton({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor={`note-${recordId}`}>Note (optional)</Label>
-            <Textarea id={`note-${recordId}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} placeholder="Met on Tuesday, wants a trial" />
-          </div>
+          {!correcting && (
+            <div className="grid gap-1">
+              <Label htmlFor={`note-${recordId}`}>Note (optional)</Label>
+              <Textarea id={`note-${recordId}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} placeholder="Met on Tuesday, wants a trial" />
+            </div>
+          )}
           {leavesCustomer && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/40 p-3 text-sm">
               <Checkbox id={`unlock-${recordId}`} checked={unlock} onCheckedChange={(c) => setUnlock(c === true)} />

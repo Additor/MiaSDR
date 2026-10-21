@@ -33,4 +33,31 @@ test.describe("the conversation page", () => {
     await expect(panel.getByTestId("draft-status")).toHaveText("Awaiting review");
     await expect(panel.getByRole("button", { name: "Approve and send" })).toBeVisible();
   });
+
+  test("Change category is the one place to correct the reading of a reply, and the card keeps the AI's reading", async ({ page }) => {
+    await signInAdmin(page);
+    const lead = { email: "omar@s45b.test", firstName: "Omar", lastName: "Reyes", title: "COO", company: "S45B Co" };
+    await seedReply(page.request, { key: "s45b", mailbox: "sdr-s45b@e2e-corp.test", lead, reply: { bodyText: "Let's book a call next week." } });
+    const [row] = await sql()`select c.id from conversations c join records r on r.id = c.record_id join people p on p.id = r.person_id where p.email = ${lead.email} limit 1`;
+    await page.goto(`/inbox/${row.id}`);
+    // The card shows the reading and offers no category control of its own.
+    const card = page.getByTestId("classification");
+    await expect(card.getByRole("combobox")).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Apply" })).toHaveCount(0);
+
+    const category = page.getByTestId("reply-category");
+    const open = category.getByRole("button", { name: "Change category" });
+    await waitForHydrated(open);
+    await open.click();
+    const dialog = page.getByRole("dialog", { name: "Change the category of Omar Reyes" });
+    await expect(dialog.getByRole("radio", { name: "The AI read the last reply wrong" })).toBeChecked();
+    await expect(dialog.getByLabel("Note (optional)")).toHaveCount(0);
+    await dialog.getByRole("combobox", { name: "New category" }).click();
+    await page.getByRole("option", { name: "Interested: Meeting requested" }).click();
+    await dialog.getByRole("button", { name: "Change category", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(category).toContainText("Interested: Meeting requested");
+    await expect(category).toContainText("Set by a person");
+    await expect(card.getByTestId("category-chip")).toContainText("Meeting requested");
+  });
 });

@@ -129,7 +129,7 @@ export interface RecordDetail {
   events: EventEntry[];
   notes: NoteEntry[];
   enrollments: EnrollmentEntry[];
-  stages: Array<{ id: string; categoryKey: CategoryKey; name: string; stageRank: number | null }>;
+  stages: Array<{ id: string; key: string; categoryKey: CategoryKey; name: string; stageRank: number | null }>;
 }
 
 export interface StageMoveInput {
