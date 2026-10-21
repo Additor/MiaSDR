@@ -7,7 +7,8 @@ import { answerWith, asRecord, statusError, text, type VendorDefinition } from "
 
 // ZeroBounce (https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-validate-emails, v2-status-codes,
 // v2-credit-balance). Docs read 2026-10-20. The key goes in a form body, so it never sits in a URL; the credit check is a
-// GET and takes it as a query parameter. The regional hosts (api-us, api-eu) are not offered.
+// GET and takes it as a query parameter. ZeroBounce also runs regional hosts (api-us, api-eu); MiaSDR calls the global
+// one. `timeout` stays under the worker's 30-second limit, so ZeroBounce answers unknown before the call is cut off.
 // Run live on 2026-10-20 with an invalid key only: the key check and one call were refused as the code expects.
 const VALIDATE_URL = "https://api.zerobounce.net/v2/validate";
 const CREDITS_URL = "https://api.zerobounce.net/v2/getcredits";
@@ -16,6 +17,8 @@ const STATUS: Record<string, VerificationStatus> = { valid: "valid", invalid: "i
 
 /** do_not_mail covers addresses that exist but should not be mailed; three of its sub-statuses say more than "invalid". */
 function zeroBounceStatus(status: unknown, subStatus: string | null): VerificationStatus {
+  // The domain is on ZeroBounce's accept-all list, so "valid" says no more than a catch-all would.
+  if (status === "valid" && (subStatus === "accept_all" || subStatus === "role_based_accept_all")) return "catch_all";
   if (status === "do_not_mail") {
     if (subStatus === "disposable") return "disposable";
     if (subStatus === "role_based") return "valid";
@@ -35,7 +38,7 @@ export const zerobounce: VendorDefinition = {
     if (!email) throw new ProviderError("ZeroBounce needs an email.", false);
     const url = new URL(VALIDATE_URL);
     const request = { method: "POST", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
-    const form = new URLSearchParams({ api_key: stripLineBreaks(apiKey), email, ip_address: "" }).toString();
+    const form = new URLSearchParams({ api_key: stripLineBreaks(apiKey), email, ip_address: "", timeout: "20" }).toString();
     const response = await safeRequest(url, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" }, body: form }, call.timeoutMs, net);
     const body = asRecord(parseBody(response));
     if (response.status < 200 || response.status >= 300) throw statusError("ZeroBounce", response, body, request);
@@ -52,7 +55,7 @@ export const zerobounce: VendorDefinition = {
       score: null,
       subStatus,
       freeEmail: body.free_email,
-      role: subStatus === "role_based" || subStatus === "role_based_catch_all",
+      role: subStatus === "role_based" || subStatus === "role_based_catch_all" || subStatus === "role_based_accept_all",
       didYouMean: body.did_you_mean,
     };
     // ZeroBounce charges nothing for unknown. The ledger keeps the verdict, not the name, gender and place it may add.

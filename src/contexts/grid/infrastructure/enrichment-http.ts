@@ -63,6 +63,8 @@ export interface SafeResponse {
   text: string;
   /** The `retry-after` header as sent, or null. */
   retryAfter: string | null;
+  /** Every response header, for vendors that put rate-limit resets or credits in their own headers. */
+  headers: Headers;
 }
 
 const isLoopbackHost = (hostname: string) => hostname === "localhost" || hostname === "127.0.0.1";
@@ -132,7 +134,7 @@ export async function safeRequest(
     }
     text = Buffer.concat(chunks).toString("utf8");
   }
-  return { status: response.status, contentType: response.headers.get("content-type") ?? "", text, retryAfter: response.headers.get("retry-after") };
+  return { status: response.status, contentType: response.headers.get("content-type") ?? "", text, retryAfter: response.headers.get("retry-after"), headers: response.headers };
 }
 
 export function parseBody(response: SafeResponse): unknown {

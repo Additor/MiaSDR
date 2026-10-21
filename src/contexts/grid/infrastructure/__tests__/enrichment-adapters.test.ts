@@ -159,11 +159,12 @@ describe("Hunter adapter", () => {
     expect((await hunter(fn).execute(hunterCall("find-work-email", { fullName: "Nobody", companyDomain: "acme.com" }))).outcome).toBe("miss");
   });
 
-  it("treats 202 and 429 as retryable and 401 as permanent", async () => {
+  it("retries 202, 222 and the 403 rate limit, and fails 401 and the spent 429 quota for good", async () => {
     const run = async (status: number) => hunter(mockFetch(status, { errors: [{ details: "x" }] }).fn).execute(hunterCall("verify-email", { email: "a@acme.com" })).catch((e) => e);
     expect(await run(202)).toMatchObject({ transient: true, message: "Hunter is still verifying this address. It will be asked again." });
-    expect(await run(429)).toMatchObject({ transient: true });
-    expect(await run(401)).toMatchObject({ transient: false, message: "Hunter returned 401: x" });
+    expect(await run(429)).toMatchObject({ transient: false, message: "Hunter returned 429: x The Hunter account reached its usage limit." });
+    expect(await run(401)).toMatchObject({ transient: false, message: "Hunter returned 401: x Check the Hunter API key." });
+    expect(await run(451)).toMatchObject({ transient: false, message: "Hunter returned 451: this person asked Hunter not to process their data." });
     expect(await run(403)).toMatchObject({ transient: true });
     // 222: the mail server answered oddly; Hunter advises asking again later.
     expect(await run(222)).toMatchObject({ transient: true, message: "Hunter could not verify this address right now. It will be asked again." });
@@ -177,17 +178,30 @@ describe("Hunter adapter", () => {
   });
 
   it.each([
-    ["valid", "valid", "hit"],
-    ["webmail", "valid", "hit"],
-    ["invalid", "invalid", "hit"],
-    ["disposable", "disposable", "hit"],
-    ["accept_all", "catch_all", "miss"],
-    ["unknown", "unknown", "miss"],
-    ["blocked", "unknown", "miss"],
-  ])("maps Hunter's %s to %s, a %s", async (raw, status, outcome) => {
+    ["valid", "valid", "hit", true],
+    // Webmail names the host only, so a waterfall asks the next verifier.
+    ["webmail", "unknown", "miss", true],
+    ["invalid", "invalid", "hit", true],
+    ["disposable", "disposable", "hit", true],
+    ["accept_all", "catch_all", "miss", true],
+    // Hunter charges nothing for a verification that ends unknown.
+    ["unknown", "unknown", "miss", false],
+    ["blocked", "unknown", "miss", true],
+  ])("maps Hunter's %s to %s, a %s", async (raw, status, outcome, billable) => {
     const answer = await hunter(mockFetch(200, { data: { email: "ada@acme.com", status: raw } }).fn).execute(hunterCall("verify-email", { email: "ada@acme.com" }));
     // A miss keeps its verdict, so the cell can show it when no later step settles the address.
     expect(answer).toMatchObject({ outcome, primary: status, outputs: { status, providerStatus: raw } });
+    expect(answer.billable === false).toBe(!billable);
+  });
+
+  it("bills a finder or a domain search only when it finds an address, and keeps other people out of the ledger", async () => {
+    const empty = await hunter(mockFetch(200, { data: { email: null, score: null } }).fn).execute(hunterCall("find-work-email", { fullName: "Ada Lovelace", companyDomain: "acme.com" }));
+    expect(empty).toMatchObject({ outcome: "miss", billable: false });
+    const none = await hunter(mockFetch(200, { data: { emails: [], organization: "Acme" } }).fn).execute(hunterCall("find-emails-by-company", { companyDomain: "acme.com" }));
+    expect(none).toMatchObject({ outcome: "miss", billable: false });
+    const some = await hunter(mockFetch(200, { data: { emails: [{ value: "bob@acme.com", type: "personal", confidence: 90, first_name: "Bob", phone_number: "+1 555 0100" }] } }).fn).execute(hunterCall("find-emails-by-company", { companyDomain: "acme.com" }));
+    expect(some.billable).toBeUndefined();
+    expect(JSON.stringify(some.response)).not.toMatch(/Bob|555/);
   });
 
   it("finds emails by company domain with a limit of ten", async () => {
@@ -254,6 +268,14 @@ describe("Apollo adapter", () => {
     expect(seen[0].url).toBe("https://api.apollo.io/api/v1/organizations/enrich?domain=acme.com");
     expect(seen[0].init.method).toBe("GET");
     expect(answer).toMatchObject({ outcome: "hit", primary: "Acme", outputs: { industry: "software", employeeCount: 120, city: "Berlin" } });
+  });
+
+  it("reads an unrevealed email as none, bills no empty organization, and keeps only the read fields in the ledger", async () => {
+    const locked = await apollo(mockFetch(200, { person: { id: "p1", match_confidence: "high", email: "email_not_unlocked@acme.com", title: "CTO", employment_history: [{ title: "Engineer" }] } }).fn).execute(apolloCall("enrich-person", { email: "ada@acme.com" }));
+    expect(locked).toMatchObject({ outcome: "miss", outputs: { email: null, title: "CTO" } });
+    expect(JSON.stringify(locked.response)).not.toContain("employment_history");
+    const empty = await apollo(mockFetch(200, { organization: {} }).fn).execute(apolloCall("enrich-company", { companyDomain: "acme.com" }));
+    expect(empty).toMatchObject({ outcome: "miss", billable: false });
   });
 
   it("classifies statuses: 401, 403, 422 permanent; 429, 500 transient; 429 carries retry-after", async () => {

@@ -15,7 +15,18 @@ describe("People Data Labs", () => {
   };
   // https://docs.peopledatalabs.com/docs/errors
   const docNotFound = { status: 404, error: { type: "not_found", message: "No records were found matching your request" } };
-  const person = (status: number, body: unknown, inputs: Record<string, unknown> = { fullName: "Kimberly Patton", companyDomain: "hall-rios-and-miller.com" }) => ask("peopledatalabs", status, body, "enrich-person", inputs);
+  const person = (status: number, body: unknown, inputs: Record<string, unknown> = { fullName: "Kimberly Patton", companyDomain: "hall-rios-and-miller.com" }, headers?: Record<string, string>) => ask("peopledatalabs", status, body, "enrich-person", inputs, headers);
+
+  it("reads the billed credits from x-call-credits-spent and waits for x-ratelimit-reset", async () => {
+    const json = { "content-type": "application/json" };
+    expect((await person(200, docPerson, undefined, { ...json, "x-call-credits-spent": "0" })).result).toMatchObject({ outcome: "hit", billable: false });
+    expect((await person(200, docPerson, undefined, { ...json, "x-call-credits-spent": "1" })).result.billable).toBeUndefined();
+    const reset = new Date(Date.now() + 45_000).toISOString();
+    const limited = await person(429, { status: 429, error: { type: "rate_limit_error", message: "Rate limit exceeded" } }, undefined, { ...json, "x-ratelimit-reset": reset });
+    expect(limited.result.transient).toBe(true);
+    expect(limited.result.retryAfterMs).toBeGreaterThan(40_000);
+    expect(limited.result.retryAfterMs).toBeLessThanOrEqual(46_000);
+  });
 
   it("asks for work fields only, at a likelihood of 6, with the key in a header", async () => {
     const { result, seen } = await person(200, docPerson);

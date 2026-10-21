@@ -27,6 +27,8 @@ export const neverbounce: VendorDefinition = {
     const url = new URL(CHECK_URL);
     url.searchParams.set("key", stripLineBreaks(apiKey));
     url.searchParams.set("email", email);
+    // NeverBounce advises about ten seconds and reads a timeout as unknown, which moves a waterfall on.
+    url.searchParams.set("timeout", "10");
     const request = { method: "GET", endpoint: url.pathname, inputKeys: Object.keys(call.inputs) };
     const response = await safeRequest(url, { method: "GET", headers: { Accept: "application/json" } }, call.timeoutMs, net);
     const body = asRecord(parseBody(response));

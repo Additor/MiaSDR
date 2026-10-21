@@ -2,7 +2,7 @@ import { standardStatus } from "@/contexts/integrations/infrastructure/credentia
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
 import { stripLineBreaks } from "../../domain/enrichment-url-policy";
 import { parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, retryAfterMs, statusError, text, type VendorDefinition } from "./vendor-kit";
+import { answerWith, asRecord, rateLimitWaitMs, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // Prospeo (https://prospeo.io/api-docs/enrich-person, person-object, account-information, rate-limits). Docs read
 // 2026-10-20. Most errors share HTTP 400 and differ by `error_code`. The request asks for verified emails only, and
@@ -37,16 +37,18 @@ export const prospeo: VendorDefinition = {
     if (code === "INVALID_API_KEY") throw new ProviderError("Prospeo returned INVALID_API_KEY. Check the Prospeo API key.", false, audit);
     if (code === "INSUFFICIENT_CREDITS") throw new ProviderError("Prospeo returned INSUFFICIENT_CREDITS. The Prospeo account is out of credits.", false, audit);
     if (code === "INTERNAL_ERROR") throw new ProviderError("Prospeo returned INTERNAL_ERROR.", true, audit);
-    if (response.status === 429) throw new ProviderError("Prospeo returned 429: rate limit exceeded.", true, audit, retryAfterMs(response.retryAfter));
+    if (response.status === 429) throw new ProviderError("Prospeo returned 429: rate limit exceeded.", true, audit, rateLimitWaitMs(response));
     if (code) throw new ProviderError(`Prospeo returned ${code}.`, false, audit);
     if (response.status < 200 || response.status >= 300) throw statusError("Prospeo", response, body, request);
 
     const person = asRecord(body.person);
     const found = asRecord(person.email);
     const verified = text(found.status)?.toUpperCase() === "VERIFIED";
-    const email = verified ? text(found.email) : null;
+    // Prospeo sends the address only once it is revealed; an unrevealed one comes back masked ("eoghan.*****@intercom.com").
+    const address = text(found.email);
+    const email = verified && found.revealed !== false && address && !address.includes("*") ? address : null;
     const outputs = { email, confidence: null, verificationStatus: email ? "valid" : null };
-    const kept = { free_enrichment: body.free_enrichment, person: { email: { status: found.status, email: found.email } } };
+    const kept = { free_enrichment: body.free_enrichment, person: { email: { status: found.status, revealed: found.revealed, email: found.email } } };
     return answerWith(outputs, email, request, kept, email && body.free_enrichment !== true ? {} : { billable: false });
   },
 

@@ -52,7 +52,22 @@ describe("Findymail", () => {
 describe("Prospeo", () => {
   // https://prospeo.io/api-docs/enrich-person, read 2026-10-20 (excerpt of the documented answer).
   const docHit = { error: false, free_enrichment: false, person: { full_name: "Eva Kiegler", email: { status: "VERIFIED", revealed: true, email: "eva@intercom.com", verification_method: "BOUNCEBAN", email_mx_provider: "Google" } }, company: { name: "Intercom" } };
-  const find = (status: number, body: unknown) => ask("prospeo", status, body, "find-work-email", inputs);
+  const find = (status: number, body: unknown, headers?: Record<string, string>) => ask("prospeo", status, body, "find-work-email", inputs, headers);
+
+  it("reads a masked or unrevealed address as no email", async () => {
+    for (const email of [{ ...docHit.person.email, email: "eva.*****@intercom.com" }, { ...docHit.person.email, revealed: false }]) {
+      const { result } = await find(200, { ...docHit, person: { ...docHit.person, email } });
+      expect(result).toMatchObject({ outcome: "miss", primary: null, billable: false });
+    }
+  });
+
+  it("waits for the daily reset once the day's requests are gone, and the minute reset otherwise", async () => {
+    const json = { "content-type": "application/json" };
+    const daily = await find(429, { error: true }, { ...json, "x-daily-request-left": "0", "x-daily-reset-seconds": "1800", "x-minute-reset-seconds": "20" });
+    expect(daily.result).toMatchObject({ transient: true, retryAfterMs: 1_800_000 });
+    const minute = await find(429, { error: true }, { ...json, "x-daily-request-left": "40", "x-daily-reset-seconds": "1800", "x-minute-reset-seconds": "20" });
+    expect(minute.result).toMatchObject({ transient: true, retryAfterMs: 20_000 });
+  });
 
   it("asks for verified emails only with the key in X-KEY", async () => {
     const { result, seen } = await find(200, docHit);

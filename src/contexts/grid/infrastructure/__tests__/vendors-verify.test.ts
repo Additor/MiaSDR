@@ -17,6 +17,7 @@ describe("ZeroBounce", () => {
     expect(seen[0].url).toBe("https://api.zerobounce.net/v2/validate");
     expect(seen[0].init.method).toBe("POST");
     expect(new URLSearchParams(String(seen[0].init.body)).get("api_key")).toBe(VENDOR_KEY);
+    expect(new URLSearchParams(String(seen[0].init.body)).get("timeout")).toBe("20");
     expect(result).toMatchObject({ outcome: "hit", primary: "valid", outputs: { email: "john.doe@zerobounce.net", status: "valid", providerStatus: "valid", freeEmail: false, role: false } });
     expect(result.request).toEqual({ method: "POST", endpoint: "/v2/validate", inputKeys: ["email"] });
     expect(JSON.stringify(result.response)).not.toContain("cotet");
@@ -39,6 +40,9 @@ describe("ZeroBounce", () => {
     ["do_not_mail", "disposable", "disposable", "hit", true],
     ["do_not_mail", "role_based", "valid", "hit", true],
     ["do_not_mail", "role_based_catch_all", "catch_all", "miss", true],
+    // The domain is on ZeroBounce's accept-all list.
+    ["valid", "accept_all", "catch_all", "miss", true],
+    ["valid", "role_based_accept_all", "catch_all", "miss", true],
   ])("maps %s/%s to %s, a %s", async (raw, sub, status, outcome, billable) => {
     const { result } = await verify(200, { ...docValid, status: raw, sub_status: sub });
     expect(result).toMatchObject({ outcome, primary: status, outputs: { status, providerStatus: raw } });
@@ -156,6 +160,7 @@ describe("NeverBounce", () => {
     const url = new URL(seen[0].url);
     expect(`${url.origin}${url.pathname}`).toBe("https://api.neverbounce.com/v4.2/single/check");
     expect(url.searchParams.get("key")).toBe(VENDOR_KEY);
+    expect(url.searchParams.get("timeout")).toBe("10");
     expect(result).toMatchObject({ outcome: "hit", primary: "valid", outputs: { email: "ada@acme.com", status: "valid", freeEmail: true, role: true, didYouMean: null } });
     noKey([result.request, result.response]);
   });

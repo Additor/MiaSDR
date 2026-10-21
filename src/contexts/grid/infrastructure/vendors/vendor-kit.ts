@@ -27,7 +27,9 @@ export function errorSnippet(body: unknown): string {
   const root = asRecord(body);
   const errors = root.errors;
   const first = Array.isArray(errors) ? asRecord(errors[0]) : asRecord(errors);
-  for (const value of [first.details, first.detail, first.message, root.message, (root.error as { message?: unknown } | undefined)?.message, root.error]) {
+  // Apollo moves its error text to `error_details` and drops the root fields on 2027-02-16.
+  const details = root.error_details;
+  for (const value of [first.details, first.detail, first.message, asRecord(details).message, details, root.message, (root.error as { message?: unknown } | undefined)?.message, root.error]) {
     if (typeof value === "string" && value) return value.slice(0, 300);
   }
   return "request failed";
@@ -36,11 +38,30 @@ export function errorSnippet(body: unknown): string {
 const DEFAULT_WAIT_MS = 60_000;
 const MAX_WAIT_MS = 60 * 60_000;
 
-/** `retry-after` is a number of seconds. A missing or odd value waits a minute; a long one is capped at an hour. */
-export function retryAfterMs(header: string | null): number {
-  const seconds = Number(header);
-  if (!header || !Number.isFinite(seconds) || seconds < 0) return DEFAULT_WAIT_MS;
+/**
+ * `retry-after` is a number of seconds or an HTTP date. A missing or odd value waits a minute; a long one is capped at
+ * an hour.
+ */
+export function retryAfterMs(header: string | null, now = Date.now()): number {
+  if (!header) return DEFAULT_WAIT_MS;
+  const date = /^\s*\d+(\.\d+)?\s*$/.test(header) ? NaN : Date.parse(header);
+  const seconds = Number.isFinite(date) ? (date - now) / 1000 : Number(header);
+  if (!Number.isFinite(seconds) || seconds < 0) return DEFAULT_WAIT_MS;
   return Math.min(MAX_WAIT_MS, Math.max(1000, Math.ceil(seconds * 1000)));
+}
+
+/**
+ * How long a rate-limited vendor asks you to wait. `retry-after` comes first, then the vendors' own headers: Prospeo's
+ * reset seconds (the daily one once the day's requests are gone) and People Data Labs' `x-ratelimit-reset` time.
+ */
+export function rateLimitWaitMs(response: SafeResponse, now = Date.now()): number {
+  if (response.retryAfter) return retryAfterMs(response.retryAfter, now);
+  const header = (name: string) => response.headers?.get(name) ?? null;
+  const daily = header("x-daily-reset-seconds");
+  if (daily && header("x-daily-request-left") === "0") return retryAfterMs(daily, now);
+  const minute = header("x-minute-reset-seconds");
+  if (minute) return retryAfterMs(minute, now);
+  return retryAfterMs(header("x-ratelimit-reset"), now);
 }
 
 /**
@@ -62,15 +83,18 @@ export function answerWith(outputs: Record<string, unknown>, primary: unknown, r
 }
 
 /**
- * The shared reading of a failed status: 401 and 403 mean the key, 402 means credits, 429 waits for `retry-after`, and
- * 408 and 5xx are worth asking again. Everything else fails the same way next time.
+ * The shared reading of a failed status: 401 means the key, 403 the key or the plan's reach (or a usage limit, for a
+ * vendor that says so), 402 means credits, 429 waits as the vendor asks, and 408 and 5xx are worth asking again.
+ * Everything else fails the same way next time.
  */
-export function statusError(vendor: string, response: SafeResponse, body: unknown, request: unknown): ProviderError {
+export function statusError(vendor: string, response: SafeResponse, body: unknown, request: unknown, options: { forbiddenIsLimit?: boolean } = {}): ProviderError {
   const detail = `${vendor} returned ${response.status}: ${errorSnippet(body)}`;
   const audit = { request, response: body };
-  if (response.status === 401 || response.status === 403) return new ProviderError(`${detail} Check the ${vendor} API key.`, false, audit);
+  if (response.status === 401) return new ProviderError(`${detail} Check the ${vendor} API key.`, false, audit);
+  if (response.status === 403 && options.forbiddenIsLimit) return new ProviderError(detail, true, audit, rateLimitWaitMs(response));
+  if (response.status === 403) return new ProviderError(`${detail} Check the ${vendor} API key, and whether your plan includes this endpoint.`, false, audit);
   if (response.status === 402) return new ProviderError(`${detail} The ${vendor} account is out of credits.`, false, audit);
-  if (response.status === 429) return new ProviderError(detail, true, audit, retryAfterMs(response.retryAfter));
+  if (response.status === 429) return new ProviderError(detail, true, audit, rateLimitWaitMs(response));
   return new ProviderError(detail, isTransientStatus(response.status), audit);
 }
 

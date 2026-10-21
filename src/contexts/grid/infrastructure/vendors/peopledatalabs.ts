@@ -1,7 +1,7 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
 import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { parseBody, safeRequest } from "../enrichment-http";
+import { parseBody, safeRequest, type SafeResponse } from "../enrichment-http";
 import { answerWith, asRecord, statusError, text, withScheme, type VendorDefinition } from "./vendor-kit";
 
 // People Data Labs (https://docs.peopledatalabs.com/docs/reference-person-enrichment-api, input-parameters-person-
@@ -23,6 +23,9 @@ export const PDL_MIN_LIKELIHOOD = "6";
  */
 const PERSON_FIELDS = "work_email,job_title,job_company_name,linkedin_url";
 const COMPANY_FIELDS = "name,industry,employee_count,website,linkedin_url,location";
+
+/** PDL reports the credits it billed in `x-call-credits-spent`; a 0 there is free whatever the answer. */
+const spentNothing = (response: SafeResponse) => response.headers?.get("x-call-credits-spent")?.trim() === "0";
 
 export const peopledatalabs: VendorDefinition = {
   key: "peopledatalabs",
@@ -67,7 +70,7 @@ export const peopledatalabs: VendorDefinition = {
       const outputs = { email: text(data.work_email), title: text(data.job_title), company: text(data.job_company_name), linkedinUrl: withScheme(data.linkedin_url), likelihood: body.likelihood };
       // The ledger keeps the requested fields only, in case PDL ever sends more. A match without a work email is still billed.
       const kept = Object.fromEntries(PERSON_FIELDS.split(",").map((field) => [field, data[field] ?? null]));
-      return answerWith(outputs, outputs.email, request, { status: body.status, likelihood: body.likelihood, data: kept });
+      return answerWith(outputs, outputs.email, request, { status: body.status, likelihood: body.likelihood, data: kept }, spentNothing(response) ? { billable: false } : {});
     }
     const none = { name: null, industry: null, employeeCount: null, websiteUrl: null, linkedinUrl: null, city: null, country: null, size: null };
     if (response.status === 404) return answerWith(none, null, request, { status: 404 }, { billable: false });
@@ -84,7 +87,7 @@ export const peopledatalabs: VendorDefinition = {
       country: text(location.country),
       size: text(body.size),
     };
-    return answerWith(outputs, outputs.name, request, { status: body.status, likelihood: body.likelihood, ...outputs });
+    return answerWith(outputs, outputs.name, request, { status: body.status, likelihood: body.likelihood, ...outputs }, spentNothing(response) ? { billable: false } : {});
   },
 
   // Autocomplete is free for every active key.

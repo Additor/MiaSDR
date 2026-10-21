@@ -6,15 +6,15 @@ Tables enrichment columns call data vendors with your organization's own API key
 
 | Vendor | Actions | Key check (spends nothing) | A call is free when |
 | --- | --- | --- | --- |
-| Hunter | Verify email, Find work email, Find emails by company | `GET /v2/account` | Hunter's plan decides |
+| Hunter | Verify email, Find work email, Find emails by company | `GET /v2/account` | Nothing is found, or the verdict is unknown |
 | ZeroBounce | Verify email | `GET /v2/getcredits` | The verdict is unknown |
-| MillionVerifier | Verify email | `GET /api/v3/credits` | The verdict is unknown or catch-all (refunded as credits) |
+| MillionVerifier | Verify email | `GET /api/v3/credits` | The verdict is unknown or catch-all, unless MillionVerifier withdraws that refund from an account with many risky results |
 | NeverBounce | Verify email | `GET /v4.2/account/info` | NeverBounce does not document it |
 | Findymail | Find work email | `GET /api/credits` | Nothing is found |
 | Prospeo | Find work email | `GET /account-information` | Nothing is found, or Prospeo marks it a free enrichment |
 | LeadMagic | Find work email | `GET /v1/credits` | Nothing is found |
-| Apollo | Enrich person, Enrich company | `GET /api/v1/auth/health` | The match confidence is `none` |
-| People Data Labs | Enrich person, Enrich company | `GET /v5/autocomplete` | Nothing matches (HTTP 404) |
+| Apollo | Enrich person, Enrich company | `GET /api/v1/auth/health` | No person or company matches, or the match confidence is `none` |
+| People Data Labs | Enrich person, Enrich company | `GET /v5/autocomplete` | Nothing matches (HTTP 404), or PDL reports 0 in `x-call-credits-spent` |
 
 Every vendor has a fixed host, so none needs an entry in `GRID_HTTP_ALLOWED_HOSTS`. For any other vendor, use the Custom HTTP API provider and allow-list its host.
 
@@ -41,6 +41,8 @@ Vendors that offer the same action take the same inputs and fill the same column
 
 A vendor can add columns of its own, such as ZeroBounce's Sub-status or Hunter's Position. Those columns stay empty when another step of the waterfall answers.
 
+A cell runs once every input its action requires has a value. Enrich person requires none of its four, so a row runs when any mapped identity has a value, and each vendor uses the combination it can match on. A Custom HTTP API action needs every mapped input.
+
 In the Enrichment dialog, choose Waterfall. "Start from" offers Verify email and Find work email with every connected vendor that has the action. After the first step, the dialog lists only vendors that offer the first step's action.
 
 ## Verification status
@@ -49,15 +51,21 @@ Every verifier's answer maps to one Status. The vendor's own word stays in Provi
 
 | Status | Hunter | ZeroBounce | MillionVerifier | NeverBounce |
 | --- | --- | --- | --- | --- |
-| valid | valid, webmail | valid; do_not_mail with sub-status role_based | ok | valid |
+| valid | valid | valid; do_not_mail with sub-status role_based | ok | valid |
 | invalid | invalid | invalid, spamtrap, abuse, other do_not_mail | invalid | invalid |
 | disposable | disposable | do_not_mail with sub-status disposable | disposable | disposable |
-| catch_all | accept_all | catch-all; do_not_mail with sub-status role_based_catch_all | catch_all | catchall |
-| unknown | unknown and anything else | unknown | unknown | unknown |
+| catch_all | accept_all | catch-all; valid with sub-status accept_all or role_based_accept_all; do_not_mail with sub-status role_based_catch_all | catch_all | catchall |
+| unknown | unknown, webmail and anything else | unknown | unknown | unknown |
 
 Valid, invalid and disposable settle an address, so a verification waterfall stops there. Catch-all and unknown move on to the next verifier. When no step settles the address, the cell shows the first catch-all or unknown verdict and its columns, marked as a miss, so you keep the answer you paid for.
 
+Hunter's webmail names the mailbox host (Gmail, Outlook) and carries a fixed score of 50, so it moves a waterfall on. ZeroBounce and NeverBounce get a time limit (20 and 10 seconds) under the cell's 30, so a slow server ends as unknown before the call is cut off.
+
 Find work email vendors return Confidence from 0 to 100 when they have one (Hunter's score); the others return verified emails only and leave Confidence empty.
+
+## Addresses that are not there
+
+Apollo answers `email_not_unlocked@<domain>` for an address nobody on your account has revealed, and Prospeo masks an unrevealed one (`eva.*****@intercom.com`). MiaSDR stores neither and reads the step as a miss.
 
 ## People Data Labs and personal data
 
@@ -65,15 +73,17 @@ MiaSDR asks People Data Labs for work fields only (work email, job title, compan
 
 ## Rate limits
 
-A new provider starts with the vendor's published per-minute limit where there is one: Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin` to match your plan. When a vendor answers 429, the cell waits for its `retry-after` and runs again.
+A new provider starts with the vendor's published per-minute limit where there is one: Hunter 300 (Email Verifier), Prospeo 300 (Starter plan), LeadMagic 600 and People Data Labs 100 (free plan, person lookups). Others start without a limit. Change it with `PATCH /api/grid/providers/<id>` and `rateLimitPerMin` to match your plan. When a vendor answers 429, the cell waits as the vendor asks and runs again: `retry-after` first, then Prospeo's reset seconds (the daily one once the day's requests are gone) or PDL's `x-ratelimit-reset`, up to an hour.
 
 ## Errors
 
 | Answer | MiaSDR treats it as |
 | --- | --- |
-| 401, 403, or a body that says the key is wrong | The key is wrong. The step fails and is not retried. |
-| 402, or a body that says the credits ran out | Out of credits. The step fails and a waterfall moves on. |
+| 401, or a body that says the key is wrong | The key is wrong. The step fails and is not retried. |
+| 403 | The key is wrong, or your plan does not include the endpoint. The step fails. Hunter's 403 is its rate limit and retries. |
+| 402, Hunter's 429, or a body that says the credits ran out | Out of credits. The step fails and a waterfall moves on. |
 | 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries, and steps that already missed are not asked again. |
+| Hunter's 451 | The person asked Hunter not to process their data. The step fails. |
 | Any other 4xx | The input is wrong for that vendor. The step fails. |
 
 ZeroBounce, MillionVerifier and NeverBounce can report errors with HTTP 200; MiaSDR reads the body. Prospeo reports most errors with HTTP 400 and an error code.

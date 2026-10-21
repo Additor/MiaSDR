@@ -162,6 +162,8 @@ export const PROVIDER_CATALOG: readonly CatalogEntry[] = [
     fixedBaseUrl: "https://api.hunter.io",
     credentialFields: API_KEY,
     actions: HUNTER_ACTIONS,
+    // The Email Verifier's limit; the finder allows 500.
+    defaultRateLimitPerMin: 300,
   },
   {
     key: "apollo",

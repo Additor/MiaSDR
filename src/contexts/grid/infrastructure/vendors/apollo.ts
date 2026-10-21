@@ -1,8 +1,8 @@
 import { standardStatus } from "@/contexts/integrations/infrastructure/credential-verifier";
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
 import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { isTransientStatus, parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, errorSnippet, retryAfterMs, text, type VendorDefinition } from "./vendor-kit";
+import { parseBody, safeRequest } from "../enrichment-http";
+import { answerWith, asRecord, statusError, text, type VendorDefinition } from "./vendor-kit";
 
 // Apollo (https://docs.apollo.io/reference/people-enrichment, .../organization-enrichment).
 // The caller brings their own key. Docs read 2026-10-16; not exercised against a live key.
@@ -43,30 +43,34 @@ export const apollo: VendorDefinition = {
     const request = { method, endpoint: url.pathname, inputKeys: Object.keys(inputs) };
     const response = await safeRequest(url, { method, headers: { Accept: "application/json", "Cache-Control": "no-cache", "x-api-key": stripLineBreaks(apiKey) } }, call.timeoutMs, net);
     const body = parseBody(response);
-    if (response.status < 200 || response.status >= 300) {
-      const detail = `Apollo returned ${response.status}: ${errorSnippet(body)}`;
-      if (response.status === 401 || response.status === 403) throw new ProviderError(`${detail} Check the Apollo API key.`, false, { request, response: body });
-      if (response.status === 429) throw new ProviderError(detail, true, { request, response: body }, retryAfterMs(response.retryAfter));
-      throw new ProviderError(detail, isTransientStatus(response.status), { request, response: body });
-    }
+    // 403 also covers a key without access to the endpoint (API_INACCESSIBLE).
+    if (response.status < 200 || response.status >= 300) throw statusError("Apollo", response, body, request);
+    // The ledger keeps the fields read here, not the person's or the company's whole record.
     if (call.action === "enrich-person") {
       const person = asRecord(asRecord(body).person);
       const confidence = text(person.match_confidence);
-      // Apollo bills nothing for "none", and its fields then belong to nobody.
-      const matched = confidence !== "none";
+      // Apollo bills nothing when it finds no one or answers "none", and the fields of a "none" belong to nobody.
+      const matched = Object.keys(person).length > 0 && confidence !== "none";
+      // An address nobody on the account has revealed comes back as email_not_unlocked@<domain>.
+      const email = text(person.email);
       const outputs = {
-        email: matched ? person.email : null,
+        email: matched && email && !/^email_not_unlocked@/i.test(email) ? email : null,
         emailStatus: matched ? person.email_status : null,
         title: matched ? person.title : null,
         company: matched ? asRecord(person.organization).name : null,
         linkedinUrl: matched ? person.linkedin_url : null,
         matchConfidence: confidence,
       };
-      return answerWith(outputs, outputs.email, request, body, matched ? {} : { billable: false });
+      const kept = matched
+        ? { person: { id: person.id, match_confidence: person.match_confidence, email: person.email, email_status: person.email_status, title: person.title, linkedin_url: person.linkedin_url, organization: { name: asRecord(person.organization).name } } }
+        : { person: Object.keys(person).length ? { match_confidence: person.match_confidence } : null };
+      return answerWith(outputs, outputs.email, request, kept, matched ? {} : { billable: false });
     }
     const org = asRecord(asRecord(body).organization);
     const outputs = { name: org.name, industry: org.industry, employeeCount: org.estimated_num_employees, websiteUrl: org.website_url, linkedinUrl: org.linkedin_url, city: org.city, country: org.country };
-    return answerWith(outputs, org.name, request, body);
+    const kept = { organization: Object.keys(org).length ? { name: org.name, industry: org.industry, estimated_num_employees: org.estimated_num_employees, website_url: org.website_url, linkedin_url: org.linkedin_url, city: org.city, country: org.country } : null };
+    // No organization means no match, which Apollo does not bill.
+    return answerWith(outputs, org.name, request, kept, Object.keys(org).length ? {} : { billable: false });
   },
 
   // Only the `is_logged_in` flag is read, and nothing else leaves the check.

@@ -2,15 +2,18 @@ import { standardStatus } from "@/contexts/integrations/infrastructure/credentia
 import { ProviderError, type ProviderAnswer } from "../../application/enrichment-ports";
 import { isSettled, percentScore, verificationStatus, type VerificationStatus } from "../../domain/enrichment-contracts";
 import { stripLineBreaks } from "../../domain/enrichment-url-policy";
-import { isTransientStatus, parseBody, safeRequest } from "../enrichment-http";
-import { answerWith, asRecord, errorSnippet, type VendorDefinition } from "./vendor-kit";
+import { parseBody, safeRequest } from "../enrichment-http";
+import { answerWith, asRecord, errorSnippet, statusError, type VendorDefinition } from "./vendor-kit";
 
-// Hunter (https://hunter.io/api-documentation/v2). The caller brings their own key.
+// Hunter (https://hunter.io/api-documentation/v2, help.hunter.io/en/articles/12631167). The caller brings their own key.
+// Docs read 2026-10-21: 403 is the rate limit, 429 the spent usage quota, and a lookup that finds nothing or a
+// verification that ends unknown costs no credit.
 const HUNTER_BASE = "https://api.hunter.io/v2";
 const HUNTER_ACCOUNT_URL = "https://api.hunter.io/v2/account";
 
-// Hunter's verifier words (https://hunter.io/api-documentation/v2#email-verifier). A webmail address exists.
-const STATUS: Record<string, VerificationStatus> = { valid: "valid", invalid: "invalid", accept_all: "catch_all", webmail: "valid", disposable: "disposable", unknown: "unknown" };
+// Hunter's verifier words (https://hunter.io/api-documentation/v2#email-verifier). Webmail only names the host (Gmail,
+// Outlook) and carries an arbitrary score of 50, so it does not settle an address.
+const STATUS: Record<string, VerificationStatus> = { valid: "valid", invalid: "invalid", accept_all: "catch_all", webmail: "unknown", disposable: "disposable", unknown: "unknown" };
 
 export const hunter: VendorDefinition = {
   key: "hunter",
@@ -40,21 +43,23 @@ export const hunter: VendorDefinition = {
     if (response.status === 202) throw new ProviderError("Hunter is still verifying this address. It will be asked again.", true, { request, response: body });
     // 222: the mail server gave Hunter an unexpected answer. Hunter advises asking again later.
     if (response.status === 222) throw new ProviderError("Hunter could not verify this address right now. It will be asked again.", true, { request, response: body });
-    if (response.status < 200 || response.status >= 300) {
-      // 403 is Hunter's usage and rate limit; it clears on its own.
-      const transient = response.status === 403 || isTransientStatus(response.status);
-      throw new ProviderError(`Hunter returned ${response.status}: ${errorSnippet(body)}`, transient, { request, response: body });
-    }
+    if (response.status === 429) throw new ProviderError(`Hunter returned 429: ${errorSnippet(body)} The Hunter account reached its usage limit.`, false, { request, response: body });
+    if (response.status === 451) throw new ProviderError("Hunter returned 451: this person asked Hunter not to process their data.", false, { request, response: body });
+    // 403 is Hunter's rate limit; it clears on its own.
+    if (response.status < 200 || response.status >= 300) throw statusError("Hunter", response, body, request, { forbiddenIsLimit: true });
+    // The ledger keeps the fields read here. A domain search lists other people, so only their addresses stay.
     const data = asRecord(asRecord(body).data);
     if (call.action === "verify-email") {
       const status = data.status === undefined || data.status === null ? null : verificationStatus(data.status, STATUS);
       const outputs = { email: data.email, status, providerStatus: data.status, score: percentScore(data.score), acceptAll: data.accept_all, disposable: data.disposable, webmail: data.webmail };
-      return answerWith(outputs, status, request, body, { hit: status !== null && isSettled(status) });
+      const kept = { data: { email: data.email, status: data.status, result: data.result, score: data.score, accept_all: data.accept_all, disposable: data.disposable, webmail: data.webmail } };
+      return answerWith(outputs, status, request, kept, { hit: status !== null && isSettled(status), billable: data.status !== "unknown" });
     }
     if (call.action === "find-emails-by-company") {
       const emails = Array.isArray(data.emails) ? data.emails : [];
       const firstEmail = asRecord(emails[0]).value;
-      return answerWith({ emails, emailCount: emails.length, firstEmail, organization: data.organization, pattern: data.pattern }, firstEmail, request, body);
+      const kept = { data: { domain: data.domain, organization: data.organization, pattern: data.pattern, emails: emails.map((e) => ({ value: asRecord(e).value, type: asRecord(e).type, confidence: asRecord(e).confidence })) } };
+      return answerWith({ emails, emailCount: emails.length, firstEmail, organization: data.organization, pattern: data.pattern }, firstEmail, request, kept, emails.length ? {} : { billable: false });
     }
     const verification = asRecord(data.verification).status;
     const outputs = {
@@ -65,7 +70,8 @@ export const hunter: VendorDefinition = {
       position: data.position,
       linkedinUrl: data.linkedin_url,
     };
-    return answerWith(outputs, data.email, request, body);
+    const kept = { data: { email: data.email, score: data.score, position: data.position, linkedin_url: data.linkedin_url, verification: data.verification } };
+    return answerWith(outputs, data.email, request, kept, data.email ? {} : { billable: false });
   },
 
   // Hunter answers 403 for usage limits, which clear on their own. 401 is a bad key.
