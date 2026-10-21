@@ -121,6 +121,9 @@ export class FakeEnrichmentProvider implements EnrichmentProvider {
     this.calls.push(call);
     if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
     if (this.handler) return this.handler(call);
+    if (call.action === "verify-email") return fakeVerify(call);
+    if (call.action === "enrich-person") return fakePerson(call);
+    if (call.action === "enrich-company") return fakeCompany(call);
     const name = String(call.inputs.fullName ?? "").toLowerCase();
     const domain = String(call.inputs.companyDomain ?? "");
     if (name.includes("nohit")) return { outcome: "miss", primary: null, outputs: { email: null, confidence: null }, request: { inputs: call.inputs }, response: { found: false } };
@@ -129,6 +132,39 @@ export class FakeEnrichmentProvider implements EnrichmentProvider {
     const email = `${first}.${rest.join("") || "x"}@${domain}`;
     return { outcome: "hit", primary: email, outputs: { email, confidence: 90 }, request: { inputs: call.inputs }, response: { email, confidence: 90, echoedKey: call.credentials.apiKey ?? null } };
   }
+}
+
+/** A verdict from the address itself: "invalid", "catchall", "unknown" or "disposable" in it picks that verdict, "boom" fails. */
+function fakeVerify(call: ProviderCall): ProviderAnswer {
+  const email = String(call.inputs.email ?? "").toLowerCase();
+  if (email.includes("boom")) throw new ProviderError("The fake provider rejected this request.", false, { request: { inputs: call.inputs } });
+  const status = email.includes("invalid") ? "invalid" : email.includes("catchall") ? "catch_all" : email.includes("unknown") ? "unknown" : email.includes("disposable") ? "disposable" : "valid";
+  const settled = status !== "catch_all" && status !== "unknown";
+  const outputs = { email, status, providerStatus: status, score: status === "valid" ? 95 : null };
+  return { outcome: settled ? "hit" : "miss", primary: status, outputs, ...(status === "unknown" ? { billable: false } : {}), request: { inputs: call.inputs }, response: { status } };
+}
+
+/** A person at the company of the email's or the input's domain. A name or email with "nohit" finds nobody. */
+function fakePerson(call: ProviderCall): ProviderAnswer {
+  const email = String(call.inputs.email ?? "").toLowerCase();
+  const name = String(call.inputs.fullName ?? "").toLowerCase();
+  const domain = String(call.inputs.companyDomain ?? (email.split("@")[1] || "example.com"));
+  if (`${email} ${name}`.includes("nohit")) return { outcome: "miss", primary: null, outputs: { email: null, title: null, company: null, linkedinUrl: null }, billable: false, request: { inputs: call.inputs }, response: { found: false } };
+  const handle = (name || email.split("@")[0] || "person").replace(/[^a-z0-9]+/g, "-");
+  const found = email || `${handle.replace(/-/g, ".")}@${domain}`;
+  const outputs = { email: found, title: "Head of Sales", company: String(call.inputs.companyName ?? domain.split(".")[0]), linkedinUrl: `https://www.linkedin.com/in/${handle}` };
+  return { outcome: "hit", primary: found, outputs, request: { inputs: call.inputs }, response: outputs };
+}
+
+/** A company named after the domain's first label. A domain with "nohit" matches nothing. */
+function fakeCompany(call: ProviderCall): ProviderAnswer {
+  const domain = String(call.inputs.companyDomain ?? "").toLowerCase();
+  const none = { name: null, industry: null, employeeCount: null, websiteUrl: null, linkedinUrl: null, city: null, country: null };
+  if (!domain || domain.includes("nohit")) return { outcome: "miss", primary: null, outputs: none, billable: false, request: { inputs: call.inputs }, response: { found: false } };
+  const label = domain.split(".")[0];
+  const name = label.charAt(0).toUpperCase() + label.slice(1);
+  const outputs = { name, industry: "Software", employeeCount: 120, websiteUrl: `https://${domain}`, linkedinUrl: `https://www.linkedin.com/company/${label}`, city: "Berlin", country: "Germany" };
+  return { outcome: "hit", primary: name, outputs, request: { inputs: call.inputs }, response: outputs };
 }
 
 export interface RegistryOptions {

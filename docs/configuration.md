@@ -51,7 +51,7 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 | `LINKEDIN_DSN_ALLOWED_HOSTS` | none | Extra Unipile hosts besides `*.unipile.com`, comma list (`host`, `host:port` or `*.domain`). |
 | `AI_PROVIDER` | none | `fake` answers with a keyword classifier and template drafts (demos only). |
 | `AI_MODEL` | `claude-sonnet-5-5` | Anthropic model when an organization has not picked one. An owner or admin picks the model in Settings, Integrations, AI model; the pick is checked against the live model list of the saved key and wins over this variable. |
-| `GRID_PROVIDER` | none | `fake` enables the deterministic enrichment provider (demos only). |
+| `GRID_PROVIDER` | none | `fake` enables the deterministic enrichment provider (demos only). It offers Find email and the four shared actions. An address with `invalid`, `catchall`, `unknown` or `disposable` in it gets that verdict, and `nohit` finds nothing. |
 | `GRID_HTTP_ALLOWED_HOSTS` | none | Hosts a Custom HTTP enrichment provider may call. Empty means none. |
 | `GRID_RUN_CONCURRENCY` | `8` | Grid cells run at once per tick, 1 to 16. |
 

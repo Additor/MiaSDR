@@ -81,6 +81,11 @@ test.describe("grid runs", () => {
     await signInAdmin(page);
     const { workbookId, tableId } = await newWorkbook(page.request, "C2 verify waterfall");
     await importCsv(page.request, tableId, [["Full name", "Email"], ["Ann Lee", "ann@acme.test"]]);
+    // The fake provider an earlier test connected verifies too; switch it off so the preset holds the two vendors only.
+    const listed = await page.request.get("/api/grid/providers");
+    for (const p of ((await listed.json()) as { providers: Array<{ id: string; adapter: string }> }).providers.filter((p) => p.adapter === "fake")) {
+      expect((await page.request.patch(`/api/grid/providers/${p.id}`, { data: { enabled: false } })).ok()).toBe(true);
+    }
     // In fake mode the key check makes no call, so these keys are never sent anywhere. Nothing here runs the column.
     for (const adapter of ["hunter", "zerobounce"]) {
       const res = await page.request.post("/api/grid/providers", { data: { adapter, key: `c2-${adapter}`, credentials: { apiKey: `c2-${adapter}-key` } } });

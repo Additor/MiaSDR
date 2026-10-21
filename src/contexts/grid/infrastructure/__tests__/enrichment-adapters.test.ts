@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ProviderError, type ProviderCall, type ProviderRecord } from "../../application/enrichment-ports";
-import { HttpAdapter, createAdapterRegistry } from "../enrichment-adapters";
+import { FakeEnrichmentProvider, HttpAdapter, createAdapterRegistry } from "../enrichment-adapters";
 import { VENDORS } from "../vendors";
 import { retryAfterMs } from "../vendors/vendor-kit";
 import { SIMPLE_ADAPTER_KEYS } from "../../domain/enrichment-catalog";
@@ -334,5 +334,31 @@ describe("adapter registry", () => {
     expect(registry.adapterFor(provider({ config: { adapter: "zerobounce-legacy" } }))).toBeNull();
     // Without an instance the fake adapter stays off.
     expect(registry.adapterFor(provider({ config: { adapter: "fake" } }))).toBeNull();
+  });
+});
+
+describe("fake adapter", () => {
+  const fakeCall = (action: string, inputs: Record<string, unknown>): ProviderCall => ({ action, inputs, credentials: {}, provider: provider({ key: "fake", config: { adapter: "fake" } }), timeoutMs: 1000 });
+  const fake = new FakeEnrichmentProvider();
+
+  it("offers every shared contract next to its own finder", () => {
+    expect(fake.actions().map((a) => a.key)).toEqual(["find-email", "verify-email", "enrich-person", "enrich-company"]);
+  });
+
+  it.each([
+    ["ada@acme.com", "valid", "hit"],
+    ["invalid@acme.com", "invalid", "hit"],
+    ["catchall@acme.com", "catch_all", "miss"],
+    ["unknown@acme.com", "unknown", "miss"],
+    ["disposable@acme.com", "disposable", "hit"],
+  ])("verifies %s as %s, a %s", async (email, status, outcome) => {
+    expect(await fake.execute(fakeCall("verify-email", { email }))).toMatchObject({ outcome, primary: status, outputs: { status, providerStatus: status } });
+  });
+
+  it("enriches a person and a company, and finds nobody for nohit", async () => {
+    expect(await fake.execute(fakeCall("enrich-person", { fullName: "Ada Lovelace", companyDomain: "acme.com" }))).toMatchObject({ outcome: "hit", primary: "ada.lovelace@acme.com", outputs: { title: "Head of Sales", company: "acme" } });
+    expect(await fake.execute(fakeCall("enrich-person", { email: "nohit@acme.com" }))).toMatchObject({ outcome: "miss", billable: false });
+    expect(await fake.execute(fakeCall("enrich-company", { companyDomain: "acme.com" }))).toMatchObject({ outcome: "hit", primary: "Acme", outputs: { employeeCount: 120 } });
+    expect(await fake.execute(fakeCall("enrich-company", { companyDomain: "nohit.test" }))).toMatchObject({ outcome: "miss" });
   });
 });

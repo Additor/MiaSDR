@@ -152,6 +152,10 @@ export const FAKE_ACTIONS: ActionSpec[] = [
     primaryOutput: "email",
     defaultCostCents: 1,
   },
+  // The shared contracts too, so a waterfall, its presets and every result can be tried without a vendor key.
+  contractAction("verify-email", { defaultCostCents: 1 }),
+  contractAction("enrich-person", { defaultCostCents: 1 }),
+  contractAction("enrich-company", { defaultCostCents: 1 }),
 ];
 
 const catalogOnly = (key: string, name: string, description: string): CatalogEntry => ({
