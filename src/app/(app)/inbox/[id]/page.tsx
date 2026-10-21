@@ -92,13 +92,11 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
           asideLabel="Person and reply handling"
           main={
             <div className="stack-section min-w-0">
+              {/* The sender and the mailbox are on the message card and the side panel; this line says whose move it is. */}
               <SummaryLine
                 items={[
-                  { label: "From", value: person.name ?? person.email ?? "Unknown sender" },
-                  { label: "Channel", value: channelLabel(thread.channel) },
-                  { label: "Received at", value: thread.accountLabel },
-                  { label: "State", value: workflowLabel(thread.workflowState) },
-                  { label: "Waiting on", value: waitingOn(thread.workflowState), hint: "Who has to act next on this conversation" },
+                  { label: "Waiting on", value: waitingOn(thread.workflowState), hint: `${workflowLabel(thread.workflowState)}. Who has to act next on this conversation` },
+                  ...(thread.channel === "email" ? [] : [{ label: "Channel", value: channelLabel(thread.channel) }]),
                 ]}
               />
               <DraftWatch contextVersion={thread.contextVersion} draftStatus={thread.latestDraftStatus} workflowState={thread.workflowState} />

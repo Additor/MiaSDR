@@ -123,7 +123,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             {draft && <Badge variant={draft.status === "stale" ? "destructive" : "outline"} data-testid="draft-status">{draftStatusLabel(draft.status)}</Badge>}
             {draft?.regeneratedFrom && <Badge variant="outline">Regenerated</Badge>}
           </CardTitle>
-          <CardDescription>Nothing is sent until you approve it. The reply goes to {panel.recipient ?? "no address"} in this thread.</CardDescription>
+          <CardDescription>To {panel.recipient ?? "no address"}</CardDescription>
         </CardHeader>
         <CardContent
           className="grid gap-3"
@@ -174,7 +174,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               </div>
               {panel.knownCcs.length > 0 && (
                 <fieldset className="grid gap-2 rounded-lg border p-3 text-sm" data-testid="cc-options" disabled={draft.status !== "awaiting_review"}>
-                  <legend className="px-1 text-xs text-muted-foreground">Also on this thread. Tick to CC them on this reply (off by default).</legend>
+                  <legend className="px-1 text-xs text-muted-foreground">CC on this reply</legend>
                   {panel.knownCcs.map((known) => (
                     <label key={known.email} className="flex items-center gap-2">
                       <input

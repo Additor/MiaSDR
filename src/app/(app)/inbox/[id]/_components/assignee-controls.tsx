@@ -19,7 +19,6 @@ export function AssigneeControls({ recordId, assignedTo, members, currentUserId 
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const items = memberItems(members, currentUserId, assignedTo, { value: NOBODY, label: "Nobody", at: "start" });
-  const holder = assignedTo === null ? "Nobody handles this conversation yet." : assignedTo === currentUserId ? "You handle this conversation." : null;
 
   async function change(body: { action: "claim" } | { action: "assign"; assignedTo: string | null; expectedAssignedTo: string | null }) {
     setPending(true);
@@ -36,7 +35,6 @@ export function AssigneeControls({ recordId, assignedTo, members, currentUserId 
 
   return (
     <div className="grid gap-2">
-      {holder && <p className="text-sm text-muted-foreground">{holder}</p>}
       <div className="flex flex-wrap items-center gap-2">
         {assignedTo !== currentUserId && (
           <Button size="sm" variant="outline" disabled={pending || assignedTo !== null} onClick={() => change({ action: "claim" })} className="max-sm:h-11">

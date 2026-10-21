@@ -32,7 +32,7 @@ test.describe("who handles a reply", () => {
     await expect(page).toHaveURL(/\/inbox\/[0-9a-f-]{36}/);
     const threadUrl = page.url();
     const assignee = page.getByTestId("thread-assignee");
-    await expect(assignee.getByText("You handle this conversation.")).toBeVisible();
+    await expect(assignee.getByRole("combobox", { name: "Assign to" })).toContainText("(you)");
     // The assignment is an Activity line; Activity folds behind its count.
     await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Assigned to Ada Admin");
 
@@ -62,7 +62,7 @@ test.describe("who handles a reply", () => {
     // Bea sees it as hers: the sidebar counts one more, and the thread says so.
     await beaPage.goto(threadUrl);
     const beaAssignee = beaPage.getByTestId("thread-assignee");
-    await expect(beaAssignee.getByText("You handle this conversation.")).toBeVisible();
+    await expect(beaAssignee.getByRole("combobox", { name: "Assign to" })).toContainText("(you)");
     await beaPage.goto("/actions");
     await expect(beaPage.getByTestId("queue-item").filter({ hasText: "Cora Vance" })).toBeVisible();
     expect(await pending(beaPage)).toBe(beaBefore + 1);
@@ -80,7 +80,7 @@ test.describe("who handles a reply", () => {
     // Bea hands it to nobody. Her sidebar count goes, and it waits under Unassigned.
     await beaPage.goto(threadUrl);
     await pick(beaPage, beaAssignee.getByRole("combobox", { name: "Assign to" }), "Nobody");
-    await expect(beaAssignee.getByText("Nobody handles this conversation yet.")).toBeVisible();
+    await expect(beaAssignee.getByRole("combobox", { name: "Assign to" })).toContainText("Nobody");
     expect(await pending(beaPage)).toBe(beaBefore);
     await bea.close();
 
@@ -90,9 +90,9 @@ test.describe("who handles a reply", () => {
 
     // The admin takes it.
     await page.goto(threadUrl);
-    await expect(assignee.getByText("Nobody handles this conversation yet.")).toBeVisible();
+    await expect(assignee.getByRole("combobox", { name: "Assign to" })).toContainText("Nobody");
     await assignee.getByRole("button", { name: "Take it" }).click();
-    await expect(assignee.getByText("You handle this conversation.")).toBeVisible();
+    await expect(assignee.getByRole("combobox", { name: "Assign to" })).toContainText("(you)");
     expect((await sql()`select assigned_source from records where id = ${recordId}`)[0].assigned_source).toBe("human");
   });
 });

@@ -51,7 +51,7 @@ export function ReplyComposer({ conversationId, defaultSubject, knownCcs, disabl
       </div>
       {knownCcs.length > 0 && (
         <fieldset className="grid gap-2 rounded-lg border p-3 text-sm" data-testid="compose-cc-options">
-          <legend className="px-1 text-xs text-muted-foreground">Also on this thread. Tick to CC them on this reply (off by default).</legend>
+          <legend className="px-1 text-xs text-muted-foreground">CC on this reply</legend>
           {knownCcs.map((known) => (
             <label key={known.email} className="flex items-center gap-2">
               <input

@@ -1,7 +1,7 @@
+import { SparklesIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,6 +20,7 @@ import { DoNotContactCard } from "@/app/(app)/crm/_components/person/do-not-cont
 import { TasksSection } from "@/app/(app)/crm/_components/person/tasks-section";
 import { personHref } from "@/app/(app)/crm/_components/person/person-href";
 import { ReachLinks } from "@/app/(app)/crm/_components/person/reach-links";
+import { StateTip } from "@/app/(app)/crm/_components/person/state-tip";
 import { AsideDisclosure, AsideSection } from "@/app/(app)/crm/_components/record/record-header";
 import { AssigneeControls } from "./assignee-controls";
 import { ChangeCategoryButton } from "./change-category-button";
@@ -79,7 +80,6 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
   const held = !record.categoryKey ? detail.classifications.find((c) => c.status === "proposed" && c.latest) : undefined;
   // A campaign that hands replies to the Inbox says so in its Campaigns row; the work column then shows no follow-ups.
   const handoffCampaignId = !afterReply.run && afterReply.campaign?.mode === "handoff" ? afterReply.campaign.id : null;
-  const channel = record.activeChannel ? (record.activeChannel === "email" ? "email" : channelLabel(record.activeChannel)) : null;
 
   return (
     <>
@@ -108,18 +108,16 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
 
       <AsideSection title="Reply category" testId="reply-category">
         <div className="grid gap-1 text-sm">
-          <p className="font-medium">{record.categoryKey ? `${categoryLabel(record.categoryKey)}${record.subcategoryName ? `: ${record.subcategoryName}` : ""}` : "Not classified yet"}</p>
+          {/* Who set the category rides on a mark beside it; the message card already says when the last reply came. */}
+          <p className="flex items-center gap-1.5 font-medium">
+            {record.categoryKey ? `${categoryLabel(record.categoryKey)}${record.subcategoryName ? `: ${record.subcategoryName}` : ""}` : "Not classified yet"}
+            {record.categorySource && (
+              <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="category-source" />} tip={`Set by ${record.categorySource === "ai" ? "the AI" : "a person"}`}>
+                {record.categorySource === "ai" ? <SparklesIcon aria-hidden className="size-3.5" /> : <UserIcon aria-hidden className="size-3.5" />}
+              </StateTip>
+            )}
+          </p>
           {held?.proposed.categoryKey && <p>The AI suggests {categoryLabel(held.proposed.categoryKey)}, waiting in the reply panel.</p>}
-          {(record.categorySource || record.lastInboundAt) && (
-            <p className="text-muted-foreground">
-              {record.categorySource && `Set by ${record.categorySource === "ai" ? "the AI" : "a person"}. `}
-              {record.lastInboundAt && (
-                <>
-                  Last reply{channel ? ` on ${channel}` : ""} <Time value={record.lastInboundAt} />.
-                </>
-              )}
-            </p>
-          )}
           {record.categoryLocked && (
             <Badge variant="outline" className="w-fit" title="The AI cannot move this person out of Existing customer">
               Locked as Existing customer
