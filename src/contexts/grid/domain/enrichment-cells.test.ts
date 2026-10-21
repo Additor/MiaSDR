@@ -77,6 +77,17 @@ describe("cascade", () => {
     expect(cascadeTargets(columns, { name: "Ada" }, ["name"]).map((c) => c.key)).toEqual(["opener"]);
     expect(inputsReady(columns[2], { name: "Ada", domain: " " })).toBe(false);
   });
+  it("runs a shared contract with its required inputs filled, leaving optional ones empty", () => {
+    const person = col("person", "enrichment", { providerKey: "apollo", actionKey: "enrich-person", inputs: { email: "email", linkedinUrl: "li", fullName: "name", companyDomain: "domain" } }, ["email", "li", "name", "domain"]);
+    expect(inputsReady(person, { email: "ada@acme.com" })).toBe(true);
+    expect(inputsReady(person, { li: " " })).toBe(false);
+    const find = col("find2", "waterfall", { steps: [{ providerKey: "hunter", actionKey: "find-work-email" }, { providerKey: "prospeo", actionKey: "find-work-email" }], inputs: { fullName: "name", companyDomain: "domain" } }, ["name", "domain"]);
+    expect(inputsReady(find, { name: "Ada" })).toBe(false);
+    expect(inputsReady(find, { name: "Ada", domain: "acme.com" })).toBe(true);
+    // A custom action carries no contract, so every mapped input counts.
+    const custom = col("custom", "enrichment", { providerKey: "http", actionKey: "lookup", inputs: { email: "email", fullName: "name" } }, ["email", "name"]);
+    expect(inputsReady(custom, { email: "ada@acme.com" })).toBe(false);
+  });
   it("finds the roots of the run graph, treating an output column as its source", () => {
     // "verify" reads find's output column, so it follows find. "manual" has auto-run off but is still a root.
     expect(runRoots(columns).map((c) => c.key)).toEqual(["find", "opener", "manual"]);
