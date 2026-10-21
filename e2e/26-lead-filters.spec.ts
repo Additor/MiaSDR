@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { columnCells } from "./support/table";
-import { e2eOrganizationId, expect, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
+import { e2eOrganizationId, expect, openFilters, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
 
 /**
  * Seeds people, one contact and companies straight into the admin's organization. Import and campaign flows are
@@ -48,7 +48,7 @@ test.describe("lead list filters, sort and lifecycle", () => {
     // Filter bar: LinkedIn yes, within the s26 leads.
     await page.goto("/leads?q=s26");
     await expect(page.getByText("5 leads", { exact: true })).toBeVisible();
-    await page.locator("summary", { hasText: "Filters" }).click();
+    await openFilters(page);
     await page.getByLabel("Has LinkedIn").selectOption("yes");
     await page.getByRole("button", { name: "Apply filters" }).click();
     await expect(page).toHaveURL(/linkedin=yes/);
@@ -116,14 +116,14 @@ test.describe("lead list filters, sort and lifecycle", () => {
     await expect(page.getByTestId("filter-chip-lifecycle")).toHaveCount(0);
 
     // Leads and contacts: picked in the panel, written to the URL, shown as a chip, the contact marked.
-    await page.locator("summary", { hasText: "Filters" }).click();
+    await openFilters(page);
     await expect(page.getByLabel("Lifecycle", { exact: true })).toHaveValue("");
     await page.getByLabel("Lifecycle", { exact: true }).selectOption("all");
     await page.getByRole("button", { name: "Apply filters" }).click();
     await expect(page).toHaveURL(/lifecycle=all/);
     await expect(page.getByText("6 people", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Remove filter Lifecycle: Leads and contacts" })).toBeVisible();
-    await expect(page.locator("summary", { hasText: "Filters (1)" })).toBeVisible();
+    await expect(page.getByTestId("filters-toggle")).toHaveText(/^Filters\s*1 in use$/);
     await expect(page.getByLabel("Lifecycle", { exact: true })).toHaveValue("all");
     const fay = page.locator("tbody tr", { hasText: "S26 Fay Fisher" });
     await expect(fay.getByTestId("contact-chip")).toHaveText("Contact");
@@ -163,8 +163,9 @@ test.describe("lead list filters, sort and lifecycle", () => {
 
     // Picking Leads in the panel posts an empty value, which reads as the default.
     await page.goto("/leads?q=s26&lifecycle=all");
-    // A set filter opens the panel on load.
-    await expect(page.getByLabel("Lifecycle", { exact: true })).toBeVisible();
+    // The panel starts closed; the chip says what applies.
+    await expect(page.getByRole("link", { name: "Remove filter Lifecycle: Leads and contacts" })).toBeVisible();
+    await openFilters(page);
     await page.getByLabel("Lifecycle", { exact: true }).selectOption("");
     await page.getByRole("button", { name: "Apply filters" }).click();
     await expect(page).toHaveURL(/lifecycle=(&|$)/);
@@ -172,7 +173,7 @@ test.describe("lead list filters, sort and lifecycle", () => {
     await expect(page.getByTestId("filter-chip-lifecycle")).toHaveCount(0);
 
     // The filter bar labels the reply taxonomy "Reply category".
-    await page.locator("summary", { hasText: "Filters" }).click();
+    await openFilters(page);
     await expect(page.getByLabel("Reply category")).toBeVisible();
     await expect(page.getByText("CRM category")).toHaveCount(0);
   });

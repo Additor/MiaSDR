@@ -29,13 +29,15 @@ import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { ListKeys } from "@/components/shell/list-keys";
 import { ListSkeleton } from "@/components/shell/list-skeleton";
 import { FilterChips } from "@/components/shell/filter-chips";
+import { ActiveFilterChips } from "@/components/shell/filter-panel";
+import { ListToolbar } from "@/components/shell/list-toolbar";
 import { PageHeader } from "@/components/shell/page-header";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
 import { personHref } from "../crm/_components/person/person-href";
 import { ACTIONS_FILTER_KEYS, actionsViewFrom, threadQueryFromActions } from "./actions-query";
 import { hasAnyFilter } from "./more-filters";
-import { QueueFilters } from "./queue-filters";
+import { queueFilterChips, QueueFilters } from "./queue-filters";
 import { QueueGroup, type QueueItemView } from "./queue-group";
 
 export const metadata: Metadata = { title: "Actions" };
@@ -249,14 +251,21 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     { scope: "others", label: "Others" },
   ] as const;
   const unassignedCount = counts.work.unassigned;
+  const subcategories = taxonomy.subcategories.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, categoryKey: t.categoryKey }));
+  const queueChips = queueFilterChips(filterValues, scope, { subcategories, campaigns });
 
   return (
     <>
       <ListKeys />
-      <FilterChips
-        label="Whose work"
-        items={scopeChips.map((c) => ({ href: scopeHref(c.scope), active: scope === c.scope, testId: `scope-${c.scope}`, label: `${c.label} ${counts.work[c.scope]}` }))}
-      />
+      <ListToolbar
+        filters={{
+          count: queueChips.length,
+          panel: <QueueFilters values={filterValues} scope={scope} subcategories={subcategories} campaigns={campaigns} />,
+        }}
+      >
+        <FilterChips label="Whose work" items={scopeChips.map((c) => ({ href: scopeHref(c.scope), active: scope === c.scope, testId: `scope-${c.scope}`, label: c.label, count: counts.work[c.scope] }))} />
+      </ListToolbar>
+      <ActiveFilterChips chips={queueChips} clearHref={`/actions?scope=${scope}`} />
       {oldestWaiting && (
         <p className="text-sm text-muted-foreground" data-testid="queue-oldest">
           The oldest has waited {elapsed(oldestWaiting, nowIso, true)}
@@ -280,12 +289,6 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
           ))}
         </nav>
       )}
-      <QueueFilters
-        values={filterValues}
-        scope={scope}
-        subcategories={taxonomy.subcategories.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, categoryKey: t.categoryKey }))}
-        campaigns={campaigns}
-      />
       {filterError && (
         <p role="alert" className="text-sm text-destructive">
           {filterError}

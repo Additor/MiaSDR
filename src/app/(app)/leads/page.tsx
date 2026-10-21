@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
+import { ActiveFilterChips } from "@/components/shell/filter-panel";
 import { PageHeader } from "@/components/shell/page-header";
 import { SelectionProvider } from "@/components/shell/selection";
 import { buttonVariants } from "@/components/ui/button";
@@ -17,8 +18,10 @@ import { cn } from "@/lib/utils";
 import { toActor } from "@/shared/api";
 import type { Actor } from "@/shared/errors";
 import { dealDialogData } from "../crm/_components/deal-dialog-data";
+import { StateTip } from "../crm/_components/person/state-tip";
 import { AddToCampaign } from "./add-to-campaign";
-import { ActiveFilters } from "./active-filter-chips";
+import { ColumnsMenu, LeadColumnsProvider } from "./columns-menu";
+import { leadsHref } from "./list-url";
 import { activeFilterChips, panelFilterCount } from "./active-filters";
 import { columnsCookieName, parseColumns } from "./list-columns";
 import { LeadsFilterBar } from "./leads-filter-bar";
@@ -83,27 +86,32 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
   const exportParams = leadFilterParams(filter).toString();
 
   return (
-    <>
-      <div className="flex flex-wrap items-start gap-2">
-        <div className="min-w-0 basis-full flex-1 sm:basis-0">
-          <LeadsFilterBar filter={filter} sort={sort} size={pageSize} options={options} panelCount={panelFilterCount(chips)} />
-        </div>
-        {total === 0 ? (
-          <div className="flex items-center gap-2">
-            <button type="button" aria-disabled="true" aria-describedby="export-reason" className={cn(buttonVariants({ variant: "outline" }), "cursor-not-allowed opacity-50")}>
-              {active ? "Export filtered CSV" : "Export CSV"}
-            </button>
-            <span id="export-reason" className="text-xs text-muted-foreground">
-              {active ? "No leads match, so there is nothing to export." : "Import leads to export them."}
-            </span>
-          </div>
-        ) : (
-          <a href={`/api/leads/export${exportParams ? `?${exportParams}` : ""}`} download className={cn(buttonVariants({ variant: "outline" }))}>
-            {active ? "Export filtered CSV" : "Export CSV"}
-          </a>
-        )}
-      </div>
-      <ActiveFilters chips={chips} sort={sort} size={pageSize} />
+    <LeadColumnsProvider initial={columns} userId={userId}>
+      <LeadsFilterBar
+        filter={filter}
+        sort={sort}
+        size={pageSize}
+        options={options}
+        panelCount={panelFilterCount(chips)}
+        end={
+          <>
+            {total > 0 && <ColumnsMenu />}
+            {total === 0 ? (
+              <StateTip
+                trigger={<button type="button" aria-disabled="true" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-not-allowed opacity-50 max-sm:h-11")} />}
+                tip={active ? "No leads match, so there is nothing to export." : "Import leads to export them."}
+              >
+                {active ? "Export filtered CSV" : "Export CSV"}
+              </StateTip>
+            ) : (
+              <a href={`/api/leads/export${exportParams ? `?${exportParams}` : ""}`} download className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-sm:h-11")}>
+                {active ? "Export filtered CSV" : "Export CSV"}
+              </a>
+            )}
+          </>
+        }
+      />
+      <ActiveFilterChips chips={chips.map((chip) => ({ key: chip.key, name: chip.name, value: chip.value, href: leadsHref({ filter: chip.without, sort, size: pageSize }) }))} clearHref={leadsHref({ filter: {}, sort, size: pageSize })} />
 
       {total === 0 ? (
         <EmptyState
@@ -128,7 +136,6 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
               // `readLeadActivity` returns an entry for each row it was given.
               activity: activity.get(r.id)!,
             }))}
-            initialColumns={columns}
             userId={userId}
             now={now}
             total={total}
@@ -142,6 +149,6 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
           />
         </SelectionProvider>
       )}
-    </>
+    </LeadColumnsProvider>
   );
 }

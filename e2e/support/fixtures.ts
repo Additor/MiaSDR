@@ -532,3 +532,11 @@ export async function waitForHydrated(locator: Locator): Promise<void> {
       }),
   );
 }
+
+/** Opens a list's Filters panel. The button is a client toggle, so it waits for hydration: a click before that opens nothing. */
+export async function openFilters(page: Page): Promise<void> {
+  const toggle = page.getByTestId("filters-toggle");
+  await waitForHydrated(toggle);
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}

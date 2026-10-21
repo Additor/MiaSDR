@@ -28,8 +28,8 @@ import { personHref } from "../crm/_components/person/person-href";
 import { ReachIcons } from "../crm/_components/person/reach-icons";
 import type { DealMemberOption, DealStageList } from "../crm/_components/deal-form";
 import { bulkActionModel, clearsSelectionOnKey, type BulkMenuItemId } from "./bulk-actions";
-import { ColumnsMenu } from "./columns-menu";
-import { columnsCookie, type OptionalColumn } from "./list-columns";
+import { useLeadColumns } from "./columns-menu";
+import type { OptionalColumn } from "./list-columns";
 import { leadHref, listQueryOf } from "./[id]/list-context";
 import { leadsHref } from "./list-url";
 
@@ -97,8 +97,6 @@ export function LeadsTableView(props: {
   pageSize: number;
   filter: LeadFilter;
   sort: LeadSort;
-  /** The columns the person chose, read from their cookie on the server. */
-  initialColumns: OptionalColumn[];
   userId: string;
   /** The server's clock for this render. Relative times print against it. */
   now: string;
@@ -108,12 +106,8 @@ export function LeadsTableView(props: {
   deals: { stages: DealStageList; members: DealMemberOption[] };
 }) {
   const { rows, total, page, pageCount, pageSize, filter, sort, bulkActions, userId, now, deals } = props;
-  const [columns, setColumns] = useState<OptionalColumn[]>(props.initialColumns);
+  const { columns } = useLeadColumns();
   const shows = (id: "name" | OptionalColumn) => id === "name" || columns.includes(id);
-  function changeColumns(next: OptionalColumn[]) {
-    setColumns(next);
-    document.cookie = columnsCookie(userId, next);
-  }
   const router = useRouter();
   const { selectedIds: ids, isSelected, select, clear } = useSelection();
   const [pending, setPending] = useState<Pending>(null);
@@ -198,9 +192,6 @@ export function LeadsTableView(props: {
 
   return (
     <>
-      <div className="flex justify-end">
-        <ColumnsMenu columns={columns} onChange={changeColumns} />
-      </div>
       {/* Esc inside the table clears the selection; the bar sits after the table. */}
       <div className="min-w-0" onKeyDown={onTableKeyDown}>
         <ScrollableTable>

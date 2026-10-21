@@ -1,16 +1,8 @@
-import type { Page } from "@playwright/test";
-import { deliverInbound, ensureMailbox, expect, makeInboxSyncDue, signInAdmin, sql, test, tick, waitForHydrated } from "./support/fixtures";
+import { deliverInbound, ensureMailbox, expect, makeInboxSyncDue, openFilters, signInAdmin, sql, test, tick } from "./support/fixtures";
 
 const BOX_A = "sdr25a@e2e-corp.test";
 const BOX_B = "sdr25b@e2e-corp.test";
 
-/** The Filters button is a client toggle, so it waits for hydration: a click before that opens nothing. */
-async function openFilters(page: Page) {
-  const toggle = page.getByTestId("inbox-filters-toggle");
-  await waitForHydrated(toggle);
-  await toggle.click();
-  await expect(page.getByRole("form", { name: "Inbox filters" })).toBeVisible();
-}
 
 /**
  * Seeds conversations straight into the database, in the organization that owns the mailbox. The inbound path
@@ -112,7 +104,7 @@ test.describe("inbox filters and views", () => {
     // Filter through the UI: open the panel, pick mailbox A, apply. The URL carries the filter.
     await page.goto("/inbox");
     await openFilters(page);
-    await page.locator("#f-mailbox").selectOption({ label: BOX_A });
+    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("Mailbox").selectOption({ label: BOX_A });
     await page.getByRole("button", { name: "Apply filters" }).click();
     await expect(page).toHaveURL(new RegExp(`mailbox=${boxA}`));
     await expect(page.getByText("27 conversations, page 1 of 2")).toBeVisible();
@@ -178,9 +170,9 @@ test.describe("inbox filters and views", () => {
     // A custom date range through the panel: nothing was written on 2020-01-01.
     await page.goto(`/inbox?mailbox=${boxA}`);
     await openFilters(page);
-    await page.locator("#f-range").selectOption("custom");
-    await page.locator("#f-from").fill("2020-01-01");
-    await page.locator("#f-to").fill("2020-01-01");
+    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("Last message").selectOption("custom");
+    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("From (date, custom range)").fill("2020-01-01");
+    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("To (date, custom range)").fill("2020-01-01");
     await page.getByRole("button", { name: "Apply filters" }).click();
     await expect(page).toHaveURL(/range=custom/);
     await expect(page.getByText("No conversations match")).toBeVisible();

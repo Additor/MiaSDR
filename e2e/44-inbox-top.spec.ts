@@ -86,14 +86,14 @@ test.describe("the top of the Inbox is about conversations", () => {
 
     await page.goto("/inbox");
     const search = page.getByRole("searchbox", { name: "Search inbox" });
-    const toggle = page.getByTestId("inbox-filters-toggle");
+    const toggle = page.getByTestId("filters-toggle");
     const [s, t] = [await search.boundingBox(), await toggle.boundingBox()];
     expect(Math.abs((s?.y ?? 0) + (s?.height ?? 0) / 2 - ((t?.y ?? 0) + (t?.height ?? 0) / 2)), "vertical centers differ by px").toBeLessThan(8);
     await waitForHydrated(toggle);
     await toggle.click();
     await expect(page.getByRole("form", { name: "Inbox filters" })).toBeVisible();
     await toggle.click();
-    await expect(page.getByRole("form", { name: "Inbox filters" })).toHaveCount(0);
+    await expect(page.getByRole("form", { name: "Inbox filters" })).toBeHidden();
   });
 });
 
@@ -135,7 +135,7 @@ test.describe("smoke at 390x844 in dark mode", () => {
     await expectNoHorizontalOverflow(page);
     const targets = {
       more: page.getByTestId("more-views"),
-      filters: page.getByTestId("inbox-filters-toggle"),
+      filters: page.getByTestId("filters-toggle"),
       unread: page.getByRole("group", { name: "Conversation views" }).getByRole("link", { name: "Unread" }),
     };
     for (const [name, target] of Object.entries(targets)) {

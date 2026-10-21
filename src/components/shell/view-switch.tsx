@@ -7,6 +7,8 @@ export interface SwitchItem {
   label: ReactNode;
   active: boolean;
   testId?: string;
+  /** A count beside the label, in one style on every chip row. */
+  count?: number;
 }
 
 /**

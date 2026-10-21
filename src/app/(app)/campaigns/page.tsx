@@ -19,13 +19,23 @@ import { toActor } from "@/shared/api";
 import { LabeledStatusBadge } from "./labeled-status-badge";
 import { NewCampaignButton } from "./new-campaign-button";
 import { FilterChips } from "@/components/shell/filter-chips";
+import { ListPager } from "@/components/shell/list-pager";
+import { ListToolbar } from "@/components/shell/list-toolbar";
+import { SearchField } from "@/components/shell/search-field";
 
 export const metadata: Metadata = { title: "Campaigns" };
 
 export default function CampaignsPage({ searchParams }: PageProps<"/campaigns">) {
   return (
     <>
-      <PageHeader title="Campaigns" />
+      <PageHeader
+        title="Campaigns"
+        actions={
+          <Suspense fallback={null}>
+            <NewCampaign />
+          </Suspense>
+        }
+      />
       <div className="page stack-group">
         <Suspense fallback={<Skeleton className="h-64 w-full" />}>
           <CampaignTable searchParams={searchParams} />
@@ -35,18 +45,23 @@ export default function CampaignsPage({ searchParams }: PageProps<"/campaigns">)
   );
 }
 
+/** The create action sits in the header, as Import does on Leads. It needs the senders the dialog offers. */
+async function NewCampaign() {
+  await connection();
+  const actor = toActor(await requireOrgContext());
+  const [email, linkedin] = await Promise.all([enrollmentAdminStore.listAvailableSenders(actor.organizationId, "email"), enrollmentAdminStore.listAvailableSenders(actor.organizationId, "linkedin")]);
+  return <NewCampaignButton senders={{ email, linkedin }} />;
+}
+
 async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campaigns">["searchParams"] }) {
   await connection();
-  const raw = (await searchParams).show;
+  const params = await searchParams;
+  const raw = params.show;
+  const query = (Array.isArray(params.q) ? params.q[0] : params.q)?.trim() ?? "";
   const show = parseArchiveFilter(raw === "archived" ? "only" : Array.isArray(raw) ? raw[0] : raw);
   const actor = toActor(await requireOrgContext());
-  const [email, linkedin, emailSenders, linkedinSenders] = await Promise.all([
-    listCampaigns(campaignDeps(), actor, show),
-    listLinkedInCampaigns(linkedinCampaignDeps(), actor, show),
-    enrollmentAdminStore.listAvailableSenders(actor.organizationId, "email"),
-    enrollmentAdminStore.listAvailableSenders(actor.organizationId, "linkedin"),
-  ]);
-  const campaigns = [
+  const [email, linkedin] = await Promise.all([listCampaigns(campaignDeps(), actor, show), listLinkedInCampaigns(linkedinCampaignDeps(), actor, show)]);
+  const all = [
     ...email.map((c) => ({
       id: c.id,
       name: c.name,
@@ -74,9 +89,12 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
       progress: linkedinProgressText(c),
     })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const needle = query.toLowerCase();
+  const campaigns = needle ? all.filter((c) => c.name.toLowerCase().includes(needle)) : all;
+  const showParam = show === "only" ? "archived" : show === "all" ? "all" : null;
 
   const filters = (
-    <div className="flex flex-wrap items-center justify-between gap-2">
+    <ListToolbar>
       <FilterChips
         label="Campaign filter"
         items={(
@@ -85,10 +103,13 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
             ["only", "Archived", "/campaigns?show=archived"],
             ["all", "All", "/campaigns?show=all"],
           ] as const
-        ).map(([value, label, href]) => ({ href, label, active: show === value }))}
+        ).map(([value, label, href]) => ({ href: query ? `${href}${href.includes("?") ? "&" : "?"}q=${encodeURIComponent(query)}` : href, label, active: show === value }))}
       />
-      <NewCampaignButton senders={{ email: emailSenders, linkedin: linkedinSenders }} />
-    </div>
+      <form action="/campaigns" className="flex min-w-48 flex-1 items-center">
+        {showParam && <input type="hidden" name="show" value={showParam} />}
+        <SearchField label="Search campaigns" defaultValue={query} placeholder="Search campaign names" className="max-w-sm" />
+      </form>
+    </ListToolbar>
   );
 
   if (campaigns.length === 0) {
@@ -96,9 +117,11 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
       <div className="stack-group">
         {filters}
         <EmptyState
-          title={show === "only" ? "No archived campaigns" : "No campaigns yet"}
+          title={query ? "No campaigns match" : show === "only" ? "No archived campaigns" : "No campaigns yet"}
           description={
-            show === "only"
+            query
+              ? "Try a different name."
+              : show === "only"
               ? "Archive a completed campaign to move it here. Its sends and analytics stay."
               : "Create one, add leads from your database, then start it once a mailbox or LinkedIn account is connected."
           }
@@ -109,9 +132,6 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
   return (
     <div className="stack-group">
       {filters}
-      <p className="text-sm text-muted-foreground">
-        {email.length.toLocaleString("en-US")} email, {linkedin.length.toLocaleString("en-US")} LinkedIn
-      </p>
       <Table>
         <TableHeader>
           <TableRow>
@@ -161,6 +181,7 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
           ))}
         </TableBody>
       </Table>
+      <ListPager total={campaigns.length} page={1} pageCount={1} noun={["campaign", "campaigns"]} hrefFor={() => "/campaigns"} />
     </div>
   );
 }

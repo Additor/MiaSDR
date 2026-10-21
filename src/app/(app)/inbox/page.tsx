@@ -21,9 +21,10 @@ import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/w
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { cn } from "@/lib/utils";
 import { toActor } from "@/shared/api";
-import { ActiveFilters, FilterPanel } from "./filter-panel";
+import { ActiveFilterChips } from "@/components/shell/filter-panel";
+import { ListToolbar } from "@/components/shell/list-toolbar";
+import { activeFilterChips, clearedInboxHref, InboxFilterForm } from "./filter-panel";
 import { MoreViews } from "./more-views";
-import { SearchAndFilters } from "./search-and-filters";
 import { ConversationRow } from "./conversation-row";
 import { groupByDayInZone, rowTimeLabel } from "./day-groups";
 import { ListKeys } from "@/components/shell/list-keys";
@@ -148,8 +149,8 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
   // What waits on a person is not a view of conversations. It has its own page, and this line says how much is there.
   const waiting = counts?.work.mine ?? 0;
   const status =
-    waiting > 0 ? (
-      <Link href="/actions" className="inline-flex min-h-8 items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline max-sm:min-h-11 sm:ml-auto" data-testid="waiting-in-actions">
+    waiting > 0 && !scheduled ? (
+      <Link href="/actions" className="inline-flex min-h-8 items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline max-sm:min-h-11" data-testid="waiting-in-actions">
         <span className="font-semibold text-sidebar-count tabular-nums">{waiting}</span> waiting in Actions
       </Link>
     ) : null;
@@ -163,15 +164,16 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
           { href: link({ view: "scheduled", page: 1 }), label: "Scheduled", active: scheduled },
         ]}
       />
-      {!scheduled && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <FilterChips label="Conversation views" items={CHIP_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view }))} />
-          <MoreViews items={MORE_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view }))} />
-        </div>
-      )}
-
-      <SearchAndFilters count={activeFilterCount(params)} search={search} status={status} panel={options ? <FilterPanel params={params} options={options} /> : null} />
-      {options && <ActiveFilters params={params} options={options} />}
+      <ListToolbar filters={options ? { count: activeFilterCount(params), panel: <InboxFilterForm params={params} options={options}/> } : undefined} end={status}>
+        {!scheduled && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <FilterChips label="Conversation views" items={CHIP_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view }))} />
+            <MoreViews items={MORE_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view }))} />
+          </div>
+        )}
+        {search}
+      </ListToolbar>
+      {options && <ActiveFilterChips chips={activeFilterChips(params, options)} clearHref={clearedInboxHref(params)} />}
 
       {!loaded && (
         <div role="alert" className="grid justify-items-start gap-2 py-8 text-sm" data-testid="inbox-load-failed">

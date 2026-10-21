@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { columnCells } from "./support/table";
-import { e2eOrganizationId, expect, expectNoHorizontalOverflow, MOBILE_DARK, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
+import { e2eOrganizationId, expect, expectNoHorizontalOverflow, MOBILE_DARK, openFilters, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
 
 /**
  * The people list answers "who do I work next": the lead status token with the campaign as a second line, last contact and the Reach icons (email and LinkedIn) per lead,
@@ -86,18 +86,19 @@ test.describe("lead list status columns, chips and column set", () => {
 
     // One submit button, one Clear filters while the search is applied, none once its chip is removed.
     const form = page.locator('form[aria-label="Filter leads"]');
-    await expect(form.locator('button[type="submit"]')).toHaveCount(1);
+    // The search's hidden submit and Apply filters.
+    await expect(form.locator('button[type="submit"]')).toHaveCount(2);
     await expect(page.getByRole("link", { name: "Clear filters" })).toHaveCount(1);
     await page.getByRole("link", { name: "Remove filter Search: s30" }).click();
     await expect(page.getByRole("link", { name: "Clear filters" })).toHaveCount(0);
 
     await page.goto("/leads?q=s30");
-    await page.locator("summary", { hasText: "Filters" }).click();
+    await openFilters(page);
     await page.getByLabel("Replied", { exact: true }).selectOption("yes");
     await page.getByRole("button", { name: "Apply filters" }).click();
     await expect(page).toHaveURL(/replied=yes/);
     await expect.poll(() => names(page)).toEqual(["S30 Rita Replied"]);
-    await expect(page.locator("summary", { hasText: "Filters (1)" })).toBeVisible();
+    await expect(page.getByTestId("filters-toggle")).toHaveText(/^Filters\s*1 in use$/);
     const chip = page.getByRole("link", { name: "Remove filter Replied: Yes" });
     await expect(chip).toBeVisible();
     await chip.click();
@@ -108,8 +109,8 @@ test.describe("lead list status columns, chips and column set", () => {
     await page.goto("/leads?q=s30&lastFrom=2999-01-01");
     await expect(page.getByText("No leads match", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Clear filters" })).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "Export filtered CSV" })).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText("No leads match, so there is nothing to export.")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Export filtered CSV/ })).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByRole("button", { name: /Export filtered CSV/ })).toContainText("No leads match, so there is nothing to export.");
 
     // Last contact filter finds the lead contacted three days ago.
     const today = new Date().toISOString().slice(0, 10);

@@ -21,6 +21,7 @@ export function FilterChips({ label, items, className }: { label: string; items:
           )}
         >
           {item.label}
+          {item.count !== undefined && <span className="ml-1.5 tabular-nums opacity-70">{item.count.toLocaleString("en-US")}</span>}
         </Link>
       ))}
     </div>
