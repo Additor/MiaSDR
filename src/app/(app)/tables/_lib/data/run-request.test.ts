@@ -21,8 +21,8 @@ describe("runCellSource", () => {
 });
 
 describe("cellRunBody", () => {
-  it("names the source column, exactly one row, replaces a filled cell and limits the run to one row", () => {
-    expect(cellRunBody("find", "row-1")).toEqual({ columnKey: "find", rowIds: ["row-1"], onlyEmpty: false, maxRows: 1 });
+  it("names the source column, exactly one row, replaces a filled cell, asks the providers again and limits the run to one row", () => {
+    expect(cellRunBody("find", "row-1")).toEqual({ columnKey: "find", rowIds: ["row-1"], onlyEmpty: false, maxRows: 1, fresh: true });
   });
 });
 

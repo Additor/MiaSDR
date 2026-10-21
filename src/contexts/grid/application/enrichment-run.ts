@@ -113,7 +113,7 @@ export async function requestRun(deps: RunDeps, actor: Actor, tableId: string, r
   }
   assertWithinLimits({ rows: rowCount, worstCaseCents: worst, maxRows, maxCostCents: request.maxCostCents });
 
-  const queued = await deps.store.enqueue(org, tableId, queue, { priority: request.columnKey ? 10 : 0, now: deps.now() });
+  const queued = await deps.store.enqueue(org, tableId, queue, { priority: request.columnKey ? 10 : 0, now: deps.now(), fresh: request.fresh === true });
   kickWorker(deps, queued);
   return { queued, rows: rowCount, columns: targets.map((c) => c.key), worstCaseCostCents: worst, jobs: await deps.store.counts(org, tableId) };
 }

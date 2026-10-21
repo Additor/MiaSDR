@@ -24,6 +24,8 @@ export interface RunRequest {
   firstN?: number;
   /** Refuse the run when the worst-case provider cost in cents is higher. No cap when unset. */
   maxCostCents?: number;
+  /** Ask the providers again: no reused answer, and no state from an earlier try. A person's press on one cell sets it. */
+  fresh?: boolean;
 }
 
 export function resolveMaxRows(requested: number | undefined): number {

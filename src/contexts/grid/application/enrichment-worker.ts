@@ -80,7 +80,7 @@ async function executeStep(
   inputsMap: Record<string, string>,
   cells: Record<string, unknown>,
   gate: LocalRateGate,
-  reuseDays: number,
+  reuse: { days: number; fresh: boolean },
 ): Promise<StepExecution> {
   const provider = await deps.providers.getByKey(job.organizationId, step.providerKey);
   if (!provider || !provider.enabled) return { kind: "unavailable", message: `Provider "${step.providerKey}" is not connected or is switched off.` };
@@ -103,10 +103,11 @@ async function executeStep(
   }
   if (!inputsCovered(action, (key) => key in inputs)) return { kind: "unavailable", message: `${action.name} needs ${acceptsText(action)}.` };
 
-  const reusable = reuseDays > 0 && action.creditsPerCall !== undefined;
+  const reusable = reuse.days > 0 && action.creditsPerCall !== undefined;
   const key = reusable ? lookupKey(provider.key, action.key, inputs) : undefined;
-  if (key) {
-    const earlier = await deps.store.reusableAnswer(job.organizationId, key, new Date(deps.now().getTime() - reuseDays * 86_400_000));
+  // A fresh run still stores its answer for later cells; it only skips taking one.
+  if (key && !reuse.fresh) {
+    const earlier = await deps.store.reusableAnswer(job.organizationId, key, new Date(deps.now().getTime() - reuse.days * 86_400_000));
     if (earlier) {
       return {
         kind: "result",
@@ -156,7 +157,7 @@ async function executeStep(
       request: boundedAudit(redactSecrets(answer.request ?? { action: action.key, inputKeys: Object.keys(inputs) }, secrets)),
       response: boundedAudit(redactSecrets(answer.response ?? null, secrets)),
       // A found value or a verdict is worth reusing; an empty miss is asked again next time.
-      ...(key && (answer.outcome === "hit" || hasCellValue(answer.primary)) ? { reuse: { lookupKey: key } } : {}),
+      ...(key && (answer.outcome === "hit" || hasCellValue(answer.primary)) ? { reuse: { lookupKey: key, outcome: answer.outcome } } : {}),
     };
   } catch (error) {
     if (error instanceof ProviderError) {
@@ -190,7 +191,7 @@ const ledger = (attempts: StepAttempt[]): LedgerRun[] =>
     outcome: a.outcome === "skipped" ? "skipped" : a.outcome,
     costCents: a.costCents,
     credits: a.credits ?? null,
-    ...(a.reuse?.lookupKey ? { lookupKey: a.reuse.lookupKey, answer: boundedAudit({ primary: a.reuse.primary ?? null, outputs: a.reuse.outputs ?? {} }) as LedgerRun["answer"] } : {}),
+    ...(a.reuse?.lookupKey ? { lookupKey: a.reuse.lookupKey, answer: boundedAudit({ primary: a.reuse.primary ?? null, outputs: a.reuse.outputs ?? {}, ...(a.reuse.outcome ? { outcome: a.reuse.outcome } : {}) }) as LedgerRun["answer"] } : {}),
     ...(a.reuse?.reused ? { reused: true } : {}),
     latencyMs: a.latencyMs ?? null,
     request: sanitizeOutput(a.request ?? { action: a.step.actionKey }),
@@ -208,7 +209,7 @@ async function succeedOnce(deps: WorkerDeps, job: CellJob, write: CellWrite, run
     return (await deps.store.succeed(job, write, runs, spec)) ? "saved" : "lease_lost";
   } catch (error) {
     const reason = cleanError(error instanceof Error ? error.message : String(error));
-    const message = sanitizeOutputString(`The provider answered and was paid, but the result could not be saved: ${reason}. It was not run again; retry the cell to pay for a new call.`, 500);
+    const message = sanitizeOutputString(`The provider answered and was paid, but the result could not be saved: ${reason}. It was not run again. Retry failed saves it without paying again when the column reuses answers; running the cell asks the provider again.`, 500);
     console.error(`[grid] result of ${job.columnKey} could not be saved after a paid call:`, reason);
     try {
       await deps.store.fail(job, message, runs);
@@ -221,9 +222,18 @@ async function succeedOnce(deps: WorkerDeps, job: CellJob, write: CellWrite, run
   }
 }
 
-/** The job's saved state, read with care: it comes back from a JSON column. */
-function retryStateOf(job: CellJob): { missed: Set<string>; fallback?: MissVerdict; spentCents: number; spentCredits: number } {
-  const state = job.providerState ?? {};
+/** Hash of the values the column reads from the row, so saved state from other inputs is not trusted. */
+const inputsKeyOf = (columnKey: string, inputs: Record<string, string>, cells: Record<string, unknown>) =>
+  lookupKey("cell", columnKey, Object.fromEntries(Object.entries(inputs).map(([inputKey, column]) => [inputKey, ownCell(cells, column) ?? null])));
+
+/**
+ * The job's saved state, read with care: it comes back from a JSON column. State saved for other input values (the row
+ * was edited since) is dropped, so a step that missed for the old email is asked about the new one.
+ */
+function retryStateOf(job: CellJob, inputsKey: string): { missed: Set<string>; fallback?: MissVerdict; spentCents: number; spentCredits: number; fresh: boolean } {
+  const saved = job.providerState ?? {};
+  const fresh = saved.fresh === true;
+  const state = saved.inputsKey === undefined || saved.inputsKey === inputsKey ? saved : {};
   const missed = Array.isArray(state.missed) ? state.missed.filter((id): id is string => typeof id === "string") : [];
   const f = state.fallback;
   const fallback =
@@ -231,18 +241,21 @@ function retryStateOf(job: CellJob): { missed: Set<string>; fallback?: MissVerdi
       ? { step: { providerKey: f.step.providerKey, actionKey: f.step.actionKey }, primary: f.primary, outputs: f.outputs }
       : undefined;
   const positive = (n: unknown) => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
-  return { missed: new Set(missed), fallback, spentCents: positive(state.spentCents), spentCredits: positive(state.spentCredits) };
+  return { missed: new Set(missed), fallback, spentCents: positive(state.spentCents), spentCredits: positive(state.spentCredits), fresh };
 }
 
+/** A transient error that used up an attempt. A vendor's 429 told the cell to wait, which is not the cell's fault. */
+const failedTry = (attempts: StepAttempt[]) => attempts.some((a) => a.outcome === "error" && a.retryable && !a.waited);
+
 /** True when this try used the cell's last attempt on a transient error, so a retry would fail it. */
-const lastAttempt = (job: CellJob, attempts: StepAttempt[]) => attempts.some((a) => a.outcome === "error" && a.retryable) && job.attempts >= job.maxAttempts;
+const lastAttempt = (job: CellJob, attempts: StepAttempt[]) => failedTry(attempts) && job.attempts >= job.maxAttempts;
 
 async function finishRetry(deps: WorkerDeps, job: CellJob, attempts: StepAttempt[], state: RetryState, retryAfterMs: number | undefined, message: string) {
-  const sawTransientError = attempts.some((a) => a.outcome === "error" && a.retryable);
-  // A pure rate-limit wait does not use up an attempt: nothing was wrong with the cell.
+  const sawTransientError = failedTry(attempts);
+  // A rate-limit wait, ours or the vendor's, does not use up an attempt: nothing was wrong with the cell.
   const consumeAttempt = sawTransientError;
   if (consumeAttempt && job.attempts >= job.maxAttempts) {
-    await deps.store.fail(job, message, ledger(attempts));
+    await deps.store.fail(job, message, ledger(attempts), state);
     return "failed";
   }
   const delay = Math.max(retryAfterMs ?? 0, sawTransientError ? retryDelayMs(job.attempts) : 0, 1000);
@@ -280,9 +293,10 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
     creditEstimates.set(stepId(step), action?.creditsPerCall ?? 0);
   }
 
-  const carried = retryStateOf(job);
+  const inputsKey = inputsKeyOf(column.key, plan.inputs, cells);
+  const carried = retryStateOf(job, inputsKey);
   const result = await runWaterfall(plan.steps, async (step) => {
-    const result = await executeStep(deps, job, step, plan.inputs, cells, gate, plan.reuseDays);
+    const result = await executeStep(deps, job, step, plan.inputs, cells, gate, { days: plan.reuseDays, fresh: carried.fresh });
     return result.kind === "result" ? settleVerdict(step.actionKey, result, plan.settled) : result;
   }, {
     maxCostCents: plan.maxCostCents,
@@ -299,7 +313,7 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   // On the last attempt a paid miss verdict is saved as the cell's answer instead of failing the cell.
   if (result.status === "retry" && !(result.fallback && lastAttempt(job, result.attempts))) {
     const message = result.attempts.find((a) => a.outcome === "error")?.detail ?? "Every provider was busy or unavailable. The cell will run again soon.";
-    const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents, spentCredits: result.spentCredits };
+    const state: RetryState = { missed: result.missed, ...(result.fallback ? { fallback: { ...result.fallback, outputs: sanitizeOutput(result.fallback.outputs) as Record<string, unknown> } } : {}), spentCents: result.spentCents, spentCredits: result.spentCredits, inputsKey, ...(carried.fresh ? { fresh: true } : {}) };
     return finishRetry(deps, job, result.attempts, state, result.retryAfterMs, message);
   }
   if (result.status === "failed") {

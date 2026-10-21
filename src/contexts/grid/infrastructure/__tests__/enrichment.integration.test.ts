@@ -459,7 +459,73 @@ describeDb("grid enrichment runs", () => {
     expect(calls).toBe(3);
   });
 
-  it("holds the other cells of a tick once the vendor answers 429, without spending their attempts", async () => {
+  it("keeps a waiting cell's state when it is queued again, and drops it once the row's inputs change", async () => {
+    const { actor, table, rows } = await fixture();
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
+    await addFake(d, actor, "fake-b", { defaultCostCents: 3 });
+    const { ProviderError } = await import("../../application/enrichment-ports");
+    const asked: string[] = [];
+    f.handler = async (call) => {
+      asked.push(`${call.provider.key}:${String(call.inputs.fullName)}`);
+      if (call.provider.key === "fake-b") return { outcome: "miss", primary: "catch_all", outputs: { email: "ada@acme.com", confidence: 40 } };
+      throw new ProviderError("upstream 503", true);
+    };
+    await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
+      inputs: { fullName: "name", companyDomain: "domain" },
+      steps: [{ providerKey: "fake-a", actionKey: "find-email" }, { providerKey: "fake-b", actionKey: "find-email" }],
+      selectedOutputs: ["email"],
+      autoRun: false,
+    });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const [before] = await sql`select provider_state, run_after from grid_jobs where row_id = ${rows[0]}`;
+    expect(before.provider_state).toMatchObject({ missed: ["fake-b/find-email"], spentCents: 3 });
+
+    // Run again while the cell waits: the state and the later run_after stay.
+    await m.run.requestRun(d.runDeps, actor, table);
+    const [again] = await sql`select provider_state, run_after from grid_jobs where row_id = ${rows[0]}`;
+    expect(again.provider_state).toEqual(before.provider_state);
+    expect(again.run_after.getTime()).toBe(before.run_after.getTime());
+    await sql`update grid_jobs set run_after = now() - interval '1 minute' where row_id = ${rows[0]}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(asked).toEqual(["fake-a:Ada Lovelace", "fake-b:Ada Lovelace", "fake-a:Ada Lovelace"]);
+
+    // A new name is a new lookup: the step that missed for the old one is asked again.
+    await sql`update grid_rows set cells = cells || '{"name":"Ada King"}'::jsonb where id = ${rows[0]}`;
+    await sql`update grid_jobs set run_after = now() - interval '1 minute' where row_id = ${rows[0]}`;
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(asked.slice(3)).toEqual(["fake-a:Ada King", "fake-b:Ada King"]);
+  });
+
+  it("a fresh run asks the vendor again, and a reuse reads the vendor's verdict with its own column's rules", async () => {
+    const { actor, table, rows } = await fixture([{ about: "ada@acme.com" }]);
+    let calls = 0;
+    const vendorFetch = (async () => {
+      calls++;
+      return new Response(JSON.stringify({ data: { email: "ada@acme.com", status: "accept_all", score: 60 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const d = deps(fake(), { fetch: vendorFetch });
+    await m.providers.createProvider(d.providerDeps, actor, { adapter: "hunter", credentials: { apiKey: "hunter-key-0123456789" } });
+    // The first column stops at catch-all; the second keeps the default and must not inherit that.
+    const settled = await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "hunter", actionKey: "verify-email", inputs: { email: "about" }, selectedOutputs: ["status"], settledStatuses: ["valid", "invalid", "disposable", "catch_all"], autoRun: false });
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: settled[0].key });
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const plain = await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "hunter", actionKey: "verify-email", inputs: { email: "about" }, selectedOutputs: ["status"], autoRun: false });
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: plain[0].key });
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(calls).toBe(1);
+    const row = await cells(rows[0]);
+    expect(row.cell_meta[settled[0].key]).toMatchObject({ outcome: "hit" });
+    expect(row.cell_meta[plain[0].key]).toMatchObject({ outcome: "miss" });
+
+    await m.run.requestRun(d.runDeps, actor, table, { columnKey: plain[0].key, rowIds: [rows[0]], onlyEmpty: false, fresh: true });
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect(calls).toBe(2);
+  });
+
+  it("holds the other cells of a tick once the vendor answers 429, and no cell spends an attempt on the wait", async () => {
     const { actor, table } = await fixture([1, 2, 3, 4, 5, 6].map((i) => ({ name: `Person ${i}`, domain: "acme.com" })));
     const f = fake();
     const d = deps(f);
@@ -476,8 +542,8 @@ describeDb("grid enrichment runs", () => {
     expect(calls).toBe(1);
     const queued = await sql`select attempts, run_after > now() + interval '20 seconds' as later from grid_jobs where table_id = ${table} and status = 'queued'`;
     expect(queued).toHaveLength(6);
-    // Only the cell that got the 429 used an attempt; the held ones wait for free.
-    expect(queued.map((j) => j.attempts).sort()).toEqual([0, 0, 0, 0, 0, 1]);
+    // A 429 is the vendor asking to wait: neither the cell that got it nor the held ones use an attempt.
+    expect(queued.map((j) => j.attempts)).toEqual([0, 0, 0, 0, 0, 0]);
     expect(queued.every((j) => j.later)).toBe(true);
   });
 

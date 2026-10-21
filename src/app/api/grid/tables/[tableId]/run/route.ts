@@ -10,6 +10,7 @@ const body = z.object({
   maxRows: z.number().int().optional(),
   firstN: z.number().int().optional(),
   maxCostCents: z.number().optional(),
+  fresh: z.boolean().optional(),
 });
 
 /** Job counts for the toolbar. */

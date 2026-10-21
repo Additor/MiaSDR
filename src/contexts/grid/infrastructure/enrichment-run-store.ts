@@ -87,7 +87,7 @@ async function markQueued(tx: Tx, organizationId: string, tableId: string, cells
   }
 }
 
-async function enqueueIn(tx: Tx, organizationId: string, tableId: string, targets: EnqueueTarget[], options: { priority: number; now: Date }): Promise<number> {
+async function enqueueIn(tx: Tx, organizationId: string, tableId: string, targets: EnqueueTarget[], options: { priority: number; now: Date; fresh?: boolean }): Promise<number> {
   let queued = 0;
   for (let i = 0; i < targets.length; i += CHUNK) {
     const chunk = targets.slice(i, i + CHUNK);
@@ -99,10 +99,34 @@ async function enqueueIn(tx: Tx, organizationId: string, tableId: string, target
     if (live.length === 0) continue;
     const inserted = await tx
       .insert(gridJobs)
-      .values(live.map((t) => ({ organizationId, tableId, rowId: t.rowId, columnKey: t.columnKey, status: "queued", priority: options.priority, attempts: 0, runAfter: new Date(options.now.getTime() - DUE_SKEW_MS + (t.delaySeconds ?? 0) * 1000) })))
+      .values(
+        live.map((t) => ({
+          organizationId,
+          tableId,
+          rowId: t.rowId,
+          columnKey: t.columnKey,
+          status: "queued",
+          priority: options.priority,
+          attempts: 0,
+          providerState: options.fresh ? { fresh: true } : null,
+          runAfter: new Date(options.now.getTime() - DUE_SKEW_MS + (t.delaySeconds ?? 0) * 1000),
+        })),
+      )
       .onConflictDoUpdate({
         target: [gridJobs.rowId, gridJobs.columnKey],
-        set: { status: "queued", attempts: 0, error: null, providerState: null, lockedAt: null, priority: options.priority, runAfter: sql`excluded.run_after`, updatedAt: new Date() },
+        // Queuing again keeps the steps that missed, the verdict and the spend of earlier tries, so nothing is paid
+        // twice and the caps hold; the worker drops that state when the inputs changed. A queued job also keeps a
+        // later run_after, which is a vendor's wait. A fresh run starts over.
+        set: {
+          status: "queued",
+          attempts: 0,
+          error: null,
+          providerState: options.fresh ? sql`'{"fresh":true}'::jsonb` : sql`${gridJobs.providerState}`,
+          lockedAt: null,
+          priority: options.priority,
+          runAfter: options.fresh ? sql`excluded.run_after` : sql`case when ${gridJobs.status} = 'queued' then greatest(${gridJobs.runAfter}, excluded.run_after) else excluded.run_after end`,
+          updatedAt: new Date(),
+        },
         // A job in flight is left alone: queuing it again would orphan the run in progress.
         where: sql`${gridJobs.status} not in ('running', 'waiting')`,
       })
@@ -259,7 +283,8 @@ export const drizzleGridRunStore: GridRunStore = {
       if (options.columnKey) where.push(eq(gridJobs.columnKey, options.columnKey));
       const rows = await tx
         .update(gridJobs)
-        .set({ status: "queued", attempts: 0, error: null, providerState: null, lockedAt: null, runAfter: new Date(options.now.getTime() - DUE_SKEW_MS), updatedAt: new Date() })
+        // The state of the failed tries stays, so a retry does not pay again for the steps that already missed.
+        .set({ status: "queued", attempts: 0, error: null, lockedAt: null, runAfter: new Date(options.now.getTime() - DUE_SKEW_MS), updatedAt: new Date() })
         .where(and(...where))
         .returning({ rowId: gridJobs.rowId, columnKey: gridJobs.columnKey });
       await markQueued(tx, organizationId, tableId, rows);
@@ -413,9 +438,11 @@ export const drizzleGridRunStore: GridRunStore = {
       .where(and(eq(gridCellRuns.organizationId, organizationId), eq(gridCellRuns.lookupKey, lookupKey), sql`${gridCellRuns.createdAt} > ${since.toISOString()}::timestamptz`))
       .orderBy(desc(gridCellRuns.createdAt))
       .limit(1);
-    const answer = row?.answer as { primary?: unknown; outputs?: unknown } | null | undefined;
+    const answer = row?.answer as { primary?: unknown; outputs?: unknown; outcome?: unknown } | null | undefined;
     if (!row || (row.outcome !== "hit" && row.outcome !== "miss") || !answer || typeof answer.outputs !== "object" || answer.outputs === null) return null;
-    return { id: row.id, createdAt: row.createdAt, outcome: row.outcome, answer: { primary: answer.primary ?? null, outputs: answer.outputs as Record<string, unknown> } };
+    // The vendor's own outcome when the row kept it; the reusing column applies its own settled verdicts to it.
+    const outcome = answer.outcome === "hit" || answer.outcome === "miss" ? answer.outcome : row.outcome;
+    return { id: row.id, createdAt: row.createdAt, outcome, answer: { primary: answer.primary ?? null, outputs: answer.outputs as Record<string, unknown> } };
   },
 
   async succeed(job, write, runs, cascade) {
@@ -479,9 +506,13 @@ export const drizzleGridRunStore: GridRunStore = {
     });
   },
 
-  async fail(job, error, runs) {
+  async fail(job, error, runs, state) {
     return db.transaction(async (tx) => {
-      const done = await tx.update(gridJobs).set({ status: "failed", lockedAt: null, error: sanitizeOutputString(error, 1000), updatedAt: new Date() }).where(fenced(job)).returning({ id: gridJobs.id });
+      const done = await tx
+        .update(gridJobs)
+        .set({ status: "failed", lockedAt: null, error: sanitizeOutputString(error, 1000), ...(state ? { providerState: state } : {}), updatedAt: new Date() })
+        .where(fenced(job))
+        .returning({ id: gridJobs.id });
       if (done.length === 0) return false;
       await patchRow(tx, job.organizationId, job.tableId, job.rowId, {}, { [job.columnKey]: { status: "error", error: sanitizeOutputString(error, 500), runAt: new Date().toISOString() } });
       await writeRuns(tx, job, runs);

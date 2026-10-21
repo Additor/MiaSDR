@@ -25,6 +25,8 @@ export type StepExecution =
 export interface ReuseNote {
   lookupKey?: string;
   reused?: boolean;
+  /** The vendor's own hit or miss, before a column's settled verdicts, so a reuse reads it with its own. */
+  outcome?: "hit" | "miss";
 }
 
 export interface StepAttempt {
@@ -40,6 +42,8 @@ export interface StepAttempt {
   detail?: string;
   /** True for an error worth retrying, a rate limit, or a skip caused by the cost cap. */
   retryable?: boolean;
+  /** True for an error that told the cell how long to wait (a vendor's 429). Waiting uses no attempt. */
+  waited?: boolean;
   /** Set on an answer that later cells may reuse, with the answer to store, or on an answer that was reused. */
   reuse?: ReuseNote & { primary?: unknown; outputs?: Record<string, unknown> };
 }
@@ -138,7 +142,16 @@ export async function runWaterfall(
       answered = true;
     } else if (result.kind === "error") {
       spent += result.costCents ?? 0;
-      attempts.push({ step, outcome: "error", costCents: result.costCents ?? 0, detail: result.message, request: result.request, response: result.response, retryable: result.transient });
+      attempts.push({
+        step,
+        outcome: "error",
+        costCents: result.costCents ?? 0,
+        detail: result.message,
+        request: result.request,
+        response: result.response,
+        retryable: result.transient,
+        ...(result.transient && result.retryAfterMs !== undefined ? { waited: true } : {}),
+      });
       if (result.transient) {
         transient = true;
         if (result.retryAfterMs !== undefined) limitedAfterMs = Math.min(limitedAfterMs ?? Infinity, result.retryAfterMs);

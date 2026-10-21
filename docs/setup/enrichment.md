@@ -79,7 +79,7 @@ MiaSDR asks People Data Labs for work fields only (work email, job title, compan
 
 ## Reusing answers
 
-When a vendor answered the same lookup in your organization within the last 30 days, a cell takes that answer instead of calling again: the same provider, the same action and the same inputs, with case and outer space ignored. The reused call records 0 cents and 0 credits, marks the ledger row as reused, and does not count against the rate limit. MiaSDR reuses found values and verdicts (a catch-all too); an empty "not found" is asked again. Set "Reuse an answer for the same lookup (days)" in the dialog, or `reuseDays` on the column, from 0 (always ask) to 365. The 30 days count from the vendor's answer, not from a reuse. Custom HTTP API providers never reuse, because their actions may do more than look something up.
+When a vendor answered the same lookup in your organization within the last 30 days, a cell takes that answer instead of calling again: the same provider, the same action and the same inputs, with case and outer space ignored. The reused call records 0 cents and 0 credits, marks the ledger row as reused, and does not count against the rate limit. MiaSDR reuses found values and verdicts (a catch-all too); an empty "not found" is asked again. Set "Reuse an answer for the same lookup (days)" in the dialog, or `reuseDays` on the column, from 0 (always ask) to 365. The 30 days count from the vendor's answer, not from a reuse. A reuse reads the vendor's own verdict with its column's settled verdicts, so a column that stops at catch-all does not make another column stop there. The run button of a single cell (or Cmd+Enter) asks the vendor again and skips reuse; a table run and Retry failed reuse. Custom HTTP API providers never reuse, because their actions may do more than look something up.
 
 The stored answer lives in the ledger row of the call that paid for it, under a sha256 of the lookup. It goes when its table goes.
 
@@ -104,7 +104,7 @@ When a waterfall step is rate limited, the cell asks the next step by default. T
 | 401, or a body that says the key is wrong | The key is wrong. The step fails and is not retried. |
 | 403 | The key is wrong, or your plan does not include the endpoint. The step fails. Hunter's 403 is its rate limit and retries. |
 | 402, Hunter's 429, or a body that says the credits ran out | Out of credits. The step fails and a waterfall moves on. |
-| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries. Steps that already missed are not asked again, and a catch-all or unknown verdict from an earlier try stays. |
+| 429, 5xx, timeout, Hunter's 202 and 222 | Temporary. The cell retries. Steps that already missed are not asked again, and a catch-all or unknown verdict and the spend of earlier tries stay, also when you run the table again or press Retry failed. Once you change the row's inputs, the cell starts over. A 429 uses no attempt. |
 | Hunter's 451 | The person asked Hunter not to process their data. The step fails. |
 | Any other 4xx | The input is wrong for that vendor. The step fails. |
 

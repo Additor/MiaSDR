@@ -26,8 +26,11 @@ export function runCellSource<C extends ColumnLike>(column: ColumnLike, columns:
   return source && RUNNER_TYPES_WITH_RUN.has(source.type) ? source : null;
 }
 
-/** The run request for one cell. `onlyEmpty` is off so the person's explicit press replaces a filled cell. */
-export const cellRunBody = (sourceKey: string, rowId: string) => ({ columnKey: sourceKey, rowIds: [rowId], onlyEmpty: false, maxRows: 1 });
+/**
+ * The run request for one cell. `onlyEmpty` is off so the person's explicit press replaces a filled cell, and `fresh`
+ * asks the providers again instead of reusing an earlier answer.
+ */
+export const cellRunBody = (sourceKey: string, rowId: string) => ({ columnKey: sourceKey, rowIds: [rowId], onlyEmpty: false, maxRows: 1, fresh: true });
 
 /** A whole number in [min, max] read from text, or null. */
 export function wholeNumber(text: string, min: number, max: number): number | null {

@@ -151,6 +151,10 @@ export interface RetryState {
   fallback?: MissVerdict;
   spentCents?: number;
   spentCredits?: number;
+  /** Hash of the input values the state belongs to. A row edited since then starts over. */
+  inputsKey?: string;
+  /** Set by a person's fresh run: every step asks its provider, with no reused answer. */
+  fresh?: boolean;
 }
 
 export interface CellJob {
@@ -204,6 +208,8 @@ export interface ProviderUsage {
 export interface ReusableAnswer {
   primary: unknown;
   outputs: Record<string, unknown>;
+  /** The vendor's own hit or miss. The ledger row's outcome went through the paying column's settled verdicts. */
+  outcome?: "hit" | "miss";
 }
 
 /** Worst-case cents per cell of each runnable column, so the store can apply the cost cap inside the finishing transaction. */
@@ -251,7 +257,11 @@ export interface GridRunStore {
   updateColumn(organizationId: string, tableId: string, columnId: string, patch: { config?: Record<string, unknown>; dependsOn?: string[]; autoRun?: boolean }): Promise<ColumnRow | null>;
 
   /** One job per (row, column). A job that is queued again goes back to `queued`; a running one is left alone. Returns the cells queued. */
-  enqueue(organizationId: string, tableId: string, targets: EnqueueTarget[], options: { priority: number; now: Date }): Promise<number>;
+  /**
+   * A job queued again keeps what earlier tries left (the worker drops it once the inputs change) and any later
+   * `runAfter` a vendor asked for. `fresh` starts it over and skips reused answers.
+   */
+  enqueue(organizationId: string, tableId: string, targets: EnqueueTarget[], options: { priority: number; now: Date; fresh?: boolean }): Promise<number>;
   /** Removes queued and waiting jobs, clears their cell state and writes a `cancelled` ledger row each. Running jobs finish. */
   cancel(organizationId: string, tableId: string): Promise<number>;
   /** Puts failed jobs back in the queue with a fresh attempt count. Succeeded cells are not touched. */
@@ -279,7 +289,8 @@ export interface GridRunStore {
   /** Each finisher returns false when the lease was lost, and then writes nothing. */
   succeed(job: CellJob, write: CellWrite, runs: LedgerRun[], cascade: CascadeSpec | false): Promise<boolean>;
   retryLater(job: CellJob, options: { runAfter: Date; error: string; consumeAttempt: boolean; state: RetryState; runs: LedgerRun[] }): Promise<boolean>;
-  fail(job: CellJob, error: string, runs: LedgerRun[]): Promise<boolean>;
+  /** `state` keeps what the failed tries left, so Retry failed does not pay again for steps that missed. */
+  fail(job: CellJob, error: string, runs: LedgerRun[], state?: RetryState): Promise<boolean>;
   /** The cell had nothing to work with. The job ends and the cell returns to idle. */
   skip(job: CellJob, reason: string): Promise<boolean>;
 
