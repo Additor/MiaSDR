@@ -147,11 +147,21 @@ test.describe("deals pipeline", () => {
     await expect(card("New")).toHaveCount(0);
     await expect(page.getByText(`Moved ${DEAL} to Meeting.`)).toBeVisible();
     await expect(column(page, "Meeting").locator("header")).toContainText("1");
-    // The board keeps the moved card's new version, so it moves again without a reload.
+    // The board keeps the moved card's new version, so it moves again without a reload, back to New included.
     await card("Meeting").dragTo(column(page, "Proposal"));
-    await expect(page.getByText(`Moved ${DEAL} to Proposal.`)).toBeVisible();
-    await card("Proposal").dragTo(column(page, "Meeting"));
-    await expect(page.getByText(`Moved ${DEAL} to Meeting.`)).toHaveCount(2);
+    await expect(card("Proposal")).not.toHaveAttribute("aria-busy");
+    await card("Proposal").dragTo(column(page, "New"));
+    await expect(card("New")).not.toHaveAttribute("aria-busy");
+    await expect(card("Proposal")).toHaveCount(0);
+    await expect(column(page, "New").locator("header")).toContainText("1");
+    // Its Move stage button carries the new version too, so the dialog moves it without a stale refusal.
+    await card("New").getByRole("button", { name: "Move stage" }).click();
+    const back = page.getByRole("dialog", { name: `Move ${DEAL}` });
+    await back.getByRole("combobox", { name: "New stage" }).click();
+    await page.getByRole("option", { name: "Meeting", exact: true }).click();
+    await back.getByRole("button", { name: "Move", exact: true }).click();
+    await expect(back).toBeHidden();
+    await expect(card("Meeting")).toBeVisible();
     await page.reload();
     await expect(card("Meeting")).toBeVisible();
 

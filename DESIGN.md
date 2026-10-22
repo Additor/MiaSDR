@@ -197,7 +197,7 @@ A workbook (`src/app/(app)/tables`) is a spreadsheet and the densest surface in 
 
 The Pipeline page (`src/app/(app)/crm/pipeline`) is a `ScrollCue` of stage columns, 18rem wide, each a heading with its count and totals over a stack of deal cards.
 
-- **Drag.** A card drags to another column. The column under it takes the `bg-primary/5` tint and a `ring-primary/30` hairline, and an empty one reads "Drop a deal here". The card moves on screen at once, faded until the server confirms, and the column counts and totals follow it; the board does not reload, so cards loaded with "N more" stay. A refused move puts the card back, says why in a toast and reloads the board. A drop on Won or Lost opens the move dialog on that stage, as Mark won and Mark lost ask first; Lost keeps its reason.
+- **Drag.** A card drags to another column. The column under it takes the `bg-primary/5` tint and a `ring-primary/30` hairline, and an empty one reads "Drop a deal here". The card moves on screen at once, faded until the server confirms, and the column counts and totals follow it; the board does not reload, so cards loaded with "N more" stay. A refused move puts the card back where it was before that drop, says why in a toast and reloads the board. A card whose move is on its way cannot drag again, and its Move stage button waits too. A drop on Won or Lost opens the move dialog on that stage, as Mark won and Mark lost ask first; Lost keeps its reason.
 - **Move stage.** Each card keeps its Move stage button, the way to move from the keyboard or a touch screen.
 
 ## Shapes

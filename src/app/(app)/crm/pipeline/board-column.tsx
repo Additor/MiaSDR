@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, type DragEvent } from "react";
+import { memo, useEffect, useMemo, useState, type DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,8 @@ export interface BoardQueryParams {
  */
 const DealCard = memo(function DealCard({ card, stageId, stages, nowMs, from, dragged, moving }: { card: CardData; stageId: string; stages: DealStageList; nowMs: number; from: string; dragged: boolean; moving: boolean }) {
   const { startDrag, endDrag } = useBoardActions();
+  // A card that leaves the page mid-drag never gets its dragend, so it ends its own drag on the way out.
+  useEffect(() => () => endDrag(card.id), [card.id, endDrag]);
   const contact = card.personName ?? "Unnamed contact";
   const facts = [card.amountMinor !== null && card.currency ? formatAmount(card.amountMinor, card.currency) : null, ownerText(card.owner)].filter(Boolean);
   const draggable = stageId !== "" && !moving;
@@ -63,7 +65,7 @@ const DealCard = memo(function DealCard({ card, stageId, stages, nowMs, from, dr
       aria-busy={moving || undefined}
       draggable={draggable}
       onDragStart={draggable ? onDragStart : undefined}
-      onDragEnd={endDrag}
+      onDragEnd={() => endDrag()}
     >
       <CardHeader>
         <CardTitle className="text-sm leading-snug break-words">
@@ -79,7 +81,7 @@ const DealCard = memo(function DealCard({ card, stageId, stages, nowMs, from, dr
             {daysInStage(card.stageChangedAt, nowMs)}
           </span>
           <div className="relative z-10">
-            <MoveDealStageButton deal={{ id: card.id, title: card.title, version: card.version, stageId }} stages={stages} size="xs" />
+            <MoveDealStageButton deal={{ id: card.id, title: card.title, version: card.version, stageId }} stages={stages} size="xs" disabled={moving} />
           </div>
         </div>
       </CardContent>
@@ -93,23 +95,22 @@ const DealCard = memo(function DealCard({ card, stageId, stages, nowMs, from, dr
  */
 export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { column: ColumnData; stages: DealStageList; nowMs: number; query: BoardQueryParams; closedWindow: boolean }) {
   const { drop } = useBoardActions();
-  const { dragging, moves } = useBoardState();
+  const { dragging, movesFor, stageOf } = useBoardState();
   const [over, setOver] = useState(false);
   const [cards, setCards] = useState(column.cards);
   const [cursor, setCursor] = useState(column.nextCursor);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "N more" pages through the server's stage, so its count stays the server's.
   const remaining = Math.max(0, column.total - cards.length);
-  // Drag moves the server has not sent back in a fresh board: cards leaving this stage hide, cards arriving show first.
-  const arrivingMoves = [...moves.values()].filter((m) => m.to === column.id && !cards.some((c) => c.id === m.card.id));
-  const arriving = arrivingMoves.map((m) => m.card);
-  const leaving = cards.filter((c) => {
-    const move = moves.get(c.id);
-    return move !== undefined && move.to !== column.id;
-  });
-  const shown = leaving.length === 0 ? cards : cards.filter((c) => !leaving.includes(c));
-  const total = column.total - leaving.length + arriving.length;
-  const totals = formatTotals(shiftTotals(column.amounts, leaving, arriving));
+  // The drag moves for this stage: a card that moved in replaces the column's copy or shows first, one that moved out
+  // hides, and the count and totals follow both, whatever "N more" has loaded.
+  const moves = movesFor(column.id);
+  const loaded = useMemo(() => new Set(cards.map((c) => c.id)), [cards]);
+  const arriving = [...moves.here.values()].filter((m) => !loaded.has(m.card.id));
+  const shown = cards.filter((c) => (stageOf(c.id) ?? column.id) === column.id).map((c) => ({ card: moves.here.get(c.id)?.card ?? c, pending: moves.here.get(c.id)?.pending ?? false }));
+  const total = column.total - moves.departed.length + moves.arrived.length;
+  const totals = formatTotals(shiftTotals(column.amounts, moves.departed, moves.arrived));
   const accepts = dragging !== null && column.id !== null && dragging.from !== column.id;
   const from = boardHref(query);
 
@@ -164,11 +165,11 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
         )}
       </header>
       {shown.length + arriving.length === 0 && <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">{accepts ? "Drop a deal here" : "No deals in this stage"}</p>}
-      {arrivingMoves.map((m) => (
-        <DealCard key={m.card.id} card={m.card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} dragged={dragging?.card.id === m.card.id} moving={!m.done} />
+      {arriving.map((m) => (
+        <DealCard key={m.card.id} card={m.card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} dragged={dragging?.card.id === m.card.id} moving={m.pending} />
       ))}
-      {shown.map((card) => (
-        <DealCard key={card.id} card={card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} dragged={dragging?.card.id === card.id} moving={false} />
+      {shown.map(({ card, pending }) => (
+        <DealCard key={card.id} card={card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} dragged={dragging?.card.id === card.id} moving={pending} />
       ))}
       {remaining > 0 && cursor && (
         <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={more} disabled={pending}>

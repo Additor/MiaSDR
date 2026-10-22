@@ -156,12 +156,13 @@ export function MoveDealStageButton({
   label = "Move stage",
   variant = "outline",
   size = "sm",
+  disabled = false,
   ...props
-}: Omit<MoveDealStageDialogProps, "open" | "onOpenChange"> & { label?: string; variant?: "default" | "outline"; size?: "default" | "sm" | "xs" }) {
+}: Omit<MoveDealStageDialogProps, "open" | "onOpenChange"> & { label?: string; variant?: "default" | "outline"; size?: "default" | "sm" | "xs"; /** Off while another move of this deal is on its way. */ disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant={variant} size={size} onClick={() => setOpen(true)}>
+      <Button variant={variant} size={size} onClick={() => setOpen(true)} disabled={disabled}>
         {label}
       </Button>
       <MoveDealStageDialog {...props} open={open} onOpenChange={setOpen} />
