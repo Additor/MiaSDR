@@ -34,7 +34,7 @@ export type NotesPanelProps = NoteTarget & {
 
 export function NotesPanel({ notes, currentUserId, isAdmin, heading = true, ...target }: NotesPanelProps) {
   const router = useRouter();
-  const base = target.recordId !== undefined ? `/api/crm/records/${target.recordId}/notes` : `/api/people/${target.personId}/notes`;
+  const base = target.recordId !== undefined ? `/api/records/${target.recordId}/notes` : `/api/people/${target.personId}/notes`;
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);

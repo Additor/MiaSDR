@@ -965,10 +965,10 @@ describeDb("After a reply flows", () => {
     it("the lead page toggle stops the run at once, without waiting for a tick", async () => {
       const { f, run } = await withRun();
       const person = await one("select id from people where organization_id = $1", [f.org]);
-      const { setPersonDoNotContact } = await import("../../../application/crm");
-      const { crmDeps } = await import("../../../infrastructure/crm-composition");
-      await expect(setPersonDoNotContact(crmDeps(), f.actor, person.id, { enabled: true })).rejects.toThrow(/Say why/);
-      await setPersonDoNotContact(crmDeps(), f.actor, person.id, { enabled: true, reason: "Asked to stop" });
+      const { setPersonDoNotContact } = await import("../../../application/reply-handling");
+      const { replyHandlingDeps } = await import("../../../infrastructure/reply-handling-composition");
+      await expect(setPersonDoNotContact(replyHandlingDeps(), f.actor, person.id, { enabled: true })).rejects.toThrow(/Say why/);
+      await setPersonDoNotContact(replyHandlingDeps(), f.actor, person.id, { enabled: true, reason: "Asked to stop" });
       expect(await one("select status from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
       expect(await count("sequence_step_runs", f.org, "status in ('scheduled', 'drafting', 'awaiting_review')")).toBe(0);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
@@ -1026,11 +1026,11 @@ describeDb("After a reply flows", () => {
     const personOf = (f: Fx) => one("select id, email from people where organization_id = $1", [f.org]);
     const suppression = async () => (await import("@/test-support/suppression")).suppressionStore();
 
-    it("do not contact through the CRM store", async () => {
+    it("do not contact through the reply handling store", async () => {
       const { f, run } = await withRun();
       const person = await personOf(f);
-      const { drizzleCrmStore } = await import("../../../infrastructure/drizzle-crm-store");
-      await drizzleCrmStore.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: person.id, enabled: true, reason: "Asked", now: f.clock() });
+      const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
+      await drizzleReplyHandlingStore.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: person.id, enabled: true, reason: "Asked", now: f.clock() });
       await expectStoppedNow(f, run.id, "do_not_contact");
     });
 
@@ -1065,8 +1065,8 @@ describeDb("After a reply flows", () => {
     it("a person's move to a terminal subcategory", async () => {
       const { f, run } = await withRun();
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
-      const { drizzleCrmStore } = await import("../../../infrastructure/drizzle-crm-store");
-      await drizzleCrmStore.moveStage({
+      const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
+      await drizzleReplyHandlingStore.moveStage({
         organizationId: f.org,
         actorUserId: f.user,
         recordId: record.id,
@@ -1091,10 +1091,10 @@ describeDb("After a reply flows", () => {
     it("a move to a non-terminal subcategory ends the run too (restart rules live in restart-record-work.integration.test.ts)", async () => {
       const { f, run } = await withRun();
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
-      const { drizzleCrmStore } = await import("../../../infrastructure/drizzle-crm-store");
+      const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
       const other = await one("select id, category_key from subcategories where organization_id = $1 and key = 'pricing_question'", [f.org]).catch(() => null);
       if (!other) return;
-      await drizzleCrmStore.moveStage({
+      await drizzleReplyHandlingStore.moveStage({
         organizationId: f.org,
         actorUserId: f.user,
         recordId: record.id,
@@ -1190,7 +1190,7 @@ describeDb("After a reply flows", () => {
         const person = await one("select id, email from people where organization_id = $1", [f.org]);
         const stop = async () => {
           if (i % 2 === 0) await (await (await import("@/test-support/suppression")).suppressionStore()).suppressEmail({ organizationId: f.org, email: person.email, reason: "unsubscribed" });
-          else await (await import("../../../infrastructure/drizzle-crm-store")).drizzleCrmStore.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: person.id, enabled: true, reason: "Asked", now: f.clock() });
+          else await (await import("../../../infrastructure/drizzle-reply-handling-store")).drizzleReplyHandlingStore.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: person.id, enabled: true, reason: "Asked", now: f.clock() });
         };
         const delayed = async () => {
           await new Promise((r) => setTimeout(r, i * 7));

@@ -70,7 +70,7 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
     if (enabled && reason.trim() === "") return setError(DNC_REASON_REQUIRED);
     setPending(true);
     setError(null);
-    const result = await callApi<DncResult>(`/api/crm/people/${personId}/dnc`, "POST", { enabled, reason: enabled ? reason : null });
+    const result = await callApi<DncResult>(`/api/people/${personId}/dnc`, "POST", { enabled, reason: enabled ? reason : null });
     setPending(false);
     if (!result.ok || !result.data) return setError(result.error);
     setReason("");

@@ -70,10 +70,10 @@ test.describe("who handles a reply", () => {
     // Someone else cannot take what Bea holds, and a change made from a stale view is refused. Both answer 409 and change nothing.
     const [{ id: recordId }] = await sql()`select r.id from records r join people p on p.id = r.person_id where p.email = ${LEAD.email}`;
     const [{ id: beaId }] = await sql()`select id from users where email = ${MEMBER.email}`;
-    const taken = await page.request.post(`/api/crm/records/${recordId}/assignee`, { data: { action: "claim" } });
+    const taken = await page.request.post(`/api/records/${recordId}/assignee`, { data: { action: "claim" } });
     expect(taken.status()).toBe(409);
     expect(((await taken.json()) as { error: string }).error).toContain("Another member already handles");
-    const stale = await page.request.post(`/api/crm/records/${recordId}/assignee`, { data: { action: "assign", assignedTo: beaId, expectedAssignedTo: null } });
+    const stale = await page.request.post(`/api/records/${recordId}/assignee`, { data: { action: "assign", assignedTo: beaId, expectedAssignedTo: null } });
     expect(stale.status()).toBe(409);
     expect((await sql()`select assigned_to from records where id = ${recordId}`)[0].assigned_to).toBe(beaId);
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
-import type { EventEntry } from "@/contexts/conversations/application/crm-ports";
+import type { EventEntry } from "@/contexts/conversations/application/reply-handling-ports";
 import { dealsDeps } from "@/composition/deals";
 import type { Actor } from "@/shared/errors";
 import { humanizeToken } from "@/shared/humanize";

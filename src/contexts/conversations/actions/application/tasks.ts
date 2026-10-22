@@ -153,7 +153,7 @@ export async function editNote(deps: TaskDeps, actor: Actor, target: NoteTarget,
   await deps.store.updateNote({ organizationId: actor.organizationId, scope, noteId, title, body });
 }
 
-/** Checks ownership of a note before `deleteCrmNote` removes it. */
+/** Checks ownership of a note before `deleteRecordNote` removes it. */
 export async function assertCanDeleteNote(deps: TaskDeps, actor: Actor, target: NoteTarget, noteId: string) {
   const scope = noteScope(target);
   assertId(noteId, "Note");

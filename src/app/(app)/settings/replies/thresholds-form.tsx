@@ -29,7 +29,7 @@ export function ThresholdsForm({ settings }: { settings: Settings }) {
     setPending(true);
     setError(null);
     const value = Number(percent);
-    const result = await callApi("/api/crm/settings", "PATCH", { autoApplyConfidence: value / 100, reviewOther, customerRequiresReview: customer });
+    const result = await callApi("/api/settings/replies", "PATCH", { autoApplyConfidence: value / 100, reviewOther, customerRequiresReview: customer });
     setPending(false);
     if (!result.ok) return setError(result.error);
     toast.success("Auto-apply rules saved.");

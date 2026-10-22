@@ -4,8 +4,8 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getCrmTaxonomy } from "@/contexts/conversations/application/crm";
-import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
+import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
+import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { cn } from "@/lib/utils";
 import { toActor } from "@/app/_lib/api";
@@ -28,7 +28,7 @@ export default function ReplySettingsPage() {
 
 async function Settings() {
   await connection();
-  const { subcategories, settings } = await getCrmTaxonomy(crmDeps(), toActor(await requireOrgContext()));
+  const { subcategories, settings } = await getReplyTaxonomy(replyHandlingDeps(), toActor(await requireOrgContext()));
   return (
     <>
       <SettingsSection title="Knowledge" description="Pasted text the AI draws on when it writes replies. It has its own page.">

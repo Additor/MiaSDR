@@ -1,7 +1,7 @@
 import { cache } from "react";
-import { getCrmRecordDetail } from "@/contexts/conversations/application/crm";
+import { getRecordDetail } from "@/contexts/conversations/application/reply-handling";
 import { getRecordSequence } from "@/contexts/conversations/after-reply/application/sequences";
-import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
+import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { sequenceDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import type { Actor } from "@/shared/errors";
 
@@ -10,6 +10,6 @@ import type { Actor } from "@/shared/errors";
  * use it, each inside its own Suspense boundary.
  */
 
-export const recordDetail = cache((actor: Actor, recordId: string) => getCrmRecordDetail(crmDeps(), actor, recordId));
+export const recordDetail = cache((actor: Actor, recordId: string) => getRecordDetail(replyHandlingDeps(), actor, recordId));
 
 export const recordAfterReply = cache((actor: Actor, recordId: string) => getRecordSequence(sequenceDeps(), actor, recordId));

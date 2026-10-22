@@ -23,8 +23,8 @@ describeDb("personal campaigns", () => {
   let inboxApp: typeof import("@/contexts/conversations/application/inbox");
   let inboxComposition: typeof import("@/contexts/conversations/infrastructure/composition");
   let unread: typeof import("@/contexts/conversations/infrastructure/drizzle-unread-store");
-  let crmApp: typeof import("@/contexts/conversations/application/crm");
-  let crmComposition: typeof import("@/contexts/conversations/infrastructure/crm-composition");
+  let replyHandlingApp: typeof import("@/contexts/conversations/application/reply-handling");
+  let crmComposition: typeof import("@/contexts/conversations/infrastructure/reply-handling-composition");
   let workQueueApp: typeof import("@/contexts/conversations/actions/application/work-queue");
   let workQueueComposition: typeof import("@/contexts/conversations/actions/infrastructure/work-queue-composition");
   let personHandling: typeof import("@/contexts/conversations/infrastructure/person-handling").personReplyHandling;
@@ -105,8 +105,8 @@ describeDb("personal campaigns", () => {
     inboxApp = await import("@/contexts/conversations/application/inbox");
     inboxComposition = await import("@/contexts/conversations/infrastructure/composition");
     unread = await import("@/contexts/conversations/infrastructure/drizzle-unread-store");
-    crmApp = await import("@/contexts/conversations/application/crm");
-    crmComposition = await import("@/contexts/conversations/infrastructure/crm-composition");
+    replyHandlingApp = await import("@/contexts/conversations/application/reply-handling");
+    crmComposition = await import("@/contexts/conversations/infrastructure/reply-handling-composition");
     workQueueApp = await import("@/contexts/conversations/actions/application/work-queue");
     workQueueComposition = await import("@/contexts/conversations/actions/infrastructure/work-queue-composition");
     personHandling = (await import("@/contexts/conversations/infrastructure/person-handling")).personReplyHandling;
@@ -181,7 +181,7 @@ describeDb("personal campaigns", () => {
       expect(queue.total).toBe(0);
       // The record exists only as the parent of the private thread, so the CRM does not show it at all.
       const [record] = await sql`select id from records where organization_id = ${f.org}`;
-      await expect(crmApp.getCrmRecord(crmComposition.crmDeps(), actor, record.id)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(replyHandlingApp.getRecord(crmComposition.replyHandlingDeps(), actor, record.id)).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it("cannot be opened, marked read, replied to or loaded for the AI by conversation id", async () => {
@@ -377,7 +377,7 @@ describeDb("personal campaigns", () => {
     });
   });
 
-  const crm = () => crmComposition.crmDeps();
+  const crm = () => crmComposition.replyHandlingDeps();
   const queueDeps = () => workQueueComposition.workQueueDeps();
   const recordOf = async (personId: string) => (await sql`select * from records where person_id = ${personId}`)[0];
 
@@ -417,7 +417,7 @@ describeDb("personal campaigns", () => {
       expect(queued).not.toContain(adaRecord.id);
       for (const id of queued) expect(visible).toContain(id);
       expect((await workQueueApp.getWorkQueueCounts(queueDeps(), actor())).total).toBe(queue.total);
-      await expect(crmApp.getCrmRecord(crm(), actor(), adaRecord.id)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(replyHandlingApp.getRecord(crm(), actor(), adaRecord.id)).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it("gives no active conversation for a private-only person and the public one for a person with both", async () => {
@@ -589,7 +589,7 @@ describeDb("personal campaigns", () => {
                 values (${f.org}, ${record.id}, ${shared}, ${record.context_version + 1}, 'linkedin', 'failed', 'Private failure')`;
       await sql`update records set context_version = context_version + 1 where id = ${record.id}`;
 
-      const detail = await crmApp.getCrmRecord(crm(), f.actor("owner"), record.id);
+      const detail = await replyHandlingApp.getRecord(crm(), f.actor("owner"), record.id);
       expect(detail.conversations.map((c) => c.id)).not.toContain(shared);
       expect(detail.classifications.map((c) => c.messageId)).not.toContain(first);
       expect(detail.classifications.map((c) => c.messageId)).not.toContain(privateMessage.id);

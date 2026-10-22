@@ -359,7 +359,7 @@ describeDb("inbox filters, views and search", () => {
       expect(result.rows[0].dueAt.getTime()).toBeLessThan(result.rows[1].dueAt.getTime());
     });
 
-    it("includes queued CRM follow-up steps of active runs only and honors lead, campaign, mailbox and date filters", async () => {
+    it("includes queued follow-up steps of active runs only and honors lead, campaign, mailbox and date filters", async () => {
       const f = await fixture();
       const nurture = await campaignWith(f, "Nurture");
       const [seq] = await sql`insert into sequences (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;

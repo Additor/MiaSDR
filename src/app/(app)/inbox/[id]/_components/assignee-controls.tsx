@@ -22,7 +22,7 @@ export function AssigneeControls({ recordId, assignedTo, members, currentUserId 
 
   async function change(body: { action: "claim" } | { action: "assign"; assignedTo: string | null; expectedAssignedTo: string | null }) {
     setPending(true);
-    const result = await callApi(`/api/crm/records/${recordId}/assignee`, "POST", body);
+    const result = await callApi(`/api/records/${recordId}/assignee`, "POST", body);
     setPending(false);
     if (!result.ok) {
       toast.error(result.error ?? "Could not change who handles this conversation.");

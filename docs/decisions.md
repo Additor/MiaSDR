@@ -230,7 +230,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 ### Reachability and do not contact
 
 - Reachability is separate from lead status (`outreach/domain/reachability.ts`, read by `readReachability`): do not contact with reason and time, email open, suppressed or missing, LinkedIn open or missing. A suppressed address blocks email and leaves LinkedIn open.
-- `setPersonDoNotContact` (conversations) is the one writer. `POST /api/crm/people/[personId]/dnc` sets or clears it; `POST /api/crm/people/dnc` marks 1 to 200 people, one transaction each, reporting `already_marked`, `not_found` or `retryable`. Setting needs a reason (500 characters at most).
+- `setPersonDoNotContact` (conversations) is the one writer. `POST /api/people/[personId]/dnc` sets or clears it; `POST /api/people/dnc` marks 1 to 200 people, one transaction each, reporting `already_marked`, `not_found` or `retryable`. Setting needs a reason (500 characters at most).
 - Setting upserts `contact_policies` (source `human`) and, in the same transaction, sets the person's `pending` and `active` enrollments to `suppressed` with `stop_reason = 'do_not_contact'`, ends follow-up runs, retires open drafts and returns open reply handling to `action_required`. Clearing removes the flag and revives nothing. The flag applies to every channel, and the send engines check it again before each provider call.
 
 ### Delete
@@ -448,7 +448,7 @@ A campaign setting with two modes, stored as state on a campaign-owned row in `s
 - **Stop rules.** A reply, do not contact, unsubscribe, bounce, manual suppression, a closed record, conversion to contact, and a move into a terminal subcategory (not-interested category, `do_not_contact`, `left_company`, `wrong_contact`, `connected_to_different_contact`, `customer`) end the run as `interrupted` and retire its unsent drafts. Each writer does this in its own transaction through `conversations/after-reply/infrastructure/sequence-stop.ts` (`endRunTx`, `interruptPersonRunsTx`, `interruptEmailRunsTx`). Outreach's suppression reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which `src/composition/inbox-filing.ts` wires; a sweep at the start of each tick is the safety net.
 - **Draft fate.** Sent: the step is `sent` and the next scheduled. Discarded: `skipped`. Stale without a stop reason: drafted again up to 3 times, then `failed`. A failed step waits for a person to retry or skip it.
 - **Races.** `claimDue` takes one step with `FOR UPDATE SKIP LOCKED`. `linkDraft` locks the run before the step, the same order as `endRunTx`, and returns false for an ended run, so the job retires the draft it wrote. `endRunTx` also retires drafts whose `request.sequenceRunId` names the run.
-- **Per-record controls** on the Inbox thread: `POST /api/crm/records/[id]/after-reply` with `pause`, `resume`, `skip`, `cancel` or `restart`. Restart answers 409 with the reason the server computed when it cannot run.
+- **Per-record controls** on the Inbox thread: `POST /api/records/[id]/after-reply` with `pause`, `resume`, `skip`, `cancel` or `restart`. Restart answers 409 with the reason the server computed when it cannot run.
 
 ## Conversations, Inbox and Actions
 
@@ -534,7 +534,7 @@ Every member sees every public conversation of the organization. Private convers
 
 ### Actions work queue
 
-`/actions` is the queue of work that waits for a person. Read model: `conversations/actions/infrastructure/work-queue-read.ts`; writes in `drizzle-crm-store.ts`.
+`/actions` is the queue of work that waits for a person. Read model: `conversations/actions/infrastructure/work-queue-read.ts`; writes in `drizzle-reply-handling-store.ts`.
 
 - **Membership.** A record is in the queue when it is `action_required` or `error`, or `waiting` with `next_action_at` due. A `next_step` record with an open task leaves the queue, because the task covers it. A record counts once.
 - **Groups.** The first match decides: problem (record `error`, a `failed` or `delivery_uncertain` draft, or a failed AI job for the newest inbound message), reply (an `awaiting_review` draft), classification (held or unseen AI change), follow-up (`waiting` and due), next step. The page shows them in the order problem, reply, follow-up, classification, next step.
@@ -542,7 +542,7 @@ Every member sees every public conversation of the organization. Private convers
   - Auto-assign: the first inbound message of an unassigned record goes to the creator of the person's newest non-removed regular-campaign enrollment whose creator is still a member. It never replaces a person's choice; choosing Nobody sets `cleared` and auto-assign skips the record.
   - Claim: any member can take an unassigned visible record. Assign: any member can give a visible record to a member or to nobody, with `expectedAssignedTo`; a mismatch answers 409. Neither changes `context_version` or retires a draft.
   - `records_assigned_to_fk` points at `members` with `ON DELETE SET NULL (assigned_to)`, so a member who leaves leaves their records unassigned.
-  - Route: `/api/crm/records/[id]/assignee`. Every change writes an `assignee.changed` event.
+  - Route: `/api/records/[id]/assignee`. Every change writes an `assignee.changed` event.
 - **Scopes.** Mine, Unassigned and Others split the queue by assignee and add up to the total. The page opens on Mine for every role, and the sidebar Actions number is Mine only. Unconfirmed campaign sends, unmatched senders and dead inbound events (owners and admins only) are shared work outside the scopes.
 - **Waiting since.** Problem items wait since the failure was recorded. Follow-ups wait since `next_action_at` and read as overdue; they stay out of the oldest-wait sentence. Every other group waits since the last inbound message.
 - **Ordering.** Inside a group the item that has waited longest comes first, keyed on (waiting time, record id). Paging is keyset per group, 50 by default and 200 at most. Counts for all scopes come from one pass.
@@ -590,8 +590,8 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 - Outreach owns `stopPersonEnrollmentsTx`, `liveEnrollmentSummary`, `latestRepliedEnrollment`, `enrollmentSources` (`drizzle-conversion-outreach.ts`), `notContactSql` and the delete side in `person-outreach.ts`.
 - Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
 - Leads imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
-- `deals/infrastructure/deals-composition.ts` is the composition root of the conversion and the deal use cases.
-- `/api/crm/*` and `conversations/**/crm*.ts` mean reply handling. The CRM screen group means deals.
+- `src/composition/deals.ts` is the composition root of the conversion and the deal use cases.
+- "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-categories` and `/api/settings/replies`.
 
 #### Conversion and lock order
 

@@ -37,7 +37,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Deal:** one sales opportunity with a contact, with a title, stage, owner, amount and expected close date.
 - **Stage:** a step of the deal Pipeline (New, Meeting, Proposal, Won, Lost by default). A stage never stops outreach.
 - **Pipeline:** in the UI, the board of deals by stage. The code calls the reply taxonomy `pipelines`; user-facing text calls it the reply category.
-- **Reply category:** the AI's label for a reply (Interested, Not interested and so on). It decides what reply handling does next.
+- **Reply category:** the AI's label for a reply (Interested, Not interested and so on). It decides what reply handling does next. The code calls a person's reply-handling state for one lead a `record`, and moving its reply category a `stage` move (`moveRecordStage`, the `stage.moved` event); user-facing text says neither.
 - **Existing customer:** the reply category for a sender who already pays for the product and writes about their account. It labels the reply and says nothing about deals: a Won deal does not set it, and it does not make anyone a contact. The code key stays `customer`.
 - **Custom fields:** the fields an organization adds to people and to companies, set in Settings > Custom fields. Person fields show on the lead and contact forms, company fields on the company page.
 - **Became a contact:** what a person sees when a lead converts to a contact, as a stop reason and a history line.

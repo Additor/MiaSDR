@@ -41,7 +41,7 @@ export function BulkDncDialog({ open, ids, onClose }: { open: boolean; ids: read
     const reports: DncReport[] = [];
     setProgress({ done: 0, total: ids.length });
     for (const chunk of chunks(ids, DNC_CHUNK)) {
-      const result = await callApi<DncReport>("/api/crm/people/dnc", "POST", { ids: chunk, reason });
+      const result = await callApi<DncReport>("/api/people/dnc", "POST", { ids: chunk, reason });
       if (!result.ok || !result.data) {
         if (reports.length > 0) {
           const merged = mergeDncReports(reports);

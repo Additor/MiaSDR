@@ -22,7 +22,7 @@ describeDb("contact delete races", () => {
   let deals: typeof import("@/contexts/deals/application/deals");
   let dealsDeps: typeof import("@/composition/deals").dealsDeps;
   let conversations: typeof import("@/contexts/conversations/infrastructure/composition");
-  let crmStore: typeof import("@/contexts/conversations/infrastructure/drizzle-crm-store").drizzleCrmStore;
+  let crmStore: typeof import("@/contexts/conversations/infrastructure/drizzle-reply-handling-store").drizzleReplyHandlingStore;
   let suppression: Awaited<ReturnType<typeof import("@/test-support/suppression").suppressionStore>>;
 
   beforeAll(async () => {
@@ -32,7 +32,7 @@ describeDb("contact delete races", () => {
     deals = await import("@/contexts/deals/application/deals");
     dealsDeps = (await import("@/composition/deals")).dealsDeps;
     conversations = await import("@/contexts/conversations/infrastructure/composition");
-    crmStore = (await import("@/contexts/conversations/infrastructure/drizzle-crm-store")).drizzleCrmStore;
+    crmStore = (await import("@/contexts/conversations/infrastructure/drizzle-reply-handling-store")).drizzleReplyHandlingStore;
     suppression = await (await import("@/test-support/suppression")).suppressionStore();
   }, 60_000);
 

@@ -51,7 +51,7 @@ function BlockList({ field, title, description, initial }: { field: "draftInstru
   async function save() {
     setPending(true);
     setError(null);
-    const result = await callApi("/api/crm/settings/ai-instructions", "PUT", { [field]: blocks });
+    const result = await callApi("/api/settings/replies/ai-instructions", "PUT", { [field]: blocks });
     setPending(false);
     if (!result.ok) return setError(result.error);
     toast.success(`${title} saved.`);

@@ -10,13 +10,13 @@ import { createTestOrg, describeDb, dropOrgs, TEST_DATABASE_URL, testSql, useTes
 describeDb("do not contact: bulk marks and a person deleted under the mark", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
-  let crm: typeof import("../../application/crm");
-  let deps: import("../../application/crm").CrmDeps;
+  let replies: typeof import("../../application/reply-handling");
+  let deps: import("../../application/reply-handling").ReplyHandlingDeps;
   const orgs: TestOrg[] = [];
 
   beforeAll(async () => {
-    crm = await import("../../application/crm");
-    deps = (await import("../crm-composition")).crmDeps();
+    replies = await import("../../application/reply-handling");
+    deps = (await import("../reply-handling-composition")).replyHandlingDeps();
   });
 
   afterAll(async () => {
@@ -43,13 +43,13 @@ describeDb("do not contact: bulk marks and a person deleted under the mark", () 
     const f = await fixture();
     const fresh = [await f.person(), await f.person()];
     const already = await f.person();
-    await crm.setPersonDoNotContact(deps, f.actor, already, { enabled: true, reason: "asked earlier" });
+    await replies.setPersonDoNotContact(deps, f.actor, already, { enabled: true, reason: "asked earlier" });
     const elsewhere = await fixture();
     const foreign = await elsewhere.person();
     const missing = "00000000-0000-4000-8000-000000000000";
     const ids = [...fresh, fresh[0], already, missing, "not-a-uuid", foreign];
 
-    const report = await crm.setPeopleDoNotContact(deps, f.actor, ids, { reason: "  wrong person " });
+    const report = await replies.setPeopleDoNotContact(deps, f.actor, ids, { reason: "  wrong person " });
 
     expect(report.marked).toBe(2);
     expect(report.skipped).toEqual([
@@ -70,10 +70,10 @@ describeDb("do not contact: bulk marks and a person deleted under the mark", () 
   it("refuses an empty batch, more than 200 ids and a missing reason", async () => {
     const f = await fixture();
     const id = await f.person();
-    await expect(crm.setPeopleDoNotContact(deps, f.actor, [], { reason: "x" })).rejects.toBeInstanceOf(ValidationError);
+    await expect(replies.setPeopleDoNotContact(deps, f.actor, [], { reason: "x" })).rejects.toBeInstanceOf(ValidationError);
     const many = Array.from({ length: 201 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
-    await expect(crm.setPeopleDoNotContact(deps, f.actor, many, { reason: "x" })).rejects.toBeInstanceOf(ValidationError);
-    await expect(crm.setPeopleDoNotContact(deps, f.actor, [id], { reason: "   " })).rejects.toThrow("Say why this person should not be contacted.");
+    await expect(replies.setPeopleDoNotContact(deps, f.actor, many, { reason: "x" })).rejects.toBeInstanceOf(ValidationError);
+    await expect(replies.setPeopleDoNotContact(deps, f.actor, [id], { reason: "   " })).rejects.toThrow("Say why this person should not be contacted.");
     expect(await marked(id)).toBe(false);
   });
 
@@ -82,9 +82,9 @@ describeDb("do not contact: bulk marks and a person deleted under the mark", () 
     const ids = [await f.person(), await f.person(), await f.person()];
     let clock = Date.parse("2026-10-19T10:00:00Z");
     // Each person's mark reads the clock once for `now`; the loop reads it once before each person.
-    const slow = { ...deps, now: () => new Date((clock += crm.BULK_DNC_TIME_BUDGET_MS / 3)) };
+    const slow = { ...deps, now: () => new Date((clock += replies.BULK_DNC_TIME_BUDGET_MS / 3)) };
 
-    const report = await crm.setPeopleDoNotContact(slow, f.actor, ids, { reason: "asked" });
+    const report = await replies.setPeopleDoNotContact(slow, f.actor, ids, { reason: "asked" });
 
     expect(report.marked).toBe(1);
     expect(report.skipped).toEqual([
@@ -111,7 +111,7 @@ describeDb("do not contact: bulk marks and a person deleted under the mark", () 
         await tx`delete from people where id = ${id}`;
       });
       await Promise.race([lockTaken, held]);
-      const mark = crm.setPersonDoNotContact(deps, f.actor, id, { enabled: true, reason: "asked" });
+      const mark = replies.setPersonDoNotContact(deps, f.actor, id, { enabled: true, reason: "asked" });
       const outcome = mark.then(
         () => null,
         (error: unknown) => error,
@@ -136,7 +136,7 @@ describeDb("do not contact: bulk marks and a person deleted under the mark", () 
     const kept = await f.person();
     const gone = await f.person();
     await sql`delete from people where id = ${gone}`;
-    const report = await crm.setPeopleDoNotContact(deps, f.actor, [kept, gone], { reason: "asked" });
+    const report = await replies.setPeopleDoNotContact(deps, f.actor, [kept, gone], { reason: "asked" });
     expect(report).toEqual({ marked: 1, skipped: [{ personId: gone, reason: "not_found" }] });
   });
 });

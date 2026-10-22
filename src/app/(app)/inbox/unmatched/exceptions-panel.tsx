@@ -94,7 +94,7 @@ function PersonPicker({ row }: { row: Row }) {
   async function submit(body: { status: "resolved"; personId: string } | { status: "ignored" }) {
     setPending(true);
     setError(null);
-    const result = await callApi(`/api/crm/identity-exceptions/${row.id}`, "PATCH", body);
+    const result = await callApi(`/api/identity-exceptions/${row.id}`, "PATCH", body);
     setPending(false);
     if (!result.ok) return setError(result.error);
     toast.success(body.status === "resolved" ? `Message filed under ${chosen ? (chosen.name ?? chosen.email ?? "the person") : "the person"}.` : "Message ignored.");

@@ -93,7 +93,7 @@ test.describe("contact delete", () => {
     const company = `S41 Sol ${tag}`;
     const email = `sam@${domain}`;
     const { personId } = await seedContact(page.request, { firstName: "S41 Sam", lastName: tag, email, companyDomain: domain, companyName: company });
-    const marked = await page.request.post(`/api/crm/people/${personId}/dnc`, { data: { enabled: true, reason: "Asked to stop" } });
+    const marked = await page.request.post(`/api/people/${personId}/dnc`, { data: { enabled: true, reason: "Asked to stop" } });
     expect(marked.status(), "mark do not contact").toBe(200);
     const [row] = await sql()`select id from companies where domain = ${domain}`;
     const companyId = row.id as string;

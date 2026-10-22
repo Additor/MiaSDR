@@ -7,7 +7,7 @@ import { MAX_MATCHING_IDS, matchingSelection } from "@/contexts/leads/domain/lea
 
 export type ContactsBarControl = "export" | "doNotContact" | "clear" | "more";
 
-/** The person routes take 200 ids per request (`POST /api/crm/people/dnc`), so the dialog sends chunks of this size. */
+/** The person routes take 200 ids per request (`POST /api/people/dnc`), so the dialog sends chunks of this size. */
 export const DNC_CHUNK = 200;
 
 export interface DncReport {

@@ -1,4 +1,4 @@
-import { categoryLabel } from "@/contexts/conversations/domain/crm";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 
 export { categoryLabel };
 

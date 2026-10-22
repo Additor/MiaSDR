@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { CRM_CATEGORIES } from "@/contexts/conversations/domain/crm";
+import { REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
 import { callApi } from "@/lib/api-client";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ interface Sub {
   historyCount: number;
 }
 
-const CATEGORY_ITEMS = CRM_CATEGORIES.map((c) => ({ value: c.key, label: c.label }));
+const CATEGORY_ITEMS = REPLY_CATEGORIES.map((c) => ({ value: c.key, label: c.label }));
 
 const archiveRecords = (count: number) => (count === 0 ? "Nobody is in it now." : `${count} ${count === 1 ? "person keeps" : "people keep"} this subcategory.`);
 
@@ -63,7 +63,7 @@ export function TaxonomyPanel({ subcategories }: { subcategories: Sub[] }) {
     setPending(true);
     setError(null);
     const common = { name, description: description.trim() || null, classificationGuidance: guidance.trim() || null, reviewRequired: review, stageRank: rank.trim() === "" ? null : Number(rank) };
-    const result = editing ? await callApi(`/api/crm/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/crm/subcategories", "POST", { ...common, categoryKey: category });
+    const result = editing ? await callApi(`/api/reply-categories/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/reply-categories/subcategories", "POST", { ...common, categoryKey: category });
     setPending(false);
     if (!result.ok) return setError(result.error);
     toast.success(editing ? "Subcategory saved." : "Subcategory added.");
@@ -73,14 +73,14 @@ export function TaxonomyPanel({ subcategories }: { subcategories: Sub[] }) {
 
   /** Archive and restore. A failure throws so the confirmation dialog can show it; Restore has no dialog and reports through setError. */
   async function toggle(sub: Sub) {
-    const result = await callApi(`/api/crm/subcategories/${sub.id}`, "PATCH", { active: !sub.active });
+    const result = await callApi(`/api/reply-categories/subcategories/${sub.id}`, "PATCH", { active: !sub.active });
     if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
     toast.success(sub.active ? `${sub.name} archived.` : `${sub.name} restored.`);
     router.refresh();
   }
 
   async function remove(sub: Sub) {
-    const result = await callApi(`/api/crm/subcategories/${sub.id}`, "DELETE");
+    const result = await callApi(`/api/reply-categories/subcategories/${sub.id}`, "DELETE");
     if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
     toast.success(`${sub.name} deleted.`);
     router.refresh();
@@ -156,7 +156,7 @@ export function TaxonomyPanel({ subcategories }: { subcategories: Sub[] }) {
       {/* Two levels only: a category is a group with an h3, its subcategories are the rows of one ruled list. */}
       <SettingsSection title="Subcategories">
         <div className="stack-section">
-          {CRM_CATEGORIES.map((c) => {
+          {REPLY_CATEGORIES.map((c) => {
             const subs = subcategories.filter((s) => s.categoryKey === c.key);
             return (
               <div key={c.key} className="stack-group" data-testid={`category-${c.key}`}>

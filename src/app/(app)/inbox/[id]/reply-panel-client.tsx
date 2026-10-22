@@ -185,7 +185,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
                     // Under a draft that waits for approval, Approve and send stays the one filled button.
                     variant={classificationFirst ? "default" : "outline"}
                     disabled={busy !== null}
-                    onClick={() => decide("ack", () => callApi(`/api/crm/classifications/${classification.id}/acknowledge`, "POST"), "Marked as looked at.")}
+                    onClick={() => decide("ack", () => callApi(`/api/classifications/${classification.id}/acknowledge`, "POST"), "Marked as looked at.")}
                   >
                     Looks right
                   </Button>

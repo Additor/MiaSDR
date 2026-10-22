@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ValidationError } from "@/shared/errors";
-import { identityPayloadSchema } from "./crm";
+import { identityPayloadSchema } from "./reply-handling";
 import { ingestInboundEmail } from "./ingest-inbound-email";
 import type { InboundConversationStore, InboundEmailInput, QuarantineInbound } from "./ports";
 

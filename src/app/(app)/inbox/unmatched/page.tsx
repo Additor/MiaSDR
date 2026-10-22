@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { listIdentityExceptions } from "@/contexts/conversations/application/crm";
-import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
+import { listIdentityExceptions } from "@/contexts/conversations/application/reply-handling";
+import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { toActor } from "@/app/_lib/api";
 import { PageHeader } from "@/components/shell/page-header";
@@ -26,7 +26,7 @@ export default function UnmatchedSendersPage() {
 
 async function Exceptions() {
   await connection();
-  const rows = await listIdentityExceptions(crmDeps(), toActor(await requireOrgContext()), "open");
+  const rows = await listIdentityExceptions(replyHandlingDeps(), toActor(await requireOrgContext()), "open");
   return (
     <ExceptionsPanel
       rows={rows.map((r) => {

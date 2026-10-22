@@ -68,7 +68,7 @@ export function ChangeCategoryButton({
     setError(null);
     const result = correcting
       ? await callApi(`/api/inbox/${conversationId}/classification`, "POST", { subcategoryKey: chosen.key, expectedContextVersion: contextVersion })
-      : await callApi(`/api/crm/records/${recordId}/stage`, "POST", {
+      : await callApi(`/api/records/${recordId}/stage`, "POST", {
           categoryKey: chosen.categoryKey,
           subcategoryId: chosen.id,
           expectedContextVersion: contextVersion,

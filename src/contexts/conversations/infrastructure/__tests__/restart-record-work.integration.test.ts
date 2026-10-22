@@ -31,14 +31,14 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
   let aiJobsApp: typeof import("../../ai/application/ai-jobs");
   let arApp: typeof import("../../after-reply/application/after-reply");
   let seqJobsApp: typeof import("../../after-reply/application/sequence-jobs");
-  let crmApp: typeof import("../../application/crm");
+  let replyHandlingApp: typeof import("../../application/reply-handling");
   let stores: {
     jobs: typeof import("../../ai/infrastructure/drizzle-ai-job-store").drizzleAiJobStore;
     replies: typeof import("../drizzle-reply-store").drizzleReplyStore;
     flows: typeof import("../../after-reply/infrastructure/drizzle-sequence-store").drizzleAfterReplyStore;
     runs: typeof import("../../after-reply/infrastructure/drizzle-sequence-store").drizzleRunStore;
     engine: typeof import("../../after-reply/infrastructure/drizzle-sequence-engine").drizzleSequenceEngine;
-    crm: typeof import("../drizzle-crm-store").drizzleCrmStore;
+    crm: typeof import("../drizzle-reply-handling-store").drizzleReplyHandlingStore;
   };
   let FakeAi: typeof import("../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
   let createReplyMailer: typeof import("../reply-mailer").createReplyMailer;
@@ -63,7 +63,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(() => mailbox), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
     const seqDeps = { runs: stores.runs, now: clock };
     const arDeps = { flows: stores.flows, now: clock };
-    const crmDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };
+    const replyHandlingDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };
     return {
       org,
       user,
@@ -76,7 +76,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       replyDeps,
       seqDeps,
       arDeps,
-      crmDeps,
+      replyHandlingDeps,
       aiRun: () => aiTick.run(ctx()),
       /** One tick of both jobs, in the registry's order. */
       cycle: async () => {
@@ -137,7 +137,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
 
   const move = async (f: Fx, recordId: string, key: string, expectedContextVersion: number, note: string | null = null) => {
     const target = await sub(f.org, key);
-    return crmApp.moveRecordStage(f.crmDeps, f.actor, recordId, { categoryKey: target.category_key, subcategoryId: target.id, expectedContextVersion, note });
+    return replyHandlingApp.moveRecordStage(f.replyHandlingDeps, f.actor, recordId, { categoryKey: target.category_key, subcategoryId: target.id, expectedContextVersion, note });
   };
   const versionOf = async (recordId: string) => Number((await one("select context_version from records where id = $1", [recordId])).context_version);
 
@@ -147,7 +147,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     aiJobsApp = await import("../../ai/application/ai-jobs");
     arApp = await import("../../after-reply/application/after-reply");
     seqJobsApp = await import("../../after-reply/application/sequence-jobs");
-    crmApp = await import("../../application/crm");
+    replyHandlingApp = await import("../../application/reply-handling");
     const seqStore = await import("../../after-reply/infrastructure/drizzle-sequence-store");
     stores = {
       jobs: (await import("../../ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore,
@@ -155,7 +155,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       flows: seqStore.drizzleAfterReplyStore,
       runs: seqStore.drizzleRunStore,
       engine: (await import("../../after-reply/infrastructure/drizzle-sequence-engine")).drizzleSequenceEngine,
-      crm: (await import("../drizzle-crm-store")).drizzleCrmStore,
+      crm: (await import("../drizzle-reply-handling-store")).drizzleReplyHandlingStore,
     };
     FakeAi = (await import("../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
     createReplyMailer = (await import("../reply-mailer")).createReplyMailer;
@@ -271,7 +271,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await count("sequence_runs", b.f.org, "status = 'active'")).toBe(1);
       expect(await count("drafts", b.f.org, "status = 'awaiting_review'")).toBe(1);
       expect(await versionOf(b.recordId)).toBe(b.version);
-      await expect(crmApp.moveRecordStage(a.f.crmDeps, b.f.actor, a.recordId, { categoryKey: "interested", subcategoryId: null, expectedContextVersion: a.version + 1 })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(replyHandlingApp.moveRecordStage(a.f.replyHandlingDeps, b.f.actor, a.recordId, { categoryKey: "interested", subcategoryId: null, expectedContextVersion: a.version + 1 })).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 

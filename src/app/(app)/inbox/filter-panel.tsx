@@ -1,7 +1,7 @@
 import { FILTER_SELECT, FilterField, FilterPanel, type ActiveFilterChip } from "@/components/shell/filter-panel";
 import { Input } from "@/components/ui/input";
 import type { InboxFilterOptions } from "@/contexts/conversations/application/ports";
-import { categoryLabel } from "@/contexts/conversations/domain/crm";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 import { inboxHref, INBOX_CATEGORIES, type InboxParams } from "@/contexts/conversations/domain/inbox-filter";
 
 /** The filters in force as chips, each one a link that removes it. */

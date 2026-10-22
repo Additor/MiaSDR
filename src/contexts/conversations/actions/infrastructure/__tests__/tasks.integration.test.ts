@@ -9,9 +9,9 @@ describeDb("tasks, note ownership and the important flag", () => {
   const sql = testSql({ max: 4 });
   let composition: typeof import("../../../infrastructure/composition");
   let tasks: typeof import("../../application/tasks");
-  let crm: typeof import("../../../application/crm");
+  let replies: typeof import("../../../application/reply-handling");
   let deps: import("../../application/tasks").TaskDeps;
-  let crmDeps: import("../../../application/crm").CrmDeps;
+  let replyHandlingDeps: import("../../../application/reply-handling").ReplyHandlingDeps;
   const orgs: string[] = [];
   const users: string[] = [];
   let counter = 0;
@@ -55,9 +55,9 @@ describeDb("tasks, note ownership and the important flag", () => {
   beforeAll(async () => {
     composition = await import("../../../infrastructure/composition");
     tasks = await import("../../application/tasks");
-    crm = await import("../../../application/crm");
+    replies = await import("../../../application/reply-handling");
     deps = (await import("../task-composition")).taskDeps();
-    crmDeps = (await import("../../../infrastructure/crm-composition")).crmDeps();
+    replyHandlingDeps = (await import("../../../infrastructure/reply-handling-composition")).replyHandlingDeps();
   });
 
   afterAll(async () => {
@@ -134,7 +134,7 @@ describeDb("tasks, note ownership and the important flag", () => {
 
   it("limits note edits and deletes to the author or an admin", async () => {
     const w = await org();
-    const { id } = await crm.addCrmNote(crmDeps, w.ann, w.recordId, { body: "first" });
+    const { id } = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "first" });
     await expect(tasks.editNote(deps, w.bob, w.recordId, id, { body: "hijack" })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(tasks.assertCanDeleteNote(deps, w.bob, w.recordId, id)).rejects.toBeInstanceOf(ForbiddenError);
     await tasks.editNote(deps, w.ann, w.recordId, id, { title: " T ", body: " second " });
@@ -154,7 +154,7 @@ describeDb("tasks, note ownership and the important flag", () => {
   it("adds, edits and deletes a note on a person with no reply record, stored with a null record_id", async () => {
     const w = await org();
     const personId = await personWithoutRecord(w.id);
-    const { id } = await crm.addCrmNote(crmDeps, w.ann, { personId }, { title: " Call ", body: " Wants pricing " });
+    const { id } = await replies.addRecordNote(replyHandlingDeps, w.ann, { personId }, { title: " Call ", body: " Wants pricing " });
     const [row] = await sql`select person_id, record_id, title, body, created_by from notes where id = ${id}`;
     expect(row).toEqual({ person_id: personId, record_id: null, title: "Call", body: "Wants pricing", created_by: w.ann.userId });
 
@@ -167,9 +167,9 @@ describeDb("tasks, note ownership and the important flag", () => {
 
     await expect(tasks.assertCanDeleteNote(deps, w.bob, { personId }, id)).rejects.toBeInstanceOf(ForbiddenError);
     await tasks.assertCanDeleteNote(deps, w.ann, { personId }, id);
-    await crm.deleteCrmNote(crmDeps, w.ann, { personId }, id);
+    await replies.deleteRecordNote(replyHandlingDeps, w.ann, { personId }, id);
     expect((await sql`select 1 from notes where id = ${id}`).length).toBe(0);
-    await expect(crm.deleteCrmNote(crmDeps, w.ann, { personId }, id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(replies.deleteRecordNote(replyHandlingDeps, w.ann, { personId }, id)).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("adds and completes a task on a person with no reply record, stored with a null record_id", async () => {
@@ -186,8 +186,8 @@ describeDb("tasks, note ownership and the important flag", () => {
   it("lists by person every note and task, record-bound ones included, and edits a record-bound note through the person", async () => {
     const w = await org();
     const [{ person_id: personId }] = await sql`select person_id from records where id = ${w.recordId}`;
-    const onRecord = await crm.addCrmNote(crmDeps, w.ann, w.recordId, { body: "on the record" });
-    const onPerson = await crm.addCrmNote(crmDeps, w.ann, { personId }, { body: "on the person" });
+    const onRecord = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "on the record" });
+    const onPerson = await replies.addRecordNote(replyHandlingDeps, w.ann, { personId }, { body: "on the person" });
     expect((await tasks.listPersonNotes(deps, w.ann, personId)).map((n) => n.id).sort()).toEqual([onRecord.id, onPerson.id].sort());
     // The record scope still finds only the record's own notes.
     await expect(tasks.editNote(deps, w.ann, w.recordId, onPerson.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
@@ -203,8 +203,8 @@ describeDb("tasks, note ownership and the important flag", () => {
   it("leaves a note out of the person's list when its record has only private threads", async () => {
     const w = await org();
     const [{ person_id: personId }] = await sql`select person_id from records where id = ${w.recordId}`;
-    const onRecord = await crm.addCrmNote(crmDeps, w.ann, w.recordId, { body: "on the record" });
-    const onPerson = await crm.addCrmNote(crmDeps, w.ann, { personId }, { body: "on the person" });
+    const onRecord = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "on the record" });
+    const onPerson = await replies.addRecordNote(replyHandlingDeps, w.ann, { personId }, { body: "on the person" });
     const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, name, channel, type) values (${w.id}, 'Personal', 'linkedin', 'personal') returning id`;
     await sql`update conversations set private_campaign_id = ${campaignId} where id = ${w.conversationId}`;
     expect((await tasks.listPersonNotes(deps, w.ann, personId)).map((n) => n.id)).toEqual([onPerson.id]);
@@ -216,7 +216,7 @@ describeDb("tasks, note ownership and the important flag", () => {
   it("does not find a note or task of a private-thread-only record through the person; the record scope still does", async () => {
     const w = await org();
     const [{ person_id: personId }] = await sql`select person_id from records where id = ${w.recordId}`;
-    const onRecord = await crm.addCrmNote(crmDeps, w.ann, w.recordId, { body: "on the record" });
+    const onRecord = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "on the record" });
     const recordTask = await tasks.createTask(deps, w.ann, w.recordId, { name: "record task" });
     const personTask = await tasks.createTask(deps, w.ann, { personId }, { name: "person task" });
     const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, name, channel, type) values (${w.id}, 'Personal', 'linkedin', 'personal') returning id`;
@@ -224,7 +224,7 @@ describeDb("tasks, note ownership and the important flag", () => {
     try {
       await expect(tasks.editNote(deps, w.ann, { personId }, onRecord.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
       await expect(tasks.assertCanDeleteNote(deps, w.admin, { personId }, onRecord.id)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(crm.deleteCrmNote(crmDeps, w.admin, { personId }, onRecord.id)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(replies.deleteRecordNote(replyHandlingDeps, w.admin, { personId }, onRecord.id)).rejects.toBeInstanceOf(NotFoundError);
       expect((await sql`select body from notes where id = ${onRecord.id}`)[0].body).toBe("on the record");
       expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => t.id)).toEqual([personTask.id]);
       // The private thread's own view, by record, keeps both.
@@ -240,14 +240,14 @@ describeDb("tasks, note ownership and the important flag", () => {
     const a = await org();
     const b = await org();
     const personId = await personWithoutRecord(a.id);
-    const note = await crm.addCrmNote(crmDeps, a.ann, { personId }, { body: "private" });
-    await expect(crm.addCrmNote(crmDeps, b.ann, { personId }, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
+    const note = await replies.addRecordNote(replyHandlingDeps, a.ann, { personId }, { body: "private" });
+    await expect(replies.addRecordNote(replyHandlingDeps, b.ann, { personId }, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.createTask(deps, b.ann, { personId }, { name: "x" })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.listTasks(deps, b.ann, { personId })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.listPersonNotes(deps, b.ann, personId)).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.editNote(deps, b.admin, { personId }, note.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
     await expect(tasks.assertCanDeleteNote(deps, b.admin, { personId }, note.id)).rejects.toBeInstanceOf(NotFoundError);
-    await expect(crm.deleteCrmNote(crmDeps, b.admin, { personId }, note.id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(replies.deleteRecordNote(replyHandlingDeps, b.admin, { personId }, note.id)).rejects.toBeInstanceOf(NotFoundError);
     // Another person of the same organization does not reach the note either.
     const other = await personWithoutRecord(a.id);
     await expect(tasks.editNote(deps, a.ann, { personId: other }, note.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);

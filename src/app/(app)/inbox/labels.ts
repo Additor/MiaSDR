@@ -1,4 +1,4 @@
-import { workflowLabel } from "@/contexts/conversations/domain/crm";
+import { workflowLabel } from "@/contexts/conversations/domain/reply-handling";
 import { humanizeToken } from "@/shared/humanize";
 
 /** Reply draft statuses as the person reads them. `stale` shows as "Out of date" everywhere. */

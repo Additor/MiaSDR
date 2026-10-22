@@ -3,14 +3,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
-import { getCrmTaxonomy } from "@/contexts/conversations/application/crm";
+import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
 import { getWorkQueue, getWorkQueueCounts, getWorkQueueExtras } from "@/contexts/conversations/actions/application/work-queue";
 import { listTasks } from "@/contexts/conversations/actions/application/tasks";
 import type { QueueItem } from "@/contexts/conversations/actions/application/work-queue-ports";
 import type { TaskRow } from "@/contexts/conversations/actions/application/tasks-ports";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { QUEUE_GROUPS, QUEUE_GROUP_LABELS, isQueueScope, isWorkClear, scopeOf, type QueueScope } from "@/contexts/conversations/actions/domain/action-queue";
-import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
+import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInboundEvents } from "@/contexts/outreach/application/inbound-review";
@@ -127,7 +127,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   );
   const { queue, filterError } = result;
   const [taxonomy, emailCampaigns, linkedinCampaigns, extras, counts] = await Promise.all([
-    getCrmTaxonomy(crmDeps(), actor),
+    getReplyTaxonomy(replyHandlingDeps(), actor),
     listCampaigns(campaignDeps(), actor),
     listLinkedInCampaigns(linkedinCampaignDeps(), actor),
     getWorkQueueExtras(workQueueDeps(), actor),

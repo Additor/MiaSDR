@@ -14,14 +14,14 @@ describeDb("AI drafts for LinkedIn threads", () => {
   let liApp: typeof import("../../application/linkedin-reply");
   let mgmt: typeof import("../../application/reply-management");
   let aiJobsApp: typeof import("../../ai/application/ai-jobs");
-  let crmApp: typeof import("../../application/crm");
+  let replyHandlingApp: typeof import("../../application/reply-handling");
   let knowledgeApp: typeof import("../../ai/application/knowledge");
   let stores: {
     jobs: typeof import("../../ai/infrastructure/drizzle-ai-job-store").drizzleAiJobStore;
     replies: typeof import("../drizzle-reply-store").drizzleReplyStore;
     li: typeof import("../drizzle-linkedin-reply-store").drizzleLinkedInReplyStore;
     knowledge: typeof import("../../ai/infrastructure/drizzle-knowledge-store").drizzleKnowledgeStore;
-    crm: typeof import("../drizzle-crm-store").drizzleCrmStore;
+    crm: typeof import("../drizzle-reply-handling-store").drizzleReplyHandlingStore;
   };
   let FakeAi: typeof import("../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
   let Fake: typeof import("@/contexts/outreach/linkedin/infrastructure/fake-linkedin-gateway").FakeLinkedInGateway;
@@ -49,7 +49,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
     const [tick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "t", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const liDeps: LinkedInReplyDeps = { store: stores.li, sender: makeSender(fake), now: clock, aiConfigured: async (o) => (await resolver.forOrganization(o)) !== null };
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(mailboxProvider), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
-    const crmDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };
+    const replyHandlingDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };
     const n = ++counter;
     const input: InboundLinkedInInput = {
       organizationId: org,
@@ -63,7 +63,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       receivedAt: new Date(Date.now() - 5000),
     };
     const ingested = await composition.ingestInboundLinkedInMessage(input);
-    return { org, user, account: account as string, actor, fake, ai, liDeps, replyDeps, crmDeps, tag, input, conversationId: ingested.conversationId, personId: ingested.personId, run: () => tick.run({ deadline: Date.now() + 60_000, now: clock }) };
+    return { org, user, account: account as string, actor, fake, ai, liDeps, replyDeps, replyHandlingDeps, tag, input, conversationId: ingested.conversationId, personId: ingested.personId, run: () => tick.run({ deadline: Date.now() + 60_000, now: clock }) };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
@@ -87,14 +87,14 @@ describeDb("AI drafts for LinkedIn threads", () => {
     liApp = await import("../../application/linkedin-reply");
     mgmt = await import("../../application/reply-management");
     aiJobsApp = await import("../../ai/application/ai-jobs");
-    crmApp = await import("../../application/crm");
+    replyHandlingApp = await import("../../application/reply-handling");
     knowledgeApp = await import("../../ai/application/knowledge");
     stores = {
       jobs: (await import("../../ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore,
       replies: (await import("../drizzle-reply-store")).drizzleReplyStore,
       li: (await import("../drizzle-linkedin-reply-store")).drizzleLinkedInReplyStore,
       knowledge: (await import("../../ai/infrastructure/drizzle-knowledge-store")).drizzleKnowledgeStore,
-      crm: (await import("../drizzle-crm-store")).drizzleCrmStore,
+      crm: (await import("../drizzle-reply-handling-store")).drizzleReplyHandlingStore,
     };
     FakeAi = (await import("../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
     Fake = (await import("@/contexts/outreach/linkedin/infrastructure/fake-linkedin-gateway")).FakeLinkedInGateway;
@@ -155,7 +155,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       await knowledgeApp.createKnowledge(stores.knowledge, f.actor, { title: "Demo process", kind: "faq", content: "Demos run 30 minutes on Zoom.", alwaysInclude: true, tags: [] });
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
       const target = await one("select id, category_key from subcategories where organization_id = $1 and key = 'meeting_done' limit 1", [f.org]);
-      await crmApp.moveRecordStage(f.crmDeps, f.actor, record.id, { categoryKey: target.category_key, subcategoryId: target.id, expectedContextVersion: Number(record.context_version), note: "We met on a call, send the contract" });
+      await replyHandlingApp.moveRecordStage(f.replyHandlingDeps, f.actor, record.id, { categoryKey: target.category_key, subcategoryId: target.id, expectedContextVersion: Number(record.context_version), note: "We met on a call, send the contract" });
       // The move retires the open draft; a person asks for a fresh one.
       expect(await count("drafts", f.org, "status = 'stale'")).toBe(1);
       await mgmt.requestDraft(f.replyDeps, f.actor, f.conversationId);

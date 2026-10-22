@@ -3,7 +3,7 @@ import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Badge } from "@/components/ui/badge";
 import type { InboxRow } from "@/contexts/conversations/application/ports";
-import { categoryLabel } from "@/contexts/conversations/domain/crm";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { cn } from "@/lib/utils";
 

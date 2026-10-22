@@ -1,6 +1,6 @@
 import { FILTER_SELECT, FilterField, FilterPanel, type ActiveFilterChip } from "@/components/shell/filter-panel";
 import { QUEUE_GROUPS, QUEUE_GROUP_LABELS } from "@/contexts/conversations/actions/domain/action-queue";
-import { CRM_CATEGORIES } from "@/contexts/conversations/domain/crm";
+import { REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
 
 export interface QueueFilterValues {
   category: string;
@@ -36,7 +36,7 @@ export function QueueFilters({
         <FilterField label="Reply category">
           <select name="category" defaultValue={values.category} className={FILTER_SELECT}>
             <option value="">All reply categories</option>
-            {CRM_CATEGORIES.map((c) => (
+            {REPLY_CATEGORIES.map((c) => (
               <option key={c.key} value={c.key}>
                 {c.label}
               </option>
@@ -109,7 +109,7 @@ export function queueFilterChips(
   };
   const chips: ActiveFilterChip[] = [];
   const add = (key: keyof QueueFilterValues, name: string, value: string) => chips.push({ key, name, value, href: without(key) });
-  if (values.category) add("category", "Reply category", values.category === "unclassified" ? "Unclassified" : (CRM_CATEGORIES.find((c) => c.key === values.category)?.label ?? values.category));
+  if (values.category) add("category", "Reply category", values.category === "unclassified" ? "Unclassified" : (REPLY_CATEGORIES.find((c) => c.key === values.category)?.label ?? values.category));
   if (values.channel) add("channel", "Channel", values.channel === "linkedin" ? "LinkedIn" : "Email");
   if (values.group) add("group", "Group", QUEUE_GROUP_LABELS[values.group as (typeof QUEUE_GROUPS)[number]]?.title ?? values.group);
   if (values.subcategoryId) add("subcategoryId", "Reply subcategory", names.subcategories.find((s) => s.id === values.subcategoryId)?.name ?? values.subcategoryId);

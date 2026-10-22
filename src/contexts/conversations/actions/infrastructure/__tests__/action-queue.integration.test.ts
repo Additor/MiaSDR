@@ -6,7 +6,7 @@ import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-sup
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
 
-describeDb("CRM Actions queue: state-based groups, filters, keyset paging, counts", () => {
+describeDb("Actions queue: state-based groups, filters, keyset paging, counts", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 4 });
   let composition: typeof import("../../../infrastructure/composition");

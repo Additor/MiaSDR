@@ -55,7 +55,7 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
 
   /** Sends one command and returns the problem to show, or null when it worked. */
   async function send(action: Command) {
-    const result = await callApi(`/api/crm/records/${recordId}/after-reply`, "POST", { action });
+    const result = await callApi(`/api/records/${recordId}/after-reply`, "POST", { action });
     return result.ok ? null : (result.error ?? "Could not change the follow-ups. Try again.");
   }
   async function call(action: Command) {

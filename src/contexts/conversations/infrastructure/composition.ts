@@ -1,11 +1,11 @@
 import { ValidationError } from "@/shared/errors";
-import { quarantineInbound } from "../application/crm";
+import { quarantineInbound } from "../application/reply-handling";
 import { ingestInboundEmail } from "../application/ingest-inbound-email";
 import { ingestInboundLinkedIn } from "../application/ingest-inbound-linkedin";
 import type { InboundLinkedInInput } from "../application/linkedin-ports";
 import type { InboxDeps } from "../application/inbox";
 import type { InboundEmailInput, IngestOutcome, IngestResult, QuarantineInbound } from "../application/ports";
-import { drizzleCrmStore } from "./drizzle-crm-store";
+import { drizzleReplyHandlingStore } from "./drizzle-reply-handling-store";
 import { drizzleConversationStore } from "./drizzle-conversation-store";
 import { drizzleInboxStore } from "./drizzle-inbox-store";
 import { drizzleLinkedInConversationStore } from "./drizzle-linkedin-conversation-store";
@@ -27,7 +27,7 @@ const noReplay = {
 
 /** Parks a message no person can be found for. Reviewed at /inbox/unmatched. */
 const quarantine: QuarantineInbound = (input) =>
-  quarantineInbound({ store: drizzleCrmStore, inbox: drizzleInboxStore, now: () => new Date(), replay: noReplay }, input);
+  quarantineInbound({ store: drizzleReplyHandlingStore, inbox: drizzleInboxStore, now: () => new Date(), replay: noReplay }, input);
 
 /** Files one received email in the master inbox, or parks it for review. Production callers use this one. */
 export const receiveInbound = (input: InboundEmailInput): Promise<IngestOutcome> => ingestInboundEmail({ store: drizzleConversationStore, quarantine }, input);

@@ -26,7 +26,7 @@ export function RecordControls({ recordId, closed, closedReason }: { recordId: s
   async function send(path: "close" | "reopen") {
     setPending(true);
     setError(null);
-    const result = await callApi(`/api/crm/records/${recordId}/${path}`, "POST", path === "close" ? { reason: reason.trim() } : undefined);
+    const result = await callApi(`/api/records/${recordId}/${path}`, "POST", path === "close" ? { reason: reason.trim() } : undefined);
     setPending(false);
     if (!result.ok) return setError(result.error ?? "Could not change reply handling. Try again.");
     setReason("");

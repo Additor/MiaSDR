@@ -165,7 +165,7 @@ export function QueueGroup({
         ? item.conversationId
           ? await callApi(`/api/inbox/${item.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: c.contextVersion })
           : { ok: false, error: "Open the person to decide." }
-        : await callApi(`/api/crm/classifications/${c.classificationId}/acknowledge`, "POST");
+        : await callApi(`/api/classifications/${c.classificationId}/acknowledge`, "POST");
     if (!result.ok) {
       setRowErrors((current) => ({ ...current, [item.recordId]: result.error ?? "Could not save. Try again." }));
       return false;
@@ -213,7 +213,7 @@ export function QueueGroup({
     const params = new URLSearchParams(query);
     params.set("group", group);
     params.set("cursor", cursor);
-    const result = await callApi<GroupResponse>(`/api/crm/actions?${params.toString()}`, "GET");
+    const result = await callApi<GroupResponse>(`/api/actions?${params.toString()}`, "GET");
     setBusy(false);
     if (!result.ok || !result.data) {
       setError(result.error ?? "Could not load more.");

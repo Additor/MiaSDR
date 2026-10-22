@@ -1,5 +1,5 @@
 import type { InboxView } from "../domain/inbox-filter";
-import type { IdentityPayload } from "./crm";
+import type { IdentityPayload } from "./reply-handling";
 
 /** One inbound email, already normalized by the use case. */
 export interface InboundEmailInput {
@@ -88,7 +88,7 @@ export interface InboxFilter {
 }
 
 export interface ScheduledRow {
-  /** `campaign`: a campaign step. `sequence`: a CRM follow-up step. */
+  /** `campaign`: a campaign step. `sequence`: an After a reply follow-up step. */
   kind: "campaign" | "sequence";
   id: string;
   personId: string;

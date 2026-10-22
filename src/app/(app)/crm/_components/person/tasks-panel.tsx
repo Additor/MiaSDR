@@ -58,7 +58,7 @@ export type TasksPanelProps = TaskTarget & {
 
 export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = true, compact = false, ...target }: TasksPanelProps) {
   const router = useRouter();
-  const createUrl = target.recordId !== undefined ? `/api/crm/records/${target.recordId}/tasks` : `/api/people/${target.personId}/tasks`;
+  const createUrl = target.recordId !== undefined ? `/api/records/${target.recordId}/tasks` : `/api/people/${target.personId}/tasks`;
   // Ids of the form fields: unique per panel, so two panels on one page keep their labels apart.
   const fieldKey = target.recordId ?? target.personId;
   const zone = useBrowserZone();
@@ -96,13 +96,13 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
 
   async function patch(id: string, body: Record<string, unknown>) {
     setError(null);
-    const result = await callApi(`/api/crm/tasks/${id}`, "PATCH", body);
+    const result = await callApi(`/api/tasks/${id}`, "PATCH", body);
     if (!result.ok) return setError(result.error);
     router.refresh();
   }
 
   async function remove(id: string) {
-    const result = await callApi(`/api/crm/tasks/${id}`, "DELETE");
+    const result = await callApi(`/api/tasks/${id}`, "DELETE");
     if (!result.ok) throw new Error(result.error ?? "Could not delete the task. Try again.");
     toast.success("Task deleted.");
     router.refresh();

@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { deleteCrmNote } from "@/contexts/conversations/application/crm";
+import { deleteRecordNote } from "@/contexts/conversations/application/reply-handling";
 import { assertCanDeleteNote, editNote } from "@/contexts/conversations/actions/application/tasks";
-import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
+import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { withActor } from "@/app/_lib/api";
 
@@ -19,7 +19,7 @@ export async function DELETE(_request: Request, ctx: RouteContext<"/api/people/[
   const { personId, noteId } = await ctx.params;
   return withActor(async (actor) => {
     await assertCanDeleteNote(taskDeps(), actor, { personId }, noteId);
-    await deleteCrmNote(crmDeps(), actor, { personId }, noteId);
+    await deleteRecordNote(replyHandlingDeps(), actor, { personId }, noteId);
     return { ok: true };
   });
 }

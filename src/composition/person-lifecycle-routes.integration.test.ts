@@ -102,16 +102,16 @@ describeDb("person lifecycle routes", () => {
     expect(again.body).toMatchObject({ code: "already_converted", personId: leadId });
   });
 
-  it("POST /api/crm/people/dnc marks people, skips the marked and the missing, and answers 422 without a reason", async () => {
+  it("POST /api/people/dnc marks people, skips the marked and the missing, and answers 422 without a reason", async () => {
     const a = await lead("Dan One", `dnc1-${tag}@routes.test`);
     const missing = "00000000-0000-4000-8000-000000000099";
-    const first = await callRoute("crm/people/dnc/route.ts", "POST", { json: { ids: [a, missing], reason: "asked" }, as: world.member });
+    const first = await callRoute("people/dnc/route.ts", "POST", { json: { ids: [a, missing], reason: "asked" }, as: world.member });
     expect(first.status).toBe(200);
     expect(first.body).toEqual({ marked: 1, skipped: [{ personId: missing, reason: "not_found" }] });
-    const second = await callRoute("crm/people/dnc/route.ts", "POST", { json: { ids: [a], reason: "asked" }, as: world.member });
+    const second = await callRoute("people/dnc/route.ts", "POST", { json: { ids: [a], reason: "asked" }, as: world.member });
     expect(second.body).toEqual({ marked: 0, skipped: [{ personId: a, reason: "already_marked" }] });
-    expect((await callRoute("crm/people/dnc/route.ts", "POST", { json: { ids: [a], reason: "" }, as: world.member })).status).toBe(422);
-    expect((await callRoute("crm/people/dnc/route.ts", "POST", { json: { ids: [], reason: "asked" }, as: world.member })).status).toBe(400);
+    expect((await callRoute("people/dnc/route.ts", "POST", { json: { ids: [a], reason: "" }, as: world.member })).status).toBe(422);
+    expect((await callRoute("people/dnc/route.ts", "POST", { json: { ids: [], reason: "asked" }, as: world.member })).status).toBe(400);
   });
 
   it("POST /api/companies answers 201 for a new company, 200 for a company with leads only, and 409 company_exists for a listed one", async () => {
