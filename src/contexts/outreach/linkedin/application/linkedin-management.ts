@@ -8,10 +8,8 @@ import { type WorkingHours } from "../../domain/working-hours";
 import { LinkedInGatewayError, type GatewayAccount, type LinkedInGateway } from "./linkedin-ports";
 import type { LinkedInConnectStore } from "./linkedin-connect-ports";
 
-/** Writes organization-level audit rows (`audit_log`). A failed write throws to the caller. */
-export interface AuditSink {
-  record(entry: { organizationId: string; actorUserId: string | null; action: string; entityType?: string; entityId?: string; meta?: Record<string, unknown> }): Promise<void>;
-}
+import type { AuditSink } from "@/platform/db/audit";
+export type { AuditSink };
 
 /** The last webhook registration, kept on the integration row. It never holds the secret. */
 export interface WebhookStatus {

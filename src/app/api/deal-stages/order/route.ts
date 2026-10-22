@@ -1,5 +1,5 @@
 import { reorderDealStages } from "@/contexts/deals/application/deal-stages";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { withActor } from "@/app/_lib/api";
 import { idsSchema } from "@/app/api/deals/validation";
 

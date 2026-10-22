@@ -109,6 +109,69 @@ describe("tier dependencies", () => {
   });
 });
 
+/**
+ * What a context publishes to the contexts above it: its `domain/`, `application/`, schema and composition files
+ * (`composition.ts`, `*-composition.ts`), plus the infrastructure modules listed here. The rest of its `infrastructure/`
+ * is private, so a context can rename or split a store without touching another context.
+ */
+const PUBLISHED_INFRASTRUCTURE = new Set([
+  // Session readers and the auth handler.
+  "identity/infrastructure/auth",
+  "identity/infrastructure/session",
+  "identity/infrastructure/signup-facts",
+  // Credential encryption and live checks, a generic service.
+  "integrations/infrastructure/credential-cipher",
+  "integrations/infrastructure/credential-verifier",
+  // The organization read (time zone, name).
+  "tenancy/infrastructure/drizzle-organization-store",
+  // The lead search predicate the enrollment lists filter with.
+  "leads/infrastructure/queries",
+  // The reply stop and the suppression store, which conversations runs inside its own transactions.
+  "outreach/infrastructure/reply-stop",
+  "outreach/infrastructure/suppression-store",
+]);
+
+/** Context files that import another context's private infrastructure. Every cross-context wiring now lives in src/composition. Keep it empty. */
+const PRIVATE_CROSS_IMPORTS: Record<string, string[]> = {};
+
+/** Another context's private infrastructure modules that `file` imports, as `<context>/.../infrastructure/<module>`. */
+export function privateCrossImports(file: string, source: string): string[] {
+  const own = path.relative(SRC, file).split(path.sep)[1];
+  const found = new Set<string>();
+  for (const s of specifiers(source)) {
+    const t = target(file, s)?.match(/^contexts\/(([^/]+)\/(?:[^/]+\/)*infrastructure\/(?:[^/]+\/)*([^/]+))$/);
+    if (!t || t[2] === own) continue;
+    const [, module, , name] = t;
+    if (name === "schema" || name === "sequences-schema" || /(^|-)composition$/.test(name) || PUBLISHED_INFRASTRUCTURE.has(module)) continue;
+    found.add(module);
+  }
+  return [...found].sort();
+}
+
+describe("context interfaces", () => {
+  it("imports another context's infrastructure only where it is published or the shrink-only list allows it", () => {
+    const found: Record<string, string[]> = {};
+    for (const file of sourceFiles(path.join(SRC, "contexts"))) {
+      const hits = privateCrossImports(file, readFileSync(file, "utf8"));
+      if (hits.length > 0) found[path.relative(ROOT, file).split(path.sep).join("/")] = hits;
+    }
+    expect(found).toEqual(PRIVATE_CROSS_IMPORTS);
+  });
+
+  it("tells a published module, a composition and a schema from a private module", () => {
+    const file = path.join(SRC, "contexts/deals/infrastructure/example.ts");
+    const source = [
+      'import { leadSearchCondition } from "@/contexts/leads/infrastructure/queries";',
+      'import { leadDeps } from "@/contexts/leads/infrastructure/composition";',
+      'import { people } from "@/contexts/leads/infrastructure/schema";',
+      'import { drizzleLeadStore } from "@/contexts/leads/infrastructure/drizzle-lead-store";',
+      'import { gateway } from "../../outreach/linkedin/infrastructure/unipile-gateway";',
+      'import { own } from "./own-store";',
+    ].join("\n");
+    expect(privateCrossImports(file, source)).toEqual(["leads/infrastructure/drizzle-lead-store", "outreach/linkedin/infrastructure/unipile-gateway"]);
+  });
+});
+
 describe("context dependencies", () => {
   it("places every context in a layer", () => {
     const contexts = readdirSync(path.join(SRC, "contexts")).filter((name) => statSync(path.join(SRC, "contexts", name)).isDirectory());

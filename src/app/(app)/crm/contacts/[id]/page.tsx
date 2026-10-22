@@ -11,7 +11,7 @@ import { contactDeleteDeps } from "@/composition/person-lifecycle";
 import { personReplyHandling } from "@/contexts/conversations/infrastructure/composition";
 import { dealSummaryForPeople, getDeal, isUuid } from "@/contexts/deals/application/deals";
 import { primaryDeal } from "@/contexts/deals/domain/primary-deal";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { previewContactDelete } from "@/contexts/leads/application/contact-delete";
 import { getLead } from "@/contexts/leads/application/lead-management";

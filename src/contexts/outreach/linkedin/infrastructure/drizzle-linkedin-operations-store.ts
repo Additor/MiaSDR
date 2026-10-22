@@ -1,22 +1,14 @@
 import { and, desc, eq, inArray, isNull, notLike, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { recordAudit } from "@/platform/db/audit";
 import { auditLog, inboundEvents, jobRuns, linkedinAccounts, users } from "@/platform/db/schema";
 import { TICK_FAILURE_PREFIX } from "@/platform/jobs/failure-log";
 import { claimSlot, finishSlot } from "@/platform/jobs/slots";
 import { MAX_EVENT_ATTEMPTS } from "../domain/linkedin";
-import type { AuditSink } from "../application/linkedin-management";
 import type { LinkedInOperationsStore, WebhookBacklog } from "../application/linkedin-operations";
 
 const p = inboundEvents;
 
 const entry = (message: string, now: Date) => JSON.stringify([{ ts: now.toISOString(), level: "retry", message }]);
-
-export const drizzleAuditSink: AuditSink = {
-  async record(e) {
-    await recordAudit(db, e);
-  },
-};
 
 export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
   async recentRuns(organizationId, limit) {

@@ -1,4 +1,4 @@
-import type { DbHandle } from "./client";
+import { db, type DbHandle } from "./client";
 import { auditLog } from "./schema";
 
 export interface AuditEntry {
@@ -23,3 +23,11 @@ export async function recordAudit(handle: DbHandle, entry: AuditEntry): Promise<
     meta: entry.meta ?? {},
   });
 }
+
+/** Writes organization-level audit rows (`audit_log`). A failed write throws to the caller. Use cases take it as a port. */
+export interface AuditSink {
+  record(entry: AuditEntry): Promise<void>;
+}
+
+/** The audit sink on the pool. */
+export const auditSink: AuditSink = { record: (entry) => recordAudit(db, entry) };

@@ -1,7 +1,7 @@
 /** The real suppression store, wired to conversations' follow-up stop as src/composition wires it. Imported late, after `useTestEnv`. */
 export async function suppressionStore() {
   const [{ createSuppressionStore }, { followUpStop }] = await Promise.all([
-    import("@/contexts/outreach/infrastructure/drizzle-outreach-store"),
+    import("@/contexts/outreach/infrastructure/suppression-store"),
     import("@/contexts/conversations/after-reply/infrastructure/sequence-stop"),
   ]);
   return createSuppressionStore(followUpStop);

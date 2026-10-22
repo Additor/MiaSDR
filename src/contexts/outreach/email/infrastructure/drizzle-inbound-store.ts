@@ -4,7 +4,7 @@ import { campaignEnrollments, inboundEvents, mailboxes, people, sends } from "@/
 import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from "../../application/inbound-ports";
 import type { InboundEmail } from "../../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
-import { createSuppressionStore } from "../../infrastructure/drizzle-outreach-store";
+import { createSuppressionStore } from "../../infrastructure/suppression-store";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];

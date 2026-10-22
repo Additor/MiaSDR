@@ -15,7 +15,8 @@ import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-
 import { drizzleEnrollmentAdminStore } from "../../infrastructure/drizzle-enrollment-admin";
 import { drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
 import { drizzleLinkedInConnectStore } from "./drizzle-linkedin-connect-store";
-import { drizzleAuditSink, drizzleLinkedInOperationsStore } from "./drizzle-linkedin-operations-store";
+import { drizzleLinkedInOperationsStore } from "./drizzle-linkedin-operations-store";
+import { auditSink } from "@/platform/db/audit";
 import { drizzleLinkedInCampaignStore } from "./drizzle-linkedin-campaign-store";
 import { createDrizzleLinkedInInboundStore } from "./drizzle-linkedin-inbound-store";
 import { drizzleLinkedInSearchBatchStore } from "./drizzle-linkedin-search-batch-store";
@@ -27,6 +28,9 @@ import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { UnipileGateway } from "./unipile-gateway";
 import { parseUnipilePayload } from "./unipile-webhook";
+
+/** Enrolls people in a LinkedIn campaign inside the caller's transaction (grid's campaign handoff). */
+export { enrollPeople } from "./drizzle-linkedin-campaign-store";
 
 const globalForFake = globalThis as unknown as { __miasdrFakeLinkedIn?: FakeLinkedInGateway };
 
@@ -69,13 +73,13 @@ export function linkedinManagementDeps(): LinkedInManagementDeps {
     gatewayFor: (credentials) => (fakeMode() ? fakeGateway() : new UnipileGateway(credentials)),
     appUrl: env().APP_URL,
     now: () => new Date(),
-    audit: drizzleAuditSink,
+    audit: auditSink,
     connectLinks: drizzleLinkedInConnectStore,
   };
 }
 
 export function linkedinOperationsDeps(inbox: InboxFiling): LinkedInOperationsDeps {
-  return { store: drizzleLinkedInOperationsStore, inbound: inboundDeps(inbox), audit: drizzleAuditSink, now: () => new Date() };
+  return { store: drizzleLinkedInOperationsStore, inbound: inboundDeps(inbox), audit: auditSink, now: () => new Date() };
 }
 
 export const personalThreadDeps = () => ({ store: drizzlePersonalThreadStore });

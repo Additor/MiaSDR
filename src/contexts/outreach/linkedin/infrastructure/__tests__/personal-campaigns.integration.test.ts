@@ -29,7 +29,7 @@ describeDb("personal campaigns", () => {
   let workQueueComposition: typeof import("@/contexts/conversations/actions/infrastructure/work-queue-composition");
   let personHandling: typeof import("@/contexts/conversations/infrastructure/person-handling").personReplyHandling;
   let dealsApp: typeof import("@/contexts/deals/application/deals");
-  let dealsComposition: typeof import("@/contexts/deals/infrastructure/deals-composition");
+  let dealsComposition: typeof import("@/composition/deals");
   let aiJobs: typeof import("@/contexts/conversations/ai/infrastructure/drizzle-ai-job-store");
   let replyStore: typeof import("@/contexts/conversations/infrastructure/drizzle-reply-store");
   let linkedinReplyStore: typeof import("@/contexts/conversations/infrastructure/drizzle-linkedin-reply-store");
@@ -111,7 +111,7 @@ describeDb("personal campaigns", () => {
     workQueueComposition = await import("@/contexts/conversations/actions/infrastructure/work-queue-composition");
     personHandling = (await import("@/contexts/conversations/infrastructure/person-handling")).personReplyHandling;
     dealsApp = await import("@/contexts/deals/application/deals");
-    dealsComposition = await import("@/contexts/deals/infrastructure/deals-composition");
+    dealsComposition = await import("@/composition/deals");
     aiJobs = await import("@/contexts/conversations/ai/infrastructure/drizzle-ai-job-store");
     replyStore = await import("@/contexts/conversations/infrastructure/drizzle-reply-store");
     linkedinReplyStore = await import("@/contexts/conversations/infrastructure/drizzle-linkedin-reply-store");

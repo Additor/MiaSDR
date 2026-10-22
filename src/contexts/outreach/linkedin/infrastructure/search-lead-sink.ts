@@ -1,5 +1,5 @@
 import { importFoundPeople } from "@/contexts/leads/application/found-people";
-import { drizzleFoundPeopleStore } from "@/contexts/leads/infrastructure/drizzle-found-people-store";
+import { foundPeopleStore } from "@/contexts/leads/infrastructure/composition";
 import type { SearchLeadSink } from "../application/linkedin-search-ports";
 import { enrollPeopleCounted } from "./drizzle-linkedin-campaign-store";
 
@@ -7,7 +7,7 @@ import { enrollPeopleCounted } from "./drizzle-linkedin-campaign-store";
 export const searchLeadSink: SearchLeadSink = {
   async importPeople(input) {
     const report = await importFoundPeople(
-      { store: drizzleFoundPeopleStore },
+      { store: foundPeopleStore },
       { organizationId: input.organizationId, source: `linkedin_search:${input.searchId}`, people: input.people, tx: input.tx },
     );
     const ids = new Map([...report.people].map(([key, value]) => [key, value.personId]));

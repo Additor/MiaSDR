@@ -1,6 +1,6 @@
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { listDealStages } from "@/contexts/deals/application/deal-stages";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import type { Actor } from "@/shared/errors";
 import type { DealMemberOption, DealStageList } from "./deal-form";
 

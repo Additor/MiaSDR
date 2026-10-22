@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { personReplyHandling } from "@/contexts/conversations/infrastructure/composition";
 import type { ContactListRow } from "@/contexts/deals/application/deal-ports";
 import { getCompany } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { companyInUseMessage } from "@/contexts/leads/application/company-lifecycle";
 import { listCustomColumns } from "@/contexts/leads/application/custom-columns";

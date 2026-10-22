@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createDealFromLead } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { withActor } from "@/app/_lib/api";
 import { dealFieldsSchema } from "@/app/api/deals/validation";
 

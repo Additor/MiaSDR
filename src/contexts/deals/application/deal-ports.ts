@@ -10,7 +10,7 @@ import type { DealStageKind } from "../domain/stages";
  * Ports of the deals context ("Leads and CRM" in docs/decisions.md). Deals owns `deals` and `deal_stages`. Everything
  * else arrives through a port: the conversion is the leads use case `convertToContact` (`ConvertLead`), the person's history
  * is conversations' `appendPersonEvent`, the replied enrollment and campaign names are outreach reads, and the screens read
- * through `CrmRead`, an explicit read model. `deals-composition.ts` wires all of them. Every call carries the organization.
+ * through `CrmRead`, an explicit read model. `src/composition/deals.ts` wires all of them. Every call carries the organization.
  */
 
 export interface DealStage {

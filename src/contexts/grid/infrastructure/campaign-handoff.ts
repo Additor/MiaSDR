@@ -1,13 +1,11 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { importLeads } from "@/contexts/leads/application/import-leads";
 import type { Mapping } from "@/contexts/leads/domain/import-plan";
-import { defaultPhoneCountry } from "@/contexts/leads/infrastructure/default-phone-country";
-import { drizzleLeadStore } from "@/contexts/leads/infrastructure/drizzle-lead-store";
+import { leadImportDeps } from "@/contexts/leads/infrastructure/composition";
 import { normalizeEmail, normalizeLinkedinSlug } from "@/contexts/leads/domain/normalize";
 import { DEFAULT_STEPS } from "@/contexts/outreach/application/campaign-management";
-import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
-import { enrollPeople } from "@/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store";
-import { enrollEmailPeople } from "@/contexts/outreach/infrastructure/drizzle-management-stores";
+import { campaignDeps, enrollEmailPeople } from "@/contexts/outreach/infrastructure/composition";
+import { enrollPeople } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { db, type DbTx } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, contactPolicies, people, suppressionList } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
@@ -85,7 +83,7 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
 
   const lead = buildLeadImport(importable, input.columns, input.fields, input.customColumnKeys);
   const report = await importLeads(
-    { store: drizzleLeadStore, defaultPhoneCountry },
+    leadImportDeps(),
     { tx, organizationId: org, userId: input.userId, filename: `grid:${input.tableName}`.slice(0, 200), headers: lead.headers, rows: lead.rows, mapping: lead.mapping as Mapping },
   );
 

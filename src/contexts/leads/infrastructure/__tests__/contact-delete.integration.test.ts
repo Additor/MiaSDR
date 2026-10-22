@@ -19,7 +19,7 @@ describeDb("contact delete", () => {
   let deps: ContactDeleteDeps;
   let purgeSwitchIsOn: typeof import("@/contexts/conversations/infrastructure/person-purge").purgeSwitchIsOn;
   let deals: typeof import("@/contexts/deals/application/deals");
-  let dealsDeps: typeof import("@/contexts/deals/infrastructure/deals-composition").dealsDeps;
+  let dealsDeps: typeof import("@/composition/deals").dealsDeps;
   const orgs: string[] = [];
   const users: string[] = [];
 
@@ -28,7 +28,7 @@ describeDb("contact delete", () => {
     deps = (await import("@/composition/person-lifecycle")).contactDeleteDeps;
     purgeSwitchIsOn = (await import("@/contexts/conversations/infrastructure/person-purge")).purgeSwitchIsOn;
     deals = await import("@/contexts/deals/application/deals");
-    dealsDeps = (await import("@/contexts/deals/infrastructure/deals-composition")).dealsDeps;
+    dealsDeps = (await import("@/composition/deals")).dealsDeps;
   });
 
   afterAll(async () => {

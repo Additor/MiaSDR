@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import type { EventEntry } from "@/contexts/conversations/application/crm-ports";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import type { Actor } from "@/shared/errors";
 import { humanizeToken } from "@/shared/humanize";
 import { eventLabel } from "@/app/(app)/crm/_components/event-labels";

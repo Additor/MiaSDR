@@ -74,13 +74,13 @@ describe("crm-read source", () => {
 describeDb("crm-read against Postgres", () => {
   let kit: DealsKit;
   let deals: typeof import("../../application/deals");
-  let composition: typeof import("../deals-composition");
+  let composition: typeof import("@/composition/deals");
   let crm: typeof import("../crm-read");
 
   beforeAll(async () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
     deals = await import("../../application/deals");
-    composition = await import("../deals-composition");
+    composition = await import("@/composition/deals");
     crm = await import("../crm-read");
   }, 60_000);
 

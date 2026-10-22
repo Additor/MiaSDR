@@ -11,7 +11,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { personReplyHandling } from "@/contexts/conversations/infrastructure/composition";
 import { getDeal, type DealView } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getLead } from "@/contexts/leads/application/lead-management";
 import { leadContactPoints } from "@/contexts/leads/domain/lead-activity";

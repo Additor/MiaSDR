@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listDealStages } from "@/contexts/deals/application/deal-stages";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { toActor } from "@/app/_lib/api";
 import { StagesPanel } from "./stages-panel";

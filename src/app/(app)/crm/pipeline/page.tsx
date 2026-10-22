@@ -11,7 +11,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { board, isUuid } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { toActor } from "@/app/_lib/api";
 import type { DealStageList } from "../_components/deal-form";

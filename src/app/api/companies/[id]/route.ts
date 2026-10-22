@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { companyLifecycleDeps } from "@/composition/person-lifecycle";
 import { getCompany } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { deleteCompany } from "@/contexts/leads/application/company-lifecycle";
 import { updateCompany } from "@/contexts/leads/application/company-management";
 import { companyDeps } from "@/contexts/leads/infrastructure/composition";

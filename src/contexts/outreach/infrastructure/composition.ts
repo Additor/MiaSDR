@@ -17,7 +17,8 @@ import { drizzleEnrollmentAdminStore } from "./drizzle-enrollment-admin";
 import { createDrizzleInboundStore } from "../email/infrastructure/drizzle-inbound-store";
 import { readLeadStatuses } from "./drizzle-lead-statuses";
 import { drizzleMergeFieldSource } from "./drizzle-merge-fields";
-import { createSuppressionStore, drizzleOutreachStore } from "./drizzle-outreach-store";
+import { drizzleOutreachStore } from "./drizzle-outreach-store";
+import { createSuppressionStore } from "./suppression-store";
 import { readReachability } from "./drizzle-reachability";
 import { drizzleTestSendStore } from "../email/infrastructure/drizzle-test-send-store";
 import { drizzleCampaignStore, drizzleMailboxStore } from "./drizzle-management-stores";
@@ -30,6 +31,9 @@ export { readReachability } from "./drizzle-reachability";
 
 /** Enrollment admin store. Pages read the available senders from it. */
 export { drizzleEnrollmentAdminStore as enrollmentAdminStore } from "./drizzle-enrollment-admin";
+
+/** Enrolls people in an email campaign inside the caller's transaction (grid's campaign handoff). */
+export { enrollEmailPeople } from "./drizzle-management-stores";
 
 /** Cross-campaign notices reader. The notice use cases take it directly. */
 export { drizzleCrossCampaignNotices as crossCampaignNotices } from "./drizzle-cross-campaign-notices";

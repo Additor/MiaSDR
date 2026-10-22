@@ -12,12 +12,12 @@ import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
 describeDb("create deal for contact", () => {
   let kit: DealsKit;
   let deals: typeof import("../../application/deals");
-  let composition: typeof import("../deals-composition");
+  let composition: typeof import("@/composition/deals");
 
   beforeAll(async () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
     deals = await import("../../application/deals");
-    composition = await import("../deals-composition");
+    composition = await import("@/composition/deals");
   }, 60_000);
 
   afterAll(async () => {

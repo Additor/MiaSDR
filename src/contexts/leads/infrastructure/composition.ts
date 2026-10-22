@@ -21,3 +21,6 @@ export { leadFilterOptions, listLeads } from "./queries";
 export { readLeadNeighbors, type LeadNeighbors } from "./lead-neighbors";
 export { findCompanyByDomain, searchCompanies } from "./company-domain-store";
 export { searchPeople } from "./people-directory";
+
+/** Where a LinkedIn search hands the people it found: outreach's search sink calls `importFoundPeople` with it. */
+export { drizzleFoundPeopleStore as foundPeopleStore } from "./drizzle-found-people-store";

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { companyLifecycleDeps } from "@/composition/person-lifecycle";
 import { listCompanies } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { addCompany } from "@/contexts/leads/application/company-lifecycle";
 import { withActor } from "@/app/_lib/api";
 

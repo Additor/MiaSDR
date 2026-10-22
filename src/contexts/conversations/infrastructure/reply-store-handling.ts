@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { createSuppressionStore } from "@/contexts/outreach/infrastructure/drizzle-outreach-store";
+import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
 import { restartRecordWorkTx } from "./restart-record-work";

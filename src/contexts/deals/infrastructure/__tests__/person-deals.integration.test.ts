@@ -10,14 +10,14 @@ import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
 describeDb("person deals", () => {
   let kit: DealsKit;
   let deals: typeof import("../../application/deals");
-  let composition: typeof import("../deals-composition");
+  let composition: typeof import("@/composition/deals");
   let personDeals: typeof import("../person-deals");
   let dbClient: typeof import("@/platform/db/client");
 
   beforeAll(async () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
     deals = await import("../../application/deals");
-    composition = await import("../deals-composition");
+    composition = await import("@/composition/deals");
     personDeals = await import("../person-deals");
     dbClient = await import("@/platform/db/client");
   }, 60_000);

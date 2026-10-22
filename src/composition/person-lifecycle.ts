@@ -2,7 +2,7 @@ import { appendPersonEvent, lockContactPolicy, lockPersonForDelete, personHandli
 import { purgePersonHandling } from "@/contexts/conversations/infrastructure/person-purge";
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
-import { conversionDeps, dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { conversionDeps, dealsDeps } from "@/composition/deals";
 import { dealCountsOfPerson, dealTitleParts, deleteClosedDealsOfPerson, lockDealsOfPerson } from "@/contexts/deals/infrastructure/person-deals";
 import { addContact, type AddContactDeps, type AddContactInput, type AddContactResult } from "@/contexts/leads/application/add-contact";
 import type { CompanyLifecycleDeps, CompanyMergePreviewDeps } from "@/contexts/leads/application/company-lifecycle";

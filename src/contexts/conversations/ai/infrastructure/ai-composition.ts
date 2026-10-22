@@ -8,7 +8,7 @@ import { db } from "@/platform/db/client";
 import { integrationAccounts, integrationCredentials } from "@/platform/db/schema";
 import { env } from "@/shared/env";
 import type { Job } from "@/platform/jobs/types";
-import { drizzleAuditSink } from "@/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-operations-store";
+import { auditSink } from "@/platform/db/audit";
 import type { AiJobOpsDeps } from "../application/ai-job-ops";
 import { AI_JOB_LEASE_MS, createAiJobs } from "../application/ai-jobs";
 import type { AiProvider, AiProviderResolver } from "../application/ai-ports";
@@ -57,7 +57,7 @@ export const replyDeps = (): ReplyDeps => ({
   newToken: () => randomUUID(),
 });
 
-export const aiJobOpsDeps = (): AiJobOpsDeps => ({ jobs: drizzleAiJobStore, audit: drizzleAuditSink, now: () => new Date() });
+export const aiJobOpsDeps = (): AiJobOpsDeps => ({ jobs: drizzleAiJobStore, audit: auditSink, now: () => new Date() });
 
 export const linkedinReplyDeps = (): LinkedInReplyDeps => ({
   store: drizzleLinkedInReplyStore,
@@ -76,7 +76,7 @@ export function conversationJobs(): Job[] {
     workerId: `${hostname()}:${process.pid}`,
     leaseMs: AI_JOB_LEASE_MS,
     notConfiguredDelayMs: 5 * 60_000,
-    audit: drizzleAuditSink,
+    audit: auditSink,
   };
   const jobs = createAiJobs(deps);
   // Reconciling needs the mailbox, so it exists only when a mail adapter is selected. It looks, it never sends.

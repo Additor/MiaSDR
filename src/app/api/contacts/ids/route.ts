@@ -1,5 +1,5 @@
 import { listContactIds } from "@/contexts/deals/application/deals";
-import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
+import { dealsDeps } from "@/composition/deals";
 import { withActor } from "@/app/_lib/api";
 
 /**

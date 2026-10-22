@@ -20,7 +20,7 @@ import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
 describeDb("conversion races", () => {
   let kit: DealsKit;
   let deals: typeof import("../../application/deals");
-  let composition: typeof import("../deals-composition");
+  let composition: typeof import("@/composition/deals");
   let leadsApp: typeof import("@/contexts/leads/application/convert-to-contact");
   let conversations: typeof import("@/contexts/conversations/infrastructure/composition");
   let suppression: Awaited<ReturnType<typeof import("@/test-support/suppression").suppressionStore>>;
@@ -29,7 +29,7 @@ describeDb("conversion races", () => {
   beforeAll(async () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
     deals = await import("../../application/deals");
-    composition = await import("../deals-composition");
+    composition = await import("@/composition/deals");
     leadsApp = await import("@/contexts/leads/application/convert-to-contact");
     conversations = await import("@/contexts/conversations/infrastructure/composition");
     const outreach = await import("@/contexts/outreach/infrastructure/drizzle-outreach-store");
