@@ -8,7 +8,9 @@ export type AiStatus =
   | { state: "demo" }
   | { state: "no_key" }
   /** A key is saved for `provider`, which has no default model, and nobody picked one. */
-  | { state: "no_model"; provider: string };
+  | { state: "no_model"; provider: string }
+  /** The saved key for `provider` no longer decrypts (a changed encryption key, a damaged row): it must be saved again. */
+  | { state: "key_unreadable"; provider: string };
 
 export const aiIsOn = (status: AiStatus): boolean => status.state === "on" || status.state === "demo";
 
@@ -24,6 +26,11 @@ export function aiOffMessage(status: AiStatus, reader: "admin" | "member" = "adm
     return reader === "admin"
       ? `AI is off. ${status.provider} needs a model: pick one in Settings, Integrations.`
       : `AI is off. ${status.provider} needs a model: ask an owner or admin to pick one.`;
+  }
+  if (status.state === "key_unreadable") {
+    return reader === "admin"
+      ? `AI is off. The saved ${status.provider} key cannot be read: save it again in Settings, Integrations.`
+      : `AI is off. The saved ${status.provider} key cannot be read: ask an owner or admin to save it again.`;
   }
   return null;
 }

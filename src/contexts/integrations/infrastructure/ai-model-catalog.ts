@@ -1,19 +1,17 @@
-import type { AiConnectionSpec } from "../domain/ai-connections";
+import { headerSafe } from "@/platform/credentials/key-check";
+import { ANTHROPIC_VERSION, type AiConnectionSpec } from "../domain/ai-connections";
 import type { ModelCatalog, ModelListResult } from "../application/ai-model";
 
-const ANTHROPIC_VERSION = "2023-06-01";
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 5;
 const TIMEOUT_MS = 10_000;
-
-/** Same printable-ASCII rule as the credential verifier: anything else makes fetch throw while it builds headers. */
-const headerSafe = (value: string) => !/[^\x20-\x7e]/.test(value);
 
 type ModelRow = { id?: unknown; type?: unknown };
 
 /**
  * A connection's model list. Anthropic: GET /v1/models with the saved key, paged by `after_id` and `has_more`; 401 and
- * 403 mean the key is rejected. The gateways: one public GET, filtered by the spec. Any other failure, a malformed body
+ * 403 mean the key is rejected. The gateways: their list is public, so the saved key goes to the spec's key check
+ * first (401 or 403 means rejected), then one public GET, filtered by the spec. Any other failure, a malformed body
  * or a network error means the list is unreachable. The key travels in a header only.
  */
 export function createModelCatalog(options: { fetch?: typeof fetch; timeoutMs?: number } = {}): ModelCatalog {
@@ -47,7 +45,12 @@ export function createModelCatalog(options: { fetch?: typeof fetch; timeoutMs?: 
     return ids.length > 0 ? { ok: true, ids } : { ok: false, reason: "unreachable" };
   }
 
-  async function publicList(spec: AiConnectionSpec): Promise<ModelListResult> {
+  async function publicList(spec: AiConnectionSpec, apiKey: string): Promise<ModelListResult> {
+    if (!apiKey || !headerSafe(apiKey)) return { ok: false, reason: "rejected" };
+    // A revoked key still sees the public list, so ask the key check before offering models it cannot run.
+    const check = await get(spec.keyCheck.url, { authorization: `Bearer ${apiKey}` });
+    await check.body?.cancel().catch(() => undefined);
+    if (check.status === 401 || check.status === 403) return { ok: false, reason: "rejected" };
     const response = await get(spec.models.url, {});
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
@@ -65,7 +68,7 @@ export function createModelCatalog(options: { fetch?: typeof fetch; timeoutMs?: 
   return {
     async list(spec, apiKey): Promise<ModelListResult> {
       try {
-        return spec.models.auth === "anthropic" ? await anthropic(spec, apiKey) : await publicList(spec);
+        return spec.models.auth === "anthropic" ? await anthropic(spec, apiKey) : await publicList(spec, apiKey);
       } catch {
         return { ok: false, reason: "unreachable" };
       }

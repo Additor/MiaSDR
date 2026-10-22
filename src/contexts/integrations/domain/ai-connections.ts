@@ -29,6 +29,9 @@ export interface AiConnectionSpec {
   fallbackModels: readonly string[];
 }
 
+/** The `anthropic-version` header the Anthropic SDK sends on every request; the key check and the model list send it too. */
+export const ANTHROPIC_VERSION = "2023-06-01";
+
 /** The model the code uses when neither the organization nor `AI_MODEL` names one, on a direct Anthropic connection. */
 export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
 

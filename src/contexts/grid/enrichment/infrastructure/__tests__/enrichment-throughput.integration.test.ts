@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 import { gridOrg } from "../../../infrastructure/__tests__/grid-test-kit";
+import { GridAiError } from "../../application/enrichment-ports";
+
+/** The answerer when AI is off, as the real one fails: a permanent error naming the fix. */
+const aiOff = {
+  answer: async (): Promise<never> => {
+    throw new GridAiError("AI is off. Connect an AI provider in Settings, Integrations.", false);
+  },
+};
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. Fake provider with latency, no network. */
 describeDb("grid run throughput", () => {
@@ -30,7 +38,7 @@ describeDb("grid run throughput", () => {
         providers: m.pstore.drizzleProviderStore,
         adapters,
         cipher,
-        ai: { answer: async () => null },
+        ai: aiOff,
         now: () => new Date(),
         workerId,
         leaseMs: 5 * 60_000,

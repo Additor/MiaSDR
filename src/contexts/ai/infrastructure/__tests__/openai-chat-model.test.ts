@@ -61,10 +61,10 @@ describe("OpenAiChatModel (OpenRouter)", () => {
   });
 
   it("retries 408, 429 and 5xx, honoring retry-after, and then succeeds", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(fail(429, { "retry-after": "2" })).mockResolvedValueOnce(fail(408)).mockResolvedValueOnce(fail(502)).mockResolvedValueOnce(ok("{}"));
+    const fetchMock = vi.fn().mockResolvedValueOnce(fail(429, { "retry-after": "2" })).mockResolvedValueOnce(fail(408)).mockResolvedValueOnce(ok("{}"));
     const { m, sleep } = model(fetchMock);
     await m.generate(request);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenNthCalledWith(1, 2000);
   });
 

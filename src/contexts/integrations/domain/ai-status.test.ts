@@ -15,5 +15,7 @@ describe("AI status", () => {
     expect(aiOffMessage({ state: "no_key" }, "member")).toBe("AI is off. Ask an owner or admin to connect an AI provider.");
     expect(aiOffMessage({ state: "no_model", provider: "OpenRouter" })).toBe("AI is off. OpenRouter needs a model: pick one in Settings, Integrations.");
     expect(aiOffMessage({ state: "no_model", provider: "OpenRouter" }, "member")).toBe("AI is off. OpenRouter needs a model: ask an owner or admin to pick one.");
+    expect(aiIsOn({ state: "key_unreadable", provider: "Anthropic" })).toBe(false);
+    expect(aiOffMessage({ state: "key_unreadable", provider: "Anthropic" })).toBe("AI is off. The saved Anthropic key cannot be read: save it again in Settings, Integrations.");
   });
 });

@@ -390,12 +390,6 @@ async function runAiColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awai
     await deps.store.fail(job, message, ledger([attempt]));
     return "failed";
   }
-  if (!answered) {
-    const message = "AI is off. Connect an AI provider in Settings, Integrations.";
-    await deps.store.fail(job, message, [{ provider: "ai", outcome: "failed", costCents: 0, response: { error: message } }]);
-    return "failed";
-  }
-
   const output = sanitizeOutput(answered.output);
   // The model answers email, url, date and json fields as text. Check each one before it reaches a typed column. A
   // rejected answer becomes that cell's error; the call was paid for, so nothing runs again and the other fields still save.

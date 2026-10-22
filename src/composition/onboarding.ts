@@ -13,6 +13,7 @@ async function aiSetup(organizationId: string): Promise<AiSetup> {
   if (status.state === "on") return { state: "on", running: `${status.provider}, ${status.model}` };
   if (status.state === "demo") return { state: "on", running: "Demo mode" };
   if (status.state === "no_model") return { state: "needs_model", provider: status.provider };
+  if (status.state === "key_unreadable") return { state: "needs_key", provider: status.provider };
   return { state: "none" };
 }
 

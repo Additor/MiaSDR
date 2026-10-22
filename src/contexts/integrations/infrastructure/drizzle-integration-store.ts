@@ -23,7 +23,7 @@ export const drizzleIntegrationStore: IntegrationStore = {
       .leftJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
       .where(eq(integrationAccounts.organizationId, organizationId))
       .orderBy(asc(integrationAccounts.name));
-    return rows.map(({ credentialId, config, ...row }) => ({ ...row, hasCredential: credentialId !== null, primary: config?.primary === true }));
+    return rows.map(({ credentialId, config, ...row }) => ({ ...row, hasCredential: credentialId !== null, primary: config?.primary === true, model: typeof config?.model === "string" && config.model ? config.model : null }));
   },
 
   async get(organizationId, id) {

@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { callApi } from "@/lib/api-client";
-import { AI_CONNECTIONS } from "@/contexts/integrations/domain/ai-connections";
 import { AiModelCard } from "./ai-model-card";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
@@ -27,6 +26,7 @@ interface Account {
   credentialUpdatedAt: string | null;
   manageHref: string | null;
   runsAi: boolean;
+  removalMovesAiTo: string | null;
 }
 
 interface Provider {
@@ -80,11 +80,10 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
     requestAnimationFrame(() => document.getElementById(target.fields[0]?.name ?? "")?.focus());
   }
 
-  /** What removing `account` does to AI, for the confirm dialog. Null when the account does not run AI. */
+  /** What removing `account` does to AI, for the confirm dialog. The server works out where AI goes. */
   function removalEffect(account: Account): string | null {
     if (!account.runsAi) return null;
-    const next = AI_CONNECTIONS.map((c) => accounts.find((a) => a.key === c.key && a.id !== account.id && a.kind === "ai" && a.enabled && a.hasCredential)).find(Boolean);
-    return next ? `AI runs on this key. Removing it moves AI to ${next.name}; check the AI model card afterward.` : "AI runs on this key. Removing it turns AI off.";
+    return account.removalMovesAiTo ? `AI runs on this key. Removing it moves AI to ${account.removalMovesAiTo}.` : "AI runs on this key. Removing it turns AI off.";
   }
 
   async function remove(account: Account) {

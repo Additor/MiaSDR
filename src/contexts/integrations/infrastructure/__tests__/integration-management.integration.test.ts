@@ -61,6 +61,23 @@ describeDb("integration credentials", () => {
     expect(JSON.stringify(list)).not.toMatch(/sk-ant|encrypted|v1:/);
   });
 
+  it("marks the key that runs AI with the resolver's rule, and says where AI goes if it is removed", async () => {
+    const t = await org();
+    const anthropic = await uc.saveIntegrationCredential(deps(), t.actor, { providerKey: "anthropic", values: { apiKey: "sk-ant-one" } });
+    const router = await uc.saveIntegrationCredential(deps(), t.actor, { providerKey: "openrouter", values: { apiKey: "sk-or-one" } });
+    const row = async (id: string) => (await uc.listIntegrations(deps(), t.actor)).find((a) => a.id === id)!;
+    // OpenRouter has no model: Anthropic runs AI, and removing it turns AI off.
+    expect(await row(anthropic.id)).toMatchObject({ runsAi: true, removalMovesAiTo: null });
+    expect(await row(router.id)).toMatchObject({ runsAi: false, removalMovesAiTo: null });
+
+    await sql`update integration_accounts set config = config || '{"model": "openai/gpt-6"}'::jsonb where id = ${router.id}`;
+    expect(await row(anthropic.id)).toMatchObject({ runsAi: true, removalMovesAiTo: "OpenRouter" });
+
+    // Marked primary but with no model, OpenRouter runs nothing, and nothing is marked.
+    await sql`update integration_accounts set config = '{"primary": true}'::jsonb where id = ${router.id}`;
+    expect((await uc.listIntegrations(deps(), t.actor)).filter((a) => a.runsAi)).toEqual([]);
+  });
+
   it("limits access to owners and admins and rejects unmanaged providers and empty keys", async () => {
     const t = await org();
     await expect(uc.listIntegrations(deps(), t.member)).rejects.toBeInstanceOf(ForbiddenError);

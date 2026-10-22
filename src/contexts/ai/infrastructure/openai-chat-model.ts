@@ -1,5 +1,6 @@
 import type { LanguageModel } from "../application/ports";
 import { AiError } from "../domain/ai-error";
+import { CALL_RETRIES, CALL_TIMEOUT_MS } from "../domain/call-budget";
 import type { GenerateRequest, GenerateResult, StopReason } from "../domain/generation";
 
 /**
@@ -57,8 +58,8 @@ export class OpenAiChatModel implements LanguageModel {
     this.apiKey = options.apiKey;
     this.fetchImpl = options.fetch ?? fetch;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-    this.timeoutMs = options.timeoutMs ?? 45_000;
-    this.maxRetries = options.maxRetries ?? 3;
+    this.timeoutMs = options.timeoutMs ?? CALL_TIMEOUT_MS;
+    this.maxRetries = options.maxRetries ?? CALL_RETRIES;
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {

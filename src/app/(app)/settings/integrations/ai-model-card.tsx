@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleAlertIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,16 @@ function RunningLine({ status }: { status: AiStatus }) {
       </p>
     );
   }
+  if (status.state === "key_unreadable") {
+    return (
+      <p role="status" className="flex items-start gap-2 text-sm">
+        <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+        <span>
+          <strong className="font-medium text-warning">AI is off.</strong> The saved {status.provider} key cannot be read. Replace it in the form above.
+        </span>
+      </p>
+    );
+  }
   return null;
 }
 
@@ -67,6 +78,7 @@ const endpoint = (connection?: string | null) => `/api/integrations/ai-model${co
  * picker loads that provider's models; saving switches AI to it. The server checks the model against the live list.
  */
 export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: string) => void }) {
+  const router = useRouter();
   const [view, setView] = useState<ModelView | null>(null);
   const [choice, setChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +135,8 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
       return;
     }
     apply(result.data);
+    // The Connected list below is server-rendered: refresh it so "Runs AI" and the removal warning follow the switch.
+    router.refresh();
     const running = result.data.status;
     const label = view.connections.find((c) => c.key === view.connection)?.label ?? "this provider";
     if (running.state !== "on") toast.success("Model saved.");
@@ -213,7 +227,7 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
         </p>
       )}
       <div hidden={demo}>
-        <Button onClick={() => void save()} disabled={pending || !view?.connected || unchanged || choice === null || (choice === DEFAULT_VALUE && !hasDefault)}>
+        <Button onClick={() => void save()} disabled={pending || !view?.connected || view.keyRejected || unchanged || choice === null || (choice === DEFAULT_VALUE && !hasDefault)}>
           {pending ? "Saving…" : view && view.connection !== view.active ? "Use this provider" : "Save model"}
         </Button>
       </div>

@@ -70,7 +70,9 @@ describe("AI model setting", () => {
 
   it("refuses a save when the provider rejects the saved key", async () => {
     const { deps, saveChoice } = setup({ list: { ok: false, reason: "rejected" } });
-    await expect(setAiModel(deps, owner, { model: "claude-sonnet-5-5" })).rejects.toThrow("Anthropic rejected the saved key, so the model cannot be checked. Save the key again.");
+    await expect(setAiModel(deps, owner, { model: "claude-sonnet-5-5" })).rejects.toThrow("Anthropic rejected the saved key. Replace the key before AI runs on it.");
+    await expect(setAiModel(deps, owner, { model: null })).rejects.toThrow("Anthropic rejected the saved key. Replace the key before AI runs on it.");
+    expect(saveChoice).not.toHaveBeenCalled();
     expect(await getAiModel(deps, owner)).toMatchObject({ keyRejected: true, choices: [], notice: null });
     expect(saveChoice).not.toHaveBeenCalled();
   });
@@ -88,7 +90,7 @@ describe("AI model setting", () => {
     const view = await setAiModel(deps, owner, { model: "  " });
     expect(saveChoice).toHaveBeenCalledWith("o1", "a1", null, expect.objectContaining({ from: { connection: "anthropic", model: "claude-opus-9-9" } }));
     expect(view).toMatchObject({ model: null, effective: "claude-haiku-5-5" });
-    expect(list).toHaveBeenCalledTimes(1); // only the view's choices
+    expect(list).toHaveBeenCalledTimes(2); // the save's key check and the view's choices
   });
 
   it("writes nothing when the model is unchanged", async () => {
@@ -144,6 +146,11 @@ describe("AI model setting", () => {
       expect(aiStatusOf([])).toEqual({ state: "no_key" });
       expect(aiStatusOf([account("openrouter", null, true)])).toEqual({ state: "no_model", provider: "OpenRouter" });
       expect(aiStatusOf([account("anthropic", null)])).toEqual({ state: "on", provider: "Anthropic", model: "claude-sonnet-5-5" });
+      const broken = () => {
+        throw new Error("bad envelope");
+      };
+      expect(aiStatusOf([account("anthropic", null)], undefined, broken)).toEqual({ state: "key_unreadable", provider: "Anthropic" });
+      expect(aiStatusOf([account("anthropic", null)], undefined, () => JSON.stringify({ apiKey: "sk" }))).toMatchObject({ state: "on" });
     });
 
     it("reads the key from a decrypted payload, and null from one that does not parse", () => {

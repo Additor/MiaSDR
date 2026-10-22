@@ -94,9 +94,13 @@ export function runningAi(accounts: readonly AiAccount[], envModel?: string): { 
   return model ? { account, spec, model } : null;
 }
 
-/** The organization's AI status from its saved AI accounts. Demo mode is the caller's switch, since it skips every account. */
-export function aiStatusOf(accounts: readonly AiAccount[], envModel?: string): AiStatus {
+/**
+ * The organization's AI status from its saved AI accounts. Demo mode is the caller's switch, since it skips every
+ * account. With `decrypt`, a running key that does not decrypt reads as unreadable, as the model resolver finds it.
+ */
+export function aiStatusOf(accounts: readonly AiAccount[], envModel?: string, decrypt?: (envelope: string) => string): AiStatus {
   const running = runningAi(accounts, envModel);
+  if (running && decrypt && !apiKeyOf(() => decrypt(running.account.encryptedPayload))) return { state: "key_unreadable", provider: running.spec.label };
   if (running) return { state: "on", provider: running.spec.label, model: running.model };
   const active = pickActiveAiConnection(accounts);
   const spec = active && aiConnection(active.key);
@@ -122,7 +126,7 @@ export async function getAiModel(deps: AiModelDeps, actor: Actor, query: { conne
   requireAdmin(actor);
   const { accounts, active, target } = await load(deps, actor, query.connection);
   const connections = accounts.map((a) => ({ key: a.key, label: aiConnection(a.key)!.label }));
-  const status: AiStatus = deps.skipLive ? { state: "demo" } : aiStatusOf(accounts, deps.envModel);
+  const status: AiStatus = deps.skipLive ? { state: "demo" } : aiStatusOf(accounts, deps.envModel, deps.decrypt);
   if (!target) {
     return { status, connected: false, connections, active: null, connection: null, model: null, effective: null, defaultModel: null, choices: [], live: false, keyRejected: false, notice: "Connect an AI provider above, then choose a model here." };
   }
@@ -148,13 +152,13 @@ export async function setAiModel(deps: AiModelDeps, actor: Actor, input: { conne
   const spec = aiConnection(target.key)!;
   const model = input.model?.trim() || null;
   if (model === null && !spec.defaultModel) throw new ValidationError(`${spec.label} has no default model. Pick one from the list.`);
+  if (model !== null && !MODEL_ID.test(model)) throw new ValidationError("That is not a valid model ID. Pick one from the list.");
+  // The key is checked on every save, the default included: a save makes this connection run AI.
+  const result = await liveChoices(deps, spec, target);
+  if (!result.ok && result.reason === "rejected") throw new ValidationError(`${spec.label} rejected the saved key. Replace the key before AI runs on it.`);
   if (model !== null) {
-    if (!MODEL_ID.test(model)) throw new ValidationError("That is not a valid model ID. Pick one from the list.");
-    const result = await liveChoices(deps, spec, target);
     if (result.ok) {
       if (!result.ids.includes(model)) throw new ValidationError(`${spec.label} does not list ${model} for this key. Pick one from the list.`);
-    } else if (result.reason === "rejected") {
-      throw new ValidationError(`${spec.label} rejected the saved key, so the model cannot be checked. Save the key again.`);
     } else if (!spec.fallbackModels.includes(model)) {
       throw new ValidationError(
         spec.fallbackModels.length > 0

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { LanguageModel } from "../application/ports";
 import { AiError } from "../domain/ai-error";
+import { CALL_RETRIES, CALL_TIMEOUT_MS } from "../domain/call-budget";
 import type { GenerateRequest, GenerateResult, StopReason } from "../domain/generation";
 
 /**
@@ -39,8 +40,8 @@ export class AnthropicMessagesModel implements LanguageModel {
       apiKey: options.apiKey,
       baseURL: options.baseURL,
       fetch: options.fetch,
-      timeout: options.timeoutMs ?? 45_000,
-      maxRetries: options.maxRetries ?? 3,
+      timeout: options.timeoutMs ?? CALL_TIMEOUT_MS,
+      maxRetries: options.maxRetries ?? CALL_RETRIES,
     });
   }
 
@@ -73,6 +74,8 @@ export class AnthropicMessagesModel implements LanguageModel {
 
   private failure(error: unknown): AiError {
     if (error instanceof Anthropic.APIConnectionTimeoutError) return new AiError("The AI request timed out.", "transient");
+    // APIUserAbortError extends APIError with no status, so it is read before the status checks below.
+    if (error instanceof Anthropic.APIUserAbortError) return new AiError("The AI request was cancelled.", "transient");
     if (error instanceof Anthropic.APIConnectionError) return new AiError("Could not reach the AI service.", "transient");
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
       return new AiError(`${this.label} rejected the API key. Replace it in Settings, Integrations.`, "permanent");

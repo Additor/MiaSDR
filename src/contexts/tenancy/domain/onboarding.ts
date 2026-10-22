@@ -21,7 +21,14 @@ export interface OnboardingFacts {
  * `needs_model`: a key is saved for a provider with no default model, and nobody picked one, so AI is off.
  * `on` carries what runs, such as "Anthropic, claude-sonnet-5-5", or "Demo mode" when no provider is called.
  */
-export type AiSetup = { state: "none" } | { state: "needs_model"; provider: string } | { state: "on"; running: string };
+export type AiSetup = { state: "none" } | { state: "needs_model"; provider: string } | { state: "needs_key"; provider: string } | { state: "on"; running: string };
+
+function aiStepDetail(setup: AiSetup): string | null {
+  if (setup.state === "on") return `AI runs on ${setup.running}`;
+  if (setup.state === "needs_model") return `${setup.provider} key saved. AI is off until a model is picked.`;
+  if (setup.state === "needs_key") return `The saved ${setup.provider} key cannot be read. AI is off until it is saved again.`;
+  return null;
+}
 
 export type StepId = "profile" | "mailbox" | "linkedin" | "leads" | "campaign" | "approve" | "ai";
 /** `attention`: the person started but something needs a fix (a mailbox that failed to connect). */
@@ -135,11 +142,10 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
       title: "Add an AI key",
       description: "Optional. Lets MiaSDR classify replies and draft answers for your approval.",
       optional: true,
-      status: facts.aiSetup.state === "on" ? "done" : facts.aiSetup.state === "needs_model" ? "attention" : "todo",
-      detail:
-        facts.aiSetup.state === "on" ? `AI runs on ${facts.aiSetup.running}` : facts.aiSetup.state === "needs_model" ? `${facts.aiSetup.provider} key saved. AI is off until a model is picked.` : null,
+      status: facts.aiSetup.state === "on" ? "done" : facts.aiSetup.state === "none" ? "todo" : "attention",
+      detail: aiStepDetail(facts.aiSetup),
       href: "/settings/integrations",
-      action: facts.aiSetup.state === "needs_model" ? "Pick a model" : "Add key",
+      action: facts.aiSetup.state === "needs_model" ? "Pick a model" : facts.aiSetup.state === "needs_key" ? "Replace key" : "Add key",
     },
   ];
 

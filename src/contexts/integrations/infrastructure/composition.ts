@@ -39,8 +39,8 @@ export async function runningAiConnection(organizationId: string): Promise<{ spe
   return { spec: running.spec, model: running.model, apiKey: () => apiKeyOf(() => credentialCipher.decrypt(running.account.encryptedPayload)) };
 }
 
-/** Whether AI runs for an organization, and why not. Reads no key, so any screen may ask it. */
+/** Whether AI runs for an organization, and why not. It decrypts the running key to check it reads, and builds no client. */
 export async function aiStatus(organizationId: string): Promise<AiStatus> {
   if (env().AI_PROVIDER === "fake") return { state: "demo" };
-  return aiStatusOf(await drizzleAiModelStore.listAi(organizationId), env().AI_MODEL);
+  return aiStatusOf(await drizzleAiModelStore.listAi(organizationId), env().AI_MODEL, credentialCipher.decrypt);
 }

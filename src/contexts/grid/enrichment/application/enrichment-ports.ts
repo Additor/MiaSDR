@@ -311,7 +311,7 @@ export interface GridRunStore {
   cellRuns(organizationId: string, tableId: string, rowId: string, columnKey: string, limit: number): Promise<CellRunView[]>;
 }
 
-/** A free-form AI answer over cell values with the organization's own key. Null result means AI is not set up. */
+/** A failed AI answer. A transient one retries; a permanent one (AI is off, the provider refused) fails the cell with its message. */
 export class GridAiError extends Error {
   constructor(
     message: string,
@@ -321,11 +321,12 @@ export class GridAiError extends Error {
   }
 }
 
+/** A free-form AI answer over cell values with the organization's own key. Throws `GridAiError` when AI is off. */
 export interface CellAnswerer {
   answer(
     organizationId: string,
     input: { instruction: string; cells: Array<{ key: string; value: string }>; outputs: Array<{ key: string; type: "text" | "number" | "boolean" | "email" | "url" | "date" | "json"; description?: string }> },
-  ): Promise<{ output: Record<string, unknown>; provider: string; model: string; usage?: Record<string, number> } | null>;
+  ): Promise<{ output: Record<string, unknown>; provider: string; model: string; usage?: Record<string, number> }>;
 }
 
 export type { StepAttempt };

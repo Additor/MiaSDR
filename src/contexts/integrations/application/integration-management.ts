@@ -1,6 +1,7 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { pickActiveAiConnection } from "../domain/ai-connections";
+import { aiConnection, type AiConnectionKey } from "../domain/ai-connections";
+import { runningAi } from "./ai-model";
 import { EXTERNAL_PROVIDERS, managedProvider, validateCredentialInput } from "../domain/providers";
 import { assertCredentialVerified, type CredentialVerifier } from "@/platform/credentials/verify";
 
@@ -16,13 +17,18 @@ export interface IntegrationView {
   updatedAt: Date;
   /** Set for providers with their own settings page. */
   manageHref: string | null;
-  /** The AI connection that runs AI now. False for every other account. */
+  /** The AI connection that runs AI now: picked and with a model. False for every other account. */
   runsAi: boolean;
+  /**
+   * For the account that runs AI: where AI moves if it is removed, as that account's name. Null when AI would turn off
+   * (no other key, or the next one has no model), and for every account that does not run AI.
+   */
+  removalMovesAiTo: string | null;
 }
 
 export interface IntegrationStore {
-  /** `primary`: the AI account marked as the one AI runs on. */
-  list(organizationId: string): Promise<Array<Omit<IntegrationView, "manageHref" | "runsAi"> & { primary: boolean }>>;
+  /** `primary` and `model`: the AI choice in the account's config. */
+  list(organizationId: string): Promise<Array<Omit<IntegrationView, "manageHref" | "runsAi" | "removalMovesAiTo"> & { primary: boolean; model: string | null }>>;
   get(organizationId: string, id: string): Promise<{ id: string; key: string } | null>;
   /** Creates the account or replaces its credential for the same provider key. */
   saveCredential(
@@ -53,7 +59,12 @@ function requireAdmin(actor: Actor) {
 export async function listIntegrations(deps: IntegrationDeps, actor: Actor): Promise<IntegrationView[]> {
   requireAdmin(actor);
   const rows = await deps.integrations.list(actor.organizationId);
-  const running = pickActiveAiConnection(rows.filter((row) => row.kind === "ai" && row.enabled && row.hasCredential));
+  // The same rule the model resolver runs: an AI key with no model (a gateway nobody picked one for) runs nothing.
+  const aiRows = rows.filter((row) => row.kind === "ai" && row.enabled && row.hasCredential && aiConnection(row.key));
+  const accounts = aiRows.map((row) => ({ accountId: row.id, key: row.key as AiConnectionKey, encryptedPayload: "", model: row.model, primary: row.primary }));
+  const running = runningAi(accounts)?.account ?? null;
+  const after = running ? runningAi(accounts.filter((a) => a.accountId !== running.accountId))?.account : null;
+  const nameOf = (accountId: string | undefined) => rows.find((row) => row.id === accountId)?.name ?? null;
   return rows.map(({ id, kind, key, name, enabled, hasCredential, credentialUpdatedAt, updatedAt }) => ({
     id,
     kind,
@@ -64,7 +75,8 @@ export async function listIntegrations(deps: IntegrationDeps, actor: Actor): Pro
     credentialUpdatedAt,
     updatedAt,
     manageHref: EXTERNAL_PROVIDERS[key]?.href ?? null,
-    runsAi: id === running?.id,
+    runsAi: id === running?.accountId,
+    removalMovesAiTo: id === running?.accountId ? nameOf(after?.accountId) : null,
   }));
 }
 

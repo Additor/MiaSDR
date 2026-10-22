@@ -50,24 +50,42 @@ describe("Anthropic model catalog", () => {
 });
 
 describe("gateway model catalogs", () => {
-  it("reads Vercel's public list without a key and keeps Anthropic language models only", async () => {
-    const stub = vi.fn(async () => json({ data: [{ id: "anthropic/claude-sonnet-5.5", type: "language" }, { id: "openai/gpt-6", type: "language" }, { id: "anthropic/embed", type: "embedding" }] }));
+  /** Answers the key check with `keyStatus` and the model list with `models` (or `listStatus`). */
+  function gateway(models: unknown, options: { keyStatus?: number; listStatus?: number } = {}) {
+    return vi.fn(async (url: string | URL) => {
+      const u = String(url);
+      if (u.endsWith("/v1/credits") || u.endsWith("/api/v1/key")) return json({}, options.keyStatus ?? 200);
+      return json(models, options.listStatus ?? 200);
+    });
+  }
+  const calls = (stub: ReturnType<typeof gateway>) => stub.mock.calls.map((c) => c as unknown as [string, RequestInit]);
+
+  it("checks Vercel's key, then reads its public list without the key, keeping Anthropic language models only", async () => {
+    const stub = gateway({ data: [{ id: "anthropic/claude-sonnet-5.5", type: "language" }, { id: "openai/gpt-6", type: "language" }, { id: "anthropic/embed", type: "embedding" }] });
     const result = await createModelCatalog({ fetch: stub as unknown as typeof fetch }).list(aiConnection("vercel-ai-gateway")!, KEY);
     expect(result).toEqual({ ok: true, ids: ["anthropic/claude-sonnet-5.5"] });
-    const [url, init] = stub.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://ai-gateway.vercel.sh/v1/models");
-    expect(JSON.stringify(init.headers)).not.toContain(KEY);
+    const [[checkUrl, checkInit], [listUrl, listInit]] = calls(stub);
+    expect(checkUrl).toBe("https://ai-gateway.vercel.sh/v1/credits");
+    expect(JSON.stringify(checkInit.headers)).toContain(`Bearer ${KEY}`);
+    expect(listUrl).toBe("https://ai-gateway.vercel.sh/v1/models");
+    expect(JSON.stringify(listInit.headers)).not.toContain(KEY);
   });
 
   it("asks OpenRouter for models with structured output support only", async () => {
-    const stub = vi.fn(async () => json({ data: [{ id: "openai/gpt-6" }, { id: "anthropic/claude-sonnet-5.5" }] }));
+    const stub = gateway({ data: [{ id: "openai/gpt-6" }, { id: "anthropic/claude-sonnet-5.5" }] });
     const result = await createModelCatalog({ fetch: stub as unknown as typeof fetch }).list(aiConnection("openrouter")!, KEY);
     expect(result).toEqual({ ok: true, ids: ["openai/gpt-6", "anthropic/claude-sonnet-5.5"] });
-    expect(String((stub.mock.calls[0] as unknown as [string])[0])).toBe("https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs");
+    expect(calls(stub)[1][0]).toBe("https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs");
+  });
+
+  it("reports a revoked gateway key as rejected, though the public list would answer", async () => {
+    const stub = gateway({ data: [{ id: "openai/gpt-6" }] }, { keyStatus: 401 });
+    expect(await createModelCatalog({ fetch: stub as unknown as typeof fetch }).list(aiConnection("openrouter")!, KEY)).toEqual({ ok: false, reason: "rejected" });
+    expect(stub).toHaveBeenCalledTimes(1);
   });
 
   it("treats a failed public list as unreachable, never as a rejected key", async () => {
-    const result = await createModelCatalog({ fetch: (async () => json({}, 401)) as unknown as typeof fetch }).list(aiConnection("openrouter")!, KEY);
-    expect(result).toEqual({ ok: false, reason: "unreachable" });
+    const stub = gateway({}, { listStatus: 401 });
+    expect(await createModelCatalog({ fetch: stub as unknown as typeof fetch }).list(aiConnection("openrouter")!, KEY)).toEqual({ ok: false, reason: "unreachable" });
   });
 });

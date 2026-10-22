@@ -1,9 +1,6 @@
 import type { CredentialVerifier } from "@/platform/credentials/verify";
 import { createKeyCheck, headerSafe, standardStatus } from "@/platform/credentials/key-check";
-import { aiConnection } from "../domain/ai-connections";
-
-// The version header the Anthropic SDK sends on every request.
-const ANTHROPIC_VERSION = "2023-06-01";
+import { ANTHROPIC_VERSION, aiConnection } from "../domain/ai-connections";
 
 export interface VerifierOptions {
   fetch?: typeof fetch;
