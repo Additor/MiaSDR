@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { connectMailbox, listMailboxes } from "@/contexts/outreach/email/application/mailbox-management";
 import { mailboxDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => listMailboxes(mailboxDeps(), actor));
 

@@ -1,6 +1,6 @@
 import { makeContactDeps } from "@/composition/person-lifecycle";
 import { makeContact } from "@/contexts/leads/application/make-contact";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * Make contact: the lead becomes a contact without a deal. 200 `{ personId, stopped }`. A second call answers

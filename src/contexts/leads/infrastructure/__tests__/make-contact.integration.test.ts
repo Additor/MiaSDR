@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ConflictError, NotFoundError } from "@/shared/errors";
-import { lockRetryStats } from "@/platform/db/person-locks";
+import { lockRetryStats } from "@/platform/db/errors";
 import { bootDealsKit, holdLocks, type DealsKit } from "@/test-support/deals-test-kit";
 import type { MakeContactDeps } from "../../application/make-contact";
 import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { cancelRun, requestRun, runStatus } from "@/contexts/grid/enrichment/application/enrichment-run";
 import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const body = z.object({
   columnKey: z.string().min(1).optional(),

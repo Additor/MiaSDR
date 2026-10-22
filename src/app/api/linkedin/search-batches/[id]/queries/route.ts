@@ -2,7 +2,7 @@ import { z } from "zod";
 import { addSearchBatchUrls, removeSearchBatchUrls } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
 import { MAX_BATCH_IDS, MAX_BATCH_ROWS } from "@/contexts/outreach/linkedin/domain/linkedin-search-batch";
 import { linkedinSearchBatchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Body `{ urls: string[] }`: LinkedIn people search addresses to add to the batch. Answers how many queued and why others did not. */
 export async function POST(request: Request, ctx: RouteContext<"/api/linkedin/search-batches/[id]/queries">) {

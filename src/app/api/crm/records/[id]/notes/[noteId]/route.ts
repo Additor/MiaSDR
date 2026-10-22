@@ -3,7 +3,7 @@ import { deleteCrmNote } from "@/contexts/conversations/application/crm";
 import { assertCanDeleteNote, editNote } from "@/contexts/conversations/actions/application/tasks";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function PATCH(request: Request, ctx: RouteContext<"/api/crm/records/[id]/notes/[noteId]">) {
   const { id, noteId } = await ctx.params;

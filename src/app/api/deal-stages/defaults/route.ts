@@ -1,6 +1,6 @@
 import { createDefaultDealStages } from "@/contexts/deals/application/deal-stages";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Settings > Pipeline stages, "Create default stages": writes the defaults for an organization without stages. */
 export async function POST() {

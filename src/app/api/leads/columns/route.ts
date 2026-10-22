@@ -6,7 +6,7 @@ import {
 } from "@/contexts/leads/application/custom-columns";
 import { COLUMN_ENTITIES } from "@/contexts/leads/domain/custom-columns";
 import { customColumnStore } from "@/contexts/leads/infrastructure/composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 const entity = z.enum(COLUMN_ENTITIES);
 const DENIED = "Only an owner or admin can manage custom fields.";

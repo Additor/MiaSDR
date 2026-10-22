@@ -1,6 +1,6 @@
 import { duplicateTable } from "@/contexts/grid/application/structure-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam } from "../../../http";
 
 /** Copies columns, rows and finished cell values next to the original. Queued jobs and run history stay behind. */

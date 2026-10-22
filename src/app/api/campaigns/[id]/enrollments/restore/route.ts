@@ -2,7 +2,7 @@ import { z } from "zod";
 import { MAX_PICKED_IDS } from "@/contexts/outreach/application/enrollment-admin";
 import { restoreCampaignEnrollments } from "@/contexts/outreach/application/enrollment-restore";
 import { enrollmentRestoreDeps } from "@/contexts/outreach/infrastructure/restore-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Email campaigns: puts removed leads back with the same rules as LinkedIn, plus the suppression list. */
 export async function POST(request: Request, ctx: RouteContext<"/api/campaigns/[id]/enrollments/restore">) {

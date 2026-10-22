@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { lockRetryStats } from "@/platform/db/person-locks";
+import { lockRetryStats } from "@/platform/db/errors";
 import { bootDealsKit, holdLocks, sqlState, waitForLockWaiters, type DealsKit, type DealsOrg } from "../../../../test-support/deals-test-kit";
 import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
 

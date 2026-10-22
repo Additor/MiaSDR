@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ignoreIdentityException, resolveIdentityException } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const schema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("resolved"), personId: z.string().uuid() }),

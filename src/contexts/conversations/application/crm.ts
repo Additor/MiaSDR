@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { retryOnce } from "@/platform/db/person-locks";
+import { retryOnce } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import {
   PROTECTED_SUBCATEGORY_KEY,

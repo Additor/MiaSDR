@@ -1,7 +1,7 @@
 import { createFolder, listFolders } from "@/contexts/grid/application/structure-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idField, nullableIdField, readOptionalJsonObject } from "../http";
 
 /** `?parent=root` lists the root, `?parent=<id>` one folder's children, no parameter every folder (move pickers). */

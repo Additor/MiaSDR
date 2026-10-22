@@ -1,4 +1,4 @@
-import { inTransaction, type DbHandle } from "@/platform/db/client";
+import type { DbHandle } from "@/platform/db/client";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { canArchive, canTransition, emptyFirstSubjectMessage, type ArchiveFilter, stepsEditable, stepsWithPlaceholders, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery } from "../domain/enrollment-list";
@@ -51,11 +51,11 @@ export async function createCampaign(deps: CampaignDeps, actor: Actor, input: { 
   const name = cleanName(input.name);
   const senderIds = await validateSenderIds(adminStore(deps), actor, "email", input.senderIds ?? []);
   // One transaction: a campaign that fails to take its senders must not exist, or it would send from every mailbox.
-  const id = await inTransaction(tx, async (t) => {
+  const id = await deps.campaigns.transaction(async (t) => {
     const created = await deps.campaigns.create(actor.organizationId, { name, createdBy: actor.userId, steps: DEFAULT_STEPS }, t);
     if (senderIds.length > 0) await adminStore(deps).replaceSenders(actor.organizationId, created, "email", senderIds, t);
     return created;
-  });
+  }, tx);
   return { id };
 }
 
@@ -76,7 +76,7 @@ export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: strin
     next.steps = patch.steps;
   }
   // One transaction: a failed sender replacement must not leave the new name or steps behind.
-  await inTransaction(undefined, async (tx) => {
+  await deps.campaigns.transaction(async (tx) => {
     if (!(await deps.campaigns.update(actor.organizationId, id, next, tx))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
     if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "email", senderIds, tx);
   });

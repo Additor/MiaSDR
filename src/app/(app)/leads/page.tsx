@@ -15,7 +15,7 @@ import { leadFilterOptions, listLeads } from "@/contexts/leads/infrastructure/co
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { leadActivityDeps } from "@/contexts/outreach/infrastructure/composition";
 import { cn } from "@/lib/utils";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import type { Actor } from "@/shared/errors";
 import { dealDialogData } from "../crm/_components/deal-dialog-data";
 import { StateTip } from "../crm/_components/person/state-tip";

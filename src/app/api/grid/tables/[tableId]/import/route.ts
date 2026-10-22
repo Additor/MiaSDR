@@ -3,7 +3,7 @@ import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { parseUpload } from "@/contexts/grid/infrastructure/parse-upload";
 import { PayloadTooLargeError, ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam, readFormLimited } from "../../../http";
 
 /**

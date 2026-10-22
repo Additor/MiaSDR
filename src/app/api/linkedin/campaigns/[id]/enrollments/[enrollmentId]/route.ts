@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { removeLinkedInLead } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 
 /** Removes one lead from the campaign: the enrollment becomes `removed`, the person stays. A repeat call answers `removed: false`. */

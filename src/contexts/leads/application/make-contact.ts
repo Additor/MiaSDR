@@ -1,5 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
-import { retryOnce } from "@/platform/db/person-locks";
+import { retryOnce } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 import { convertToContact, PERSONAL_CAMPAIGN_MESSAGE, personalCampaignSkip, type ConvertDeps, type LiveEnrollmentSummary } from "./convert-to-contact";
 

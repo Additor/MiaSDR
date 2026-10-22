@@ -14,7 +14,7 @@ import {
   sends,
   suppressionList,
 } from "@/platform/db/schema";
-import { TRY_AGAIN } from "@/platform/db/person-locks";
+import { TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { BlockReason, DeleteOutcome, ExportRow, LeadFilter, LeadRepository, SendViewer } from "../application/lead-ports";
 import { renameOnCompanyPage } from "../domain/company-domain";

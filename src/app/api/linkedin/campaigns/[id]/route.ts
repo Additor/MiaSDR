@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { deleteLinkedInCampaign, getLinkedInCampaign, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { linkedinStepSchema } from "../step-schema";
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/linkedin/campaigns/[id]">) {

@@ -1,7 +1,7 @@
 import { listMatchingLeadIds } from "@/contexts/leads/application/lead-management";
 import { MAX_MATCHING_IDS, parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
 import { leadDeps } from "@/contexts/leads/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * The ids of every lead that matches the list filter params (the same ones as the export), up to MAX_MATCHING_IDS.

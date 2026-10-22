@@ -18,7 +18,7 @@ import { leadContactPoints } from "@/contexts/leads/domain/lead-activity";
 import { leadDeps } from "@/contexts/leads/infrastructure/composition";
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { formatDate } from "@/shared/format-time";
 import { dealDialogData } from "../../_components/deal-dialog-data";

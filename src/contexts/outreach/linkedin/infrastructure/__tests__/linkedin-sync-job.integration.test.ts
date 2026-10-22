@@ -81,7 +81,8 @@ describeDb("linkedin.sync-accounts job", () => {
       audit: drizzleAuditSink,
       connectLinks: drizzleLinkedInConnectStore,
     };
-    job = createLinkedInJobs({} as never, {} as never, {} as never, mgmtDeps).find((j) => j.name === "linkedin.sync-accounts") as Job;
+    const { claimSlot, finishSlot } = await import("@/platform/jobs/slots");
+    job = createLinkedInJobs({} as never, {} as never, {} as never, mgmtDeps, { claim: claimSlot, finish: finishSlot }).find((j) => j.name === "linkedin.sync-accounts") as Job;
   });
 
   afterAll(async () => {

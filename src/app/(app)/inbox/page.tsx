@@ -20,7 +20,7 @@ import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { cn } from "@/lib/utils";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { ActiveFilterChips } from "@/components/shell/filter-panel";
 import { ListToolbar } from "@/components/shell/list-toolbar";
 import { activeFilterChips, clearedInboxHref, InboxFilterForm } from "./filter-panel";

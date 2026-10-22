@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { removeMailbox, updateMailbox } from "@/contexts/outreach/email/application/mailbox-management";
 import { mailboxDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 const window = z.object({ start: z.string(), end: z.string() });
 const settings = z.object({

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getCrmTaxonomy, updateCrmSettings } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export const GET = () => withActor(async (actor) => (await getCrmTaxonomy(crmDeps(), actor)).settings);
 

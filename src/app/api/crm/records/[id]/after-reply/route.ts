@@ -8,7 +8,7 @@ import {
   skipSequenceStep,
 } from "@/contexts/conversations/after-reply/application/sequences";
 import { sequenceDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { ValidationError } from "@/shared/errors";
 
 type Ctx = RouteContext<"/api/crm/records/[id]/after-reply">;

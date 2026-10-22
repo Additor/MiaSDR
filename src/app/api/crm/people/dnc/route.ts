@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { setPeopleDoNotContact } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const bodySchema = z.object({ ids: z.array(z.string().max(64)).min(1).max(200), reason: z.string().max(500).nullable().optional() });
 

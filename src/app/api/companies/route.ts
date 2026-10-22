@@ -4,7 +4,7 @@ import { companyLifecycleDeps } from "@/composition/person-lifecycle";
 import { listCompanies } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
 import { addCompany } from "@/contexts/leads/application/company-lifecycle";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * The Companies list (M3): companies listed in Companies or with a contact. `q`, `page`, `sort` (`name`, the default;

@@ -26,7 +26,7 @@ Open `http://localhost:3000`. The first visit asks you to create the owner accou
 ## Where code goes
 
 ```
-src/app/            routes and screens; route handlers stay thin
+src/app/            routes and screens; route handlers stay thin; _lib/api.ts holds the route wrappers
 src/contexts/<ctx>/ one bounded context: leads, outreach, conversations, deals, grid, identity, tenancy, integrations, analytics
   domain/           pure rules with unit tests; imports no framework, database or other layer
   application/      use cases and ports; checks permissions; never imports infrastructure
@@ -35,21 +35,25 @@ src/contexts/<ctx>/ one bounded context: leads, outreach, conversations, deals, 
                     outreach/email, outreach/linkedin, conversations/ai, conversations/actions, conversations/after-reply
 src/composition/    wiring that spans contexts; routes import it, no context does
 src/platform/       the database (client, schema barrel, migrations, shared read predicates) and the job scheduler
-src/shared/         the kernel: errors, env, time zones, formatting, route wrappers
+src/shared/         the kernel: errors, env, time zones, formatting; imports nothing above it
 src/architecture/   tests that check the whole repository: layers, boundaries, table ownership, copy, docs
 src/components/     ui/ primitives (shadcn) and shell/ app-wide components
 ```
 
 Unit tests of `domain/` and `application/` sit next to the file they test. Tests of `infrastructure/` and `src/platform/db`, most of them integration tests against Postgres, sit in that folder's `__tests__/`.
 
-A route handler calls `withActor`, `withAdmin` or `withUser`, then one use case. Two checks keep the layers apart:
+The tiers under `src/` import downward only: `shared`, then `platform`, then the contexts, then `composition`, then `app`.
 
-- ESLint (`eslint.config.mjs`) stops `domain/` from importing `application/`, `infrastructure/`, Next.js, React or Drizzle, and stops `application/` from importing `infrastructure/`.
+A route handler calls `withActor`, `withAdmin` or `withUser`, then one use case. These checks keep the layers apart:
+
+- ESLint (`eslint.config.mjs`) stops `domain/` from importing `application/`, `infrastructure/`, `src/platform`, Next.js, React or Drizzle. It stops `application/` from importing `infrastructure/` and runtime `src/platform` code: a use case takes the database and job slots through ports, and may import platform types and the driver-free `@/platform/db/errors`.
 - `src/architecture/context-dependencies.test.ts` keeps contexts in layers (identity, tenancy, integrations, leads, outreach, conversations, then deals, grid and analytics): a context imports only lower layers and never `src/composition`. When a lower context needs a higher one, declare a port in the lower context and wire it in `src/composition`.
+- `src/architecture/context-dependencies.test.ts` also keeps `src/shared` free of every tier above it, and lets `src/platform` import a context only where its shrink-only list allows.
 - `src/architecture/app-boundaries.test.ts` lets `src/app` import a context's `infrastructure/` only through its composition files (`composition.ts`, `*-composition.ts`) and identity's session and auth modules. Add a wired deps function to the composition file instead of importing a store.
-- `src/architecture/table-ownership.test.ts` lets only the context that declares a table write it, and lets a context read a higher layer's tables only through that context's read model.
+- `src/architecture/table-ownership.test.ts` lets only the context that declares a table write it, and lets a context read a higher layer's tables only through that context's read model. It scans `src/platform` too.
+- `src/architecture/status-guards.test.ts` checks that every write of `drafts.status` and `campaign_enrollments.status` names the statuses it moves from, as the transition tables in `conversations/domain/draft-status.ts` and `outreach/domain/enrollment-status.ts` define.
 
-The last two keep a shrink-only list of the places that broke the rule when it arrived. When you fix one, delete its entry; the test fails until you do.
+The boundary tests keep shrink-only lists of the places that broke a rule when it arrived. When you fix one, delete its entry; the test fails until you do.
 
 UI work follows [DESIGN.md](DESIGN.md) for tokens, components and layout, and [PRODUCT.md](PRODUCT.md) for the words the screens use. Background on why the code works the way it does: [docs/decisions.md](docs/decisions.md) and [docs/database.md](docs/database.md).
 

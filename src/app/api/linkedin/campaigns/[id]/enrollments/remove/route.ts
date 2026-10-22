@@ -2,7 +2,7 @@ import { z } from "zod";
 import { removeLinkedInLeads } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { MAX_PICKED_IDS } from "@/contexts/outreach/application/enrollment-admin";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Removes the named enrollments of this campaign. Answers how many changed, were already removed, or were not found. */
 export async function POST(request: Request, ctx: RouteContext<"/api/linkedin/campaigns/[id]/enrollments/remove">) {

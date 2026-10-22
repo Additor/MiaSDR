@@ -70,6 +70,8 @@ export const checkedStatusChange = (organizationId: string, id: string, change: 
   and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, change.from), sql`${campaigns.steps} = ${JSON.stringify(change.checkedSteps)}::jsonb`);
 
 export const drizzleCampaignStore: CampaignStore = {
+  transaction: (fn, within) => inTransaction(within, fn),
+
   async list(organizationId, now = new Date(), archived = "hide") {
     const rows = await db
       .select({

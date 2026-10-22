@@ -2,7 +2,7 @@ import { exportTableCsv } from "@/contexts/grid/application/import-export";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idList, idParam, readOptionalJsonObject, stringList } from "../../../http";
 
 const flag = (value: unknown): boolean => {

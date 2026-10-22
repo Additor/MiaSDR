@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { setPersonDoNotContact } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Setting it stops the person's pending and active campaign enrollments and retires open drafts. */
 export async function POST(request: Request, ctx: RouteContext<"/api/crm/people/[personId]/dnc">) {

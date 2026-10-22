@@ -6,7 +6,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInvitations, listMembers } from "@/contexts/tenancy/application/member-management";
 import { memberDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 import { isOwnerOrAdmin, parseRoles } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { env } from "@/shared/env";
 import { MembersPanel } from "./members-panel";
 

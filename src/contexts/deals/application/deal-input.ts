@@ -1,5 +1,5 @@
 import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/leads/application/convert-to-contact";
-import { sqlState } from "@/platform/db/person-locks";
+import { sqlState } from "@/platform/db/errors";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCloseDate, parseDealTitle } from "../domain/deal";
 import { parseAmountToMinor, parseCurrency } from "../domain/money";

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { changeCampaignStatus } from "@/contexts/outreach/application/campaign-management";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/campaigns/[id]/status">) {
   const { id } = await ctx.params;

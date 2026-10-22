@@ -1,7 +1,7 @@
 import { deleteFolder, getFolder, updateFolder } from "@/contexts/grid/application/structure-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam, nullableIdField, readJsonObject } from "../../http";
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/grid/folders/[folderId]">) {

@@ -6,7 +6,7 @@ import {
   restoreCustomColumn,
 } from "@/contexts/leads/application/custom-columns";
 import { customColumnStore } from "@/contexts/leads/infrastructure/composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 const DENIED = "Only an owner or admin can manage custom fields.";
 const patch = z.object({ name: z.string().max(200).optional(), archived: z.boolean().optional() });

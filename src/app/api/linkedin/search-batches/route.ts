@@ -5,7 +5,7 @@ import { linkedinSearchBatchDeps } from "@/contexts/outreach/linkedin/infrastruc
 import { CsvError } from "@/platform/files/csv";
 import { parseSpreadsheet } from "@/platform/files/spreadsheet";
 import { PayloadTooLargeError, ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => listLinkedInSearchBatches(linkedinSearchBatchDeps(), actor));
 

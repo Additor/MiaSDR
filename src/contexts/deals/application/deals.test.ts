@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lockRetryStats } from "@/platform/db/person-locks";
+import { lockRetryStats } from "@/platform/db/errors";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import type { LiveEnrollmentSummary } from "@/contexts/outreach/application/conversion";
 import { DEFAULT_DEAL_STAGES } from "../domain/stages";

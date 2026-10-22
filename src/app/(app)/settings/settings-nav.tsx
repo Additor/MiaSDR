@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { loadSettingsAttention } from "./settings-attention";
 import { visibleGroups } from "./settings-nav-config";
 import { SettingsNavList } from "./settings-nav-list";

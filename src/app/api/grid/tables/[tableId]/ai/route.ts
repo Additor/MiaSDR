@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createAiColumns, updateRunnableColumn } from "@/contexts/grid/enrichment/application/enrichment-columns";
 import { AI_OUTPUT_TYPES } from "@/contexts/grid/enrichment/domain/enrichment-config";
 import { gridColumnDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const output = z.object({ key: z.string(), type: z.enum(AI_OUTPUT_TYPES), description: z.string().max(300).optional() });
 

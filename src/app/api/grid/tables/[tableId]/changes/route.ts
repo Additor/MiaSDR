@@ -1,6 +1,6 @@
 import { getChanges } from "@/contexts/grid/application/row-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam } from "../../../http";
 
 /**

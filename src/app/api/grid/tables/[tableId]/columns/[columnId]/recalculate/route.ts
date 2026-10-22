@@ -1,6 +1,6 @@
 import { recalculateColumn } from "@/contexts/grid/application/column-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam } from "../../../../../http";
 
 /** Recomputes a formula column for every row, so LOOKUPs pick up changes in their source tables. Clears "stale" and error markers that no longer apply. */

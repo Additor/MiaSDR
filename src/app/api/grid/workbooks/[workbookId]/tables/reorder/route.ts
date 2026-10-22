@@ -1,7 +1,7 @@
 import { reorderTables } from "@/contexts/grid/application/structure-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idList, idParam, readJsonObject } from "../../../../http";
 
 /** Body `{ tableIds }`: every table of the workbook, in the new tab order. */

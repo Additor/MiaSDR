@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { lockRetryStats, setLockTimeout } from "@/platform/db/person-locks";
+import { lockRetryStats } from "@/platform/db/errors";
+import { setLockTimeout } from "@/platform/db/person-locks";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/shared/errors";
 import { bootDealsKit, holdLocks, type DealsKit, type DealsOrg } from "../../../../test-support/deals-test-kit";
 import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";

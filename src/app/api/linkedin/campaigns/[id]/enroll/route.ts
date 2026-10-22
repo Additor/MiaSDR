@@ -2,7 +2,7 @@ import { z } from "zod";
 import { MAX_PICKED_IDS } from "@/contexts/outreach/application/enrollment-admin";
 import { enrollLinkedInLeadsWithNotices, enrollPickedLinkedInLeadsWithNotices } from "@/contexts/outreach/linkedin/application/linkedin-enroll-notices";
 import { linkedinNoticeDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Either a search (`query`, `limit`; `dryRun` counts the people it would add and enrolls nobody) or the people a person picked (`personIds`), never both. The answer carries `notices`: people also contacted in other campaigns. */
 const body = z.union([

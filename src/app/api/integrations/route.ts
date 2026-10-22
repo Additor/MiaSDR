@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { saveIntegrationCredential } from "@/contexts/integrations/application/integration-management";
 import { integrationDeps } from "@/contexts/integrations/infrastructure/composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 /** Adds a provider credential, or rotates it. The response never echoes the secret. */
 export const POST = (request: Request) =>

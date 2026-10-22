@@ -1,6 +1,5 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
-import { claimSlot, finishSlot } from "@/platform/jobs/slots";
-import type { Job } from "@/platform/jobs/types";
+import type { Job, SlotPort } from "@/platform/jobs/types";
 import { replayLinkedInEvents } from "./linkedin-inbound";
 import { storedGateway, syncAndRecord, syncErrorText, type LinkedInManagementDeps } from "./linkedin-management";
 import type { LinkedInEngineDeps, LinkedInInboundDeps } from "./linkedin-ports";
@@ -15,7 +14,7 @@ const SYNC_RETRY_MS = 10 * 60_000;
  * Per tick: replay failed webhook events (so a reply stops its sequence before sends are claimed),
  * reconcile unknown outcomes, read search pages, then give every due account one unit of work.
  */
-export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps): Job[] {
+export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedInInboundDeps, search: LinkedInSearchEngineDeps, management: LinkedInManagementDeps, slots: SlotPort): Job[] {
   return [
     {
       // One sync per organization per UTC hour, so a disconnected account shows up without anyone pressing Sync.
@@ -29,19 +28,19 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
           // Credentials that no longer decrypt read as null: nothing to sync, no slot, no error.
           const credentials = await management.accounts.getCredentials(organizationId);
           if (!credentials) continue;
-          const claim = await claimSlot("linkedin-sync", hourKey, { organizationId, now: ctx.now(), leaseMs: SYNC_LEASE_MS });
+          const claim = await slots.claim("linkedin-sync", hourKey, { organizationId, now: ctx.now(), leaseMs: SYNC_LEASE_MS });
           if (!claim) continue;
           detail.organizations += 1;
           try {
             const result = await syncAndRecord(management, organizationId, () => storedGateway(management, credentials));
-            await finishSlot(claim, { status: "succeeded" }, ctx.now());
+            await slots.finish(claim, { status: "succeeded" }, ctx.now());
             detail.added += result.added;
             // A new account is `added`, not a status change.
             for (const change of result.changes) if (change.from !== null) detail[change.to] += 1;
           } catch (error) {
             detail.failed += 1;
             try {
-              await finishSlot(claim, { status: "failed", error: syncErrorText(error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
+              await slots.finish(claim, { status: "failed", error: syncErrorText(error), retryAfterMs: SYNC_RETRY_MS }, ctx.now());
             } catch (finishError) {
               // The lease expires on its own. The remaining organizations still get their turn.
               console.error(`LinkedIn sync: could not close the slot for organization ${organizationId}: ${finishError instanceof Error ? finishError.name : "unknown error"}`);

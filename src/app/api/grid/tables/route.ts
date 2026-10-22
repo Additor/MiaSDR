@@ -2,7 +2,7 @@ import { createTable, listTables } from "@/contexts/grid/application/structure-m
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idField, readJsonObject } from "../http";
 
 export function GET(request: Request) {

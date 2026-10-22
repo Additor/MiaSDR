@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { sendLinkedInReply } from "@/contexts/conversations/application/linkedin-reply";
 import { linkedinReplyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const bodySchema = z
   .object({ text: z.string().max(20000), idempotencyKey: z.string().min(8).max(200), draftId: z.string().max(64).optional(), revision: z.number().int().optional() })

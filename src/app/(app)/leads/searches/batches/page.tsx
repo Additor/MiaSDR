@@ -8,7 +8,7 @@ import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
 import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { listLinkedInSearchBatches } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
 import { linkedinCampaignDeps, linkedinSearchBatchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { BatchesPanel } from "./batches-panel";
 
 export const metadata: Metadata = { title: "Search batches" };

@@ -558,7 +558,7 @@ describeDb("linkedin search queue", () => {
   it("runs as a job and stops when no search is due", async () => {
     const f = await fixture();
     await create(f);
-    const job = jobs.createLinkedInJobs({ store: {} as never, gateways: f.gateway, clock, random: () => 0 }, {} as never, f.deps, {} as never).find((j) => j.name === "linkedin.search");
+    const job = jobs.createLinkedInJobs({ store: {} as never, gateways: f.gateway, clock, random: () => 0 }, {} as never, f.deps, {} as never, {} as never).find((j) => j.name === "linkedin.search");
     const result = await job?.run({ deadline: Date.now() + 5000, now: () => current });
     // One page per claim: the pacing gap stops a second page in the same tick.
     expect(result).toMatchObject({ processed: 1, more: false, detail: { page: 1 } });

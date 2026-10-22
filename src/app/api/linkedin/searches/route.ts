@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createLinkedInSearch, listLinkedInSearches } from "@/contexts/outreach/linkedin/application/linkedin-search";
 import { linkedinSearchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => listLinkedInSearches(linkedinSearchDeps(), actor));
 

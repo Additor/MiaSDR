@@ -21,7 +21,7 @@ describe("queue build under PAUSE_OUTBOUND", () => {
 
   function linkedinSetup() {
     const listActionableAccounts = vi.fn(async () => []);
-    const jobs = createLinkedInJobs({ store: { listActionableAccounts } } as never, {} as never, {} as never, {} as never);
+    const jobs = createLinkedInJobs({ store: { listActionableAccounts } } as never, {} as never, {} as never, {} as never, {} as never);
     return { listActionableAccounts, run: job(jobs, "linkedin.run") };
   }
 

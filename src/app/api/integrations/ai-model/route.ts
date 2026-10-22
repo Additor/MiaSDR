@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getAiModel, setAiModel } from "@/contexts/integrations/application/ai-model";
 import { aiModelDeps } from "@/contexts/integrations/infrastructure/composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 const FORBIDDEN = "Only an owner or admin can choose the AI model.";
 

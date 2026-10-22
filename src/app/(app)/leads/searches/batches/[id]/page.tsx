@@ -10,7 +10,7 @@ import { getSearchCapacity } from "@/contexts/outreach/linkedin/application/link
 import { canManageBatch } from "@/contexts/outreach/linkedin/domain/linkedin-search-batch";
 import { linkedinSearchBatchDeps, linkedinSearchCapacityDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { BatchDetail } from "./batch-detail";
 

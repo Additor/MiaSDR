@@ -2,7 +2,7 @@ import { z } from "zod";
 import { updateKnowledge } from "@/contexts/conversations/ai/application/knowledge";
 import { KNOWLEDGE_KINDS } from "@/contexts/conversations/ai/domain/knowledge";
 import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function PATCH(request: Request, ctx: RouteContext<"/api/crm/knowledge/[id]">) {
   const { id } = await ctx.params;

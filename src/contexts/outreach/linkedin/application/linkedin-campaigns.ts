@@ -1,4 +1,4 @@
-import { inTransaction, type DbHandle } from "@/platform/db/client";
+import type { DbHandle } from "@/platform/db/client";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCampaignType, canArchive, canTransition, stepsEditable, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
 import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "../../application/enrollment-admin";
@@ -98,6 +98,8 @@ export interface LinkedInAccountLimits {
 
 export interface LinkedInCampaignStore {
   list(organizationId: string, archived?: ArchiveFilter): Promise<Array<LinkedInCampaignRecord & { enrolled: number; invited: number; connected: number; replied: number }>>;
+  /** Runs `fn` in one transaction, as a savepoint inside `within` when the caller already holds one. */
+  transaction<T>(fn: (tx: DbHandle) => Promise<T>, within?: DbHandle): Promise<T>;
   get(organizationId: string, id: string, tx?: DbHandle): Promise<LinkedInCampaignRecord | null>;
   create(organizationId: string, input: { name: string; type?: CampaignType; createdBy: string; steps: LinkedInStep[] }, tx?: DbHandle): Promise<string>;
   furthestStep(organizationId: string, id: string): Promise<number>;
@@ -153,11 +155,11 @@ export async function createLinkedInCampaign(deps: LinkedInCampaignDeps, actor: 
   const type = parseCampaignType(input.type);
   const senderIds = await validateSenderIds(adminStore(deps), actor, "linkedin", input.senderIds ?? []);
   // One transaction: a campaign that fails to take its senders must not exist, or it would send from every account.
-  const id = await inTransaction(tx, async (t) => {
+  const id = await deps.campaigns.transaction(async (t) => {
     const created = await deps.campaigns.create(actor.organizationId, { name, type, createdBy: actor.userId, steps: DEFAULT_LINKEDIN_STEPS }, t);
     if (senderIds.length > 0) await adminStore(deps).replaceSenders(actor.organizationId, created, "linkedin", senderIds, t);
     return created;
-  });
+  }, tx);
   return { id };
 }
 
@@ -179,7 +181,7 @@ export async function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: 
     next.steps = patch.steps;
   }
   // One transaction: a failed sender replacement must not leave the new name or steps behind.
-  await inTransaction(undefined, async (tx) => {
+  await deps.campaigns.transaction(async (tx) => {
     if (!(await deps.campaigns.update(actor.organizationId, id, next, tx))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
     if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "linkedin", senderIds, tx);
   });

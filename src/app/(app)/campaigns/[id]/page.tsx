@@ -21,7 +21,7 @@ import { campaignSummary, leadsInProgress, parseCampaignTab, parseLeadsQuery, se
 import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
 import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import { campaignDeps, emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { RecordPage } from "../../crm/_components/record/record-header";
 import { LeadStatusToken } from "../../crm/_components/person/lead-status-token";

@@ -34,7 +34,7 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [
-          { group: ["**/infrastructure/**", "**/application/**", "next/*", "react", "drizzle-orm*", "postgres"], message: "domain/ must stay pure." },
+          { group: ["**/infrastructure/**", "**/application/**", "next/*", "react", "drizzle-orm*", "postgres", "@/platform/**", "@/composition/**"], message: "domain/ must stay pure." },
         ],
       }],
     },
@@ -44,7 +44,9 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [
-          { group: ["**/infrastructure/**", "next/*", "drizzle-orm*", "postgres"], message: "application/ depends on ports, not infrastructure." },
+          { group: ["**/infrastructure/**", "next/*", "drizzle-orm*", "postgres", "@/composition/**"], message: "application/ depends on ports, not infrastructure." },
+          // Platform types (DbHandle, Job, SlotPort) are ports. Runtime platform code opens the database, except the driver-free error helpers.
+          { group: ["@/platform/db/*", "!@/platform/db/errors", "@/platform/jobs/*", "!@/platform/jobs/local-day"], allowTypeImports: true, message: "application/ takes the database and job slots through ports; import platform types only (or @/platform/db/errors)." },
         ],
       }],
     },

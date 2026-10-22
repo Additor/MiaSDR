@@ -15,7 +15,7 @@ import { parseArchiveFilter } from "@/contexts/outreach/domain/campaign";
 import { campaignStatusLabel, CHANNEL_LABELS, emailProgressText, linkedinProgressText } from "@/contexts/outreach/domain/campaign-view";
 import { campaignDeps, enrollmentAdminStore } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { LabeledStatusBadge } from "./labeled-status-badge";
 import { NewCampaignButton } from "./new-campaign-button";
 import { FilterChips } from "@/components/shell/filter-chips";

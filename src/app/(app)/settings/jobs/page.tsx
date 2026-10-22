@@ -6,7 +6,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getLinkedInJobsOverview } from "@/contexts/outreach/linkedin/application/linkedin-operations";
 import { linkedinOperations } from "@/composition/inbox-filing";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { getFailedAiJobs, getSkippedAiJobs } from "@/contexts/conversations/ai/application/ai-job-ops";
 import { aiJobOpsDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
 import { recentTickFailures } from "@/platform/jobs/failure-log";

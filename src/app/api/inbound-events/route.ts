@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { listInboundEvents } from "@/contexts/outreach/application/inbound-review";
 import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-review-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const query = z.object({
   source: z.enum(["all", "gmail", "linkedin"]).default("all"),

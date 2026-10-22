@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { retryFailedCells } from "@/contexts/grid/enrichment/application/enrichment-run";
 import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Re-queues failed cells only. */
 export const POST = async (request: Request, { params }: RouteContext<"/api/grid/tables/[tableId]/run/retry">) => {

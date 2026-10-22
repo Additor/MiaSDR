@@ -1,7 +1,7 @@
 import { pasteCells } from "@/contexts/grid/application/paste-management";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam, readJsonObject } from "../../../http";
 
 /**

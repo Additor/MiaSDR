@@ -78,6 +78,8 @@ export interface CampaignStore {
   list(organizationId: string, now?: Date, archived?: ArchiveFilter): Promise<CampaignSummary[]>;
   /** Sends in status `unknown` claimed before `olderThan`: the total and the oldest `limit`. */
   unconfirmedSends(organizationId: string, id: string, olderThan: Date, limit: number): Promise<{ total: number; rows: UnconfirmedSend[] }>;
+  /** Runs `fn` in one transaction, as a savepoint inside `within` when the caller already holds one. */
+  transaction<T>(fn: (tx: DbHandle) => Promise<T>, within?: DbHandle): Promise<T>;
   get(organizationId: string, id: string, tx?: DbHandle): Promise<CampaignRecord | null>;
   /** Pass `tx` to make the insert part of the caller's transaction. */
   create(organizationId: string, input: { name: string; createdBy: string; steps: StepInput[] }, tx?: DbHandle): Promise<string>;

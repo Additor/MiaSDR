@@ -4,7 +4,7 @@ import { auth } from "@/contexts/identity/infrastructure/auth";
 import { revokeInvitation } from "@/contexts/tenancy/application/member-management";
 import { getInvitationView } from "@/contexts/tenancy/application/invitation-view";
 import { memberDeps, invitationViewDeps } from "@/contexts/tenancy/infrastructure/member-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * The accept-invitation page's data. It needs a session but no organization: the invited person usually has none yet.

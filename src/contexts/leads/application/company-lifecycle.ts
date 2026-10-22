@@ -1,5 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
-import { retryOnce } from "@/platform/db/person-locks";
+import { retryOnce } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { checkCompanyDomain, companyLabel } from "../domain/company-domain";
 import { planCompanyEdit } from "../domain/company-edit";

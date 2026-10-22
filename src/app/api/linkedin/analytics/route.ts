@@ -1,6 +1,6 @@
 import { getAnalytics } from "@/contexts/analytics/application/analytics-queries";
 import { analyticsDeps } from "@/contexts/analytics/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * GET /api/linkedin/analytics?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&campaignId=<uuid>&accountId=<uuid>

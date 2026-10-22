@@ -87,7 +87,7 @@ describe("route inventory", () => {
 
 describe("permission before validation", () => {
   it("has an empty allow-list: every admin-only handler checks the role before it parses the body", () => {
-    expect(PERMISSION_AFTER_VALIDATION, "use withAdmin (src/shared/api.ts) in the handler instead of allow-listing it").toEqual([]);
+    expect(PERMISSION_AFTER_VALIDATION, "use withAdmin (src/app/_lib/api.ts) in the handler instead of allow-listing it").toEqual([]);
   });
 });
 

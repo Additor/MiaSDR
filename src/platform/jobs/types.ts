@@ -1,3 +1,5 @@
+import type { ClaimSlotOptions, SlotClaim, SlotOutcome } from "./slots";
+
 /**
  * A job is a unit of recurring work. It claims its own work (SKIP LOCKED or a
  * DB slot) and stops when the tick budget runs out, so several callers can
@@ -28,4 +30,10 @@ export interface TickReport {
   startedAt: string;
   durationMs: number;
   jobs: Array<{ name: string; processed: number; more: boolean; detail?: Record<string, number>; error?: string; durationMs?: number }>;
+}
+
+/** Once-per-period claims on `job_runs` (see ./slots), handed to a job as a port so application code never opens the database. */
+export interface SlotPort {
+  claim(job: string, slotKey: string, options?: ClaimSlotOptions): Promise<SlotClaim | null>;
+  finish(claim: SlotClaim, outcome: SlotOutcome, now?: Date): Promise<boolean>;
 }

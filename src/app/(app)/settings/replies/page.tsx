@@ -8,7 +8,7 @@ import { getCrmTaxonomy } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { cn } from "@/lib/utils";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { SettingsSection } from "../settings-section";
 import { InstructionsPanel } from "./instructions-panel";
 import { TaxonomyPanel } from "./taxonomy-panel";

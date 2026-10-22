@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createTask, listTasks } from "@/contexts/conversations/actions/application/tasks";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/crm/records/[id]/tasks">) {
   const { id } = await ctx.params;

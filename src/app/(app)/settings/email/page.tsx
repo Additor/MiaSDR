@@ -6,7 +6,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getEmailRules } from "@/contexts/outreach/email/application/email-rules";
 import { emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { EmailRulesForm } from "./email-rules-form";
 
 export const metadata: Metadata = { title: "Email rules" };

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { MAX_DELETE_IDS, deleteLeads } from "@/contexts/leads/application/lead-management";
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
 import { leadDeps } from "@/contexts/leads/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { ValidationError } from "@/shared/errors";
 
 /** Every `LeadFilter` key the list sends except `ids`, which belong to the other branch. */

@@ -1,6 +1,6 @@
 import { sql as dsql } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { lockRetryStats } from "@/platform/db/person-locks";
+import { lockRetryStats } from "@/platform/db/errors";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import { bootDealsKit, holdLocks, sqlState, waitForLockWaiters, type DealsKit, type DealsOrg } from "@/test-support/deals-test-kit";
 import type { ContactDeleteDeps, ContactDeletePreview } from "../../application/contact-delete";

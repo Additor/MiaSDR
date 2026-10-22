@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createOrganization } from "@/contexts/tenancy/application/create-organization";
 import { listMyOrganizations } from "@/contexts/tenancy/application/organization-switching";
 import { createOrganizationDeps, switchingDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
-import { withUser } from "@/shared/api";
+import { withUser } from "@/app/_lib/api";
 
 export const GET = () => withUser((user) => listMyOrganizations(switchingDeps(), user));
 

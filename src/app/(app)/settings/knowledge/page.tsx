@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { listKnowledge } from "@/contexts/conversations/ai/application/knowledge";
 import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { KnowledgePanel } from "./knowledge-panel";
 
 export const metadata: Metadata = { title: "Knowledge" };

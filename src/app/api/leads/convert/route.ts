@@ -1,6 +1,6 @@
 import { createDealsFromLeads } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { bulkConvertSchema } from "@/app/api/deals/validation";
 
 /** Create deals for many leads, one transaction each: `{ created: [{ personId, dealId }], skipped: [{ personId, reason }] }`. */

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createProvider, listCatalog, listProviders } from "@/contexts/grid/enrichment/application/enrichment-providers";
 import { gridProviderDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 /** The catalog and this organization's providers. Credentials are never part of the answer, only `hasCredential`. */
 export const GET = () =>

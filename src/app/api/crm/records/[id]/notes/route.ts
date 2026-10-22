@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { addCrmNote } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/crm/records/[id]/notes">) {
   const { id } = await ctx.params;

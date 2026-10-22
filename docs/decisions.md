@@ -42,7 +42,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 
 ### Route wrappers and error mapping
 
-| Wrapper (`src/shared/api.ts`) | Use |
+| Wrapper (`src/app/_lib/api.ts`) | Use |
 |---|---|
 | `withActor(run)` | Signed-in member of an organization. 401 otherwise. |
 | `withAdmin(message, run)` | Owner or admin. Throws `ForbiddenError` before `run` parses the body, so a member with a malformed body gets 403, not 400. |

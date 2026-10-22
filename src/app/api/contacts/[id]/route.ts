@@ -1,6 +1,6 @@
 import { contactDeleteDeps } from "@/composition/person-lifecycle";
 import { deleteContact } from "@/contexts/leads/application/contact-delete";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const COUNT_KEYS = ["deals", "notes", "tasks", "events", "conversations", "messages", "sends"] as const;
 

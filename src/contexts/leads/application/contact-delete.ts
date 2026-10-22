@@ -1,5 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
-import { retryOnce, sqlState, TRY_AGAIN } from "@/platform/db/person-locks";
+import { retryOnce, sqlState, TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import type { LeadsAudit } from "./leads-audit";
 

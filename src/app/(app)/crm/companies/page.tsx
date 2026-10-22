@@ -13,7 +13,7 @@ import type { CompanySort } from "@/contexts/deals/application/deal-ports";
 import { listCompanies } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { SearchField } from "@/components/shell/search-field";
 import { ListPager, pageCountOf, SortHeader } from "@/components/shell/list-pager";
 import { AddCompanyButton } from "../_components/add-company-dialog";

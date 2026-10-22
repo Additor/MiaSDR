@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { companyLifecycleDeps } from "@/composition/person-lifecycle";
 import { mergeCompanies } from "@/contexts/leads/application/company-lifecycle";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const bodySchema = z.object({ otherId: z.string().max(64), expected: z.unknown().optional() });
 

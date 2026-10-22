@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { sendTestEmail } from "@/contexts/outreach/email/application/send-test-email";
 import { testSendDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 const bodySchema = z.object({ to: z.string().min(3).max(320) }).strict();
 

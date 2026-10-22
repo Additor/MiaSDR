@@ -1,6 +1,6 @@
 import { listContactIds } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * "Select all matching" on Contacts: the ids of the contacts that match the list's `q`, `owner` and `stage`, newest conversion

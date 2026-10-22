@@ -3,7 +3,7 @@ import { addCrmNote } from "@/contexts/conversations/application/crm";
 import { listPersonNotes } from "@/contexts/conversations/actions/application/tasks";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Every note of the person, record-bound ones included, newest first. */
 export async function GET(_request: Request, ctx: RouteContext<"/api/people/[personId]/notes">) {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { removeLead } from "@/contexts/outreach/application/campaign-management";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 
 /** Removes one lead from the campaign: the enrollment becomes `removed`, the person stays. A repeat call answers `removed: false`. */

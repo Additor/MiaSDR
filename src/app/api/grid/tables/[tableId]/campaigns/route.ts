@@ -3,7 +3,7 @@ import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { CAMPAIGN_FIELDS, type CampaignFieldMapping } from "@/contexts/grid/domain/campaign-rows";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idField, idList, idParam, readJsonObject, stringList } from "../../../http";
 
 /**

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { deleteDealStage, renameDealStage } from "@/contexts/deals/application/deal-stages";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function PATCH(request: Request, ctx: RouteContext<"/api/deal-stages/[id]">) {
   const { id } = await ctx.params;

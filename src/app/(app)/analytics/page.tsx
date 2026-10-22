@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ANALYTICS_VIEWS, getAnalytics, getFilterOptions, isAnalyticsView, type AnalyticsView } from "@/contexts/analytics/application/analytics-queries";
 import { analyticsDeps } from "@/contexts/analytics/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { ValidationError } from "@/shared/errors";
 import { AnalyticsReportView } from "./report-views";
 import { ViewSwitch } from "@/components/shell/view-switch";

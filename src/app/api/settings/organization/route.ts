@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getOrganization, updateOrganization } from "@/contexts/tenancy/application/organization-settings";
 import { organizationDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => getOrganization(organizationDeps(), actor));
 

@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { sqlState, TRY_AGAIN } from "@/platform/db/person-locks";
+import { sqlState, TRY_AGAIN } from "@/platform/db/errors";
 import { companies, companyDomainAliases } from "@/platform/db/schema";
 import { ConflictError, ValidationError } from "@/shared/errors";
 import { checkCompanyDomain } from "../domain/company-domain";

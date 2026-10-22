@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createKnowledge, listKnowledge } from "@/contexts/conversations/ai/application/knowledge";
 import { KNOWLEDGE_KINDS } from "@/contexts/conversations/ai/domain/knowledge";
 import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Same use cases as /api/knowledge; the page lives at /settings/knowledge. */
 export const GET = () => withActor((actor) => listKnowledge(knowledgeStore, actor));

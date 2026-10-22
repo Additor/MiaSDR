@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createDealStage, listDealStages } from "@/contexts/deals/application/deal-stages";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** The pipeline's stages. An organization without stages gets the defaults with `virtual: true`; this never writes. */
 export function GET() {

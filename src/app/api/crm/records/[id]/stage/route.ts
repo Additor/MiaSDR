@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { moveRecordStage } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const schema = z.object({
   categoryKey: z.string().min(1).max(40),

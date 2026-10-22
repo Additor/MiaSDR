@@ -21,7 +21,7 @@ import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { cn } from "@/lib/utils";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { ForbiddenError, ValidationError } from "@/shared/errors";
 import { elapsed } from "@/shared/format-time";
 import { EmptyState } from "@/components/shell/empty-state";

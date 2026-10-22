@@ -1,6 +1,6 @@
 import { deleteDeal, getDeal, updateDeal } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { ValidationError } from "@/shared/errors";
 import { updateDealSchema } from "../validation";
 

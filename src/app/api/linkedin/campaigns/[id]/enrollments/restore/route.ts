@@ -2,7 +2,7 @@ import { z } from "zod";
 import { MAX_PICKED_IDS } from "@/contexts/outreach/application/enrollment-admin";
 import { restoreCampaignEnrollments } from "@/contexts/outreach/application/enrollment-restore";
 import { enrollmentRestoreDeps } from "@/contexts/outreach/infrastructure/restore-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * Puts removed leads back: `pending` when nothing was sent, `active` when the lead has progress. Leads that replied, are on do not contact,

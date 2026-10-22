@@ -1,7 +1,7 @@
 import { getAnalytics, isAnalyticsView } from "@/contexts/analytics/application/analytics-queries";
 import { reportCsv } from "@/contexts/analytics/application/export";
 import { analyticsDeps } from "@/contexts/analytics/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 
 /**

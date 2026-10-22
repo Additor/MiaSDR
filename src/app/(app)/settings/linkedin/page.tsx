@@ -7,7 +7,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listLinkedInAccounts } from "@/contexts/outreach/linkedin/application/linkedin-management";
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { LinkedInPanel } from "./linkedin-panel";
 
 export const metadata: Metadata = { title: "LinkedIn" };

@@ -13,7 +13,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { readPersonalThread } from "@/contexts/outreach/linkedin/application/personal-thread";
 import { personalThreadDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { cn } from "@/lib/utils";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { ForbiddenError, NotFoundError } from "@/shared/errors";
 
 export const metadata: Metadata = { title: "Private reply" };

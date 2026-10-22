@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { cellRuns } from "@/contexts/grid/enrichment/application/enrichment-run";
 import { gridRunDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Run ledger of one cell: provider, outcome, cost and latency per attempt, newest first. */
 export const GET = async (request: Request, { params }: RouteContext<"/api/grid/tables/[tableId]/cell-runs">) => {

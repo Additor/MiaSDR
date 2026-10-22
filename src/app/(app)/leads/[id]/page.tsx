@@ -15,7 +15,7 @@ import { leadDeps } from "@/contexts/leads/infrastructure/composition";
 import { readLeadNeighbors, type LeadNeighbors } from "@/contexts/leads/infrastructure/composition";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { leadActivityDeps, crossCampaignNotices } from "@/contexts/outreach/infrastructure/composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { AddLeadToCampaign } from "../add-to-campaign";
 import { CampaignsTable } from "../../crm/_components/person/campaigns-table";

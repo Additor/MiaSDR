@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { listIdentityExceptions } from "@/contexts/conversations/application/crm";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { PageHeader } from "@/components/shell/page-header";
 import { ExceptionsPanel } from "./exceptions-panel";
 

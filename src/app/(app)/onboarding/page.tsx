@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getOnboarding } from "@/contexts/tenancy/application/onboarding";
 import { onboardingDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { OnboardingChecklist } from "./onboarding-checklist";
 
 export const metadata: Metadata = { title: "Setup guide" };

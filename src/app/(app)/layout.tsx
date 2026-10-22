@@ -18,7 +18,7 @@ import { getOnboarding } from "@/contexts/tenancy/application/onboarding";
 import { onboardingDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
 import { getOutboundPauseBanner } from "@/contexts/outreach/application/outbound-pause";
 import { switchingDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (

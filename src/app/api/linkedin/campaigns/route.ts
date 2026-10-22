@@ -2,7 +2,7 @@ import { z } from "zod";
 import { parseArchiveFilter } from "@/contexts/outreach/domain/campaign";
 import { createLinkedInCampaign, listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** GET ?archived=only|all lists archived campaigns too. The default hides them. */
 export const GET = (request: Request) => withActor((actor) => listLinkedInCampaigns(linkedinCampaignDeps(), actor, parseArchiveFilter(new URL(request.url).searchParams.get("archived"))));

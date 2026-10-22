@@ -1,6 +1,6 @@
 import { getWorkQueue } from "@/contexts/conversations/actions/application/work-queue";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * The work queue: records in `action_required` or `error`, or `waiting` and due, in five groups with an exact total each.

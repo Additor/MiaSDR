@@ -1,6 +1,6 @@
 import { listTasks } from "@/contexts/conversations/actions/application/tasks";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);

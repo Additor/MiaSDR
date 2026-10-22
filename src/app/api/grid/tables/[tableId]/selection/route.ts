@@ -1,6 +1,6 @@
 import { selectRows } from "@/contexts/grid/application/row-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam } from "../../../http";
 
 /** Ids of every row matching the saved filters and `?search=`. The grid holds one page, so this is the source for "select all". */

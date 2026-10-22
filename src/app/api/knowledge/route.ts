@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createKnowledge, listKnowledge } from "@/contexts/conversations/ai/application/knowledge";
 import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
 import { KNOWLEDGE_KINDS } from "@/contexts/conversations/ai/domain/knowledge";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => listKnowledge(knowledgeStore, actor));
 

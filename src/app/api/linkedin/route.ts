@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { connectLinkedIn, disconnectLinkedIn, listLinkedInAccounts } from "@/contexts/outreach/linkedin/application/linkedin-management";
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => listLinkedInAccounts(linkedinManagementDeps(), actor));
 

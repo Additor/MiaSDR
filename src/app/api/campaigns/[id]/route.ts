@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { deleteCampaign, updateCampaign } from "@/contexts/outreach/application/campaign-management";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { stepSchema } from "../step-schema";
 
 export async function PATCH(request: Request, ctx: RouteContext<"/api/campaigns/[id]">) {

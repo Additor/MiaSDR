@@ -2,7 +2,7 @@ import { NextResponse, connection } from "next/server";
 import { ZodError } from "zod";
 import { apiOrgContext, apiUser, type OrgContext, type SessionUser } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { ConflictError, ForbiddenError, NotFoundError, PayloadTooLargeError, ValidationError, type Actor } from "./errors";
+import { ConflictError, ForbiddenError, NotFoundError, PayloadTooLargeError, ValidationError, type Actor } from "@/shared/errors";
 
 export const toActor = (ctx: OrgContext): Actor => ({ userId: ctx.user.id, organizationId: ctx.organization.id, role: ctx.role });
 

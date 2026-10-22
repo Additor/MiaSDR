@@ -3,7 +3,7 @@ import { deleteCrmNote } from "@/contexts/conversations/application/crm";
 import { assertCanDeleteNote, editNote } from "@/contexts/conversations/actions/application/tasks";
 import { crmDeps } from "@/contexts/conversations/infrastructure/crm-composition";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Any note of the person, record-bound or not. Only the author or an admin changes it, as on the record routes. */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/people/[personId]/notes/[noteId]">) {

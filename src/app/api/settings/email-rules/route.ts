@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getEmailRules, updateEmailRules } from "@/contexts/outreach/email/application/email-rules";
 import { emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withActor, withAdmin } from "@/shared/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => getEmailRules(emailRulesDeps(), actor));
 

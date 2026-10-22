@@ -71,6 +71,8 @@ async function insertEnrollments(tx: DbHandle, organizationId: string, campaignI
 }
 
 export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
+  transaction: (fn, within) => inTransaction(within, fn),
+
   async list(organizationId, archived = "hide") {
     const rows = await db
       .select({

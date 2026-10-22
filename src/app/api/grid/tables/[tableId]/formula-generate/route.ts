@@ -1,7 +1,7 @@
 import { generateFormula } from "@/contexts/grid/application/formula-management";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam, readJsonObject } from "../../../http";
 
 /** Body `{ prompt, currentExpression? }`. Answers 409 when the organization has no AI provider configured. */

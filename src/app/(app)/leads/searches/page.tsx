@@ -11,7 +11,7 @@ import { getSearchCapacity } from "@/contexts/outreach/linkedin/application/link
 import { DEFAULT_MAX_RESULTS, MAX_SEARCH_RESULTS } from "@/contexts/outreach/linkedin/domain/linkedin-search";
 import { MAX_BATCH_ROWS } from "@/contexts/outreach/linkedin/domain/linkedin-search-batch";
 import { linkedinCampaignDeps, linkedinSearchBatchDeps, linkedinSearchCapacityDeps, linkedinSearchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { SearchesPanel } from "./searches-panel";
 
 export const metadata: Metadata = { title: "LinkedIn searches" };

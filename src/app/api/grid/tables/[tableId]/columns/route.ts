@@ -2,7 +2,7 @@ import { createColumn, listColumns } from "@/contexts/grid/application/column-ma
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idField, idParam, readJsonObject } from "../../../http";
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/grid/tables/[tableId]/columns">) {

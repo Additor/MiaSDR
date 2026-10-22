@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { resolveUncertainSend } from "@/contexts/conversations/application/reply-management";
 import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/drafts/[id]/resolve">) {
   const { id } = await ctx.params;

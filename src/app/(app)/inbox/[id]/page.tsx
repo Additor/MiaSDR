@@ -14,7 +14,7 @@ import type { ThreadDetail } from "@/contexts/conversations/application/ports";
 import { inboxHref, parseInboxParams } from "@/contexts/conversations/domain/inbox-filter";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { actionsHref, actionsViewFrom } from "../../actions/actions-query";

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { assignRecord, claimRecord } from "@/contexts/conversations/actions/application/assignment";
 import { assignmentDeps } from "@/contexts/conversations/actions/infrastructure/assignment-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("claim") }),

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { switchOrganization } from "@/contexts/tenancy/application/organization-switching";
 import { switchingDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
-import { withUser } from "@/shared/api";
+import { withUser } from "@/app/_lib/api";
 
 export const POST = (request: Request) =>
   withUser(async (user) => {

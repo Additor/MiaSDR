@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getCampaignAfterReply, saveCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
 import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 type Ctx = RouteContext<"/api/campaigns/[id]/after-reply">;
 

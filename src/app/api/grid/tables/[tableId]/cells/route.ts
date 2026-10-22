@@ -2,7 +2,7 @@ import { editCells, type CellUpdateInput } from "@/contexts/grid/application/row
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idField, idParam, readJsonObject } from "../../../http";
 
 function updateOf(raw: unknown): CellUpdateInput {

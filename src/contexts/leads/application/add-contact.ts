@@ -1,5 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
-import { TRY_AGAIN } from "@/platform/db/person-locks";
+import { TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
 import { renameOnCompanyPage } from "../domain/company-domain";
 import { NEW_PERSON, planLeadEdit } from "../domain/lead-edit";

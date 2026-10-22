@@ -1,7 +1,7 @@
 import { createWorkbook, listWorkbooks } from "@/contexts/grid/application/structure-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idField, nullableIdField, readOptionalJsonObject } from "../http";
 
 /** `?folder=root` lists the root, `?folder=<id>` one folder, no parameter every workbook. */

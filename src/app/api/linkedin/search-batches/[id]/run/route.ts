@@ -2,7 +2,7 @@ import { z } from "zod";
 import { runSearchBatch } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
 import { MAX_BATCH_IDS } from "@/contexts/outreach/linkedin/domain/linkedin-search-batch";
 import { linkedinSearchBatchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Body `{ ids?: string[] }`: the searches to run now, or every paused and queued search of the batch. Limits and pacing still apply. */
 export async function POST(request: Request, ctx: RouteContext<"/api/linkedin/search-batches/[id]/run">) {

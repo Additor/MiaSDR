@@ -21,7 +21,7 @@ import { listCustomColumns } from "@/contexts/leads/application/custom-columns";
 import { customColumnStore } from "@/contexts/leads/infrastructure/composition";
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { NotFoundError, type Actor } from "@/shared/errors";
 import { AddContactButton } from "../../_components/add-contact-dialog";
 import { dealDialogData } from "../../_components/deal-dialog-data";

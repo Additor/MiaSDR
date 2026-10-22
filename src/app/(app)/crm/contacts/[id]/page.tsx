@@ -20,7 +20,7 @@ import { sourceLabel } from "@/contexts/leads/domain/lead-labels";
 import { leadDeps } from "@/contexts/leads/infrastructure/composition";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { leadActivityDeps } from "@/contexts/outreach/infrastructure/composition";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { NotFoundError, type Actor } from "@/shared/errors";
 import { CreateDealButton } from "../../_components/create-deal-dialog";
 import { dealDialogData } from "../../_components/deal-dialog-data";

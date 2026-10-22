@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { editDraft } from "@/contexts/conversations/application/reply-management";
 import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /** Same use case as PATCH /api/drafts/[id]. The edit bumps the revision a later approval must name. */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/crm/drafts/[id]">) {

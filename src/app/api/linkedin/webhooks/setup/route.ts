@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getLinkedInWebhookSetup } from "@/contexts/outreach/linkedin/application/linkedin-management";
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 /**
  * The webhook URL, header name and secret, for registering the webhooks by hand. Owner or admin only; every call is audited.

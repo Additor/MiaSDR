@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createManualDraft, requestDraft } from "@/contexts/conversations/application/reply-management";
 import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * Without a body, asks the AI for a draft. With `bodyText`, saves a reply a person typed (no AI, no key needed).

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { mapRawField } from "@/contexts/leads/application/lead-management";
 import { leadDeps } from "@/contexts/leads/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 const schema = z.object({
   rawKey: z.string().min(1).max(100),

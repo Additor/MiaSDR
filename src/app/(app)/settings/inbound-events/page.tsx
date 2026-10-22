@@ -6,7 +6,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInboundEvents, type InboundStateFilter } from "@/contexts/outreach/application/inbound-review";
 import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-review-composition";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { InboundEventsPanel } from "./inbound-events-panel";
 import { AdminNotice } from "../admin-notice";
 

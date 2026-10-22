@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { deleteProvider, updateProvider } from "@/contexts/grid/enrichment/application/enrichment-providers";
 import { gridProviderDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 const body = z.object({
   name: z.string().optional(),

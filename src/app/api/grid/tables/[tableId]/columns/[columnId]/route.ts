@@ -2,7 +2,7 @@ import { deleteColumn, updateColumn } from "@/contexts/grid/application/column-m
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
 import { ValidationError } from "@/shared/errors";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idParam, nullableIdField, readJsonObject } from "../../../../http";
 
 /** Body `{ name?, type?, config?, autoRun?, afterColumnId? }`. A static to static type change converts the stored values. */

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { updateLinkedInAccount } from "@/contexts/outreach/linkedin/application/linkedin-management";
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 const window = z.object({ start: z.string(), end: z.string() });
 const settings = z.object({

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { setMailboxEnabled } from "@/contexts/outreach/email/application/mailbox-management";
 import { mailboxDeps } from "@/contexts/outreach/infrastructure/composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/mailboxes/[id]/enabled">) {
   const { id } = await ctx.params;

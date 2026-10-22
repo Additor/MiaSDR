@@ -15,7 +15,7 @@ import { drizzleLeadsAudit } from "@/contexts/leads/infrastructure/drizzle-leads
 import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
 import { keepEmailSuppressed, leadsInRunningCampaigns, personOutreachBlockers, personOutreachCounts, purgePersonOutreach } from "@/contexts/outreach/infrastructure/person-outreach";
 import { drizzleOrganizationStore } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
-import { retryOnce } from "@/platform/db/person-locks";
+import { retryOnce } from "@/platform/db/errors";
 import type { Actor } from "@/shared/errors";
 
 /*

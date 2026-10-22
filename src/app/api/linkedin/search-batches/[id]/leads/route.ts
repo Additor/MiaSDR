@@ -2,7 +2,7 @@ import { z } from "zod";
 import { deleteSearchBatchResults } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
 import { MAX_BATCH_IDS } from "@/contexts/outreach/linkedin/domain/linkedin-search-batch";
 import { linkedinSearchBatchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 
 /**
  * Body `{ ids: string[] }` deletes the staged results found by those searches. Body `{ all: true }` deletes them for every search

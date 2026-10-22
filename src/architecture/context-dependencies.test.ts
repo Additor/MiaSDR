@@ -51,6 +51,66 @@ export function upwardImports(file: string, source: string): string[] {
     .map((s) => `${path.relative(ROOT, file)} -> ${s}`);
 }
 
+/**
+ * The tiers under src, lowest first: `shared` (the kernel: errors, env, time, formatting), `platform` (database client,
+ * schema barrel, job runtime, files, credentials), the contexts, `composition`, then `app`. A tier imports only lower
+ * tiers. `shared` imports no framework or driver either.
+ */
+const TIER_FORBIDDEN: Record<string, { paths: string[]; packages: RegExp | null }> = {
+  shared: { paths: ["contexts", "platform", "composition", "app", "components", "lib", "hooks"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
+  platform: { paths: ["composition", "app", "components", "lib", "hooks"], packages: null },
+};
+
+/** Platform files that import a context, as the code stood when the rule arrived. Shrink only. */
+const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
+  // The schema barrel: the Drizzle client and migrations see every table through it.
+  "src/platform/db/schema.ts": [
+    "@/contexts/conversations/after-reply/infrastructure/sequences-schema",
+    "@/contexts/conversations/infrastructure/schema",
+    "@/contexts/deals/infrastructure/schema",
+    "@/contexts/grid/infrastructure/schema",
+    "@/contexts/identity/infrastructure/schema",
+    "@/contexts/integrations/infrastructure/schema",
+    "@/contexts/leads/infrastructure/schema",
+    "@/contexts/outreach/infrastructure/schema",
+    "@/contexts/tenancy/infrastructure/schema",
+  ],
+  "src/platform/db/columns.ts": ["@/contexts/tenancy/infrastructure/schema"],
+  "src/platform/db/sequence-stop.ts": ["@/contexts/conversations/domain/draft-status", "@/contexts/outreach/domain/enrollment-status"],
+  "src/platform/jobs/rollover-registry.ts": ["@/contexts/leads/infrastructure/backfill-linkedin-urls"],
+};
+
+/** `{ file: specifiers }` of the files under `tier` that import what the tier may not. */
+function tierViolations(tier: keyof typeof TIER_FORBIDDEN): string[] {
+  const rule = TIER_FORBIDDEN[tier];
+  const out: string[] = [];
+  for (const file of sourceFiles(path.join(SRC, tier))) {
+    const source = readFileSync(file, "utf8");
+    out.push(...violations(file, source, rule.paths));
+    if (rule.packages) for (const s of specifiers(source)) if (rule.packages.test(s)) out.push(`${path.relative(ROOT, file)} -> ${s}`);
+  }
+  return out;
+}
+
+describe("tier dependencies", () => {
+  it("keeps src/shared free of every tier above it, frameworks and drivers", () => {
+    expect(tierViolations("shared")).toEqual([]);
+  });
+
+  it("keeps src/platform free of composition, app and UI", () => {
+    expect(tierViolations("platform")).toEqual([]);
+  });
+
+  it("lets src/platform import a context only where the shrink-only list allows it", () => {
+    const found: Record<string, string[]> = {};
+    for (const file of sourceFiles(path.join(SRC, "platform"))) {
+      const hits = [...new Set(specifiers(readFileSync(file, "utf8")).filter((s) => target(file, s)?.startsWith("contexts/")))].sort();
+      if (hits.length > 0) found[path.relative(ROOT, file).split(path.sep).join("/")] = hits;
+    }
+    expect(found).toEqual(PLATFORM_CONTEXT_IMPORTS);
+  });
+});
+
 describe("context dependencies", () => {
   it("places every context in a layer", () => {
     const contexts = readdirSync(path.join(SRC, "contexts")).filter((name) => statSync(path.join(SRC, "contexts", name)).isDirectory());

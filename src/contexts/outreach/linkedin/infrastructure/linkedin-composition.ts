@@ -1,3 +1,4 @@
+import { claimSlot, finishSlot } from "@/platform/jobs/slots";
 import { timingSafeEqual } from "node:crypto";
 import { env } from "@/shared/env";
 import type { Job } from "@/platform/jobs/types";
@@ -103,7 +104,7 @@ function inboundDeps(inbox: InboxFiling): LinkedInInboundDeps {
 
 /** LinkedIn jobs. They idle until an organization connects Unipile, so they are always registered. */
 export function linkedinJobs(inbox: InboxFiling): Job[] {
-  return createLinkedInJobs(engineDeps(), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps());
+  return createLinkedInJobs(engineDeps(), inboundDeps(inbox), searchEngineDeps(), linkedinManagementDeps(), { claim: claimSlot, finish: finishSlot });
 }
 
 export type UnipileDelivery = { status: 401 } | { status: 200; result: WebhookResult };

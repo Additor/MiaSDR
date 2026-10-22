@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requeueFailedAiJobsSince } from "@/contexts/conversations/ai/application/ai-job-ops";
 import { aiJobOpsDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 const body = z.object({ since: z.iso.datetime({ offset: true }) });
 

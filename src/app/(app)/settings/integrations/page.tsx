@@ -7,7 +7,7 @@ import { MANAGED_PROVIDERS } from "@/contexts/integrations/domain/providers";
 import { integrationDeps } from "@/contexts/integrations/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { IntegrationsPanel } from "./integrations-panel";
 import { AdminNotice } from "../admin-notice";
 

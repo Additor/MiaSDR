@@ -6,7 +6,7 @@ import { listCustomColumns } from "@/contexts/leads/application/custom-columns";
 import { customColumnStore } from "@/contexts/leads/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { ColumnsPanel } from "./columns-panel";
 
 export const metadata: Metadata = { title: "Custom fields" };

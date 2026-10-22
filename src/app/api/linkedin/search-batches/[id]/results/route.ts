@@ -3,7 +3,7 @@ import { exportSearchBatchResults } from "@/contexts/outreach/linkedin/applicati
 import { linkedinSearchBatchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 import { NotFoundError } from "@/shared/errors";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 
 /** Streams the batch's stored results as CSV: UTF-8 with BOM, formula-safe cells, pages of 1,000 rows. */
 export async function GET(_request: Request, ctx: RouteContext<"/api/linkedin/search-batches/[id]/results">) {

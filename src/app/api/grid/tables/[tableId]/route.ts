@@ -2,7 +2,7 @@ import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { getTablePage } from "@/contexts/grid/application/row-management";
 import { deleteTable, updateTable } from "@/contexts/grid/application/structure-management";
 import { gridDeps } from "@/contexts/grid/infrastructure/composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { idField, idParam, intParam, readJsonObject } from "../../http";
 
 /**

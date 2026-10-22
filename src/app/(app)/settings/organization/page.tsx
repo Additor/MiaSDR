@@ -6,7 +6,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getOrganization } from "@/contexts/tenancy/application/organization-settings";
 import { organizationDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
 import { isOwnerOrAdmin, parseRoles } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { timeZoneOptions } from "../time-zone-options";
 import { OrganizationForm } from "./organization-form";
 

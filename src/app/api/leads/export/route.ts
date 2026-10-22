@@ -3,7 +3,7 @@ import { exportLeadsCsv } from "@/contexts/leads/application/lead-management";
 import { parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
 import { leadDeps } from "@/contexts/leads/infrastructure/composition";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 
 /** Streams the leads matching the list filter params (`q`, `campaign`, `email`, `ids` and the rest, see `parseLeadFilter`) as CSV: UTF-8 with BOM, formula-safe cells, batches of 1,000 rows. */
 export async function GET(request: Request) {

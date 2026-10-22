@@ -8,7 +8,7 @@ import { getEmailRules } from "@/contexts/outreach/email/application/email-rules
 import { listMailboxes } from "@/contexts/outreach/email/application/mailbox-management";
 import { mailboxDeps, emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import { timeZoneOptions } from "../time-zone-options";
 import { MailboxList } from "./mailbox-list";
 

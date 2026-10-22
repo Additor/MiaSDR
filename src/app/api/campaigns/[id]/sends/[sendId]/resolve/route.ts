@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { resolveCampaignSend } from "@/contexts/outreach/application/send-resolution";
 import { sendResolutionDeps } from "@/contexts/outreach/infrastructure/send-resolution-composition";
-import { withAdmin } from "@/shared/api";
+import { withAdmin } from "@/app/_lib/api";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/campaigns/[id]/sends/[sendId]/resolve">) {
   const { id, sendId } = await ctx.params;

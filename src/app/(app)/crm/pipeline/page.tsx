@@ -13,7 +13,7 @@ import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-c
 import { board, isUuid } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { toActor } from "@/shared/api";
+import { toActor } from "@/app/_lib/api";
 import type { DealStageList } from "../_components/deal-form";
 import { toJson } from "../_components/serialize";
 import { BoardColumn } from "./board-column";

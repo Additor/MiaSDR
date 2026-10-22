@@ -1,6 +1,6 @@
 import { board, createDealForContact } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/contexts/deals/infrastructure/deals-composition";
-import { withActor } from "@/shared/api";
+import { withActor } from "@/app/_lib/api";
 import { createForContactSchema } from "./validation";
 
 /** The Pipeline board: `stage`, `owner` (user id, `me` or `none`), `q`, `limit` (per stage, default 25), `cursor`, `showAll=1`. */
