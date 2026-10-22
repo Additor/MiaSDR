@@ -28,7 +28,8 @@ interface Props {
   /** The action key of the outcome to open on, from the start strip. */
   outcome?: string;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  /** After a save; `addedKey` is the new column's key, so the grid can bring it into view. */
+  onSaved: (addedKey?: string) => Promise<void>;
 }
 
 type Step = WaterfallStep;
@@ -383,7 +384,7 @@ function CreateFooter({ blocker, busy, onBack, onSave }: { blocker: string | nul
 }
 
 /** Creates the column, then on `run` queues its first rows. A refused run leaves the column added and says why. */
-async function createColumn(tableId: string, body: Record<string, unknown>, run: boolean): Promise<{ ok: true } | { ok: false; error: string | null }> {
+async function createColumn(tableId: string, body: Record<string, unknown>, run: boolean): Promise<{ ok: true; key?: string } | { ok: false; error: string | null }> {
   const res = await gridRequest<{ primaryColumnKey?: string }>(gridUrl.sub(tableId, "enrichments"), "POST", body);
   if (!res.ok) return { ok: false, error: res.error };
   const columnKey = res.data?.primaryColumnKey;
@@ -392,7 +393,7 @@ async function createColumn(tableId: string, body: Record<string, unknown>, run:
     if (started.ok && started.data) toast.success(runSummary(started.data));
     else toast.error(`The column was added, but the run did not start: ${started.error ?? "unknown error"}`);
   } else toast.success("Column added. Press Run when you are ready.");
-  return { ok: true };
+  return { ok: true, key: columnKey };
 }
 
 /** Inputs for the chosen actions: one column per input, guessed from the table, and the combinations still missing. */
@@ -488,7 +489,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
       setBusy(false);
       return setError(res.error);
     }
-    await onSaved();
+    await onSaved(res.key);
     onClose();
   }
 
@@ -621,7 +622,7 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
       setBusy(false);
       return setError(res.error);
     }
-    await onSaved();
+    await onSaved(res.key);
     onClose();
   }
 

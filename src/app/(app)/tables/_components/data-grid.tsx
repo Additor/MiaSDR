@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import { cn } from "@/lib/utils";
-import { cellStatus, columnWidth, displayValue, editorText, isEditableColumn, selectOptions, typeLabel } from "../_lib/view/format";
+import { cellStatus, columnWidth, displayValue, editorText, isEditableColumn, selectOptions, typeLabel, columnRunSummary, missingInputHint } from "../_lib/view/format";
 import { planFill } from "../_lib/edit/fill";
 import { historyKey } from "../_lib/view/keymap";
 import { clipboardCell, parseClipboard, routePaste, serializeClipboard, skippedCellsText, type BlockPasteRequest } from "../_lib/edit/paste";
@@ -57,6 +57,8 @@ interface Props {
   canRunCell?: (column: GridColumn) => boolean;
   /** Bumps when the parent wants the grid to take focus back (after a dialog closes). */
   focusToken: number;
+  /** A column to bring into view and select, such as one just added. A new token asks again. */
+  reveal?: { key: string; token: number } | null;
   /** Shown under the header when the grid has no rows, such as an empty state with a next step. */
   empty?: ReactNode;
 }
@@ -153,6 +155,21 @@ export function DataGrid(props: Props) {
     },
     [dims, reveal],
   );
+
+  // A column just added lands on the right, often off screen: select its first cell and scroll it into view.
+  const revealToken = props.reveal?.token;
+  useEffect(() => {
+    const key = props.reveal?.key;
+    const col = key ? columns.findIndex((c) => c.key === key) : -1;
+    if (col < 0) return;
+    const frame = requestAnimationFrame(() => {
+      moveTo({ row: 0, col }, false);
+      focusGrid();
+    });
+    return () => cancelAnimationFrame(frame);
+    // Runs once per token: the column list changing later must not move the selection again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealToken]);
 
   const pinnedKeys = props.pinnedKeys ?? [];
   const rowIds = useMemo(() => rows.map((r) => r.id), [rows]);
@@ -388,7 +405,7 @@ export function DataGrid(props: Props) {
                 {sort === "asc" && <ArrowUpIcon className="size-3 shrink-0" aria-hidden />}
                 {sort === "desc" && <ArrowDownIcon className="size-3 shrink-0" aria-hidden />}
                 <span className="ml-auto" />
-                <ColumnMenu column={column} index={c} count={columns.length} sort={sort} pinned={pinnedKeys.includes(column.key)} pinCount={pinnedKeys.length} onAction={props.onColumnAction} />
+                <ColumnMenu column={column} index={c} count={columns.length} sort={sort} pinned={pinnedKeys.includes(column.key)} pinCount={pinnedKeys.length} summary={columnRunSummary(column, rows, rows.length < total)} onAction={props.onColumnAction} />
                 <ResizeHandle label={`Resize ${column.name}`} width={widthOf(column)} onResize={(w) => setWidths((s) => ({ ...s, [column.key]: w }))} />
               </div>
             );
@@ -523,6 +540,8 @@ const GridCell = memo(function GridCell(p: CellProps) {
   const { row, column, active, editing } = p;
   const value = row.cells[column.key];
   const status = cellStatus(row, column.key);
+  // An enrichment cell that never ran because the row lacks an input says so, instead of looking like one not run yet.
+  const hint = status.state === "idle" && (value === null || value === undefined || value === "") ? missingInputHint(column, row.cells) : null;
   const readOnly = !isEditableColumn(column);
   const type = effectiveColumnType(column);
   return (
@@ -532,7 +551,7 @@ const GridCell = memo(function GridCell(p: CellProps) {
       aria-colindex={p.colIndex + 2}
       aria-selected={active || p.inRange}
       aria-readonly={readOnly || undefined}
-      aria-label={`${column.name}: ${displayValue(value, column) || "empty"}`}
+      aria-label={`${column.name}: ${displayValue(value, column) || hint?.text.toLowerCase() || "empty"}`}
       className={cn(
         "group/cell relative flex shrink-0 items-center overflow-hidden border-r text-sm select-none",
         type === "number" || type === "currency" ? "justify-end" : "",
@@ -554,6 +573,11 @@ const GridCell = memo(function GridCell(p: CellProps) {
       ) : (
         <div className="flex w-full min-w-0 items-center gap-1 px-2">
           <CellContent value={value} column={column} onToggle={p.onToggle} />
+          {hint && (
+            <span className="truncate text-xs text-muted-foreground" title={hint.title}>
+              {hint.text}
+            </span>
+          )}
           {status.state === "running" && <Loader2Icon className="ml-auto size-3.5 shrink-0 animate-spin text-muted-foreground" aria-label="Running" />}
           {status.state === "waiting" && (
             <span className="ml-auto shrink-0" title={status.message}>

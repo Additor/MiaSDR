@@ -309,6 +309,20 @@ export function useGridTable(tableId: string): GridTableState {
     };
   }, [status, activeJobs, refreshJobs]);
 
+  // The header's fill rates are counted at load. When a run ends, count them again, so a column it just filled does
+  // not read 0%.
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (activeJobs > 0) {
+      wasRunning.current = true;
+      return;
+    }
+    if (!wasRunning.current) return;
+    wasRunning.current = false;
+    const handle = setTimeout(() => void load({ coverage: true, keep: rowsRef.current.length }), 0);
+    return () => clearTimeout(handle);
+  }, [activeJobs, load]);
+
   /** Takes cells out of the undo steps they belong to, for edits that will never be saved. */
   const forgetEdits = useCallback(
     (edits: Iterable<{ rowId: string; columnKey: string; actionId?: string }>) => {

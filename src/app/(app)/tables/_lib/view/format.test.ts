@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellResultText, cellStatus, displayValue, editorText, parseEditorText, runCost, selectOptions } from "./format";
+import { cellResultText, cellStatus, columnRunSummary, displayValue, editorText, missingInputHint, parseEditorText, runCost, selectOptions } from "./format";
 import type { GridColumn, GridRow } from "../data/types";
 
 const col = (type: GridColumn["type"], config: Record<string, unknown> = {}): GridColumn => ({ id: "c", tableId: "t", key: "k", name: "K", type, config, dependsOn: [], position: 0, autoRun: false });
@@ -63,5 +63,29 @@ describe("enrichment results in words", () => {
     expect(cellResultText({ status: "success", outcome: "miss" }, true)).toBe("Not settled: the first verdict a provider gave");
     expect(cellResultText({ status: "success", outcome: "miss" })).toBe("Nothing found");
     expect(cellResultText({ status: "skipped: cap" })).toBe("Held back by the auto-run limit");
+  });
+});
+
+describe("what an enrichment column has left", () => {
+  const find = col("enrichment", { actionKey: "find-work-email", inputs: { fullName: "name", companyDomain: "domain" } });
+  const row = (cells: Record<string, unknown>, meta: GridRow["cellMeta"] = {}): GridRow => ({ id: Math.random().toString(36), cells, cellMeta: meta, version: 1 }) as GridRow;
+
+  it("names the input an empty row needs, and nothing once it has them", () => {
+    expect(missingInputHint(find, { domain: "acme.test" })).toMatchObject({ text: "Needs full name" });
+    expect(missingInputHint(find, { name: "Ada", domain: "acme.test" })).toBeNull();
+    expect(missingInputHint(col("text"), {})).toBeNull();
+  });
+
+  it("counts found, not found, failed and missing-input rows", () => {
+    const rows = [
+      row({ name: "A", domain: "a.test", k: "a@a.test" }, { k: { status: "success", outcome: "hit" } }),
+      row({ name: "B", domain: "b.test" }, { k: { status: "success", outcome: "miss" } }),
+      row({ name: "C", domain: "c.test" }, { k: { status: "error", error: "boom" } }),
+      row({ domain: "d.test" }),
+      row({ name: "E", domain: "e.test" }),
+    ];
+    expect(columnRunSummary(find, rows, false)).toBe("1 found · 1 not found · 1 failed · 1 need input · 1 not run");
+    expect(columnRunSummary(find, rows.slice(0, 1), true)).toBe("1 found (loaded rows)");
+    expect(columnRunSummary(col("text"), rows, false)).toBeNull();
   });
 });

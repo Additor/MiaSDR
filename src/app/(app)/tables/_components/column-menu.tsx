@@ -28,6 +28,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -48,11 +49,13 @@ interface Props {
   /** Whether this column is pinned and how many are pinned in all. The grid passes them once pins render (G1-pin). */
   pinned?: boolean;
   pinCount?: number;
+  /** A runner column's results across the loaded rows, shown at the top of its menu. */
+  summary?: string | null;
   onAction: (column: GridColumn, action: ColumnAction) => void;
 }
 
 /** The menu behind a column header: rename, type, config, sort, filter, hide, dedupe, split and delete. */
-export function ColumnMenu({ column, index, count, sort, pinned = false, pinCount = 0, onAction }: Props) {
+export function ColumnMenu({ column, index, count, sort, pinned = false, pinCount = 0, summary, onAction }: Props) {
   const act = (action: ColumnAction) => () => onAction(column, action);
   const offered = (kind: ColumnAction["kind"]) => isColumnActionOffered(kind, { column, pinned, pinCount });
   const pinBlocked = pinBlockedReason({ pinned, pinCount });
@@ -67,6 +70,12 @@ export function ColumnMenu({ column, index, count, sort, pinned = false, pinCoun
         <ChevronDownIcon className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        {summary && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="tabular-nums">{summary}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </DropdownMenuGroup>
+        )}
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={act({ kind: "rename" })}>
             <PencilIcon /> Rename

@@ -1,4 +1,7 @@
 import { effectiveColumnType, isStaticColumnType, STATIC_COLUMN_TYPES, type ColumnType } from "@/contexts/grid/domain/column-types";
+import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
+import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
+import { OUTCOMES } from "../data/outcomes";
 import type { CellMeta, GridColumn, GridRow } from "../data/types";
 
 export const TYPE_LABELS: Record<string, string> = {
@@ -161,4 +164,56 @@ export function runCost(r: { costCents: number; credits: number | null; reused?:
   if (r.reused) return "Reused, no charge";
   const parts = [r.costCents > 0 ? `$${(r.costCents / 100).toFixed(2)}` : null, r.credits !== null && r.credits > 0 ? `${Number(r.credits.toFixed(2))} ${r.credits === 1 ? "credit" : "credits"}` : null].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "No charge";
+}
+
+const filled = (v: unknown) => v !== null && v !== undefined && !(typeof v === "string" && v.trim() === "");
+
+/** The shared action an enrichment or waterfall column runs, or null for another action or column type. */
+function sharedAction(column: Pick<GridColumn, "type" | "config">) {
+  if (column.type !== "enrichment" && column.type !== "waterfall") return null;
+  const steps = column.config.steps as Array<{ actionKey?: unknown }> | undefined;
+  const key = column.type === "waterfall" ? steps?.[0]?.actionKey : column.config.actionKey;
+  return OUTCOMES.some((o) => o.actionKey === key) ? contractAction(key as ContractKey) : null;
+}
+
+/**
+ * Why an empty enrichment cell cannot run: the row misses an input its action needs. "Needs email" names the first
+ * required input that is empty; an action that takes one of several identities says what it takes in the title.
+ */
+export function missingInputHint(column: Pick<GridColumn, "type" | "config">, cells: Record<string, unknown>): { text: string; title: string } | null {
+  const action = sharedAction(column);
+  if (!action) return null;
+  const inputs = (column.config.inputs ?? {}) as Record<string, string>;
+  const has = (key: string) => !!inputs[key] && filled(cells[inputs[key]]);
+  if (inputsCovered(action, has)) return null;
+  const first = action.inputs.find((i) => i.required && !has(i.key));
+  return { text: first ? `Needs ${first.name.toLowerCase()}` : "Needs input", title: `This row needs ${acceptsText(action)} to run.` };
+}
+
+/**
+ * A runner column's results across the loaded rows, for its column menu: "3 found · 1 not found · 1 needs input".
+ * `partial` marks a table with more rows than are loaded.
+ */
+export function columnRunSummary(column: GridColumn, rows: readonly GridRow[], partial: boolean): string | null {
+  if (!["enrichment", "waterfall", "ai"].includes(column.type)) return null;
+  const counts = { found: 0, notFound: 0, failed: 0, waiting: 0, needsInput: 0, notRun: 0 };
+  for (const row of rows) {
+    const meta = row.cellMeta[column.key];
+    if (meta?.status === "error" || meta?.status === "failed") counts.failed += 1;
+    else if (meta?.status === "queued" || meta?.status === "running" || meta?.status === "waiting") counts.waiting += 1;
+    else if (meta?.status === "success") counts[meta.outcome === "miss" ? "notFound" : "found"] += 1;
+    else if (!filled(row.cells[column.key]) && missingInputHint(column, row.cells)) counts.needsInput += 1;
+    else if (!filled(row.cells[column.key])) counts.notRun += 1;
+    else counts.found += 1;
+  }
+  const parts = [
+    counts.found && `${counts.found} found`,
+    counts.notFound && `${counts.notFound} not found`,
+    counts.failed && `${counts.failed} failed`,
+    counts.waiting && `${counts.waiting} waiting`,
+    counts.needsInput && `${counts.needsInput} need input`,
+    counts.notRun && `${counts.notRun} not run`,
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return `${parts.join(" · ")}${partial ? " (loaded rows)" : ""}`;
 }

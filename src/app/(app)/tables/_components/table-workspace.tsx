@@ -61,6 +61,7 @@ export function TableWorkspace({ tableId }: Props) {
   const [selection, setSelection] = useState<RowSelection>(emptySelection);
   const [dialog, setDialog] = useState<Open | null>(null);
   const [focusToken, setFocusToken] = useState(0);
+  const [reveal, setReveal] = useState<{ key: string; token: number } | null>(null);
   const [active, setActive] = useState<ActiveCell | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -423,6 +424,7 @@ export function TableWorkspace({ tableId }: Props) {
         canRunCell={(column) => runCellSource(column, columns) !== null}
         onOpenDetails={(cell) => setDialog({ kind: "details", rowId: cell.row.id, columnKey: cell.column.key })}
         focusToken={focusToken}
+        reveal={reveal}
         empty={rows.length === 0 ? emptyGrid : undefined}
       />
       {grid.conflict && <ConflictDialog items={grid.conflict.items} columns={columns} rowNumbers={rowNumbers} onResolve={(choice) => { grid.resolveConflict(choice); setFocusToken((t) => t + 1); }} />}
@@ -431,7 +433,10 @@ export function TableWorkspace({ tableId }: Props) {
       {dialog?.kind === "addRows" && <AddRowsDialog onAdd={addRows} onClose={closeDialog} />}
       {dialog?.kind === "import" && <ImportWizard tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
       {dialog?.kind === "formula" && <FormulaDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} previewRowId={active?.row.id} onClose={closeDialog} onSaved={grid.reload} />}
-      {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} outcome={dialog.outcome} onClose={closeDialog} onSaved={grid.reload} />}
+      {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} outcome={dialog.outcome} onClose={closeDialog} onSaved={async (key) => {
+            await grid.reload();
+            if (key) setReveal((r) => ({ key, token: (r?.token ?? 0) + 1 }));
+          }} />}
       {dialog?.kind === "ai" && <AiDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} onStarted={() => void grid.reload()} />}
       {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} allRows={dialog.allRows} onClose={closeDialog} />}
