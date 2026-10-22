@@ -43,6 +43,12 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
   const provider = providers.find((p) => p.key === providerKey);
   const items = providers.map((p) => ({ value: p.key, label: p.label }));
   const connected = new Set(accounts.map((a) => a.key));
+  // The AI model card reads its own endpoint once. Saving, replacing or removing an AI key changes this value, which
+  // remounts the card after router.refresh() so it describes the keys that exist now.
+  const aiKeysRevision = accounts
+    .filter((a) => a.kind === "ai")
+    .map((a) => `${a.id}:${a.credentialUpdatedAt ?? ""}`)
+    .join("|");
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -109,7 +115,7 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
         </form>
       </SettingsSection>
 
-      <AiModelCard />
+      <AiModelCard key={aiKeysRevision} />
 
       <SettingsSection title="Connected">
         {accounts.length === 0 ? (
