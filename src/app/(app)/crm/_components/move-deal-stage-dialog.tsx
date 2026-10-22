@@ -37,16 +37,19 @@ export interface MoveDealStageDialogProps {
 const STALE =
   "Someone changed this deal since you opened it. The page now shows the latest version. Check the stage, then move it again.";
 
-/** What a move answered: the moved deal, a stale version with the server's current one, or an error to show. */
-export type MoveDealResult = { ok: true; deal: unknown } | { ok: false; staleVersion: number } | { ok: false; error: string };
+/** What a move answered: the moved deal and its new version, a stale version with the server's current one, or an error. */
+export type MoveDealResult = { ok: true; deal: unknown; version: number | null } | { ok: false; staleVersion: number } | { ok: false; error: string };
 
 /**
- * Moves a deal to a stage with the version the caller read, so a deal someone changed meanwhile is refused as stale
- * instead of overwritten. The dialog and the board's drag both move through it.
+ * Moves a deal to a stage with the version the caller read. The server refuses a stale version, so a change someone
+ * made meanwhile stays. The dialog and the board's drag both move through it.
  */
 export async function moveDealStage(dealId: string, stageId: string, expectedVersion: number, lostReason: string | null = null): Promise<MoveDealResult> {
   const result = await callApi(`/api/deals/${dealId}/stage`, "POST", { stageId, expectedVersion, lostReason });
-  if (result.ok) return { ok: true, deal: result.data };
+  if (result.ok) {
+    const version = (result.data as { version?: unknown } | null)?.version;
+    return { ok: true, deal: result.data, version: typeof version === "number" ? version : null };
+  }
   if (result.details?.code === "stale_version" && typeof result.details.version === "number") return { ok: false, staleVersion: result.details.version };
   return { ok: false, error: result.error ?? "Could not move the deal. Try again." };
 }

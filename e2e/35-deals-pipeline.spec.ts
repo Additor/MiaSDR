@@ -129,7 +129,7 @@ test.describe("deals pipeline", () => {
     await expect(column(page, "Won").locator("header")).toContainText("Last 30 days");
   });
 
-  test("a card dragged to another stage moves there, a stale drag goes back, and a drop on Lost asks for the reason", async ({ page, watch }) => {
+  test("a card dragged to another stage moves there, a stale drag goes back, and a drop on Won or Lost asks first", async ({ page, watch }) => {
     await signInAdmin(page);
     const DREW = { email: "drew@s35-drag.test", firstName: "Drew", lastName: "Hale", title: "COO", company: "S35 Drag" };
     const DEAL = "S35 Drew deal";
@@ -146,6 +146,12 @@ test.describe("deals pipeline", () => {
     await expect(card("Meeting")).toBeVisible();
     await expect(card("New")).toHaveCount(0);
     await expect(page.getByText(`Moved ${DEAL} to Meeting.`)).toBeVisible();
+    await expect(column(page, "Meeting").locator("header")).toContainText("1");
+    // The board keeps the moved card's new version, so it moves again without a reload.
+    await card("Meeting").dragTo(column(page, "Proposal"));
+    await expect(page.getByText(`Moved ${DEAL} to Proposal.`)).toBeVisible();
+    await card("Proposal").dragTo(column(page, "Meeting"));
+    await expect(page.getByText(`Moved ${DEAL} to Meeting.`)).toHaveCount(2);
     await page.reload();
     await expect(card("Meeting")).toBeVisible();
 
@@ -157,7 +163,14 @@ test.describe("deals pipeline", () => {
     await expect(card("Proposal")).toBeVisible();
     await expect(card("New")).toHaveCount(0);
 
-    // Lost keeps a reason, so the drop opens the move dialog on Lost.
+    // Won and Lost close the deal, so a drop there asks first, as Mark won and Mark lost do.
+    await card("Proposal").dragTo(column(page, "Won"));
+    const won = page.getByRole("dialog", { name: `Move ${DEAL}` });
+    await expect(won.getByRole("combobox", { name: "New stage" })).toContainText("Won");
+    await won.getByRole("button", { name: "Cancel" }).click();
+    await expect(card("Proposal")).toBeVisible();
+
+    // Lost keeps a reason.
     await card("Proposal").dragTo(column(page, "Lost"));
     const lost = page.getByRole("dialog", { name: `Move ${DEAL}` });
     await expect(lost.getByRole("combobox", { name: "New stage" })).toContainText("Lost");

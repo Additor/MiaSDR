@@ -76,6 +76,9 @@ async function Board({ searchParams }: { searchParams: PageProps<"/crm/pipeline"
   const total = hasOlder ? 1 : shown;
   const stages: DealStageList = { virtual: view.virtual, stages: view.columns.map(({ id, name, kind, position }) => ({ id, name, kind, position })) };
   const columns = toJson(view.columns);
+  // Names this board's cards and versions: a column remounts when its own part changes, and the drag moves reset with the whole.
+  const columnKey = (column: (typeof columns)[number]) => `${column.id}:${column.total}:${column.cards.map((c) => `${c.id}.${c.version}`).join(",")}`;
+  const boardKey = columns.map(columnKey).join("|");
 
   return (
     <>
@@ -104,11 +107,11 @@ async function Board({ searchParams }: { searchParams: PageProps<"/crm/pipeline"
           />
         )
       ) : (
-        <BoardMovesProvider stages={stages}>
+        <BoardMovesProvider stages={stages} boardKey={boardKey}>
           <ScrollCue hint="Scroll sideways for more stages" className="gap-3 p-1 pb-2" data-testid="board">
           {columns.map((column) => (
             <BoardColumn
-              key={`${column.id}:${column.total}:${column.cards.map((c) => `${c.id}.${c.version}`).join(",")}`}
+              key={columnKey(column)}
               column={column}
               stages={stages}
               nowMs={nowMs}

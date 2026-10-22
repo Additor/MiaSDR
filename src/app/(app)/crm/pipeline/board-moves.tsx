@@ -1,104 +1,145 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useMemo, useState, useTransition, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { MoveDealStageDialog, STALE_MOVE, moveDealStage } from "../_components/move-deal-stage-dialog";
 import type { DealStageList } from "../_components/deal-form";
 import type { CardData } from "./board-column";
 
-/** A card on its way: where it came from and, once dropped, where it went. */
-interface Move {
+/** A card moved by a drag. `done` once the server took it; until then the card shows faded in its new column. */
+export interface BoardMove {
   card: CardData;
   from: string;
   to: string;
+  done: boolean;
 }
 
-interface BoardMoves {
-  /** The card being dragged, with the stage it sits in. */
-  dragging: { card: CardData; from: string } | null;
+export interface DropTarget {
+  id: string;
+  name: string;
+  kind: "open" | "won" | "lost";
+}
+
+interface BoardActions {
   startDrag: (card: CardData, from: string) => void;
   endDrag: () => void;
-  /** Drops the dragged card on a stage. A Lost stage asks for the reason first; any other moves at once. */
-  drop: (to: { id: string; name: string; kind: "open" | "won" | "lost" }) => void;
-  /** Moves sent and not yet shown by the server: the source column hides the card and the target shows it. */
-  moves: ReadonlyMap<string, Move>;
+  /** Drops the dragged card on a stage. Won and Lost ask first, as Mark won and Mark lost do; an open stage moves at once. */
+  drop: (to: DropTarget) => void;
 }
 
-const Context = createContext<BoardMoves | null>(null);
+interface BoardState {
+  /** The card being dragged, with the stage it sits in. */
+  dragging: { card: CardData; from: string } | null;
+  /** Drag moves since the board last loaded: the source column hides the card and the target column shows it. */
+  moves: ReadonlyMap<string, BoardMove>;
+}
 
-export function useBoardMoves(): BoardMoves {
-  const value = useContext(Context);
-  if (!value) throw new Error("useBoardMoves needs a BoardMovesProvider");
+// Two contexts: the actions never change, so a card that only starts and ends drags does not render again on every move.
+const Actions = createContext<BoardActions | null>(null);
+const State = createContext<BoardState | null>(null);
+
+export function useBoardActions(): BoardActions {
+  const value = useContext(Actions);
+  if (!value) throw new Error("useBoardActions needs a BoardMovesProvider");
+  return value;
+}
+
+export function useBoardState(): BoardState {
+  const value = useContext(State);
+  if (!value) throw new Error("useBoardState needs a BoardMovesProvider");
   return value;
 }
 
 /**
- * Drag and drop for the deal board. A card dropped on another stage moves there on screen at once and the move goes to
- * the server with the version the board read; a refusal puts the card back and says why. A Lost stage opens the move
- * dialog on that stage, because a lost deal keeps its reason. Each card's Move stage button stays the way to move from
- * the keyboard or a touch screen.
+ * Drag and drop for the deal board. A card dropped on an open stage moves there on screen at once and the move goes to
+ * the server with the version the board read. The board does not reload after a move the server took, so cards loaded
+ * with "N more" stay; a refusal puts the card back, says why and reloads the board. Won and Lost open the move dialog on
+ * that stage. Each card's Move stage button stays the way to move from the keyboard or a touch screen.
+ *
+ * `boardKey` names the board the server last sent. When it changes, the board shows the server's columns again and the
+ * moves it now includes are dropped.
  */
-export function BoardMovesProvider({ stages, children }: { stages: DealStageList; children: ReactNode }) {
+export function BoardMovesProvider({ stages, boardKey, children }: { stages: DealStageList; boardKey: string; children: ReactNode }) {
   const router = useRouter();
-  const [refreshing, startRefresh] = useTransition();
-  const [dragging, setDragging] = useState<BoardMoves["dragging"]>(null);
-  const [moves, setMoves] = useState<Map<string, Move>>(new Map());
-  // Moves the server took. They stop counting once the refreshed board shows them, so the old columns never flash back.
-  const [settled, setSettled] = useState<ReadonlySet<string>>(new Set());
-  const [asking, setAsking] = useState<Move | null>(null);
-  const shown = useMemo(() => (refreshing ? moves : new Map([...moves].filter(([id]) => !settled.has(id)))), [moves, settled, refreshing]);
+  const [dragging, setDragging] = useState<BoardState["dragging"]>(null);
+  const [moves, setMoves] = useState<Map<string, BoardMove>>(new Map());
+  const [asking, setAsking] = useState<Omit<BoardMove, "done"> | null>(null);
+  const [seenKey, setSeenKey] = useState(boardKey);
 
-  function forget(id: string) {
-    setMoves((current) => {
-      const next = new Map(current);
-      next.delete(id);
-      return next;
-    });
+  if (seenKey !== boardKey) {
+    setSeenKey(boardKey);
+    setMoves((current) => new Map([...current].filter(([, m]) => !m.done)));
   }
 
-  async function send(move: Move, stageName: string) {
-    // Settled moves the board already shows can go; while a refresh is on its way they still hold the cards in place.
-    const done = refreshing ? new Set<string>() : settled;
-    setMoves((current) => new Map([...current].filter(([id]) => !done.has(id))).set(move.card.id, move));
-    setSettled((ids) => new Set([...ids].filter((id) => !done.has(id) && id !== move.card.id)));
-    const result = await moveDealStage(move.card.id, move.to, move.card.version);
-    if (result.ok) {
-      toast.success(`Moved ${move.card.title} to ${stageName}.`);
-      setSettled((ids) => new Set(ids).add(move.card.id));
-    } else {
-      forget(move.card.id);
+  // The drop handler reads the drag through a ref, so the actions stay one object for the life of the board.
+  const draggingRef = useRef(dragging);
+  useEffect(() => {
+    draggingRef.current = dragging;
+  }, [dragging]);
+
+  // A browser sends no mouse events during a drag. The first one after it means the drag ended, even when the dragged
+  // card left the page before its dragend could fire.
+  useEffect(() => {
+    if (!dragging) return;
+    const end = () => setDragging(null);
+    window.addEventListener("mousemove", end, { once: true });
+    return () => window.removeEventListener("mousemove", end);
+  }, [dragging]);
+
+  const send = useCallback(
+    async (move: Omit<BoardMove, "done">, stageName: string) => {
+      setMoves((current) => new Map(current).set(move.card.id, { ...move, done: false }));
+      const result = await moveDealStage(move.card.id, move.to, move.card.version);
+      if (result.ok) {
+        // The new version lets the card move again without a reload.
+        const card = { ...move.card, version: result.version ?? move.card.version + 1, stageChangedAt: new Date().toISOString() };
+        setMoves((current) => new Map(current).set(move.card.id, { ...move, card, done: true }));
+        toast.success(`Moved ${move.card.title} to ${stageName}.`);
+        return;
+      }
+      setMoves((current) => {
+        const next = new Map(current);
+        next.delete(move.card.id);
+        return next;
+      });
       toast.error("staleVersion" in result ? STALE_MOVE : result.error);
-    }
-    startRefresh(() => router.refresh());
-  }
-
-  const value: BoardMoves = {
-    dragging,
-    moves: shown,
-    startDrag: (card, from) => setDragging({ card, from }),
-    endDrag: () => setDragging(null),
-    drop: (to) => {
-      if (!dragging || dragging.from === to.id) return setDragging(null);
-      const move = { card: dragging.card, from: dragging.from, to: to.id };
-      setDragging(null);
-      if (to.kind === "lost") return setAsking(move);
-      void send(move, to.name);
+      router.refresh();
     },
-  };
+    [router],
+  );
+
+  const actions = useMemo<BoardActions>(
+    () => ({
+      startDrag: (card, from) => setDragging({ card, from }),
+      endDrag: () => setDragging(null),
+      drop: (to) => {
+        const current = draggingRef.current;
+        setDragging(null);
+        if (!current || current.from === to.id) return;
+        const move = { card: current.card, from: current.from, to: to.id };
+        if (to.kind !== "open") return setAsking(move);
+        void send(move, to.name);
+      },
+    }),
+    [send],
+  );
+  const state = useMemo<BoardState>(() => ({ dragging, moves }), [dragging, moves]);
 
   return (
-    <Context.Provider value={value}>
-      {children}
-      {asking && (
-        <MoveDealStageDialog
-          open
-          onOpenChange={(open) => !open && setAsking(null)}
-          deal={{ id: asking.card.id, title: asking.card.title, version: asking.card.version, stageId: asking.from }}
-          stages={stages}
-          targetStageId={asking.to}
-        />
-      )}
-    </Context.Provider>
+    <Actions.Provider value={actions}>
+      <State.Provider value={state}>
+        {children}
+        {asking && (
+          <MoveDealStageDialog
+            open
+            onOpenChange={(open) => !open && setAsking(null)}
+            deal={{ id: asking.card.id, title: asking.card.title, version: asking.card.version, stageId: asking.from }}
+            stages={stages}
+            targetStageId={asking.to}
+          />
+        )}
+      </State.Provider>
+    </Actions.Provider>
   );
 }
