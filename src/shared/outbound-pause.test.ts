@@ -74,6 +74,18 @@ describe("outbound pause banner read model", () => {
     expect(getOutboundPauseBanner()).toEqual({ paused: false, text: null });
   });
 
+  it("names who paused the organization and links to the switch; PAUSE_OUTBOUND wins", () => {
+    delete process.env.PAUSE_OUTBOUND;
+    const pause = { at: "2026-10-22T01:00:00.000Z", byName: "Ada" };
+    expect(getOutboundPauseBanner(pause)).toEqual({
+      paused: true,
+      text: "Ada paused campaign emails and LinkedIn actions for this organization. Replies you approve still send.",
+      href: "/settings/organization#sending",
+    });
+    process.env.PAUSE_OUTBOUND = "true";
+    expect(getOutboundPauseBanner(pause).href).toBeUndefined();
+  });
+
   it("reports an unreadable value as paused", () => {
     process.env.PAUSE_OUTBOUND = "maybe";
     expect(getOutboundPauseBanner().paused).toBe(true);

@@ -14,10 +14,14 @@ export interface SettingsGroup {
 }
 
 /**
- * Groups follow what a setting changes: the workspace and its keys, how outreach sends, the CRM's data model, what the
+ * Groups follow what a setting changes: your own sign-in, the workspace and its keys, how outreach sends, the CRM's data model, what the
  * AI does, and the operations an admin checks when something failed. Each setting has one home.
  */
 export const SETTINGS_GROUPS: SettingsGroup[] = [
+  {
+    label: "You",
+    items: [{ href: "/settings/account", title: "Your account", summary: "Your name, your password and the devices you are signed in on." }],
+  },
   {
     label: "Workspace",
     items: [
@@ -31,6 +35,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     items: [
       { href: "/settings/mailboxes", title: "Mailboxes", summary: "Connect the addresses campaigns send from, set their limits, hours and signatures, and the pace between sends." },
       { href: "/settings/linkedin", title: "LinkedIn", summary: "Connect LinkedIn accounts through Unipile and set their daily limits." },
+      { href: "/settings/suppression", title: "Suppression list", summary: "Addresses no campaign or reply ever emails: unsubscribes, bounces and addresses you add." },
     ],
   },
   {
@@ -53,6 +58,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     items: [
       { href: "/settings/jobs", title: "Jobs", summary: "Failed and skipped AI jobs, background failures and recent runs.", adminOnly: true },
       { href: "/settings/inbound-events", title: "Inbound events", summary: "Gmail messages and LinkedIn deliveries that failed: replay, retry or dismiss them.", adminOnly: true },
+      { href: "/settings/audit-log", title: "Audit log", summary: "Who changed which setting or key, and when.", adminOnly: true },
     ],
   },
 ];

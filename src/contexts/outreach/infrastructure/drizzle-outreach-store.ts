@@ -14,6 +14,7 @@ import {
 } from "@/platform/db/schema";
 import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend } from "../application/ports";
 import { mailboxPolicyViolation } from "../email/application/mailbox-management";
+import { readSendPause } from "../domain/send-pause";
 import { mailboxBlock } from "../domain/send-policy";
 import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../domain/send-status";
 import { takeoverCutoff } from "../email/domain/takeover";
@@ -54,8 +55,8 @@ async function channelValues(tx: Tx, organizationId: string, channel: string): P
   return row?.values ?? null;
 }
 
-async function organizationTimeZone(tx: Tx, organizationId: string): Promise<string | null> {
-  const zone = (await channelValues(tx, organizationId, "general"))?.timeZone;
+function zoneOf(general: Record<string, unknown> | null): string | null {
+  const zone = general?.timeZone;
   return typeof zone === "string" ? zone : null;
 }
 
@@ -85,7 +86,10 @@ export const drizzleOutreachStore: OutreachStore = {
       if (!mailbox) return null;
       if (options.domainPolicy && mailboxPolicyViolation(options.domainPolicy, mailbox.emailAddress)) return null;
 
-      const zone = await organizationTimeZone(tx, mailbox.organizationId);
+      const general = await channelValues(tx, mailbox.organizationId, "general");
+      // An owner or admin paused outreach for this organization: claim nothing, like PAUSE_OUTBOUND for one organization.
+      if (readSendPause(general)) return null;
+      const zone = zoneOf(general);
       const workingHours: WorkingHours = (mailbox.workingHours as WorkingHours | null) ?? options.defaultWorkingHours(zone);
 
       const [{ sentToday }] = await tx

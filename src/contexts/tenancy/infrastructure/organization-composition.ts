@@ -11,6 +11,8 @@ import type { SwitchingDeps } from "../application/organization-switching";
 import { isValidTimeZone } from "@/shared/time-zone";
 import { drizzleMembershipStore, drizzleOrganizationCreationStore } from "./drizzle-organization-creation-store";
 import { drizzleOrganizationStore } from "./drizzle-organization-store";
+import { drizzleAuditLogStore } from "./drizzle-audit-log-store";
+import type { AuditLogStore } from "../application/audit-log";
 
 /** Better Auth writes sessions.active_organization_id and refreshes the session cookie. */
 export const betterAuthActiveOrganization: ActiveOrganizationGateway = {
@@ -38,3 +40,6 @@ export const switchingDeps = (): SwitchingDeps => ({
 
 /** Organization settings: the store plus the time zone check. */
 export const organizationDeps = (): OrganizationDeps => ({ organizations: drizzleOrganizationStore, isValidTimeZone });
+
+/** Settings, Audit log. */
+export const auditLogStore: AuditLogStore = drizzleAuditLogStore;

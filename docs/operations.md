@@ -42,6 +42,8 @@ While it is set:
 - **Banner.** Every page of the app shows "Sending is paused." and "Campaign emails and LinkedIn actions wait until the pause ends. Replies you approve still send. The server administrator ends the pause, see docs/operations.md." while the switch is set.
 - **Typos.** A value the app cannot read (`maybe`, `ture`) does not stop the server from starting. It counts as paused, the banner shows, and the server logs one warning at start that names `PAUSE_OUTBOUND` and the value. Fix the value and recreate the app to resume.
 
+An owner or admin can also pause one organization without touching the server: Settings, Organization, Sending, Pause all sending. The pause is stored in the organization's `general` channel settings (`sendingPaused` with the time and the name of the person), and both send engines read it inside their claim transaction, so that organization claims no campaign email and no LinkedIn action while other organizations keep sending. Replies you approve and mailbox test sends still go out. Every page shows "Sending is paused." with the name of the person who paused and a link to resume. `PAUSE_OUTBOUND` wins when both are set.
+
 Pausing a single campaign or disabling a single mailbox stays available for a narrower stop. `EMBEDDED_SCHEDULER=false` is not a pause: it also stops reply and bounce sync.
 
 ## Job tick report

@@ -129,6 +129,12 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 - Integrations holds every API key: the AI provider and the enrichment providers. A table's Enrich dialog opens the same provider manager.
 - A failed Gmail or LinkedIn delivery counts once, under Inbound events, which also replays the LinkedIn deliveries. Jobs counts AI jobs and tick failures. The LinkedIn page resets the daily counters.
 - `/settings/email` redirects to `/settings/mailboxes` (307).
+- Your account (`/settings/account`) is every member's own page: the name through Better Auth's `updateUser`, the password through `changePassword` (only for a password sign-in, with "Sign out on my other devices" on by default), and the sessions through `listSessions` and `revokeOtherSessions`. The sidebar's user menu links to it. The email address does not change there.
+- The organization pause (`PUT /api/settings/sending-pause`, owner or admin) stops campaign emails and LinkedIn actions for one organization; see "Pause all sending" in docs/operations.md.
+- The suppression list page (`/settings/suppression`) lists `suppression_list` for every member and searches by address. Owners and admins paste up to 500 addresses (reason `manual`), each through `suppressEmail`, so it stops unfinished email sequences like Suppress in the Inbox. Only a `manual` row can be removed; unsubscribes, complaints and bounces stay. Removing revives nothing. Both write `suppression.added` or `suppression.removed` to the audit log.
+- The audit log page (`/settings/audit-log`, owner or admin) lists `audit_log` newest first with the actor's current name, filtered by the action's area (the part before the dot).
+- A pending invitation offers Resend (or New link without an email service). It sends a new invitation to the same address and role, which cancels the old one and starts a fresh 7 days.
+- Organizations have no delete and no leave in Settings. "Nobody removes themself" (Roles and members) still holds; an owner hands over by giving another member the owner role.
 
 ### Invitations
 

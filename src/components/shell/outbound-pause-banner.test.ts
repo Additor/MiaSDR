@@ -11,6 +11,12 @@ describe("OutboundPauseBanner", () => {
     expect(html).toContain("PAUSE_OUTBOUND is set.");
   });
 
+  it("links an organization pause to the place that resumes it", () => {
+    const html = renderToStaticMarkup(createElement(OutboundPauseBanner, { banner: { paused: true, text: "Ada paused sending.", href: "/settings/organization#sending" } }));
+    expect(html).toContain("Ada paused sending.");
+    expect(html).toContain('href="/settings/organization#sending"');
+  });
+
   it("renders nothing while sending runs", () => {
     expect(renderToStaticMarkup(createElement(OutboundPauseBanner, { banner: { paused: false, text: null } }))).toBe("");
   });

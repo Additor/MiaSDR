@@ -235,14 +235,15 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
                     <span className="text-sm text-muted-foreground">
                       expires <Time value={inv.expiresAt} dateOnly />
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto"
-                      onClick={() => void act("Invitation revoked", () => callApi(`/api/invitations/${inv.id}`, "DELETE"))}
-                    >
-                      Revoke
-                    </Button>
+                    <span className="ml-auto flex gap-1">
+                      {/* A new invitation for the same address cancels this one and starts a fresh 7 days. */}
+                      <Button variant="ghost" size="sm" onClick={() => void act(emailConfigured ? "Invitation sent again" : "New link created", () => callApi("/api/members", "POST", { email: inv.email, role: primaryRole(inv.role) }))}>
+                        {emailConfigured ? "Resend" : "New link"}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => void act("Invitation revoked", () => callApi(`/api/invitations/${inv.id}`, "DELETE"))}>
+                        Revoke
+                      </Button>
+                    </span>
                   </div>
                   {!emailConfigured && <CopyLink link={`${appUrl}/accept-invitation/${inv.id}`} />}
                 </li>

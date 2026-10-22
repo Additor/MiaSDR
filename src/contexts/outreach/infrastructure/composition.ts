@@ -12,6 +12,7 @@ import type { LeadActivityDeps } from "../application/read-lead-activity";
 import type { EngineDeps } from "../email/application/send-next-email";
 import { reconcileTestSends, type TestSendDeps } from "../email/application/send-test-email";
 import type { SuppressionStore } from "../email/application/unsubscribe";
+import type { SuppressionListDeps } from "../application/suppression-list";
 import { drizzleChannelSettingsStore } from "./drizzle-channel-settings-store";
 import { drizzleEnrollmentAdminStore } from "./drizzle-enrollment-admin";
 import { createDrizzleInboundStore } from "../email/infrastructure/drizzle-inbound-store";
@@ -19,6 +20,7 @@ import { readLeadStatuses } from "./drizzle-lead-statuses";
 import { drizzleMergeFieldSource } from "./drizzle-merge-fields";
 import { drizzleOutreachStore } from "./drizzle-outreach-store";
 import { createSuppressionStore } from "./suppression-store";
+import { drizzleSuppressionListStore } from "./drizzle-suppression-list-store";
 import { readReachability } from "./drizzle-reachability";
 import { drizzleTestSendStore } from "../email/infrastructure/drizzle-test-send-store";
 import { drizzleCampaignStore, drizzleMailboxStore } from "./drizzle-management-stores";
@@ -79,6 +81,9 @@ export const mergeFieldDeps = (): { source: MergeFieldSource } => ({ source: dri
 
 /** Public unsubscribe link: the suppression store and the token secret. src/composition passes conversations' follow-up stop. */
 export const unsubscribeDeps = (followUps: FollowUpStop): { store: SuppressionStore; secret: string } => ({ store: createSuppressionStore(followUps), secret: env().UNSUBSCRIBE_SECRET });
+
+/** Settings, Suppression list: reads the list, and adds through the same suppression that ends follow-up sequences. */
+export const suppressionListDeps = (followUps: FollowUpStop): SuppressionListDeps => ({ list: drizzleSuppressionListStore, suppress: createSuppressionStore(followUps) });
 
 export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, admin: drizzleEnrollmentAdminStore });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3Icon, Building2Icon, ContactRoundIcon, KanbanIcon, ListChecksIcon, SearchIcon, PlusIcon, RocketIcon, MonitorIcon, MoonIcon, SunIcon, ChevronsUpDownIcon, InboxIcon, LogOutIcon, SendIcon, SettingsIcon, Table2Icon, UsersIcon, type LucideIcon } from "lucide-react";
+import { BarChart3Icon, Building2Icon, ContactRoundIcon, KanbanIcon, ListChecksIcon, SearchIcon, PlusIcon, RocketIcon, MonitorIcon, MoonIcon, SunIcon, ChevronsUpDownIcon, InboxIcon, LogOutIcon, SendIcon, SettingsIcon, Table2Icon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -334,6 +334,10 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
                   </DropdownMenuRadioGroup>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem render={<Link href="/settings/account" />}>
+                  <UserRoundIcon />
+                  Your account
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={signOut}>
                   <LogOutIcon />
                   Sign out

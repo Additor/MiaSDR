@@ -732,6 +732,19 @@ describeDb("linkedin engine", () => {
     expect((await withPause(undefined, () => act(gateway, f))).kind).toBe("resolved");
   });
 
+  it("claims nothing while the organization paused sending, and resumes once it is lifted", async () => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    await sql`insert into channel_settings (organization_id, channel, values) values (${f.org}, 'general', ${sql.json({ sendingPaused: { at: "2026-01-01T00:00:00.000Z", byName: "Ada" } })})
+      on conflict (organization_id, channel) do update set values = channel_settings.values || excluded.values`;
+    expect((await act(gateway, f)).kind).toBe("idle");
+    expect(gateway.profileCalls).toHaveLength(0);
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "pending" });
+
+    await sql`update channel_settings set values = values || ${sql.json({ sendingPaused: null })} where organization_id = ${f.org} and channel = 'general'`;
+    expect((await act(gateway, f)).kind).toBe("resolved");
+  });
+
   it("still records a reply and stops the sequence while PAUSE_OUTBOUND is set", async () => {
     const f = await fixture();
     const gateway = new FakeLinkedInGateway();

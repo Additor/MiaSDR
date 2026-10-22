@@ -464,4 +464,21 @@ describeDb("email send engine", () => {
     expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
     expect(provider.delivered).toHaveLength(1);
   });
+
+  it("claims nothing while the organization paused sending, and sends once it resumes", async () => {
+    const f = await fixture();
+    const other = await fixture();
+    const provider = new FakeMailboxProvider();
+    await sql`insert into channel_settings (organization_id, channel, values) values (${f.org}, 'general', ${sql.json({ sendingPaused: { at: "2026-01-01T00:00:00.000Z", byName: "Ada" } })})
+      on conflict (organization_id, channel) do update set values = channel_settings.values || excluded.values`;
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("idle");
+    // The pause belongs to one organization: another one keeps sending.
+    expect((await send.sendNextEmail(deps(provider), other.mailboxIds[0])).kind).toBe("sent");
+    const [{ n }] = await sql`select count(*)::int as n from sends where organization_id = ${f.org}`;
+    expect(n).toBe(0);
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "pending" });
+
+    await sql`update channel_settings set values = values || ${sql.json({ sendingPaused: null })} where organization_id = ${f.org} and channel = 'general'`;
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
+  });
 });

@@ -127,6 +127,8 @@ const DEAL_FILES = [
   /^src\/app\/\(app\)\/crm\/pipeline\//,
   /^src\/app\/\(app\)\/crm\/deals\//,
   /^src\/app\/\(app\)\/settings\/pipeline\//,
+  // The audit log names the pipeline stage changes it lists.
+  /^src\/app\/\(app\)\/settings\/audit-log\//,
   /^src\/app\/\(app\)\/crm\/_components\/[^/]*deal[^/]*$/,
   /^src\/app\/api\/deals\//,
   /^src\/app\/api\/deal-stages\//,

@@ -30,6 +30,7 @@ import {
   pickMinutes,
   resolveRetryMinutes,
 } from "../domain/linkedin";
+import { readSendPause } from "../../domain/send-pause";
 import { canonicalProfileUrl, isMemberReference, normalizePublicSlug } from "../domain/linkedin-identity";
 import { messageBlock } from "../domain/linkedin-limits";
 import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
@@ -203,7 +204,10 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const [account] = await tx.select().from(linkedinAccounts).where(eq(linkedinAccounts.id, options.accountId)).for("update", { skipLocked: true });
       if (!account) return null;
 
-      const zoneValue = (await channelValues(tx, account.organizationId, "general"))?.timeZone;
+      const general = await channelValues(tx, account.organizationId, "general");
+      // An owner or admin paused outreach for this organization: claim nothing, like PAUSE_OUTBOUND for one organization.
+      if (readSendPause(general)) return null;
+      const zoneValue = general?.timeZone;
       const workingHours: WorkingHours = (account.workingHours as WorkingHours | null) ?? options.defaultWorkingHours(typeof zoneValue === "string" ? zoneValue : null);
       if (accountBlock(options.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, nextAllowedRunAt: account.nextAllowedRunAt, workingHours })) return null;
 

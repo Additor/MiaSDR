@@ -17,6 +17,8 @@ import { listMyOrganizations } from "@/contexts/tenancy/application/organization
 import { getOnboarding } from "@/contexts/tenancy/application/onboarding";
 import { onboardingDeps } from "@/composition/onboarding";
 import { getOutboundPauseBanner } from "@/contexts/outreach/application/outbound-pause";
+import { getSendPause } from "@/contexts/outreach/application/send-pause";
+import { emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
 import { switchingDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
 import { toActor } from "@/app/_lib/api";
 
@@ -35,13 +37,15 @@ async function Shell({ children }: { children: React.ReactNode }) {
   // The sidebar writes this cookie when it collapses; reading it here keeps the choice across full page loads.
   const defaultOpen = (await cookies()).get("sidebar_state")?.value !== "false";
   const scope = { userId: user.id, organizationId: organization.id, role };
-  // Five independent reads: run them together so the shell adds the slowest one, not the sum.
-  const [{ total: inboxUnread }, { work }, { organizations, canCreate }, setup, timeZone] = await Promise.all([
+  // Six independent reads: run them together so the shell adds the slowest one, not the sum.
+  const [{ total: inboxUnread }, { work }, { organizations, canCreate }, setup, timeZone, sendPause] = await Promise.all([
     unreadCounts(unreadStore, scope),
     getWorkQueueCounts(workQueueDeps(), scope),
     listMyOrganizations(switchingDeps(), { userId: user.id, activeOrganizationId: organization.id }),
     setupProgress(toActor({ user, organization, role })),
     getOrgTimeZone(),
+    // A failed read leaves the banner to PAUSE_OUTBOUND; the send engines still read the pause in their claim.
+    getSendPause(emailRulesDeps(), toActor({ user, organization, role })).catch(() => null),
   ]);
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -53,7 +57,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
       </a>
       <AppSidebar organizationName={organization.name} organizations={organizations} canCreateOrganization={canCreate} user={user} inboxUnread={inboxUnread} actionsPending={work.mine} setup={setup} isAdmin={isOwnerOrAdmin(role)} />
       <SidebarInset id="main-content" tabIndex={-1} className="outline-none">
-        <OutboundPauseBanner banner={getOutboundPauseBanner()} />
+        <OutboundPauseBanner banner={getOutboundPauseBanner(sendPause)} />
         <OrgTimeZoneProvider timeZone={timeZone}>{children}</OrgTimeZoneProvider>
       </SidebarInset>
     </SidebarProvider>
