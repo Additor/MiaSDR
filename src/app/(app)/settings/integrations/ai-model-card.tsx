@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { callApi } from "@/lib/api-client";
 import { SettingsSection } from "../settings-section";
+import { ModelCombobox } from "./model-combobox";
 
 interface ModelView {
   status: AiStatus;
@@ -69,6 +70,8 @@ export function AiModelCard() {
   const [choice, setChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  /** The provider whose models are loading after a switch in the picker. */
+  const [loading, setLoading] = useState<string | null>(null);
   // Each request takes a ticket; only the latest one may update the card, so a slow earlier answer cannot win.
   const latest = useRef(0);
 
@@ -80,8 +83,10 @@ export function AiModelCard() {
   const load = useCallback(
     async (connection?: string | null) => {
       const ticket = ++latest.current;
+      setLoading(connection ?? null);
       const result = await callApi<ModelView>(endpoint(connection), "GET");
       if (ticket !== latest.current) return;
+      setLoading(null);
       if (result.ok && result.data) {
         apply(result.data);
         setError(null);
@@ -109,6 +114,7 @@ export function AiModelCard() {
     setError(null);
     // A provider load still in flight would describe the card from before the save, so it no longer applies.
     latest.current++;
+    setLoading(null);
     const result = await callApi<ModelView>("/api/integrations/ai-model", "PUT", { connection: view.connection, model: choice === DEFAULT_VALUE ? null : choice });
     setPending(false);
     if (!result.ok || !result.data) {
@@ -122,13 +128,11 @@ export function AiModelCard() {
     else toast.success(view.active !== view.connection ? `AI now runs on ${label}, ${running.model}.` : `Model saved. AI runs on ${running.model}.`);
   }
 
-  const choices = view ? Array.from(new Set([...(view.model ? [view.model] : []), ...view.choices])) : [];
   // A provider without a default (the gateways) has no "Default" entry: a model must be picked.
   const hasDefault = view?.defaultModel != null;
-  const items = [
-    ...(hasDefault || !view ? [{ value: DEFAULT_VALUE, label: view?.defaultModel ? `Default (${view.defaultModel})` : "Default" }] : []),
-    ...choices.map((id) => ({ value: id, label: id })),
-  ];
+  // The default entry and the saved model lead the list; the saved model stays even if the live list dropped it.
+  const pinned = useMemo(() => (view ? [...(view.defaultModel != null ? [DEFAULT_VALUE] : []), ...(view.model ? [view.model] : [])] : []), [view]);
+  const modelLabel = (value: string) => (value === DEFAULT_VALUE ? `Default (${view?.defaultModel ?? "none"})` : value);
   const connectionItems = (view?.connections ?? []).map((c) => ({ value: c.key, label: c.key === view?.active ? `${c.label} (runs AI now)` : c.label }));
   const labelOf = (key: string | null) => view?.connections.find((c) => c.key === key)?.label;
   // Viewing a provider that does not run AI: say what saving does, and that the running key stays.
@@ -166,18 +170,12 @@ export function AiModelCard() {
           )}
           <div className="stack-field">
             <Label htmlFor="ai-model">Model</Label>
-            <Select items={items} value={choice} onValueChange={(v) => v && setChoice(v)} disabled={!view}>
-              <SelectTrigger id="ai-model" className="w-full max-w-sm">
-                <SelectValue placeholder="Pick a model" />
-              </SelectTrigger>
-              <SelectContent>
-                {items.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ModelCombobox id="ai-model" ids={view?.choices ?? []} pinned={pinned} value={choice} onValueChange={setChoice} labelOf={modelLabel} disabled={!view || loading !== null || pending} />
+            {loading && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Loading {labelOf(loading)} models…
+              </p>
+            )}
             {view?.notice && (
               <p role="status" className="text-sm text-muted-foreground">
                 {view.notice}
