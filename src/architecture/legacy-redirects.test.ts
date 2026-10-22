@@ -28,6 +28,7 @@ describe("lead and CRM split redirects", () => {
     ["/crm/identity-exceptions", "/inbox/unmatched"],
     ["/crm/settings", "/settings/replies"],
     ["/settings/crm", "/settings/replies"],
+    ["/settings/email", "/settings/mailboxes"],
   ])("sends %s to %s with a 307", async (source, destination) => {
     const matches = (await redirects()).filter((r) => r.source === source && !r.has && !r.missing);
     expect(matches).toHaveLength(1);

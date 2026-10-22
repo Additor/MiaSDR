@@ -5,6 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInboundEvents, type InboundStateFilter } from "@/contexts/outreach/application/inbound-review";
 import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-review-composition";
+import { getLinkedInJobsOverview } from "@/contexts/outreach/linkedin/application/linkedin-operations";
+import { linkedinOperations } from "@/composition/inbox-filing";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { InboundEventsPanel } from "./inbound-events-panel";
@@ -36,6 +38,20 @@ async function InboundEvents({ searchParams }: { searchParams: PageProps<"/setti
   const state = STATES.find((s) => s === first(params.state)) ?? "open";
   const source = SOURCES.find((s) => s === first(params.source)) ?? "all";
   const page = Math.max(Number(first(params.page)) || 1, 1);
-  const result = await listInboundEvents(inboundReviewDeps(), toActor(ctx), { state, source, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE });
-  return <InboundEventsPanel rows={JSON.parse(JSON.stringify(result.rows))} total={result.total} page={page} pageSize={PAGE_SIZE} state={state} source={source} />;
+  const actor = toActor(ctx);
+  const [result, linkedin] = await Promise.all([
+    listInboundEvents(inboundReviewDeps(), actor, { state, source, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    getLinkedInJobsOverview(linkedinOperations(), actor),
+  ]);
+  return (
+    <InboundEventsPanel
+      rows={JSON.parse(JSON.stringify(result.rows))}
+      total={result.total}
+      page={page}
+      pageSize={PAGE_SIZE}
+      state={state}
+      source={source}
+      linkedinBacklog={linkedin.backlog}
+    />
+  );
 }

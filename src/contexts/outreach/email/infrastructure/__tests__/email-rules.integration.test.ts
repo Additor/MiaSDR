@@ -62,6 +62,13 @@ describeDb("email rules", () => {
     expect(await sql`select 1 from channel_settings where organization_id = ${t.id}`).toHaveLength(0);
   });
 
+  it("leaves the organization time zone alone when the save carries none", async () => {
+    const t = await org();
+    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "Asia/Seoul" });
+    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 7, maxGapMinutes: 11 });
+    expect(await uc.getEmailRules(deps(), t.actor)).toEqual({ sendGapMinutes: [7, 11], takeoverAfterHours: 24, timeZone: "Asia/Seoul" });
+  });
+
   it("saves the takeover delay", async () => {
     const t = await org();
     await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "UTC", takeoverAfterHours: 48 });

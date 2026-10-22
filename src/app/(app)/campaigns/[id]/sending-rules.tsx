@@ -9,7 +9,7 @@ export function SendingRules({ channel, line }: { channel: "email" | "linkedin";
       <div className="stack-field text-sm">
         <p>{line ?? "The limits show here once a LinkedIn account sends for this campaign."}</p>
         <p>
-          <Link href={linkedin ? "/settings/linkedin" : "/settings/email"} className="underline underline-offset-4">
+          <Link href={linkedin ? "/settings/linkedin" : "/settings/mailboxes#sending-rules"} className="underline underline-offset-4">
             {linkedin ? "Change LinkedIn settings" : "Change email settings"}
           </Link>
         </p>

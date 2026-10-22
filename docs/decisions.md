@@ -121,6 +121,14 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 - Roles: `owner`, `admin`, `member` (`tenancy/domain/member-rules.ts`). Owners grant any role, admins grant admin and member, and members manage nobody. An owner alone changes or removes an owner, an organization keeps at least one owner, and nobody removes themself.
 - Role changes and removals run in one transaction that locks the organization's member rows `FOR UPDATE`, so two requests cannot both pass the last-owner check. A removal clears `active_organization_id` on the removed user's sessions for that organization.
 - Any member can list members. Listing, sending and revoking invitations needs an owner or admin.
+- Every organization setting is an owner or admin write: reply handling, reply subcategories, AI instructions, knowledge documents, pipeline stages, custom fields, sending rules, mailboxes, LinkedIn and integrations. The service refuses a member, and the route checks the role before it reads the body, so a member gets 403 and never a 400. Members read the same Settings pages without the controls.
+
+### Settings structure
+
+- Settings groups follow what a setting changes, and each setting has one home: Workspace (Organization, Members, Integrations), Sending (Mailboxes with its Sending rules block, LinkedIn), CRM (Pipeline stages, Custom fields), AI (Reply handling, AI instructions, Knowledge) and Operations (Jobs, Inbound events). `settings-nav-config.ts` lists them.
+- Integrations holds every API key: the AI provider and the enrichment providers. A table's Enrich dialog opens the same provider manager.
+- A failed Gmail or LinkedIn delivery counts once, under Inbound events, which also replays the LinkedIn deliveries. Jobs counts AI jobs and tick failures. The LinkedIn page resets the daily counters.
+- `/settings/email` redirects to `/settings/mailboxes` (307).
 
 ### Invitations
 
@@ -161,8 +169,9 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### Organization settings and time zone
 
-- `PATCH /api/settings/organization` (`updateOrganization`): the owner renames; owners and admins set the time zone, the unknown-sender AI cap and the default phone country. Each change writes an audit row (`organization.renamed`, `organization.timezone_changed`, `organization.ai_cap_changed`, `organization.phone_country_changed` with `from` and `to`) in the same transaction. A value equal to the current one writes nothing.
-- The zone lives in two places: `channel_settings` `general.timeZone`, which the send engine, analytics and the day logic read, and `organizations.timezone`. Organization settings and Email rules write both in one transaction. Reads prefer a valid `general` value.
+- `PATCH /api/settings/organization` (`updateOrganization`): the owner renames; owners and admins set the time zone, the unknown-sender AI cap and the default phone country. Settings, Organization edits the name, zone and phone country; Settings, Reply handling edits the AI cap through the same endpoint. Each change writes an audit row (`organization.renamed`, `organization.timezone_changed`, `organization.ai_cap_changed`, `organization.phone_country_changed` with `from` and `to`) in the same transaction. A value equal to the current one writes nothing.
+- The zone lives in two places: `channel_settings` `general.timeZone`, which the send engine, analytics and the day logic read, and `organizations.timezone`. Organization settings write both in one transaction. `PATCH /api/settings/email-rules` writes the zone only when the request carries one; the Sending rules block of Settings, Mailboxes sends none. Reads prefer a valid `general` value.
+- A mailbox without its own working hours follows the organization's zone. Its settings dialog offers Organization hours, which saves `workingHours: null`, or Custom hours.
 - `canonicalTimeZone` (`src/shared/time-zone.ts`) maps legacy ICU ids such as `Asia/Calcutta` to current IANA names at every write and at the reads that feed SQL or day math. An unset or unknown zone means UTC.
 - The UI prints timestamps in the organization's zone with the UTC original in a tooltip: `<Time value />` in JSX, `formatDateTime(value, zone)` elsewhere (`components/shell/org-time-zone.ts`, `src/shared/format-time.ts`). The output never depends on the viewer's locale or zone. A filter labelled UTC keeps UTC.
 

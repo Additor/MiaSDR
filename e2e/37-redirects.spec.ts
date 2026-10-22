@@ -78,9 +78,9 @@ test.describe("old CRM URLs", () => {
     await expect(page.getByText("Message ignored.", { exact: true })).toBeVisible();
     await expect(card).toHaveCount(0);
 
-    // Settings: Replies sits in the AI group, Pipeline stages in the CRM group.
+    // Settings: Reply handling sits in the AI group, Pipeline stages in the CRM group.
     await page.goto("/settings/replies");
-    await expect(page.locator("#main-content").getByRole("link", { name: "Replies" }).first()).toBeVisible();
+    await expect(page.locator("#main-content").getByRole("link", { name: "Reply handling" }).first()).toBeVisible();
     await expect(page.locator("#main-content").getByText("Position").first()).toBeVisible();
   });
 });

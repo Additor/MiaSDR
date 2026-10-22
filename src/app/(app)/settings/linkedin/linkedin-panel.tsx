@@ -21,6 +21,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
+import { DailyCounters } from "./daily-counters";
 
 interface Account {
   id: string;
@@ -327,6 +328,7 @@ export function LinkedInPanel({ state, canManage }: { state: State | null; canMa
           {state.connected && <SyncLine sync={state.sync} />}
         </SettingsSection>
       )}
+      {state.connected && state.accounts.length > 0 && <DailyCounters />}
       <ConfirmDialog
         open={confirmDisconnect}
         onOpenChange={setConfirmDisconnect}

@@ -17,7 +17,7 @@ To try the app without Google, set `MAILBOX_PROVIDER=fake` in `.env` and restart
 
 ## 3. Set the rules
 
-Open Settings, Organization and check the default time zone. Set the default phone country (for example `KR`) if your lead files hold numbers without a country code. Open Settings, Email rules to see the gap between sends. The default is 18 to 24 minutes.
+Open Settings, Organization and check the default time zone. Set the default phone country (for example `KR`) if your lead files hold numbers without a country code. Open Settings, Mailboxes and find Sending rules at the end of the page to see the gap between sends. The default is 18 to 24 minutes.
 
 ## 4. Import leads
 

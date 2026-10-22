@@ -134,7 +134,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
         description={
           skipped.total === 0
             ? "No AI job was skipped."
-            : `${skipped.total} skipped because the daily limit for unknown senders (set under Organization) was used up. The sweep never retries them. Raise the limit or wait a day, then requeue.`
+            : `${skipped.total} skipped because the daily limit for unknown senders (set under Reply handling) was used up. The sweep never retries them. Raise the limit or wait a day, then requeue.`
         }
       >
         {skipped.rows.length > 0 && (

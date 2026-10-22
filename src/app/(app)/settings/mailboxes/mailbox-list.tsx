@@ -2,7 +2,7 @@
 
 import { CheckIcon, TriangleAlertIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
@@ -69,6 +69,7 @@ export function MailboxList({
   signupBlocked,
   zones,
   defaultTimeZone,
+  rules,
 }: {
   mailboxes: Mailbox[];
   canManage: boolean;
@@ -77,6 +78,8 @@ export function MailboxList({
   signupBlocked: boolean;
   zones: string[];
   defaultTimeZone: string;
+  /** The sending rules block, which closes the page. */
+  rules: ReactNode;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +216,7 @@ export function MailboxList({
           </ul>
         )}
       </SettingsSection>
+      {rules}
     </div>
   );
 }

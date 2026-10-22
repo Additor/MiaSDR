@@ -28,16 +28,17 @@ export async function getEmailRules(deps: EmailRulesDeps, actor: Actor): Promise
   };
 }
 
+/** `timeZone` is optional: Settings > Organization owns it, and the Mailboxes page saves the pace without it. */
 export async function updateEmailRules(
   deps: EmailRulesDeps,
   actor: Actor,
-  input: { minGapMinutes: number; maxGapMinutes: number; timeZone: string; takeoverAfterHours?: number },
+  input: { minGapMinutes: number; maxGapMinutes: number; timeZone?: string; takeoverAfterHours?: number },
 ): Promise<EmailRulesView> {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can change email rules.");
   const problem = sendGapProblem(input.minGapMinutes, input.maxGapMinutes);
   if (problem) throw new ValidationError(problem);
-  const timeZone = canonicalTimeZone(input.timeZone);
-  if (!timeZone) throw new ValidationError("Unknown time zone.");
+  const timeZone = input.timeZone === undefined ? undefined : canonicalTimeZone(input.timeZone);
+  if (timeZone === null) throw new ValidationError("Unknown time zone.");
   if (input.takeoverAfterHours !== undefined) {
     const hoursProblem = takeoverHoursProblem(input.takeoverAfterHours);
     if (hoursProblem) throw new ValidationError(hoursProblem);
@@ -48,6 +49,6 @@ export async function updateEmailRules(
     { sendGapMinutes: [input.minGapMinutes, input.maxGapMinutes], ...(input.takeoverAfterHours !== undefined ? { takeoverAfterHours: input.takeoverAfterHours } : {}) },
     actor.userId,
   );
-  await deps.settings.merge(actor.organizationId, "general", { timeZone }, actor.userId);
+  if (timeZone) await deps.settings.merge(actor.organizationId, "general", { timeZone }, actor.userId);
   return getEmailRules(deps, actor);
 }

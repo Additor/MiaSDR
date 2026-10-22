@@ -29,7 +29,7 @@ async function Organization() {
   const zones = timeZoneOptions(Intl.supportedValuesOf("timeZone"), org.timeZone);
   return (
     <OrganizationForm
-      org={{ name: org.name, slug: org.slug, timeZone: org.timeZone, unknownSenderAiDailyCap: org.unknownSenderAiDailyCap, defaultPhoneCountry: org.defaultPhoneCountry }}
+      org={{ name: org.name, slug: org.slug, timeZone: org.timeZone, defaultPhoneCountry: org.defaultPhoneCountry }}
       zones={zones}
       canRename={parseRoles(ctx.role).includes("owner")}
       canEditZone={isOwnerOrAdmin(ctx.role)}

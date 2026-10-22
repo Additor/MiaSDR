@@ -51,9 +51,11 @@ interface Props {
   pageSize: number;
   state: string;
   source: string;
+  /** LinkedIn deliveries that gave up, wait for an automatic retry, or are queued. Replay puts them all back in line. */
+  linkedinBacklog: { dead: number; retrying: number; queued: number };
 }
 
-export function InboundEventsPanel({ rows, total, page, pageSize, state, source }: Props) {
+export function InboundEventsPanel({ rows, total, page, pageSize, state, source, linkedinBacklog }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const pageCount = Math.max(Math.ceil(total / pageSize), 1);
@@ -69,6 +71,17 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source 
     return `/settings/inbound-events${query ? `?${query}` : ""}`;
   };
 
+  const waiting = linkedinBacklog.dead + linkedinBacklog.retrying + linkedinBacklog.queued;
+
+  async function replay() {
+    setBusy("replay");
+    const result = await callApi<{ requeued: number; claimed: number; done: number; failed: number }>("/api/linkedin/jobs/replay-webhooks", "POST");
+    setBusy(null);
+    if (!result.ok || !result.data) toast.error(result.error ?? "Replay failed.");
+    else toast.success(`Replayed ${result.data.claimed} deliveries: ${result.data.done} applied, ${result.data.failed} failed again.`);
+    router.refresh();
+  }
+
   async function act(row: Row, action: "retry" | "dismiss") {
     setBusy(row.id);
     const result = await callApi(`/api/inbound-events/${row.id}/${action}`, "POST");
@@ -80,7 +93,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source 
 
   return (
     <div className="stack-group">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Select items={STATE_ITEMS} value={state} onValueChange={(v) => v && router.push(href({ state: v }))}>
           <SelectTrigger aria-label="State" className="w-52">
             <SelectValue />
@@ -105,6 +118,16 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source 
             ))}
           </SelectContent>
         </Select>
+        {source !== "gmail" && (
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <span className="text-sm text-muted-foreground tabular-nums">
+              {waiting === 0 ? "No LinkedIn delivery waits." : `LinkedIn: ${linkedinBacklog.dead} gave up, ${linkedinBacklog.retrying} retrying, ${linkedinBacklog.queued} queued`}
+            </span>
+            <Button variant="outline" size="sm" onClick={replay} disabled={busy !== null || waiting === 0}>
+              {busy === "replay" ? "Replaying…" : "Replay LinkedIn deliveries"}
+            </Button>
+          </div>
+        )}
       </div>
 
       {rows.length === 0 ? (

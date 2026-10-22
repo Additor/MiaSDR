@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { callApi } from "@/lib/api-client";
 import { AiModelCard } from "./ai-model-card";
+import { EnrichmentProviders } from "./enrichment-providers";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
@@ -96,7 +97,7 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
 
   return (
     <div>
-      <SettingsSection title="Add or replace a key" description="Keys are encrypted before they are stored and are never shown again. Saving a key for a connected provider replaces the old one.">
+      <SettingsSection title="AI provider key" description="Keys are encrypted before they are stored and are never shown again. Saving a key for a connected provider replaces the old one.">
         <form onSubmit={save} className="stack-group">
           <div className="stack-field">
             <Label htmlFor="provider">Provider</Label>
@@ -139,7 +140,7 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
         {accounts.length === 0 ? (
           <EmptyState
             title="Nothing connected yet"
-            description="Connect an AI provider above (Anthropic, Vercel AI Gateway or OpenRouter) so the AI can classify replies and write drafts. LinkedIn connects on its own page."
+            description="Connect an AI provider above (Anthropic, Vercel AI Gateway or OpenRouter) so the AI can classify replies and write drafts. LinkedIn connects on its own page, enrichment providers below."
             action={{ label: "Open LinkedIn settings", href: "/settings/linkedin" }}
           />
         ) : (
@@ -174,6 +175,7 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
           </ul>
         )}
       </SettingsSection>
+      <EnrichmentProviders />
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}

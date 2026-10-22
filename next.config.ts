@@ -23,6 +23,8 @@ const nextConfig: NextConfig = {
       // `/crm/settings` was a 308 to `/settings/crm`, which browsers keep; that hop lands here as well.
       { source: "/crm/settings", destination: "/settings/replies", permanent: false },
       { source: "/settings/crm", destination: "/settings/replies", permanent: false },
+      // Email rules (the pace between sends and the takeover delay) became a block of the Mailboxes page.
+      { source: "/settings/email", destination: "/settings/mailboxes", permanent: false },
       { source: "/leads", has: [{ type: "query", key: "tab", value: "companies" }], destination: "/crm/companies", permanent: false },
       // "Needs action" was a view of the Inbox until what waits on a person moved to Actions ("Actions work queue" in docs/decisions.md).
       { source: "/inbox", has: [{ type: "query", key: "view", value: "action" }], destination: "/actions", permanent: false },

@@ -15,7 +15,6 @@ interface Org {
   name: string;
   slug: string;
   timeZone: string;
-  unknownSenderAiDailyCap: number;
   defaultPhoneCountry: string | null;
 }
 
@@ -33,7 +32,6 @@ export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: 
     const result = await callApi("/api/settings/organization", "PATCH", {
       ...(canRename ? { name: String(data.get("name") ?? "") } : {}),
       timeZone,
-      unknownSenderAiDailyCap: Number(data.get("unknownSenderAiDailyCap")),
       defaultPhoneCountry: String(data.get("defaultPhoneCountry") ?? "").trim().toUpperCase() || null,
     });
     setPending(false);
@@ -46,7 +44,7 @@ export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: 
   }
 
   return (
-    <SettingsSection title="Details" description="The owner renames the organization. Owners and admins change the time zone, the AI job limit and the default phone country.">
+    <SettingsSection title="Details" description="The owner renames the organization. Owners and admins change the time zone and the default phone country.">
       <form onSubmit={onSubmit} className="stack-group">
         <div className="stack-field">
           <Label htmlFor="name">Name</Label>
@@ -61,24 +59,6 @@ export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: 
           <Label htmlFor="timeZone">Default time zone</Label>
           <TimeZoneSelect id="timeZone" zones={zones} value={timeZone} onValueChange={setTimeZone} disabled={!canEditZone} />
           <p className="text-sm text-muted-foreground">Mailboxes without their own working hours use this zone, Monday to Friday, 09:00 to 18:00.</p>
-        </div>
-        <div className="stack-field">
-          <Label htmlFor="unknownSenderAiDailyCap">AI jobs per day for unknown senders</Label>
-          <Input
-            id="unknownSenderAiDailyCap"
-            name="unknownSenderAiDailyCap"
-            type="number"
-            min={0}
-            max={10000}
-            step={1}
-            defaultValue={org.unknownSenderAiDailyCap}
-            disabled={!canEditZone}
-            required
-            className="max-w-40"
-          />
-          <p className="text-sm text-muted-foreground">
-            Applies to replies from addresses you never wrote to. Over the limit, jobs are skipped and listed under Jobs. The day follows the time zone above.
-          </p>
         </div>
         <div className="stack-field">
           <Label htmlFor="defaultPhoneCountry">Default country for phone numbers</Label>

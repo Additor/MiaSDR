@@ -11,6 +11,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { timeZoneOptions } from "../time-zone-options";
 import { MailboxList } from "./mailbox-list";
+import { SendingRulesForm } from "./sending-rules-form";
 
 export const metadata: Metadata = { title: "Mailboxes" };
 
@@ -33,15 +34,17 @@ async function Mailboxes() {
   const saved = mailboxes.map((m) => m.workingHours?.timeZone).filter((zone): zone is string => Boolean(zone));
   const zones = timeZoneOptions(Intl.supportedValuesOf("timeZone"), orgTimeZone);
   for (const zone of saved) if (!zones.includes(zone)) zones.push(zone);
+  const canManage = isOwnerOrAdmin(ctx.role);
   return (
     <MailboxList
       mailboxes={JSON.parse(JSON.stringify(mailboxes))}
-      canManage={isOwnerOrAdmin(ctx.role)}
+      canManage={canManage}
       takeoverAfterHours={rules.takeoverAfterHours}
       allowedDomains={policy.allowedDomains}
       signupBlocked={policy.allowedDomains === null && policy.openSignup}
       zones={zones}
       defaultTimeZone={orgTimeZone}
+      rules={<SendingRulesForm rules={{ sendGapMinutes: rules.sendGapMinutes, takeoverAfterHours: rules.takeoverAfterHours }} canEdit={canManage} />}
     />
   );
 }

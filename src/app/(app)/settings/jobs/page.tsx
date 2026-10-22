@@ -12,7 +12,7 @@ import { aiJobOpsDeps } from "@/contexts/conversations/ai/infrastructure/ai-comp
 import { recentTickFailures } from "@/platform/jobs/failure-log";
 import { AiJobsPanel } from "./ai-jobs-panel";
 import { Tabs } from "@/components/shell/tabs";
-import { JobsHistory, LinkedInOperations } from "./jobs-panel";
+import { JobsHistory } from "./jobs-panel";
 import { AdminNotice } from "../admin-notice";
 
 export const metadata: Metadata = { title: "Jobs" };
@@ -49,10 +49,7 @@ async function Jobs() {
             label: "Needs attention",
             count: failedAi.total + tickFailures.length,
             content: (
-              <>
-                <AiJobsPanel failed={JSON.parse(JSON.stringify(failedAi))} skipped={JSON.parse(JSON.stringify(skippedAi))} tickFailures={JSON.parse(JSON.stringify(tickFailures))} />
-                <LinkedInOperations overview={linkedin} />
-              </>
+              <AiJobsPanel failed={JSON.parse(JSON.stringify(failedAi))} skipped={JSON.parse(JSON.stringify(skippedAi))} tickFailures={JSON.parse(JSON.stringify(tickFailures))} />
             ),
           },
           { id: "history", label: "History", content: <JobsHistory overview={linkedin} /> },
