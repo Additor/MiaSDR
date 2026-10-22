@@ -9,23 +9,17 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { ErrorWithLinks } from "@/components/shell/error-with-links";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
-import { TimeZoneSelect } from "../time-zone-select";
-
-interface WorkingHours {
-  timeZone: string;
-  days: Record<string, Array<{ start: string; end: string }>>;
-}
+import { hoursDraft, hoursSummary, sameHours, toStoredHours, WorkingHoursFields, type StoredHours } from "../working-hours-fields";
 
 interface Mailbox {
   id: string;
@@ -35,20 +29,10 @@ interface Mailbox {
   lastError: string | null;
   dailySendLimit: number;
   signatureHtml: string | null;
-  workingHours: WorkingHours | null;
+  workingHours: StoredHours | null;
   sentToday: number;
   waitingLeads: number;
 }
-
-const DAYS = [
-  { key: "1", label: "Mon" },
-  { key: "2", label: "Tue" },
-  { key: "3", label: "Wed" },
-  { key: "4", label: "Thu" },
-  { key: "5", label: "Fri" },
-  { key: "6", label: "Sat" },
-  { key: "0", label: "Sun" },
-];
 
 /** What happens to leads waiting on a mailbox that stops sending. */
 function waitingWarning(count: number, hours: number) {
@@ -130,32 +114,33 @@ export function MailboxList({
             </>
           }
         >
-          <form onSubmit={connect} className="stack-group">
-            <div className="grid gap-group sm:grid-cols-2">
-              <div className="stack-field">
-                <Label htmlFor="emailAddress">Email address</Label>
-                <Input id="emailAddress" name="emailAddress" type="email" required />
+          <form onSubmit={connect}>
+            <FieldGroup>
+              <div className="grid gap-group sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="emailAddress">Email address</FieldLabel>
+                  <Input id="emailAddress" name="emailAddress" type="email" required autoComplete="off" />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="displayName">Sender name (optional)</FieldLabel>
+                  <Input id="displayName" name="displayName" placeholder="Ada from Acme" />
+                </Field>
               </div>
-              <div className="stack-field">
-                <Label htmlFor="displayName">Sender name (optional)</Label>
-                <Input id="displayName" name="displayName" placeholder="Ada from Acme" />
+              {error && <FieldError>{error}</FieldError>}
+              <div>
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Connecting…" : "Connect mailbox"}
+                </Button>
               </div>
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <div>
-              <Button type="submit" disabled={pending}>
-                {pending ? "Connecting…" : "Connect mailbox"}
-              </Button>
-            </div>
+            </FieldGroup>
           </form>
         </SettingsSection>
       )}
 
-      <SettingsSection title="Mailboxes">
+      <SettingsSection
+        title="Mailboxes"
+        description={canManage && mailboxes.length > 0 ? "Recheck connection asks Google whether MiaSDR can still send as an address. To deliver one real message, open More and choose Send test email." : undefined}
+      >
         {mailboxes.length === 0 ? (
           <EmptyState
             title="No mailboxes yet"
@@ -181,6 +166,10 @@ export function MailboxList({
                     {mailbox.displayName ? `${mailbox.displayName}. ` : ""}
                     {mailbox.sentToday} of {mailbox.dailySendLimit} sent today.
                   </p>
+                  <p className="text-sm text-muted-foreground">
+                    {hoursSummary(hoursDraft(mailbox.workingHours, defaultTimeZone))}
+                    {mailbox.workingHours ? "" : " (organization hours)"}
+                  </p>
                 </div>
                 {mailbox.waitingLeads > 0 && mailbox.status !== "connected" && (
                   // Leads still wait on this mailbox: a degraded state, so the icon takes the warning hue.
@@ -204,11 +193,8 @@ export function MailboxList({
                     <Button variant="outline" size="sm" onClick={() => act("Connection checked", () => callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"))}>
                       Recheck connection
                     </Button>
-                    <SettingsDialog mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} onSaved={() => router.refresh()} />
+                    <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} onSaved={() => router.refresh()} />
                     <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} act={act} />
-                    {mailbox.status === "connected" && (
-                      <p className="basis-full text-sm text-muted-foreground">Recheck connection asks Google whether MiaSDR can still send as this address. To deliver one real message, open More and choose Send test email.</p>
-                    )}
                   </div>
                 )}
               </li>
@@ -295,132 +281,97 @@ function MailboxMenu({
   );
 }
 
-function SettingsDialog({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox: Mailbox; zones: string[]; defaultTimeZone: string; onSaved: () => void }) {
+/** Sender name, daily limit, hours and signature of one mailbox, in the shared confirm dialog. */
+function EditMailbox({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox: Mailbox; zones: string[]; defaultTimeZone: string; onSaved: () => void }) {
+  const saved = {
+    displayName: mailbox.displayName ?? "",
+    limit: String(mailbox.dailySendLimit),
+    signature: mailbox.signatureHtml ?? "",
+    // A mailbox without its own hours follows the organization's zone, so saving keeps it unset until someone picks Custom.
+    hoursMode: mailbox.workingHours ? "custom" : "organization",
+    hours: hoursDraft(mailbox.workingHours, defaultTimeZone),
+  };
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const initialDays = mailbox.workingHours ? Object.entries(mailbox.workingHours.days).filter(([, w]) => w.length > 0).map(([d]) => d) : ["1", "2", "3", "4", "5"];
-  const savedHours = mailbox.workingHours ? "custom" : "organization";
-  // A mailbox without its own hours follows the organization's zone, so saving keeps it unset until someone picks Custom.
-  const [hours, setHours] = useState<"organization" | "custom">(savedHours);
-  const [days, setDays] = useState<string[]>(initialDays);
-  const savedTimeZone = mailbox.workingHours?.timeZone ?? defaultTimeZone;
-  const [timeZone, setTimeZone] = useState(savedTimeZone);
-  const firstWindow = mailbox.workingHours ? Object.values(mailbox.workingHours.days).find((w) => w.length > 0)?.[0] : undefined;
+  const [values, setValues] = useState(saved);
+  const dirty =
+    values.displayName.trim() !== saved.displayName ||
+    Number(values.limit) !== mailbox.dailySendLimit ||
+    values.signature.trim() !== saved.signature.trim() ||
+    values.hoursMode !== saved.hoursMode ||
+    (values.hoursMode === "custom" && !sameHours(values.hours, saved.hours));
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const window = { start: String(data.get("start")), end: String(data.get("end")) };
-    setPending(true);
-    setError(null);
+  async function save() {
+    if (values.hoursMode === "custom" && values.hours.days.length === 0) throw new Error("Pick at least one sending day, or use organization hours.");
     const result = await callApi(`/api/mailboxes/${mailbox.id}`, "PATCH", {
-      displayName: String(data.get("displayName") ?? "").trim() || null,
-      dailySendLimit: Number(data.get("dailySendLimit")),
-      signatureHtml: String(data.get("signatureHtml") ?? "").trim() || null,
-      workingHours: hours === "organization" ? null : { timeZone, days: Object.fromEntries(days.map((d) => [d, [window]])) },
+      displayName: values.displayName.trim() || null,
+      dailySendLimit: Number(values.limit),
+      signatureHtml: values.signature.trim() || null,
+      workingHours: values.hoursMode === "organization" ? null : toStoredHours(values.hours),
     });
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    toast.success("Mailbox settings saved.");
-    setOpen(false);
+    if (!result.ok) throw new Error(result.error ?? "Could not save the mailbox.");
+    toast.success("Mailbox saved.");
     onSaved();
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        // Reopening starts from what is saved, not from an abandoned edit.
-        if (next) {
-          setHours(savedHours);
-          setDays(initialDays);
-          setTimeZone(savedTimeZone);
-          setError(null);
-        }
-        setOpen(next);
-      }}
-    >
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>Edit limits and hours</DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>{mailbox.emailAddress}</DialogTitle>
-            <DialogDescription>Limits and hours apply to this mailbox only.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="s-name">Sender name</Label>
-            <Input id="s-name" name="displayName" defaultValue={mailbox.displayName ?? ""} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="s-limit">Emails per day (1 to 200)</Label>
-            <Input id="s-limit" name="dailySendLimit" type="number" min={1} max={200} defaultValue={mailbox.dailySendLimit} className="w-28" required />
-          </div>
-          <fieldset className="grid gap-2">
-            <legend className="pb-2 text-sm font-medium">Sending hours</legend>
-            <RadioGroup value={hours} onValueChange={(v) => setHours(v as "organization" | "custom")}>
-              <label className="flex items-start gap-2 text-sm">
-                <RadioGroupItem value="organization" className="mt-0.5" />
-                <span className="grid gap-0.5">
-                  <span>Organization hours</span>
-                  <span className="text-muted-foreground">Monday to Friday, 09:00 to 18:00, {defaultTimeZone}. Follows the organization&apos;s time zone when it changes.</span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 text-sm">
-                <RadioGroupItem value="custom" className="mt-0.5" />
-                <span>Custom hours for this mailbox</span>
-              </label>
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          // Opening starts from what is saved, not from an abandoned edit.
+          setValues(saved);
+          setOpen(true);
+        }}
+      >
+        Edit mailbox
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Edit ${mailbox.emailAddress}`}
+        description="These settings apply to this mailbox only."
+        confirmLabel="Save"
+        pendingLabel="Saving…"
+        confirmDisabled={!dirty}
+        className="sm:max-w-lg"
+        onConfirm={save}
+      >
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={`${mailbox.id}-name`}>Sender name</FieldLabel>
+            <Input id={`${mailbox.id}-name`} value={values.displayName} onChange={(e) => setValues({ ...values, displayName: e.target.value })} placeholder="Ada from Acme" />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${mailbox.id}-limit`}>Emails per day</FieldLabel>
+            <Input id={`${mailbox.id}-limit`} type="number" min={1} max={200} value={values.limit} onChange={(e) => setValues({ ...values, limit: e.target.value })} className="w-28" required />
+            <FieldDescription>1 to 200. Test emails do not count.</FieldDescription>
+          </Field>
+          <FieldSet>
+            <FieldLegend variant="label">Sending hours</FieldLegend>
+            <RadioGroup value={values.hoursMode} onValueChange={(v) => setValues({ ...values, hoursMode: v as "organization" | "custom" })}>
+              <Field orientation="horizontal">
+                <RadioGroupItem value="organization" id={`${mailbox.id}-hours-org`} />
+                <FieldContent>
+                  <FieldLabel htmlFor={`${mailbox.id}-hours-org`}>Organization hours</FieldLabel>
+                  <FieldDescription>Monday to Friday, 09:00 to 18:00, {defaultTimeZone}. Follows the organization&apos;s time zone when it changes.</FieldDescription>
+                </FieldContent>
+              </Field>
+              <Field orientation="horizontal">
+                <RadioGroupItem value="custom" id={`${mailbox.id}-hours-custom`} />
+                <FieldLabel htmlFor={`${mailbox.id}-hours-custom`}>Custom hours for this mailbox</FieldLabel>
+              </Field>
             </RadioGroup>
-          </fieldset>
-          {hours === "custom" && (
-            <>
-              <div className="grid gap-2">
-                <Label htmlFor="s-tz">Time zone</Label>
-                <TimeZoneSelect id="s-tz" zones={zones.includes(timeZone) ? zones : [timeZone, ...zones]} value={timeZone} onValueChange={setTimeZone} />
-              </div>
-              <fieldset className="grid gap-2">
-                <legend className="text-sm font-medium">Send on</legend>
-                <div className="flex flex-wrap gap-3">
-                  {DAYS.map((d) => (
-                    <label key={d.key} className="flex items-center gap-1.5 text-sm">
-                      <Checkbox checked={days.includes(d.key)} onCheckedChange={(checked) => setDays((all) => (checked ? [...all, d.key] : all.filter((x) => x !== d.key)))} />
-                      {d.label}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <div className="flex gap-3">
-                <div className="grid gap-2">
-                  <Label htmlFor="s-start">From</Label>
-                  <Input id="s-start" name="start" type="time" defaultValue={firstWindow?.start ?? "09:00"} required />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="s-end">Until</Label>
-                  <Input id="s-end" name="end" type="time" defaultValue={firstWindow?.end ?? "18:00"} required />
-                </div>
-              </div>
-            </>
-          )}
-          <div className="grid gap-2">
-            <Label htmlFor="s-sig">Signature</Label>
-            <Textarea id="s-sig" name="signatureHtml" rows={4} defaultValue={mailbox.signatureHtml ?? ""} placeholder={"Ada Lovelace\nAcme"} />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          </FieldSet>
+          {values.hoursMode === "custom" && <WorkingHoursFields id={`${mailbox.id}-hours`} value={values.hours} onChange={(hours) => setValues({ ...values, hours })} zones={zones} />}
+          <Field>
+            <FieldLabel htmlFor={`${mailbox.id}-signature`}>Signature</FieldLabel>
+            <Textarea id={`${mailbox.id}-signature`} rows={4} value={values.signature} onChange={(e) => setValues({ ...values, signature: e.target.value })} placeholder={"Ada Lovelace\nAcme"} />
+            <FieldDescription>Goes at the end of each email from this mailbox, or where a step says %signature%.</FieldDescription>
+          </Field>
+        </FieldGroup>
+      </ConfirmDialog>
+    </>
   );
 }
 
@@ -466,10 +417,10 @@ function TestSendForm({ mailbox }: { mailbox: Mailbox }) {
           The test goes through the same checks as a campaign email. A mailbox sends 3 test emails per hour, and test emails do not use the daily campaign limit.
         </DialogDescription>
       </DialogHeader>
-      <div className="grid gap-2">
-        <Label htmlFor={`test-to-${mailbox.id}`}>Send to</Label>
+      <Field>
+        <FieldLabel htmlFor={`test-to-${mailbox.id}`}>Send to</FieldLabel>
         <Input id={`test-to-${mailbox.id}`} name="to" type="email" required placeholder="you@example.com" />
-      </div>
+      </Field>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

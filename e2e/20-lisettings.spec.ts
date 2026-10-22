@@ -28,7 +28,7 @@ test.describe("linkedin settings and jobs", () => {
     await messages.fill("150");
     await expect(card.getByText(/More than 100 messages a day/)).toBeVisible();
     await card.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText("Saved.")).toBeVisible();
+    await expect(page.getByText(/Hosted Seller.* saved\./)).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("linkedin-account").filter({ hasText: "Hosted Seller" }).first().getByLabel("Messages per day")).toHaveValue("150");
     const accounts = (await (await page.request.get("/api/linkedin")).json()) as { accounts: Array<{ id: string; name: string }> };

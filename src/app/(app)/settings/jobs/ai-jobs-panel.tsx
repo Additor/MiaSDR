@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Time, useOrgTimeZone } from "@/components/shell/time";
 import { callApi } from "@/lib/api-client";
@@ -63,6 +64,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
   const timeZone = useOrgTimeZone();
   const [busy, setBusy] = useState<string | null>(null);
   const [windowIndex, setWindowIndex] = useState(1);
+  const [confirmingBulk, setConfirmingBulk] = useState(false);
 
   async function requeue(key: string, url: string, body?: unknown) {
     setBusy(key);
@@ -101,9 +103,17 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" disabled={busy !== null} onClick={() => requeue("since", "/api/jobs/ai/requeue", { since: new Date(Date.now() - WINDOWS[windowIndex].ms).toISOString() })}>
+            <Button variant="outline" disabled={busy !== null} onClick={() => setConfirmingBulk(true)}>
               {busy === "since" ? "Requeueing…" : "Requeue failed jobs"}
             </Button>
+            <ConfirmDialog
+              open={confirmingBulk}
+              onOpenChange={setConfirmingBulk}
+              title={`Requeue jobs that failed in ${WINDOWS[windowIndex].label}?`}
+              description="Each classification and draft job that failed in that time gets fresh attempts and runs again on the next ticks, which calls the AI provider again. The requeue is recorded with your name."
+              confirmLabel="Requeue failed jobs"
+              onConfirm={() => void requeue("since", "/api/jobs/ai/requeue", { since: new Date(Date.now() - WINDOWS[windowIndex].ms).toISOString() })}
+            />
           </div>
         )}
         {failed.rows.length > 0 && (

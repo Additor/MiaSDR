@@ -98,19 +98,23 @@ test.describe("organization settings", () => {
   test("the owner renames the organization and changes the zone; the slug stays; an audit row records both", async ({ page }) => {
     await signInAdmin(page);
     await page.goto("/settings/organization");
-    await expect(page.getByLabel("Slug")).toBeDisabled();
     await expect(page.getByLabel("Name")).toHaveValue(ADMIN.organization);
-    const slug = await page.getByLabel("Slug").inputValue();
+    // The slug is shown as text under the name, never as a field.
+    const { slug } = (await (await page.request.get("/api/settings/organization")).json()) as { slug: string };
+    await expect(page.getByText(slug, { exact: true })).toBeVisible();
+    // Save stays off until something changes.
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
     try {
       await page.getByLabel("Name").fill("E2E Corp Renamed");
-      await page.getByLabel("Default time zone").click();
+      // The zone picker is a combobox: type part of the name, then pick it.
+      await page.getByLabel("Default time zone").fill("Seoul");
       await page.getByRole("option", { name: "Asia/Seoul", exact: true }).click();
       await page.getByRole("button", { name: "Save" }).click();
       await expect(page.getByText("Organization saved.")).toBeVisible();
       await page.reload();
       await expect(page.getByLabel("Name")).toHaveValue("E2E Corp Renamed");
-      await expect(page.getByLabel("Slug")).toHaveValue(slug);
+      await expect(page.getByText(slug, { exact: true })).toBeVisible();
       const audit = await sql()`select action, meta from audit_log where action in ('organization.renamed', 'organization.timezone_changed') order by created_at desc limit 2`;
       expect(audit.map((a) => a.action).sort()).toEqual(["organization.renamed", "organization.timezone_changed"]);
     } finally {

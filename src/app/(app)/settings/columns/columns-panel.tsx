@@ -4,13 +4,14 @@ import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { callApi } from "@/lib/api-client";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
 import { Tabs } from "@/components/shell/tabs";
 import { cn } from "@/lib/utils";
+import { ReorderButtons } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 type Entity = "people" | "companies";
@@ -83,8 +84,10 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
     if (await run(callApi("/api/leads/columns", "POST", { entity, name }), "Field added.")) setName("");
   }
 
-  async function rename(id: string) {
-    if (await run(callApi(`/api/leads/columns/${id}`, "PATCH", { name: draft }), "Field renamed.")) setEditingId(null);
+  async function rename(event: React.FormEvent, id: string) {
+    event.preventDefault();
+    if (draft.trim() === "") return;
+    if (await run(callApi(`/api/leads/columns/${id}`, "PATCH", { name: draft.trim() }), "Field renamed.")) setEditingId(null);
   }
 
   function move(index: number, delta: number) {
@@ -104,10 +107,10 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
       {canManage && (
         <SettingsSection title="Add a field" description="Imports turn extra file columns into fields too. Names are unique per type, ignoring case.">
           <form onSubmit={add} className="flex flex-wrap items-end gap-2">
-            <div className="stack-field">
-              <Label htmlFor={nameId}>New field name</Label>
+            <Field className="w-auto">
+              <FieldLabel htmlFor={nameId}>New field name</FieldLabel>
               <Input id={nameId} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required className="w-64 max-w-full" />
-            </div>
+            </Field>
             <Button type="submit" disabled={pending}>
               Add field
             </Button>
@@ -137,30 +140,33 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
             {active.map((column, index) => (
               <li key={column.id} className={cn(RULED_ROW, "flex min-h-11 flex-wrap items-center gap-2")}>
                 {editingId === column.id ? (
-                  <>
-                    <Input aria-label="Field name" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={60} className="w-56" />
-                    <Button size="sm" disabled={pending} onClick={() => rename(column.id)}>
+                  <form onSubmit={(e) => rename(e, column.id)} className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <Input
+                      aria-label={`New name for ${column.name}`}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => e.key === "Escape" && setEditingId(null)}
+                      maxLength={60}
+                      className="max-w-56 min-w-0 flex-1"
+                      autoFocus
+                    />
+                    <Button type="submit" size="sm" disabled={pending || draft.trim() === "" || draft.trim() === column.name}>
                       Save
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditingId(null)}>
                       Cancel
                     </Button>
-                  </>
+                  </form>
                 ) : (
                   <>
                     <span className="font-medium">{column.name}</span>
                     <span className="text-sm text-muted-foreground">{column.usedBy} with a value</span>
                     {canManage && (
-                      <span className="ml-auto flex gap-1">
-                        <Button size="sm" variant="ghost" aria-label={`Move ${column.name} up`} disabled={pending || index === 0} onClick={() => move(index, -1)}>
-                          Up
-                        </Button>
-                        <Button size="sm" variant="ghost" aria-label={`Move ${column.name} down`} disabled={pending || index === active.length - 1} onClick={() => move(index, 1)}>
-                          Down
-                        </Button>
+                      <span className="ml-auto flex items-center gap-1">
+                        <ReorderButtons name={column.name} canUp={index > 0} canDown={index < active.length - 1} disabled={pending} onMove={(direction) => move(index, direction)} />
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="ghost"
                           onClick={() => {
                             setEditingId(column.id);
                             setDraft(column.name);
@@ -168,7 +174,7 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
                         >
                           Rename
                         </Button>
-                        <Button size="sm" variant="outline" disabled={pending} onClick={() => setArchiving(column)}>
+                        <Button size="sm" variant="ghost" disabled={pending} onClick={() => setArchiving(column)}>
                           Archive
                         </Button>
                       </span>
@@ -189,10 +195,10 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
                 <span className="text-sm text-muted-foreground">{column.usedBy} with a value</span>
                 {canManage && (
                   <span className="ml-auto flex gap-1">
-                    <Button size="sm" variant="outline" disabled={pending} onClick={() => run(callApi(`/api/leads/columns/${column.id}`, "PATCH", { archived: false }), `${column.name} restored.`)}>
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(callApi(`/api/leads/columns/${column.id}`, "PATCH", { archived: false }), `${column.name} restored.`)}>
                       Restore
                     </Button>
-                    <Button size="sm" variant="destructive" disabled={pending} onClick={() => setDeleting(column)}>
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => setDeleting(column)}>
                       Delete
                     </Button>
                   </span>

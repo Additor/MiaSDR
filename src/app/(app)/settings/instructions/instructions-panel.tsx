@@ -1,14 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface Block {
@@ -62,7 +63,11 @@ function BlockList({
     setBlocks((current) => current.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   };
 
-  async function save() {
+  const dirty = JSON.stringify(blocks) !== JSON.stringify(initial);
+  useLeaveGuard(dirty);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setPending(true);
     setError(null);
     const result = await callApi("/api/settings/replies/ai-instructions", "PUT", { [field]: blocks });
@@ -92,43 +97,43 @@ function BlockList({
   }
 
   return (
-    <SettingsSection title={title} description={description}>
-      {blocks.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No instructions yet.</p>
-      ) : (
-        <ul className={RULED_LIST} aria-label={title}>
-          {blocks.map((b) => (
-            <li key={b.id} className={cn(RULED_ROW, "stack-group")}>
-              <div className="stack-field">
-                <Label htmlFor={`${b.id}-title`}>Title</Label>
-                <Input id={`${b.id}-title`} value={b.title} onChange={(e) => change(b.id, { title: e.target.value })} maxLength={200} />
-              </div>
-              <div className="stack-field">
-                <Label htmlFor={`${b.id}-content`}>Instruction</Label>
-                <Textarea id={`${b.id}-content`} className="min-h-24" value={b.content} onChange={(e) => change(b.id, { content: e.target.value })} maxLength={8000} />
-              </div>
-              <div>
-                <Button size="xs" variant="ghost" onClick={() => setBlocks((current) => current.filter((x) => x.id !== b.id))}>
-                  Remove
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" disabled={blocks.length >= 50} onClick={() => setBlocks((current) => [...current, { id: newId(), title: "", content: "" }])}>
+    <SettingsSection
+      title={title}
+      description={description}
+      action={
+        <Button type="button" variant="outline" disabled={blocks.length >= 50} onClick={() => setBlocks((current) => [...current, { id: newId(), title: "", content: "" }])}>
           Add instruction
         </Button>
-        <Button size="sm" disabled={pending} onClick={save}>
-          {pending ? "Saving…" : "Save"}
-        </Button>
-      </div>
+      }
+    >
+      <form onSubmit={save}>
+        <FieldGroup>
+          {blocks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No instructions yet.</p>
+          ) : (
+            <ul className={RULED_LIST} aria-label={title}>
+              {blocks.map((b, index) => (
+                <li key={b.id} className={cn(RULED_ROW, "stack-group")}>
+                  <Field>
+                    <FieldLabel htmlFor={`${b.id}-title`}>Title</FieldLabel>
+                    <div className="flex items-center gap-2">
+                      <Input id={`${b.id}-title`} value={b.title} onChange={(e) => change(b.id, { title: e.target.value })} maxLength={200} placeholder={`Instruction ${index + 1}`} />
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setBlocks((current) => current.filter((x) => x.id !== b.id))} aria-label={`Remove ${b.title || `instruction ${index + 1}`}`}>
+                        Remove
+                      </Button>
+                    </div>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`${b.id}-content`}>Instruction</FieldLabel>
+                    <Textarea id={`${b.id}-content`} className="min-h-24" value={b.content} onChange={(e) => change(b.id, { content: e.target.value })} maxLength={8000} />
+                  </Field>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(blocks.length > 0 || dirty) && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setBlocks(initial)} />}
+        </FieldGroup>
+      </form>
     </SettingsSection>
   );
 }

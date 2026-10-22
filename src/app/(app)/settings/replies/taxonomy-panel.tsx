@@ -3,16 +3,16 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
 import { callApi } from "@/lib/api-client";
-import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
@@ -30,48 +30,57 @@ interface Sub {
   historyCount: number;
 }
 
+interface Draft {
+  category: string;
+  name: string;
+  description: string;
+  guidance: string;
+  rank: string;
+  review: boolean;
+}
+
 const CATEGORY_ITEMS = REPLY_CATEGORIES.map((c) => ({ value: c.key, label: c.label }));
 
 const archiveRecords = (count: number) => (count === 0 ? "Nobody is in it now." : `${count} ${count === 1 ? "person keeps" : "people keep"} this subcategory.`);
 
+const draftOf = (sub: Sub | null, category = "interested"): Draft => ({
+  category: sub?.categoryKey ?? category,
+  name: sub?.name ?? "",
+  description: sub?.description ?? "",
+  guidance: sub?.classificationGuidance ?? "",
+  rank: sub?.stageRank?.toString() ?? "",
+  review: sub?.reviewRequired ?? false,
+});
+
 export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub[]; canManage: boolean }) {
   const router = useRouter();
-  const [editing, setEditing] = useState<Sub | null>(null);
+  // `editing` null with the dialog open adds a subcategory.
+  const [dialog, setDialog] = useState<{ editing: Sub | null } | null>(null);
+  const [draft, setDraft] = useState<Draft>(draftOf(null));
   const [confirming, setConfirming] = useState<{ sub: Sub; action: "archive" | "delete" } | null>(null);
-  const [category, setCategory] = useState<string>("interested");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [guidance, setGuidance] = useState("");
-  const [rank, setRank] = useState("");
-  const [review, setReview] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
-  function edit(sub: Sub | null) {
-    setEditing(sub);
-    setCategory(sub?.categoryKey ?? "interested");
-    setName(sub?.name ?? "");
-    setDescription(sub?.description ?? "");
-    setGuidance(sub?.classificationGuidance ?? "");
-    setRank(sub?.stageRank?.toString() ?? "");
-    setReview(sub?.reviewRequired ?? false);
-    setError(null);
+  function open(sub: Sub | null, category?: string) {
+    setDraft(draftOf(sub, category));
+    setDialog({ editing: sub });
   }
 
-  async function save(event: React.FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setError(null);
-    const common = { name, description: description.trim() || null, classificationGuidance: guidance.trim() || null, reviewRequired: review, stageRank: rank.trim() === "" ? null : Number(rank) };
-    const result = editing ? await callApi(`/api/reply-categories/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/reply-categories/subcategories", "POST", { ...common, categoryKey: category });
-    setPending(false);
-    if (!result.ok) return setError(result.error);
-    toast.success(editing ? "Subcategory saved." : "Subcategory added.");
-    edit(null);
+  async function save() {
+    const editing = dialog?.editing ?? null;
+    const common = {
+      name: draft.name,
+      description: draft.description.trim() || null,
+      classificationGuidance: draft.guidance.trim() || null,
+      reviewRequired: draft.review,
+      stageRank: draft.rank.trim() === "" ? null : Number(draft.rank),
+    };
+    const result = editing ? await callApi(`/api/reply-categories/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/reply-categories/subcategories", "POST", { ...common, categoryKey: draft.category });
+    if (!result.ok) throw new Error(result.error ?? "Could not save the subcategory.");
+    toast.success(editing ? `${draft.name} saved.` : `${draft.name} added.`);
     router.refresh();
   }
 
-  /** Archive and restore. A failure throws so the confirmation dialog can show it; Restore has no dialog and reports through setError. */
+  /** Archive and restore. A failure throws so the confirmation dialog can show it; Restore has no dialog and reports below the list. */
   async function toggle(sub: Sub) {
     const result = await callApi(`/api/reply-categories/subcategories/${sub.id}`, "PATCH", { active: !sub.active });
     if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
@@ -87,76 +96,25 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
   }
 
   function restore(sub: Sub) {
-    setError(null);
-    toggle(sub).catch((e: unknown) => setError(e instanceof Error ? e.message : "Something went wrong. Try again."));
+    setRestoreError(null);
+    toggle(sub).catch((e: unknown) => setRestoreError(e instanceof Error ? e.message : "Something went wrong. Try again."));
   }
 
+  const editing = dialog?.editing ?? null;
   return (
     <>
-      {canManage && (
-        <SettingsSection
-          title={editing ? `Edit ${editing.name}` : "Add a subcategory"}
-          description="The four reply categories are fixed. Their subcategories are what the AI picks from, and the guidance tells it when to choose one. A position orders the subcategories from first reply to outcome, and the AI never moves a person to a lower position on its own."
-        >
-          <form onSubmit={save} className="stack-group">
-            <div className="flex flex-wrap gap-3">
-              <div className="stack-field">
-                <Label htmlFor="sub-category">Category</Label>
-                <Select items={CATEGORY_ITEMS} value={category} onValueChange={(v) => v && setCategory(v)} disabled={editing !== null}>
-                  <SelectTrigger id="sub-category" className="w-44">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORY_ITEMS.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="stack-field">
-                <Label htmlFor="sub-name">Name</Label>
-                <Input id="sub-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} className="w-64 max-w-full" />
-              </div>
-              <div className="stack-field">
-                <Label htmlFor="sub-rank">Position</Label>
-                <Input id="sub-rank" type="number" min={1} max={100} value={rank} onChange={(e) => setRank(e.target.value)} placeholder="Outcome" className="w-28" />
-              </div>
-            </div>
-            <div className="stack-field">
-              <Label htmlFor="sub-description">Description (optional)</Label>
-              <Input id="sub-description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
-            </div>
-            <div className="stack-field">
-              <Label htmlFor="sub-guidance">Guidance for the AI (optional)</Label>
-              <Textarea id="sub-guidance" value={guidance} onChange={(e) => setGuidance(e.target.value)} maxLength={2000} placeholder="Choose this when the sender asks for pricing or a quote." />
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="sub-review" checked={review} onCheckedChange={(c) => setReview(c === true)} />
-              <Label htmlFor="sub-review">A person confirms every AI choice of this subcategory</Label>
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" size="sm" disabled={pending}>
-                {pending ? "Saving…" : editing ? "Save changes" : "Add subcategory"}
-              </Button>
-              {editing && (
-                <Button type="button" size="sm" variant="ghost" onClick={() => edit(null)}>
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </form>
-        </SettingsSection>
-      )}
-
       {/* Two levels only: a category is a group with an h3, its subcategories are the rows of one ruled list. */}
-      <SettingsSection title="Subcategories">
+      <SettingsSection
+        title="Subcategories"
+        description="The four reply categories are fixed. Their subcategories are what the AI picks from, and the guidance tells it when to choose one. A position orders the subcategories from first reply to outcome, and the AI never moves a person to a lower position on its own."
+        action={
+          canManage ? (
+            <Button variant="outline" onClick={() => open(null)}>
+              Add subcategory
+            </Button>
+          ) : undefined
+        }
+      >
         <div className="stack-section">
           {REPLY_CATEGORIES.map((c) => {
             const subs = subcategories.filter((s) => s.categoryKey === c.key);
@@ -168,28 +126,32 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
                 ) : (
                   <ul className={RULED_LIST} aria-label={`${c.label} subcategories`}>
                     {subs.map((s) => (
-                      <li key={s.id} className={cn(RULED_ROW, "grid gap-1 text-sm", !s.active && "opacity-60")}>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium">{s.name}</span>
-                          {s.stageRank !== null && <Badge variant="secondary">Position {s.stageRank}</Badge>}
-                          {s.reviewRequired && <Badge variant="secondary">Always reviewed</Badge>}
-                          {!s.active && <Badge variant="outline">Archived</Badge>}
-                          <span className="text-xs text-muted-foreground">{s.recordCount} {s.recordCount === 1 ? "person" : "people"}</span>
+                      <li key={s.id} className={cn(RULED_ROW, "flex flex-wrap items-start gap-x-3 gap-y-1 text-sm")}>
+                        <div className={cn("grid min-w-0 flex-1 gap-1", !s.active && "opacity-60")}>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{s.name}</span>
+                            {s.stageRank !== null && <Badge variant="secondary">Position {s.stageRank}</Badge>}
+                            {s.reviewRequired && <Badge variant="secondary">Always reviewed</Badge>}
+                            {!s.active && <Badge variant="outline">Archived</Badge>}
+                            <span className="text-xs text-muted-foreground">
+                              {s.recordCount} {s.recordCount === 1 ? "person" : "people"}
+                            </span>
+                          </div>
+                          {s.description && <p className="text-muted-foreground">{s.description}</p>}
+                          {s.classificationGuidance && <p className="whitespace-pre-wrap text-muted-foreground">Guidance: {s.classificationGuidance}</p>}
                         </div>
-                        {s.description && <p className="text-muted-foreground">{s.description}</p>}
-                        {s.classificationGuidance && <p className="whitespace-pre-wrap text-muted-foreground">Guidance: {s.classificationGuidance}</p>}
                         {canManage && (
-                          <div className="flex flex-wrap gap-2 pt-1">
-                            <Button size="xs" variant="outline" onClick={() => edit(s)}>
+                          <div className="flex shrink-0 gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => open(s)} aria-label={`Edit ${s.name}`}>
                               Edit
                             </Button>
                             {s.key !== "do_not_contact" && (
-                              <Button size="xs" variant="ghost" onClick={() => (s.active ? setConfirming({ sub: s, action: "archive" }) : restore(s))}>
+                              <Button size="sm" variant="ghost" onClick={() => (s.active ? setConfirming({ sub: s, action: "archive" }) : restore(s))}>
                                 {s.active ? "Archive" : "Restore"}
                               </Button>
                             )}
                             {s.key !== "do_not_contact" && s.recordCount === 0 && s.historyCount === 0 && (
-                              <Button size="xs" variant="ghost" onClick={() => setConfirming({ sub: s, action: "delete" })}>
+                              <Button size="sm" variant="ghost" onClick={() => setConfirming({ sub: s, action: "delete" })}>
                                 Delete
                               </Button>
                             )}
@@ -203,7 +165,66 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
             );
           })}
         </div>
+        {restoreError && (
+          <p role="alert" className="text-sm text-destructive">
+            {restoreError}
+          </p>
+        )}
       </SettingsSection>
+
+      <ConfirmDialog
+        open={dialog !== null}
+        onOpenChange={(next) => !next && setDialog(null)}
+        title={editing ? `Edit ${editing.name}` : "Add a subcategory"}
+        description="The AI reads the name, the description and the guidance when it classifies a reply."
+        confirmLabel={editing ? "Save" : "Add subcategory"}
+        pendingLabel="Saving…"
+        confirmDisabled={draft.name.trim() === ""}
+        className="sm:max-w-lg"
+        onConfirm={save}
+      >
+        <FieldGroup>
+          <div className="flex flex-wrap gap-group">
+            <Field className="w-auto">
+              <FieldLabel htmlFor="sub-category">Category</FieldLabel>
+              <Select items={CATEGORY_ITEMS} value={draft.category} onValueChange={(v) => v && setDraft({ ...draft, category: v })} disabled={editing !== null}>
+                <SelectTrigger id="sub-category" className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_ITEMS.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field className="w-auto">
+              <FieldLabel htmlFor="sub-rank">Position</FieldLabel>
+              <Input id="sub-rank" type="number" min={1} max={100} value={draft.rank} onChange={(e) => setDraft({ ...draft, rank: e.target.value })} placeholder="Outcome" className="w-28" />
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel htmlFor="sub-name">Name</FieldLabel>
+            <Input id="sub-name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required maxLength={100} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="sub-description">Description (optional)</FieldLabel>
+            <Input id="sub-description" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} maxLength={500} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="sub-guidance">Guidance for the AI (optional)</FieldLabel>
+            <Textarea id="sub-guidance" value={draft.guidance} onChange={(e) => setDraft({ ...draft, guidance: e.target.value })} maxLength={2000} placeholder="Choose this when the sender asks for pricing or a quote." />
+            <FieldDescription>When the AI should pick this subcategory over the others.</FieldDescription>
+          </Field>
+          <Field orientation="horizontal">
+            <Checkbox id="sub-review" checked={draft.review} onCheckedChange={(c) => setDraft({ ...draft, review: c === true })} />
+            <FieldLabel htmlFor="sub-review">A person confirms every AI choice of this subcategory</FieldLabel>
+          </Field>
+        </FieldGroup>
+      </ConfirmDialog>
+
       <ConfirmDialog
         open={confirming !== null}
         onOpenChange={(open) => !open && setConfirming(null)}

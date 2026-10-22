@@ -75,11 +75,15 @@ test.describe("phone width in dark mode", () => {
       { path: `/crm/companies?q=${tag}` },
       { path: `/crm/companies/${company.id}` },
       { path: "/settings/members", ready: (p) => p.getByRole("button", { name: "Send invitation" }) },
-      { path: "/settings/organization", ready: (p) => p.getByLabel("Slug") },
+      { path: "/settings/organization", ready: (p) => p.getByLabel("Default time zone") },
       { path: "/settings/mailboxes", ready: (p) => p.getByRole("button", { name: /^More/ }).first() },
       { path: "/settings/replies" },
       { path: "/settings/linkedin", ready: (p) => p.getByRole("heading", { name: "LinkedIn", exact: true }).first() },
       { path: "/settings/jobs", ready: (p) => p.getByRole("heading", { name: "Jobs", exact: true }).first() },
+      { path: "/settings/account", ready: (p) => p.getByRole("heading", { name: "Where you are signed in" }) },
+      { path: "/settings/suppression", ready: (p) => p.getByRole("heading", { name: "Suppressed addresses" }) },
+      { path: "/settings/instructions", ready: (p) => p.getByRole("heading", { name: "Drafting instructions" }) },
+      { path: "/settings/audit-log" },
     ];
     for (const route of routes) await expectFits(page, route);
   });

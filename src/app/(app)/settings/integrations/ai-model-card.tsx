@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { callApi } from "@/lib/api-client";
@@ -168,8 +168,8 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
         <>
           {view && <RunningLine status={view.status} canPick={!view.keyRejected} />}
           {connectionItems.length > 1 && (
-            <div className="stack-field">
-              <Label htmlFor="ai-connection">AI provider</Label>
+            <Field>
+              <FieldLabel htmlFor="ai-connection">AI provider</FieldLabel>
               <Select items={connectionItems} value={view?.connection ?? ""} onValueChange={(v) => v && void load(v)} disabled={!view || pending}>
                 <SelectTrigger id="ai-connection" className="w-full max-w-sm">
                   <SelectValue />
@@ -187,10 +187,10 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
                   Saving switches AI from {labelOf(view.active)} to {labelOf(view.connection)}. The {labelOf(view.active)} key stays saved.
                 </p>
               )}
-            </div>
+            </Field>
           )}
-          <div className="stack-field">
-            <Label htmlFor="ai-model">Model</Label>
+          <Field>
+            <FieldLabel htmlFor="ai-model">Model</FieldLabel>
             <ModelCombobox id="ai-model" ids={view?.choices ?? []} pinned={pinned} value={choice} onValueChange={setChoice} labelOf={modelLabel} disabled={!view || loading !== null || pending} />
             {loading && (
               <p role="status" className="text-sm text-muted-foreground">
@@ -221,7 +221,7 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
                 {view.notice}
               </p>
             )}
-          </div>
+          </Field>
         </>
       )}
       {error && (

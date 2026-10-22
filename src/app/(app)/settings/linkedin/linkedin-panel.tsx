@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { callApi } from "@/lib/api-client";
@@ -20,7 +21,9 @@ import { INVITE_LIMIT_RULE, MESSAGE_LIMIT_RULE, inviteLimitWarning, messageLimit
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { AdminNotice } from "../admin-notice";
+import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
+import { hoursDraft, sameHours, toStoredHours, WorkingHoursFields, type StoredHours } from "../working-hours-fields";
 import { DailyCounters } from "./daily-counters";
 
 interface Account {
@@ -34,18 +37,8 @@ interface Account {
   messagesToday: number;
   limitReachedUntil: string | null;
   invitesToday: number;
-  workingHours: { timeZone: string; days: Record<string, Array<{ start: string; end: string }>> };
+  workingHours: StoredHours | null;
 }
-
-const DAYS = [
-  { key: "1", label: "Mon" },
-  { key: "2", label: "Tue" },
-  { key: "3", label: "Wed" },
-  { key: "4", label: "Thu" },
-  { key: "5", label: "Fri" },
-  { key: "6", label: "Sat" },
-  { key: "0", label: "Sun" },
-];
 
 interface ConnectLinkRow {
   id: string;
@@ -78,7 +71,7 @@ interface ConnectResult {
   webhooks: { status: string; detail: string };
 }
 
-export function LinkedInPanel({ state, canManage }: { state: State | null; canManage: boolean }) {
+export function LinkedInPanel({ state, canManage, zones }: { state: State | null; canManage: boolean; zones: string[] }) {
   const router = useRouter();
   const timeZone = useOrgTimeZone();
   const [error, setError] = useState<string | null>(null);
@@ -193,14 +186,14 @@ export function LinkedInPanel({ state, canManage }: { state: State | null; canMa
         <form onSubmit={connect} className="stack-group">
           {(!state.connected || editingCredentials) && (
             <div className="grid gap-group sm:grid-cols-2">
-              <div className="stack-field">
-                <Label htmlFor="dsn">DSN</Label>
+              <Field>
+                <FieldLabel htmlFor="dsn">DSN</FieldLabel>
                 <Input id="dsn" name="dsn" placeholder="api1.unipile.com:13111" required autoComplete="off" />
-              </div>
-              <div className="stack-field">
-                <Label htmlFor="apiKey">API key</Label>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="apiKey">API key</FieldLabel>
                 <Input id="apiKey" name="apiKey" type="password" required autoComplete="off" />
-              </div>
+              </Field>
               {state.connected && <p className="text-sm text-muted-foreground sm:col-span-2">Enter new values to replace the saved key.</p>}
             </div>
           )}
@@ -321,7 +314,7 @@ export function LinkedInPanel({ state, canManage }: { state: State | null; canMa
           ) : (
             <ul className={RULED_LIST}>
               {state.accounts.map((account) => (
-                <AccountRow key={account.id} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} reconnecting={linking === account.id} onReconnect={() => startHostedAuth(account.id)} onChanged={() => router.refresh()} />
+                <AccountRow key={account.id} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} reconnecting={linking === account.id} onReconnect={() => startHostedAuth(account.id)} onChanged={() => router.refresh()} />
               ))}
             </ul>
           )}
@@ -355,131 +348,111 @@ function SyncLine({ sync }: { sync: StoredSyncStatus | null }) {
 function AccountRow({
   account,
   limits,
+  zones,
   reconnecting,
   onReconnect,
   onChanged,
 }: {
   account: Account;
   limits: State["limits"];
+  zones: string[];
   reconnecting: boolean;
   onReconnect: () => void;
   onChanged: () => void;
 }) {
-  const [limit, setLimit] = useState(String(account.dailyInviteLimit));
-  const [messageLimit, setMessageLimit] = useState(String(account.dailyMessageLimit));
-  const [premium, setPremium] = useState(account.isPremium);
+  const orgTimeZone = useOrgTimeZone();
+  const saved = { invites: String(account.dailyInviteLimit), messages: String(account.dailyMessageLimit), premium: account.isPremium, hours: hoursDraft(account.workingHours, orgTimeZone) };
+  const [values, setValues] = useState(saved);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const firstWindow = Object.values(account.workingHours.days).find((w) => w.length > 0)?.[0];
-  const [days, setDays] = useState<string[]>(Object.entries(account.workingHours.days).filter(([, w]) => w.length > 0).map(([d]) => d));
-  const [timeZone, setTimeZone] = useState(account.workingHours.timeZone);
-  const [start, setStart] = useState(firstWindow?.start ?? "09:00");
-  const [end, setEnd] = useState(firstWindow?.end ?? "18:00");
+  const dirty = Number(values.invites) !== account.dailyInviteLimit || Number(values.messages) !== account.dailyMessageLimit || values.premium !== account.isPremium || !sameHours(values.hours, saved.hours);
+  useLeaveGuard(dirty);
 
-  const inviteNumber = Number(limit);
-  const messageNumber = Number(messageLimit);
-  const inviteWarning = Number.isInteger(inviteNumber) && inviteNumber >= INVITE_LIMIT_RULE.min && inviteNumber <= INVITE_LIMIT_RULE.max ? inviteLimitWarning(inviteNumber, premium) : null;
+  const inviteNumber = Number(values.invites);
+  const messageNumber = Number(values.messages);
+  const inviteWarning = Number.isInteger(inviteNumber) && inviteNumber >= INVITE_LIMIT_RULE.min && inviteNumber <= INVITE_LIMIT_RULE.max ? inviteLimitWarning(inviteNumber, values.premium) : null;
   const messageWarning = Number.isInteger(messageNumber) && messageNumber >= MESSAGE_LIMIT_RULE.min && messageNumber <= MESSAGE_LIMIT_RULE.max ? messageLimitWarning(messageNumber) : null;
+  const name = account.name ?? account.username ?? "LinkedIn account";
 
-  async function save() {
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (values.hours.days.length === 0) return setError("Pick at least one sending day.");
     setSaving(true);
+    setError(null);
     const result = await callApi<{ warnings: string[] }>(`/api/linkedin/accounts/${account.id}`, "PATCH", {
-      dailyInviteLimit: Number(limit),
-      dailyMessageLimit: Number(messageLimit),
-      isPremium: premium,
-      workingHours: { timeZone, days: Object.fromEntries(days.map((d) => [d, [{ start, end }]])) },
+      dailyInviteLimit: inviteNumber,
+      dailyMessageLimit: messageNumber,
+      isPremium: values.premium,
+      workingHours: toStoredHours(values.hours),
     });
-    if (!result.ok) toast.error(result.error ?? "Could not save.");
-    else {
-      toast.success("Saved.");
-      for (const warning of result.data?.warnings ?? []) toast.warning(warning);
-    }
     setSaving(false);
+    if (!result.ok) return setError(result.error ?? "Could not save the account.");
+    toast.success(`${name} saved.`);
+    for (const warning of result.data?.warnings ?? []) toast.warning(warning);
     onChanged();
   }
 
   return (
     <li data-testid="linkedin-account" className={cn(RULED_ROW, "stack-group")}>
-      <div className="stack-field">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-medium">{account.name ?? account.username ?? "LinkedIn account"}</h3>
-          <StatusBadge status={account.status} />
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="stack-field min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-medium">{name}</h3>
+            <StatusBadge status={account.status} />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {account.invitesToday} of {account.dailyInviteLimit} invitations and {account.messagesToday} of {account.dailyMessageLimit} messages used today.
+            {account.limitReachedUntil && (
+              <>
+                {" "}
+                LinkedIn reported a limit, so this account rests until <Time value={account.limitReachedUntil} />.
+              </>
+            )}
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {account.invitesToday} of {account.dailyInviteLimit} invitations and {account.messagesToday} of {account.dailyMessageLimit} messages used today.
-          {account.limitReachedUntil && (
-            <>
-              {" "}
-              LinkedIn reported a limit, so this account rests until <Time value={account.limitReachedUntil} />.
-            </>
-          )}
-        </p>
-      </div>
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="stack-field">
-          <Label htmlFor={`limit-${account.id}`}>Invitations per day</Label>
-          <Input id={`limit-${account.id}`} type="number" min={limits.invites.min} max={limits.invites.max} value={limit} onChange={(e) => setLimit(e.target.value)} className="w-28" />
-        </div>
-        <div className="stack-field">
-          <Label htmlFor={`message-limit-${account.id}`}>Messages per day</Label>
-          <Input id={`message-limit-${account.id}`} type="number" min={limits.messages.min} max={limits.messages.max} value={messageLimit} onChange={(e) => setMessageLimit(e.target.value)} className="w-28" />
-        </div>
-        <div className="flex min-h-9 items-center gap-2">
-          <Checkbox id={`premium-${account.id}`} checked={premium} onCheckedChange={(v) => setPremium(v === true)} />
-          <Label htmlFor={`premium-${account.id}`}>Paid LinkedIn plan</Label>
-        </div>
-      </div>
-      {(inviteWarning || messageWarning) && (
-        // A limit above LinkedIn's comfort zone is a risk, not an error: the warning hue on the icon only.
-        <div className="stack-field text-sm" role="status">
-          {inviteWarning && (
-            <p className="flex items-start gap-2">
-              <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-              {inviteWarning}
-            </p>
-          )}
-          {messageWarning && (
-            <p className="flex items-start gap-2">
-              <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-              {messageWarning}
-            </p>
-          )}
-        </div>
-      )}
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="stack-field">
-          <Label htmlFor={`tz-${account.id}`}>Time zone</Label>
-          <Input id={`tz-${account.id}`} value={timeZone} onChange={(e) => setTimeZone(e.target.value)} className="w-44" />
-        </div>
-        <div className="stack-field">
-          <Label htmlFor={`start-${account.id}`}>From</Label>
-          <Input id={`start-${account.id}`} type="time" value={start} onChange={(e) => setStart(e.target.value)} required />
-        </div>
-        <div className="stack-field">
-          <Label htmlFor={`end-${account.id}`}>Until</Label>
-          <Input id={`end-${account.id}`} type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />
-        </div>
-      </div>
-      <fieldset className="stack-field">
-        <legend className="pb-field text-sm font-medium">Send on</legend>
-        <div className="flex flex-wrap gap-3">
-          {DAYS.map((d) => (
-            <label key={d.key} className="flex items-center gap-1.5 text-sm">
-              <Checkbox checked={days.includes(d.key)} onCheckedChange={(checked) => setDays((all) => (checked ? [...all, d.key] : all.filter((x) => x !== d.key)))} />
-              {d.label}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={save} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
         {account.status !== "connected" && (
           <Button variant="outline" size="sm" onClick={onReconnect} disabled={reconnecting}>
             {reconnecting ? "Opening Unipile…" : "Reconnect"}
           </Button>
         )}
       </div>
+      <form onSubmit={save}>
+        <FieldGroup>
+          <div className="flex flex-wrap items-end gap-group">
+            <Field className="w-auto">
+              <FieldLabel htmlFor={`limit-${account.id}`}>Invitations per day</FieldLabel>
+              <Input id={`limit-${account.id}`} type="number" min={limits.invites.min} max={limits.invites.max} value={values.invites} onChange={(e) => setValues({ ...values, invites: e.target.value })} className="w-28" required />
+            </Field>
+            <Field className="w-auto">
+              <FieldLabel htmlFor={`message-limit-${account.id}`}>Messages per day</FieldLabel>
+              <Input id={`message-limit-${account.id}`} type="number" min={limits.messages.min} max={limits.messages.max} value={values.messages} onChange={(e) => setValues({ ...values, messages: e.target.value })} className="w-28" required />
+            </Field>
+            <Field orientation="horizontal" className="min-h-8 w-auto">
+              <Checkbox id={`premium-${account.id}`} checked={values.premium} onCheckedChange={(v) => setValues({ ...values, premium: v === true })} />
+              <FieldLabel htmlFor={`premium-${account.id}`}>Paid LinkedIn plan</FieldLabel>
+            </Field>
+          </div>
+          {(inviteWarning || messageWarning) && (
+            // A limit above LinkedIn's comfort zone is a risk, not an error: the warning hue on the icon only.
+            <div className="stack-field text-sm" role="status">
+              {inviteWarning && (
+                <p className="flex items-start gap-2">
+                  <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+                  {inviteWarning}
+                </p>
+              )}
+              {messageWarning && (
+                <p className="flex items-start gap-2">
+                  <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+                  {messageWarning}
+                </p>
+              )}
+            </div>
+          )}
+          <WorkingHoursFields id={`hours-${account.id}`} value={values.hours} onChange={(hours) => setValues({ ...values, hours })} zones={zones} />
+          <SaveRow dirty={dirty} pending={saving} error={error} onDiscard={() => setValues(saved)} />
+        </FieldGroup>
+      </form>
     </li>
   );
 }

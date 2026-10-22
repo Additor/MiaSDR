@@ -8,6 +8,8 @@ import { listLinkedInAccounts } from "@/contexts/outreach/linkedin/application/l
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
+import { getOrgTimeZone } from "@/components/shell/org-time-zone";
+import { timeZoneOptions } from "../time-zone-options";
 import { LinkedInPanel } from "./linkedin-panel";
 
 export const metadata: Metadata = { title: "LinkedIn" };
@@ -28,6 +30,8 @@ async function LinkedIn() {
   const ctx = await requireOrgContext();
   const canManage = isOwnerOrAdmin(ctx.role);
   // Credentials never reach the page. Members only see that LinkedIn is connected.
-  const state = canManage ? await listLinkedInAccounts(linkedinManagementDeps(), toActor(ctx)) : null;
-  return <LinkedInPanel state={state ? JSON.parse(JSON.stringify(state)) : null} canManage={canManage} />;
+  const [state, orgTimeZone] = await Promise.all([canManage ? listLinkedInAccounts(linkedinManagementDeps(), toActor(ctx)) : null, getOrgTimeZone()]);
+  const zones = timeZoneOptions(Intl.supportedValuesOf("timeZone"), orgTimeZone);
+  for (const account of state?.accounts ?? []) if (account.workingHours && !zones.includes(account.workingHours.timeZone)) zones.push(account.workingHours.timeZone);
+  return <LinkedInPanel state={state ? JSON.parse(JSON.stringify(state)) : null} canManage={canManage} zones={zones} />;
 }

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { cn } from "@/lib/utils";
+import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface SessionRow {
@@ -45,12 +46,15 @@ export function AccountPanel({ name, email }: { name: string; email: string }) {
 
 function ProfileSection({ name, email }: { name: string; email: string }) {
   const router = useRouter();
+  const [value, setValue] = useState(name);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const dirty = value.trim() !== name;
+  useLeaveGuard(dirty);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const next = String(new FormData(event.currentTarget).get("name") ?? "").trim();
+    const next = value.trim();
     if (!next) return setError("Enter your name.");
     setPending(true);
     setError(null);
@@ -66,23 +70,14 @@ function ProfileSection({ name, email }: { name: string; email: string }) {
       <form onSubmit={save} className="stack-group">
         <div className="stack-field">
           <Label htmlFor="account-name">Name</Label>
-          <Input id="account-name" name="name" defaultValue={name} maxLength={100} required autoComplete="name" className="max-w-sm" />
+          <Input id="account-name" value={value} onChange={(e) => setValue(e.target.value)} maxLength={100} required autoComplete="name" className="max-w-sm" />
         </div>
         <div className="stack-field">
           <span className="text-sm font-medium">Email</span>
           <p className="text-sm">{email}</p>
           <p className="text-sm text-muted-foreground">You sign in with this address. It cannot change here.</p>
         </div>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <div>
-          <Button type="submit" disabled={pending}>
-            {pending ? "Saving…" : "Save"}
-          </Button>
-        </div>
+        <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValue(name)} />
       </form>
     </SettingsSection>
   );

@@ -8,8 +8,8 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { callApi } from "@/lib/api-client";
 import { AiModelCard } from "./ai-model-card";
@@ -99,8 +99,8 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
     <div>
       <SettingsSection title="AI provider key" description="Keys are encrypted before they are stored and are never shown again. Saving a key for a connected provider replaces the old one.">
         <form onSubmit={save} className="stack-group">
-          <div className="stack-field">
-            <Label htmlFor="provider">Provider</Label>
+          <Field>
+            <FieldLabel htmlFor="provider">Provider</FieldLabel>
             <Select items={items} value={providerKey} onValueChange={(v) => v && setProviderKey(v)}>
               <SelectTrigger id="provider" className="w-full max-w-xs">
                 <SelectValue />
@@ -114,12 +114,12 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
               </SelectContent>
             </Select>
             {provider && <p className="text-sm text-muted-foreground">{provider.description}</p>}
-          </div>
+          </Field>
           {provider?.fields.map((field) => (
-            <div key={`${provider.key}-${field.name}`} className="stack-field">
-              <Label htmlFor={field.name}>{field.label}</Label>
+            <Field key={`${provider.key}-${field.name}`}>
+              <FieldLabel htmlFor={field.name}>{field.label}</FieldLabel>
               <Input id={field.name} name={field.name} type="password" autoComplete="off" required />
-            </div>
+            </Field>
           ))}
           {error && (
             <p role="alert" className="text-sm text-destructive">

@@ -152,6 +152,18 @@ A heading always sits closer to its content than to the block above it. A sectio
 - Two levels at most: block, then rows. The reply taxonomy groups subcategories under an h3 per category inside one Subcategories block.
 - Width: the content column is `max-w-3xl`. Jobs and Inbound events take `max-w-5xl`: their tables carry six to eight columns of times, counts and errors. Tables in Settings sit flush in the column (`ScrollableTable`), not in a card.
 - The Settings overview (`/settings`) keeps its bordered link lists: they are navigation rows, not content blocks.
+- Groups follow what a setting changes, and each setting has one home: You, Workspace, Sending, CRM, AI, Operations (`settings-nav-config.ts`).
+
+### Settings forms
+
+Every Settings form builds from the same parts, so a person learns one way to change a value:
+
+- **Fields.** shadcn's `Field` family (`src/components/ui/field.tsx`): `FieldGroup` stacks fields at group space, `Field` holds a `FieldLabel`, the control and an optional `FieldDescription` at field space, `FieldSet` with a `FieldLegend variant="label"` groups related controls, and `FieldError` carries the error. A checkbox or radio sits in `Field orientation="horizontal"`. In a flex row a field takes `className="w-auto"`.
+- **Save.** A form is controlled and compares its values with what is saved. `SaveRow` (`settings/settings-form.tsx`) ends it: the error, then Save, which stays off until something changed, then "Unsaved changes" and a ghost Discard while it is on. The button is always the default size and reads Save. `useLeaveGuard` asks before the tab closes with unsaved changes. A list that saves each step at once (custom fields, stages) has no Save.
+- **Members.** A member sees the same page with the controls off or hidden and the `AdminNotice` once at the top. No Save row.
+- **Add and edit.** A list of things (subcategories, knowledge documents) leads the page. Add sits on the block's heading row as an outline button, and Add and Edit open the same `ConfirmDialog` with the form in its body and Save as the confirm. A short single-value change (a field or stage name) edits in place: Enter saves, Escape cancels, Save stays off while the name is unchanged.
+- **Row actions.** Ghost `sm` buttons at the end of the row; the destructive step is the dialog's red confirm, never a red button in the row. Reordering uses `ReorderButtons` (arrow icons, "Move {name} up").
+- **Pickers.** A long list is a searchable `Combobox` (`TimeZoneSelect`, `CountrySelect`); a short fixed list is a `Select`. Sending days are a `ToggleGroup` of outline buttons (`WorkingHoursFields`, shared by mailboxes and LinkedIn accounts), and a choice between two modes with an explanation is a `RadioGroup` of horizontal fields.
 
 ### Inbox thread
 

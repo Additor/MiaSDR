@@ -43,6 +43,9 @@ const ACTION_LABEL: Record<string, string> = {
   "integration.deleted": "Removed an API key",
   "integration.ai_model_changed": "Changed the AI model",
   "integration.secret_viewed": "Viewed the webhook secret",
+  "mailbox.test_sent": "Sent a test email",
+  "linkedin.connect_link_created": "Created a LinkedIn connection link",
+  "linkedin.reconnect_link_created": "Created a LinkedIn reconnect link",
   "suppression.added": "Added addresses to the suppression list",
   "suppression.removed": "Removed an address from the suppression list",
   "deal_stage.created": "Added a pipeline stage",
@@ -68,7 +71,8 @@ function details(meta: Record<string, unknown>): string | null {
   const parts: string[] = [];
   if ((typeof meta.from === "string" || typeof meta.from === "number") && (typeof meta.to === "string" || typeof meta.to === "number")) parts.push(`${meta.from} → ${meta.to}`);
   for (const [key, value] of Object.entries(meta)) {
-    if (key === "from" || key === "to" || key === "ids") continue;
+    // Ids and machine timestamps mean nothing to a reader.
+    if (key === "from" || key === "to" || key === "ids" || /(^id|Id|_id|At|_at)$/.test(key)) continue;
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") parts.push(`${humanizeToken(key).toLowerCase()} ${value}`);
   }
   return parts.length > 0 ? parts.slice(0, 4).join(", ") : null;

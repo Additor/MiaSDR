@@ -5,8 +5,8 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { callApi } from "@/lib/api-client";
@@ -112,12 +112,12 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
         <SettingsSection title="Invite someone" description="Sign-up is by invitation only. An invitation lasts 7 days.">
           <form onSubmit={invite} className="stack-group">
             <div className="grid gap-group sm:grid-cols-[1fr_12rem]">
-              <div className="stack-field">
-                <Label htmlFor="email">Email address</Label>
+              <Field>
+                <FieldLabel htmlFor="email">Email address</FieldLabel>
                 <Input id="email" name="email" type="email" required />
-              </div>
-              <div className="stack-field">
-                <Label htmlFor="role">Role</Label>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="role">Role</FieldLabel>
                 <Select items={grantable} value={role} onValueChange={(v) => v && setRole(v)}>
                   <SelectTrigger id="role" className="w-full">
                     <SelectValue />
@@ -130,7 +130,7 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </Field>
             </div>
             {error && (
               <p role="alert" className="text-sm text-destructive">

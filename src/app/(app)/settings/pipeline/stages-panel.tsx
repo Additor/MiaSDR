@@ -1,18 +1,18 @@
 "use client";
 
-import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { StageSetting, StageSettings } from "@/contexts/deals/application/deal-stages";
 import { callApi } from "@/lib/api-client";
 import { AdminNotice } from "../admin-notice";
+import { ReorderButtons } from "../settings-form";
 import { RULED_LIST, SettingsSection } from "../settings-section";
 import { moveTarget, stageBlocker } from "./stage-rules";
 
@@ -127,10 +127,10 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
                       onChange={(e) => setRenaming({ id: renaming.id, name: e.target.value })}
                       onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
                       maxLength={60}
-                      className="h-7 max-w-56 min-w-0 flex-1"
+                      className="max-w-56 min-w-0 flex-1"
                       autoFocus
                     />
-                    <Button type="submit" size="sm" disabled={pending || renaming.name.trim() === ""}>
+                    <Button type="submit" size="sm" disabled={pending || renaming.name.trim() === "" || renaming.name.trim() === stage.name}>
                       Save
                     </Button>
                     <Button type="button" variant="ghost" size="sm" onClick={() => setRenaming(null)}>
@@ -146,12 +146,7 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
                 <span className="text-xs text-muted-foreground tabular-nums">{stage.dealCount === 1 ? "1 deal" : `${stage.dealCount} deals`}</span>
                 {canManage && !settings.virtual && !editing && (
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon-sm" aria-label={`Move ${stage.name} up`} disabled={pending || moveTarget(stages, index, -1) === null} onClick={() => move(index, -1)}>
-                      <ArrowUpIcon />
-                    </Button>
-                    <Button variant="ghost" size="icon-sm" aria-label={`Move ${stage.name} down`} disabled={pending || moveTarget(stages, index, 1) === null} onClick={() => move(index, 1)}>
-                      <ArrowDownIcon />
-                    </Button>
+                    <ReorderButtons name={stage.name} canUp={moveTarget(stages, index, -1) !== null} canDown={moveTarget(stages, index, 1) !== null} disabled={pending} onMove={(direction) => move(index, direction)} />
                     <Button variant="ghost" size="sm" disabled={pending} onClick={() => setRenaming({ id: stage.id as string, name: stage.name })} aria-label={`Rename ${stage.name}`}>
                       Rename
                     </Button>
@@ -174,12 +169,12 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
       {canManage && (
         <SettingsSection title="Add a stage" description="A new stage goes after the last stage of its kind.">
           <form onSubmit={add} className="flex flex-wrap items-end gap-3">
-            <div className="stack-field min-w-0 flex-1 basis-48">
-              <Label htmlFor="new-stage-name">Name</Label>
+            <Field className="min-w-0 flex-1 basis-48">
+              <FieldLabel htmlFor="new-stage-name">Name</FieldLabel>
               <Input id="new-stage-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="Negotiation" />
-            </div>
-            <div className="stack-field">
-              <Label htmlFor="new-stage-kind">Kind</Label>
+            </Field>
+            <Field className="w-auto">
+              <FieldLabel htmlFor="new-stage-kind">Kind</FieldLabel>
               <Select items={KIND_ITEMS} value={kind} onValueChange={(v) => v && setKind(v)}>
                 <SelectTrigger id="new-stage-kind" className="w-28">
                   <SelectValue />
@@ -192,7 +187,7 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
             <Button type="submit" disabled={pending || name.trim() === ""}>
               Add stage
             </Button>
