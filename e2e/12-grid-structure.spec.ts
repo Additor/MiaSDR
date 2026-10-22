@@ -91,9 +91,16 @@ test.describe("grid structure", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("tab", { name: "Leads" })).toBeFocused();
 
+    // A rename that ends with a click elsewhere saves and leaves focus where the click went.
+    await page.getByRole("tab", { name: "Leads" }).dblclick();
+    await page.getByRole("textbox", { name: "Table name" }).fill("Leads Q4");
+    await page.getByRole("textbox", { name: "Search rows" }).click();
+    await expect(page.getByRole("tab", { name: "Leads Q4" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Search rows" })).toBeFocused();
+
     await page.reload();
     await expect(page.getByRole("heading", { name: "C2 renamed" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Leads" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Leads Q4" })).toBeVisible();
   });
 
   test("a column is resized by dragging and hidden from its menu, and the hidden state sticks", async ({ page }) => {

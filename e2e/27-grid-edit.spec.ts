@@ -52,19 +52,19 @@ test.describe("grid undo and redo", () => {
   test("Ctrl/Cmd+Z, Shift+Z and Y step through a typed edit, and the formula follows", async ({ page }) => {
     const seeded = await open(page, "G1 undo keys");
     const score = page.getByRole("gridcell", { name: /^Score: 1$/ });
-    await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
 
     await page.getByRole("gridcell", { name: "Name: Person 1", exact: true }).click();
     await page.keyboard.type("Edited");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("gridcell", { name: "Name: Edited", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeEnabled();
 
     await page.getByRole("gridcell", { name: "Name: Edited", exact: true }).click();
     await page.keyboard.press(`${MOD}+z`);
     await expect(page.getByRole("gridcell", { name: "Name: Person 1", exact: true })).toBeVisible();
     expect(await nameOf(page, seeded)).toBe("Person 1");
-    await expect(page.getByRole("button", { name: "Redo" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Redo", exact: true })).toBeEnabled();
 
     await page.keyboard.press(`${MOD}+Shift+z`);
     await expect(page.getByRole("gridcell", { name: "Name: Edited", exact: true })).toBeVisible();
@@ -89,8 +89,8 @@ test.describe("grid undo and redo", () => {
 
   test("the toolbar buttons undo and redo, and disable at the ends", async ({ page }) => {
     const seeded = await open(page, "G1 undo buttons");
-    const undo = page.getByRole("button", { name: "Undo" });
-    const redo = page.getByRole("button", { name: "Redo" });
+    const undo = page.getByRole("button", { name: "Undo", exact: true });
+    const redo = page.getByRole("button", { name: "Redo", exact: true });
     await page.getByRole("gridcell", { name: "Name: Person 2", exact: true }).click();
     await page.keyboard.press("Delete");
     await expect(page.getByRole("gridcell", { name: "Name: empty", exact: true })).toBeVisible();
@@ -120,7 +120,7 @@ test.describe("grid undo and redo", () => {
     await expect(page.getByRole("gridcell", { name: "Name: Person 3", exact: true })).toBeVisible();
     const undone = await gridPage(page.request, seeded.tableId);
     expect(undone.rows.slice(0, 3).map((r) => [r.cells[seeded.keys.Name], r.cells[seeded.keys.Email]])).toEqual([["Person 1", "person1@seed.test"], ["Person 2", "person2@seed.test"], ["Person 3", "person3@seed.test"]]);
-    await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
 
     await page.keyboard.press(`${MOD}+Shift+z`);
     await expect(page.getByRole("gridcell", { name: "Name: Cy", exact: true })).toBeVisible();
@@ -150,13 +150,13 @@ test.describe("grid undo and redo", () => {
     await page.getByRole("gridcell", { name: "Name: Person 1", exact: true }).click();
     await page.keyboard.type("Typed");
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("button", { name: "Undo" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeEnabled();
 
     await page.getByRole("button", { name: "Column menu for Site" }).click();
     await page.getByRole("menuitem", { name: "Delete column" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete column" }).click();
     await expect(page.getByRole("columnheader", { name: /^Site/ })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
   });
 });
 
@@ -230,7 +230,7 @@ test.describe("grid paste past the end", () => {
     expect(undone.rows[29].cells[seeded.keys.Site]).toBe(site(30));
     expect(undone.rows[30].cells[seeded.keys.Site] ?? null).toBeNull();
     expect(undone.rows[31].cells[extra.key] ?? null).toBeNull();
-    await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
 
     await page.keyboard.press(`${MOD}+Shift+z`);
     await expect.poll(async () => (await gridPage(page.request, seeded.tableId)).rows[31].cells[seeded.keys.Site]).toBe("a3");

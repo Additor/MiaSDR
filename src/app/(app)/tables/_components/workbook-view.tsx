@@ -55,6 +55,8 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [editingTab, setEditingTab] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // Set once the workbook is deleted: the grid unmounts so it stops asking for tables that are gone.
+  const [deleted, setDeleted] = useState(false);
   // Rename from a tab's menu: the menu must not take focus back from the field it opened.
   const renaming = useRef(false);
 
@@ -106,9 +108,17 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
     void reorder(ids);
   }
 
+  // The route's metadata names the page "Table"; the browser tab names the open workbook instead, and gets the route's
+  // title back when the page goes.
+  const workbookName = workbook?.name;
   useEffect(() => {
-    if (workbook) document.title = `${workbook.name} · MiaSDR`;
-  }, [workbook]);
+    if (!workbookName) return;
+    const before = document.title;
+    document.title = `${workbookName} · MiaSDR`;
+    return () => {
+      document.title = before;
+    };
+  }, [workbookName]);
 
   useEffect(() => {
     if (!editingTab) renaming.current = false;
@@ -248,10 +258,11 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                       value={tab.name}
                       label="Table name"
                       onSave={(name) => renameTable(tab.id, name)}
-                      onDone={() => {
+                      onDone={(_saved, end) => {
                         setEditingTab(null);
-                        // Back to the tab, after it renders again in place of the field.
-                        setTimeout(() => document.getElementById(`tab-${tab.id}`)?.focus(), 0);
+                        // After Enter or Escape, back to the tab once it renders again in place of the field. A click
+                        // elsewhere keeps its focus.
+                        if (end === "key") setTimeout(() => document.getElementById(`tab-${tab.id}`)?.focus(), 0);
                       }}
                     />
                   </span>
@@ -348,7 +359,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
       )}
 
       <div id="table-panel" role="tabpanel" aria-labelledby={activeId ? `tab-${activeId}` : undefined} className="flex min-h-0 flex-1 flex-col">
-        {activeId && <TableWorkspace key={activeId} tableId={activeId} />}
+        {activeId && !deleted && <TableWorkspace key={activeId} tableId={activeId} />}
       </div>
 
       {action?.kind === "moveWorkbook" && (
@@ -377,6 +388,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
           onConfirm={async () => {
             const res = await gridRequest(`${gridUrl.workbooks}/${workbookId}`, "DELETE");
             if (!res.ok) throw new Error(res.error ?? "Could not delete the workbook. Try again.");
+            setDeleted(true);
             toast.success(`Deleted "${workbook.name}".`);
             router.push(workbook.folderId ? `/tables?folder=${workbook.folderId}` : "/tables");
           }}

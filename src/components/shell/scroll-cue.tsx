@@ -27,7 +27,13 @@ export function ScrollCue({ children, hint, className, after, ...rest }: { child
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     if (el.firstElementChild) observer.observe(el.firstElementChild);
-    return () => observer.disconnect();
+    // Content can grow without the scroller changing size, such as a tab added or renamed in a row of tabs.
+    const changes = new MutationObserver(measure);
+    changes.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      changes.disconnect();
+    };
   }, [measure]);
 
   return (

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { gridRequest, gridUrl } from "../_lib/data/client";
+import { plural } from "../_lib/view/format";
 import type { FolderSummary, WorkbookSummary } from "../_lib/data/types";
 import { ErrorText } from "./form-bits";
 import { ImportWizard } from "./import-wizard";
@@ -28,7 +29,6 @@ type Action =
   | { kind: "move"; type: "folder" | "workbook"; id: string; name: string; current: string | null }
   | { kind: "delete"; type: "folder" | "workbook"; id: string; name: string };
 
-const plural = (n: number, word: string) => `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
 
 /** Workbook and folder browser: create, rename, move, delete and search. */
 export function TablesBrowser() {

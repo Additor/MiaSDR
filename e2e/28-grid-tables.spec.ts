@@ -49,8 +49,7 @@ test.describe("grid tables: export and import", () => {
 
     const exportCsv = async () => {
       const download = page.waitForEvent("download");
-      await page.getByRole("button", { name: "Export options" }).click();
-      await page.getByRole("menuitem", { name: "Export CSV" }).click();
+      await page.getByRole("button", { name: "Export CSV" }).click();
       const file = await download;
       const stream = await file.createReadStream();
       let text = "";

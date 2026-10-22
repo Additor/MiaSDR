@@ -5,6 +5,9 @@ import { runnerActionKey } from "@/contexts/grid/domain/verified-push";
 import { OUTCOMES } from "../data/outcomes";
 import type { CellMeta, GridColumn, GridRow } from "../data/types";
 
+/** "1 filter", "1,204 rows": a count with its word, in English. */
+export const plural = (n: number, word: string) => `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
+
 export const TYPE_LABELS: Record<string, string> = {
   text: "Text",
   number: "Number",

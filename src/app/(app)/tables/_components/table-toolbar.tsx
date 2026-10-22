@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Input } from "@/components/ui/input";
 import { OUTCOMES } from "../_lib/data/outcomes";
 import type { GridColumn } from "../_lib/data/types";
+import { plural } from "../_lib/view/format";
 import { RunProgress } from "./run-controls";
 
 type Progress = ComponentProps<typeof RunProgress>;
@@ -53,12 +54,11 @@ interface Props {
   onShowFailed?: () => void;
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
 /**
  * The row of controls above the grid, in two groups. On the left, what you see: search, filter and sort, columns and
  * the row count. On the right, what you do, ending on the one filled button: Add, Push to campaign, Enrich, then Run
- * once the table has a column that runs. Enrich is filled until then. On a phone the left group takes the first line.
+ * once the table has a column that runs. Enrich is filled until then. Push and Export share one group: the two ways rows
+ * leave the table. On a phone the left group takes the first line.
  */
 export function TableToolbar(props: Props) {
   const { columns, hidden } = props;
@@ -160,16 +160,9 @@ export function TableToolbar(props: Props) {
           <Button variant="outline" size="sm" onClick={props.onPush}>
             <SendIcon /> <span className="max-sm:sr-only">Push to campaign</span>
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="icon-sm" aria-label="Export options" />}>
-              <ChevronDownIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={props.onExport} disabled={props.busy}>
-                <DownloadIcon /> Export CSV
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="outline" size="icon-sm" aria-label="Export CSV" title="Export CSV" onClick={props.onExport} disabled={props.busy}>
+            <DownloadIcon />
+          </Button>
         </ButtonGroup>
 
         <DropdownMenu>

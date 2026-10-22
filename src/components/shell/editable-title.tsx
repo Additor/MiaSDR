@@ -1,7 +1,7 @@
 "use client";
 
 import { PencilIcon } from "lucide-react";
-import { useCallback, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -11,15 +11,20 @@ export type RenameResult = string | null;
 /** The longest name the grid and the rest of the app store. */
 export const MAX_NAME = 200;
 
+/** How an edit ended: from the keyboard (Enter or Escape), or by leaving the field for something else. */
+export type RenameEnd = "key" | "blur";
+
 /**
  * The field a name turns into while you edit it, at the size of the text it replaces. Enter saves and keeps the field
  * open on an empty name; leaving the field saves too, and drops an empty or unchanged name. Escape cancels. A failed
  * save keeps what you typed with the reason under it; leaving the field again after that gives up and restores the name.
+ * `onDone` says how the edit ended, so the caller moves focus back only after a key, never away from a click elsewhere.
  */
-export function NameInput({ value, label, onSave, onDone, className }: { value: string; label: string; onSave: (name: string) => Promise<RenameResult>; onDone: (saved: boolean) => void; className?: string }) {
+export function NameInput({ value, label, onSave, onDone, className }: { value: string; label: string; onSave: (name: string) => Promise<RenameResult>; onDone: (saved: boolean, end: RenameEnd) => void; className?: string }) {
   const errorId = useId();
   const [text, setText] = useState(value);
-  const [error, setError] = useState<{ text: string; top: number; left: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
   const [pending, setPending] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   // The text a save last refused: leaving the field with it still there gives up instead of asking again.
@@ -27,38 +32,49 @@ export function NameInput({ value, label, onSave, onDone, className }: { value: 
   const done = useRef(false);
 
   const finish = useCallback(
-    (saved: boolean) => {
+    (saved: boolean, end: RenameEnd) => {
       if (done.current) return;
       done.current = true;
-      onDone(saved);
+      onDone(saved, end);
     },
     [onDone],
   );
 
-  async function commit(fromEnter: boolean) {
+  // The reason floats under the field from the page's top layer, so a tab strip that scrolls or a title that truncates
+  // cannot clip it. It follows the field while the page scrolls or resizes.
+  useEffect(() => {
+    if (!error) return;
+    const measure = () => {
+      const box = input.current?.getBoundingClientRect();
+      if (box) setPlace({ top: box.bottom + 4, left: box.left });
+    };
+    measure();
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, [error]);
+
+  async function commit(end: RenameEnd) {
     if (pending || done.current) return;
     const name = text.trim();
-    if (name === value.trim()) return finish(false);
+    if (name === value.trim()) return finish(false, end);
     if (!name) {
-      if (fromEnter) return showError("Give it a name.");
-      return finish(false);
+      if (end === "key") return setError("Give it a name.");
+      return finish(false, end);
     }
-    if (!fromEnter && refused.current === name) return finish(false);
+    if (end === "blur" && refused.current === name) return finish(false, end);
     setPending(true);
     setError(null);
     const problem = await onSave(name);
     setPending(false);
-    if (!problem) return finish(true);
+    if (!problem) return finish(true, end);
     refused.current = name;
-    showError(problem);
+    setError(problem);
+    // The field stays focusable while it saves (read-only, not disabled), so focus can come straight back to it.
     input.current?.focus();
-  }
-
-  // The reason floats under the field from the page's top layer, so a tab strip that scrolls or a title that truncates
-  // cannot clip it.
-  function showError(text: string) {
-    const box = input.current?.getBoundingClientRect();
-    setError({ text, top: (box?.bottom ?? 0) + 4, left: box?.left ?? 0 });
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -66,10 +82,10 @@ export function NameInput({ value, label, onSave, onDone, className }: { value: 
     event.stopPropagation();
     if (event.key === "Enter") {
       event.preventDefault();
-      void commit(true);
+      void commit("key");
     } else if (event.key === "Escape") {
       event.preventDefault();
-      finish(false);
+      finish(false, "key");
     }
   }
 
@@ -83,23 +99,25 @@ export function NameInput({ value, label, onSave, onDone, className }: { value: 
         autoFocus
         maxLength={MAX_NAME}
         value={text}
-        disabled={pending}
+        readOnly={pending}
+        aria-busy={pending || undefined}
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => {
           setText(e.target.value);
           setError(null);
         }}
         onKeyDown={onKeyDown}
-        onBlur={() => void commit(false)}
+        onBlur={() => void commit("blur")}
         className={cn(
-          "h-7 max-w-full min-w-24 rounded-md border border-input bg-background px-1.5 [field-sizing:content] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 aria-invalid:border-destructive aria-invalid:ring-destructive/20",
+          "h-7 max-w-full min-w-24 rounded-md border border-input bg-background px-1.5 [field-sizing:content] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 read-only:opacity-60 aria-invalid:border-destructive aria-invalid:ring-destructive/20",
           className,
         )}
       />
       {error &&
+        place &&
         createPortal(
-          <span id={errorId} role="alert" style={{ top: error.top, left: error.left }} className="fixed z-50 w-max max-w-72 rounded-lg bg-popover px-2 py-1 text-xs font-normal text-destructive shadow-md ring-1 ring-foreground/10">
-            {error.text}
+          <span id={errorId} role="alert" style={{ top: place.top, left: place.left }} className="fixed z-50 w-max max-w-72 rounded-lg bg-popover px-2 py-1 text-xs font-normal text-destructive shadow-md ring-1 ring-foreground/10">
+            {error}
           </span>,
           document.body,
         )}
@@ -136,9 +154,9 @@ export function EditableTitle({ value, label, onSave, as: Tag = "h1", className 
               if (!problem) setAnnounce(`Renamed to ${name}`);
               return problem;
             }}
-            onDone={() => {
+            onDone={(_saved, end) => {
               setEditing(false);
-              setReturnFocus(true);
+              setReturnFocus(end === "key");
             }}
             className="-ml-1.5"
           />
@@ -163,7 +181,7 @@ export function EditableTitle({ value, label, onSave, as: Tag = "h1", className 
       </Tag>
       {/* Outside the heading, so the heading reads as the name alone. */}
       <span id={hintId} className="sr-only">
-        Rename {label.toLowerCase()}
+        Press Enter or F2 to rename
       </span>
       <span role="status" className="sr-only">
         {announce}
