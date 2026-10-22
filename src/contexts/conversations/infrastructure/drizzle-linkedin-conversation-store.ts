@@ -4,7 +4,7 @@ import { db } from "@/platform/db/client";
 import { conversations, messages, people, records } from "@/platform/db/schema";
 import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/linkedin-ports";
 import { defaultPipelineId, findOrCreateRecord, type Tx } from "./drizzle-conversation-store";
-import { stopPersonOutreachOnReplyTx } from "@/platform/db/sequence-stop";
+import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
 import { staleOpenDraftsTx } from "../after-reply/infrastructure/sequence-run-tx";
 import { detachPrivateThreadTx } from "./private-thread-detach";

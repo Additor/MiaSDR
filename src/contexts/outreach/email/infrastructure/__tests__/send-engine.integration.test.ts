@@ -346,7 +346,7 @@ describeDb("email send engine", () => {
     it("blocks the send after an unsubscribe and keeps the suppressed status", async () => {
       const f = await fixture();
       const claim = await claimFor(f);
-      const { drizzleSuppressionStore } = await import("../../../infrastructure/drizzle-outreach-store");
+      const drizzleSuppressionStore = await (await import("@/test-support/suppression")).suppressionStore();
       await drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: f.emails[0], reason: "unsubscribed" });
       expect(await store.checkBlockers(claim)).toBe("enrollment_stopped");
       await store.abandon(claim, "enrollment_stopped", current);
@@ -392,7 +392,7 @@ describeDb("email send engine", () => {
 
   it("stops an address's sequences when it unsubscribes, and nothing else", async () => {
     const f = await fixture({ people: 2 });
-    const { drizzleSuppressionStore } = await import("../../../infrastructure/drizzle-outreach-store");
+    const drizzleSuppressionStore = await (await import("@/test-support/suppression")).suppressionStore();
     const provider = new FakeMailboxProvider();
     await send.sendNextEmail(deps(provider), f.mailboxIds[0]); // lead 0 is now active
 
@@ -415,7 +415,7 @@ describeDb("email send engine", () => {
   it("does not suppress the same address in another organization", async () => {
     const a = await fixture({ people: 0 });
     const b = await fixture({ people: 0 });
-    const { drizzleSuppressionStore } = await import("../../../infrastructure/drizzle-outreach-store");
+    const drizzleSuppressionStore = await (await import("@/test-support/suppression")).suppressionStore();
     await drizzleSuppressionStore.suppressEmail({ organizationId: a.org, email: "shared@x.test", reason: "unsubscribed" });
     const rows = await sql`select organization_id from suppression_list where email = 'shared@x.test'`;
     expect(rows.map((r) => r.organization_id)).toEqual([a.org]);

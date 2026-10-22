@@ -1,3 +1,4 @@
+import type { DbTx } from "@/platform/db/client";
 import type { InboundClass } from "../email/domain/inbound";
 import type { InboundEmail } from "./ports";
 
@@ -56,6 +57,15 @@ export interface InboxLinkedInMessage {
   privateCampaignId?: string | null;
   bodyText: string;
   receivedAt: Date;
+}
+
+/**
+ * Conversations' follow-up sequences, as outreach sees them. Suppressing an address ends that person's runs in the same
+ * transaction. Conversations implements it and `src/composition/inbox-filing.ts` passes it in, so outreach never
+ * imports conversations.
+ */
+export interface FollowUpStop {
+  endEmailRunsTx(tx: DbTx, organizationId: string, email: string, reason: string, now: Date): Promise<number>;
 }
 
 /**

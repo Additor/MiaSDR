@@ -76,8 +76,6 @@ const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
     "@/contexts/tenancy/infrastructure/schema",
   ],
   "src/platform/db/columns.ts": ["@/contexts/tenancy/infrastructure/schema"],
-  "src/platform/db/sequence-stop.ts": ["@/contexts/conversations/domain/draft-status", "@/contexts/outreach/domain/enrollment-status"],
-  "src/platform/jobs/rollover-registry.ts": ["@/contexts/leads/infrastructure/backfill-linkedin-urls"],
 };
 
 /** `{ file: specifiers }` of the files under `tier` that import what the tier may not. */

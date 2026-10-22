@@ -3,7 +3,7 @@ import { recordAudit } from "@/platform/db/audit";
 import { db, type DbHandle } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, events, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
 import type { EnrollmentRestoreStore, RestoreRefused } from "../application/enrollment-restore";
-import { lockPersonOutreachTx } from "@/platform/db/sequence-stop";
+import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { RESTORE_REFUSAL_TEXT, decideRestore, restoredProgress } from "../domain/enrollment-restore";
 import { notContactSql } from "./contact-guard";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";

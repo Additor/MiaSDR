@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { InvalidUnsubscribeToken, unsubscribeByToken } from "@/contexts/outreach/email/application/unsubscribe";
-import { unsubscribeDeps } from "@/contexts/outreach/infrastructure/composition";
+import { unsubscribe } from "@/composition/inbox-filing";
 
 const INVALID = { error: "invalid or expired unsubscribe link" };
 
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   if (!token) return NextResponse.json(INVALID, { status: 400 });
 
   try {
-    const { email } = await unsubscribeByToken(unsubscribeDeps(), token);
+    const { email } = await unsubscribeByToken(unsubscribe(), token);
     return NextResponse.json({ ok: true, email });
   } catch (error) {
     if (error instanceof InvalidUnsubscribeToken) return NextResponse.json(INVALID, { status: 400 });

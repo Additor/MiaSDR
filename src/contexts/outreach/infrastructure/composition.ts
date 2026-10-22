@@ -5,7 +5,7 @@ import type { EmailRulesDeps } from "../email/application/email-rules";
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";
-import type { InboxFiling } from "../application/inbound-ports";
+import type { FollowUpStop, InboxFiling } from "../application/inbound-ports";
 import { createInboxJobs } from "../email/application/inbox-jobs";
 import type { MailboxProvider } from "../application/ports";
 import type { LeadActivityDeps } from "../application/read-lead-activity";
@@ -17,7 +17,7 @@ import { drizzleEnrollmentAdminStore } from "./drizzle-enrollment-admin";
 import { createDrizzleInboundStore } from "../email/infrastructure/drizzle-inbound-store";
 import { readLeadStatuses } from "./drizzle-lead-statuses";
 import { drizzleMergeFieldSource } from "./drizzle-merge-fields";
-import { drizzleOutreachStore, drizzleSuppressionStore } from "./drizzle-outreach-store";
+import { createSuppressionStore, drizzleOutreachStore } from "./drizzle-outreach-store";
 import { readReachability } from "./drizzle-reachability";
 import { drizzleTestSendStore } from "../email/infrastructure/drizzle-test-send-store";
 import { drizzleCampaignStore, drizzleMailboxStore } from "./drizzle-management-stores";
@@ -73,8 +73,8 @@ export const emailRulesDeps = (): EmailRulesDeps => ({ settings: drizzleChannelS
 /** Merge fields offered in the sequence editor. */
 export const mergeFieldDeps = (): { source: MergeFieldSource } => ({ source: drizzleMergeFieldSource });
 
-/** Public unsubscribe link: the suppression store and the token secret. */
-export const unsubscribeDeps = (): { store: SuppressionStore; secret: string } => ({ store: drizzleSuppressionStore, secret: env().UNSUBSCRIBE_SECRET });
+/** Public unsubscribe link: the suppression store and the token secret. src/composition passes conversations' follow-up stop. */
+export const unsubscribeDeps = (followUps: FollowUpStop): { store: SuppressionStore; secret: string } => ({ store: createSuppressionStore(followUps), secret: env().UNSUBSCRIBE_SECRET });
 
 export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, admin: drizzleEnrollmentAdminStore });
 
@@ -108,13 +108,13 @@ function engineDeps(): EngineDeps {
 }
 
 /** Email jobs run only when an adapter is selected: Gmail, or the demo `fake` provider. */
-export function emailJobs(inbox: InboxFiling) {
+export function emailJobs(inbox: InboxFiling, followUps: FollowUpStop) {
   const provider = env().MAILBOX_PROVIDER;
   if (provider !== "fake" && provider !== "gmail") return [];
   try {
     // Inbox sync first, so a reply stops its sequence before the send job looks for due follow-ups.
     return [
-      ...createInboxJobs({ store: createDrizzleInboundStore(inbox), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
+      ...createInboxJobs({ store: createDrizzleInboundStore(inbox, followUps), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
       ...createEmailJobs(engineDeps()),
       {
         name: "email.reconcile-test",

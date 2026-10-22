@@ -1,19 +1,20 @@
 import { sql } from "drizzle-orm";
-import type { db } from "./client";
-import { RETIRABLE_DRAFT_STATUSES } from "@/contexts/conversations/domain/draft-status";
-import { sqlValues } from "./sql-values";
-import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
+import type { DbTx } from "@/platform/db/client";
+import { lockPersonOutreachTx } from "@/platform/db/person-locks";
+import { sqlValues } from "@/platform/db/sql-values";
+import { stopEnrollmentsOnReplyTx } from "@/contexts/outreach/infrastructure/reply-stop";
+import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
+import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports";
 
 /**
  * Ending a follow-up sequence run from inside another write's transaction. Every path that makes further contact
  * wrong (do not contact, unsubscribe, bounce, manual suppression, a terminal stage, a closed record, a reply)
  * calls one of these in the transaction that records the trigger, so the run stops and its unsent drafts retire
- * in the same commit. The 60 second sweep stays as a safety net. This lives in shared because outreach and leads
- * own some of those writes and must not import the conversations context. It touches only raw SQL on the
- * sequence tables, so it carries no domain code.
+ * in the same commit. The 60 second sweep stays as a safety net. Conversations owns the runs, so outreach, a lower
+ * layer, reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which src/composition wires to this module.
  */
 
-export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = DbTx;
 
 export type StopFinal = "interrupted" | "cancelled";
 
@@ -126,18 +127,6 @@ export async function interruptEmailRunsTx(tx: Tx, organizationId: string, email
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
 }
 
-/**
- * Serializes the writers that decide whether a person may receive outreach: the reply stop and the restore of a removed
- * lead. They read facts about the person (a reply, another active enrollment) and then write enrollments, and
- * without a shared lock each reads the world before the other commits. The lock is transaction-scoped and keyed on the
- * person; several people are taken in id order so two callers cannot wait on each other.
- */
-export async function lockPersonOutreachTx(tx: Tx, organizationId: string, personIds: string[]): Promise<void> {
-  for (const id of [...new Set(personIds)].sort()) {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`person-outreach:${organizationId}:${id}`}, 0))`);
-  }
-}
-
 export interface ReplyStopResult {
   /** Enrollments moved from pending or active to replied, across every channel and campaign. */
   enrollmentsStopped: number;
@@ -165,16 +154,10 @@ export async function stopPersonOutreachOnReplyTx(
   );
   const personIds = people.map((p) => p.id);
   if (personIds.length === 0) return { enrollmentsStopped: 0, runsEnded: 0 };
-  const ids = sql.join(personIds.map((id) => sql`${id}::uuid`), sql`, `);
   // Same lock as a restore of a removed lead (drizzle-enrollment-restore): one of the two commits first and the other sees it.
   await lockPersonOutreachTx(tx, input.organizationId, personIds);
 
-  const stopped = rowsOf<{ id: string; person_id: string; channel: string }>(
-    await tx.execute(sql`
-      update campaign_enrollments set status = 'replied', stop_reason = 'replied', next_send_at = null, updated_at = ${ts(input.now)}
-      where organization_id = ${input.organizationId} and person_id in (${ids}) and status in ${sqlValues(LIVE_ENROLLMENT_STATUSES)}
-      returning id, person_id, channel`),
-  );
+  const stopped = await stopEnrollmentsOnReplyTx(tx, input.organizationId, personIds, input.now);
   const runsEnded = await interruptPersonRunsTx(tx, input.organizationId, personIds, "reply", input.now);
 
   for (const personId of new Set(stopped.map((e) => e.person_id))) {
@@ -187,3 +170,6 @@ export async function stopPersonOutreachOnReplyTx(
   }
   return { enrollmentsStopped: stopped.length, runsEnded };
 }
+
+/** Outreach's view of these runs: src/composition hands it to outreach's suppression store. */
+export const followUpStop: FollowUpStop = { endEmailRunsTx: interruptEmailRunsTx };

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { interruptPersonRunsTx, interruptRecordRunsTx } from "@/platform/db/sequence-stop";
+import { interruptPersonRunsTx, interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
 import { restartRecordWorkTx } from "./restart-record-work";
 import {
   aiJobs,

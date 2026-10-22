@@ -25,7 +25,6 @@ const FOREIGN_WRITES: Record<string, string[]> = {
   "src/contexts/tenancy/infrastructure/drizzle-member-store.ts": ["sessions"],
   "src/contexts/tenancy/infrastructure/drizzle-setup-store.ts": ["accounts", "users"],
   "src/platform/db/audit.ts": ["auditLog"],
-  "src/platform/db/sequence-stop.ts": ["campaign_enrollments", "drafts", "events", "records", "sequence_runs", "sequence_step_runs"],
 };
 
 /** Source files that import a higher layer's tables from a schema module, with those tables. `platform` sits below every context. Shrink only. */

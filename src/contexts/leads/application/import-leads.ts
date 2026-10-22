@@ -1,4 +1,6 @@
 import type { DbHandle } from "@/platform/db/client";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import type { Actor } from "@/shared/errors";
 import { buildImportSummary, RESULT_EXAMPLES, type ImportSummary } from "../domain/import-summary";
 import {
   buildCandidates,
@@ -97,8 +99,8 @@ export interface ImportCommand {
   rows: Array<Record<string, string>>;
   mapping: Mapping;
   defaultCountry?: string;
-  /** True only for an owner or admin: a header that matches an archived column then restores it. Otherwise the import is refused with a message. */
-  restoreArchivedColumns?: boolean;
+  /** The importer's role. An owner or admin restores an archived column a header matches; anyone else, or a system import with no role, is refused with a message. */
+  role?: Actor["role"];
   /** An open transaction of the caller, so the import commits or rolls back with the caller's other writes. */
   tx?: DbHandle;
 }
@@ -129,7 +131,7 @@ async function prepare(deps: { defaultPhoneCountry?: (organizationId: string) =>
       memberIds: built.candidates.flatMap((c) => (c.linkedinMemberId ? [c.linkedinMemberId] : [])),
       domains: [...new Set(built.candidates.flatMap((c) => (c.companyDomain ? [c.companyDomain] : [])))],
     },
-    restoreArchivedColumns: command.restoreArchivedColumns === true,
+    restoreArchivedColumns: isOwnerOrAdmin(command.role),
   };
 }
 

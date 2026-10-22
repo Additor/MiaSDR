@@ -235,8 +235,7 @@ describeDb("custom column registry", () => {
           headers: ["Email", label],
           rows: rows.map(([email, value]) => ({ Email: email, [label]: value })),
           mapping: { Email: "email", [label]: `custom:${label}` },
-          // The route passes the same value for the signed-in role.
-          restoreArchivedColumns: actor.role === "owner" || actor.role === "admin",
+          role: actor.role,
         },
       );
     };

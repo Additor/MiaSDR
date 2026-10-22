@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
-import { drizzleSuppressionStore } from "@/contexts/outreach/infrastructure/drizzle-outreach-store";
+import { createSuppressionStore } from "@/contexts/outreach/infrastructure/drizzle-outreach-store";
+import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
 import { restartRecordWorkTx } from "./restart-record-work";
 import { aiJobs, classifications, conversations, drafts, events, people, records, subcategories } from "@/platform/db/schema";
@@ -141,7 +142,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
     if (!head) throw new NotFoundError("Conversation not found");
     if (!head.email) throw new ConflictError("This person has no email address to suppress.");
     const email = head.email.toLowerCase();
-    await drizzleSuppressionStore.suppressEmail({ organizationId: input.organizationId, email, reason: "unsubscribed", note: "Asked to stop in a reply." });
+    await createSuppressionStore(followUpStop).suppressEmail({ organizationId: input.organizationId, email, reason: "unsubscribed", note: "Asked to stop in a reply." });
     await db.transaction(async (tx) => {
       // A reply that is waiting for review would be refused at send time anyway; retire it now.
       await tx.update(drafts).set({ status: "stale", error: "The sender was suppressed." }).where(and(eq(drafts.recordId, head.recordId), eq(drafts.status, "awaiting_review")));

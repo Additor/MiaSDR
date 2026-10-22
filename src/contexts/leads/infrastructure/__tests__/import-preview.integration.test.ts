@@ -59,6 +59,7 @@ describeDb("import dry run", () => {
   }
 
   const command = (org: { id: string; userId: string }, rows: Row[], restoreArchivedColumns: boolean) => ({
+    role: restoreArchivedColumns ? ("admin" as const) : ("member" as const),
     organizationId: org.id,
     userId: org.userId,
     filename: "p.csv",
@@ -66,7 +67,6 @@ describeDb("import dry run", () => {
     rows,
     mapping,
     defaultCountry: "US",
-    restoreArchivedColumns,
   });
 
   beforeAll(async () => {

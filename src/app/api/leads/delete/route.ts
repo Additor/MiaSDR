@@ -3,7 +3,6 @@ import { MAX_DELETE_IDS, deleteLeads } from "@/contexts/leads/application/lead-m
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
 import { leadDeps } from "@/contexts/leads/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
-import { ValidationError } from "@/shared/errors";
 
 /** Every `LeadFilter` key the list sends except `ids`, which belong to the other branch. */
 const filterSchema = z
@@ -45,8 +44,6 @@ export async function POST(request: Request) {
     }
     // The same parser as the URL, so a value that does not parse is dropped here too and cannot widen or skip a condition.
     const f = body.filter ?? {};
-    // Delete all matching is offered for leads only: a contact has history and is never deleted.
-    if (f.lifecycle !== undefined && f.lifecycle !== "lead") throw new ValidationError("Delete all matching works on leads only. Switch the list to leads first.");
     const raw: Record<string, string | undefined> = {
       q: f.query ?? body.query,
       campaign: f.campaign,

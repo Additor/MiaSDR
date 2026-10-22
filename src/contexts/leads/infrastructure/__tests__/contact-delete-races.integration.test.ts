@@ -23,7 +23,7 @@ describeDb("contact delete races", () => {
   let dealsDeps: typeof import("@/contexts/deals/infrastructure/deals-composition").dealsDeps;
   let conversations: typeof import("@/contexts/conversations/infrastructure/composition");
   let crmStore: typeof import("@/contexts/conversations/infrastructure/drizzle-crm-store").drizzleCrmStore;
-  let suppression: typeof import("@/contexts/outreach/infrastructure/drizzle-outreach-store").drizzleSuppressionStore;
+  let suppression: Awaited<ReturnType<typeof import("@/test-support/suppression").suppressionStore>>;
 
   beforeAll(async () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
@@ -33,7 +33,7 @@ describeDb("contact delete races", () => {
     dealsDeps = (await import("@/contexts/deals/infrastructure/deals-composition")).dealsDeps;
     conversations = await import("@/contexts/conversations/infrastructure/composition");
     crmStore = (await import("@/contexts/conversations/infrastructure/drizzle-crm-store")).drizzleCrmStore;
-    suppression = (await import("@/contexts/outreach/infrastructure/drizzle-outreach-store")).drizzleSuppressionStore;
+    suppression = await (await import("@/test-support/suppression")).suppressionStore();
   }, 60_000);
 
   afterAll(async () => {

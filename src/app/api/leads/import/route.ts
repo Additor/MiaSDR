@@ -4,7 +4,6 @@ import { CsvError } from "@/platform/files/csv";
 import { parseSpreadsheet } from "@/platform/files/spreadsheet";
 import { leadImportDeps } from "@/contexts/leads/infrastructure/composition";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
-import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ConflictError } from "@/shared/errors";
 import { readImportForm } from "./read-form";
 
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
         rows,
         mapping: form.mapping,
         defaultCountry: form.defaultCountry,
-        restoreArchivedColumns: isOwnerOrAdmin(ctx.role),
+        role: ctx.role,
       },
     );
     return NextResponse.json(report);

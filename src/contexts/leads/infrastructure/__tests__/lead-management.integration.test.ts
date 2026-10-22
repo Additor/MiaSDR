@@ -159,13 +159,13 @@ describeDb("lead management", () => {
       expect((await checkLeadDelete(deps, actor, bare)).canDelete).toBe(false);
       expect(await deps.leads.deleteBlock(o, bare)).toBe("linked_records");
 
-      // The filter delete only sees leads: the contact is not in its count, and a contact filter reaches contacts but blocks them.
+      // The filter delete only sees leads: the contact is not in its count, and the use case refuses any other lifecycle.
       const again = await person(o, "lead2@acme.com", { name: "Another Lead" });
       expect((await uc.deleteLeads(deps, actor, { filter: { query: "acme" }, confirmCount: 1 })).deleted).toBe(1);
       expect(await sql`select 1 from people where id = ${again}`).toHaveLength(0);
-      const viaContactFilter = await uc.deleteLeads(deps, actor, { filter: { lifecycle: "contact" }, confirmCount: 2 });
-      expect(viaContactFilter.deleted).toBe(0);
-      expect(viaContactFilter.blocked).toHaveLength(2);
+      for (const lifecycle of ["contact", "all"] as const) {
+        await expect(uc.deleteLeads(deps, actor, { filter: { lifecycle }, confirmCount: 2 })).rejects.toThrow(/leads only/);
+      }
     });
   });
 

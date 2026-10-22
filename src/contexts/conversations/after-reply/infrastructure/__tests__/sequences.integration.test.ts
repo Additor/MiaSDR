@@ -1024,7 +1024,7 @@ describeDb("After a reply flows", () => {
       expect(await count("events", f.org, `event_type = 'sequence.interrupted' and meta->>'reason' = '${reason}'`)).toBe(1);
     };
     const personOf = (f: Fx) => one("select id, email from people where organization_id = $1", [f.org]);
-    const suppression = async () => (await import("@/contexts/outreach/infrastructure/drizzle-outreach-store")).drizzleSuppressionStore;
+    const suppression = async () => (await import("@/test-support/suppression")).suppressionStore();
 
     it("do not contact through the CRM store", async () => {
       const { f, run } = await withRun();
@@ -1155,7 +1155,7 @@ describeDb("After a reply flows", () => {
       const { f, run, tickWith } = await dueRun();
       const person = await one("select email from people where organization_id = $1", [f.org]);
       const result = await tickWith(async () => {
-        await (await import("@/contexts/outreach/infrastructure/drizzle-outreach-store")).drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: person.email, reason: "unsubscribed" });
+        await (await (await import("@/test-support/suppression")).suppressionStore()).suppressEmail({ organizationId: f.org, email: person.email, reason: "unsubscribed" });
       });
       expect((result as { detail?: Record<string, number> }).detail).toMatchObject({ stopped_while_drafting: 1 });
       await expectNoLiveDraft(f, run.id);
@@ -1171,7 +1171,7 @@ describeDb("After a reply flows", () => {
       stores.engine.linkDraft = async (...args) => {
         if (!stopped) {
           stopped = true;
-          await (await import("@/contexts/outreach/infrastructure/drizzle-outreach-store")).drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: person.email, reason: "bounced" });
+          await (await (await import("@/test-support/suppression")).suppressionStore()).suppressEmail({ organizationId: f.org, email: person.email, reason: "bounced" });
         }
         return realLink(...args);
       };
@@ -1189,7 +1189,7 @@ describeDb("After a reply flows", () => {
         const { f, run } = await dueRun();
         const person = await one("select id, email from people where organization_id = $1", [f.org]);
         const stop = async () => {
-          if (i % 2 === 0) await (await import("@/contexts/outreach/infrastructure/drizzle-outreach-store")).drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: person.email, reason: "unsubscribed" });
+          if (i % 2 === 0) await (await (await import("@/test-support/suppression")).suppressionStore()).suppressEmail({ organizationId: f.org, email: person.email, reason: "unsubscribed" });
           else await (await import("../../../infrastructure/drizzle-crm-store")).drizzleCrmStore.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: person.id, enabled: true, reason: "Asked", now: f.clock() });
         };
         const delayed = async () => {

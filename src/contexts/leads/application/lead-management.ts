@@ -86,6 +86,8 @@ export async function deleteLeads(deps: LeadDeps, actor: Actor, selection: Delet
   }
   // Ids belong to the other branch; a filter delete scopes by the filter alone.
   const filter: LeadFilter = { ...selection.filter, ids: undefined };
+  // Delete all matching is offered for leads only: a contact has history and is never deleted in bulk.
+  if (filter.lifecycle !== undefined && filter.lifecycle !== "lead") throw new ValidationError("Delete all matching works on leads only. Switch the list to leads first.");
   if (!isFilterActive(filter)) throw new ValidationError("Search or filter the list first. Delete all matching needs at least one filter.");
   const current = await deps.leads.count(actor.organizationId, filter);
   if (current !== selection.confirmCount) {

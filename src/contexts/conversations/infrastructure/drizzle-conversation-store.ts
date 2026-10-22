@@ -4,7 +4,7 @@ import { conversations, leadCcs, mailboxes, messages, people, pipelines, pipelin
 import { DEFAULT_PIPELINE_NAME, DEFAULT_SUBCATEGORIES } from "../domain/default-pipeline";
 import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundConversationStore, InboundEmailInput } from "../application/ports";
-import { stopPersonOutreachOnReplyTx } from "@/platform/db/sequence-stop";
+import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
 import { staleOpenDraftsTx } from "../after-reply/infrastructure/sequence-run-tx";
 

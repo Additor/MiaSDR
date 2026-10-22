@@ -1,7 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
-import type { DbHandle } from "./client";
+import type { DbHandle, DbTx } from "./client";
 import { records } from "./schema";
-import { lockPersonOutreachTx, type Tx } from "./sequence-stop";
 
 /*
  * Lock helpers for the transactions that change one person across contexts: the conversion (deals) and, next, the leads
@@ -41,6 +40,18 @@ export async function lockPersonForConversion(tx: DbHandle, organizationId: stri
     .orderBy(records.id)
     .for("update");
   if (locked.length > 0) await setLockTimeout(tx, HELD_LOCK_TIMEOUT);
-  await lockPersonOutreachTx(tx as Tx, organizationId, [personId]);
+  await lockPersonOutreachTx(tx as DbTx, organizationId, [personId]);
   await setLockTimeout(tx, HELD_LOCK_TIMEOUT);
+}
+
+/**
+ * Serializes the writers that decide whether a person may receive outreach: the reply stop and the restore of a removed
+ * lead. They read facts about the person (a reply, another active enrollment) and then write enrollments, and
+ * without a shared lock each reads the world before the other commits. The lock is transaction-scoped and keyed on the
+ * person; several people are taken in id order so two callers cannot wait on each other.
+ */
+export async function lockPersonOutreachTx(tx: DbTx, organizationId: string, personIds: string[]): Promise<void> {
+  for (const id of [...new Set(personIds)].sort()) {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`person-outreach:${organizationId}:${id}`}, 0))`);
+  }
 }

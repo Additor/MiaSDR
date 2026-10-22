@@ -100,7 +100,7 @@ describeDb("a genuine reply stops all outreach to the person", () => {
   }
 
   beforeAll(async () => {
-    email = (await import("../../email/infrastructure/drizzle-inbound-store")).createDrizzleInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
+    email = (await import("../../email/infrastructure/drizzle-inbound-store")).createDrizzleInboundStore((await import("@/composition/inbox-filing")).inboxFiling, (await import("@/composition/inbox-filing")).followUps);
     linkedin = (await import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
   });
 

@@ -10,7 +10,7 @@ import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
  *   (c) `suppressEmail` (enrollments before records) for a person with a record, a run and a live enrollment;
  *   (d) ingest of a thread filed under person A with person B's address, racing a conversion of B;
  *   (e) `markSent` in flight.
- * Every writer is the real code: `ingestInbound`, `drizzleSuppressionStore.suppressEmail`, `drizzleOutreachStore.markSent`.
+ * Every writer is the real code: `ingestInbound`, `createSuppressionStore(...).suppressEmail`, `drizzleOutreachStore.markSent`.
  * A third connection holds one row or lock (a "gate") to stop a writer at a chosen statement; (c) pauses the conversion in
  * process at its enrollment step instead, because a lock wait of the conversion after it holds the person's records is bounded
  * by the 300 ms held-lock timeout on purpose. No case may lose state: the other writer always commits, and where Postgres has
@@ -23,7 +23,7 @@ describeDb("conversion races", () => {
   let composition: typeof import("../deals-composition");
   let leadsApp: typeof import("@/contexts/leads/application/convert-to-contact");
   let conversations: typeof import("@/contexts/conversations/infrastructure/composition");
-  let suppression: typeof import("@/contexts/outreach/infrastructure/drizzle-outreach-store").drizzleSuppressionStore;
+  let suppression: Awaited<ReturnType<typeof import("@/test-support/suppression").suppressionStore>>;
   let outreachStore: typeof import("@/contexts/outreach/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
 
   beforeAll(async () => {
@@ -33,7 +33,7 @@ describeDb("conversion races", () => {
     leadsApp = await import("@/contexts/leads/application/convert-to-contact");
     conversations = await import("@/contexts/conversations/infrastructure/composition");
     const outreach = await import("@/contexts/outreach/infrastructure/drizzle-outreach-store");
-    suppression = outreach.drizzleSuppressionStore;
+    suppression = await (await import("@/test-support/suppression")).suppressionStore();
     outreachStore = outreach.drizzleOutreachStore;
   }, 60_000);
 

@@ -325,7 +325,7 @@ describeDb("restore of removed enrollments", () => {
     /** Holds the person's outreach lock, the one a reply stop or another restore takes, until released. */
     async function holdLock(org: string, personId: string) {
       const { db } = await import("@/platform/db/client");
-      const { lockPersonOutreachTx } = await import("@/platform/db/sequence-stop");
+      const { lockPersonOutreachTx } = await import("@/platform/db/person-locks");
       let release!: () => void;
       const gate = new Promise<void>((resolve) => (release = resolve));
       let locked!: () => void;
@@ -369,7 +369,7 @@ describeDb("restore of removed enrollments", () => {
       const p = await f.person("Replier");
       const ex = await f.enroll(x, p);
       const { db } = await import("@/platform/db/client");
-      const { stopPersonOutreachOnReplyTx } = await import("@/platform/db/sequence-stop");
+      const { stopPersonOutreachOnReplyTx } = await import("@/contexts/conversations/after-reply/infrastructure/sequence-stop");
       let proceed!: () => void;
       const gate = new Promise<void>((resolve) => (proceed = resolve));
       let stopped!: () => void;

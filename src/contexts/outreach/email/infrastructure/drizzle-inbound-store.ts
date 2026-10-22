@@ -1,10 +1,10 @@
 import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { campaignEnrollments, inboundEvents, mailboxes, people, sends } from "@/platform/db/schema";
-import type { InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from "../../application/inbound-ports";
+import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from "../../application/inbound-ports";
 import type { InboundEmail } from "../../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
-import { drizzleSuppressionStore } from "../../infrastructure/drizzle-outreach-store";
+import { createSuppressionStore } from "../../infrastructure/drizzle-outreach-store";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -102,7 +102,8 @@ function storeInInbox(inbox: InboxFiling, mailbox: SyncMailbox, email: InboundEm
 const eventKey = (mailbox: SyncMailbox, providerMessageId: string) => `inbound:${mailbox.emailAddress}:${providerMessageId}`;
 
 /** The email inbound store. `inbox` files each message that is not a verified bounce or our own. */
-export function createDrizzleInboundStore(inbox: InboxFiling): InboundStore {
+export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowUpStop): InboundStore {
+  const suppression = createSuppressionStore(followUps);
   return {
     async listDueMailboxIds(dueBefore) {
       const rows = await db
@@ -134,7 +135,7 @@ export function createDrizzleInboundStore(inbox: InboxFiling): InboundStore {
             return "unverified_bounce";
           }
           // One transaction inside: suppression row (conflict ignored) and the bounced enrollments.
-          await drizzleSuppressionStore.suppressEmail({
+          await suppression.suppressEmail({
             organizationId: mailbox.organizationId,
             email: classification.failedRecipient,
             reason: "bounced",

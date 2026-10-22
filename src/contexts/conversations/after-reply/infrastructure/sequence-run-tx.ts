@@ -1,10 +1,10 @@
 import { sql } from "drizzle-orm";
 import { dueAfter, isTerminalSubcategory, isValidZone } from "../domain/sequences";
-import { interruptRecordRunsTx, recordEvent, type Tx } from "@/platform/db/sequence-stop";
+import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 
-export { endRunTx, interruptRecordRunsTx, recordEvent, type Tx } from "@/platform/db/sequence-stop";
+export { endRunTx, interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 
 export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 

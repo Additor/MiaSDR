@@ -1,9 +1,9 @@
 import { backfillLinkedinUrls } from "@/contexts/leads/infrastructure/backfill-linkedin-urls";
-import type { RolloverStep } from "./rollover";
+import type { RolloverStep } from "@/platform/jobs/rollover";
 
 /**
- * The composition point for daily rollover steps, like src/composition/job-registry.ts is
- * for jobs. A context adds its step here when it holds state that must change once
+ * The composition point for daily rollover steps, beside job-registry.ts for jobs. Platform's
+ * rollover job runs them. A context adds its step here when it holds state that must change once
  * per organization day. Steps must be idempotent.
  *
  * The only step is a safety net for people.linkedin_url. Every per-day figure is derived from time, so no step resets a counter:

@@ -1,9 +1,17 @@
 import { receiveInbound, receiveInboundLinkedIn } from "@/contexts/conversations/infrastructure/composition";
-import type { InboxFiling } from "@/contexts/outreach/application/inbound-ports";
+import { followUpStop } from "@/contexts/conversations/after-reply/infrastructure/sequence-stop";
+import type { FollowUpStop, InboxFiling } from "@/contexts/outreach/application/inbound-ports";
+import { unsubscribeDeps } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinOperationsDeps, receiveUnipileDelivery } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 
-/** Outreach syncs mail and LinkedIn; conversations files what arrives. This is the one place the two meet. */
+/** Outreach syncs mail and LinkedIn; conversations files what arrives and runs the follow-ups. This is the one place the two meet. */
 export const inboxFiling: InboxFiling = { email: receiveInbound, linkedin: receiveInboundLinkedIn };
+
+/** Suppressing an address in outreach ends the person's follow-up sequences in conversations, in the same transaction. */
+export const followUps: FollowUpStop = followUpStop;
+
+/** The public unsubscribe link, with its suppression wired to the follow-up stop. */
+export const unsubscribe = () => unsubscribeDeps(followUps);
 
 /** LinkedIn job operations (overview, replay, counter reset) with webhook replay filing into the Inbox. */
 export const linkedinOperations = () => linkedinOperationsDeps(inboxFiling);
