@@ -1,9 +1,9 @@
 "use client";
 
-import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, ListFilterIcon, Loader2Icon, PlayIcon, PlusIcon, SearchIcon, SendIcon, SigmaIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
+import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, EllipsisIcon, ListFilterIcon, Loader2Icon, PlayIcon, PlusIcon, SearchIcon, SendIcon, SigmaIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { GridColumn } from "../_lib/data/types";
 import { RunProgress } from "./run-controls";
@@ -50,7 +50,10 @@ interface Props {
   onShowFailed?: () => void;
 }
 
-/** The row of controls above the grid: search, add, import and export, column visibility, run, row count. */
+/**
+ * The row of controls above the grid. Enrich leads: it is the filled button until the table has a column that runs,
+ * then Run takes the fill, so one filled button leads at a time. Row and file actions sit under More.
+ */
 export function TableToolbar(props: Props) {
   const { columns, hidden } = props;
   return (
@@ -59,6 +62,10 @@ export function TableToolbar(props: Props) {
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input aria-label="Search rows" placeholder="Search rows" className="w-56 pl-7" value={props.search} onChange={(e) => props.onSearch(e.target.value)} />
       </div>
+
+      <Button variant={props.runnable ? "outline" : "default"} size="sm" onClick={() => props.onAddColumn("enrichment")}>
+        <SparklesIcon /> Enrich
+      </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
@@ -82,18 +89,6 @@ export function TableToolbar(props: Props) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button variant="outline" size="sm" onClick={props.onAddRow} disabled={props.busy}>
-        <PlusIcon /> Add row
-      </Button>
-      <Button variant="outline" size="sm" onClick={props.onAddRows} disabled={props.busy}>
-        <PlusIcon /> Add rows...
-      </Button>
-      <Button variant="outline" size="sm" onClick={props.onImport}>
-        <UploadIcon /> Import
-      </Button>
-      <Button variant="outline" size="sm" onClick={props.onExport} disabled={props.busy}>
-        <DownloadIcon /> Export
-      </Button>
       <Button variant="outline" size="sm" onClick={props.onPush}>
         <SendIcon /> Push to campaign
       </Button>
@@ -114,6 +109,31 @@ export function TableToolbar(props: Props) {
                 {c.name}
               </DropdownMenuCheckboxItem>
             ))}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+          <EllipsisIcon /> More
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-48">
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={props.onAddRow} disabled={props.busy}>
+              <PlusIcon /> Add row
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={props.onAddRows} disabled={props.busy}>
+              <PlusIcon /> Add rows...
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={props.onImport}>
+              <UploadIcon /> Import
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={props.onExport} disabled={props.busy}>
+              <DownloadIcon /> Export
+            </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>

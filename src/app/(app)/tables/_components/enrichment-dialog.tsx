@@ -22,6 +22,8 @@ interface Props {
   /** Set to edit the inputs and timing of an existing enrichment or waterfall column. */
   column: GridColumn | null;
   afterColumnId?: string;
+  /** The action key of the outcome to open on, from the start strip. */
+  outcome?: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }

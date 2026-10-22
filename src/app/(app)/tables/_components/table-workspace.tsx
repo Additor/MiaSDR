@@ -28,6 +28,7 @@ import { pagesToReachEnd } from "../_lib/edit/add-rows";
 import { AddRowsDialog } from "./add-rows-dialog";
 import { ConflictDialog } from "./conflict-dialog";
 import { DataGrid, type ActiveCell } from "./data-grid";
+import { EnrichStart } from "./enrich-start";
 import { EnrichmentDialog } from "./enrichment-dialog";
 import { FilterPanel } from "./filter-panel";
 import { FormulaDialog } from "./formula-dialog";
@@ -41,7 +42,7 @@ type Open =
   | { kind: "import" }
   | { kind: "filters" }
   | { kind: "formula"; column: GridColumn | null; after?: string }
-  | { kind: "enrichment"; column: GridColumn | null; after?: string }
+  | { kind: "enrichment"; column: GridColumn | null; after?: string; outcome?: string }
   | { kind: "ai"; column: GridColumn | null; after?: string }
   | { kind: "run"; column: GridColumn | null; firstN?: number }
   | { kind: "push"; rowIds: string[] }
@@ -353,6 +354,10 @@ export function TableWorkspace({ tableId }: Props) {
         onShowFailed={() => void grid.saveView(withRunFailures(view, columns.filter((c) => c.type === "enrichment" || c.type === "waterfall" || c.type === "ai").map((c) => c.key)))}
       />
 
+      {!runnable && grid.unfilteredTotal > 0 && (
+        <EnrichStart onOutcome={(outcome) => setDialog({ kind: "enrichment", column: null, outcome })} onAi={() => setDialog({ kind: "ai", column: null })} />
+      )}
+
       <ViewBar view={view} nameOf={nameOf} saveView={grid.saveView} personalView={grid.personalView} canEditDefault={grid.canEditDefault} onResetView={grid.resetView} onSaveDefaultView={grid.saveDefaultView} />
 
       {hasSelection && (
@@ -426,7 +431,7 @@ export function TableWorkspace({ tableId }: Props) {
       {dialog?.kind === "addRows" && <AddRowsDialog onAdd={addRows} onClose={closeDialog} />}
       {dialog?.kind === "import" && <ImportWizard tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
       {dialog?.kind === "formula" && <FormulaDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} previewRowId={active?.row.id} onClose={closeDialog} onSaved={grid.reload} />}
-      {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} onClose={closeDialog} onSaved={grid.reload} />}
+      {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} outcome={dialog.outcome} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "ai" && <AiDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} onClose={closeDialog} onStarted={() => void grid.reload()} />}
       {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} onClose={closeDialog} />}

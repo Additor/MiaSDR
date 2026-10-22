@@ -6,7 +6,8 @@ test.describe("grid structure", () => {
     await signInAdmin(page);
     const { workbookId } = await newWorkbook(page.request, "C2 xlsx import");
     await page.goto(`/tables/${workbookId}`);
-    await page.getByRole("button", { name: "Import", exact: true }).click();
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Import" }).click();
     await page.getByLabel("File to import").setInputFiles(
       xlsxFile("c2-leads.xlsx", [
         ["Email", "Company", "Seats"],

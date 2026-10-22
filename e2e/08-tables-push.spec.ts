@@ -9,7 +9,9 @@ test.describe("tables edit and push to campaign", () => {
     await page.getByRole("button", { name: "Create workbook" }).click();
     await expect(page.getByRole("heading", { name: "S8 prospects" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Import", exact: true }).click();
+    await page.getByRole("button", { name: "More" }).click();
+
+    await page.getByRole("menuitem", { name: "Import" }).click();
     await page.getByLabel("File to import").setInputFiles(
       csvFile("s8.csv", [
         ["Email", "First name", "Last name", "Company"],
