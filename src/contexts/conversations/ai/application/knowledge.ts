@@ -3,7 +3,7 @@ import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/sh
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 
 /**
- * Pasted-text knowledge documents that drafts may draw on. Any member can manage them.
+ * Pasted-text knowledge documents that drafts may draw on. Any member reads them; only an owner or admin adds or changes one.
  * Every content edit stores a new version, so a draft's citations keep
  * pointing at the text the model saw.
  */

@@ -72,6 +72,11 @@ export const suppressionList = pgTable(
     email: text("email").notNull(),
     reason: text("reason").notNull(),
     note: text("note"),
+    /**
+     * True only for an address an owner or admin pasted on Settings, Suppression list. Only those rows can be removed
+     * there: other `manual` rows come from a stop request or from deleting a person marked do not contact.
+     */
+    addedInSettings: boolean("added_in_settings").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [

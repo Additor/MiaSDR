@@ -418,7 +418,7 @@ export const drizzleMailboxStore: MailboxStore = {
               sql`${sends.claimedAt} >= ${startOfLocalDay(now, zone).toISOString()}::timestamptz`,
             ),
           );
-        return { ...row, workingHours: hours, sentToday, waitingLeads: waitingBy.get(row.id) ?? 0 };
+        return { ...row, workingHours: hours, ownHours: row.workingHours !== null, sentToday, waitingLeads: waitingBy.get(row.id) ?? 0 };
       }),
     );
   },
@@ -427,7 +427,7 @@ export const drizzleMailboxStore: MailboxStore = {
     const [row] = await db.select(mailboxColumns).from(mailboxes).where(and(eq(mailboxes.organizationId, organizationId), eq(mailboxes.id, id)));
     if (!row) return null;
     const waitingLeads = await drizzleMailboxStore.activeEnrollmentCount(organizationId, id);
-    return { ...row, workingHours: row.workingHours as WorkingHours | null, sentToday: 0, waitingLeads };
+    return { ...row, workingHours: row.workingHours as WorkingHours | null, ownHours: row.workingHours !== null, sentToday: 0, waitingLeads };
   },
 
   async insert(organizationId, input) {

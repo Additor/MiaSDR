@@ -30,6 +30,8 @@ interface Mailbox {
   dailySendLimit: number;
   signatureHtml: string | null;
   workingHours: StoredHours | null;
+  /** False while the mailbox follows the organization's hours; `workingHours` then holds that default. */
+  ownHours: boolean;
   sentToday: number;
   waitingLeads: number;
 }
@@ -168,7 +170,7 @@ export function MailboxList({
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {hoursSummary(hoursDraft(mailbox.workingHours, defaultTimeZone))}
-                    {mailbox.workingHours ? "" : " (organization hours)"}
+                    {mailbox.ownHours ? "" : " (organization hours)"}
                   </p>
                 </div>
                 {mailbox.waitingLeads > 0 && mailbox.status !== "connected" && (
@@ -288,8 +290,8 @@ function EditMailbox({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox: Ma
     limit: String(mailbox.dailySendLimit),
     signature: mailbox.signatureHtml ?? "",
     // A mailbox without its own hours follows the organization's zone, so saving keeps it unset until someone picks Custom.
-    hoursMode: mailbox.workingHours ? "custom" : "organization",
-    hours: hoursDraft(mailbox.workingHours, defaultTimeZone),
+    hoursMode: mailbox.ownHours ? "custom" : "organization",
+    hours: hoursDraft(mailbox.ownHours ? mailbox.workingHours : null, defaultTimeZone),
   };
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState(saved);

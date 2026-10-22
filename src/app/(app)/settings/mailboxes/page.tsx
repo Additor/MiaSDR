@@ -31,7 +31,7 @@ async function Mailboxes() {
   const actor = toActor(ctx);
   const { policy } = mailboxDeps();
   const [mailboxes, rules, orgTimeZone] = await Promise.all([listMailboxes(mailboxDeps(), actor), getEmailRules(emailRulesDeps(), actor), getOrgTimeZone()]);
-  const saved = mailboxes.map((m) => m.workingHours?.timeZone).filter((zone): zone is string => Boolean(zone));
+  const saved = mailboxes.filter((m) => m.ownHours).map((m) => m.workingHours?.timeZone).filter((zone): zone is string => Boolean(zone));
   const zones = timeZoneOptions(Intl.supportedValuesOf("timeZone"), orgTimeZone);
   for (const zone of saved) if (!zones.includes(zone)) zones.push(zone);
   const canManage = isOwnerOrAdmin(ctx.role);

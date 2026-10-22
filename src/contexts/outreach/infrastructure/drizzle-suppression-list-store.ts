@@ -4,8 +4,8 @@ import { recordAudit } from "@/platform/db/audit";
 import { suppressionList } from "@/platform/db/schema";
 import type { SuppressionListStore, SuppressionReason, SuppressionRow } from "../application/suppression-list";
 
-const columns = { id: suppressionList.id, email: suppressionList.email, reason: suppressionList.reason, note: suppressionList.note, createdAt: suppressionList.createdAt };
-const toRow = (row: { id: string; email: string; reason: string; note: string | null; createdAt: Date }): SuppressionRow => ({ ...row, reason: row.reason as SuppressionReason });
+const columns = { id: suppressionList.id, email: suppressionList.email, reason: suppressionList.reason, note: suppressionList.note, addedInSettings: suppressionList.addedInSettings, createdAt: suppressionList.createdAt };
+const toRow = (row: { id: string; email: string; reason: string; note: string | null; addedInSettings: boolean; createdAt: Date }): SuppressionRow => ({ ...row, reason: row.reason as SuppressionReason });
 
 /** `%` and `_` in a search are literal. */
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -35,7 +35,7 @@ export const drizzleSuppressionListStore: SuppressionListStore = {
   },
 
   async remove(organizationId, id) {
-    await db.delete(suppressionList).where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.id, id), eq(suppressionList.reason, "manual")));
+    await db.delete(suppressionList).where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.id, id), eq(suppressionList.addedInSettings, true)));
   },
 
   async audit(entry) {

@@ -81,6 +81,12 @@ export async function getLinkedInJobsOverview(deps: LinkedInOperationsDeps, acto
   return { runs, backlog, audit };
 }
 
+/** Only the delivery counts, for the Inbound events page that offers Replay. */
+export async function getLinkedInWebhookBacklog(deps: LinkedInOperationsDeps, actor: Actor): Promise<WebhookBacklog> {
+  requireAdmin(actor);
+  return deps.store.webhookBacklog(actor.organizationId);
+}
+
 export interface ReplaySummary {
   requeued: number;
   claimed: number;

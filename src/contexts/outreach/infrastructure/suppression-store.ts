@@ -7,13 +7,14 @@ import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 
 /** Adds the address to the suppression list and stops its unfinished email sequences, in one transaction. */
 export const createSuppressionStore = (followUps: FollowUpStop): SuppressionStore => ({
-  async suppressEmail({ organizationId, email, reason, note }) {
+  async suppressEmail({ organizationId, email, reason, note, addedInSettings }) {
     const normalized = email.trim().toLowerCase();
     return db.transaction(async (tx) => {
-      await tx
+      const inserted = await tx
         .insert(suppressionList)
-        .values({ organizationId, email: normalized, reason, note: note ?? null })
-        .onConflictDoNothing();
+        .values({ organizationId, email: normalized, reason, note: note ?? null, addedInSettings: addedInSettings ?? false })
+        .onConflictDoNothing()
+        .returning({ id: suppressionList.id });
       const stopped = await tx
         .update(campaignEnrollments)
         .set({ status: reason === "bounced" ? "bounced" : "suppressed", nextSendAt: null, stopReason: reason })
@@ -34,7 +35,7 @@ export const createSuppressionStore = (followUps: FollowUpStop): SuppressionStor
         .returning({ id: campaignEnrollments.id });
       // The follow-up sequence of a conversation stops in the same commit, with its unsent drafts.
       await followUps.endEmailRunsTx(tx, organizationId, normalized, reason === "bounced" ? "bounce" : reason === "manual" ? "suppressed" : "unsubscribed", new Date());
-      return { stopped: stopped.length };
+      return { stopped: stopped.length, added: inserted.length > 0 };
     });
   },
 });

@@ -123,7 +123,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "settings/replies": { handlers: { GET: ok(), PATCH: admin() } },
   "settings/sending-pause": { handlers: { GET: ok(), PUT: admin({ paused: false }) } },
   "suppressions": { handlers: { GET: ok(), POST: admin({ text: "matrix-suppressed@example.com" }) } },
-  "suppressions/[id]": { ids: { id: { table: "suppression_list", force: { reason: "manual" } } }, handlers: { DELETE: admin() } },
+  "suppressions/[id]": { ids: { id: { table: "suppression_list", force: { reason: "manual", added_in_settings: true } } }, handlers: { DELETE: admin() } },
   "settings/replies/ai-instructions": { handlers: { GET: ok(), PUT: admin() } },
   "reply-categories/subcategories": { handlers: { GET: ok(), POST: admin() } },
   "reply-categories/subcategories/[id]": { ids: { id: "subcategories" }, handlers: { PATCH: admin({ name: "renamed" }), DELETE: admin() } },

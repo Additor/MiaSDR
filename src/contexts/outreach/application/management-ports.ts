@@ -113,7 +113,10 @@ export interface MailboxRecord {
   lastTestedAt: Date | null;
   dailySendLimit: number;
   signatureHtml: string | null;
+  /** The hours the mailbox sends by: its own, or the organization's default when it has none (`ownHours` false). */
   workingHours: WorkingHours | null;
+  /** True when the mailbox stores its own hours; false when it follows the organization's time zone. */
+  ownHours: boolean;
   sentToday: number;
   /** Active leads pinned to this mailbox, whose follow-ups go out from it. */
   waitingLeads: number;

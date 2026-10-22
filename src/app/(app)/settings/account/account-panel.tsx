@@ -86,19 +86,29 @@ function ProfileSection({ name, email }: { name: string; email: string }) {
 function PasswordSection() {
   // null while loading; the providers this user can sign in with otherwise.
   const [providers, setProviders] = useState<string[] | null>(null);
+  // A failed lookup says so with Try again; it never claims the account has no password.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [signOutOthers, setSignOutOthers] = useState(true);
 
   useEffect(() => {
     let live = true;
-    void authClient.listAccounts().then(({ data }) => {
-      if (live) setProviders((data ?? []).map((a) => a.providerId));
-    });
+    authClient
+      .listAccounts()
+      .then(({ data, error: failed }) => {
+        if (!live) return;
+        if (failed || !data) setLoadError(failed?.message ?? "Could not read how you sign in.");
+        else setProviders(data.map((a) => a.providerId));
+      })
+      .catch(() => {
+        if (live) setLoadError("Could not read how you sign in.");
+      });
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
 
   async function change(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -120,7 +130,24 @@ function PasswordSection() {
   const hasPassword = providers?.includes("credential") ?? false;
   return (
     <SettingsSection title="Password">
-      {providers === null ? (
+      {loadError ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="alert" className="text-sm text-destructive">
+            {loadError}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoadError(null);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Try again
+          </Button>
+        </div>
+      ) : providers === null ? (
         <Skeleton className="h-24 w-full max-w-sm" />
       ) : !hasPassword ? (
         <p className="text-sm text-muted-foreground">You sign in with {providers.includes("google") ? "Google" : "another provider"}, so this account has no password here.</p>

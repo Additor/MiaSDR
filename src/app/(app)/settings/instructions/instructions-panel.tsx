@@ -56,6 +56,13 @@ function BlockList({
 }) {
   const router = useRouter();
   const [blocks, setBlocks] = useState<Block[]>(initial);
+  // The server trims what it saves. When its copy changes (after this list's save), start from it, so the trimmed text
+  // does not read as an unsaved change. Comparing content keeps the other list's edits when only this one saved.
+  const [seen, setSeen] = useState(() => JSON.stringify(initial));
+  if (JSON.stringify(initial) !== seen) {
+    setSeen(JSON.stringify(initial));
+    setBlocks(initial);
+  }
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -63,7 +70,9 @@ function BlockList({
     setBlocks((current) => current.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   };
 
-  const dirty = JSON.stringify(blocks) !== JSON.stringify(initial);
+  // Space at either end is not a change: the server trims it away.
+  const trimmed = (list: Block[]) => JSON.stringify(list.map((b) => ({ id: b.id, title: b.title.trim(), content: b.content.trim() })));
+  const dirty = trimmed(blocks) !== trimmed(initial);
   useLeaveGuard(dirty);
 
   async function save(event: FormEvent<HTMLFormElement>) {

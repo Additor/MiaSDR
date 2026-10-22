@@ -133,7 +133,7 @@ describeDb("conversion races", () => {
     const [suppressed, converted] = await Promise.all([suppressing, converting]);
     expect(sqlState(suppressed.error)).toBeUndefined();
     expect(suppressed.error).toBeNull();
-    expect(suppressed.value).toEqual({ stopped: 1 });
+    expect(suppressed.value).toEqual({ stopped: 1, added: true });
     expect(converted.error).toBeNull();
     expect(lockRetryStats.retries).toBe(retries + 1);
     expect(calls).toBe(2);

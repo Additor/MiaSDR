@@ -51,8 +51,8 @@ interface Props {
   pageSize: number;
   state: string;
   source: string;
-  /** LinkedIn deliveries that gave up, wait for an automatic retry, or are queued. Replay puts them all back in line. */
-  linkedinBacklog: { dead: number; retrying: number; queued: number };
+  /** LinkedIn deliveries that gave up, wait for an automatic retry, or are queued. Replay puts them all back in line. Null hides Replay. */
+  linkedinBacklog: { dead: number; retrying: number; queued: number } | null;
 }
 
 export function InboundEventsPanel({ rows, total, page, pageSize, state, source, linkedinBacklog }: Props) {
@@ -71,7 +71,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
     return `/settings/inbound-events${query ? `?${query}` : ""}`;
   };
 
-  const waiting = linkedinBacklog.dead + linkedinBacklog.retrying + linkedinBacklog.queued;
+  const waiting = linkedinBacklog ? linkedinBacklog.dead + linkedinBacklog.retrying + linkedinBacklog.queued : 0;
 
   async function replay() {
     setBusy("replay");
@@ -118,7 +118,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
             ))}
           </SelectContent>
         </Select>
-        {source !== "gmail" && (
+        {linkedinBacklog && (
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <span className="text-sm text-muted-foreground tabular-nums">
               {waiting === 0 ? "No LinkedIn delivery waits." : `LinkedIn: ${linkedinBacklog.dead} gave up, ${linkedinBacklog.retrying} retrying, ${linkedinBacklog.queued} queued`}

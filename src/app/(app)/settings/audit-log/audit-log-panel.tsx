@@ -6,6 +6,7 @@ import { ListPager } from "@/components/shell/list-pager";
 import { Time } from "@/components/shell/time";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { AUDIT_AREAS, type AuditArea } from "@/contexts/tenancy/application/audit-log";
 import { humanizeToken } from "@/shared/humanize";
 import { RULED_LIST, RULED_ROW } from "../settings-section";
 
@@ -18,20 +19,23 @@ interface Row {
   createdAt: string;
 }
 
-const AREA_ITEMS = [
-  { value: "all", label: "Everything" },
-  { value: "organization", label: "Organization" },
-  { value: "integration", label: "Integrations" },
-  { value: "suppression", label: "Suppression list" },
-  { value: "deal_stage", label: "Pipeline stages" },
-  { value: "deal", label: "Deals" },
-  { value: "company", label: "Companies" },
-  { value: "person", label: "People" },
-  { value: "enrollment", label: "Campaign leads" },
-  { value: "linkedin", label: "LinkedIn" },
-  { value: "ai_jobs", label: "AI jobs" },
-  { value: "search_batch", label: "LinkedIn searches" },
-];
+/** A label for every area the server filters by. The record type makes a new area fail the build until it has one. */
+const AREA_LABEL: Record<AuditArea, string> = {
+  organization: "Organization",
+  integration: "Integrations",
+  mailbox: "Mailboxes",
+  suppression: "Suppression list",
+  deal_stage: "Pipeline stages",
+  deal: "Deals",
+  company: "Companies",
+  person: "People",
+  enrollment: "Campaign leads",
+  linkedin: "LinkedIn",
+  ai_jobs: "AI jobs",
+  search_batch: "LinkedIn searches",
+};
+
+const AREA_ITEMS = [{ value: "all", label: "Everything" }, ...AUDIT_AREAS.map((area) => ({ value: area, label: AREA_LABEL[area] }))];
 
 /** Exact copy for the actions people look for. Anything else reads through `humanizeToken`. */
 const ACTION_LABEL: Record<string, string> = {
@@ -39,6 +43,8 @@ const ACTION_LABEL: Record<string, string> = {
   "organization.timezone_changed": "Changed the time zone",
   "organization.ai_cap_changed": "Changed the AI limit for unknown senders",
   "organization.phone_country_changed": "Changed the default phone country",
+  "organization.sending_paused": "Paused all sending",
+  "organization.sending_resumed": "Resumed sending",
   "integration.saved": "Saved an API key",
   "integration.deleted": "Removed an API key",
   "integration.ai_model_changed": "Changed the AI model",

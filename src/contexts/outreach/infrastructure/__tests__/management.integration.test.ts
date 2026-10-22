@@ -89,6 +89,18 @@ describeDb("campaign and mailbox management", () => {
       await expect(mailboxUc.updateMailbox(t.mailboxDeps, t.member, id, { dailySendLimit: 10 })).rejects.toBeInstanceOf(ForbiddenError);
     });
 
+    it("tells a mailbox on its own hours from one on the organization's hours", async () => {
+      const t = await org();
+      const { id } = await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: `h${Math.random().toString(36).slice(2, 6)}@corp.test` });
+      const listed = async () => (await mailboxUc.listMailboxes(t.mailboxDeps, t.actor)).find((m) => m.id === id)!;
+      // The list fills in the organization's default hours, and says they are not the mailbox's own.
+      expect(await listed()).toMatchObject({ ownHours: false, workingHours: { timeZone: expect.any(String) } });
+      await mailboxUc.updateMailbox(t.mailboxDeps, t.actor, id, { workingHours: { timeZone: "Asia/Seoul", days: { "1": [{ start: "09:00", end: "18:00" }] } } });
+      expect(await listed()).toMatchObject({ ownHours: true, workingHours: { timeZone: "Asia/Seoul" } });
+      await mailboxUc.updateMailbox(t.mailboxDeps, t.actor, id, { workingHours: null });
+      expect((await listed()).ownHours).toBe(false);
+    });
+
     it("does not let one organization read or change another's mailbox", async () => {
       const t = await org();
       const u = await org();

@@ -16,7 +16,9 @@ export interface AuditLogStore {
 }
 
 /** The first part of an action (`deal_stage` in `deal_stage.renamed`) names its area, which the page filters by. */
-export const AUDIT_AREAS = ["organization", "integration", "suppression", "deal_stage", "deal", "company", "person", "enrollment", "linkedin", "ai_jobs", "search_batch"] as const;
+export const AUDIT_AREAS = ["organization", "integration", "mailbox", "suppression", "deal_stage", "deal", "company", "person", "enrollment", "linkedin", "ai_jobs", "search_batch"] as const;
+
+export type AuditArea = (typeof AUDIT_AREAS)[number];
 
 export function listAuditLog(store: AuditLogStore, actor: Actor, query: { area?: string | null; limit: number; offset: number }) {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can read the audit log.");

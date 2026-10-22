@@ -23,10 +23,13 @@ interface Row {
   email: string;
   reason: "unsubscribed" | "bounced" | "manual" | "complaint";
   note: string | null;
+  addedInSettings: boolean;
   createdAt: string;
 }
 
-const REASON_LABEL: Record<Row["reason"], string> = { unsubscribed: "Unsubscribed", bounced: "Bounced", manual: "Added by hand", complaint: "Spam complaint" };
+const REASON_LABEL: Record<Row["reason"], string> = { unsubscribed: "Unsubscribed", bounced: "Bounced", manual: "Stopped by a person", complaint: "Spam complaint" };
+/** A `manual` row pasted here reads apart from one a stop request or a do-not-contact deletion wrote, which cannot be removed. */
+const reasonLabel = (row: Row) => (row.addedInSettings ? "Added here" : REASON_LABEL[row.reason]);
 
 export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: { rows: Row[]; total: number; page: number; pageSize: number; q: string; canManage: boolean }) {
   const router = useRouter();
@@ -125,8 +128,8 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
                     {row.note ? `, ${row.note}` : ""}
                   </span>
                 </div>
-                <Badge variant="secondary">{REASON_LABEL[row.reason]}</Badge>
-                {canManage && row.reason === "manual" && (
+                <Badge variant="secondary">{reasonLabel(row)}</Badge>
+                {canManage && row.addedInSettings && (
                   <Button variant="ghost" size="sm" onClick={() => setRemoving(row)} aria-label={`Remove ${row.email}`}>
                     Remove
                   </Button>

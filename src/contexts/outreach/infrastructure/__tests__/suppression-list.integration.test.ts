@@ -60,9 +60,13 @@ describeDb("suppression list", () => {
     const [hand] = await sql`select id from suppression_list where organization_id = ${t.id} and email = 'hand@acme.test'`;
     const [bounce] = await sql`insert into suppression_list (organization_id, email, reason) values (${t.id}, 'bounce@acme.test', 'bounced') returning id`;
     await expect(uc.removeSuppression(deps, t.actor, bounce.id)).rejects.toBeInstanceOf(ConflictError);
+    // A `manual` row that deleting a person marked do not contact wrote stays too: that person asked not to be contacted.
+    const [kept] = await sql`insert into suppression_list (organization_id, email, reason, note) values (${t.id}, 'dnc@acme.test', 'manual', 'Deleted while marked do not contact.') returning id`;
+    await expect(uc.removeSuppression(deps, t.actor, kept.id)).rejects.toBeInstanceOf(ConflictError);
+    expect((await uc.listSuppressions(deps, t.actor, { q: "dnc@", limit: 5, offset: 0 })).rows[0].addedInSettings).toBe(false);
     await expect(uc.removeSuppression(deps, other.actor, hand.id)).rejects.toBeInstanceOf(NotFoundError);
     await expect(uc.removeSuppression(deps, { ...t.actor, role: "member" }, hand.id)).rejects.toBeInstanceOf(ForbiddenError);
     await uc.removeSuppression(deps, t.actor, hand.id);
-    expect((await sql`select email from suppression_list where organization_id = ${t.id}`).map((r) => r.email)).toEqual(["bounce@acme.test"]);
+    expect((await sql`select email from suppression_list where organization_id = ${t.id} order by email`).map((r) => r.email)).toEqual(["bounce@acme.test", "dnc@acme.test"]);
   });
 });

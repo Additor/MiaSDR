@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { env } from "@/shared/env";
 import type { CampaignDeps } from "../application/campaign-management";
 import type { EmailRulesDeps } from "../email/application/email-rules";
+import type { SendPauseDeps } from "../application/send-pause";
+import { auditSink } from "@/platform/db/audit";
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";
@@ -75,6 +77,9 @@ export const leadActivityDeps = (): LeadActivityDeps => ({ readStatuses: readLea
 
 /** The organization's email channel settings. */
 export const emailRulesDeps = (): EmailRulesDeps => ({ settings: drizzleChannelSettingsStore });
+
+/** The organization's sending pause, which writes an audit row on each change. */
+export const sendPauseDeps = (): SendPauseDeps => ({ settings: drizzleChannelSettingsStore, audit: auditSink });
 
 /** Merge fields offered in the sequence editor. */
 export const mergeFieldDeps = (): { source: MergeFieldSource } => ({ source: drizzleMergeFieldSource });
