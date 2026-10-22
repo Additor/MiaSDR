@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { gridRequest } from "../_lib/data/client";
+import { centsToDollarsText, dollarsToCents } from "../_lib/data/run-request";
 import { catalogGroups, impactText, usageLine, type CatalogEntry, type ProviderImpact, type ProviderUsage, type ProviderView } from "../_lib/data/providers";
 import { ErrorText, Field } from "./form-bits";
 
@@ -54,13 +55,15 @@ export function ProviderManager({ catalog, providers, onChanged }: Props) {
   );
 }
 
-function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntry; provider: ProviderView | undefined; usage?: ProviderUsage & { days: number }; onChanged: () => Promise<void> }) {
+/** One vendor: its connection state, and Connect or Settings with the key, the price and the rate limit. */
+export function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntry; provider: ProviderView | undefined; usage?: ProviderUsage & { days: number }; onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [creds, setCreds] = useState<Record<string, string>>({});
   const [baseUrl, setBaseUrl] = useState("");
   const [configText, setConfigText] = useState("");
   const [rate, setRate] = useState(provider?.rateLimitPerMin === null || provider?.rateLimitPerMin === undefined ? "" : String(provider.rateLimitPerMin));
-  const [price, setPrice] = useState(provider ? String(provider.defaultCostCents) : "0");
+  // A new connection starts from the catalog's price, so estimates and dollar caps work from the first run.
+  const [price, setPrice] = useState(centsToDollarsText(provider ? provider.defaultCostCents : Math.max(0, ...entry.actions.map((a) => a.defaultCostCents))));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const available = entry.status === "available";
@@ -79,17 +82,21 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
         return setError("The configuration is not valid JSON.");
       }
     }
+    const nextPrice = price.trim() === "" ? 0 : dollarsToCents(price);
+    if (nextPrice === null) {
+      setBusy(false);
+      return setError("Enter the price as zero or more dollars.");
+    }
     // Limits and price change only when edited; blank calls per minute means no limit.
     const limits: Record<string, unknown> = {};
     if (provider) {
       const nextRate = rate.trim() === "" ? null : Math.max(1, Math.floor(Number(rate) || 0));
       if (nextRate !== provider.rateLimitPerMin) limits.rateLimitPerMin = nextRate;
-      const nextPrice = Math.max(0, Number(price) || 0);
       if (nextPrice !== provider.defaultCostCents) limits.defaultCostCents = nextPrice;
     }
     const res = provider
       ? await gridRequest(`/api/grid/providers/${provider.id}`, "PATCH", { credentials: Object.keys(credentials).length > 0 ? credentials : undefined, ...limits, ...(isHttp ? { baseUrl: baseUrl || undefined, config } : {}) })
-      : await gridRequest("/api/grid/providers", "POST", { adapter: entry.key, credentials, ...(isHttp ? { baseUrl, config } : {}) });
+      : await gridRequest("/api/grid/providers", "POST", { adapter: entry.key, credentials, defaultCostCents: nextPrice, ...(isHttp ? { baseUrl, config } : {}) });
     setBusy(false);
     if (!res.ok) return setError(res.error);
     // The key leaves the form state as soon as it is saved.
@@ -183,16 +190,16 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
               />
             </Field>
           ))}
-          {provider && (
-            <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Price per lookup ($)" htmlFor={`price-${entry.key}`} hint="What one lookup costs you on your plan. Estimates and dollar caps use it. Leave 0 to count vendor credits only.">
+              <Input id={`price-${entry.key}`} type="number" min={0} step={0.001} value={price} onChange={(e) => setPrice(e.target.value)} className="w-28" />
+            </Field>
+            {provider && (
               <Field label="Calls per minute" htmlFor={`rate-${entry.key}`} hint="Your plan's limit. Leave blank for no limit.">
                 <Input id={`rate-${entry.key}`} type="number" min={1} value={rate} onChange={(e) => setRate(e.target.value)} className="w-28" />
               </Field>
-              <Field label="Price per call (cents)" htmlFor={`price-${entry.key}`} hint="What a billed call costs you. Cents caps and the run's dollar estimate use it.">
-                <Input id={`price-${entry.key}`} type="number" min={0} step={0.01} value={price} onChange={(e) => setPrice(e.target.value)} className="w-28" />
-              </Field>
-            </div>
-          )}
+            )}
+          </div>
           {isHttp && (
             <>
               <Field label="Base URL" htmlFor="http-base" hint="https only. The host must be on the operator's allow-list.">
@@ -223,7 +230,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
                 {confirm.impact.columns.map((c) => (
                   <li key={`${c.tableId}:${c.columnName}`}>
                     {c.tableName} › {c.columnName}
-                    {c.waterfall && <span className="text-muted-foreground"> (waterfall)</span>}
+                    {c.waterfall && <span className="text-muted-foreground"> (tried in order)</span>}
                   </li>
                 ))}
               </ul>

@@ -15,13 +15,15 @@ export interface Outcome {
    * of the action uses ("Company name" would read as the imported column next to it).
    */
   column: string;
+  /** The action's other outputs that `fills` names, ticked as columns of their own when the dialog opens. */
+  outputs: readonly string[];
 }
 
 export const OUTCOMES: readonly Outcome[] = [
-  { actionKey: "find-work-email", label: "Find work emails", fills: "From a name and a company", column: "Work email" },
-  { actionKey: "verify-email", label: "Verify emails", fills: "Valid, invalid or catch-all", column: "Email status" },
-  { actionKey: "enrich-person", label: "Enrich people", fills: "Work email, title and LinkedIn", column: "Person's work email" },
-  { actionKey: "enrich-company", label: "Enrich companies", fills: "Industry, size and location", column: "Matched company" },
+  { actionKey: "find-work-email", label: "Find work emails", fills: "From a name and a company", column: "Work email", outputs: [] },
+  { actionKey: "verify-email", label: "Verify emails", fills: "Valid, invalid or catch-all", column: "Email status", outputs: [] },
+  { actionKey: "enrich-person", label: "Enrich people", fills: "Work email, title and LinkedIn", column: "Person's work email", outputs: ["title", "linkedinUrl"] },
+  { actionKey: "enrich-company", label: "Enrich companies", fills: "Industry, size and location", column: "Matched company", outputs: ["industry", "employeeCount", "city", "country"] },
 ];
 
 export const outcomeOf = (actionKey: string | undefined): Outcome | undefined => OUTCOMES.find((o) => o.actionKey === actionKey);

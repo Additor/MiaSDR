@@ -539,6 +539,17 @@ describeDb("grid enrichment runs", () => {
     expect(calls).toBe(2);
   });
 
+  it("a preview counts the rows a new column could run on and one cell's cost, and creates nothing", async () => {
+    const { actor, table } = await fixture([{ name: "Ada Lovelace", domain: "acme.com" }, { name: "Bob Ray", domain: "" }]);
+    const d = deps(fake());
+    await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
+    const preview = await m.run.previewEnrichment(d.runDeps, actor, table, { steps: [{ providerKey: "fake-a", actionKey: "find-email" }], inputs: { fullName: "name", companyDomain: "domain", ghost: "no_such_column" } });
+    expect(preview).toMatchObject({ rows: 2, ready: 1, more: false, samples: { name: "Ada Lovelace", domain: "acme.com" }, perCell: { cents: 2 } });
+    const unmapped = await m.run.previewEnrichment(d.runDeps, actor, table, { steps: [{ providerKey: "fake-a", actionKey: "find-email" }], inputs: {} });
+    expect(unmapped.ready).toBe(0);
+    expect(await jobs(table)).toEqual({});
+  });
+
   it("a dry run counts calls, credits and cents per provider with the auto-run columns it sets off, and queues nothing", async () => {
     const { actor, table, rows } = await fixture([{ name: "Ada Lovelace", domain: "acme.com" }, { name: "Bob Ray", domain: "beta.com" }]);
     const d = deps(fake());

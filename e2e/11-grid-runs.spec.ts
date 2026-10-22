@@ -96,16 +96,58 @@ test.describe("grid runs", () => {
 
     await page.getByRole("button", { name: "Enrich", exact: true }).click();
     await page.getByRole("menuitem", { name: /^Verify emails/ }).click();
-    // The outcome opens with the first connected verifier ticked; ticking a second makes it a waterfall.
+    // The outcome opens on the first connected verifier; ticking a second under Change makes it a waterfall.
     const dialog = page.getByRole("dialog", { name: "Verify emails" });
+    await expect(dialog.getByText("Hunter", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Change providers" }).click();
     await expect(dialog.getByRole("checkbox", { name: /Hunter/ })).toBeChecked();
     await dialog.getByRole("checkbox", { name: /ZeroBounce/ }).click();
-    await dialog.getByRole("button", { name: "Add without running" }).click();
+    await expect(dialog.getByText("Hunter, then ZeroBounce")).toBeVisible();
+    await dialog.getByRole("button", { name: "Add column" }).click();
     await expect(dialog).toBeHidden();
 
     const { columns } = await gridPage(page.request, tableId);
     const waterfall = columns.find((c) => c.type === "waterfall");
     expect(waterfall?.config).toMatchObject({ steps: [{ providerKey: "c2-hunter", actionKey: "verify-email" }, { providerKey: "c2-zerobounce", actionKey: "verify-email" }] });
+  });
+
+  test("an outcome with no provider connects one in place, then reads as provider, match and columns", async ({ page }) => {
+    await signInAdmin(page);
+    const { workbookId, tableId } = await newWorkbook(page.request, "C2 enrich people");
+    await importCsv(page.request, tableId, PEOPLE);
+    // Nothing that enriches people stays connected: earlier fake providers go off, and a vendor from an earlier run goes.
+    const listed = (await (await page.request.get("/api/grid/providers")).json()) as { providers: Array<{ id: string; adapter: string }> };
+    for (const p of listed.providers) {
+      if (p.adapter === "fake") expect((await page.request.patch(`/api/grid/providers/${p.id}`, { data: { enabled: false } })).ok()).toBe(true);
+      if (p.adapter === "apollo" || p.adapter === "peopledatalabs") expect((await page.request.delete(`/api/grid/providers/${p.id}`)).ok()).toBe(true);
+    }
+    await page.goto(`/tables/${workbookId}`);
+    await page.getByRole("button", { name: "Enrich", exact: true }).click();
+    await page.getByRole("menuitem", { name: /^Enrich people/ }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Enrich people" });
+    await expect(dialog.getByText(/^Connect a provider that can enrich people\./)).toBeVisible();
+    const pdl = dialog.getByRole("listitem").filter({ hasText: "People Data Labs" });
+    await pdl.getByRole("button", { name: "Connect" }).click();
+    // In fake mode the key check makes no call, so this key is never sent anywhere.
+    await pdl.getByLabel("API key").fill("c2-pdl-key");
+    await expect(pdl.getByLabel("Price per lookup ($)")).toHaveValue("0");
+    await pdl.locator("form").getByRole("button", { name: "Connect" }).click();
+
+    // The form takes over with the vendor picked, the guessed inputs in a line and the promised columns ticked.
+    await expect(dialog.getByText("People Data Labs", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("1 credit a lookup")).toBeVisible();
+    await expect(dialog.getByText("Full name + Company domain + Company name")).toBeVisible();
+    await expect(dialog.getByText(/3 of 3 rows have these inputs/)).toBeVisible();
+    await expect(dialog.getByRole("list", { name: "Columns this adds" })).toHaveText(/Person's work email.*Title.*LinkedIn URL/);
+    await expect(dialog.getByText("A full run uses up to 3 credits.")).toBeVisible();
+    await dialog.getByRole("button", { name: "Add column" }).click();
+    await expect(dialog).toBeHidden();
+
+    const { columns } = await gridPage(page.request, tableId);
+    expect(columns.map((c) => c.name)).toEqual(expect.arrayContaining(["Person's work email", "Title", "LinkedIn URL"]));
+    const after = (await (await page.request.get("/api/grid/providers")).json()) as { providers: Array<{ id: string; adapter: string }> };
+    for (const p of after.providers.filter((x) => x.adapter === "peopledatalabs")) await page.request.delete(`/api/grid/providers/${p.id}`);
   });
 
   test("an AI column is added from the toolbar and filled by a run", async ({ page }) => {
@@ -120,7 +162,7 @@ test.describe("grid runs", () => {
     const dialog = page.getByRole("dialog", { name: "Add AI column" });
     await dialog.getByLabel("Column name").fill("Summary");
     await dialog.getByLabel("Prompt").fill("Describe the company {{company}} in one line.");
-    await dialog.getByRole("button", { name: "Add without running" }).click();
+    await dialog.getByRole("button", { name: "Add column" }).click();
     await expect(page.getByRole("columnheader", { name: /Summary/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Run", exact: true }).first().click();

@@ -4,15 +4,15 @@ export interface WaterfallStep {
   actionKey: string;
 }
 
-/** The one line under the folded "Spend and timing" section: "Manual runs · reuse 30 days · up to 2 credits a cell". */
+/** The one line under the folded Options section: "Manual runs · reuses answers for 30 days · up to 2 credits a row". */
 export function spendSummary(s: { autoRun: boolean; delay: string; reuseDays: string; maxCost?: string; maxCredits?: string; waitOnLimit?: boolean }): string {
   const parts = [s.autoRun ? "Runs automatically" : "Manual runs"];
   const delay = Math.floor(Number(s.delay) || 0);
   if (delay > 0) parts.push(`${delay} s between calls`);
   const reuse = Math.floor(Number(s.reuseDays) || 0);
-  parts.push(reuse > 0 ? `reuse ${reuse} ${reuse === 1 ? "day" : "days"}` : "no reuse");
-  if (s.maxCredits?.trim()) parts.push(`up to ${Number(s.maxCredits)} credits a cell`);
-  if (s.maxCost?.trim()) parts.push(`up to $${Number(s.maxCost)} a cell`);
+  parts.push(reuse > 0 ? `reuses answers for ${reuse} ${reuse === 1 ? "day" : "days"}` : "no reuse");
+  if (s.maxCredits?.trim()) parts.push(`up to ${Number(s.maxCredits)} credits a row`);
+  if (s.maxCost?.trim()) parts.push(`up to $${Number(s.maxCost)} a row`);
   if (s.waitOnLimit) parts.push("waits for rate limits");
   return parts.join(" · ");
 }

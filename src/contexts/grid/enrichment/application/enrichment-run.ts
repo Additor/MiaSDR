@@ -1,7 +1,7 @@
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { autoRunDescendants, cascadeTargets, inputsReady, RUNNABLE_TYPES, runRoots } from "../domain/enrichment-cascade";
 import { assertWithinLimits, DEFAULT_CASCADE_LIMITS, MAX_SCAN_ROWS, ORG_MAX_PENDING_CELLS, planCascade, resolveFirstN, resolveMaxRows, SCAN_PAGE_ROWS, type CascadeCandidate, type RunRequest } from "../domain/enrichment-run-limits";
-import { hasCellValue } from "../domain/enrichment-templates";
+import { cellText, hasCellValue, ownCell } from "../domain/enrichment-templates";
 import type { AdapterRegistry, CellRunView, EnqueueTarget, GridRunStore, JobCounts, ProviderImpact, ProviderStore, ProviderUsage } from "./enrichment-ports";
 import { cellEstimate, estimateColumn, type ColumnEstimate, type ProviderEstimate } from "./enrichment-cost";
 
@@ -172,6 +172,59 @@ export async function requestRun(deps: RunDeps, actor: Actor, tableId: string, r
   const queued = await deps.store.enqueue(org, tableId, queue, { priority: request.columnKey ? 10 : 0, now: deps.now(), fresh: request.fresh === true });
   kickWorker(deps, queued);
   return { queued, ...estimate, jobs: await deps.store.counts(org, tableId) };
+}
+
+/** Rows a preview reads at most. Past it the preview says "more", as the run's own row limit stops there too. */
+export const PREVIEW_MAX_ROWS = 10_000;
+const SAMPLE_CHARS = 40;
+
+/** What a new enrichment column would do before it exists, for the enrichment dialog. */
+export interface EnrichmentPreview {
+  /** Rows read, up to PREVIEW_MAX_ROWS. */
+  rows: number;
+  /** Of those, the rows whose mapped inputs cover the action: the cells a run would call a provider for. */
+  ready: number;
+  /** True when the table has rows past PREVIEW_MAX_ROWS. */
+  more: boolean;
+  /** The first value of each column, cut to a few words, so the dialog can show what a column holds. */
+  samples: Record<string, string>;
+  /** One cell at worst, from the providers as they are now. */
+  perCell: { cents: number; credits: number; providers: ProviderEstimate[] };
+}
+
+/**
+ * Counts the rows a column with these steps and inputs could run on, and what one of its cells can cost, without
+ * creating it. Inputs that name no column are left out, as the column itself would refuse them.
+ */
+export async function previewEnrichment(deps: RunDeps, actor: Actor, tableId: string, request: { steps: Array<{ providerKey: string; actionKey: string }>; inputs: Record<string, string> }): Promise<EnrichmentPreview> {
+  await requireTable(deps, actor, tableId);
+  const org = actor.organizationId;
+  const columns = await deps.store.listColumns(org, tableId);
+  const known = new Set(columns.map((c) => c.key));
+  const inputs = Object.fromEntries(Object.entries(request.inputs).filter(([, key]) => known.has(key)));
+  const steps = request.steps.slice(0, 8);
+  const config = steps.length === 1 ? { providerKey: steps[0].providerKey, actionKey: steps[0].actionKey, inputs } : { steps, inputs };
+  const draft = { id: "", key: "", name: "this column", position: 0, updatedAt: new Date(0), type: steps.length === 1 ? "enrichment" : "waterfall", config, dependsOn: [], autoRun: false };
+  const estimate = steps.length === 0 ? { cents: 0, credits: 0, providers: [] } : await cellEstimate(deps, org, draft);
+
+  let rows = 0;
+  let ready = 0;
+  const samples: Record<string, string> = {};
+  for (let offset = 0; offset < PREVIEW_MAX_ROWS + 1; offset += SCAN_PAGE_ROWS) {
+    const page = await deps.store.listRows(org, tableId, { limit: Math.min(SCAN_PAGE_ROWS, PREVIEW_MAX_ROWS + 1 - offset), offset });
+    for (const row of page) {
+      if (rows === PREVIEW_MAX_ROWS) return { rows, ready, more: true, samples, perCell: { cents: estimate.cents, credits: estimate.credits, providers: estimate.providers } };
+      rows += 1;
+      if (Object.keys(inputs).length > 0 && inputsReady(draft, row.cells)) ready += 1;
+      for (const column of columns) {
+        if (samples[column.key] !== undefined) continue;
+        const value = ownCell(row.cells, column.key);
+        if (hasCellValue(value)) samples[column.key] = cellText(value).slice(0, SAMPLE_CHARS);
+      }
+    }
+    if (page.length < SCAN_PAGE_ROWS) break;
+  }
+  return { rows, ready, more: false, samples, perCell: { cents: estimate.cents, credits: estimate.credits, providers: estimate.providers } };
 }
 
 /** The Stop button. Queued cells go back to idle, each with a `cancelled` ledger row. A cell that is mid-call finishes. */

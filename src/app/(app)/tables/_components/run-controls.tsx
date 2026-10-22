@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { gridRequest, gridUrl } from "../_lib/data/client";
-import { buildRunBody, centsCapIsInert, DEFAULT_FIRST_N, estimateByProvider, estimateHeadline, retrySummary, runSummary, stopSummary, type RunEstimate, type RunScope } from "../_lib/data/run-request";
+import { buildRunBody, centsCapIsInert, DEFAULT_FIRST_N, RUN_MAX_ROWS, estimateByProvider, estimateHeadline, retrySummary, runSummary, stopSummary, type RunEstimate, type RunScope } from "../_lib/data/run-request";
 import type { GridColumn, JobCounts } from "../_lib/data/types";
 import { ErrorText, Field } from "./form-bits";
 
@@ -26,16 +28,19 @@ interface DialogProps {
   initialFirstN?: number;
   /** The table has never run: open on the first rows, so the first spend is a small test. */
   firstRun?: boolean;
+  /** Rows in the table, so the row limit starts high enough to cover it. */
+  tableRows?: number;
   onClose: () => void;
   onStarted: () => void;
 }
 
 /** Choose what to run: rows, whether to skip filled cells, and how much a run may cost. */
-export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firstRun, onClose, onStarted }: DialogProps) {
+export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firstRun, tableRows = 0, onClose, onStarted }: DialogProps) {
   const [scope, setScope] = useState<RunScope>(initialFirstN !== undefined ? "first" : selectedRowIds.length > 0 ? "selected" : firstRun ? "first" : "all");
   const [firstN, setFirstN] = useState(String(initialFirstN ?? DEFAULT_FIRST_N));
   const [onlyEmpty, setOnlyEmpty] = useState(true);
-  const [maxRows, setMaxRows] = useState("1000");
+  // The limit guards against a mistake, not the table you meant: it starts at the table's size, from 1,000 up to the most a run takes.
+  const [maxRows, setMaxRows] = useState(String(Math.min(RUN_MAX_ROWS, Math.max(1000, tableRows))));
   const [maxCost, setMaxCost] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,31 +91,40 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
         <div className="grid gap-3">
           <fieldset className="stack-field">
             <legend className="mb-1 text-sm font-medium">Rows</legend>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="radio" name="run-scope" checked={scope === "all"} onChange={() => setScope("all")} /> All rows (up to the limit below)
-            </label>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <label className="flex items-center gap-2">
-                <input type="radio" name="run-scope" checked={scope === "first"} onChange={() => setScope("first")} /> First
-              </label>
-              <Input
-                aria-label="Number of first rows"
-                className="w-24"
-                type="number"
-                min={1}
-                max={10000}
-                value={firstN}
-                onFocus={() => setScope("first")}
-                onChange={(e) => {
-                  setScope("first");
-                  setFirstN(e.target.value);
-                }}
-              />
-              <span>rows in table order</span>
-            </div>
-            <label className={`flex items-center gap-2 text-sm ${selectedRowIds.length === 0 ? "text-muted-foreground" : ""}`}>
-              <input type="radio" name="run-scope" disabled={selectedRowIds.length === 0} checked={scope === "selected"} onChange={() => setScope("selected")} /> {selectedRowIds.length === 0 ? "Selected rows (select rows in the grid first)" : `${selectedRowIds.length.toLocaleString("en-US")} selected ${selectedRowIds.length === 1 ? "row" : "rows"}`}
-            </label>
+            <RadioGroup value={scope} onValueChange={(v) => setScope(v as RunScope)}>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="all" id="run-scope-all" />
+                <Label htmlFor="run-scope-all" className="font-normal">
+                  All rows (up to the limit below)
+                </Label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <RadioGroupItem value="first" id="run-scope-first" />
+                <Label htmlFor="run-scope-first" className="font-normal">
+                  First
+                </Label>
+                <Input
+                  aria-label="Number of first rows"
+                  className="w-24"
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={firstN}
+                  onFocus={() => setScope("first")}
+                  onChange={(e) => {
+                    setScope("first");
+                    setFirstN(e.target.value);
+                  }}
+                />
+                <span>rows in table order</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="selected" id="run-scope-selected" disabled={selectedRowIds.length === 0} />
+                <Label htmlFor="run-scope-selected" className={`font-normal ${selectedRowIds.length === 0 ? "text-muted-foreground" : ""}`}>
+                  {selectedRowIds.length === 0 ? "Selected rows (select rows in the grid first)" : `${selectedRowIds.length.toLocaleString("en-US")} selected ${selectedRowIds.length === 1 ? "row" : "rows"}`}
+                </Label>
+              </div>
+            </RadioGroup>
           </fieldset>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={onlyEmpty} onCheckedChange={(v) => setOnlyEmpty(v === true)} /> Skip cells that already have a value

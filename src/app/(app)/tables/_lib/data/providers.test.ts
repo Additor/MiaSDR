@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogGroups, guessColumn, impactText, usageLine } from "./providers";
+import { catalogGroups, guessColumn, impactText, lookupPrice, usageLine } from "./providers";
 
 describe("provider usage line", () => {
   it("names calls, the found rate, errors, reuses, credits and the typical latency", () => {
@@ -15,8 +15,8 @@ describe("provider usage line", () => {
 describe("turn off and disconnect confirmation", () => {
   const impact = { columns: [{ tableId: "t", tableName: "Leads", columnName: "Verify", waterfall: false }], pendingCells: 3 };
   it("says what happens to the columns and the waiting cells", () => {
-    expect(impactText("off", impact)).toBe("1 column uses it. 3 cells are waiting to run. Their cells wait until you turn it back on, without using an attempt; a waterfall asks its other steps meanwhile.");
-    expect(impactText("disconnect", impact)).toBe("The saved key is deleted. 1 column uses it. 3 cells are waiting to run. Their cells fail until you connect it again; a waterfall asks its other steps.");
+    expect(impactText("off", impact)).toBe("1 column uses it. 3 cells are waiting to run. Their cells wait until you turn it back on, without using an attempt; a column that tries several providers asks the next one meanwhile.");
+    expect(impactText("disconnect", impact)).toBe("The saved key is deleted. 1 column uses it. 3 cells are waiting to run. Their cells fail until you connect it again; a column that tries several providers asks the next one.");
     expect(impactText("off", { columns: [], pendingCells: 0 })).toBe("No column uses it. You can turn it back on at any time.");
     expect(impactText("disconnect", null)).toMatch(/^MiaSDR could not check which columns use it\./);
   });
@@ -48,5 +48,15 @@ describe("input column guess", () => {
 
   it("does not take an email column renamed from the starter key as the full name", () => {
     expect(guessColumn(fullName, [col("name", "Email", "email")])).toBeNull();
+  });
+});
+
+describe("price of a lookup", () => {
+  it("takes the higher of the provider's and the action's price, then credits", () => {
+    expect(lookupPrice(0, { defaultCostCents: 1, creditsPerCall: 1 })).toBe("$0.01 a lookup");
+    expect(lookupPrice(0.5, { defaultCostCents: 0, creditsPerCall: 1 })).toBe("$0.005 a lookup");
+    expect(lookupPrice(0, { defaultCostCents: 0, creditsPerCall: 0.5 })).toBe("0.5 credits a lookup");
+    expect(lookupPrice(0, { defaultCostCents: 0, creditsPerCall: 1 })).toBe("1 credit a lookup");
+    expect(lookupPrice(0, undefined)).toBe("No price set");
   });
 });
