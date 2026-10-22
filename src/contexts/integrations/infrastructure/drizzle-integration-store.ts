@@ -17,12 +17,13 @@ export const drizzleIntegrationStore: IntegrationStore = {
         updatedAt: integrationAccounts.updatedAt,
         credentialId: integrationCredentials.accountId,
         credentialUpdatedAt: integrationCredentials.updatedAt,
+        config: integrationAccounts.config,
       })
       .from(integrationAccounts)
       .leftJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
       .where(eq(integrationAccounts.organizationId, organizationId))
       .orderBy(asc(integrationAccounts.name));
-    return rows.map(({ credentialId, ...row }) => ({ ...row, hasCredential: credentialId !== null }));
+    return rows.map(({ credentialId, config, ...row }) => ({ ...row, hasCredential: credentialId !== null, primary: config?.primary === true }));
   },
 
   async get(organizationId, id) {

@@ -1,14 +1,17 @@
 "use client";
 
+import { CircleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { callApi } from "@/lib/api-client";
 import { SettingsSection } from "../settings-section";
 
 interface ModelView {
+  status: AiStatus;
   connected: boolean;
   connections: Array<{ key: string; label: string }>;
   active: string | null;
@@ -25,6 +28,35 @@ const DEFAULT_VALUE = "__default__";
 
 /** The select's starting value: the saved model, else "Default" where one exists, else nothing so the placeholder shows. */
 const initialChoice = (view: ModelView): string | null => view.model ?? (view.defaultModel != null ? DEFAULT_VALUE : null);
+
+/** One line on what AI runs on now, whichever provider the picker shows. Off reads in the warning hue, as DESIGN.md asks for a degraded state. */
+function RunningLine({ status }: { status: AiStatus }) {
+  if (status.state === "on") {
+    return (
+      <p role="status" className="text-sm">
+        AI runs on <span className="font-medium">{status.provider}</span>, <span className="font-medium">{status.model}</span>.
+      </p>
+    );
+  }
+  if (status.state === "demo") {
+    return (
+      <p role="status" className="text-sm">
+        Demo mode: AI answers come from stand-ins, and no provider is called.
+      </p>
+    );
+  }
+  if (status.state === "no_model") {
+    return (
+      <p role="status" className="flex items-start gap-2 text-sm">
+        <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+        <span>
+          <strong className="font-medium text-warning">AI is off.</strong> {status.provider} has no default model. Pick one below and save it.
+        </span>
+      </p>
+    );
+  }
+  return null;
+}
 
 const endpoint = (connection?: string | null) => `/api/integrations/ai-model${connection ? `?connection=${encodeURIComponent(connection)}` : ""}`;
 
@@ -84,7 +116,10 @@ export function AiModelCard() {
       return;
     }
     apply(result.data);
-    toast.success(result.data.active === view.connection && view.active !== view.connection ? "AI now runs on this provider." : "Model saved.");
+    const running = result.data.status;
+    const label = view.connections.find((c) => c.key === view.connection)?.label ?? "this provider";
+    if (running.state !== "on") toast.success("Model saved.");
+    else toast.success(view.active !== view.connection ? `AI now runs on ${label}, ${running.model}.` : `Model saved. AI runs on ${running.model}.`);
   }
 
   const choices = view ? Array.from(new Set([...(view.model ? [view.model] : []), ...view.choices])) : [];
@@ -94,7 +129,10 @@ export function AiModelCard() {
     ...(hasDefault || !view ? [{ value: DEFAULT_VALUE, label: view?.defaultModel ? `Default (${view.defaultModel})` : "Default" }] : []),
     ...choices.map((id) => ({ value: id, label: id })),
   ];
-  const connectionItems = (view?.connections ?? []).map((c) => ({ value: c.key, label: c.key === view?.active ? `${c.label} (in use)` : c.label }));
+  const connectionItems = (view?.connections ?? []).map((c) => ({ value: c.key, label: c.key === view?.active ? `${c.label} (runs AI now)` : c.label }));
+  const labelOf = (key: string | null) => view?.connections.find((c) => c.key === key)?.label;
+  // Viewing a provider that does not run AI: say what saving does, and that the running key stays.
+  const switching = view !== null && view.active !== null && view.connection !== view.active;
   const unchanged = view !== null && view.connection === view.active && choice === initialChoice(view);
 
   return (
@@ -103,9 +141,10 @@ export function AiModelCard() {
         <p className="text-sm text-muted-foreground">{view.notice}</p>
       ) : (
         <>
+          {view && <RunningLine status={view.status} />}
           {connectionItems.length > 1 && (
             <div className="stack-field">
-              <Label htmlFor="ai-connection">Provider</Label>
+              <Label htmlFor="ai-connection">AI provider</Label>
               <Select items={connectionItems} value={view?.connection ?? ""} onValueChange={(v) => v && void load(v)} disabled={!view || pending}>
                 <SelectTrigger id="ai-connection" className="w-full max-w-sm">
                   <SelectValue />
@@ -118,6 +157,11 @@ export function AiModelCard() {
                   ))}
                 </SelectContent>
               </Select>
+              {switching && (
+                <p className="text-sm text-muted-foreground">
+                  Saving switches AI from {labelOf(view.active)} to {labelOf(view.connection)}. The {labelOf(view.active)} key stays saved.
+                </p>
+              )}
             </div>
           )}
           <div className="stack-field">
@@ -134,7 +178,11 @@ export function AiModelCard() {
                 ))}
               </SelectContent>
             </Select>
-            {view?.notice && <p className="text-sm text-muted-foreground">{view.notice}</p>}
+            {view?.notice && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {view.notice}
+              </p>
+            )}
           </div>
         </>
       )}

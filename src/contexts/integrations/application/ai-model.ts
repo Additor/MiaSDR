@@ -45,6 +45,8 @@ export interface AiModelDeps {
 }
 
 export interface AiModelView {
+  /** Whether AI runs for the organization and on what, whichever connection this view describes. */
+  status: AiStatus;
   connected: boolean;
   /** Every connection with a saved key, in settings order. */
   connections: Array<{ key: string; label: string }>;
@@ -118,22 +120,22 @@ export async function getAiModel(deps: AiModelDeps, actor: Actor, query: { conne
   requireAdmin(actor);
   const { accounts, active, target } = await load(deps, actor, query.connection);
   const connections = accounts.map((a) => ({ key: a.key, label: aiConnection(a.key)!.label }));
+  const status: AiStatus = deps.skipLive ? { state: "demo" } : aiStatusOf(accounts, deps.envModel);
   if (!target) {
-    return { connected: false, connections, active: null, connection: null, model: null, effective: null, defaultModel: null, choices: [], live: false, notice: "Connect an AI provider above, then choose a model here." };
+    return { status, connected: false, connections, active: null, connection: null, model: null, effective: null, defaultModel: null, choices: [], live: false, notice: "Connect an AI provider above, then choose a model here." };
   }
   const spec = aiConnection(target.key)!;
   const effective = effectiveAiModel(spec, target.model, deps.envModel);
-  const base = { connected: true, connections, active: active?.key ?? null, connection: target.key, model: target.model, effective, defaultModel: effectiveAiModel(spec, null, deps.envModel) };
+  const base = { status, connected: true, connections, active: active?.key ?? null, connection: target.key, model: target.model, effective, defaultModel: effectiveAiModel(spec, null, deps.envModel) };
   const result = await liveChoices(deps, spec, target);
-  const missing = effective ? null : `Choose a ${spec.label} model. AI stays off until one is saved.`;
-  if (result.ok) return { ...base, choices: result.ids, live: true, notice: missing };
+  if (result.ok) return { ...base, choices: result.ids, live: true, notice: null };
   const notice =
     result.reason === "rejected"
       ? `${spec.label} rejected the saved key, so the live model list is unavailable. Save the key again.`
       : spec.fallbackModels.length > 0
         ? "The live model list could not be loaded. Showing the built-in list."
         : "The live model list could not be loaded. Try again shortly.";
-  return { ...base, choices: [...spec.fallbackModels], live: false, notice: missing ? `${notice} ${missing}` : notice };
+  return { ...base, choices: [...spec.fallbackModels], live: false, notice };
 }
 
 /** Runs AI on `connection` (default: the active one) with `model`, or that connection's default with null. */

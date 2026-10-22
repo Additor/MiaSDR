@@ -25,6 +25,7 @@ interface Account {
   hasCredential: boolean;
   credentialUpdatedAt: string | null;
   manageHref: string | null;
+  runsAi: boolean;
 }
 
 interface Provider {
@@ -130,6 +131,7 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
               <li key={account.id} className={`flex flex-wrap items-center gap-2 ${RULED_ROW}`}>
                 <span className="font-medium">{account.name}</span>
                 <StatusBadge status={account.enabled ? "connected" : "disabled"} />
+                {account.runsAi && <span className="text-sm font-medium">Runs AI</span>}
                 <span className="text-sm text-muted-foreground">
                   {account.hasCredential ? (
                     <>

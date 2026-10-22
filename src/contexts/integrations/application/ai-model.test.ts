@@ -103,8 +103,8 @@ describe("AI model setting", () => {
       const { deps } = setup({ extra: [router] });
       expect(await getAiModel(deps, owner)).toMatchObject({ active: "anthropic", connection: "anthropic", connections: [{ key: "anthropic" }, { key: "openrouter" }] });
       const other = await getAiModel(deps, owner, { connection: "openrouter" });
-      expect(other).toMatchObject({ active: "anthropic", connection: "openrouter", effective: null, defaultModel: null, choices: ROUTER });
-      expect(other.notice).toMatch(/Choose a OpenRouter model/);
+      expect(other).toMatchObject({ active: "anthropic", connection: "openrouter", effective: null, defaultModel: null, choices: ROUTER, notice: null });
+      expect(other.status).toEqual({ state: "on", provider: "Anthropic", model: "claude-sonnet-5-5" });
       await expect(getAiModel(deps, owner, { connection: "vercel-ai-gateway" })).rejects.toThrow(/not connected/);
     });
 
@@ -114,7 +114,7 @@ describe("AI model setting", () => {
       await expect(setAiModel(deps, owner, { connection: "openrouter", model: "claude-sonnet-5-5" })).rejects.toThrow(/OpenRouter does not list/);
       const view = await setAiModel(deps, owner, { connection: "openrouter", model: "openai/gpt-6" });
       expect(saveChoice).toHaveBeenCalledWith("o1", "a2", "openai/gpt-6", { actorUserId: "u1", from: { connection: "anthropic", model: null }, to: { connection: "openrouter", model: "openai/gpt-6" } });
-      expect(view).toMatchObject({ active: "openrouter", connection: "openrouter", model: "openai/gpt-6", effective: "openai/gpt-6" });
+      expect(view).toMatchObject({ active: "openrouter", connection: "openrouter", model: "openai/gpt-6", effective: "openai/gpt-6", status: { state: "on", provider: "OpenRouter", model: "openai/gpt-6" } });
     });
 
     it("has no built-in fallback for a gateway whose list is unreachable", async () => {

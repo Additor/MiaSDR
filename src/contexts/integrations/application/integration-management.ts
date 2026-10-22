@@ -1,5 +1,6 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { pickActiveAiConnection } from "../domain/ai-connections";
 import { EXTERNAL_PROVIDERS, managedProvider, validateCredentialInput } from "../domain/providers";
 import { assertCredentialVerified, type CredentialVerifier } from "@/platform/credentials/verify";
 
@@ -15,10 +16,13 @@ export interface IntegrationView {
   updatedAt: Date;
   /** Set for providers with their own settings page. */
   manageHref: string | null;
+  /** The AI connection that runs AI now. False for every other account. */
+  runsAi: boolean;
 }
 
 export interface IntegrationStore {
-  list(organizationId: string): Promise<Omit<IntegrationView, "manageHref">[]>;
+  /** `primary`: the AI account marked as the one AI runs on. */
+  list(organizationId: string): Promise<Array<Omit<IntegrationView, "manageHref" | "runsAi"> & { primary: boolean }>>;
   get(organizationId: string, id: string): Promise<{ id: string; key: string } | null>;
   /** Creates the account or replaces its credential for the same provider key. */
   saveCredential(
@@ -49,7 +53,19 @@ function requireAdmin(actor: Actor) {
 export async function listIntegrations(deps: IntegrationDeps, actor: Actor): Promise<IntegrationView[]> {
   requireAdmin(actor);
   const rows = await deps.integrations.list(actor.organizationId);
-  return rows.map((row) => ({ ...row, manageHref: EXTERNAL_PROVIDERS[row.key]?.href ?? null }));
+  const running = pickActiveAiConnection(rows.filter((row) => row.kind === "ai" && row.enabled && row.hasCredential));
+  return rows.map(({ id, kind, key, name, enabled, hasCredential, credentialUpdatedAt, updatedAt }) => ({
+    id,
+    kind,
+    key,
+    name,
+    enabled,
+    hasCredential,
+    credentialUpdatedAt,
+    updatedAt,
+    manageHref: EXTERNAL_PROVIDERS[key]?.href ?? null,
+    runsAi: id === running?.id,
+  }));
 }
 
 /** Adds the provider's credential, or rotates it when one is already stored. */

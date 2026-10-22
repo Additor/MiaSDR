@@ -57,7 +57,7 @@ describeDb("integration credentials", () => {
 
     const list = await uc.listIntegrations(deps(), t.actor);
     expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ key: "anthropic", kind: "ai", hasCredential: true, manageHref: null });
+    expect(list[0]).toMatchObject({ key: "anthropic", kind: "ai", hasCredential: true, manageHref: null, runsAi: true });
     expect(JSON.stringify(list)).not.toMatch(/sk-ant|encrypted|v1:/);
   });
 
@@ -82,7 +82,7 @@ describeDb("integration credentials", () => {
     const [{ id: unipile }] = await sql`insert into integration_accounts (organization_id, kind, key, name) values (${a.id}, 'platform', 'unipile', 'Unipile') returning id`;
     await expect(uc.deleteIntegration(deps(), a.actor, unipile)).rejects.toBeInstanceOf(ValidationError);
     const list = await uc.listIntegrations(deps(), a.actor);
-    expect(list).toEqual([expect.objectContaining({ key: "unipile", hasCredential: false, manageHref: "/settings/linkedin" })]);
+    expect(list).toEqual([expect.objectContaining({ key: "unipile", hasCredential: false, manageHref: "/settings/linkedin", runsAi: false })]);
   });
 
   describe("verification", () => {
