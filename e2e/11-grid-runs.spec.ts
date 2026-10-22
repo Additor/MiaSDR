@@ -49,7 +49,7 @@ test.describe("grid runs", () => {
     await expect(page.getByLabel("The fake provider rejected this request.")).toBeVisible();
 
     // With auto-run on, editing an input queues the cell again by itself. Turn it off so the retry button does the work.
-    await page.getByRole("button", { name: "Run settings" }).click();
+    await page.getByRole("button", { name: /^Run options/ }).click();
     const autoRun = page.getByRole("menuitemcheckbox", { name: "Auto-run new and edited rows" });
     await expect(autoRun).toBeChecked();
     await autoRun.click();

@@ -25,7 +25,8 @@ test.describe("tables edit and push to campaign", () => {
     await expect(page.getByText("3 rows", { exact: true })).toBeVisible();
 
     // Add a blank row and fill it in by typing into cells.
-    await page.getByRole("button", { name: "Add row", exact: true }).click();
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Add row", exact: true }).click();
     await expect(page.getByText("4 rows", { exact: true })).toBeVisible();
     const email = page.getByRole("gridcell", { name: "Email: empty" });
     await email.click();
@@ -42,7 +43,7 @@ test.describe("tables edit and push to campaign", () => {
     await page.getByRole("checkbox", { name: "Select all loaded rows" }).first().check();
     await page.getByRole("button", { name: "Push to campaign" }).first().click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByText("4 rows become leads and are enrolled.")).toBeVisible();
+    await expect(dialog.getByText(/^4 selected rows\. They become leads and are enrolled\./)).toBeVisible();
     await dialog.getByLabel("New campaign name").fill("S8 from tables");
     await dialog.getByRole("button", { name: "Push 4 rows" }).click();
     await expect(dialog.getByText(/Created a draft campaign\./)).toBeVisible();

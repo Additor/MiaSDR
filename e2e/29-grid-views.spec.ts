@@ -266,14 +266,14 @@ test.describe("AI column output types and editing", () => {
     await add.getByLabel("Field key").fill("mail");
     await choose(page, add, "Field type", "Email");
     await add.getByRole("button", { name: "Add without running" }).click();
-    await expect(page.getByRole("columnheader", { name: /mail/ })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /Mail/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Run", exact: true }).first().click();
     await page.getByRole("dialog", { name: "Run enrichments" }).getByRole("button", { name: /^Run( [\d,]+ rows?)?$/ }).click();
     await expect(page.getByText(/Queued 2 cells across 2 rows/)).toBeVisible();
     await settle(page.request, tableId);
-    await expect(page.getByRole("gridcell", { name: "mail: fake@example.test" }).first()).toBeVisible({ timeout: 20_000 });
-    const mailType = (await gridPage(page.request, tableId)).columns.find((c) => c.name === "mail")!;
+    await expect(page.getByRole("gridcell", { name: "Mail: fake@example.test" }).first()).toBeVisible({ timeout: 20_000 });
+    const mailType = (await gridPage(page.request, tableId)).columns.find((c) => c.name === "Mail")!;
     expect(mailType.type).toBe("ai_output");
 
     // Edit the column: add a URL field. The email field keeps its column and values.
@@ -287,8 +287,8 @@ test.describe("AI column output types and editing", () => {
     await page.getByRole("option", { name: "URL", exact: true }).click();
     await edit.getByRole("button", { name: "Save" }).click();
     await expect(edit).toBeHidden();
-    await expect(page.getByRole("columnheader", { name: /site/ })).toBeVisible();
-    await expect(page.getByRole("gridcell", { name: "mail: fake@example.test" }).first()).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /Site/ })).toBeVisible();
+    await expect(page.getByRole("gridcell", { name: "Mail: fake@example.test" }).first()).toBeVisible();
 
     // Retyping the filled email field is refused and nothing changes.
     await page.getByRole("button", { name: "Column menu for Contact" }).click();
@@ -299,7 +299,7 @@ test.describe("AI column output types and editing", () => {
     await again.getByRole("button", { name: "Save" }).click();
     await expect(again.getByRole("alert")).toContainText("already has values");
     await again.getByRole("button", { name: "Cancel" }).click();
-    const stored = (await gridPage(page.request, tableId)).columns.find((c) => c.name === "mail")!;
+    const stored = (await gridPage(page.request, tableId)).columns.find((c) => c.name === "Mail")!;
     expect(stored.type).toBe("ai_output");
   });
 });
