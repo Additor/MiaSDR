@@ -2,7 +2,7 @@ import * as React from "react"
 import { cn } from "cn"
 
 /**
- * Buttons that act as one control: a main action and the chevron that opens its menu. The inner corners square off
+ * Buttons that act as one control, such as a main action and the chevron that opens its menu. The inner corners square off
  * and the borders merge, so the pair reads as one button. The button sizes already round their outer corners for it.
  */
 function ButtonGroup({ className, ...props }: React.ComponentProps<"div">) {
