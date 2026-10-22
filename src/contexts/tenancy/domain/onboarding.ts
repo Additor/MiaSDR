@@ -13,9 +13,15 @@ export interface OnboardingFacts {
   draftsAwaiting: number;
   /** Drafts a person approved that went out (`sent`). */
   messagesApproved: number;
-  /** An enabled Anthropic credential is stored. */
-  aiKeyStored: boolean;
+  /** Where AI setup stands. The integrations context decides it; the app wires it in. */
+  aiSetup: AiSetup;
 }
+
+/**
+ * `needs_model`: a key is saved for a provider with no default model, and nobody picked one, so AI is off.
+ * `on` carries what runs, such as "Anthropic, claude-sonnet-5-5", or "Demo mode" when no provider is called.
+ */
+export type AiSetup = { state: "none" } | { state: "needs_model"; provider: string } | { state: "on"; running: string };
 
 export type StepId = "profile" | "mailbox" | "linkedin" | "leads" | "campaign" | "approve" | "ai";
 /** `attention`: the person started but something needs a fix (a mailbox that failed to connect). */
@@ -129,10 +135,11 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
       title: "Add an AI key",
       description: "Optional. Lets MiaSDR classify replies and draft answers for your approval.",
       optional: true,
-      status: facts.aiKeyStored ? "done" : "todo",
-      detail: facts.aiKeyStored ? "AI provider connected" : null,
+      status: facts.aiSetup.state === "on" ? "done" : facts.aiSetup.state === "needs_model" ? "attention" : "todo",
+      detail:
+        facts.aiSetup.state === "on" ? `AI runs on ${facts.aiSetup.running}` : facts.aiSetup.state === "needs_model" ? `${facts.aiSetup.provider} key saved. AI is off until a model is picked.` : null,
       href: "/settings/integrations",
-      action: "Add key",
+      action: facts.aiSetup.state === "needs_model" ? "Pick a model" : "Add key",
     },
   ];
 

@@ -1,3 +1,4 @@
+import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { randomBytes } from "node:crypto";
 import type { LanguageModel, LanguageModelResolver } from "@/contexts/ai/application/ports";
 import { generateStructured } from "@/contexts/ai/application/structured";
@@ -15,6 +16,8 @@ export interface GridAnswerer {
 
 export interface GridAnswererResolver {
   forOrganization(organizationId: string): Promise<GridAnswerer | null>;
+  /** Whether AI is on and why not, for the message a null answerer turns into. */
+  status(organizationId: string): Promise<AiStatus>;
 }
 
 export function createGridAnswerer(model: LanguageModel): GridAnswerer {
@@ -45,5 +48,6 @@ export function createGridAnswererResolver(models: LanguageModelResolver = langu
       const model = await models.forOrganization(organizationId);
       return model ? createGridAnswerer(model) : null;
     },
+    status: (organizationId) => models.status(organizationId),
   };
 }

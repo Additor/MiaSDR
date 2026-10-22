@@ -117,6 +117,7 @@ export function LinkedInReplyPanelClient({ panel }: { panel: LinkedInReplyPanelV
         ) : (
           <div className="grid gap-1">
             {stale && <p className="text-sm text-destructive">This draft may be out of date: a newer message arrived after it was written. Regenerate or discard it.</p>}
+            {!draft && !panel.canGenerate && panel.aiOff && !panel.doNotContact && <p className="text-sm text-muted-foreground">{panel.aiOff} Until then, write the message yourself below.</p>}
             {!draft && panel.canGenerate && !panel.doNotContact && (
               <div>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>

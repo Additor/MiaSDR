@@ -1,5 +1,6 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, ValidationError, type Actor } from "@/shared/errors";
+import type { AiStatus } from "../domain/ai-status";
 import { aiConnection, effectiveAiModel, pickActiveAiConnection, type AiConnectionKey, type AiConnectionSpec } from "../domain/ai-connections";
 
 export { DEFAULT_AI_MODEL, KNOWN_AI_MODELS } from "../domain/ai-connections";
@@ -87,6 +88,15 @@ export function runningAi(accounts: readonly AiAccount[], envModel?: string): { 
   if (!account || !spec) return null;
   const model = effectiveAiModel(spec, account.model, envModel);
   return model ? { account, spec, model } : null;
+}
+
+/** The organization's AI status from its saved AI accounts. Demo mode is the caller's switch, since it skips every account. */
+export function aiStatusOf(accounts: readonly AiAccount[], envModel?: string): AiStatus {
+  const running = runningAi(accounts, envModel);
+  if (running) return { state: "on", provider: running.spec.label, model: running.model };
+  const active = pickActiveAiConnection(accounts);
+  const spec = active && aiConnection(active.key);
+  return spec ? { state: "no_model", provider: spec.label } : { state: "no_key" };
 }
 
 async function liveChoices(deps: AiModelDeps, spec: AiConnectionSpec, account: AiAccount): Promise<ModelListResult> {

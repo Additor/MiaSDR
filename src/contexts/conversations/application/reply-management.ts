@@ -4,6 +4,8 @@ import { normalizeSubject } from "../domain/subject";
 import { validateReplyCc, MAX_REPLY_CC, type ReplyCcError } from "../domain/lead-cc";
 import { needsReply } from "../domain/reply-policy";
 import { AiError } from "@/contexts/ai/domain/ai-error";
+import { aiIsOn, aiOffMessage } from "@/contexts/integrations/domain/ai-status";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { ReplyAiResolver } from "../ai/application/ai-ports";
 import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
 import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext } from "./reply-ports";
@@ -33,27 +35,34 @@ const assertId = (id: string, what: string) => {
 };
 const text = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
 
-export type ReplyPanel = PanelData & { aiConfigured: boolean; canGenerate: boolean };
+/**
+ * `aiOff` says what stops AI and how to turn it on, worded for the reader's role. Null when AI is on. `canManageAi`:
+ * the reader can open Settings, Integrations to fix it.
+ */
+export type ReplyPanel = PanelData & { aiConfigured: boolean; aiOff: string | null; canManageAi: boolean; canGenerate: boolean };
+
+const readerOf = (actor: Actor) => (isOwnerOrAdmin(actor.role) ? "admin" : "member");
 
 export async function getReplyPanel(deps: ReplyDeps, actor: Actor, conversationId: string): Promise<ReplyPanel | null> {
   assertId(conversationId, "Conversation");
   const panel = await deps.store.panel(actor.organizationId, conversationId);
   if (!panel) throw new NotFoundError("Conversation not found");
   if (panel.channel !== "email") return null;
-  const aiConfigured = await deps.ai.isConfigured(actor.organizationId);
-  return { ...panel, aiConfigured, canGenerate: aiConfigured && panel.recipient !== null };
+  const status = await deps.ai.status(actor.organizationId);
+  const aiConfigured = aiIsOn(status);
+  return { ...panel, aiConfigured, aiOff: aiOffMessage(status, readerOf(actor)), canManageAi: isOwnerOrAdmin(actor.role), canGenerate: aiConfigured && panel.recipient !== null };
 }
 
-async function requireProvider(deps: ReplyDeps, organizationId: string) {
-  const provider = await deps.ai.forOrganization(organizationId);
-  if (!provider) throw new ValidationError("AI is not configured. Connect an AI provider in Settings, Integrations.");
+async function requireProvider(deps: ReplyDeps, actor: Actor) {
+  const provider = await deps.ai.forOrganization(actor.organizationId);
+  if (!provider) throw new ValidationError(aiOffMessage(await deps.ai.status(actor.organizationId), readerOf(actor)) ?? "AI is off. Try again shortly.");
   return provider;
 }
 
 /** Generates a draft on request, for threads where the job made none (or AI was off when the reply arrived). */
 export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId: string): Promise<{ draftId: string }> {
   assertId(conversationId, "Conversation");
-  const provider = await requireProvider(deps, actor.organizationId);
+  const provider = await requireProvider(deps, actor);
   const ctx = await deps.store.draftContext(actor.organizationId, conversationId);
   if (!ctx) throw new NotFoundError("Conversation not found");
   const panel = await deps.store.panel(actor.organizationId, conversationId);
@@ -94,7 +103,7 @@ function asValidation(error: unknown) {
 
 export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: string, input: { note?: string }): Promise<{ draftId: string }> {
   assertId(draftId, "Draft");
-  const provider = await requireProvider(deps, actor.organizationId);
+  const provider = await requireProvider(deps, actor);
   const ctx = await deps.store.draftContextForDraft(actor.organizationId, draftId);
   if (!ctx) throw new NotFoundError("Draft not found");
   if (!["awaiting_review", "failed", "stale"].includes(ctx.draft.status)) {

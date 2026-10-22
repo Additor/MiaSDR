@@ -44,7 +44,7 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/outreach/infrastructure/drizzle-reachability.ts": ["contactPolicies"],
   "src/contexts/outreach/email/infrastructure/drizzle-test-send-store.ts": ["contactPolicies"],
   "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "records"],
-  "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "drafts", "integrationAccounts", "integrationCredentials", "linkedinAccounts", "mailboxes", "people"],
+  "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "drafts", "linkedinAccounts", "mailboxes", "people"],
   "src/platform/db/audit.ts": ["auditLog"],
   "src/platform/db/columns.ts": ["organizations"],
   "src/platform/db/conversation-visibility.ts": ["conversations"],

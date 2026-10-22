@@ -1,3 +1,4 @@
+import { aiOffMessage } from "@/contexts/integrations/domain/ai-status";
 import { hostname } from "node:os";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import { createGridAnswererResolver } from "../../infrastructure/grid-ai";
@@ -35,7 +36,8 @@ const gridAnswerers = createGridAnswererResolver();
 export const cellAnswerer: CellAnswerer = {
   async answer(organizationId, input) {
     const answerer = await gridAnswerers.forOrganization(organizationId);
-    if (!answerer) return null;
+    // The cell shows this to whoever opens it; the fix lives in Settings, Integrations, so the admin wording applies.
+    if (!answerer) throw new GridAiError(aiOffMessage(await gridAnswerers.status(organizationId)) ?? "AI is off. Try again shortly.", false);
     try {
       const result = await answerer.answer(input);
       return { output: result.output, provider: answerer.provider, model: answerer.model, usage: result.usage };

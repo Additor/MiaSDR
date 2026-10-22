@@ -36,7 +36,6 @@ describeDb("onboarding store", () => {
       activeCampaigns: 0,
       draftsAwaiting: 0,
       messagesApproved: 0,
-      aiKeyStored: false,
     });
   });
 
@@ -56,9 +55,6 @@ describeDb("onboarding store", () => {
     await sql`insert into mailboxes (organization_id, email_address, status) values (${a}, ${`ok-${tag}@onb.test`}, 'connected'), (${a}, ${`bad-${tag}@onb.test`}, 'failed'), (${b}, ${`other-${tag}@onb.test`}, 'connected')`;
     await sql`insert into people (organization_id, email) values (${a}, ${`p1-${tag}@onb.test`}), (${a}, ${`p2-${tag}@onb.test`}), (${b}, ${`p3-${tag}@onb.test`})`;
     await sql`insert into campaigns (organization_id, channel, name, status) values (${a}, 'email', 'One', 'active'), (${a}, 'email', 'Two', 'draft'), (${b}, 'email', 'Other', 'active')`;
-    const [{ id: account }] = await sql`insert into integration_accounts (organization_id, kind, key, name) values (${a}, 'ai', 'anthropic', 'Anthropic') returning id`;
-    expect((await store.facts(a)).aiKeyStored).toBe(false);
-    await sql`insert into integration_credentials (account_id, encrypted_payload) values (${account}, 'v1.x.y.z')`;
 
     const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${a}, 'default', true) returning id`;
     const [{ id: person }] = await sql`select id from people where organization_id = ${a} limit 1`;
@@ -81,9 +77,7 @@ describeDb("onboarding store", () => {
       activeCampaigns: 1,
       draftsAwaiting: 2,
       messagesApproved: 1,
-      aiKeyStored: true,
     });
-    expect((await store.facts(b)).aiKeyStored).toBe(false);
   });
 
   it("stores dismissal per organization and keeps it idempotent", async () => {

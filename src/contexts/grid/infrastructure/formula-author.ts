@@ -43,5 +43,6 @@ export function createFormulaAuthor(resolver: GridAnswererResolver = createGridA
         },
       };
     },
+    status: (organizationId) => resolver.status(organizationId),
   };
 }

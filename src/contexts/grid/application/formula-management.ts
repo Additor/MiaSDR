@@ -3,6 +3,8 @@ import { effectiveColumnType, TEXT_LIKE_TYPES } from "../domain/column-types";
 import { compileFormula, evaluateFormula, type FormulaValue } from "../domain/formula";
 import { GRID_LIMITS } from "./limits";
 import type { ColumnRecord, GridDeps } from "./ports";
+import { aiOffMessage } from "@/contexts/integrations/domain/ai-status";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 
 type Deps = Pick<GridDeps, "structure" | "columns" | "formulas">;
 
@@ -83,7 +85,7 @@ export async function generateFormula(
   const table = await deps.structure.getTable(org, tableId);
   if (!table) throw new NotFoundError("Table not found");
   const author = await deps.formulaAuthor.forOrganization(org);
-  if (!author) throw new ConflictError("AI is not configured. Connect an AI provider in Settings, Integrations.");
+  if (!author) throw new ConflictError(aiOffMessage(await deps.formulaAuthor.status(org), isOwnerOrAdmin(actor.role) ? "admin" : "member") ?? "AI is off. Try again shortly.");
 
   const tables = (await deps.structure.listTables(org, table.workbookId)).slice(0, MAX_SCHEMA_TABLES);
   const schema = await Promise.all(

@@ -1,3 +1,5 @@
+import { aiIsOn, aiOffMessage, type AiStatus } from "@/contexts/integrations/domain/ai-status";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { REPLY_PAUSE_HOURS, checkReplyText } from "../domain/linkedin-reply";
 import { LinkedInReplyError, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore } from "./linkedin-reply-ports";
@@ -12,8 +14,8 @@ export interface LinkedInReplyDeps {
   store: LinkedInReplyStore;
   sender: LinkedInReplySender;
   now: () => Date;
-  /** Whether the organization has an AI key, so the panel can offer "Write a draft". Without it the panel offers none. */
-  aiConfigured?: (organizationId: string) => Promise<boolean>;
+  /** Whether AI runs for the organization, so the panel can offer "Write a draft" or say what stops it. */
+  aiStatus?: (organizationId: string) => Promise<AiStatus>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,13 +42,15 @@ function replay(attempt: AttemptRow): LinkedInReplyResult {
   }
 }
 
-export type LinkedInReplyPanelView = LinkedInReplyPanel & { canGenerate: boolean };
+/** `aiOff` says what stops AI and how to turn it on, worded for the reader's role. Null when AI is on. */
+export type LinkedInReplyPanelView = LinkedInReplyPanel & { canGenerate: boolean; aiOff: string | null };
 
 export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Actor, conversationId: string): Promise<LinkedInReplyPanelView | null> {
   if (!UUID.test(conversationId)) throw new NotFoundError("Conversation not found");
   const panel = await deps.store.panel(actor.organizationId, conversationId, deps.now());
   if (!panel) return null;
-  return { ...panel, canGenerate: deps.aiConfigured ? await deps.aiConfigured(actor.organizationId) : false };
+  const status: AiStatus = deps.aiStatus ? await deps.aiStatus(actor.organizationId) : { state: "no_key" };
+  return { ...panel, canGenerate: aiIsOn(status), aiOff: aiOffMessage(status, isOwnerOrAdmin(actor.role) ? "admin" : "member") };
 }
 
 export async function sendLinkedInReply(

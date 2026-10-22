@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ForbiddenError, ValidationError, type Actor } from "@/shared/errors";
 import type { AiConnectionSpec } from "../domain/ai-connections";
-import { apiKeyOf, getAiModel, KNOWN_AI_MODELS, runningAi, setAiModel, type AiAccount, type AiModelDeps, type ModelListResult } from "./ai-model";
+import { aiStatusOf, apiKeyOf, getAiModel, KNOWN_AI_MODELS, runningAi, setAiModel, type AiAccount, type AiModelDeps, type ModelListResult } from "./ai-model";
 
 const owner: Actor = { userId: "u1", organizationId: "o1", role: "owner" };
 const member: Actor = { ...owner, role: "member" };
@@ -137,6 +137,12 @@ describe("AI model setting", () => {
       expect(runningAi([account("openrouter", null, true)], "claude-haiku-5-5")).toBeNull();
       expect(runningAi([account("openrouter", "openai/gpt-6", true), account("anthropic", null)])).toMatchObject({ model: "openai/gpt-6", account: { key: "openrouter" } });
       expect(runningAi([])).toBeNull();
+    });
+
+    it("tells a missing key from a missing model", () => {
+      expect(aiStatusOf([])).toEqual({ state: "no_key" });
+      expect(aiStatusOf([account("openrouter", null, true)])).toEqual({ state: "no_model", provider: "OpenRouter" });
+      expect(aiStatusOf([account("anthropic", null)])).toEqual({ state: "on", provider: "Anthropic", model: "claude-sonnet-5-5" });
     });
 
     it("reads the key from a decrypted payload, and null from one that does not parse", () => {

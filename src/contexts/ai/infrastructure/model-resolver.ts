@@ -1,4 +1,4 @@
-import { runningAiConnection } from "@/contexts/integrations/infrastructure/composition";
+import { aiStatus, runningAiConnection } from "@/contexts/integrations/infrastructure/composition";
 import type { LanguageModel, LanguageModelResolver } from "../application/ports";
 import { buildLanguageModel } from "./model-factory";
 
@@ -19,8 +19,6 @@ export function createModelResolver(options: { fetch?: typeof fetch } = {}): Lan
       return buildLanguageModel(running.spec, { apiKey, model: running.model }, { fetch: options.fetch });
     },
 
-    async isConfigured(organizationId) {
-      return (await runningAiConnection(organizationId)) !== null;
-    },
+    status: aiStatus,
   };
 }

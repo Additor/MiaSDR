@@ -1,3 +1,4 @@
+import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import type { ClassifyInput, ClassifyOutput, DraftInput, DraftOutput } from "../domain/ai-contract";
 
 /** Reply handling's AI: classify an inbound reply and draft an answer. Each call returns output that passed the closed schema. */
@@ -13,12 +14,15 @@ export interface ReplyAi {
 /** Picks the reply AI for one organization. Null means AI is not configured there, and the job does nothing. */
 export interface ReplyAiResolver {
   forOrganization(organizationId: string): Promise<ReplyAi | null>;
-  /** Whether AI is on, without decrypting the key or building a client. */
-  isConfigured(organizationId: string): Promise<boolean>;
+  /** Whether AI is on and why not, without decrypting the key or building a client. */
+  status(organizationId: string): Promise<AiStatus>;
 }
 
-/** A resolver whose `isConfigured` asks `forOrganization`, for fakes where building the AI costs nothing. */
+/** A resolver whose `status` asks `forOrganization`, for fakes where building the AI costs nothing. */
 export const replyAiResolverOf = (forOrganization: ReplyAiResolver["forOrganization"]): ReplyAiResolver => ({
   forOrganization,
-  isConfigured: async (organizationId) => (await forOrganization(organizationId)) !== null,
+  async status(organizationId) {
+    const ai = await forOrganization(organizationId);
+    return ai ? { state: "on", provider: ai.name, model: ai.model } : { state: "no_key" };
+  },
 });

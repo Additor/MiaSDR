@@ -557,16 +557,17 @@ describeDb("grid core", () => {
             return { formula: answers[calls.length - 1], explanation: "" };
           },
         }),
+        status: async () => ({ state: "on" as const, provider: "Anthropic", model: "m" }),
       };
       const out = await formulaUc.generateFormula({ ...deps, formulaAuthor: author }, actor, t.id, { prompt: "shout the name" });
       expect(out.formula).toBe(`UPPER({{${first}}})`);
       expect(calls).toHaveLength(2);
       expect(JSON.stringify(calls[1])).toContain("Unknown function NOPE");
 
-      const stubborn = { forOrganization: async () => ({ complete: async () => ({ formula: "{{ghost}}", explanation: "" }) }) };
+      const stubborn = { ...author, forOrganization: async () => ({ complete: async () => ({ formula: "{{ghost}}", explanation: "" }) }) };
       await expect(formulaUc.generateFormula({ ...deps, formulaAuthor: stubborn }, actor, t.id, { prompt: "x" })).rejects.toThrow(/could not produce a working formula/);
-      const none = { forOrganization: async () => null };
-      await expect(formulaUc.generateFormula({ ...deps, formulaAuthor: none }, actor, t.id, { prompt: "x" })).rejects.toBeInstanceOf(ConflictError);
+      const none = { forOrganization: async () => null, status: async () => ({ state: "no_model" as const, provider: "OpenRouter" }) };
+      await expect(formulaUc.generateFormula({ ...deps, formulaAuthor: none }, actor, t.id, { prompt: "x" })).rejects.toThrow(new ConflictError("AI is off. OpenRouter needs a model: ask an owner or admin to pick one."));
       await expect(formulaUc.generateFormula({ ...deps, formulaAuthor: author }, actor, t.id, { prompt: "x".repeat(3000) })).rejects.toBeInstanceOf(ValidationError);
     });
   });

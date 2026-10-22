@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getOnboarding } from "@/contexts/tenancy/application/onboarding";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { onboardingDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
+import { onboardingDeps } from "@/composition/onboarding";
 import { toActor } from "@/app/_lib/api";
 import type { Actor } from "@/shared/errors";
 import { loadSettingsAttention, type AttentionMap } from "./settings-attention";

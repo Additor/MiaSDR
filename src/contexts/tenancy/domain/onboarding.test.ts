@@ -11,7 +11,7 @@ const empty: OnboardingFacts = {
   activeCampaigns: 0,
   draftsAwaiting: 0,
   messagesApproved: 0,
-  aiKeyStored: false,
+  aiSetup: { state: "none" },
 };
 const status = (facts: OnboardingFacts, id: string) => deriveChecklist(facts).steps.find((s) => s.id === id)!;
 
@@ -62,7 +62,7 @@ describe("deriveChecklist", () => {
 
   it("does not require the AI key", () => {
     expect(status(empty, "ai").optional).toBe(true);
-    expect(deriveChecklist({ ...allRequired, aiKeyStored: false }).complete).toBe(true);
+    expect(deriveChecklist({ ...allRequired, aiSetup: { state: "none" } }).complete).toBe(true);
   });
 
   it("names the time zone step after what it checks", () => {
@@ -89,16 +89,17 @@ describe("deriveChecklist", () => {
 
   it("derives the optional steps from their own facts", () => {
     expect(status({ ...empty, connectedLinkedInAccounts: 2 }, "linkedin").status).toBe("done");
-    expect(status({ ...empty, aiKeyStored: true }, "ai").status).toBe("done");
+    expect(status({ ...empty, aiSetup: { state: "on", running: "Anthropic, claude-sonnet-5-5" } }, "ai")).toMatchObject({ status: "done", detail: "AI runs on Anthropic, claude-sonnet-5-5" });
+    expect(status({ ...empty, aiSetup: { state: "needs_model", provider: "OpenRouter" } }, "ai").status).toBe("attention");
   });
 
   it("points at the first unfinished required step before optional ones", () => {
-    const list = deriveChecklist({ ...empty, timeZoneSaved: true, connectedLinkedInAccounts: 1, aiKeyStored: true });
+    const list = deriveChecklist({ ...empty, timeZoneSaved: true, connectedLinkedInAccounts: 1, aiSetup: { state: "on", running: "Demo mode" } });
     expect(list.nextStepId).toBe("mailbox");
   });
 
   it("has no next step when everything is done", () => {
-    const list = deriveChecklist({ ...allRequired, connectedLinkedInAccounts: 1, aiKeyStored: true });
+    const list = deriveChecklist({ ...allRequired, connectedLinkedInAccounts: 1, aiSetup: { state: "on", running: "Demo mode" } });
     expect(list.nextStepId).toBeNull();
   });
 });

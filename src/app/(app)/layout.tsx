@@ -15,7 +15,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { listMyOrganizations } from "@/contexts/tenancy/application/organization-switching";
 import { getOnboarding } from "@/contexts/tenancy/application/onboarding";
-import { onboardingDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
+import { onboardingDeps } from "@/composition/onboarding";
 import { getOutboundPauseBanner } from "@/contexts/outreach/application/outbound-pause";
 import { switchingDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
 import { toActor } from "@/app/_lib/api";

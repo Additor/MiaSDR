@@ -357,7 +357,8 @@ describeDb("AI classification, drafts and approval", () => {
       const r = await composition.ingestInbound(input);
       const p = await panel(f, r.conversationId);
       expect(p.aiConfigured).toBe(false);
-      await expect(mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId)).rejects.toThrow(/not configured/);
+      expect(p.aiOff).toBe("AI is off. Ask an owner or admin to connect an AI provider.");
+      await expect(mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId)).rejects.toThrow("AI is off. Ask an owner or admin to connect an AI provider.");
     });
 
     it("lets a person classify without AI, then the draft waits for a configured provider", async () => {

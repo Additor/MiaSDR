@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 // Other contexts' tables come through the shared schema barrel, read only, inside this adapter (same rule as the lead repository).
-import { campaigns, channelSettings, drafts, integrationAccounts, integrationCredentials, linkedinAccounts, mailboxes, people } from "@/platform/db/schema";
+import { campaigns, channelSettings, drafts, linkedinAccounts, mailboxes, people } from "@/platform/db/schema";
 // The one read-side rule for private conversations: the awaiting count must match what the Inbox shows.
 import { visibleDraftSql } from "@/platform/db/conversation-visibility";
 import type { OnboardingStore } from "../application/onboarding";
@@ -11,7 +11,7 @@ const ONBOARDING_CHANNEL = "onboarding";
 
 export const drizzleOnboardingStore: OnboardingStore = {
   async facts(organizationId) {
-    const [general, mailboxRows, linkedin, leads, campaignRows, draftRows, ai] = await Promise.all([
+    const [general, mailboxRows, linkedin, leads, campaignRows, draftRows] = await Promise.all([
       db
         .select({ zone: sql<string | null>`${channelSettings.values}->>'timeZone'` })
         .from(channelSettings)
@@ -38,12 +38,6 @@ export const drizzleOnboardingStore: OnboardingStore = {
         .from(drafts)
         .where(and(eq(drafts.organizationId, organizationId), inArray(drafts.status, ["awaiting_review", "sent"]), visibleDraftSql("drafts")))
         .groupBy(drafts.status),
-      db
-        .select({ id: integrationAccounts.id })
-        .from(integrationAccounts)
-        .innerJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
-        .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.kind, "ai"), eq(integrationAccounts.enabled, true)))
-        .limit(1),
     ]);
     const sum = (rows: Array<{ n: number }>) => rows.reduce((total, r) => total + r.n, 0);
     return {
@@ -56,7 +50,6 @@ export const drizzleOnboardingStore: OnboardingStore = {
       activeCampaigns: sum(campaignRows.filter((r) => r.status === "active")),
       draftsAwaiting: sum(draftRows.filter((r) => r.status === "awaiting_review")),
       messagesApproved: sum(draftRows.filter((r) => r.status === "sent")),
-      aiKeyStored: ai.length > 0,
     };
   },
 

@@ -1,5 +1,6 @@
 import { env } from "@/shared/env";
-import { apiKeyOf, runningAi, type AiModelDeps } from "../application/ai-model";
+import { aiStatusOf, apiKeyOf, runningAi, type AiModelDeps } from "../application/ai-model";
+import type { AiStatus } from "../domain/ai-status";
 import type { CredentialCipher, IntegrationDeps } from "../application/integration-management";
 import { aiConnection, type AiConnectionSpec } from "../domain/ai-connections";
 import { createModelCatalog } from "./ai-model-catalog";
@@ -36,4 +37,10 @@ export async function runningAiConnection(organizationId: string): Promise<{ spe
   const running = runningAi(await drizzleAiModelStore.listAi(organizationId), env().AI_MODEL);
   if (!running) return null;
   return { spec: running.spec, model: running.model, apiKey: () => apiKeyOf(() => credentialCipher.decrypt(running.account.encryptedPayload)) };
+}
+
+/** Whether AI runs for an organization, and why not. Reads no key, so any screen may ask it. */
+export async function aiStatus(organizationId: string): Promise<AiStatus> {
+  if (env().AI_PROVIDER === "fake") return { state: "demo" };
+  return aiStatusOf(await drizzleAiModelStore.listAi(organizationId), env().AI_MODEL);
 }

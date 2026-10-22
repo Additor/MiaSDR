@@ -3,6 +3,7 @@ import type { FormulaLookupRegistry, LookupCall } from "../domain/formula";
 import type { GridQuery, TableView } from "../domain/view-query";
 import type { CampaignFieldMapping } from "../domain/campaign-rows";
 import type { PlannedColumn } from "../domain/import-plan";
+import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 
 export interface FolderRecord {
   id: string;
@@ -373,6 +374,8 @@ export interface FormulaAuthor {
   forOrganization(organizationId: string): Promise<{
     complete(input: { schema: unknown; request: string; currentExpression?: string; feedback?: string }): Promise<{ formula: string; explanation: string }>;
   } | null>;
+  /** Whether AI is on and why not, for the message when `forOrganization` answers null. */
+  status(organizationId: string): Promise<AiStatus>;
 }
 
 export interface GridDeps {

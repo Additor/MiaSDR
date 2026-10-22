@@ -48,7 +48,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const clock = () => new Date();
     const [tick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "t", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
-    const liDeps: LinkedInReplyDeps = { store: stores.li, sender: makeSender(fake), now: clock, aiConfigured: resolver.isConfigured };
+    const liDeps: LinkedInReplyDeps = { store: stores.li, sender: makeSender(fake), now: clock, aiStatus: resolver.status };
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(mailboxProvider), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
     const replyHandlingDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };
     const n = ++counter;
@@ -177,7 +177,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
 
       const g = await drafted({ ai: false });
       expect(await count("drafts", g.org)).toBe(0);
-      expect((await panel(g)).canGenerate).toBe(false);
+      expect(await panel(g)).toMatchObject({ canGenerate: false, aiOff: "AI is off. Ask an owner or admin to connect an AI provider." });
     });
   });
 

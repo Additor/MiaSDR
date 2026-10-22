@@ -160,7 +160,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               </p>
             )}
             {classification?.status === "failed" && <p className="text-destructive">Classification failed: {classification.error}</p>}
-            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category in the side panel sets one yourself." : "AI is off for this organization. Change category in the side panel sets one."}</p>}
+            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category in the side panel sets one yourself." : `${panel.aiOff} Change category in the side panel sets one yourself.`}</p>}
             {held && classification.proposed && (
               <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="proposal">
                 <div>
@@ -255,12 +255,14 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
         >
           {!draft && !panel.aiConfigured && (
             <div className="grid gap-2 text-sm" data-testid="ai-not-configured">
-              <p>AI is not configured, so no draft is written. Write the reply yourself below, or connect an AI provider in Settings, Integrations to draft replies.</p>
-              <div>
-                <Link href="/settings/integrations" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-                  Open integrations
-                </Link>
-              </div>
+              <p>{panel.aiOff} Until then, write the reply yourself below.</p>
+              {panel.canManageAi && (
+                <div>
+                  <Link href="/settings/integrations" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                    Open integrations
+                  </Link>
+                </div>
+              )}
             </div>
           )}
           {!draft && panel.aiConfigured && (

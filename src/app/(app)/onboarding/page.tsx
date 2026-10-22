@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/shell/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getOnboarding } from "@/contexts/tenancy/application/onboarding";
-import { onboardingDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
+import { onboardingDeps } from "@/composition/onboarding";
 import { toActor } from "@/app/_lib/api";
 import { OnboardingChecklist } from "./onboarding-checklist";
 
