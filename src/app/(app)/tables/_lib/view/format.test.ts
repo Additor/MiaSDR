@@ -60,7 +60,7 @@ describe("enrichment results in words", () => {
     expect(cellStatus(row({ status: "queued" }), "c")).toEqual({ state: "running" });
     expect(cellStatus(row({ status: "success", outcome: "miss", unanswered: ["zerobounce: off"] }), "c")).toMatchObject({ state: "miss", message: expect.stringContaining("zerobounce: off") });
     expect(cellResultText({ status: "success", outcome: "hit" })).toBe("Found");
-    expect(cellResultText({ status: "success", outcome: "miss" }, true)).toBe("Not settled: the first verdict a provider gave");
+    expect(cellResultText({ status: "success", outcome: "miss" }, true)).toBe("Unconfirmed: the only verdict a provider gave, such as catch-all");
     expect(cellResultText({ status: "success", outcome: "miss" })).toBe("Nothing found");
     expect(cellResultText({ status: "skipped: cap" })).toBe("Held back by the auto-run limit");
   });

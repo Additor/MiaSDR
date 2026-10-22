@@ -107,14 +107,14 @@ export function cellStatus(row: GridRow, columnKey: string): { state: "idle" | "
   if (meta.status === "stale") return { state: "stale", message: meta.error ?? "The source changed. Recalculate this column." };
   if (meta.outcome === "miss") {
     const steps = meta.unanswered?.length ? ` Steps that did not answer: ${meta.unanswered.join("; ")}.` : "";
-    return { state: "miss", message: `Not settled: no provider found or confirmed this.${steps}` };
+    return { state: "miss", message: `No provider confirmed this.${steps}` };
   }
   return { state: "idle" };
 }
 
 /** A cell's last result in words, for the cell drawer. A miss that kept a value holds an unsettled verdict, such as catch-all. */
 export function cellResultText(meta: Pick<CellMeta, "status" | "outcome">, hasValue = false): string | null {
-  if (meta.status === "success") return meta.outcome !== "miss" ? "Found" : hasValue ? "Not settled: the first verdict a provider gave" : "Nothing found";
+  if (meta.status === "success") return meta.outcome !== "miss" ? "Found" : hasValue ? "Unconfirmed: the only verdict a provider gave, such as catch-all" : "Nothing found";
   if (meta.status === "error" || meta.status === "failed") return "Failed";
   if (meta.status === "queued" || meta.status === "waiting") return "Waiting to run";
   if (meta.status === "running") return "Running";
@@ -124,7 +124,7 @@ export function cellResultText(meta: Pick<CellMeta, "status" | "outcome">, hasVa
 }
 
 /** One ledger row's outcome in words. */
-export const RUN_OUTCOME_LABELS: Readonly<Record<string, string>> = { hit: "Found", miss: "Missed", error: "Error", failed: "Failed", skipped: "Skipped", cancelled: "Cancelled" };
+export const RUN_OUTCOME_LABELS: Readonly<Record<string, string>> = { hit: "Found", miss: "Not found", error: "Error", failed: "Failed", skipped: "Skipped", cancelled: "Cancelled" };
 
 /** Words for the verification verdicts every verifier maps onto. The stored value stays the code, for filters and exports. */
 export const VERDICT_LABELS: Readonly<Record<string, string>> = { valid: "Valid", invalid: "Invalid", catch_all: "Catch-all", unknown: "Unknown", disposable: "Disposable" };

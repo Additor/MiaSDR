@@ -404,7 +404,10 @@ async function runAiColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awai
   });
   const label = sanitizeOutputString(`${answered.provider}/${answered.model}`, 200);
   const base = { status: "success", outcome: hasResult ? "hit" : "miss", provider: label, costCents: 0, runAt: deps.now().toISOString() };
-  const write: CellWrite = { cells: { [column.key]: hasResult ? "Completed" : "No result" }, meta: { [column.key]: base } };
+  // The AI column shows its first field's answer, so the column reads as the answer and not as a run status.
+  const first = config.outputs[0] ? coerced.get(config.outputs[0].key) : undefined;
+  const shown = first?.ok && first.value !== null && first.value !== undefined ? sanitizeOutputString(cellText(first.value)) : hasResult ? "Answered: see the field columns" : "No result";
+  const write: CellWrite = { cells: { [column.key]: shown }, meta: { [column.key]: base } };
   for (const field of config.outputs) {
     const columnKey = config.outputColumns[field.key];
     if (!columnKey) continue;

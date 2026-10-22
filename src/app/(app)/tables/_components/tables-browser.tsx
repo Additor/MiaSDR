@@ -118,7 +118,8 @@ export function TablesBrowser() {
 
   async function startFromFile(file: File) {
     const name = file.name.replace(/\.[^.]+$/, "").trim() || "Imported workbook";
-    const res = await gridRequest<{ workbook: { id: string }; table: { id: string } }>(gridUrl.workbooks, "POST", { name, folderId: folderId ?? null });
+    // The first table takes the file's name too, so the tab says what it holds instead of "Custom Table".
+    const res = await gridRequest<{ workbook: { id: string }; table: { id: string } }>(gridUrl.workbooks, "POST", { name, firstTableName: name.slice(0, 120), folderId: folderId ?? null });
     if (!res.ok || !res.data) return void toast.error(res.error ?? "Could not create the workbook.");
     fromFileImported.current = false;
     setFromFile({ file, workbookId: res.data.workbook.id, tableId: res.data.table.id });

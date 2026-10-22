@@ -880,7 +880,8 @@ describeDb("grid enrichment runs", () => {
     expect(ai.answerCalls).toBe(1);
     expect(ai.lastAnswerInput?.cells.map((c) => c.key)).toEqual(["name", "email", "about"]);
     const row = await cells(rows[0]);
-    expect(row.cells.opener).toBe("Completed");
+    // The AI column shows its first field's answer.
+    expect(row.cells.opener).toBe(row.cells.line);
     expect(row.cells.line).toContain("fake: Ada Lovelace");
     expect(row.cell_meta.line).toMatchObject({ status: "success", provider: "fake/fake-1", costCents: 0 });
     const [{ n }] = await sql`select count(*)::int as n from grid_cell_runs where row_id = ${rows[0]} and column_key = 'opener' and outcome = 'hit'`;
@@ -903,7 +904,7 @@ describeDb("grid enrichment runs", () => {
     const ai = new m.fakeAi.FakeGridAi();
     await m.run.retryFailedCells(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1", { ai: { answer: async (_o: string, input: Parameters<typeof ai.answer>[0]) => ({ ...(await ai.answer(input)), provider: "fake", model: "fake-1" }) } })));
-    expect((await cells(rows[0])).cells.opener).toBe("Completed");
+    expect((await cells(rows[0])).cells.opener).toContain("fake: Ada");
   });
 
   it("skips a cell whose inputs are empty without calling the provider", async () => {

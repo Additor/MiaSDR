@@ -265,7 +265,7 @@ test.describe("AI column output types and editing", () => {
     await add.getByLabel("Prompt").fill(`Find the work email of {{${key}}}.`);
     await add.getByLabel("Field key").fill("mail");
     await choose(page, add, "Field type", "Email");
-    await add.getByRole("button", { name: "Add columns" }).click();
+    await add.getByRole("button", { name: "Add without running" }).click();
     await expect(page.getByRole("columnheader", { name: /mail/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Run", exact: true }).first().click();

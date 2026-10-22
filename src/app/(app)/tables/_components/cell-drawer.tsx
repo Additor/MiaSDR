@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { OUTCOMES } from "../_lib/data/outcomes";
+import { useProviders } from "../_lib/data/providers";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { cellResultText, displayValue, editorText, RUN_OUTCOME_LABELS, runCost, typeLabel } from "../_lib/view/format";
 import type { GridColumn, GridRow } from "../_lib/data/types";
@@ -75,6 +76,9 @@ function runError(run: Run): string | null {
 /** Everything known about one cell: its value, the state of its last run and the history of attempts. */
 export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [], onAddOutput, onClose }: Props) {
   const [adding, setAdding] = useState<string | null>(null);
+  // Runs record the provider's key; the drawer names it as the provider list does. An AI run keeps its model label.
+  const { providers } = useProviders();
+  const providerName = (key: string) => providers.find((p) => p.key === key)?.name ?? key;
   const [details, setDetails] = useState<Details | null>(null);
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [state, setState] = useState<"loading" | "none" | "failed" | "ready">("loading");
@@ -180,7 +184,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                   {meta.provider && (
                     <>
                       <dt className="text-muted-foreground">Provider</dt>
-                      <dd>{meta.provider}</dd>
+                      <dd>{providerName(meta.provider)}</dd>
                     </>
                   )}
                   {meta.runAt && (
@@ -269,7 +273,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "outline"}>{RUN_OUTCOME_LABELS[r.outcome] ?? r.outcome}</Badge>
                             {r.reused && <Badge variant="outline">Reused</Badge>}
-                            {r.provider && <span>{r.provider}</span>}
+                            {r.provider && <span>{providerName(r.provider)}</span>}
                             <Time value={r.createdAt} className="text-xs text-muted-foreground" />
                             <span className="ml-auto text-xs text-muted-foreground tabular-nums">
                               {runCost(r)}

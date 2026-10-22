@@ -437,7 +437,19 @@ export function TableWorkspace({ tableId }: Props) {
             await grid.reload();
             if (key) setReveal((r) => ({ key, token: (r?.token ?? 0) + 1 }));
           }} />}
-      {dialog?.kind === "ai" && <AiDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} onClose={closeDialog} onSaved={grid.reload} />}
+      {dialog?.kind === "ai" && (
+        <AiDialog
+          tableId={tableId}
+          columns={columns}
+          column={dialog.column}
+          afterColumnId={dialog.after}
+          onClose={closeDialog}
+          onSaved={async (key) => {
+            await grid.reload();
+            if (key) setReveal((r) => ({ key, token: (r?.token ?? 0) + 1 }));
+          }}
+        />
+      )}
       {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} onStarted={() => void grid.reload()} />}
       {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} allRows={dialog.allRows} onClose={closeDialog} />}
       {dialog?.kind === "column" && (

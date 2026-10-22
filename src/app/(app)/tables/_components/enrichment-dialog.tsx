@@ -366,12 +366,12 @@ function ExtraOutputs({ outputs, primary, chosen, onChange }: { outputs: ActionS
  * The footer: the reason the add buttons are off, Back, and two ways to add. "Add and run" leads, because the first
  * thing to do with a new column is try it on a few rows; it runs the first rows only, so the first spend stays small.
  */
-function CreateFooter({ blocker, busy, onBack, onSave }: { blocker: string | null; busy: boolean; onBack: () => void; onSave: (run: boolean) => void }) {
+export function CreateFooter({ blocker, busy, onBack, onSave, backLabel = "Back" }: { blocker: string | null; busy: boolean; onBack: () => void; onSave: (run: boolean) => void; backLabel?: string }) {
   return (
     <DialogFooter className="items-center">
       {blocker && <p className="mr-auto text-sm text-muted-foreground">{blocker}</p>}
       <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
-        Back
+        {backLabel}
       </Button>
       <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={blocker !== null || busy}>
         Add without running
@@ -383,9 +383,12 @@ function CreateFooter({ blocker, busy, onBack, onSave }: { blocker: string | nul
   );
 }
 
-/** Creates the column, then on `run` queues its first rows. A refused run leaves the column added and says why. */
-async function createColumn(tableId: string, body: Record<string, unknown>, run: boolean): Promise<{ ok: true; key?: string } | { ok: false; error: string | null }> {
-  const res = await gridRequest<{ primaryColumnKey?: string }>(gridUrl.sub(tableId, "enrichments"), "POST", body);
+/**
+ * Creates a runner column through `path` ("enrichments" or "ai"), then on `run` queues its first rows. A refused run
+ * leaves the column added and says why.
+ */
+export async function createColumn(tableId: string, body: Record<string, unknown>, run: boolean, path: "enrichments" | "ai" = "enrichments"): Promise<{ ok: true; key?: string } | { ok: false; error: string | null }> {
+  const res = await gridRequest<{ primaryColumnKey?: string }>(gridUrl.sub(tableId, path), "POST", body);
   if (!res.ok) return { ok: false, error: res.error };
   const columnKey = res.data?.primaryColumnKey;
   if (run && columnKey) {

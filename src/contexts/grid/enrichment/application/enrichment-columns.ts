@@ -201,11 +201,15 @@ export interface CreateAiInput extends Placement {
   delaySeconds?: number;
 }
 
+/**
+ * Adds an AI column and one typed column per output field, named for the field. The AI column itself shows the first
+ * field's answer as text; the field columns keep the typed values, so filters, formulas and a push read them.
+ */
 export async function createAiColumns(deps: ColumnDeps, actor: Actor, tableId: string, input: CreateAiInput): Promise<ColumnRow[]> {
   const label = input.name?.trim() || "AI";
   if (new Set(input.outputs.map((o) => o.key)).size !== input.outputs.length) throw new ValidationError("Output field keys must be unique.");
   const referenced = tokensIn(input.prompt);
-  const outputs = input.outputs.map((o) => ({ label: o.key, outputKey: o.key, valueType: o.type, type: "ai_output" as const }));
+  const outputs = input.outputs.map((o) => ({ label: fieldLabel(o.key), outputKey: o.key, valueType: o.type, type: "ai_output" as const }));
   const result = await writeChange(deps, actor.organizationId, tableId, (columns) => {
     const plan = planChain(columns, { label }, outputs, input.afterColumnId);
     const known = new Set(columns.map((c) => c.key));
@@ -228,6 +232,9 @@ export async function createAiColumns(deps: ColumnDeps, actor: Actor, tableId: s
   });
   return result.inserted;
 }
+
+/** "companySize" to "Company size", the column name of an AI output field. */
+export const fieldLabel = (key: string) => key.replace(/_/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().replace(/^./, (c) => c.toUpperCase());
 
 const valueTypeOf = (column: ColumnRow) => (typeof column.config.valueType === "string" ? column.config.valueType : "text");
 
@@ -427,7 +434,7 @@ async function editAiOutputs(columns: ColumnRow[], column: ColumnRow, current: A
   fresh.forEach(({ field }, i) => {
     const key = uniqueColumnKey(field.key, taken);
     taken.add(key);
-    const name = uniqueColumnName(field.key, names);
+    const name = uniqueColumnName(fieldLabel(field.key), names);
     names.push(name);
     outputColumns[field.key] = key;
     change.inserts.push({ key, name, type: "ai_output", config: { sourceColumnKey: column.key, outputKey: field.key, valueType: field.type }, dependsOn: [column.key], position: placement.positions[i], autoRun: false });

@@ -120,7 +120,7 @@ test.describe("grid runs", () => {
     const dialog = page.getByRole("dialog", { name: "Add AI column" });
     await dialog.getByLabel("Column name").fill("Summary");
     await dialog.getByLabel("Prompt").fill("Describe the company {{company}} in one line.");
-    await dialog.getByRole("button", { name: "Add columns" }).click();
+    await dialog.getByRole("button", { name: "Add without running" }).click();
     await expect(page.getByRole("columnheader", { name: /Summary/ })).toBeVisible();
 
     await page.getByRole("button", { name: "Run", exact: true }).first().click();

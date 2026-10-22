@@ -118,7 +118,7 @@ describeDb("AI columns: output types, editing and placement", () => {
       const a = answerer({ mail: " ada@acme.test ", site: "https://acme.test/ada", since: "2026-03-01T09:00:00Z", extra: '{"tags":["a","b"]}', score: 7 });
       await tick(d.worker({ ai: a.ai }));
       const row = await rowOf(rows[0]);
-      expect(row.cells).toMatchObject({ mail: "ada@acme.test", site: "https://acme.test/ada", since: "2026-03-01", extra: { tags: ["a", "b"] }, score: 7, profile: "Completed" });
+      expect(row.cells).toMatchObject({ mail: "ada@acme.test", site: "https://acme.test/ada", since: "2026-03-01", extra: { tags: ["a", "b"] }, score: 7, profile: "ada@acme.test" });
       expect(row.cell_meta.mail).toMatchObject({ status: "success" });
     });
 
@@ -206,6 +206,24 @@ describeDb("AI columns: output types, editing and placement", () => {
       const row = await rowOf(rows[0]);
       expect(row.cells.line).toBe("hello");
       expect(row.cell_meta.mail).toMatchObject({ status: "success" });
+    });
+  });
+
+  describe("test answer", () => {
+    it("answers the first row's question without writing a cell, a column or a ledger row", async () => {
+      const { actor, table } = await fixture();
+      const preview = await import("../../application/ai-preview");
+      const gridDeps = m.gridDeps();
+      const a = answerer({ mail: "not an email", line: "Hello Ada" });
+      const out = await preview.previewAiAnswer({ ...gridDeps, ai: a.ai }, actor, table, { prompt: "Greet {{name}}", outputs: [{ key: "line", type: "text" }, { key: "mail", type: "email" }] });
+      expect(out.fields).toEqual([
+        { key: "line", value: "Hello Ada", error: null },
+        { key: "mail", value: null, error: expect.any(String) },
+      ]);
+      expect(a.calls).toHaveLength(1);
+      expect(await sql`select 1 from grid_cell_runs where table_id = ${table}`).toHaveLength(0);
+      expect(await sql`select 1 from grid_columns where table_id = ${table} and type = 'ai'`).toHaveLength(0);
+      await expect(preview.previewAiAnswer({ ...gridDeps, ai: a.ai }, actor, table, { prompt: "Greet {{ghost}}", outputs: [{ key: "line", type: "text" }] })).rejects.toThrow(/\{\{ghost\}\}/);
     });
   });
 
