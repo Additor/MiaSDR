@@ -40,7 +40,7 @@ export async function getReplyPanel(deps: ReplyDeps, actor: Actor, conversationI
   const panel = await deps.store.panel(actor.organizationId, conversationId);
   if (!panel) throw new NotFoundError("Conversation not found");
   if (panel.channel !== "email") return null;
-  const aiConfigured = (await deps.ai.forOrganization(actor.organizationId)) !== null;
+  const aiConfigured = await deps.ai.isConfigured(actor.organizationId);
   return { ...panel, aiConfigured, canGenerate: aiConfigured && panel.recipient !== null };
 }
 

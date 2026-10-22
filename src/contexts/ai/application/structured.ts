@@ -21,7 +21,7 @@ export async function generateStructured<T>(model: LanguageModel, request: Struc
   const result = await model.generate({
     ...rest,
     maxTokens: maxTokens ?? AI_TASKS[request.task].maxTokens,
-    output: { kind: "json", name: schema.name, schema: schema.json },
+    output: { name: schema.name, schema: schema.json },
   });
   if (result.stop === "refusal") throw new AiError("The model declined to answer this message.", "permanent");
   if (result.stop === "max_tokens") throw new AiError("The model's answer was cut off.", "transient");

@@ -1,7 +1,7 @@
 import { env } from "@/shared/env";
-import type { AiModelDeps } from "../application/ai-model";
+import { apiKeyOf, runningAi, type AiModelDeps } from "../application/ai-model";
 import type { CredentialCipher, IntegrationDeps } from "../application/integration-management";
-import { aiConnection } from "../domain/ai-connections";
+import { aiConnection, type AiConnectionSpec } from "../domain/ai-connections";
 import { createModelCatalog } from "./ai-model-catalog";
 import { credentialCipher } from "./credential-cipher";
 import { createCredentialVerifier } from "./credential-verifier";
@@ -26,4 +26,14 @@ export function aiModelDeps(): AiModelDeps {
     skipLive: env().AI_PROVIDER === "fake",
     envModel: env().AI_MODEL,
   };
+}
+
+/**
+ * The connection AI runs on for an organization and its model, the same answer the AI model card shows. `apiKey()`
+ * decrypts the saved key only when called, so a caller that only asks whether AI is on never decrypts it.
+ */
+export async function runningAiConnection(organizationId: string): Promise<{ spec: AiConnectionSpec; model: string; apiKey(): string | null } | null> {
+  const running = runningAi(await drizzleAiModelStore.listAi(organizationId), env().AI_MODEL);
+  if (!running) return null;
+  return { spec: running.spec, model: running.model, apiKey: () => apiKeyOf(() => credentialCipher.decrypt(running.account.encryptedPayload)) };
 }

@@ -6,7 +6,7 @@ const request: GenerateRequest = {
   task: "reply.classify",
   system: [{ text: "STABLE RULES", cacheable: true }, { text: "volatile" }],
   messages: [{ role: "user", content: "SECRET-BODY please book a demo" }],
-  output: { kind: "json", name: "classification", schema: { type: "object", properties: { k: { type: "string" } }, required: ["k"], additionalProperties: false } },
+  output: { name: "classification", schema: { type: "object", properties: { k: { type: "string" } }, required: ["k"], additionalProperties: false } },
   maxTokens: 4000,
 };
 
@@ -30,7 +30,7 @@ describe("AnthropicMessagesModel", () => {
   it("posts the Messages API shape: closed schema in output_config, cache_control on stable system text", async () => {
     const fetchMock = vi.fn(async () => ok('{"k":"v"}'));
     const result = await model(fetchMock).generate(request);
-    expect(result).toMatchObject({ text: '{"k":"v"}', stop: "end", usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 7, cacheWriteTokens: 3 }, requestId: "req_1" });
+    expect(result).toMatchObject({ text: '{"k":"v"}', stop: "end", usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 7, cacheWriteTokens: 3 } });
 
     const { url, headers, body } = sent(fetchMock);
     expect(url).toBe("https://api.anthropic.com/v1/messages");
@@ -39,7 +39,7 @@ describe("AnthropicMessagesModel", () => {
     expect(body.model).toBe("claude-sonnet-5-5");
     expect(body.max_tokens).toBe(4000);
     expect(body.tool_choice).toBeUndefined();
-    expect(body.output_config.format).toEqual({ type: "json_schema", schema: request.output.kind === "json" ? request.output.schema : null });
+    expect(body.output_config.format).toEqual({ type: "json_schema", schema: request.output.schema });
     expect(body.system).toEqual([{ type: "text", text: "STABLE RULES", cache_control: { type: "ephemeral" } }, { type: "text", text: "volatile" }]);
     expect(body.messages[0].content).toContain("SECRET-BODY");
   });

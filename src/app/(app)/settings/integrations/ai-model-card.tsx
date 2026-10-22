@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,9 @@ interface ModelView {
 
 const DEFAULT_VALUE = "__default__";
 
+/** The select's starting value: the saved model, else "Default" where one exists, else nothing so the placeholder shows. */
+const initialChoice = (view: ModelView): string | null => view.model ?? (view.defaultModel != null ? DEFAULT_VALUE : null);
+
 const endpoint = (connection?: string | null) => `/api/integrations/ai-model${connection ? `?connection=${encodeURIComponent(connection)}` : ""}`;
 
 /**
@@ -31,18 +34,22 @@ const endpoint = (connection?: string | null) => `/api/integrations/ai-model${co
  */
 export function AiModelCard() {
   const [view, setView] = useState<ModelView | null>(null);
-  const [choice, setChoice] = useState(DEFAULT_VALUE);
+  const [choice, setChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Each request takes a ticket; only the latest one may update the card, so a slow earlier answer cannot win.
+  const latest = useRef(0);
 
   const apply = useCallback((next: ModelView) => {
     setView(next);
-    setChoice(next.model ?? DEFAULT_VALUE);
+    setChoice(initialChoice(next));
   }, []);
 
   const load = useCallback(
     async (connection?: string | null) => {
+      const ticket = ++latest.current;
       const result = await callApi<ModelView>(endpoint(connection), "GET");
+      if (ticket !== latest.current) return;
       if (result.ok && result.data) {
         apply(result.data);
         setError(null);
@@ -53,8 +60,9 @@ export function AiModelCard() {
 
   useEffect(() => {
     let cancelled = false;
+    const ticket = ++latest.current;
     void callApi<ModelView>(endpoint(), "GET").then((result) => {
-      if (cancelled) return;
+      if (cancelled || ticket !== latest.current) return;
       if (result.ok && result.data) apply(result.data);
       else setError(result.error);
     });
@@ -67,6 +75,8 @@ export function AiModelCard() {
     if (!view?.connection) return;
     setPending(true);
     setError(null);
+    // A provider load still in flight would describe the card from before the save, so it no longer applies.
+    latest.current++;
     const result = await callApi<ModelView>("/api/integrations/ai-model", "PUT", { connection: view.connection, model: choice === DEFAULT_VALUE ? null : choice });
     setPending(false);
     if (!result.ok || !result.data) {
@@ -85,7 +95,7 @@ export function AiModelCard() {
     ...choices.map((id) => ({ value: id, label: id })),
   ];
   const connectionItems = (view?.connections ?? []).map((c) => ({ value: c.key, label: c.key === view?.active ? `${c.label} (in use)` : c.label }));
-  const unchanged = view !== null && view.connection === view.active && choice === (view.model ?? DEFAULT_VALUE);
+  const unchanged = view !== null && view.connection === view.active && choice === initialChoice(view);
 
   return (
     <SettingsSection title="AI model" description="The provider and model that classify replies, write drafts and fill AI columns for this organization.">
@@ -96,7 +106,7 @@ export function AiModelCard() {
           {connectionItems.length > 1 && (
             <div className="stack-field">
               <Label htmlFor="ai-connection">Provider</Label>
-              <Select items={connectionItems} value={view?.connection ?? ""} onValueChange={(v) => v && void load(v)} disabled={!view}>
+              <Select items={connectionItems} value={view?.connection ?? ""} onValueChange={(v) => v && void load(v)} disabled={!view || pending}>
                 <SelectTrigger id="ai-connection" className="w-full max-w-sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -134,7 +144,7 @@ export function AiModelCard() {
         </p>
       )}
       <div>
-        <Button onClick={() => void save()} disabled={pending || !view?.connected || unchanged || (choice === DEFAULT_VALUE && !hasDefault)}>
+        <Button onClick={() => void save()} disabled={pending || !view?.connected || unchanged || choice === null || (choice === DEFAULT_VALUE && !hasDefault)}>
           {pending ? "Saving…" : view && view.connection !== view.active ? "Use this provider" : "Save model"}
         </Button>
       </div>

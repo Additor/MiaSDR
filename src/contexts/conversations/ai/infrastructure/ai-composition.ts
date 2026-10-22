@@ -31,6 +31,7 @@ export const replyAiResolver: ReplyAiResolver = {
     const model = await languageModels.forOrganization(organizationId);
     return model ? createReplyAi(model) : null;
   },
+  isConfigured: async (organizationId) => aiFakeMode() || languageModels.isConfigured(organizationId),
 };
 
 export const replyDeps = (): ReplyDeps => ({
@@ -47,7 +48,7 @@ export const linkedinReplyDeps = (): LinkedInReplyDeps => ({
   store: drizzleLinkedInReplyStore,
   sender: createLinkedInReplySender(linkedinGateways()),
   now: () => new Date(),
-  aiConfigured: async (organizationId) => (await replyAiResolver.forOrganization(organizationId)) !== null,
+  aiConfigured: (organizationId) => replyAiResolver.isConfigured(organizationId),
 });
 
 /** Registered once in the kernel registry. Always on: an organization without a key just sees `not_configured` in the tick report. */

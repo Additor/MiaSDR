@@ -3,6 +3,7 @@ import type { InboundEmailInput } from "../../application/ports";
 import type { FakeMailboxProvider } from "@/contexts/outreach/email/infrastructure/fake-mailbox-provider";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 describeDb("manual email replies (no AI)", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
@@ -28,7 +29,7 @@ describeDb("manual email replies (no AI)", () => {
     const replyDeps = {
       store,
       // The fake answers for this organization, so any AI call from the manual path shows up in its counters.
-      ai: { forOrganization: async () => ai },
+      ai: replyAiResolverOf(async () => ai),
       mailer: createReplyMailer(() => mailbox),
       now: () => new Date(),
       newToken: () => `tok-${Math.random().toString(36).slice(2)}`,
@@ -93,7 +94,7 @@ describeDb("manual email replies (no AI)", () => {
 
   it("works when no AI key is configured", async () => {
     const f = await fixture();
-    const deps = { ...f.replyDeps, ai: { forOrganization: async () => null } };
+    const deps = { ...f.replyDeps, ai: replyAiResolverOf(async () => null) };
     const created = await mgmt.createManualDraft(deps, f.actor, f.conversationId, { subject: "Hello", bodyText: "Body" });
     const sent = await mgmt.approveAndSendDraft(deps, f.actor, created.draftId, { revision: created.revision, idempotencyKey: key() });
     expect(sent).toMatchObject({ status: "sent" });

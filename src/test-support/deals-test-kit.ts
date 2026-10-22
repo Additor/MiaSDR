@@ -4,6 +4,7 @@ import type { Job } from "@/platform/jobs/types";
 import type { InboundEmailInput } from "@/contexts/conversations/application/ports";
 import { createCampaign, FLOW_STEPS, recordSentEmail } from "@/contexts/conversations/after-reply/infrastructure/after-reply-test-kit";
 import { dropOrgs, testEnv } from "@/test-support/db";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 export { waitForLockWaiters } from "@/test-support/db";
 
@@ -56,7 +57,7 @@ export async function bootDealsKit(url: string) {
 
     const ai = new FakeAi();
     const clock = () => new Date();
-    const resolver = { forOrganization: async (o: string) => (o === org ? ai : null) };
+    const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs, replies, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const [seqTick] = seqJobsApp.createSequenceJobs({ engine, runs: seqStore.drizzleRunStore, replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });

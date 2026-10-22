@@ -9,7 +9,11 @@ export interface PromptSegment {
   cacheable?: boolean;
 }
 
-export type GenerateOutput = { kind: "text" } | { kind: "json"; name: string; schema: JsonSchema };
+/** Every task asks for JSON that fits a named schema. */
+export interface GenerateOutput {
+  name: string;
+  schema: JsonSchema;
+}
 
 export interface GenerateRequest {
   task: AiTaskKey;
@@ -17,7 +21,6 @@ export interface GenerateRequest {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   output: GenerateOutput;
   maxTokens: number;
-  signal?: AbortSignal;
 }
 
 /** Why the model stopped, the same words for every provider. */
@@ -36,16 +39,6 @@ export interface GenerateResult {
   text: string;
   stop: StopReason;
   usage: AiUsage;
-  /** The provider's id for the call, for support requests and the provider's own logs. */
-  requestId?: string;
-}
-
-/** What an adapter guarantees, so a feature can tell what to expect before it asks. */
-export interface ModelCapabilities {
-  /** `native`: the provider enforces the schema. `best_effort`: it may answer outside it, and the caller's validation catches that. */
-  jsonSchema: "native" | "best_effort";
-  promptCache: "explicit" | "none";
-  reportsCost: boolean;
 }
 
 /** Usage as the job records store it: numbers only, absent fields left out. */

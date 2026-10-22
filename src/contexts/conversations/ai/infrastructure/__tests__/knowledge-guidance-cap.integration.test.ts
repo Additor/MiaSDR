@@ -4,6 +4,7 @@ import { DEFAULT_SUBCATEGORIES } from "../../../domain/default-pipeline";
 import { ValidationError } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 describeDb("knowledge tags, default subcategory guidance and the unknown-sender AI cap", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
@@ -54,7 +55,7 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
     const deps = {
       jobs: jobStore,
       replies: undefined as never,
-      ai: { forOrganization: async (o: string) => (o === f.org ? ai : null) },
+      ai: replyAiResolverOf(async (o: string) => (o === f.org ? ai : null)),
       now: () => new Date(),
       workerId: "kg-test",
       leaseMs: aiJobsApp.AI_JOB_LEASE_MS,

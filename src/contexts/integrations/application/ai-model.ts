@@ -2,14 +2,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, ValidationError, type Actor } from "@/shared/errors";
 import { aiConnection, effectiveAiModel, pickActiveAiConnection, type AiConnectionKey, type AiConnectionSpec } from "../domain/ai-connections";
 
-export { DEFAULT_AI_MODEL } from "../domain/ai-connections";
-
-/**
- * Anthropic models accepted when Anthropic's live list cannot be reached. The live list is the source of truth; this
- * list only keeps a save possible during an outage for ids that were valid when it was written. The gateways list
- * their models without a key, so they have no fallback.
- */
-export const KNOWN_AI_MODELS: readonly string[] = ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-opus-5", "claude-sonnet-5"];
+export { DEFAULT_AI_MODEL, KNOWN_AI_MODELS } from "../domain/ai-connections";
 
 /** Anthropic ids, and gateway ids such as `anthropic/claude-sonnet-5.5` or `openai/gpt-6:free`. */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,149}$/;
@@ -74,23 +67,34 @@ function requireAdmin(actor: Actor) {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can choose the AI model.");
 }
 
-function keyOf(deps: AiModelDeps, encryptedPayload: string): string | null {
+/** The API key inside a decrypted AI credential, or null when the payload has none or does not parse. */
+export function apiKeyOf(decrypted: () => string): string | null {
   try {
-    const { apiKey } = JSON.parse(deps.decrypt(encryptedPayload)) as { apiKey?: string };
+    const { apiKey } = JSON.parse(decrypted()) as { apiKey?: string };
     return apiKey || null;
   } catch {
     return null;
   }
 }
 
+/**
+ * The account AI runs on and the model it runs, or null when AI is off: no AI key saved, or a connection with no
+ * default and no model picked. The settings card and the model resolver both read this, so they agree.
+ */
+export function runningAi(accounts: readonly AiAccount[], envModel?: string): { account: AiAccount; spec: AiConnectionSpec; model: string } | null {
+  const account = pickActiveAiConnection(accounts);
+  const spec = account && aiConnection(account.key);
+  if (!account || !spec) return null;
+  const model = effectiveAiModel(spec, account.model, envModel);
+  return model ? { account, spec, model } : null;
+}
+
 async function liveChoices(deps: AiModelDeps, spec: AiConnectionSpec, account: AiAccount): Promise<ModelListResult> {
   if (deps.skipLive) return { ok: false, reason: "unreachable" };
-  const apiKey = keyOf(deps, account.encryptedPayload);
+  const apiKey = apiKeyOf(() => deps.decrypt(account.encryptedPayload));
   if (!apiKey) return { ok: false, reason: "rejected" };
   return deps.catalog.list(spec, apiKey);
 }
-
-const fallbackChoices = (spec: AiConnectionSpec) => (spec.key === "anthropic" ? [...KNOWN_AI_MODELS] : []);
 
 async function load(deps: AiModelDeps, actor: Actor, connection?: string) {
   const accounts = (await deps.store.listAi(actor.organizationId)).filter((a) => aiConnection(a.key));
@@ -116,10 +120,10 @@ export async function getAiModel(deps: AiModelDeps, actor: Actor, query: { conne
   const notice =
     result.reason === "rejected"
       ? `${spec.label} rejected the saved key, so the live model list is unavailable. Save the key again.`
-      : spec.key === "anthropic"
+      : spec.fallbackModels.length > 0
         ? "The live model list could not be loaded. Showing the built-in list."
         : "The live model list could not be loaded. Try again shortly.";
-  return { ...base, choices: fallbackChoices(spec), live: false, notice: missing ? `${notice} ${missing}` : notice };
+  return { ...base, choices: [...spec.fallbackModels], live: false, notice: missing ? `${notice} ${missing}` : notice };
 }
 
 /** Runs AI on `connection` (default: the active one) with `model`, or that connection's default with null. */
@@ -137,10 +141,10 @@ export async function setAiModel(deps: AiModelDeps, actor: Actor, input: { conne
       if (!result.ids.includes(model)) throw new ValidationError(`${spec.label} does not list ${model} for this key. Pick one from the list.`);
     } else if (result.reason === "rejected") {
       throw new ValidationError(`${spec.label} rejected the saved key, so the model cannot be checked. Save the key again.`);
-    } else if (!fallbackChoices(spec).includes(model)) {
+    } else if (!spec.fallbackModels.includes(model)) {
       throw new ValidationError(
-        spec.key === "anthropic"
-          ? `Anthropic's model list could not be reached, and ${model} is not in the built-in list. Try again shortly.`
+        spec.fallbackModels.length > 0
+          ? `${spec.label}'s model list could not be reached, and ${model} is not in the built-in list. Try again shortly.`
           : `${spec.label}'s model list could not be reached, so ${model} cannot be checked. Try again shortly.`,
       );
     }

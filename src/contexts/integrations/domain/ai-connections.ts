@@ -20,10 +20,20 @@ export interface AiConnectionSpec {
   models: { url: string; auth: "anthropic" | "public"; keep?: (model: { id: string; type?: string }) => boolean };
   /** The model used when the organization picks none. Null means it must pick one. */
   defaultModel: string | null;
+  /** `AI_MODEL` from the environment overrides `defaultModel`. */
+  envModelApplies: boolean;
+  /**
+   * Model ids a save accepts when the live list cannot be reached. The live list is the source of truth; this list only
+   * keeps a save possible during an outage, for ids that were valid when it was written. Empty means no save then.
+   */
+  fallbackModels: readonly string[];
 }
 
 /** The model the code uses when neither the organization nor `AI_MODEL` names one, on a direct Anthropic connection. */
 export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
+
+/** Anthropic models accepted when Anthropic's live list cannot be reached. */
+export const KNOWN_AI_MODELS: readonly string[] = ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-opus-5", "claude-sonnet-5"];
 
 export const AI_CONNECTIONS: readonly AiConnectionSpec[] = [
   {
@@ -35,6 +45,8 @@ export const AI_CONNECTIONS: readonly AiConnectionSpec[] = [
     keyCheck: { url: "https://api.anthropic.com/v1/models?limit=1", auth: "anthropic" },
     models: { url: "https://api.anthropic.com/v1/models", auth: "anthropic" },
     defaultModel: DEFAULT_AI_MODEL,
+    envModelApplies: true,
+    fallbackModels: KNOWN_AI_MODELS,
   },
   {
     key: "vercel-ai-gateway",
@@ -46,6 +58,8 @@ export const AI_CONNECTIONS: readonly AiConnectionSpec[] = [
     // The Messages endpoint is the Anthropic API, so only Anthropic's models are offered through it.
     models: { url: "https://ai-gateway.vercel.sh/v1/models", auth: "public", keep: (m) => m.type === "language" && m.id.startsWith("anthropic/") },
     defaultModel: null,
+    envModelApplies: false,
+    fallbackModels: [],
   },
   {
     key: "openrouter",
@@ -57,16 +71,17 @@ export const AI_CONNECTIONS: readonly AiConnectionSpec[] = [
     // Every AI feature asks for JSON that fits a schema, so only models that support it are offered.
     models: { url: "https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs", auth: "public" },
     defaultModel: null,
+    envModelApplies: false,
+    fallbackModels: [],
   },
 ];
 
 export const aiConnection = (key: string): AiConnectionSpec | undefined => AI_CONNECTIONS.find((c) => c.key === key);
 
-/** The model a connection runs: the organization's pick, else `AI_MODEL` and the default on Anthropic. Null when none applies. */
+/** The model a connection runs: the organization's pick, else `AI_MODEL` where it applies, else the default. Null when none applies. */
 export function effectiveAiModel(spec: AiConnectionSpec, chosen: string | null, envModel?: string): string | null {
   if (chosen) return chosen;
-  if (spec.key === "anthropic") return envModel || spec.defaultModel;
-  return spec.defaultModel;
+  return (spec.envModelApplies && envModel) || spec.defaultModel;
 }
 
 /**

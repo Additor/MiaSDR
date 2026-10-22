@@ -5,6 +5,7 @@ import type { FakeMailboxProvider } from "@/contexts/outreach/email/infrastructu
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 import { createCampaign, FLOW_STEPS, recordSentEmail } from "../after-reply-test-kit";
 import type { Job } from "@/platform/jobs/types";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
 
@@ -45,7 +46,7 @@ describeDb("After a reply flows", () => {
     const ai = new FakeAi();
     const state = { offsetMs: 0 };
     const clock = () => new Date(Date.now() + state.offsetMs);
-    const resolver = { forOrganization: async (o: string) => (o === org ? ai : null) };
+    const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const seqTickFor = (workerId: string) =>
       (seqJobsApp.createSequenceJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId, leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job])[0];
@@ -1136,7 +1137,7 @@ describeDb("After a reply flows", () => {
       await approve(f, first.id);
       await f.seqRun();
       f.state.offsetMs += 3 * DAY;
-      const resolver = { forOrganization: async () => f.ai };
+      const resolver = replyAiResolverOf(async () => f.ai);
       const tickWith = (beforeWrite: () => Promise<void>) =>
         (seqJobsApp.createSequenceJobs({
           engine: stores.engine,

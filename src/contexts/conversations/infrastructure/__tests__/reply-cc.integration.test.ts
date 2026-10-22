@@ -3,6 +3,7 @@ import type { InboundEmailInput } from "../../application/ports";
 import type { FakeMailboxProvider } from "@/contexts/outreach/email/infrastructure/fake-mailbox-provider";
 import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
 describeDb("CC on a reply", () => {
@@ -25,7 +26,7 @@ describeDb("CC on a reply", () => {
     const actor: Actor = { userId: user, organizationId: org, role: "member" };
     const deps = {
       store,
-      ai: { forOrganization: async () => null },
+      ai: replyAiResolverOf(async () => null),
       mailer: createReplyMailer(() => mailbox),
       now: () => new Date(),
       newToken: () => `tok-${Math.random().toString(36).slice(2)}`,

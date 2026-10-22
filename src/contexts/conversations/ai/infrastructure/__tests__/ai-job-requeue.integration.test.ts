@@ -5,6 +5,7 @@ import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING } from "../../domain/ai
 import { ForbiddenError, NotFoundError, type Actor } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 describeDb("failed AI jobs: requeue and sweep", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
@@ -34,7 +35,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     const ai = new FakeAi();
     const state = { key: opts.withKey ?? true };
     const clock = () => new Date(Date.now() + shared.offsetMs);
-    const resolver = { forOrganization: async (o: string) => (o === org && state.key ? ai : null) };
+    const resolver = replyAiResolverOf(async (o: string) => (o === org && state.key ? ai : null));
     const deps = { jobs: store, replies: (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore, ai: resolver, now: clock, workerId: "test", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000, audit };
     const [tick] = aiJobsApp.createAiJobs(deps) as [Job];
     const run = () => tick.run({ deadline: Date.now() + 60_000, now: clock });

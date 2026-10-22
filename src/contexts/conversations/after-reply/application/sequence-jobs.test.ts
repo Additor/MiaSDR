@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ReplyAi } from "../../ai/application/ai-ports";
 import type { DraftContext, NewDraft } from "../../application/reply-ports";
 import { createSequenceJobs } from "./sequence-jobs";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 /**
  * The sequence job writes the draft with the channel of the conversation it drafts for. insertDraft
@@ -92,7 +93,7 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
     engine: engine as never,
     runs: {} as never,
     replies: replies as never,
-    ai: { forOrganization: async () => ai },
+    ai: replyAiResolverOf(async () => ai),
     now: () => new Date("2026-10-16T10:00:00Z"),
     workerId: "w",
     leaseMs: 60_000,

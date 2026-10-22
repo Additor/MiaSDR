@@ -13,4 +13,12 @@ export interface ReplyAi {
 /** Picks the reply AI for one organization. Null means AI is not configured there, and the job does nothing. */
 export interface ReplyAiResolver {
   forOrganization(organizationId: string): Promise<ReplyAi | null>;
+  /** Whether AI is on, without decrypting the key or building a client. */
+  isConfigured(organizationId: string): Promise<boolean>;
 }
+
+/** A resolver whose `isConfigured` asks `forOrganization`, for fakes where building the AI costs nothing. */
+export const replyAiResolverOf = (forOrganization: ReplyAiResolver["forOrganization"]): ReplyAiResolver => ({
+  forOrganization,
+  isConfigured: async (organizationId) => (await forOrganization(organizationId)) !== null,
+});

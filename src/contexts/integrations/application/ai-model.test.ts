@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ForbiddenError, ValidationError, type Actor } from "@/shared/errors";
 import type { AiConnectionSpec } from "../domain/ai-connections";
-import { getAiModel, KNOWN_AI_MODELS, setAiModel, type AiAccount, type AiModelDeps, type ModelListResult } from "./ai-model";
+import { apiKeyOf, getAiModel, KNOWN_AI_MODELS, runningAi, setAiModel, type AiAccount, type AiModelDeps, type ModelListResult } from "./ai-model";
 
 const owner: Actor = { userId: "u1", organizationId: "o1", role: "owner" };
 const member: Actor = { ...owner, role: "member" };
@@ -122,6 +122,32 @@ describe("AI model setting", () => {
       await expect(setAiModel(deps, owner, { connection: "openrouter", model: "openai/gpt-6" })).rejects.toThrow(/cannot be checked/);
       expect(saveChoice).not.toHaveBeenCalled();
       expect(await getAiModel(deps, owner, { connection: "openrouter" })).toMatchObject({ choices: [], live: false });
+    });
+  });
+
+  describe("the running connection, as the model resolver reads it", () => {
+    const account = (key: AiAccount["key"], model: string | null, primary = false): AiAccount => ({ accountId: key, key, encryptedPayload: "enc", model, primary });
+
+    it("runs Anthropic with AI_MODEL, then the code default, when nothing is picked", () => {
+      expect(runningAi([account("anthropic", null)], "claude-haiku-5-5")).toMatchObject({ model: "claude-haiku-5-5", spec: { key: "anthropic" } });
+      expect(runningAi([account("anthropic", null)])).toMatchObject({ model: "claude-sonnet-5-5" });
+    });
+
+    it("keeps AI off on a gateway with no model, and ignores AI_MODEL there", () => {
+      expect(runningAi([account("openrouter", null, true)], "claude-haiku-5-5")).toBeNull();
+      expect(runningAi([account("openrouter", "openai/gpt-6", true), account("anthropic", null)])).toMatchObject({ model: "openai/gpt-6", account: { key: "openrouter" } });
+      expect(runningAi([])).toBeNull();
+    });
+
+    it("reads the key from a decrypted payload, and null from one that does not parse", () => {
+      expect(apiKeyOf(() => JSON.stringify({ apiKey: "sk-1" }))).toBe("sk-1");
+      expect(apiKeyOf(() => "{}")).toBeNull();
+      expect(apiKeyOf(() => "not json")).toBeNull();
+      expect(
+        apiKeyOf(() => {
+          throw new Error("bad envelope");
+        }),
+      ).toBeNull();
     });
   });
 });

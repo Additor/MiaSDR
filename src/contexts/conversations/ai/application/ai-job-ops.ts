@@ -86,7 +86,7 @@ export async function sweepFailedAiJobs(deps: SweepDeps): Promise<number> {
   const now = deps.now();
   let total = 0;
   for (const organizationId of await deps.jobs.organizationsWithSweepable(now)) {
-    if (!(await deps.ai.forOrganization(organizationId))) continue;
+    if (!(await deps.ai.isConfigured(organizationId))) continue;
     const ids = await deps.jobs.requeueSweepable(organizationId, now, REQUEUE_BATCH);
     if (ids.length === 0) continue;
     total += ids.length;

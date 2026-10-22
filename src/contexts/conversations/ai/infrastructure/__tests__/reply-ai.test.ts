@@ -21,7 +21,6 @@ function answering(text: string) {
   const model: LanguageModel = {
     provider: "openrouter",
     model: "openai/gpt-6",
-    capabilities: { jsonSchema: "best_effort", promptCache: "explicit", reportsCost: true },
     async generate(request) {
       seen.push(request);
       return { text, stop: "end", usage: { inputTokens: 3, outputTokens: 2, costUsd: 0.001 } };
@@ -40,7 +39,7 @@ describe("reply AI on a language model", () => {
     expect(request.task).toBe("reply.classify");
     expect(request.system).toEqual([{ text: expect.stringContaining("You classify"), cacheable: true }]);
     expect(request.messages[0].content).toContain("SECRET-BODY");
-    expect(request.output.kind === "json" && request.output.schema).toMatchObject({ properties: { subcategoryKey: { enum: ["demo_request", "other"] } }, additionalProperties: false });
+    expect(request.output.schema).toMatchObject({ properties: { subcategoryKey: { enum: ["demo_request", "other"] } }, additionalProperties: false });
   });
 
   it("rejects an answer outside the closed set or with extra fields", async () => {
@@ -59,7 +58,7 @@ describe("reply AI on a language model", () => {
     const { ai, seen } = answering(JSON.stringify({ bodyText: "Thursday works.", subject: "stray" }));
     expect((await ai.draft(draftInput("linkedin"))).output).toEqual({ subject: "", bodyText: "Thursday works." });
     const request = seen[0];
-    expect(request.output.kind === "json" && request.output.schema).toMatchObject({ required: ["bodyText"] });
+    expect(request.output.schema).toMatchObject({ required: ["bodyText"] });
     expect(request.system[0].text).toMatch(/LinkedIn/);
   });
 });

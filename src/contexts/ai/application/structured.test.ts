@@ -9,7 +9,6 @@ function stub(result: Partial<GenerateResult>) {
   const model: LanguageModel = {
     provider: "stub",
     model: "stub-1",
-    capabilities: { jsonSchema: "best_effort", promptCache: "none", reportsCost: false },
     async generate(request) {
       seen.push(request);
       return { text: "", stop: "end", usage: { inputTokens: 1, outputTokens: 1 }, ...result };
@@ -31,7 +30,7 @@ describe("generateStructured", () => {
   it("asks for the schema with the task's token budget and returns the parsed output", async () => {
     const { model, seen } = stub({ text: '{"k":"a"}' });
     expect(await ask(model)).toEqual({ output: { k: "a" }, usage: { inputTokens: 1, outputTokens: 1 } });
-    expect(seen[0]).toMatchObject({ maxTokens: 4000, output: { kind: "json", name: "thing", schema: { type: "object" } } });
+    expect(seen[0]).toMatchObject({ maxTokens: 4000, output: { name: "thing", schema: { type: "object" } } });
   });
 
   it("checks the answer again, because a provider's schema support can be best effort", async () => {

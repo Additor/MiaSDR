@@ -7,7 +7,7 @@ const request: GenerateRequest = {
   task: "grid.answer",
   system: [{ text: "STABLE RULES", cacheable: true }],
   messages: [{ role: "user", content: "SECRET-BODY" }],
-  output: { kind: "json", name: "row_fields", schema },
+  output: { name: "row_fields", schema },
   maxTokens: 4000,
 };
 
@@ -29,7 +29,7 @@ describe("OpenAiChatModel (OpenRouter)", () => {
   it("posts Chat Completions with a strict json_schema and routes only to endpoints that support it", async () => {
     const fetchMock = vi.fn(async () => ok('{"k":"v"}'));
     const result = await model(fetchMock).m.generate(request);
-    expect(result).toEqual({ text: '{"k":"v"}', stop: "end", usage: { inputTokens: 12, outputTokens: 4, cacheReadTokens: 8, cacheWriteTokens: 0, costUsd: 0.0021 }, requestId: "gen-1" });
+    expect(result).toEqual({ text: '{"k":"v"}', stop: "end", usage: { inputTokens: 12, outputTokens: 4, cacheReadTokens: 8, cacheWriteTokens: 0, costUsd: 0.0021 } });
     const { url, headers, body } = sent(fetchMock);
     expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(headers.authorization).toBe("Bearer sk-or-123");
@@ -45,19 +45,33 @@ describe("OpenAiChatModel (OpenRouter)", () => {
     expect(sent(fetchMock).body.messages[0].content[0]).toEqual({ type: "text", text: "STABLE RULES", cache_control: { type: "ephemeral" } });
   });
 
-  it("maps finish reasons, and treats a provider error inside a 200 as transient", async () => {
+  it("maps finish reasons, and reads a refusal from message.refusal", async () => {
     expect((await model(vi.fn(async () => ok("{", { choices: [{ finish_reason: "length", message: { content: "{" } }] }))).m.generate(request)).stop).toBe("max_tokens");
     expect((await model(vi.fn(async () => ok("", { choices: [{ finish_reason: "content_filter", message: { content: "" } }] }))).m.generate(request)).stop).toBe("refusal");
-    await expect(model(vi.fn(async () => ok("", { choices: [{ finish_reason: "error", message: { content: "" } }] }))).m.generate(request)).rejects.toMatchObject({ kind: "transient" });
-    await expect(model(vi.fn(async () => ok("", { error: { message: "upstream down" }, choices: [] }))).m.generate(request)).rejects.toMatchObject({ kind: "transient" });
+    const refused = await model(vi.fn(async () => ok("", { choices: [{ finish_reason: "stop", message: { content: null, refusal: "I can't help with that." } }] }))).m.generate(request);
+    expect(refused).toMatchObject({ text: "", stop: "refusal" });
   });
 
-  it("retries 429 and 5xx, honoring retry-after, and then succeeds", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(fail(429, { "retry-after": "2" })).mockResolvedValueOnce(fail(502)).mockResolvedValueOnce(ok("{}"));
+  it("reads a provider error inside a 200 by its code, and treats one without a code as transient", async () => {
+    await expect(model(vi.fn(async () => ok("", { choices: [{ finish_reason: "error", message: { content: "" } }] }))).m.generate(request)).rejects.toMatchObject({ kind: "transient" });
+    await expect(model(vi.fn(async () => ok("", { error: { message: "upstream down" }, choices: [] }))).m.generate(request)).rejects.toMatchObject({ kind: "transient" });
+    await expect(model(vi.fn(async () => ok("", { error: { code: 502, message: "upstream down" }, choices: [] }))).m.generate(request)).rejects.toMatchObject({ kind: "transient" });
+    const broke = await model(vi.fn(async () => ok("", { error: { code: 402, message: "Insufficient credits" }, choices: [] }))).m.generate(request).catch((e) => e);
+    expect(broke).toMatchObject({ kind: "permanent", message: "OpenRouter reports that the account has no credits left." });
+  });
+
+  it("retries 408, 429 and 5xx, honoring retry-after, and then succeeds", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(fail(429, { "retry-after": "2" })).mockResolvedValueOnce(fail(408)).mockResolvedValueOnce(fail(502)).mockResolvedValueOnce(ok("{}"));
     const { m, sleep } = model(fetchMock);
     await m.generate(request);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(sleep).toHaveBeenNthCalledWith(1, 2000);
+  });
+
+  it("reports the last retryable status as transient once retries run out", async () => {
+    const fetchMock = vi.fn(async () => fail(503));
+    await expect(model(fetchMock, { maxRetries: 1 }).m.generate(request)).rejects.toMatchObject({ kind: "transient", message: "The AI service is unavailable (status 503)." });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry client errors, and names the provider without echoing the key", async () => {

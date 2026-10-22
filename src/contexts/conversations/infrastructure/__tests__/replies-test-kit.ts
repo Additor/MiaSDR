@@ -4,6 +4,7 @@ import type { FakeMailboxProvider } from "@/contexts/outreach/email/infrastructu
 import type { Actor } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 export interface ReplyModules {
   composition: typeof import("../composition");
@@ -57,7 +58,7 @@ export function useReplyKit() {
       jobs: stores.jobs,
       replies: stores.replies,
       // Only this fixture's organization has AI, so jobs for rows other tests left behind are released untouched.
-      ai: { forOrganization: async (o: string) => (o === org ? ai : null) },
+      ai: replyAiResolverOf(async (o: string) => (o === org ? ai : null)),
       now: clock,
       workerId: "test",
       leaseMs: aiJobsApp.AI_JOB_LEASE_MS,

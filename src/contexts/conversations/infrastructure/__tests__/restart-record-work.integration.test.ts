@@ -5,6 +5,7 @@ import type { FakeMailboxProvider } from "@/contexts/outreach/email/infrastructu
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
+import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 /** Set `fault.createRun` to make the next run write fail inside the restart transaction, after its row went in. */
 const fault = vi.hoisted(() => ({ createRun: null as Error | null }));
@@ -56,7 +57,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     const ai = new FakeAi();
     const state = { offsetMs: 0 };
     const clock = () => new Date(Date.now() + state.offsetMs);
-    const resolver = { forOrganization: async (o: string) => (o === org ? ai : null) };
+    const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const [seqTick] = seqJobsApp.createSequenceJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });

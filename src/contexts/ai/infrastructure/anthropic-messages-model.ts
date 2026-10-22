@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { LanguageModel } from "../application/ports";
 import { AiError } from "../domain/ai-error";
-import type { GenerateRequest, GenerateResult, ModelCapabilities, StopReason } from "../domain/generation";
+import type { GenerateRequest, GenerateResult, StopReason } from "../domain/generation";
 
 /**
  * The Anthropic Messages API through the official SDK. One adapter serves Anthropic itself and Vercel AI Gateway, whose
@@ -28,7 +28,6 @@ const STOP: Record<string, StopReason> = { end_turn: "end", stop_sequence: "end"
 export class AnthropicMessagesModel implements LanguageModel {
   readonly provider: string;
   readonly model: string;
-  readonly capabilities: ModelCapabilities = { jsonSchema: "native", promptCache: "explicit", reportsCost: false };
   private readonly label: string;
   private readonly client: Anthropic;
 
@@ -48,16 +47,13 @@ export class AnthropicMessagesModel implements LanguageModel {
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     let message: Anthropic.Message;
     try {
-      message = await this.client.messages.create(
-        {
-          model: this.model,
-          max_tokens: request.maxTokens,
-          system: request.system.map((segment) => ({ type: "text" as const, text: segment.text, ...(segment.cacheable ? { cache_control: { type: "ephemeral" as const } } : {}) })),
-          messages: request.messages,
-          ...(request.output.kind === "json" ? { output_config: { format: { type: "json_schema" as const, schema: request.output.schema } } } : {}),
-        },
-        { signal: request.signal },
-      );
+      message = await this.client.messages.create({
+        model: this.model,
+        max_tokens: request.maxTokens,
+        system: request.system.map((segment) => ({ type: "text" as const, text: segment.text, ...(segment.cacheable ? { cache_control: { type: "ephemeral" as const } } : {}) })),
+        messages: request.messages,
+        output_config: { format: { type: "json_schema", schema: request.output.schema } },
+      });
     } catch (error) {
       throw this.failure(error);
     }
@@ -72,13 +68,11 @@ export class AnthropicMessagesModel implements LanguageModel {
         cacheReadTokens: usage.cache_read_input_tokens ?? 0,
         cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
       },
-      requestId: (message as { _request_id?: string | null })._request_id ?? undefined,
     };
   }
 
   private failure(error: unknown): AiError {
     if (error instanceof Anthropic.APIConnectionTimeoutError) return new AiError("The AI request timed out.", "transient");
-    if (error instanceof Anthropic.APIUserAbortError) return new AiError("The AI request was cancelled.", "transient");
     if (error instanceof Anthropic.APIConnectionError) return new AiError("Could not reach the AI service.", "transient");
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
       return new AiError(`${this.label} rejected the API key. Replace it in Settings, Integrations.`, "permanent");
