@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { callApi } from "@/lib/api-client";
+import { AI_CONNECTIONS } from "@/contexts/integrations/domain/ai-connections";
 import { AiModelCard } from "./ai-model-card";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
@@ -70,6 +71,22 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
     router.refresh();
   }
 
+  /** Points the key form at `key` and puts the cursor in its first field, for the AI model card's "Replace key". */
+  function replaceKey(key: string) {
+    const target = providers.find((p) => p.key === key);
+    if (!target) return;
+    setProviderKey(key);
+    // The field renders after the provider changes; focus it on the next frame.
+    requestAnimationFrame(() => document.getElementById(target.fields[0]?.name ?? "")?.focus());
+  }
+
+  /** What removing `account` does to AI, for the confirm dialog. Null when the account does not run AI. */
+  function removalEffect(account: Account): string | null {
+    if (!account.runsAi) return null;
+    const next = AI_CONNECTIONS.map((c) => accounts.find((a) => a.key === c.key && a.id !== account.id && a.kind === "ai" && a.enabled && a.hasCredential)).find(Boolean);
+    return next ? `AI runs on this key. Removing it moves AI to ${next.name}; check the AI model card afterward.` : "AI runs on this key. Removing it turns AI off.";
+  }
+
   async function remove(account: Account) {
     const result = await callApi(`/api/integrations/${account.id}`, "DELETE");
     if (!result.ok) toast.error(result.error ?? "Removal failed.");
@@ -116,7 +133,7 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
         </form>
       </SettingsSection>
 
-      <AiModelCard key={aiKeysRevision} />
+      <AiModelCard key={aiKeysRevision} onReplaceKey={replaceKey} />
 
       <SettingsSection title="Connected">
         {accounts.length === 0 ? (
@@ -161,7 +178,7 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}
         title={`Remove ${removing?.name ?? "this key"}?`}
-        description="Anything using this key stops working."
+        description={(removing && removalEffect(removing)) ?? "Anything using this key stops working."}
         confirmLabel="Remove key"
         destructive
         onConfirm={() => removing && void remove(removing)}

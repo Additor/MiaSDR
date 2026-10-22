@@ -22,6 +22,7 @@ interface ModelView {
   defaultModel: string | null;
   choices: string[];
   live: boolean;
+  keyRejected: boolean;
   notice: string | null;
 }
 
@@ -42,7 +43,7 @@ function RunningLine({ status }: { status: AiStatus }) {
   if (status.state === "demo") {
     return (
       <p role="status" className="text-sm">
-        Demo mode: AI answers come from stand-ins, and no provider is called.
+        Demo mode: AI answers come from stand-ins, and no provider is called. Saved keys and the model apply once AI_PROVIDER=fake is removed.
       </p>
     );
   }
@@ -65,7 +66,7 @@ const endpoint = (connection?: string | null) => `/api/integrations/ai-model${co
  * The provider AI runs on and its model, for replies, drafts and AI columns. With several saved keys, the provider
  * picker loads that provider's models; saving switches AI to it. The server checks the model against the live list.
  */
-export function AiModelCard() {
+export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: string) => void }) {
   const [view, setView] = useState<ModelView | null>(null);
   const [choice, setChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,10 +139,14 @@ export function AiModelCard() {
   // Viewing a provider that does not run AI: say what saving does, and that the running key stays.
   const switching = view !== null && view.active !== null && view.connection !== view.active;
   const unchanged = view !== null && view.connection === view.active && choice === initialChoice(view);
+  // Demo mode calls no provider, so a model cannot be checked or used: the card says so and offers no picker.
+  const demo = view?.status.state === "demo";
 
   return (
     <SettingsSection title="AI model" description="The provider and model that classify replies, write drafts and fill AI columns for this organization.">
-      {view && !view.connected ? (
+      {demo ? (
+        <RunningLine status={view.status} />
+      ) : view && !view.connected ? (
         <p className="text-sm text-muted-foreground">{view.notice}</p>
       ) : (
         <>
@@ -176,6 +181,24 @@ export function AiModelCard() {
                 Loading {labelOf(loading)} models…
               </p>
             )}
+            {view?.keyRejected && view.connection && (
+              <div role="status" className="flex items-start gap-2 text-sm">
+                <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+                <div className="grid gap-2">
+                  <p>
+                    <strong className="font-medium text-warning">Key rejected.</strong> {labelOf(view.connection)} turned down the saved key, so no model can be listed.{" "}
+                    {view.connection === view.active ? "AI calls fail until you replace it." : "Replace it before you switch AI to it."}
+                  </p>
+                  {onReplaceKey && (
+                    <div>
+                      <Button variant="outline" size="sm" onClick={() => onReplaceKey(view.connection!)}>
+                        Replace key
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {view?.notice && (
               <p role="status" className="text-sm text-muted-foreground">
                 {view.notice}
@@ -189,7 +212,7 @@ export function AiModelCard() {
           {error}
         </p>
       )}
-      <div>
+      <div hidden={demo}>
         <Button onClick={() => void save()} disabled={pending || !view?.connected || unchanged || choice === null || (choice === DEFAULT_VALUE && !hasDefault)}>
           {pending ? "Saving…" : view && view.connection !== view.active ? "Use this provider" : "Save model"}
         </Button>

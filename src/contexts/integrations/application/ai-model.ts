@@ -63,6 +63,8 @@ export interface AiModelView {
   choices: string[];
   /** True when `choices` came from the provider, false when it is the built-in list or empty. */
   live: boolean;
+  /** The provider turned down the saved key on `connection`: no model can be checked, and AI calls on it fail. */
+  keyRejected: boolean;
   notice: string | null;
 }
 
@@ -122,20 +124,20 @@ export async function getAiModel(deps: AiModelDeps, actor: Actor, query: { conne
   const connections = accounts.map((a) => ({ key: a.key, label: aiConnection(a.key)!.label }));
   const status: AiStatus = deps.skipLive ? { state: "demo" } : aiStatusOf(accounts, deps.envModel);
   if (!target) {
-    return { status, connected: false, connections, active: null, connection: null, model: null, effective: null, defaultModel: null, choices: [], live: false, notice: "Connect an AI provider above, then choose a model here." };
+    return { status, connected: false, connections, active: null, connection: null, model: null, effective: null, defaultModel: null, choices: [], live: false, keyRejected: false, notice: "Connect an AI provider above, then choose a model here." };
   }
   const spec = aiConnection(target.key)!;
   const effective = effectiveAiModel(spec, target.model, deps.envModel);
   const base = { status, connected: true, connections, active: active?.key ?? null, connection: target.key, model: target.model, effective, defaultModel: effectiveAiModel(spec, null, deps.envModel) };
   const result = await liveChoices(deps, spec, target);
-  if (result.ok) return { ...base, choices: result.ids, live: true, notice: null };
+  if (result.ok) return { ...base, choices: result.ids, live: true, keyRejected: false, notice: null };
+  // The card words a rejected key itself and offers no models: a save would fail on the same key.
+  if (result.reason === "rejected") return { ...base, choices: [], live: false, keyRejected: true, notice: null };
   const notice =
-    result.reason === "rejected"
-      ? `${spec.label} rejected the saved key, so the live model list is unavailable. Save the key again.`
-      : spec.fallbackModels.length > 0
+    spec.fallbackModels.length > 0
         ? "The live model list could not be loaded. Showing the built-in list."
         : "The live model list could not be loaded. Try again shortly.";
-  return { ...base, choices: [...spec.fallbackModels], live: false, notice };
+  return { ...base, choices: [...spec.fallbackModels], live: false, keyRejected: false, notice };
 }
 
 /** Runs AI on `connection` (default: the active one) with `model`, or that connection's default with null. */

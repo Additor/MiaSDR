@@ -71,6 +71,7 @@ describe("AI model setting", () => {
   it("refuses a save when the provider rejects the saved key", async () => {
     const { deps, saveChoice } = setup({ list: { ok: false, reason: "rejected" } });
     await expect(setAiModel(deps, owner, { model: "claude-sonnet-5-5" })).rejects.toThrow("Anthropic rejected the saved key, so the model cannot be checked. Save the key again.");
+    expect(await getAiModel(deps, owner)).toMatchObject({ keyRejected: true, choices: [], notice: null });
     expect(saveChoice).not.toHaveBeenCalled();
   });
 
