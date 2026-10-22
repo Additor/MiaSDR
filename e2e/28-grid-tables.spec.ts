@@ -49,8 +49,8 @@ test.describe("grid tables: export and import", () => {
 
     const exportCsv = async () => {
       const download = page.waitForEvent("download");
-      await page.getByRole("button", { name: "More" }).click();
-      await page.getByRole("menuitem", { name: "Export" }).click();
+      await page.getByRole("button", { name: "Export options" }).click();
+      await page.getByRole("menuitem", { name: "Export CSV" }).click();
       const file = await download;
       const stream = await file.createReadStream();
       let text = "";
@@ -95,8 +95,8 @@ test.describe("grid tables: export and import", () => {
     await signInAdmin(page);
     const { workbookId, tableId } = await newWorkbook(page.request, "G2 sheet picker");
     await page.goto(`/tables/${workbookId}`);
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Import" }).click();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Import file" }).click();
     await page.getByLabel("File to import").setInputFiles(
       workbookFile("g2-three-sheets.xlsx", [
         { name: "Leads", rows: [["Email", "Name"], ["a@g2-sheets.test", "Ada"]] },
@@ -137,7 +137,7 @@ test.describe("grid tables: export and import", () => {
     await signInAdmin(page);
     const { workbookId, tableId } = await newWorkbook(page.request, "G2 add rows");
     await page.goto(`/tables/${workbookId}`);
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("menuitem", { name: "Add rows..." }).click();
     const dialog = page.getByRole("dialog", { name: "Add rows" });
 

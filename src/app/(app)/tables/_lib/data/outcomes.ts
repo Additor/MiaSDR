@@ -20,7 +20,7 @@ export interface Outcome {
 export const OUTCOMES: readonly Outcome[] = [
   { actionKey: "find-work-email", label: "Find work emails", fills: "From a name and a company", column: "Work email" },
   { actionKey: "verify-email", label: "Verify emails", fills: "Valid, invalid or catch-all", column: "Email status" },
-  { actionKey: "enrich-person", label: "Enrich people", fills: "Title, company and LinkedIn", column: "Person's work email" },
+  { actionKey: "enrich-person", label: "Enrich people", fills: "Work email, title and LinkedIn", column: "Person's work email" },
   { actionKey: "enrich-company", label: "Enrich companies", fills: "Industry, size and location", column: "Matched company" },
 ];
 

@@ -9,9 +9,8 @@ test.describe("tables edit and push to campaign", () => {
     await page.getByRole("button", { name: "Create workbook" }).click();
     await expect(page.getByRole("heading", { name: "S8 prospects" })).toBeVisible();
 
-    await page.getByRole("button", { name: "More" }).click();
-
-    await page.getByRole("menuitem", { name: "Import" }).click();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Import file" }).click();
     await page.getByLabel("File to import").setInputFiles(
       csvFile("s8.csv", [
         ["Email", "First name", "Last name", "Company"],
@@ -25,7 +24,7 @@ test.describe("tables edit and push to campaign", () => {
     await expect(page.getByText("3 rows", { exact: true })).toBeVisible();
 
     // Add a blank row and fill it in by typing into cells.
-    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("menuitem", { name: "Add row", exact: true }).click();
     await expect(page.getByText("4 rows", { exact: true })).toBeVisible();
     const email = page.getByRole("gridcell", { name: "Email: empty" });

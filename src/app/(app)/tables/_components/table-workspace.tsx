@@ -340,6 +340,8 @@ export function TableWorkspace({ tableId }: Props) {
         jobs={grid.jobs}
         activeJobs={grid.activeJobs}
         onAddColumn={(kind) => setDialog(kind === "column" ? { kind: "column", request: { column: null, action: { kind: "add" } } } : { kind, column: null })}
+        onEnrich={(outcome) => setDialog({ kind: "enrichment", column: null, outcome })}
+        onAddAi={() => setDialog({ kind: "ai", column: null })}
         onAddRow={() => void addRow()}
         onAddRows={() => setDialog({ kind: "addRows" })}
         onImport={() => setDialog({ kind: "import" })}
@@ -381,7 +383,7 @@ export function TableWorkspace({ tableId }: Props) {
             <Button size="xs" variant="outline" onClick={() => void exportCsv(true)} disabled={busy}>
               <DownloadIcon /> Export
             </Button>
-            <Button size="xs" variant="destructive" onClick={() => setDialog({ kind: "deleteRows", count: selectedIds.length })}>
+            <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "deleteRows", count: selectedIds.length })}>
               <Trash2Icon /> Delete
             </Button>
             <Button size="xs" variant="ghost" onClick={() => setSelection(emptySelection)}>

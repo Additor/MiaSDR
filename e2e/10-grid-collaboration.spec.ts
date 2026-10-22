@@ -34,7 +34,7 @@ test.describe("grid collaboration", () => {
     await expect(page.getByRole("gridcell", { name: "Company: Beta Labs" })).toBeVisible({ timeout: 20_000 });
 
     // A row added in one browser appears in the other.
-    await other.page.getByRole("button", { name: "More" }).click();
+    await other.page.getByRole("button", { name: "Add", exact: true }).click();
     await other.page.getByRole("menuitem", { name: "Add row", exact: true }).click();
     await expect(other.page.getByText("3 rows", { exact: true })).toBeVisible();
     await expect(page.getByText("3 rows", { exact: true })).toBeVisible({ timeout: 20_000 });

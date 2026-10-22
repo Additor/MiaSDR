@@ -258,8 +258,8 @@ test.describe("AI column output types and editing", () => {
     await page.goto(`/tables/${workbookId}`);
     await expect(page.getByRole("gridcell", { name: "Full name: Bob Ray" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Add column" }).click();
-    await page.getByRole("menuitem", { name: "AI column" }).click();
+    await page.getByRole("button", { name: "Enrich", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Ask AI about each row" }).click();
     const add = page.getByRole("dialog", { name: "Add AI column" });
     await add.getByLabel("Column name").fill("Contact");
     await add.getByLabel("Prompt").fill(`Find the work email of {{${key}}}.`);

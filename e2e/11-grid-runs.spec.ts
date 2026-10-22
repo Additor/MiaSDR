@@ -95,7 +95,7 @@ test.describe("grid runs", () => {
     await expect(page.getByRole("gridcell", { name: "Email: ann@acme.test" })).toBeVisible();
 
     await page.getByRole("button", { name: "Enrich", exact: true }).click();
-    await page.getByRole("dialog", { name: "Add enrichment" }).getByRole("button", { name: /^Verify emails/ }).click();
+    await page.getByRole("menuitem", { name: /^Verify emails/ }).click();
     // The outcome opens with the first connected verifier ticked; ticking a second makes it a waterfall.
     const dialog = page.getByRole("dialog", { name: "Verify emails" });
     await expect(dialog.getByRole("checkbox", { name: /Hunter/ })).toBeChecked();
@@ -115,8 +115,8 @@ test.describe("grid runs", () => {
     await page.goto(`/tables/${workbookId}`);
     await expect(page.getByRole("gridcell", { name: "Company: Acme" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Add column" }).click();
-    await page.getByRole("menuitem", { name: "AI column" }).click();
+    await page.getByRole("button", { name: "Enrich", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Ask AI about each row" }).click();
     const dialog = page.getByRole("dialog", { name: "Add AI column" });
     await dialog.getByLabel("Column name").fill("Summary");
     await dialog.getByLabel("Prompt").fill("Describe the company {{company}} in one line.");
