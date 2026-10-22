@@ -34,9 +34,9 @@ export function ProviderManager({ catalog, providers, onChanged }: Props) {
     <div className="grid gap-4">
       {catalogGroups(catalog).map((group) => (
         <section key={group.label} aria-labelledby={`pg-${group.label}`} className="grid gap-2">
-          <h4 id={`pg-${group.label}`} className="text-xs font-medium text-muted-foreground">
+          <h3 id={`pg-${group.label}`} className="text-xs font-medium text-muted-foreground">
             {group.label}
-          </h4>
+          </h3>
           <ul className="grid gap-2">
             {group.entries.map((entry) => {
               const provider = providers.find((p) => p.key === entry.key);
@@ -140,7 +140,7 @@ function ProviderRow({ entry, provider, usage, onChanged }: { entry: CatalogEntr
             )}
             {provider && !provider.enabled && <Badge variant="outline">Off</Badge>}
           </p>
-          <p className="text-xs text-muted-foreground">{entry.description}</p>
+          <p className="max-w-[72ch] text-xs text-muted-foreground">{entry.description}</p>
           {usage && <p className="mt-1 text-xs text-muted-foreground tabular-nums">{usageLine(usage)}</p>}
         </div>
         {available && (

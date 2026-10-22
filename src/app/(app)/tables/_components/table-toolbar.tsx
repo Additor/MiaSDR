@@ -60,7 +60,7 @@ export function TableToolbar(props: Props) {
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input aria-label="Search rows" placeholder="Search rows" className="w-56 pl-7" value={props.search} onChange={(e) => props.onSearch(e.target.value)} />
+        <Input aria-label="Search rows" placeholder="Search rows" className="w-56 pl-7 max-sm:w-[calc(100vw-7.5rem)]" value={props.search} onChange={(e) => props.onSearch(e.target.value)} />
       </div>
 
       <Button variant={props.runnable ? "outline" : "default"} size="sm" onClick={() => props.onAddColumn("enrichment")}>
@@ -69,7 +69,7 @@ export function TableToolbar(props: Props) {
 
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-          <PlusIcon /> Add column <ChevronDownIcon />
+          <PlusIcon /> <span className="max-sm:sr-only">Add column</span> <ChevronDownIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-52">
           <DropdownMenuGroup>
@@ -90,16 +90,16 @@ export function TableToolbar(props: Props) {
       </DropdownMenu>
 
       <Button variant="outline" size="sm" onClick={props.onPush}>
-        <SendIcon /> Push to campaign
+        <SendIcon /> <span className="max-sm:sr-only">Push to campaign</span>
       </Button>
 
       <Button variant="outline" size="sm" onClick={props.onOpenFilters}>
-        <ListFilterIcon /> Filter and sort{props.activeFilters + props.sortCount > 0 ? ` (${[props.activeFilters > 0 ? `${props.activeFilters} filter${props.activeFilters === 1 ? "" : "s"}` : "", props.sortCount > 0 ? `${props.sortCount} sort${props.sortCount === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ")})` : ""}
+        <ListFilterIcon /> <span className="max-sm:sr-only">Filter and sort</span>{props.activeFilters + props.sortCount > 0 ? ` (${[props.activeFilters > 0 ? `${props.activeFilters} filter${props.activeFilters === 1 ? "" : "s"}` : "", props.sortCount > 0 ? `${props.sortCount} sort${props.sortCount === 1 ? "" : "s"}` : ""].filter(Boolean).join(", ")})` : ""}
       </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-          <Columns3Icon /> Columns{hidden.size > 0 ? ` (${hidden.size} hidden)` : ""}
+          <Columns3Icon /> <span className="max-sm:sr-only">Columns{hidden.size > 0 ? ` (${hidden.size} hidden)` : ""}</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="max-h-80 w-56">
           <DropdownMenuGroup>
@@ -115,7 +115,7 @@ export function TableToolbar(props: Props) {
 
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-          <EllipsisIcon /> More
+          <EllipsisIcon /> <span className="max-sm:sr-only">More</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-48">
           <DropdownMenuGroup>
