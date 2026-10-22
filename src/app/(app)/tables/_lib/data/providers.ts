@@ -21,6 +21,8 @@ export interface ActionSpec {
   outputs: ActionOutput[];
   primaryOutput: string;
   defaultCostCents: number;
+  /** Vendor credits one billed call uses. Absent on a Custom HTTP action. */
+  creditsPerCall?: number;
   /** Input combinations the action can match on, beyond its required inputs. */
   accepts?: string[][];
 }
@@ -65,6 +67,20 @@ export function catalogGroups(catalog: CatalogEntry[]): Array<{ label: string; e
   return out.filter((g) => g.entries.length > 0);
 }
 
+/** Cents one lookup costs: the provider's price or the action's, whichever is higher, as the server's estimateStepCents. */
+export const lookupCents = (providerCents: number, action: Pick<ActionSpec, "defaultCostCents"> | undefined): number => Math.max(providerCents, action?.defaultCostCents ?? 0);
+
+/**
+ * "$0.01 a lookup", "0.5 credits a lookup" or "No price set". The price is the provider's or the action's, whichever is
+ * higher, as the server prices a call; credits show when neither has a price.
+ */
+export function lookupPrice(providerCents: number, action: Pick<ActionSpec, "defaultCostCents" | "creditsPerCall"> | undefined): string {
+  const cents = lookupCents(providerCents, action);
+  if (cents > 0) return `$${(cents / 100).toFixed(cents % 1 === 0 ? 2 : 3)} a lookup`;
+  const credits = action?.creditsPerCall ?? 0;
+  return credits > 0 ? `${credits} ${credits === 1 ? "credit" : "credits"} a lookup` : "No price set";
+}
+
 /** What turning a provider off or disconnecting it touches, as `/api/grid/providers/<id>/impact` returns it. */
 export interface ProviderImpact {
   columns: Array<{ tableId: string; tableName: string; columnName: string; waterfall: boolean }>;
@@ -83,11 +99,11 @@ export function impactText(kind: "off" | "disconnect", impact: ProviderImpact | 
   const waiting = impact.pendingCells > 0 ? ` ${impact.pendingCells.toLocaleString("en-US")} ${impact.pendingCells === 1 ? "cell is" : "cells are"} waiting to run.` : "";
   if (kind === "off") {
     if (n === 0) return "No column uses it. You can turn it back on at any time.";
-    return `${cols}.${waiting} Their cells wait until you turn it back on, without using an attempt; a waterfall asks its other steps meanwhile.`;
+    return `${cols}.${waiting} Their cells wait until you turn it back on, without using an attempt; a column that tries several providers asks the next one meanwhile.`;
   }
   const key = "The saved key is deleted.";
   if (n === 0) return `${key} No column uses it.`;
-  return `${key} ${cols}.${waiting} Their cells fail until you connect it again; a waterfall asks its other steps.`;
+  return `${key} ${cols}.${waiting} Their cells fail until you connect it again; a column that tries several providers asks the next one.`;
 }
 
 /** One provider's ledger totals, as `/api/grid/providers/usage` returns them. */

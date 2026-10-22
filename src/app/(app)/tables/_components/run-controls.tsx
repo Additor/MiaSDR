@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { buildRunBody, centsCapIsInert, DEFAULT_FIRST_N, estimateByProvider, estimateHeadline, retrySummary, runSummary, stopSummary, type RunEstimate, type RunScope } from "../_lib/data/run-request";
 import type { GridColumn, JobCounts } from "../_lib/data/types";
@@ -86,31 +88,40 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
         <div className="grid gap-3">
           <fieldset className="stack-field">
             <legend className="mb-1 text-sm font-medium">Rows</legend>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="radio" name="run-scope" checked={scope === "all"} onChange={() => setScope("all")} /> All rows (up to the limit below)
-            </label>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <label className="flex items-center gap-2">
-                <input type="radio" name="run-scope" checked={scope === "first"} onChange={() => setScope("first")} /> First
-              </label>
-              <Input
-                aria-label="Number of first rows"
-                className="w-24"
-                type="number"
-                min={1}
-                max={10000}
-                value={firstN}
-                onFocus={() => setScope("first")}
-                onChange={(e) => {
-                  setScope("first");
-                  setFirstN(e.target.value);
-                }}
-              />
-              <span>rows in table order</span>
-            </div>
-            <label className={`flex items-center gap-2 text-sm ${selectedRowIds.length === 0 ? "text-muted-foreground" : ""}`}>
-              <input type="radio" name="run-scope" disabled={selectedRowIds.length === 0} checked={scope === "selected"} onChange={() => setScope("selected")} /> {selectedRowIds.length === 0 ? "Selected rows (select rows in the grid first)" : `${selectedRowIds.length.toLocaleString("en-US")} selected ${selectedRowIds.length === 1 ? "row" : "rows"}`}
-            </label>
+            <RadioGroup value={scope} onValueChange={(v) => setScope(v as RunScope)}>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="all" id="run-scope-all" />
+                <Label htmlFor="run-scope-all" className="font-normal">
+                  All rows (up to the limit below)
+                </Label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <RadioGroupItem value="first" id="run-scope-first" />
+                <Label htmlFor="run-scope-first" className="font-normal">
+                  First
+                </Label>
+                <Input
+                  aria-label="Number of first rows"
+                  className="w-24"
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={firstN}
+                  onFocus={() => setScope("first")}
+                  onChange={(e) => {
+                    setScope("first");
+                    setFirstN(e.target.value);
+                  }}
+                />
+                <span>rows in table order</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="selected" id="run-scope-selected" disabled={selectedRowIds.length === 0} />
+                <Label htmlFor="run-scope-selected" className={`font-normal ${selectedRowIds.length === 0 ? "text-muted-foreground" : ""}`}>
+                  {selectedRowIds.length === 0 ? "Selected rows (select rows in the grid first)" : `${selectedRowIds.length.toLocaleString("en-US")} selected ${selectedRowIds.length === 1 ? "row" : "rows"}`}
+                </Label>
+              </div>
+            </RadioGroup>
           </fieldset>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={onlyEmpty} onCheckedChange={(v) => setOnlyEmpty(v === true)} /> Skip cells that already have a value

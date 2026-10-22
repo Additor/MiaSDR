@@ -12,11 +12,13 @@ import { DEFAULT_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment
 import { contractAction, SETTLED_STATUSES } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { OUTCOMES, outcomeOf } from "../_lib/data/outcomes";
-import { guessColumn, usableProviders, useProviders, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
+import { coverageText, fullRunText, useEnrichmentPreview } from "../_lib/data/enrichment-preview";
+import { guessColumn, lookupCents, lookupPrice, usableProviders, useProviders, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
 import { centsToDollarsText, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, type RunEstimate } from "../_lib/data/run-request";
 import { spendSummary, type WaterfallStep } from "../_lib/data/waterfall-steps";
 import { ColumnChoice, Choice, ErrorText, Field } from "./form-bits";
+import { ColumnChips, ConnectProviders, SetupRow } from "./enrichment-setup";
 import { ProviderManager } from "./provider-manager";
 
 interface Props {
@@ -148,19 +150,19 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
         )}
         {isWaterfall && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Spend cap per cell ($)" htmlFor="edit-cap" hint="Optional. A step that would pass it is skipped. Leave empty for no cap.">
+            <Field label="Spend cap per row ($)" htmlFor="edit-cap" hint="Optional. A provider that would pass it is skipped. Leave empty for no cap.">
               <Input id="edit-cap" type="number" min={0} step={0.01} value={form.maxCost} onChange={(e) => set("maxCost", e.target.value)} className="w-28" />
             </Field>
-            <Field label="Credit cap per cell" htmlFor="edit-credits" hint="Optional. Counts vendor credits. Leave empty for no cap.">
+            <Field label="Credit cap per row" htmlFor="edit-credits" hint="Optional. Counts vendor credits. Leave empty for no cap.">
               <Input id="edit-credits" type="number" min={0} step={0.5} value={form.maxCredits} onChange={(e) => set("maxCredits", e.target.value)} className="w-28" />
             </Field>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <Checkbox checked={form.waitOnLimit} onCheckedChange={(v) => set("waitOnLimit", v === true)} />
-              Wait for a rate-limited step instead of asking the next one
+              {WAIT_LABEL}
             </label>
           </div>
         )}
-        <Field label="Reuse an answer for the same lookup (days)" htmlFor="edit-reuse" hint="0 always asks the provider.">
+        <Field label={REUSE_LABEL} htmlFor="edit-reuse" hint="0 always asks the provider.">
           <Input id="edit-reuse" type="number" min={0} max={365} value={form.reuseDays} onChange={(e) => set("reuseDays", e.target.value)} className="w-28" />
         </Field>
         <RunTiming autoRun={form.autoRun} setAutoRun={(v) => set("autoRun", v)} delay={form.delay} setDelay={(v) => set("delay", v)} />
@@ -192,8 +194,8 @@ export function RunTiming({ autoRun, setAutoRun, delay, setDelay }: { autoRun: b
   );
 }
 
-/** "$0.01 a call", or that no price is set, from the provider's price per call in cents. */
-const priceText = (cents: number) => (cents > 0 ? `$${(cents / 100).toFixed(cents % 1 === 0 ? 2 : 3)} a call` : "No price set");
+const WAIT_LABEL = "When a provider is busy, wait for it instead of trying the next one";
+const REUSE_LABEL = "Reuse a found answer for (days)";
 
 type CreateView = { kind: "outcomes" } | { kind: "outcome"; actionKey: string } | { kind: "other" } | { kind: "connect"; back: CreateView };
 
@@ -237,7 +239,22 @@ function CreateBody(props: Props) {
     );
   }
   if (view.kind === "outcome") {
-    return <OutcomeForm key={view.actionKey} {...props} actionKey={view.actionKey} usable={usable} catalog={catalog} onBack={() => setView({ kind: "outcomes" })} onConnect={connect} />;
+    // Opened on one outcome from the Enrich menu, the dialog has nothing to go back to.
+    const direct = props.outcome === view.actionKey;
+    return (
+      <OutcomeForm
+        key={view.actionKey}
+        {...props}
+        actionKey={view.actionKey}
+        usable={usable}
+        providers={providers}
+        catalog={catalog}
+        loadError={loadError}
+        refresh={refresh}
+        onBack={direct ? props.onClose : () => setView({ kind: "outcomes" })}
+        backLabel={direct ? "Cancel" : "Back"}
+      />
+    );
   }
   if (view.kind === "other") return <OtherActionForm {...props} usable={usable} onBack={() => setView({ kind: "outcomes" })} onConnect={connect} />;
 
@@ -287,7 +304,7 @@ function CreateBody(props: Props) {
   );
 }
 
-/** The folded caps and timing of a new column, with its one-line summary. Caps apply to a waterfall only. */
+/** The folded options of a new column, with their one-line summary. Caps apply to a column that tries several providers. */
 function SpendAndTiming(p: {
   waterfall: boolean;
   noPrice: boolean;
@@ -307,26 +324,26 @@ function SpendAndTiming(p: {
   return (
     <details className="group rounded-lg border">
       <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3 px-3 py-2 text-sm">
-        <span className="font-medium">Spend and timing</span>
+        <span className="font-medium">Options</span>
         <span className="truncate text-xs text-muted-foreground">{spendSummary({ autoRun: p.autoRun, delay: p.delay, reuseDays: p.reuseDays, ...(p.waterfall ? { maxCost: p.maxCost, maxCredits: p.maxCredits, waitOnLimit: p.waitOnLimit } : {}) })}</span>
       </summary>
       <div className="grid gap-3 border-t px-3 py-3">
         {p.waterfall && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Spend cap per cell ($)" htmlFor="wf-cap" hint={p.maxCost.trim() !== "" && p.noPrice ? "These providers have no price, so a dollar cap never stops a call. Use the credit cap." : "Optional. A step that would pass it is skipped."}>
+            <Field label="Spend cap per row ($)" htmlFor="wf-cap" hint={p.maxCost.trim() !== "" && p.noPrice ? "These providers have no price, so a dollar cap never stops a call. Use the credit cap." : "Optional. A provider that would pass it is skipped."}>
               <Input id="wf-cap" type="number" min={0} step={0.01} value={p.maxCost} onChange={(e) => p.setMaxCost(e.target.value)} className="w-28" />
             </Field>
-            <Field label="Credit cap per cell" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">
+            <Field label="Credit cap per row" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">
               <Input id="wf-credits" type="number" min={0} step={0.5} value={p.maxCredits} onChange={(e) => p.setMaxCredits(e.target.value)} className="w-28" />
             </Field>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <Checkbox checked={p.waitOnLimit} onCheckedChange={(v) => p.setWaitOnLimit(v === true)} />
-              Wait for a rate-limited step instead of asking the next one
+              {WAIT_LABEL}
             </label>
           </div>
         )}
         <RunTiming autoRun={p.autoRun} setAutoRun={p.setAutoRun} delay={p.delay} setDelay={p.setDelay} />
-        <Field label="Reuse an answer for the same lookup (days)" htmlFor="reuse-days" hint="A vendor answered the same input within this many days: the cell takes that answer and pays nothing. 0 always asks.">
+        <Field label={REUSE_LABEL} htmlFor="reuse-days" hint="A provider answered the same lookup within this many days: the row takes that answer and you pay nothing. 0 always asks.">
           <Input id="reuse-days" type="number" min={0} max={365} value={p.reuseDays} onChange={(e) => p.setReuseDays(e.target.value)} className="w-28" />
         </Field>
       </div>
@@ -366,21 +383,32 @@ function ExtraOutputs({ outputs, primary, chosen, onChange }: { outputs: ActionS
 }
 
 /**
- * The footer: the reason the add buttons are off, Back, and two ways to add. "Add and run" leads, because the first
- * thing to do with a new column is try it on a few rows; it runs the first rows only, so the first spend stays small.
+ * The footer: the reason the add buttons are off or what a full run costs, Back, and two ways to add. "Add column" leads,
+ * so nothing spends until you press Run; "Add and run first 10 rows" tries the column on a few rows at once.
  */
-export function CreateFooter({ blocker, busy, onBack, onSave, backLabel = "Back" }: { blocker: string | null; busy: boolean; onBack: () => void; onSave: (run: boolean) => void; backLabel?: string }) {
+export function CreateFooter({ blocker, summary, busy, onBack, onSave, backLabel = "Back" }: { blocker: string | null; summary?: string | null; busy: boolean; onBack: () => void; onSave: (run: boolean) => void; backLabel?: string }) {
+  const note = blocker ?? summary;
+  // The button you pressed shows the progress.
+  const [running, setRunning] = useState(false);
+  const save = (run: boolean) => {
+    setRunning(run);
+    onSave(run);
+  };
   return (
     <DialogFooter className="items-center">
-      {blocker && <p className="mr-auto text-sm text-muted-foreground">{blocker}</p>}
+      {note && (
+        <p className="mr-auto text-sm text-muted-foreground tabular-nums" aria-live="polite">
+          {note}
+        </p>
+      )}
       <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
         {backLabel}
       </Button>
-      <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={blocker !== null || busy}>
-        Add without running
+      <Button type="button" variant="outline" onClick={() => save(true)} disabled={blocker !== null || busy}>
+        <PlayIcon /> {busy && running ? "Adding..." : `Add and run first ${DEFAULT_FIRST_N} rows`}
       </Button>
-      <Button type="button" onClick={() => onSave(true)} disabled={blocker !== null || busy}>
-        <PlayIcon /> {busy ? "Adding..." : `Add and run first ${DEFAULT_FIRST_N} rows`}
+      <Button type="button" onClick={() => save(false)} disabled={blocker !== null || busy}>
+        {busy && !running ? "Adding..." : "Add column"}
       </Button>
     </DialogFooter>
   );
@@ -402,33 +430,49 @@ export async function createColumn(tableId: string, body: Record<string, unknown
   return { ok: true, key: columnKey };
 }
 
-/** Inputs for the chosen actions: one column per input, guessed from the table, and the combinations still missing. */
-function InputFields({ specs, inputs, setInputs, columns, uncovered, missingInput }: { specs: Array<{ key: string; name: string; required: boolean }>; inputs: Record<string, string>; setInputs: (next: Record<string, string>) => void; columns: GridColumn[]; uncovered?: ActionSpec; missingInput?: unknown }) {
+/**
+ * Inputs for the chosen actions: one column per input, guessed from the table, and the combinations still missing. A
+ * mapped column shows its first value under it, so a wrong guess reads as wrong.
+ */
+function InputFields({ specs, inputs, setInputs, columns, uncovered, missingInput, samples }: { specs: Array<{ key: string; name: string; required: boolean }>; inputs: Record<string, string>; setInputs: (next: Record<string, string>) => void; columns: GridColumn[]; uncovered?: ActionSpec; missingInput?: unknown; samples?: Record<string, string> }) {
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-1 text-sm font-medium">Inputs</legend>
-      {specs.map((input) => (
-        <Field key={input.key} label={`${input.name}${input.required ? " (required)" : ""}`} htmlFor={`in-${input.key}`}>
-          <ColumnChoice id={`in-${input.key}`} value={inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => setInputs({ ...inputs, [input.key]: v ?? "" })} columns={columns} />
-        </Field>
-      ))}
+      {specs.map((input) => {
+        const sample = inputs[input.key] ? samples?.[inputs[input.key]] : undefined;
+        return (
+          <Field key={input.key} label={`${input.name}${input.required ? " (required)" : ""}`} htmlFor={`in-${input.key}`} hint={sample ? `First value: ${sample}` : undefined}>
+            <ColumnChoice id={`in-${input.key}`} value={inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => setInputs({ ...inputs, [input.key]: v ?? "" })} columns={columns} />
+          </Field>
+        );
+      })}
       {!missingInput && uncovered && <p className="text-sm text-muted-foreground">Map {acceptsText(uncovered)}.</p>}
     </fieldset>
   );
 }
 
-function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, actionKey, usable, catalog, onBack, onConnect }: Props & { actionKey: string; usable: ProviderView[]; catalog: CatalogEntry[]; onBack: () => void; onConnect: () => void }) {
+/** "A, B and C". */
+const listText = (items: string[]) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+
+/**
+ * One outcome as three lines that read as a sentence: which provider, what each row matches on, and the columns it adds.
+ * Each line opens its fields with Change. Until a connected provider offers the outcome, the dialog shows only the
+ * vendors that do, and the form keeps what you set while you connect one.
+ */
+function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, actionKey, usable, providers, catalog, loadError, refresh, onBack, backLabel }: Props & { actionKey: string; usable: ProviderView[]; providers: ProviderView[]; catalog: CatalogEntry[]; loadError: string | null; refresh: () => Promise<void>; onBack: () => void; backLabel: string }) {
   const outcome = outcomeOf(actionKey)!;
   const offering = usable.filter((p) => p.actions.some((a) => a.key === actionKey));
   const actionOf = (key: string) => offering.find((p) => p.key === key)?.actions.find((a) => a.key === actionKey);
-  // Vendors that offer this outcome and are not connected (or have no key yet): one Connect away.
-  const connectable = catalog.filter((e) => e.status === "available" && e.adapter !== "http" && e.adapter !== "fake" && !offering.some((p) => p.key === e.key) && e.actions.some((a) => a.key === actionKey));
+  // Every vendor that offers this outcome, connected or not.
+  const vendors = catalog.filter((e) => e.status === "available" && e.adapter !== "http" && e.adapter !== "fake" && e.actions.some((a) => a.key === actionKey));
   // The shared contract fixes the inputs and the outputs every vendor of the outcome fills.
   const contract = contractAction(outcome.actionKey);
 
-  const [picked, setPicked] = useState<string[]>(() => (offering[0] ? [offering[0].key] : []));
+  // Null until you tick or reorder: the first provider that offers the outcome, once one is connected.
+  const [pickedState, setPicked] = useState<string[] | null>(null);
+  const picked = (pickedState ?? offering.slice(0, 1).map((p) => p.key)).filter((k) => offering.some((p) => p.key === k));
   const [inputs, setInputs] = useState<Record<string, string>>(() => Object.fromEntries(contract.inputs.map((i) => [i.key, guessColumn(i, columns) ?? ""])));
-  const [outputs, setOutputs] = useState<string[]>([]);
+  const [outputs, setOutputs] = useState<string[]>(() => [...outcome.outputs]);
   const [name, setName] = useState("");
   const [stopAtCatchAll, setStopAtCatchAll] = useState(false);
   const [maxCost, setMaxCost] = useState("");
@@ -439,6 +483,9 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
   const [delay, setDelay] = useState("0");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<"provider" | "inputs" | "outputs" | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const toggleOpen = (row: "provider" | "inputs" | "outputs") => setOpen((o) => (o === row ? null : row));
 
   const chosen = picked.map(actionOf).filter((a): a is ActionSpec => !!a);
   const waterfall = picked.length >= 2;
@@ -456,17 +503,23 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
       missingInput,
       uncovered,
     }) ?? (capInvalid ? "Enter the spend cap as zero or more dollars, or leave it empty." : null);
+  const preview = useEnrichmentPreview(tableId, picked.map((providerKey) => ({ providerKey, actionKey })), inputs);
 
-  const toggle = (key: string, on: boolean) => setPicked((list) => (on ? [...list, key] : list.filter((k) => k !== key)));
-  const move = (i: number, d: -1 | 1) =>
-    setPicked((list) => {
-      const next = list.slice();
-      const j = i + d;
-      if (j < 0 || j >= next.length) return list;
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
+  const toggle = (key: string, on: boolean) => setPicked(on ? [...picked, key] : picked.filter((k) => k !== key));
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d;
+    if (j < 0 || j >= picked.length) return;
+    const next = picked.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    setPicked(next);
+  };
   const ordered = [...picked.map((k) => offering.find((p) => p.key === k)!).filter(Boolean), ...offering.filter((p) => !picked.includes(p.key))];
+
+  const columnName = name.trim() || outcome.column;
+  const extraNames = outputSpecs.filter((o) => o.key !== contract.primaryOutput && outputs.includes(o.key)).map((o) => o.name);
+  const mapped = inputSpecs.filter((i) => inputs[i.key]);
+  const columnNameOf = (key: string) => columns.find((c) => c.key === key)?.name ?? key;
+  const pickedNames = chosen.length > 0 ? picked.map((k) => offering.find((p) => p.key === k)?.name ?? k) : [];
 
   async function save(run: boolean) {
     setBusy(true);
@@ -483,7 +536,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
     const body = waterfall
       ? {
           kind: "waterfall",
-          name: name.trim() || outcome.column,
+          name: columnName,
           steps,
           ...base,
           ...(stopAtCatchAll && actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
@@ -491,7 +544,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
           ...(maxCredits.trim() !== "" ? { maxCredits: Math.max(0, Number(maxCredits) || 0) } : {}),
           ...(waitOnLimit ? { onRateLimit: "wait" } : {}),
         }
-      : { kind: "enrichment", name: name.trim() || outcome.column, providerKey: picked[0], actionKey, ...base };
+      : { kind: "enrichment", name: columnName, providerKey: picked[0], actionKey, ...base };
     const res = await createColumn(tableId, body, run);
     if (!res.ok) {
       setBusy(false);
@@ -501,89 +554,116 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
     onClose();
   }
 
+  const header = (
+    <DialogHeader>
+      <DialogTitle>{outcome.label}</DialogTitle>
+      <DialogDescription>
+        Adds {listText([columnName, ...extraNames])} for each row. Nothing runs until you press Run.
+      </DialogDescription>
+    </DialogHeader>
+  );
+
+  if (offering.length === 0 || connecting) {
+    return (
+      <>
+        {header}
+        <ErrorText>{loadError}</ErrorText>
+        <ConnectProviders
+          entries={vendors}
+          providers={providers}
+          onChanged={refresh}
+          lead={offering.length === 0 ? `Connect a provider that can ${outcome.label.toLowerCase()}. What you set here waits until you do.` : `Providers that can ${outcome.label.toLowerCase()}.`}
+        />
+        <DialogFooter>
+          {offering.length === 0 ? (
+            <Button type="button" variant="ghost" onClick={onBack}>
+              {backLabel}
+            </Button>
+          ) : (
+            <Button type="button" onClick={() => setConnecting(false)}>
+              Done
+            </Button>
+          )}
+        </DialogFooter>
+      </>
+    );
+  }
+
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>{outcome.label}</DialogTitle>
-        <DialogDescription>{outcome.fills}. Nothing runs until you press Run.</DialogDescription>
-      </DialogHeader>
+      {header}
       <div className="grid gap-4">
-        <fieldset className="grid gap-2">
-          <legend className="mb-1 text-sm font-medium">Providers</legend>
-          {offering.length === 0 ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3">
-              <p className="text-sm">
-                No connected provider can {outcome.label.toLowerCase()} yet.{connectable.length > 0 ? ` ${connectable.map((e) => e.name).join(", ")} can.` : ""}
-              </p>
-              <Button type="button" variant="outline" size="sm" onClick={onConnect}>
-                Connect a provider
-              </Button>
-            </div>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground">
-                {waterfall
-                  ? "Tried in this order. The first that finds an answer fills the cells, and the rest are not asked."
-                  : offering.length > 1
-                    ? "Tick another provider to try it when the first finds nothing."
-                    : "Connect a second provider to try it when this one finds nothing."}
-              </p>
-              <ul className="grid divide-y rounded-lg border">
-                {ordered.map((p) => {
-                  const index = picked.indexOf(p.key);
-                  return (
-                    <li key={p.key} className="flex items-center gap-2 px-3 py-1.5">
-                      <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">
-                        <Checkbox checked={index >= 0} onCheckedChange={(v) => toggle(p.key, v === true)} />
-                        {waterfall && index >= 0 && <span className="w-4 text-xs text-muted-foreground tabular-nums">{index + 1}</span>}
-                        <span className="truncate font-medium">{p.name}</span>
-                        <span className="text-xs text-muted-foreground">{priceText(p.defaultCostCents)}</span>
-                      </label>
-                      {waterfall && index >= 0 && (
-                        <span className="flex">
-                          <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${p.name} up`} disabled={index === 0} onClick={() => move(index, -1)}>
-                            <ArrowUpIcon />
-                          </Button>
-                          <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${p.name} down`} disabled={index === picked.length - 1} onClick={() => move(index, 1)}>
-                            <ArrowDownIcon />
-                          </Button>
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-          {connectable.length > 0 && offering.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Also offered by {connectable.map((e) => e.name).join(", ")}.{" "}
-              <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={onConnect}>
-                Connect a provider
-              </Button>
-            </p>
-          )}
-        </fieldset>
-
-        <InputFields specs={inputSpecs} inputs={inputs} setInputs={setInputs} columns={columns} uncovered={uncovered} missingInput={missingInput} />
-        <Field label="Column name" htmlFor="wf-name">
-          <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={outcome.column} />
-        </Field>
-        <ExtraOutputs outputs={outputSpecs} primary={contract.primaryOutput} chosen={outputs} onChange={setOutputs} />
-        {waterfall && actionKey === "verify-email" && (
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
-            Stop at a catch-all verdict instead of asking the next verifier
-          </label>
-        )}
+        <ul className="grid divide-y rounded-lg border">
+          <SetupRow
+            label="Provider"
+            noun="providers"
+            open={open === "provider"}
+            onToggle={() => toggleOpen("provider")}
+            summary={pickedNames.length === 0 ? "None ticked" : pickedNames.length === 1 ? <span className="font-medium">{pickedNames[0]}</span> : <span className="font-medium">{pickedNames.join(", then ")}</span>}
+            detail={pickedNames.length === 1 ? lookupPrice(offering.find((p) => p.key === picked[0])!.defaultCostCents, chosen[0]) : pickedNames.length > 1 ? "Tried in order. The first that finds an answer fills the row, and the rest are not asked." : undefined}
+          >
+            <p className="text-xs text-muted-foreground">{offering.length > 1 ? "Tick another provider to try it when the first finds nothing." : "Connect a second provider to try it when this one finds nothing."}</p>
+            <ul className="grid divide-y rounded-lg border">
+              {ordered.map((p) => {
+                const index = picked.indexOf(p.key);
+                return (
+                  <li key={p.key} className="flex items-center gap-2 px-3 py-1.5">
+                    <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+                      <Checkbox checked={index >= 0} onCheckedChange={(v) => toggle(p.key, v === true)} />
+                      {waterfall && index >= 0 && <span className="w-4 text-xs text-muted-foreground tabular-nums">{index + 1}</span>}
+                      <span className="truncate font-medium">{p.name}</span>
+                      <span className="text-xs text-muted-foreground">{lookupPrice(p.defaultCostCents, actionOf(p.key))}</span>
+                    </label>
+                    {waterfall && index >= 0 && (
+                      <span className="flex">
+                        <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${p.name} up`} disabled={index === 0} onClick={() => move(index, -1)}>
+                          <ArrowUpIcon />
+                        </Button>
+                        <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move ${p.name} down`} disabled={index === picked.length - 1} onClick={() => move(index, 1)}>
+                          <ArrowDownIcon />
+                        </Button>
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {waterfall && actionKey === "verify-email" && (
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
+                Stop at a catch-all verdict instead of asking the next verifier
+              </label>
+            )}
+            <Button type="button" variant="link" size="sm" className="h-auto w-fit p-0" onClick={() => setConnecting(true)}>
+              Connect or manage providers
+            </Button>
+          </SetupRow>
+          <SetupRow
+            label="Match rows on"
+            noun="inputs"
+            // A mapping that covers nothing cannot be summed up, so its fields stay open until it does.
+            open={open === "inputs" || !!uncovered || !!missingInput}
+            onToggle={uncovered || missingInput ? undefined : () => toggleOpen("inputs")}
+            summary={mapped.length === 0 ? "Nothing mapped yet" : <span className="font-medium">{mapped.map((i) => i.name).join(" + ")}</span>}
+            detail={mapped.length === 0 ? undefined : `From ${listText(mapped.map((i) => columnNameOf(inputs[i.key])))}${preview && !uncovered ? ` · ${coverageText(preview)}` : ""}`}
+          >
+            <InputFields specs={inputSpecs} inputs={inputs} setInputs={setInputs} columns={columns} uncovered={uncovered} missingInput={missingInput} samples={preview?.samples} />
+          </SetupRow>
+          <SetupRow label="Adds" noun="columns" action="Edit" open={open === "outputs"} onToggle={() => toggleOpen("outputs")} summary={<ColumnChips names={[columnName, ...extraNames]} />}>
+            <Field label="Column name" htmlFor="wf-name" hint="The column shows the main answer. Ticked fields get columns of their own.">
+              <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={outcome.column} />
+            </Field>
+            <ExtraOutputs outputs={outputSpecs} primary={contract.primaryOutput} chosen={outputs} onChange={setOutputs} />
+          </SetupRow>
+        </ul>
         <SpendAndTiming
           waterfall={waterfall}
-          noPrice={picked.every((k) => (offering.find((p) => p.key === k)?.defaultCostCents ?? 0) === 0)}
+          noPrice={picked.every((k) => lookupCents(offering.find((p) => p.key === k)?.defaultCostCents ?? 0, actionOf(k)) === 0)}
           {...{ maxCost, setMaxCost, maxCredits, setMaxCredits, waitOnLimit, setWaitOnLimit, autoRun, setAutoRun, delay, setDelay, reuseDays, setReuseDays }}
         />
         <ErrorText>{error}</ErrorText>
       </div>
-      <CreateFooter blocker={blocker} busy={busy} onBack={onBack} onSave={save} />
+      <CreateFooter blocker={blocker} summary={preview && !uncovered ? fullRunText(preview) : null} busy={busy} onBack={onBack} onSave={save} backLabel={backLabel} />
     </>
   );
 }
@@ -644,7 +724,7 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
         <Field label="Action" htmlFor="other-action">
           <Choice
             id="other-action"
-            items={options.map((o) => ({ value: `${o.provider.key}:${o.action.key}`, label: `${o.action.name} (${o.provider.name}, ${priceText(o.provider.defaultCostCents).toLowerCase()})` }))}
+            items={options.map((o) => ({ value: `${o.provider.key}:${o.action.key}`, label: `${o.action.name} (${o.provider.name}, ${lookupPrice(o.provider.defaultCostCents, o.action).toLowerCase()})` }))}
             value={choice}
             onChange={(v) => {
               setChoice(v);
