@@ -17,6 +17,7 @@ import { toActor } from "@/app/_lib/api";
 import type { DealStageList } from "../_components/deal-form";
 import { toJson } from "../_components/serialize";
 import { BoardColumn } from "./board-column";
+import { BoardMovesProvider } from "./board-moves";
 import { boardHref, parseBoardUrl, type BoardUrlState } from "./board-url";
 import { OwnerFilter } from "./owner-filter";
 
@@ -103,7 +104,8 @@ async function Board({ searchParams }: { searchParams: PageProps<"/crm/pipeline"
           />
         )
       ) : (
-        <ScrollCue hint="Scroll sideways for more stages" className="gap-3 pb-2" data-testid="board">
+        <BoardMovesProvider stages={stages}>
+          <ScrollCue hint="Scroll sideways for more stages" className="gap-3 p-1 pb-2" data-testid="board">
           {columns.map((column) => (
             <BoardColumn
               key={`${column.id}:${column.total}:${column.cards.map((c) => `${c.id}.${c.version}`).join(",")}`}
@@ -114,7 +116,8 @@ async function Board({ searchParams }: { searchParams: PageProps<"/crm/pipeline"
               closedWindow={!state.showAll}
             />
           ))}
-        </ScrollCue>
+          </ScrollCue>
+        </BoardMovesProvider>
       )}
     </>
   );

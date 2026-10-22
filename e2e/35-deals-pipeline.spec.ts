@@ -129,6 +129,44 @@ test.describe("deals pipeline", () => {
     await expect(column(page, "Won").locator("header")).toContainText("Last 30 days");
   });
 
+  test("a card dragged to another stage moves there, a stale drag goes back, and a drop on Lost asks for the reason", async ({ page, watch }) => {
+    await signInAdmin(page);
+    const DREW = { email: "drew@s35-drag.test", firstName: "Drew", lastName: "Hale", title: "COO", company: "S35 Drag" };
+    const DEAL = "S35 Drew deal";
+    await importLeads(page.request, [DREW]);
+    await seedReply(page.request, { key: "S35D", mailbox: "sdr35d@e2e-corp.test", lead: DREW, reply: { bodyText: "Let's talk." } });
+    const dealId = await convert(page.request, DREW.email, { title: DEAL });
+
+    // Wide enough that every stage is on screen: a drag across a column that has to scroll is the browser's job.
+    await page.setViewportSize({ width: 2200, height: 900 });
+    await page.goto("/crm/pipeline?q=S35%20Drew");
+    const card = (stage: string) => column(page, stage).getByTestId("deal-card").filter({ hasText: DEAL });
+    await waitForHydrated(card("New"));
+    await card("New").dragTo(column(page, "Meeting"));
+    await expect(card("Meeting")).toBeVisible();
+    await expect(card("New")).toHaveCount(0);
+    await expect(page.getByText(`Moved ${DEAL} to Meeting.`)).toBeVisible();
+    await page.reload();
+    await expect(card("Meeting")).toBeVisible();
+
+    // Someone moves the deal after the board loaded: the drag is refused and the board shows where the deal is now.
+    await moveByApi(page.request, dealId, "Proposal");
+    watch.tolerate(/response 409: POST .*\/api\/deals\/[0-9a-f-]+\/stage/, /status of 409 \(Conflict\).*\/api\/deals\/[0-9a-f-]+\/stage/);
+    await card("Meeting").dragTo(column(page, "New"));
+    await expect(page.getByText("Someone changed this deal since the board loaded.")).toBeVisible();
+    await expect(card("Proposal")).toBeVisible();
+    await expect(card("New")).toHaveCount(0);
+
+    // Lost keeps a reason, so the drop opens the move dialog on Lost.
+    await card("Proposal").dragTo(column(page, "Lost"));
+    const lost = page.getByRole("dialog", { name: `Move ${DEAL}` });
+    await expect(lost.getByRole("combobox", { name: "New stage" })).toContainText("Lost");
+    await lost.getByLabel("Lost reason").fill("No budget this year");
+    await lost.getByRole("button", { name: "Move", exact: true }).click();
+    await expect(card("Lost")).toBeVisible();
+    await expect(card("Proposal")).toHaveCount(0);
+  });
+
   test("Won and Lost show the last 30 days, Show all widens them, and a long column loads more inside itself", async ({ page }) => {
     await signInAdmin(page);
     const bram = { email: "bram@s35-beta.test", firstName: "Bram", lastName: "Older", company: "S35 Beta" };

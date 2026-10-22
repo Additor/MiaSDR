@@ -193,6 +193,13 @@ A workbook (`src/app/(app)/tables`) is a spreadsheet and the densest surface in 
 - **Conflicts.** When another person or a run changed rows you edited, `ConflictDialog` saves nothing and lists each cell with Now and Yours (yours at medium weight). The footer offers Keep current values and Retry my edits.
 - **Empty and loading.** An empty table shows `EmptyState` with Import file and Add rows; a search or filter with no hits shows "No rows match". Loading shows skeleton bars. A failed load prints the error in red with Try again.
 
+### Deal board
+
+The Pipeline page (`src/app/(app)/crm/pipeline`) is a `ScrollCue` of stage columns, 18rem wide, each a heading with its count and totals over a stack of deal cards.
+
+- **Drag.** A card drags to another column. The column under it takes the `bg-primary/5` tint and a `ring-primary/30` hairline, and an empty one reads "Drop a deal here". The card moves on screen at once, faded until the server confirms; a refused move puts it back and says why in a toast. A drop on Lost opens the move dialog on Lost, because a lost deal keeps its reason.
+- **Move stage.** Each card keeps its Move stage button, the way to move from the keyboard or a touch screen.
+
 ## Shapes
 
 Radius 0.5rem for panels, inputs and buttons; badges use rounded-md. Hairline borders, no shadows on page surfaces. A side panel is one bordered box with `divide-y` between its blocks. Cards are not the page structure: Settings, the Inbox side panel, Actions, the setup guide, the lead import, analytics and Unmatched senders use ruled sections and divided lists. Cards remain for the sign-in pages, the deal board's cards and the message frames of a thread.

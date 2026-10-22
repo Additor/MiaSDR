@@ -28,6 +28,8 @@ export interface MoveDealStageDialogProps {
   stages?: DealStageList;
   /** Mark won and Mark lost: preselects the first stage of that kind and names the action in the title. */
   targetKind?: Exclude<DealStageOption["kind"], "open">;
+  /** Preselects this stage, such as the column a deal was dropped on. */
+  targetStageId?: string;
   /** Runs with the moved deal (the `GET /api/deals/[id]` shape) after the move. */
   onMoved?: (deal: unknown) => void;
 }
@@ -35,12 +37,29 @@ export interface MoveDealStageDialogProps {
 const STALE =
   "Someone changed this deal since you opened it. The page now shows the latest version. Check the stage, then move it again.";
 
+/** What a move answered: the moved deal, a stale version with the server's current one, or an error to show. */
+export type MoveDealResult = { ok: true; deal: unknown } | { ok: false; staleVersion: number } | { ok: false; error: string };
+
+/**
+ * Moves a deal to a stage with the version the caller read, so a deal someone changed meanwhile is refused as stale
+ * instead of overwritten. The dialog and the board's drag both move through it.
+ */
+export async function moveDealStage(dealId: string, stageId: string, expectedVersion: number, lostReason: string | null = null): Promise<MoveDealResult> {
+  const result = await callApi(`/api/deals/${dealId}/stage`, "POST", { stageId, expectedVersion, lostReason });
+  if (result.ok) return { ok: true, deal: result.data };
+  if (result.details?.code === "stale_version" && typeof result.details.version === "number") return { ok: false, staleVersion: result.details.version };
+  return { ok: false, error: result.error ?? "Could not move the deal. Try again." };
+}
+
+/** The sentence a stale move shows on the board, where no dialog is open to hold it. */
+export const STALE_MOVE = "Someone changed this deal since the board loaded. The board now shows the latest version; move it again.";
+
 /**
  * Move stage, Mark won and Mark lost. A Lost stage asks for its reason. The move sends the version
  * the caller read; a 409 `stale_version` keeps the dialog open with the message, takes the server's version and lets the
  * person move again.
  */
-export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenStages, targetKind, onMoved }: MoveDealStageDialogProps) {
+export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenStages, targetKind, targetStageId, onMoved }: MoveDealStageDialogProps) {
   const router = useRouter();
   const { stages, error: stagesError } = useDealStages(open, givenStages);
   const [target, setTarget] = useState<string | null>(null);
@@ -60,29 +79,25 @@ export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenSta
   }
 
   const choices = stageChoices(stages).filter((c) => c.value !== deal.stageId);
-  const chosenValue = target ?? (targetKind ? (choices.find((c) => c.kind === targetKind)?.value ?? null) : null);
+  const chosenValue = target ?? (targetStageId && choices.some((c) => c.value === targetStageId) ? targetStageId : targetKind ? (choices.find((c) => c.kind === targetKind)?.value ?? null) : null);
   const chosen = choices.find((c) => c.value === chosenValue);
   const ready = chosen !== undefined && (chosen.kind !== "lost" || lostReason.trim() !== "");
   const title = targetKind === "won" ? `Mark ${deal.title} won` : targetKind === "lost" ? `Mark ${deal.title} lost` : `Move ${deal.title}`;
 
   async function move(): Promise<boolean> {
     if (!chosen) return false;
-    const result = await callApi(`/api/deals/${deal.id}/stage`, "POST", {
-      stageId: chosen.value,
-      expectedVersion: version,
-      lostReason: chosen.kind === "lost" ? lostReason.trim() : null,
-    });
+    const result = await moveDealStage(deal.id, chosen.value, version, chosen.kind === "lost" ? lostReason.trim() : null);
     if (!result.ok) {
-      if (result.details?.code === "stale_version" && typeof result.details.version === "number") {
-        setVersion(result.details.version);
+      if ("staleVersion" in result) {
+        setVersion(result.staleVersion);
         setStale(true);
         router.refresh();
         return false;
       }
-      throw new Error(result.error ?? "Could not move the deal. Try again.");
+      throw new Error(result.error);
     }
     toast.success(`Moved ${deal.title} to ${chosen.label}.`);
-    onMoved?.(result.data);
+    onMoved?.(result.deal);
     router.refresh();
     return true;
   }

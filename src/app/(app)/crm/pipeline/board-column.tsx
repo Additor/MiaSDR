@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
+import { cn } from "@/lib/utils";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ import type { DealStageList } from "../_components/deal-form";
 import type { Json } from "../_components/serialize";
 import { dealHref } from "../_components/deal-href";
 import { boardHref } from "./board-url";
+import { useBoardMoves } from "./board-moves";
 import { daysInStage, formatAmount, formatTotals, ownerText } from "./deal-format";
 
 export type CardData = Json<BoardCard>;
@@ -33,12 +35,35 @@ export interface BoardQueryParams {
   showAll: boolean;
 }
 
-/** `from` is the board with its filters, so the deal page goes back to the same board. */
-function DealCard({ card, stageId, stages, nowMs, from }: { card: CardData; stageId: string; stages: DealStageList; nowMs: number; from: string }) {
+/**
+ * `from` is the board with its filters, so the deal page goes back to the same board. A card in a real stage drags to
+ * another column; `moving` marks a card whose move the server has not confirmed yet.
+ */
+function DealCard({ card, stageId, stages, nowMs, from, moving }: { card: CardData; stageId: string; stages: DealStageList; nowMs: number; from: string; moving: boolean }) {
+  const { dragging, startDrag, endDrag } = useBoardMoves();
   const contact = card.personName ?? "Unnamed contact";
   const facts = [card.amountMinor !== null && card.currency ? formatAmount(card.amountMinor, card.currency) : null, ownerText(card.owner)].filter(Boolean);
+  const draggable = stageId !== "" && !moving;
+
+  function onDragStart(event: DragEvent<HTMLDivElement>) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", card.title);
+    // The drag starts on the card's stretched link; the whole card is what moves.
+    const box = event.currentTarget.getBoundingClientRect();
+    event.dataTransfer.setDragImage(event.currentTarget, event.clientX - box.left, event.clientY - box.top);
+    startDrag(card, stageId);
+  }
+
   return (
-    <Card size="sm" className={rowLinkClasses} data-testid="deal-card">
+    <Card
+      size="sm"
+      className={cn(rowLinkClasses, draggable && "active:cursor-grabbing", dragging?.card.id === card.id && "opacity-50", moving && "opacity-70")}
+      data-testid="deal-card"
+      aria-busy={moving || undefined}
+      draggable={draggable}
+      onDragStart={draggable ? onDragStart : undefined}
+      onDragEnd={endDrag}
+    >
       <CardHeader>
         <CardTitle className="text-sm leading-snug break-words">
           <RowLink href={dealHref(card.id, from)}>{card.title}</RowLink>
@@ -66,12 +91,22 @@ function DealCard({ card, stageId, stages, nowMs, from }: { card: CardData; stag
  * `GET /api/deals` and appends it inside the column.
  */
 export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { column: ColumnData; stages: DealStageList; nowMs: number; query: BoardQueryParams; closedWindow: boolean }) {
+  const { dragging, drop, moves } = useBoardMoves();
+  const [over, setOver] = useState(false);
   const [cards, setCards] = useState(column.cards);
   const [cursor, setCursor] = useState(column.nextCursor);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const totals = formatTotals(column.amounts);
   const remaining = Math.max(0, column.total - cards.length);
+  // Moves the server has not shown yet: cards leaving this stage hide, cards arriving show first and faded.
+  const arriving = [...moves.values()].filter((m) => m.to === column.id && !cards.some((c) => c.id === m.card.id)).map((m) => m.card);
+  const shown = cards.filter((c) => {
+    const move = moves.get(c.id);
+    return !move || move.to === column.id;
+  });
+  const total = column.total - (cards.length - shown.length) + arriving.length;
+  const accepts = dragging !== null && column.id !== null && dragging.from !== column.id;
   const from = boardHref(query);
 
   async function more() {
@@ -92,12 +127,30 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
   }
 
   return (
-    <section className="grid w-72 shrink-0 content-start gap-2" aria-label={column.name}>
+    <section
+      className={cn("-m-1 grid w-74 shrink-0 content-start gap-2 rounded-lg p-1 transition-colors", accepts && over && "bg-primary/5 ring-1 ring-primary/30")}
+      aria-label={column.name}
+      data-testid="board-column"
+      onDragOver={(e) => {
+        if (!accepts) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        if (accepts && column.id) drop({ id: column.id, name: column.name, kind: column.kind });
+      }}
+    >
       <header className="grid gap-0.5 px-1">
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="truncate text-sm font-semibold">{column.name}</h2>
-          <span className="text-xs text-muted-foreground tabular-nums" aria-label={`${column.total} deal${column.total === 1 ? "" : "s"}`}>
-            {column.total}
+          <span className="text-xs text-muted-foreground tabular-nums" aria-label={`${total} deal${total === 1 ? "" : "s"}`}>
+            {total}
           </span>
         </div>
         {(totals || (closedWindow && column.kind !== "open")) && (
@@ -106,9 +159,12 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
           </p>
         )}
       </header>
-      {cards.length === 0 && <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No deals in this stage</p>}
-      {cards.map((card) => (
-        <DealCard key={card.id} card={card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} />
+      {shown.length + arriving.length === 0 && <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">{accepts ? "Drop a deal here" : "No deals in this stage"}</p>}
+      {arriving.map((card) => (
+        <DealCard key={card.id} card={card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} moving />
+      ))}
+      {shown.map((card) => (
+        <DealCard key={card.id} card={card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} moving={false} />
       ))}
       {remaining > 0 && cursor && (
         <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={more} disabled={pending}>
