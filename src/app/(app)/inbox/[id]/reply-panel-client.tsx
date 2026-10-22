@@ -3,7 +3,7 @@
 import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import type { ReplyPanel } from "@/contexts/conversations/application/reply-mana
 import { callApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { categorySourceLabel, draftStatusLabel } from "../labels";
+import { openStopContacting } from "./_components/next-step-client";
+import { registerDraftEdits } from "./draft-edits";
 import type { NextInQueue } from "./next-queue";
 import { ReplyComposer } from "./reply-composer-client";
 
@@ -57,6 +59,22 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
 
   const ccDirty = draft !== null && [...cc].sort().join(",") !== [...draft.cc].sort().join(",");
   const dirty = draft !== null && (body.trim() !== saved.trim() || subject.trim() !== (draft.subject ?? "").trim() || ccDirty);
+
+  // Next step's controls retire the open draft. They save these edits first, so the out-of-date draft keeps what was typed.
+  const edits = useRef({ draft, dirty, body, subject, cc });
+  useEffect(() => {
+    edits.current = { draft, dirty, body, subject, cc };
+  });
+  useEffect(
+    () =>
+      registerDraftEdits(async () => {
+        const { draft: open, dirty: changed, body: text, subject: line, cc: copies } = edits.current;
+        if (!open || !changed || open.status !== "awaiting_review") return null;
+        const result = await callApi(`/api/drafts/${open.id}`, "PATCH", { revision: open.revision, subject: line.trim() || null, bodyText: text, cc: copies });
+        return result.ok ? null : (result.error ?? "Try again.");
+      }),
+    [],
+  );
   const composerBlocked = panel.suppressed ? "This address is on the suppression list." : panel.doNotContact ? "This person is marked do not contact." : panel.recipient === null ? "This person has no email address." : null;
   const composerSubject = panel.lastSubject ? (/^re:/i.test(panel.lastSubject) ? panel.lastSubject : `Re: ${panel.lastSubject}`) : "";
   const composer = <ReplyComposer conversationId={panel.conversationId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
@@ -135,7 +153,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
 
   const classificationCard = (
     <>
-      {/* The AI's reading of the last reply. Changing the category lives in one place, Change category in the side panel. */}
+      {/* The AI's reading of the last reply. Changing the category lives in one place, Change category under Next step. */}
       <Card>
         <details open={classificationNeedsYou} data-testid="classification" className="group">
           <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-(--card-spacing) text-sm font-semibold outline-none select-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -160,7 +178,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               </p>
             )}
             {classification?.status === "failed" && <p className="text-destructive">Classification failed: {classification.error}</p>}
-            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category in the side panel sets one yourself." : `${panel.aiOff} Change category in the side panel sets one yourself.`}</p>}
+            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category under Next step sets one yourself." : `${panel.aiOff} Change category under Next step sets one yourself.`}</p>}
             {held && classification.proposed && (
               <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="proposal">
                 <div>
@@ -178,7 +196,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             )}
             {unreviewed && classification && (
               <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="review-change">
-                <p>The AI set this category. Change category in the side panel if it is wrong.</p>
+                <p>The AI set this category. If it is wrong, use Change category under Next step.</p>
                 <div>
                   <Button
                     size="sm"
@@ -204,12 +222,15 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             )}
             {classification?.stopRequested && !panel.suppressed && (
               <div className="grid gap-2 rounded-lg border border-destructive/40 p-3" data-testid="stop-banner">
-                <div>The sender appears to ask us to stop contacting them. Nothing is suppressed until you confirm.</div>
-                <div>
-                  <Button size="sm" variant="destructive" disabled={busy !== null} onClick={() => run("suppress", () => callApi(`/api/inbox/${panel.conversationId}/suppress`, "POST"))}>
-                    Add {panel.recipient ?? "sender"} to the suppression list
-                  </Button>
-                </div>
+                <div>The sender appears to ask us to stop contacting them. Nothing stops until you confirm.</div>
+                {/* The one stop flow is Next step's Stop contacting, which asks how far the stop reaches and confirms it. */}
+                {!panel.doNotContact && (
+                  <div>
+                    <Button size="sm" variant="outline" disabled={busy !== null} onClick={openStopContacting}>
+                      Stop contacting…
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

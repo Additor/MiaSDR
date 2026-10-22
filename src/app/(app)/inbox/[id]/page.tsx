@@ -26,6 +26,7 @@ import { NextQueueLink } from "./next-queue-link";
 import { NextUnreadLink } from "./next-unread-link";
 import { LinkedInReplyPanel } from "./linkedin-reply-panel";
 import { ReplyPanel } from "./reply-panel";
+import { NextStep } from "./_components/next-step";
 import { ThreadSide, ThreadSideSkeleton } from "./_components/thread-side";
 import { ThreadFollowUps, ThreadHistory } from "./_components/thread-work";
 import { RecordBody } from "@/app/(app)/crm/_components/record/record-header";
@@ -85,11 +86,11 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
           </>
         }
       />
-      {/* The record frame's body: the work column (the message, the reply, follow-ups, earlier messages and the histories), then
-          one bordered side panel about the person. On a phone the panel follows the work column. */}
+      {/* The record frame's body: the work column (the message, the reply, the next step, follow-ups, earlier messages and the
+          histories), then one bordered side panel about the person. On a phone the panel follows the work column. */}
       <div className="page">
         <RecordBody
-          asideLabel="Person and reply handling"
+          asideLabel="Person"
           main={
             <div className="stack-section min-w-0">
               {/* The sender and the mailbox are on the message card and the side panel; this line says whose move it is. */}
@@ -112,6 +113,11 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
                   )}
                 </Suspense>
               </div>
+
+              {/* What happens to the person after this reply: the category, and finishing without a reply. */}
+              <Suspense fallback={<Skeleton className="h-20 w-full" />}>
+                <NextStep actor={actor} conversationId={thread.conversationId} channel={thread.channel} recordId={thread.recordId} queue={fromActions ? { view: actionsView } : undefined} />
+              </Suspense>
 
               <Suspense fallback={null}>
                 <ThreadFollowUps actor={actor} recordId={thread.recordId} personId={person.id} />

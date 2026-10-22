@@ -265,7 +265,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
 }
 
 /** The browser's calendar day `days` from today, as YYYY-MM-DD. */
-function dayFromToday(days: number): string {
+export function dayFromToday(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -284,7 +284,7 @@ const QUICK_DAYS: Array<[label: string, days: number]> = [
  * The due date as three quick choices and Pick a date. The browser's own date field opens only when you pick, so an
  * empty form never shows a placeholder in the browser's language; the chosen day reads back in English.
  */
-function DueField({ id, value, onChange }: { id: string; value: string; onChange: (day: string) => void }) {
+export function DueField({ id, value, onChange }: { id: string; value: string; onChange: (day: string) => void }) {
   const [picking, setPicking] = useState(false);
   const quick = QUICK_DAYS.map(([label, days]) => ({ label, day: dayFromToday(days) }));
   return (

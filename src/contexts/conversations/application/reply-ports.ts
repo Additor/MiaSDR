@@ -244,7 +244,7 @@ export interface ReplyStore {
   resolveUncertain(input: { organizationId: string; draftId: string; outcome: "delivered" | "not_delivered"; note: string; actorUserId: string; now: Date }): Promise<void>;
 
   /** Human classification. Returns what was applied and whether a draft job was queued. */
-  applyHumanClassification(input: { organizationId: string; conversationId: string; subcategoryKey: string | null; expectedContextVersion: number; actorUserId: string; wantsDraft: (categoryKey: string, subcategoryKey: string) => boolean }): Promise<{ categoryKey: string; subcategoryKey: string; draftQueued: boolean }>;
+  applyHumanClassification(input: { organizationId: string; conversationId: string; subcategoryKey: string | null; expectedContextVersion: number; actorUserId: string; wantsDraft: (categoryKey: string, subcategoryKey: string) => boolean }): Promise<{ personId: string; categoryKey: string; subcategoryKey: string; draftQueued: boolean }>;
   suppressSender(input: { organizationId: string; conversationId: string; actorUserId: string }): Promise<{ email: string }>;
 }
 

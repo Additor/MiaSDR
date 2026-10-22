@@ -1,4 +1,3 @@
-import { SparklesIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -15,16 +14,12 @@ import type { Actor } from "@/shared/errors";
 import { CreateDealButton } from "@/app/(app)/crm/_components/create-deal-dialog";
 import { dealDialogData } from "@/app/(app)/crm/_components/deal-dialog-data";
 import { dealHref } from "@/app/(app)/crm/_components/deal-href";
-import { categoryLabel } from "@/app/(app)/crm/_components/labels";
 import { DoNotContactCard } from "@/app/(app)/crm/_components/person/do-not-contact-card";
 import { TasksSection } from "@/app/(app)/crm/_components/person/tasks-section";
 import { personHref } from "@/app/(app)/crm/_components/person/person-href";
 import { ReachLinks } from "@/app/(app)/crm/_components/person/reach-links";
-import { StateTip } from "@/app/(app)/crm/_components/person/state-tip";
 import { AsideDisclosure, AsideSection } from "@/app/(app)/crm/_components/record/record-header";
 import { AssigneeControls } from "./assignee-controls";
-import { ChangeCategoryButton } from "./change-category-button";
-import { RecordControls } from "./record-controls";
 import { recordAfterReply, recordDetail } from "./thread-data";
 
 /** The side panel while it loads: one block per section group inside the panel, so the layout does not jump when it arrives. */
@@ -48,9 +43,9 @@ export function ThreadSideSkeleton() {
 }
 
 /**
- * The thread's side column: who the person is and what you decide about them. Open: the person, Assigned to, the reply
- * category (with the closed state and Reopen), tasks, then the person's campaigns and other conversations folded behind
- * their counts. Close reply handling and Do not contact end the panel, as the stop controls do on every person page.
+ * The thread's side column: who the person is and what is on file about them. Open: the person, Assigned to and tasks, then
+ * the person's campaigns and other conversations folded behind their counts, and Do not contact with Clear once they are
+ * marked. What happens next (the category, Done, Stop contacting) sits under the reply in Next step (`next-step.tsx`), and
  * Follow-ups and the histories live in the work column (`thread-work.tsx`). Wrap it in Suspense.
  */
 export async function ThreadSide({ actor, conversationId, recordId, personId }: { actor: Actor; conversationId: string; recordId: string; personId: string }) {
@@ -73,11 +68,8 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
   const dnc = detail.policy?.doNotContact === true;
   const reach = reachMap.get(personId) ?? NO_REACH;
   const contact = leadContactPoints({ email: person.email, linkedinSlug: directory?.linkedinSlug ?? null, linkedinUrl: directory?.linkedinUrl ?? person.linkedinUrl ?? null });
-  const closed = record.workflowState === "closed";
   const others = detail.conversations.filter((c) => c.id !== conversationId);
   const dealPerson = { id: personId, name: person.name, email: person.email, companyName: person.company, doNotContact: dnc, suppressed: detail.suppressed, openDeals: summary?.openDeals ?? 0 };
-  // A suggestion the AI holds for review, named next to "Not classified yet" so the two never seem to disagree.
-  const held = !record.categoryKey ? detail.classifications.find((c) => c.status === "proposed" && c.latest) : undefined;
   // A campaign that hands replies to the Inbox says so in its Campaigns row; the work column then shows no follow-ups.
   const handoffCampaignId = !afterReply.run && afterReply.campaign?.mode === "handoff" ? afterReply.campaign.id : null;
 
@@ -104,33 +96,6 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
 
       <AsideSection title="Assigned to" testId="thread-assignee">
         <AssigneeControls recordId={record.id} assignedTo={record.assignedTo} members={dialog.members} currentUserId={dialog.currentUserId} />
-      </AsideSection>
-
-      <AsideSection title="Reply category" testId="reply-category">
-        <div className="grid gap-1 text-sm">
-          {/* Who set the category rides on a mark beside it; the message card already says when the last reply came. */}
-          <p className="flex items-center gap-1.5 font-medium">
-            {record.categoryKey ? `${categoryLabel(record.categoryKey)}${record.subcategoryName ? `: ${record.subcategoryName}` : ""}` : "Not classified yet"}
-            {record.categorySource && (
-              <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="category-source" />} tip={`Set by ${record.categorySource === "ai" ? "the AI" : "a person"}`}>
-                {record.categorySource === "ai" ? <SparklesIcon aria-hidden className="size-3.5" /> : <UserIcon aria-hidden className="size-3.5" />}
-              </StateTip>
-            )}
-          </p>
-          {held?.proposed.categoryKey && <p>The AI suggests {categoryLabel(held.proposed.categoryKey)}, waiting in the reply panel.</p>}
-          {record.categoryLocked && (
-            <Badge variant="outline" className="w-fit" title="The AI cannot move this person out of Existing customer">
-              Locked as Existing customer
-            </Badge>
-          )}
-        </div>
-        {closed ? (
-          <RecordControls recordId={record.id} closed closedReason={record.closedReason ?? null} />
-        ) : (
-          <div>
-            <ChangeCategoryButton recordId={record.id} conversationId={conversationId} personName={name} contextVersion={record.contextVersion} currentSubcategoryId={record.subcategoryId} categoryLocked={record.categoryLocked} stages={detail.stages} />
-          </div>
-        )}
       </AsideSection>
 
       <section className="stack-group p-4" data-testid="thread-tasks">
@@ -184,13 +149,8 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
         </AsideDisclosure>
       )}
 
-      {!closed && (
-        <AsideSection title="Reply handling" testId="thread-reply-handling">
-          <RecordControls recordId={record.id} closed={false} closedReason={null} />
-        </AsideSection>
-      )}
-
-      <DoNotContactCard personId={personId} doNotContact={dnc} reason={detail.policy?.reason ?? null} setAt={detail.policy?.setAt ?? null} suppression={null} testId="thread-dnc" />
+      {/* Marking happens under the reply, in Next step's Stop contacting; a marked person shows it here with Clear. */}
+      {dnc && <DoNotContactCard personId={personId} doNotContact reason={detail.policy?.reason ?? null} setAt={detail.policy?.setAt ?? null} suppression={null} testId="thread-dnc" />}
     </>
   );
 }

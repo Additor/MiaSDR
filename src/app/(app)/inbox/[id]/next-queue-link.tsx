@@ -19,7 +19,7 @@ export async function NextQueueLink({ recordId, view, actor }: { recordId: strin
       <QueueKeys href={next.href} />
       <Link href={next.href} className={cn(buttonVariants({ variant: "outline", size: "sm" }))} data-testid="next-in-queue" aria-keyshortcuts="]" title="Next in queue (])">
         Next in queue
-        <kbd aria-hidden className="ml-1 hidden rounded border px-1 font-sans text-[0.7rem] leading-4 text-muted-foreground sm:inline">]</kbd>
+        <kbd aria-hidden className="ml-1 hidden rounded border px-1 font-sans text-xs leading-4 text-muted-foreground sm:inline">]</kbd>
       </Link>
     </>
   );

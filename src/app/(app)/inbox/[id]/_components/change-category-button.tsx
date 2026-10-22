@@ -1,16 +1,20 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox, ComboboxCollection, ComboboxContent, ComboboxEmpty, ComboboxGroup, ComboboxInput, ComboboxItem, ComboboxLabel, ComboboxList } from "@/components/ui/combobox";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { PROTECTED_SUBCATEGORY_KEY, REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
+import { needsReply } from "@/contexts/conversations/domain/reply-policy";
 import { callApi } from "@/lib/api-client";
 import { categoryLabel } from "@/app/(app)/crm/_components/labels";
+import { saveDraftEdits } from "../draft-edits";
 
 export interface StageOption {
   id: string;
@@ -21,10 +25,25 @@ export interface StageOption {
   stageRank: number | null;
 }
 
+/** The AI's reading of the last reply, shown above the picker so you correct it with it in view. */
+export interface AiReading {
+  name: string;
+  confidence: number | null;
+  reasoning: string | null;
+}
+
+interface Option {
+  value: string;
+  label: string;
+  stage: StageOption;
+}
+
 /**
- * The one place to change the reply category. The person says why: the AI read the last reply wrong (a correction of that
- * reading, recorded as a human classification of this conversation), or something happened off the thread (the record
- * moves; the reading stays and open drafts retire).
+ * Changes the reply category, from the thread's Next step. The person says why: the AI read the last reply wrong (a correction
+ * of that reading, recorded as a human classification of this conversation), or something happened off the thread (the record
+ * moves; the reading stays and open drafts retire). The picker groups the subcategories under their category and filters as you
+ * type, and the line under it says what the change does before you confirm. Unsaved edits in the reply editor are saved first,
+ * so the out-of-date draft keeps them.
  */
 export function ChangeCategoryButton({
   recordId,
@@ -34,7 +53,7 @@ export function ChangeCategoryButton({
   currentSubcategoryId,
   categoryLocked,
   stages,
-  size = "sm",
+  aiReading = null,
 }: {
   recordId: string;
   /** The conversation on screen. Without it only an off-thread change is offered. */
@@ -44,28 +63,41 @@ export function ChangeCategoryButton({
   currentSubcategoryId: string | null;
   categoryLocked: boolean;
   stages: StageOption[];
-  size?: "sm" | "default";
+  aiReading?: AiReading | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [target, setTarget] = useState<string | null>(null);
+  const [target, setTarget] = useState<Option | null>(null);
   const [note, setNote] = useState("");
   const [unlock, setUnlock] = useState(false);
   const [why, setWhy] = useState<"reply" | "offThread">(conversationId ? "reply" : "offThread");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
 
   const correcting = why === "reply" && conversationId !== undefined;
   // A correction may name the category the record already has, to confirm the reading; a move goes somewhere else.
-  const options = stages.filter((s) => correcting || s.id !== currentSubcategoryId).map((s) => ({ value: s.id, label: `${categoryLabel(s.categoryKey)}: ${s.name}` }));
-  const chosen = stages.find((s) => s.id === target);
+  const groups = useMemo(
+    () =>
+      REPLY_CATEGORIES.map((c) => ({
+        value: c.label,
+        items: stages.filter((s) => s.categoryKey === c.key && (correcting || s.id !== currentSubcategoryId)).map((s) => ({ value: s.id, label: s.name, stage: s })),
+      })).filter((g) => g.items.length > 0),
+    [stages, correcting, currentSubcategoryId],
+  );
+  const chosen = target && groups.some((g) => g.items.some((o) => o.value === target.value)) ? target.stage : undefined;
   const leavesCustomer = !correcting && categoryLocked && chosen !== undefined && chosen.categoryKey !== "customer";
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!chosen) return;
-    setPending(true);
-    setError(null);
+  function reset(next: boolean) {
+    setOpen(next);
+    if (next) return;
+    setTarget(null);
+    setNote("");
+    setUnlock(false);
+    setWhy(conversationId ? "reply" : "offThread");
+  }
+
+  async function submit() {
+    if (!chosen) return false;
+    const unsaved = await saveDraftEdits();
+    if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
     const result = correcting
       ? await callApi(`/api/inbox/${conversationId}/classification`, "POST", { subcategoryKey: chosen.key, expectedContextVersion: contextVersion })
       : await callApi(`/api/records/${recordId}/stage`, "POST", {
@@ -75,84 +107,110 @@ export function ChangeCategoryButton({
           confirmUnlock: unlock,
           note: note.trim() || null,
         });
-    setPending(false);
-    if (!result.ok) return setError(result.error);
-    toast.success(`Changed the category of ${personName} to ${chosen.name}.`);
-    setOpen(false);
-    setTarget(null);
-    setNote("");
-    setUnlock(false);
+    if (!result.ok) throw new Error(result.error ?? "The category did not change. Try again.");
+    toast.success(`Changed the category of ${personName} to ${categoryLabel(chosen.categoryKey)}: ${chosen.name}.`);
+    reset(false);
     router.refresh();
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size={size} className="max-sm:h-11" />}>Change category</DialogTrigger>
-      <DialogContent>
-        <form onSubmit={submit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Change the category of {personName}</DialogTitle>
-            <DialogDescription>
-              {correcting ? "The last reply moves to the category you choose, as your reading of it." : "The AI's reading of the last reply stays as it was. Open drafts are retired because they no longer fit."}
-            </DialogDescription>
-          </DialogHeader>
-          {conversationId && (
-            <fieldset className="grid gap-2 text-sm">
-              <legend className="mb-1 text-sm font-medium">What changed?</legend>
-              <label className="flex items-center gap-2">
-                <input type="radio" name={`why-${recordId}`} checked={why === "reply"} onChange={() => setWhy("reply")} />
-                The AI read the last reply wrong
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name={`why-${recordId}`} checked={why === "offThread"} onChange={() => setWhy("offThread")} />
-                Something happened off the thread, like a meeting
-              </label>
-            </fieldset>
-          )}
-          <div className="grid gap-1">
-            <Label htmlFor={`category-${recordId}`}>New category</Label>
-            <Select items={options} value={target} onValueChange={(v) => setTarget(v)}>
-              <SelectTrigger id={`category-${recordId}`} className="w-full">
-                <SelectValue placeholder="Choose a category" />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {!correcting && (
-            <div className="grid gap-1">
-              <Label htmlFor={`note-${recordId}`}>Note (optional)</Label>
-              <Textarea id={`note-${recordId}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} placeholder="Met on Tuesday, wants a trial" />
-            </div>
-          )}
-          {leavesCustomer && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/40 p-3 text-sm">
-              <Checkbox id={`unlock-${recordId}`} checked={unlock} onCheckedChange={(c) => setUnlock(c === true)} />
-              <div className="grid gap-0.5">
-                <Label htmlFor={`unlock-${recordId}`} className="font-normal">
-                  This person is locked as Existing customer. Take them out of it.
-                </Label>
-                <p className="text-xs text-muted-foreground">Existing customers stay locked so the AI cannot reclassify them. You can still change the category.</p>
-              </div>
-            </div>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
+    <>
+      <Button variant="outline" size="sm" className="max-sm:h-11" onClick={() => setOpen(true)}>
+        Change category
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={reset}
+        title={`Change the category of ${personName}`}
+        description={correcting ? "Your reading of the last reply replaces the AI's." : "The AI's reading of the last reply stays. The category moves because of something that happened elsewhere."}
+        confirmLabel="Change category"
+        pendingLabel="Changing…"
+        confirmDisabled={!chosen || (leavesCustomer && !unlock)}
+        className="sm:max-w-md"
+        onConfirm={submit}
+      >
+        <FieldGroup>
+          {correcting && aiReading && (
+            <p className="text-sm text-muted-foreground" data-testid="ai-reading">
+              The AI read it as <span className="text-foreground">{aiReading.name}</span>
+              {aiReading.confidence != null && ` (${Math.round(aiReading.confidence * 100)}% confident)`}
+              {aiReading.reasoning ? `: ${aiReading.reasoning}` : "."}
             </p>
           )}
-          <DialogFooter>
-            <Button type="submit" disabled={pending || !chosen || (leavesCustomer && !unlock)}>
-              {pending ? "Changing…" : "Change category"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          {conversationId && (
+            <FieldSet>
+              <FieldLegend variant="label">What changed?</FieldLegend>
+              <RadioGroup value={why} onValueChange={(v) => setWhy(v as "reply" | "offThread")}>
+                <Field orientation="horizontal">
+                  <RadioGroupItem value="reply" id={`why-reply-${recordId}`} />
+                  <FieldLabel htmlFor={`why-reply-${recordId}`} className="font-normal">
+                    The AI read the last reply wrong
+                  </FieldLabel>
+                </Field>
+                <Field orientation="horizontal">
+                  <RadioGroupItem value="offThread" id={`why-off-${recordId}`} />
+                  <FieldLabel htmlFor={`why-off-${recordId}`} className="font-normal">
+                    Something happened off the thread, like a meeting
+                  </FieldLabel>
+                </Field>
+              </RadioGroup>
+            </FieldSet>
+          )}
+          <Field>
+            <FieldLabel htmlFor={`category-${recordId}`}>New category</FieldLabel>
+            <Combobox items={groups} value={target} onValueChange={(next) => setTarget((next as Option | null) ?? null)} itemToStringLabel={(o: Option) => `${categoryLabel(o.stage.categoryKey)}: ${o.label}`} autoHighlight>
+              <ComboboxInput id={`category-${recordId}`} placeholder="Search categories" className="w-full" />
+              <ComboboxContent>
+                <ComboboxEmpty>No category matches.</ComboboxEmpty>
+                <ComboboxList>
+                  {(group: (typeof groups)[number]) => (
+                    <ComboboxGroup key={group.value} items={group.items}>
+                      <ComboboxLabel>{group.value}</ComboboxLabel>
+                      <ComboboxCollection>
+                        {(option: Option) => (
+                          <ComboboxItem key={option.value} value={option}>
+                            {option.label}
+                          </ComboboxItem>
+                        )}
+                      </ComboboxCollection>
+                    </ComboboxGroup>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
+            {chosen && (
+              <FieldDescription className="text-foreground" data-testid="category-consequence">
+                {consequence(chosen, correcting, personName)}
+              </FieldDescription>
+            )}
+          </Field>
+          {!correcting && (
+            <Field>
+              <FieldLabel htmlFor={`note-${recordId}`}>Note (optional)</FieldLabel>
+              <Textarea id={`note-${recordId}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} placeholder="Met on Tuesday, wants a trial" />
+            </Field>
+          )}
+          {leavesCustomer && (
+            <Field orientation="horizontal">
+              <Checkbox id={`unlock-${recordId}`} checked={unlock} onCheckedChange={(c) => setUnlock(c === true)} />
+              <FieldContent>
+                <FieldLabel htmlFor={`unlock-${recordId}`} className="font-normal">
+                  This person is locked as Existing customer. Take them out of it.
+                </FieldLabel>
+                <FieldDescription>Existing customers stay locked so the AI cannot reclassify them. You can still change the category.</FieldDescription>
+              </FieldContent>
+            </Field>
+          )}
+        </FieldGroup>
+      </ConfirmDialog>
+    </>
   );
+}
+
+/** What the change does to drafts, follow-ups and contact, in one or two sentences. */
+function consequence(stage: StageOption, correcting: boolean, personName: string): string {
+  const stop = stage.key === PROTECTED_SUBCATEGORY_KEY ? ` It also marks ${personName} do not contact on every channel.` : "";
+  if (!correcting) return `Retires open drafts and restarts follow-ups for this category. No new draft is written.${stop}`;
+  if (needsReply(stage.categoryKey, stage.key)) return `Retires the open draft, writes a new one for this category and starts its follow-ups.${stop}`;
+  return `Retires the open draft. This category needs no reply, so none is written.${stop}`;
 }

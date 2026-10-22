@@ -5,8 +5,9 @@ const HANDOFF_LEAD = { email: "hal@s7-hand.test", firstName: "Hal", lastName: "O
 const SWITCH_LEAD = { email: "ivo@s7-switch.test", firstName: "Ivo", lastName: "Berg", title: "Founder", company: "S7 Switch" };
 const CONTACT_LEAD = { email: "cass@s7-contact.test", firstName: "Cass", lastName: "Moreno", title: "Founder", company: "S7 Contact" };
 
-/** The reply category card in the side column of an Inbox thread. */
-const replyCategory = (page: import("@playwright/test").Page) => page.locator("#main-content").getByTestId("reply-category");
+/** The thread's Next step, under the reply, and the reply category line inside it. */
+const nextStep = (page: import("@playwright/test").Page) => page.locator("#main-content").getByTestId("next-step");
+const replyCategory = (page: import("@playwright/test").Page) => nextStep(page).getByTestId("reply-category");
 
 test.describe("reply handling on the thread and After a reply", () => {
   test("turn on AI follow-ups, let a reply start the run, control it on the thread, change the category", async ({ page }) => {
@@ -99,8 +100,9 @@ test.describe("reply handling on the thread and After a reply", () => {
     await replyCategory(page).getByRole("button", { name: "Change category" }).click();
     const change = page.getByRole("dialog", { name: "Change the category of Rae Costa" });
     await change.getByRole("radio", { name: /Something happened off the thread/ }).check();
-    await change.getByRole("combobox", { name: "New category" }).click();
-    await page.getByRole("option", { name: "Interested: Meeting requested" }).click();
+    await change.getByRole("combobox", { name: "New category" }).fill("Meeting");
+    await page.getByRole("option", { name: "Meeting requested" }).click();
+    await expect(change.getByTestId("category-consequence")).toHaveText("Retires open drafts and restarts follow-ups for this category. No new draft is written.");
     await change.getByLabel("Note (optional)").fill("Booked for Thursday");
     await change.getByRole("button", { name: "Change category", exact: true }).click();
     await expect(change).toBeHidden();
@@ -141,23 +143,26 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(campaigns.getByRole("link", { name: "Turn on AI follow-ups" })).toHaveAttribute("href", /#after-reply$/);
     await expect(page.getByText("Started follow-ups")).toHaveCount(0);
 
-    // Close reply handling with a reason, then reopen it. Closing sits at the foot of the panel and works like the
-    // other stops: a quiet button opens the reason, and a missing reason is said on confirm. Closed, the reply category
-    // says so and offers Reopen in place of Change category.
+    // Finish without a reply, then reopen. Done sits under the reply in Next step: its reason starts as the category, a
+    // missing reason is said on confirm, and closed, Next step says so and offers Reopen in place of Change category.
+    const step = nextStep(page);
     const category = replyCategory(page);
-    const handling = page.locator("#main-content").getByTestId("thread-reply-handling");
-    await handling.getByRole("button", { name: "Close reply handling" }).click();
-    await expect(handling.getByText("Closing stops follow-ups on every channel and retires unsent drafts.", { exact: false })).toBeVisible();
-    await handling.getByRole("button", { name: "Confirm close" }).click();
-    await expect(handling.getByRole("alert")).toHaveText("Type a reason to close reply handling.");
-    await handling.getByLabel("Reason").fill("Talking on the phone now");
-    await handling.getByRole("button", { name: "Confirm close" }).click();
-    await expect(page.getByText("Reply handling closed.", { exact: true })).toBeVisible();
-    await expect(category).toContainText("Reply handling closed: Talking on the phone now.");
+    await expect(page.locator("#main-content").getByTestId("thread-reply-handling")).toHaveCount(0);
+    await step.getByRole("button", { name: "Done, no reply needed" }).click();
+    const done = step.getByTestId("done-form");
+    await expect(done.getByLabel("Reason")).toHaveValue(/^Interested: /);
+    await expect(done.getByText("Retires unsent drafts and stops follow-ups on every channel.", { exact: false })).toBeVisible();
+    await done.getByLabel("Reason").fill("");
+    await done.getByRole("button", { name: "Mark done" }).click();
+    await expect(done.getByRole("alert")).toHaveText("Say why no reply is needed.");
+    await done.getByLabel("Reason").fill("Talking on the phone now");
+    await done.getByRole("button", { name: "Mark done" }).click();
+    await expect(step.getByTestId("next-step-status")).toContainText("Marked done for Hal Ortiz.");
+    await expect(step.getByTestId("reply-handling")).toContainText("Done: Talking on the phone now.");
     await expect(category.getByRole("button", { name: "Change category" })).toHaveCount(0);
-    await expect(handling).toHaveCount(0);
-    await category.getByRole("button", { name: "Reopen" }).click();
-    await expect(page.getByText("Reply handling reopened.", { exact: true })).toBeVisible();
+    await expect(step.getByRole("button", { name: "Done, no reply needed" })).toHaveCount(0);
+    await step.getByRole("button", { name: "Reopen" }).click();
+    await expect(page.getByText("Reopened.", { exact: true })).toBeVisible();
     await expect(category.getByRole("button", { name: "Change category" })).toBeVisible();
   });
 

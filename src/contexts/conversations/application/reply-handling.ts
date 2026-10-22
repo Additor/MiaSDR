@@ -106,10 +106,17 @@ export async function moveRecordStage(deps: ReplyHandlingDeps, actor: Actor, rec
     occurredAt,
     now,
   });
-  if (result.subcategoryKey === PROTECTED_SUBCATEGORY_KEY) {
-    await deps.store.setDoNotContact({ organizationId: actor.organizationId, actorUserId: actor.userId, personId: result.personId, enabled: true, reason: "Moved to Do not contact by a person.", now });
-  }
+  await followDoNotContactCategory(deps, actor, result);
   return result;
+}
+
+/**
+ * A person put the record in Do not contact, by a move off the thread or by their own reading of the reply: they have decided
+ * to stop contact, so the do-not-contact flag follows on every channel. Any other subcategory leaves the flag alone.
+ */
+export async function followDoNotContactCategory(deps: ReplyHandlingDeps, actor: Actor, result: { personId: string; subcategoryKey: string | null }) {
+  if (result.subcategoryKey !== PROTECTED_SUBCATEGORY_KEY) return;
+  await deps.store.setDoNotContact({ organizationId: actor.organizationId, actorUserId: actor.userId, personId: result.personId, enabled: true, reason: "Moved to Do not contact by a person.", now: deps.now() });
 }
 
 /** Reverts the latest applied classification to what the record had before, as a person's decision. */

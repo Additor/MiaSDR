@@ -128,7 +128,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
         const [job] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, classificationId)));
         draftQueued = job?.status === "queued" || job?.status === "running";
       }
-      return { categoryKey: target.categoryKey, subcategoryKey: target.key, draftQueued };
+      return { personId: head.personId, categoryKey: target.categoryKey, subcategoryKey: target.key, draftQueued };
     });
   },
 

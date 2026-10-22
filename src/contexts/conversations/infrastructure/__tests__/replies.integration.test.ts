@@ -370,6 +370,20 @@ describeDb("AI classification, drafts and approval", () => {
       expect(await one("select status from classifications where organization_id = $1", [f.org])).toMatchObject({ status: "overridden" });
     });
 
+    it("marks the person do not contact when a person's reading lands in Do not contact, as a move off the thread does", async () => {
+      const f = await fixture({ ai: null });
+      const r = await composition.ingestInbound(mail(f));
+      const handling = await import("../../application/reply-handling");
+      const handlingDeps = (await import("../reply-handling-composition")).replyHandlingDeps();
+      const other = await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "demo_request", expectedContextVersion: await version(f) });
+      await handling.followDoNotContactCategory(handlingDeps, f.actor, other);
+      expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
+      const stop = await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "do_not_contact", expectedContextVersion: await version(f) });
+      expect(stop).toMatchObject({ subcategoryKey: "do_not_contact", draftQueued: false });
+      await handling.followDoNotContactCategory(handlingDeps, f.actor, stop);
+      expect(await one("select do_not_contact, reason from contact_policies where organization_id = $1", [f.org])).toMatchObject({ do_not_contact: true, reason: "Moved to Do not contact by a person." });
+    });
+
     it("cites knowledge in the draft and gives the model the active documents only", async () => {
       const f = await fixture();
       // latest_version is a deferred foreign key (0017): a document and its first version go in one transaction.
