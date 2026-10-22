@@ -443,6 +443,7 @@ export function TableWorkspace({ tableId }: Props) {
           columns={columns}
           column={dialog.column}
           afterColumnId={dialog.after}
+          firstRowId={rows[0]?.id}
           onClose={closeDialog}
           onSaved={async (key) => {
             await grid.reload();
@@ -463,9 +464,14 @@ export function TableWorkspace({ tableId }: Props) {
           onRun={runCellSource(detailsColumn, columns) !== null ? () => void runCell(detailsColumn, detailsRow.id) : undefined}
           columns={columns}
           onAddOutput={async (runner, outputKey, outputName) => {
-            const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "PATCH", { columnId: runner.id, addOutput: outputKey });
+            const res = await gridRequest<{ filled?: number }>(gridUrl.sub(tableId, "enrichments"), "PATCH", { columnId: runner.id, addOutput: outputKey });
             if (!res.ok) return void toast.error(res.error ?? "Could not add the column.");
-            toast.success(`Added ${outputName}. Run ${runner.name} again to fill it.`);
+            const filled = res.data?.filled ?? 0;
+            toast.success(
+              filled > 0
+                ? `Added ${outputName} and filled ${filled.toLocaleString("en-US")} ${filled === 1 ? "row" : "rows"} from answers ${runner.name} already has. Rows without one fill on its next run.`
+                : `Added ${outputName}. It fills when ${runner.name} runs again.`,
+            );
             await grid.reload();
           }}
           onClose={closeDialog}

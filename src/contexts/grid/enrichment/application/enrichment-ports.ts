@@ -138,6 +138,8 @@ export interface ColumnChangeContext {
 export interface GridRowRef {
   id: string;
   cells: Record<string, unknown>;
+  /** Run state per cell. Present where the store reads it (a run's row scan). */
+  cellMeta?: Record<string, unknown>;
 }
 
 export interface EnqueueTarget {
@@ -256,6 +258,11 @@ export interface CellRunView {
 
 export interface GridRunStore {
   tableAutoRun(organizationId: string, tableId: string): Promise<boolean | null>;
+  /**
+   * Fills a newly added output column from the answers the ledger already holds: for each row, the latest answer of
+   * `runnerKey` whose main value is still the one the row shows. No provider is called. Returns the rows filled.
+   */
+  fillOutputFromLedger(organizationId: string, tableId: string, input: { runnerKey: string; outputKey: string; columnKey: string }): Promise<number>;
   listColumns(organizationId: string, tableId: string): Promise<ColumnRow[]>;
   /** Rows in table order. With `rowIds` only those rows, still scoped to the table. */
   /** Rows in table order (position, then id). `offset` skips that many rows of the same ordering. */

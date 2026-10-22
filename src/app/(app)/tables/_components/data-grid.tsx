@@ -172,6 +172,8 @@ export function DataGrid(props: Props) {
   }, [revealToken]);
 
   const pinnedKeys = props.pinnedKeys ?? [];
+  // The column menus' result lines, counted once per change of rows or columns, not on every render of the header.
+  const summaries = useMemo(() => new Map(columns.map((c) => [c.key, columnRunSummary(c, rows, rows.length < total)] as const)), [columns, rows, total]);
   const rowIds = useMemo(() => rows.map((r) => r.id), [rows]);
 
   const clearRange = useCallback(() => {
@@ -405,7 +407,7 @@ export function DataGrid(props: Props) {
                 {sort === "asc" && <ArrowUpIcon className="size-3 shrink-0" aria-hidden />}
                 {sort === "desc" && <ArrowDownIcon className="size-3 shrink-0" aria-hidden />}
                 <span className="ml-auto" />
-                <ColumnMenu column={column} index={c} count={columns.length} sort={sort} pinned={pinnedKeys.includes(column.key)} pinCount={pinnedKeys.length} summary={columnRunSummary(column, rows, rows.length < total)} onAction={props.onColumnAction} />
+                <ColumnMenu column={column} index={c} count={columns.length} sort={sort} pinned={pinnedKeys.includes(column.key)} pinCount={pinnedKeys.length} summary={summaries.get(column.key)} onAction={props.onColumnAction} />
                 <ResizeHandle label={`Resize ${column.name}`} width={widthOf(column)} onResize={(w) => setWidths((s) => ({ ...s, [column.key]: w }))} />
               </div>
             );

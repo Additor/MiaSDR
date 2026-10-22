@@ -1,6 +1,7 @@
 import { effectiveColumnType, isStaticColumnType, STATIC_COLUMN_TYPES, type ColumnType } from "@/contexts/grid/domain/column-types";
 import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
+import { runnerActionKey } from "@/contexts/grid/domain/verified-push";
 import { OUTCOMES } from "../data/outcomes";
 import type { CellMeta, GridColumn, GridRow } from "../data/types";
 
@@ -170,9 +171,7 @@ const filled = (v: unknown) => v !== null && v !== undefined && !(typeof v === "
 
 /** The shared action an enrichment or waterfall column runs, or null for another action or column type. */
 function sharedAction(column: Pick<GridColumn, "type" | "config">) {
-  if (column.type !== "enrichment" && column.type !== "waterfall") return null;
-  const steps = column.config.steps as Array<{ actionKey?: unknown }> | undefined;
-  const key = column.type === "waterfall" ? steps?.[0]?.actionKey : column.config.actionKey;
+  const key = runnerActionKey(column);
   return OUTCOMES.some((o) => o.actionKey === key) ? contractAction(key as ContractKey) : null;
 }
 

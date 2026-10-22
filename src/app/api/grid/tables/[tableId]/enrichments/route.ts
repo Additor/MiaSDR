@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createEnrichmentColumns, createWaterfallColumns, updateRunnableColumn } from "@/contexts/grid/enrichment/application/enrichment-columns";
+import { createEnrichmentColumns, createWaterfallColumns, fillAddedOutput, updateRunnableColumn } from "@/contexts/grid/enrichment/application/enrichment-columns";
 import { gridColumnDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/app/_lib/api";
 
@@ -51,6 +51,9 @@ export const PATCH = async (request: Request, { params }: RouteContext<"/api/gri
   const { tableId } = await params;
   return withActor(async (actor) => {
     const { columnId, ...rest } = patch.parse(await request.json());
-    return { column: await updateRunnableColumn(gridColumnDeps(), actor, tableId, columnId, rest) };
+    const column = await updateRunnableColumn(gridColumnDeps(), actor, tableId, columnId, rest);
+    // A field added as a column takes the answers the column already has, so it fills without a new call.
+    const added = rest.addOutput ? await fillAddedOutput(gridColumnDeps(), actor, tableId, columnId, rest.addOutput) : null;
+    return { column, ...(added ? { filled: added.filled } : {}) };
   });
 };

@@ -34,7 +34,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/grid/tables
     if (body.preview === true) {
       const columnKey = (body.verifiedBy as { columnKey?: unknown } | undefined)?.columnKey;
       if (typeof columnKey !== "string" || !columnKey) throw new ValidationError("verifiedBy.columnKey must be a column key");
-      return previewVerifiedPush(gridDeps(), actor, id, { rowIds: idList(body.rowIds, "rowIds", GRID_LIMITS.campaignRows), columnKey });
+      const emailKey = typeof body.emailKey === "string" && body.emailKey ? body.emailKey : undefined;
+      return previewVerifiedPush(gridDeps(), actor, id, { rowIds: idList(body.rowIds, "rowIds", GRID_LIMITS.campaignRows), columnKey, emailKey });
     }
     const fieldsRaw = body.fields;
     if (typeof fieldsRaw !== "object" || fieldsRaw === null || Array.isArray(fieldsRaw)) throw new ValidationError("fields must be an object");

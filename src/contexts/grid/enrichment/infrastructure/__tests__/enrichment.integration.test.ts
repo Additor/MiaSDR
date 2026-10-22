@@ -600,6 +600,16 @@ describeDb("grid enrichment runs", () => {
     const added = (await sql`select key, name, type, config from grid_columns where table_id = ${table} and type = 'integration_output'`)[0];
     expect(added).toMatchObject({ name: "Score", config: { sourceColumnKey: created[0].key, outputKey: "score" } });
     expect(edited.config.outputs).toEqual({ score: added.key });
+    // The run already paid for the score: the new column fills from the ledger without a call.
+    expect(await m.columns.fillAddedOutput(d.columnDeps, actor, table, created[0].id, "score")).toMatchObject({ filled: 1, columnName: "Score" });
+    expect((await sql`select cells from grid_rows where id = ${rows[0]}`)[0].cells[added.key]).not.toBeNull();
+    expect((await m.run.requestRun(d.runDeps, actor, table, { dryRun: true, onlyEmpty: true })).cells).toBe(0);
+
+    // A field the ledger cannot fill leaves its row open to a run that skips filled cells.
+    await sql`update grid_cell_runs set answer = null where table_id = ${table}`;
+    await m.columns.updateRunnableColumn(d.columnDeps, actor, table, created[0].id, { addOutput: "providerStatus" });
+    expect((await m.columns.fillAddedOutput(d.columnDeps, actor, table, created[0].id, "providerStatus")).filled).toBe(0);
+    expect((await m.run.requestRun(d.runDeps, actor, table, { dryRun: true, onlyEmpty: true })).cells).toBe(1);
     await expect(m.columns.updateRunnableColumn(d.columnDeps, actor, table, created[0].id, { addOutput: "score" })).rejects.toThrow("Score already has its own column.");
     await expect(m.columns.updateRunnableColumn(d.columnDeps, actor, table, created[0].id, { addOutput: "nope" })).rejects.toThrow(/no "nope" field/);
   });

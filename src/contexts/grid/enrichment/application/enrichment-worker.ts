@@ -349,6 +349,9 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
     costCents: result.spentCents,
     ...(result.attempts.some((a) => typeof a.credits === "number") || result.spentCredits > 0 ? { credits: result.spentCredits } : {}),
     ...(unanswered.length > 0 ? { unanswered } : {}),
+    // A verification records the address it checked, so a push can tell a verdict about today's email from one about
+    // an address the row held before.
+    ...(plan.steps[0]?.actionKey === "verify-email" && plan.inputs.email ? { checkedEmail: cellText(ownCell(cells, plan.inputs.email)).trim().toLowerCase() } : {}),
     runAt,
   };
   cells2[column.key] = answer ? sanitizeOutputString(cellText(answer.primary)) : "Not found";

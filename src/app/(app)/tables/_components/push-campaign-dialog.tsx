@@ -104,13 +104,13 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
   useEffect(() => {
     if (!check) return;
     let cancelled = false;
-    void gridRequest<{ verdicts: Partial<Record<PushVerdict, number>> }>(gridUrl.sub(tableId, "campaigns"), "POST", { rowIds, preview: true, verifiedBy: { columnKey: check.key } }).then((res) => {
+    void gridRequest<{ verdicts: Partial<Record<PushVerdict, number>> }>(gridUrl.sub(tableId, "campaigns"), "POST", { rowIds, preview: true, verifiedBy: { columnKey: check.key }, emailKey: mapped.email }).then((res) => {
       if (!cancelled && res.ok && res.data) setCounts({ columnKey: check.key, verdicts: res.data.verdicts });
     });
     return () => {
       cancelled = true;
     };
-  }, [check, rowIds, tableId]);
+  }, [check, rowIds, tableId, mapped.email]);
   const hasAddress = !!mapped.email || !!mapped.linkedin;
   const usedKeys = new Set(Object.values(mapped));
   const customOptions = columns.filter((c) => !usedKeys.has(c.key));
@@ -203,7 +203,7 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
                   {gateOn && (
                     <label className="ml-6 flex items-center gap-2 text-sm">
                       <Checkbox checked={allowCatchAll} onCheckedChange={(v) => setAllowCatchAll(v === true)} />
-                      Also push Catch-all addresses
+                      Also push Catch-all addresses (the domain accepts any address, so delivery is not confirmed)
                     </label>
                   )}
                   {gateOn && !checkMatches && (

@@ -34,10 +34,20 @@ describe("verified push gate", () => {
     expect(applyVerifiedGate(rows, "v", ["valid", "catch_all"]).pass.map((r) => r.id)).toEqual(["a", "c"]);
   });
 
-  it("reads anything that is not a verdict as unverified, and words the skip", () => {
-    expect(verdictOf("Valid")).toBe("unverified");
-    expect(verdictOf(3)).toBe("unverified");
+  it("reads anything that is not a verdict, or a verdict from an unfinished run, as unverified", () => {
+    expect(verdictOf({ id: "a", cells: { v: "Valid" } }, "v")).toBe("unverified");
+    expect(verdictOf({ id: "a", cells: { v: 3 } }, "v")).toBe("unverified");
+    expect(verdictOf({ id: "a", cells: { v: "valid" }, cellMeta: { v: { status: "stale" } } }, "v")).toBe("unverified");
+    expect(verdictOf({ id: "a", cells: { v: "valid" }, cellMeta: { v: { status: "success" } } }, "v")).toBe("valid");
     expect(heldReason("invalid", "Verify email")).toBe("Verified Invalid by Verify email");
     expect(heldReason("unverified", "Verify email")).toBe("Not verified yet by Verify email");
+    expect(heldReason("changed", "Verify email")).toBe("The email changed after Verify email checked it");
+  });
+
+  it("holds a verdict about an address the row no longer has", () => {
+    const row = { id: "a", cells: { v: "valid", mail: " New@X.test " }, cellMeta: { v: { status: "success", checkedEmail: "old@x.test" } } };
+    expect(verdictOf(row, "v", "mail")).toBe("changed");
+    expect(verdictOf({ ...row, cells: { ...row.cells, mail: "OLD@x.test" } }, "v", "mail")).toBe("valid");
+    expect(applyVerifiedGate([row], "v", ["valid"], "mail").held.map((h) => h.verdict)).toEqual(["changed"]);
   });
 });

@@ -92,12 +92,17 @@ export async function requestRun(deps: RunDeps, actor: Actor, tableId: string, r
     throw new ValidationError(`This run covers ${rowIds.length.toLocaleString("en-US")} rows and the row limit is ${maxRows.toLocaleString("en-US")}. Select fewer rows or raise the row limit.`);
   }
 
+  // A runner counts as filled only when every output column it fills has been written by a run too: a field added as a
+  // column later has no run on rows the ledger could not fill, and "only empty cells" must still reach them.
+  const outputsWritten = (column: (typeof targets)[number], meta: Record<string, unknown> | undefined) =>
+    Object.values(((column.config as { outputs?: Record<string, string> }).outputs ?? {}) as Record<string, string>).every((key) => !meta || meta[key] !== undefined);
   // The cells one row adds to the queue: inputs ready, and empty when the run skips filled cells.
-  const cellsOf = (row: { id: string; cells: Record<string, unknown> }): EnqueueTarget[] => {
+  const cellsOf = (row: { id: string; cells: Record<string, unknown>; cellMeta?: Record<string, unknown> }): EnqueueTarget[] => {
     const cells: EnqueueTarget[] = [];
     for (const column of targets) {
       if (!inputsReady(column, row.cells)) continue;
-      if (request.onlyEmpty && hasCellValue(row.cells[column.key])) continue;
+      // A value a person typed (no run state) counts as filled, as before.
+      if (request.onlyEmpty && hasCellValue(row.cells[column.key]) && (column.type === "ai" || row.cellMeta?.[column.key] === undefined || outputsWritten(column, row.cellMeta))) continue;
       const delay = Number((column.config as { delaySeconds?: unknown }).delaySeconds ?? 0);
       cells.push({ rowId: row.id, columnKey: column.key, delaySeconds: Number.isFinite(delay) && delay > 0 ? delay : 0 });
     }

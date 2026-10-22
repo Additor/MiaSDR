@@ -178,6 +178,28 @@ function fenced(job: CellJob) {
 const isoOf = (value: unknown) => new Date(String(value));
 
 export const drizzleGridRunStore: GridRunStore = {
+  async fillOutputFromLedger(organizationId, tableId, { runnerKey, outputKey, columnKey }) {
+    // An answer counts only while its main value is what the row's runner cell shows, so a later run with other inputs
+    // never lends an earlier answer's fields to the new column.
+    const filled = await db.execute(sql`
+      update grid_rows r
+      set cells = r.cells || jsonb_build_object(${columnKey}::text, l.answer -> 'outputs' -> ${outputKey}::text),
+          cell_meta = r.cell_meta || jsonb_build_object(${columnKey}::text, coalesce(r.cell_meta -> ${runnerKey}::text, '{}'::jsonb))
+      from (
+        select distinct on (row_id) row_id, answer
+        from grid_cell_runs
+        where organization_id = ${organizationId} and table_id = ${tableId} and column_key = ${runnerKey} and answer is not null
+        order by row_id, created_at desc, id desc
+      ) l
+      where r.id = l.row_id and r.organization_id = ${organizationId} and r.table_id = ${tableId}
+        and l.answer -> 'outputs' ? ${outputKey}::text
+        and jsonb_typeof(l.answer -> 'outputs' -> ${outputKey}::text) <> 'null'
+        and r.cells ->> ${runnerKey}::text = l.answer ->> 'primary'
+      returning r.id
+    `);
+    return filled.length;
+  },
+
   async tableAutoRun(organizationId, tableId) {
     const [row] = await db.select({ autoRun: gridTables.autoRun }).from(gridTables).where(and(eq(gridTables.organizationId, organizationId), eq(gridTables.id, tableId)));
     return row ? row.autoRun : null;
@@ -194,7 +216,7 @@ export const drizzleGridRunStore: GridRunStore = {
       if (options.rowIds.length === 0) return [];
       where.push(inArray(gridRows.id, options.rowIds));
     }
-    const rows = await db.select({ id: gridRows.id, cells: gridRows.cells }).from(gridRows).where(and(...where)).orderBy(asc(gridRows.position), asc(gridRows.id)).limit(options.limit).offset(options.offset ?? 0);
+    const rows = await db.select({ id: gridRows.id, cells: gridRows.cells, cellMeta: gridRows.cellMeta }).from(gridRows).where(and(...where)).orderBy(asc(gridRows.position), asc(gridRows.id)).limit(options.limit).offset(options.offset ?? 0);
     return rows;
   },
 

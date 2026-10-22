@@ -1,5 +1,5 @@
 import type { CampaignField } from "@/contexts/grid/domain/campaign-rows";
-import { verifyColumns } from "@/contexts/grid/domain/verified-push";
+import { runnerActionKey, verifyColumns } from "@/contexts/grid/domain/verified-push";
 import type { GridColumn } from "./types";
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -40,14 +40,18 @@ export function enrichedEmailColumn(columns: GridColumn[]): string | null {
   if (checked) return checked.emailColumnKey;
   const actionOf = (key: unknown) => {
     const source = columns.find((c) => c.key === key);
-    const steps = source?.config.steps as Array<{ actionKey?: unknown }> | undefined;
-    return source?.type === "waterfall" ? steps?.[0]?.actionKey : source?.config.actionKey;
+    return source ? runnerActionKey(source) : null;
   };
   const found = columns.find((c) => c.type === "integration_output" && c.config.outputKey === "email" && FINDS_EMAIL.has(String(actionOf(c.config.sourceColumnKey))));
-  if (found) return found.key;
-  // A finder's own column shows the email it found, when no output column was added for it.
-  const runner = columns.find((c) => (c.type === "enrichment" || c.type === "waterfall") && FINDS_EMAIL.has(String(actionOf(c.key))));
-  return runner?.key ?? null;
+  return found?.key ?? null;
+}
+
+/**
+ * A finder's own column, which shows the email it found. It is the last choice: a miss writes "Not found" there, so it
+ * only stands in when the table has no other email column.
+ */
+function finderColumn(columns: GridColumn[]): string | null {
+  return columns.find((c) => FINDS_EMAIL.has(String(runnerActionKey(c))))?.key ?? null;
 }
 
 /** One guess per field, in field order, never giving one column to two fields. Email prefers an enriched address. */
@@ -55,7 +59,7 @@ export function guessFields(fields: readonly CampaignField[], columns: GridColum
   const taken = new Set<string>();
   const out: Partial<Record<CampaignField, string | null>> = {};
   for (const f of fields) {
-    const key = (f === "email" ? enrichedEmailColumn(columns) : null) ?? guessField(f, columns, taken);
+    const key = f === "email" ? (enrichedEmailColumn(columns) ?? guessField(f, columns, taken) ?? finderColumn(columns)) : guessField(f, columns, taken);
     out[f] = key;
     if (key) taken.add(key);
   }

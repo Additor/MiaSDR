@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
+import { runnerActionKey } from "@/contexts/grid/domain/verified-push";
 import { OUTCOMES } from "../_lib/data/outcomes";
 import { useProviders } from "../_lib/data/providers";
 import { gridRequest, gridUrl } from "../_lib/data/client";
@@ -32,10 +33,8 @@ interface Props {
  * here; another action's fields show in its dialog.
  */
 function missingFields(source: GridColumn | undefined, columns: readonly GridColumn[]): Array<{ key: string; name: string }> {
-  if (!source || (source.type !== "enrichment" && source.type !== "waterfall")) return [];
-  const steps = source.config.steps as Array<{ actionKey?: string }> | undefined;
-  const actionKey = source.type === "waterfall" ? steps?.[0]?.actionKey : (source.config.actionKey as string | undefined);
-  if (!OUTCOMES.some((o) => o.actionKey === actionKey)) return [];
+  const actionKey = source ? runnerActionKey(source) : null;
+  if (!source || !OUTCOMES.some((o) => o.actionKey === actionKey)) return [];
   const action = contractAction(actionKey as ContractKey);
   const shown = (source.config.outputs ?? {}) as Record<string, string>;
   return action.outputs.filter((o) => o.key !== action.primaryOutput && !(shown[o.key] && columns.some((c) => c.key === shown[o.key])));
@@ -209,7 +208,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                 <h3 id="cd-fields" className="text-sm font-semibold">
                   More fields
                 </h3>
-                <p className="text-muted-foreground">{source.name} also returns these. Add one as a column, then run the column again: answers from its reuse window cost nothing.</p>
+                <p className="text-muted-foreground">{source.name} also returns these. A field added as a column fills from the answers the column already has, without a new call.</p>
                 <ul className="divide-y rounded-lg border">
                   {fields.map((f) => (
                     <li key={f.key} className="flex items-center justify-between gap-3 px-3 py-1.5">

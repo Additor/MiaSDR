@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { gridRequest, gridUrl } from "../_lib/data/client";
+import { columnForInput } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
 import { CreateFooter, createColumn, RunTiming } from "./enrichment-dialog";
 import { Choice, ErrorText, Field } from "./form-bits";
@@ -18,6 +19,8 @@ interface Props {
   /** Set to edit the prompt and timing of an existing AI column. */
   column: GridColumn | null;
   afterColumnId?: string;
+  /** The first row of the current view, the one "Test on row 1" asks about. */
+  firstRowId?: string;
   onClose: () => void;
   /** After a save; `addedKey` is the new column's key, so the grid can bring it into view. */
   onSaved: (addedKey?: string) => Promise<void>;
@@ -58,16 +61,12 @@ const toKey = (label: string) => {
   return /^[a-z]/.test(key) ? key.slice(0, 40) : `f${key}`.slice(0, 40);
 };
 
-/** The table's column for a person's name, company, title or domain, by its visible name; null when there is none. */
-function columnFor(columns: readonly GridColumn[], names: string[]): string | null {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return columns.find((c) => names.includes(norm(c.name)))?.key ?? null;
-}
+type Known = Parameters<typeof columnForInput>[0];
 
 interface Template {
   label: string;
   outputs: Output[];
-  prompt: (t: (names: string[], fallback: string) => string) => string;
+  prompt: (t: (input: Known, fallback: string) => string) => string;
 }
 
 /** Starting prompts for the work an SDR asks of a row. Each reads the table's own columns where it has them. */
@@ -76,7 +75,7 @@ const TEMPLATES: Template[] = [
     label: "Opening line",
     outputs: [{ key: "opener", type: "text", description: "One sentence, under 25 words" }],
     prompt: (t) =>
-      `Write one opening line for a cold email to ${t(["name", "fullname", "contactname"], "this person")}, ${t(["title", "jobtitle", "position"], "their role")} at ${t(["company", "companyname", "organization"], "their company")}. Name something specific to their role or company. No greeting and no sign-off.`,
+      `Write one opening line for a cold email to ${t("fullName", "this person")}, ${t("title", "their role")} at ${t("companyName", "their company")}. Name something specific to their role or company. No greeting and no sign-off.`,
   },
   {
     label: "Fit score",
@@ -84,12 +83,12 @@ const TEMPLATES: Template[] = [
       { key: "fitScore", type: "number", description: "1 to 10" },
       { key: "reason", type: "text", description: "One sentence" },
     ],
-    prompt: (t) => `From 1 to 10, how well does ${t(["company", "companyname", "organization"], "this company")} (${t(["domain", "website", "companydomain"], "no website given")}) fit a team that sells [what you sell, to whom]? Give the score and one sentence of reason.`,
+    prompt: (t) => `From 1 to 10, how well does ${t("companyName", "this company")} (${t("companyDomain", "no website given")}) fit a team that sells [what you sell, to whom]? Give the score and one sentence of reason.`,
   },
   {
     label: "Company summary",
     outputs: [{ key: "summary", type: "text", description: "One sentence" }],
-    prompt: (t) => `In one sentence, say what ${t(["company", "companyname", "organization"], "the company")} (${t(["domain", "website", "companydomain"], "no website given")}) does and who it sells to. Say "Unknown" if the data does not tell you.`,
+    prompt: (t) => `In one sentence, say what ${t("companyName", "the company")} (${t("companyDomain", "no website given")}) does and who it sells to. Say "Unknown" if the data does not tell you.`,
   },
   {
     label: "Clean job title",
@@ -97,7 +96,7 @@ const TEMPLATES: Template[] = [
       { key: "title", type: "text", description: "The title in plain words" },
       { key: "seniority", type: "text", description: "IC, manager, director or executive" },
     ],
-    prompt: (t) => `Rewrite the job title ${t(["title", "jobtitle", "position"], "(no title given)")} in plain words, and give its seniority: IC, manager, director or executive.`,
+    prompt: (t) => `Rewrite the job title ${t("title", "(no title given)")} in plain words, and give its seniority: IC, manager, director or executive.`,
   },
 ];
 
@@ -110,7 +109,7 @@ interface Preview {
 const previewText = (v: unknown) => (v === null || v === undefined || v === "" ? "Empty" : typeof v === "string" ? v : JSON.stringify(v));
 
 /** Creates or edits an AI column. The prompt reads other columns with {{key}} and each output field becomes a column. */
-export function AiDialog({ tableId, columns, column, afterColumnId, onClose, onSaved }: Props) {
+export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, onClose, onSaved }: Props) {
   const [name, setName] = useState(column?.name ?? "");
   const [prompt, setPrompt] = useState(typeof column?.config.prompt === "string" ? column.config.prompt : "");
   const [outputs, setOutputs] = useState<Output[]>(() => savedOutputs(column) ?? [{ key: "answer", type: "text", description: "" }]);
@@ -167,7 +166,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, onClose, onS
 
   async function test() {
     setTesting(true);
-    const res = await gridRequest<Preview>(`${gridUrl.sub(tableId, "ai")}/preview`, "POST", { prompt, outputs: fieldsBody });
+    const res = await gridRequest<Preview>(`${gridUrl.sub(tableId, "ai")}/preview`, "POST", { prompt, outputs: fieldsBody, ...(firstRowId ? { rowId: firstRowId } : {}) });
     setTesting(false);
     setPreview({ draft, result: res.ok ? res.data : null, error: res.ok ? null : res.error });
   }
@@ -189,8 +188,8 @@ export function AiDialog({ tableId, columns, column, afterColumnId, onClose, onS
   }
 
   function applyTemplate(t: Template) {
-    const fill = (names: string[], fallback: string) => {
-      const key = columnFor(columns, names);
+    const fill = (input: Known, fallback: string) => {
+      const key = columnForInput(input, columns);
       return key ? `{{${key}}}` : fallback;
     };
     setPrompt(t.prompt(fill));

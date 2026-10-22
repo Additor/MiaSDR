@@ -155,7 +155,12 @@ const INPUT_ALIASES: Record<string, string[]> = {
   companyName: ["company", "organization", "organisation", "account", "employer"],
   email: ["email", "workemail", "emailaddress", "mail"],
   linkedinUrl: ["linkedin", "linkedinurl", "linkedinprofile", "profileurl"],
+  title: ["title", "jobtitle", "position", "role"],
 };
+
+/** The table's column for a well-known input (a person's name, company, domain, title), as the enrichment dialog guesses it. */
+export const columnForInput = (key: "fullName" | "companyName" | "companyDomain" | "title", columns: ReadonlyArray<{ key: string; name: string; type: string }>) =>
+  guessColumn({ key, name: key, type: key === "companyDomain" ? "domain" : "text" }, columns);
 
 /** Best guess of the column that feeds an action input: its own key or name, then a common alias, then its type. */
 export function guessColumn(input: { key: string; type: string; name: string }, columns: ReadonlyArray<{ key: string; name: string; type: string }>): string | null {

@@ -389,6 +389,19 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
   return result.updated.find((c) => c.id === columnId)!;
 }
 
+/**
+ * After `addOutput`: fills the new column from answers the column already paid for. Rows with no stored answer stay
+ * empty until the column runs again. Returns the column's name and the rows filled.
+ */
+export async function fillAddedOutput(deps: ColumnDeps, actor: Actor, tableId: string, runnerId: string, outputKey: string): Promise<{ filled: number; columnName: string | null }> {
+  const columns = await deps.store.listColumns(actor.organizationId, tableId);
+  const runner = columns.find((c) => c.id === runnerId);
+  const columnKey = runner ? ((runner.config.outputs ?? {}) as Record<string, string>)[outputKey] : undefined;
+  if (!runner || !columnKey) return { filled: 0, columnName: null };
+  const filled = await deps.store.fillOutputFromLedger(actor.organizationId, tableId, { runnerKey: runner.key, outputKey, columnKey });
+  return { filled, columnName: columns.find((c) => c.key === columnKey)?.name ?? null };
+}
+
 /** What to tell a person whose AI column settings failed the schema: the field in plain words, not the schema path. */
 export function aiConfigProblem(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey> }>): string {
   const reasons = new Set<string>();

@@ -30,7 +30,7 @@ function gateColumn(columns: Parameters<typeof verifyColumns>[0], verifiedBy: No
 }
 
 /** How many of the chosen rows a verification column marked with each verdict, so the push dialog can show what a gate keeps out. */
-export async function previewVerifiedPush(deps: Deps, actor: Actor, tableId: string, input: { rowIds: string[]; columnKey: string }): Promise<{ rows: number; verdicts: Partial<Record<PushVerdict, number>> }> {
+export async function previewVerifiedPush(deps: Deps, actor: Actor, tableId: string, input: { rowIds: string[]; columnKey: string; emailKey?: string }): Promise<{ rows: number; verdicts: Partial<Record<PushVerdict, number>> }> {
   const org = actor.organizationId;
   const table = await deps.structure.getTable(org, tableId);
   if (!table) throw new NotFoundError("Table not found");
@@ -41,7 +41,7 @@ export async function previewVerifiedPush(deps: Deps, actor: Actor, tableId: str
   const rows = await deps.rows.listByIds(org, tableId, rowIds);
   const verdicts: Partial<Record<PushVerdict, number>> = {};
   for (const row of rows) {
-    const verdict = verdictOf(row.cells[input.columnKey]);
+    const verdict = verdictOf(row, input.columnKey, input.emailKey);
     verdicts[verdict] = (verdicts[verdict] ?? 0) + 1;
   }
   return { rows: rows.length, verdicts };
@@ -85,7 +85,7 @@ export async function pushToCampaign(deps: Deps, actor: Actor, tableId: string, 
   const held: Array<{ rowId: string; reason: string }> = [];
   if (input.verifiedBy) {
     const column = gateColumn(columns, input.verifiedBy, fields.email);
-    const gate = applyVerifiedGate(rows, column.key, input.verifiedBy.allow);
+    const gate = applyVerifiedGate(rows, column.key, input.verifiedBy.allow, fields.email);
     pushRows = gate.pass;
     for (const h of gate.held) held.push({ rowId: h.row.id, reason: heldReason(h.verdict, column.name) });
     if (pushRows.length === 0) throw new ValidationError("None of the selected rows passed the verification check.", held.slice(0, 50).map((h) => ({ message: `${h.rowId}: ${h.reason}` })));

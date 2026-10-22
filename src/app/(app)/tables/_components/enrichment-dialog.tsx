@@ -106,7 +106,10 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
     if (form.stopAtCatchAll !== initial.stopAtCatchAll) patch.settledStatuses = form.stopAtCatchAll ? [...SETTLED_STATUSES, "catch_all"] : null;
     if (isWaterfall) {
       const cap = (text: string) => (text.trim() === "" ? null : Math.max(0, Number(text) || 0));
-      if (form.maxCost !== initial.maxCost) patch.maxCostCents = form.maxCost.trim() === "" ? null : (dollarsToCents(form.maxCost) ?? 0);
+      if (form.maxCost !== initial.maxCost) {
+        if (form.maxCost.trim() !== "" && dollarsToCents(form.maxCost) === null) return setError("Enter the spend cap as zero or more dollars, or leave it empty.");
+        patch.maxCostCents = form.maxCost.trim() === "" ? null : dollarsToCents(form.maxCost);
+      }
       if (form.maxCredits !== initial.maxCredits) patch.maxCredits = cap(form.maxCredits);
       if (form.waitOnLimit !== initial.waitOnLimit) patch.onRateLimit = form.waitOnLimit ? "wait" : "next";
     }
@@ -445,12 +448,14 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
   const outputSpecs = chosen.length === 0 ? contract.outputs : chosen[0].outputs.filter((o) => chosen.every((a) => a.outputs.some((x) => x.key === o.key)));
   const missingInput = inputSpecs.find((i) => i.required && !inputs[i.key]);
   const uncovered = !inputsCovered(contract, (key) => !!inputs[key]) ? contract : undefined;
-  const blocker = blockerOf({
-    stepCount: picked.length,
-    noProvider: offering.length === 0 ? `Connect a provider that can ${outcome.label.toLowerCase()}.` : "Tick a provider.",
-    missingInput,
-    uncovered,
-  });
+  const capInvalid = waterfall && maxCost.trim() !== "" && dollarsToCents(maxCost) === null;
+  const blocker =
+    blockerOf({
+      stepCount: picked.length,
+      noProvider: offering.length === 0 ? `Connect a provider that can ${outcome.label.toLowerCase()}.` : "Tick a provider.",
+      missingInput,
+      uncovered,
+    }) ?? (capInvalid ? "Enter the spend cap as zero or more dollars, or leave it empty." : null);
 
   const toggle = (key: string, on: boolean) => setPicked((list) => (on ? [...list, key] : list.filter((k) => k !== key)));
   const move = (i: number, d: -1 | 1) =>
@@ -482,7 +487,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
           steps,
           ...base,
           ...(stopAtCatchAll && actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
-          ...(maxCost.trim() !== "" ? { maxCostCents: dollarsToCents(maxCost) ?? 0 } : {}),
+          ...(maxCost.trim() !== "" && dollarsToCents(maxCost) !== null ? { maxCostCents: dollarsToCents(maxCost) } : {}),
           ...(maxCredits.trim() !== "" ? { maxCredits: Math.max(0, Number(maxCredits) || 0) } : {}),
           ...(waitOnLimit ? { onRateLimit: "wait" } : {}),
         }
