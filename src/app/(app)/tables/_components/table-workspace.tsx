@@ -444,6 +444,13 @@ export function TableWorkspace({ tableId }: Props) {
           column={detailsColumn}
           rowNumber={rowNumbers.get(detailsRow.id) ?? 0}
           onRun={runCellSource(detailsColumn, columns) !== null ? () => void runCell(detailsColumn, detailsRow.id) : undefined}
+          columns={columns}
+          onAddOutput={async (runner, outputKey, outputName) => {
+            const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "PATCH", { columnId: runner.id, addOutput: outputKey });
+            if (!res.ok) return void toast.error(res.error ?? "Could not add the column.");
+            toast.success(`Added ${outputName}. Run ${runner.name} again to fill it.`);
+            await grid.reload();
+          }}
           onClose={closeDialog}
         />}
       {dialog?.kind === "deleteRows" && (

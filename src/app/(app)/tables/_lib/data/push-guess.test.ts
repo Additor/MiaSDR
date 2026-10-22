@@ -33,6 +33,7 @@ describe("guessFields", () => {
     const find = { ...col("find", "Find work email", "enrichment"), config: { actionKey: "find-work-email" } };
     const work = { ...col("work", "Work email", "integration_output"), config: { sourceColumnKey: "find", outputKey: "email" } };
     expect(guessFields(["email"], [imported, find, work]).email).toBe("work");
+    expect(guessFields(["email"], [imported, find]).email).toBe("find");
     const verify = { ...col("check", "Verify email", "enrichment"), config: { actionKey: "verify-email", inputs: { email: "email" } } };
     expect(guessFields(["email"], [imported, find, work, verify]).email).toBe("email");
   });

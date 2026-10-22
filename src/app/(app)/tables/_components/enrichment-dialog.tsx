@@ -331,12 +331,34 @@ function SpendAndTiming(p: {
 }
 
 /** Why the add button is off, in one sentence, or null when the column can be added. */
-function blockerOf(state: { stepCount: number; noProvider: string; missingInput?: { name: string }; uncovered?: ActionSpec; outputs: number }): string | null {
+function blockerOf(state: { stepCount: number; noProvider: string; missingInput?: { name: string }; uncovered?: ActionSpec }): string | null {
   if (state.stepCount === 0) return state.noProvider;
   if (state.missingInput) return `Choose the column for ${state.missingInput.name}.`;
   if (state.uncovered) return `Map ${acceptsText(state.uncovered)}.`;
-  if (state.outputs === 0) return "Tick at least one column to add.";
   return null;
+}
+
+/**
+ * The fields an action returns besides its main answer, which the new column shows itself. Each ticked one becomes a
+ * column of its own; the drawer of any cell can add the rest later.
+ */
+function ExtraOutputs({ outputs, primary, chosen, onChange }: { outputs: ActionSpec["outputs"]; primary: string; chosen: string[]; onChange: (next: string[]) => void }) {
+  const extra = outputs.filter((o) => o.key !== primary);
+  if (extra.length === 0) return null;
+  return (
+    <fieldset className="stack-field">
+      <legend className="mb-1 text-sm font-medium">Also add as columns</legend>
+      <p className="-mt-1 text-xs text-muted-foreground">The new column shows {outputs.find((o) => o.key === primary)?.name.toLowerCase() ?? "the main answer"}. Tick a field to give it a column too.</p>
+      <div className="grid gap-1 sm:grid-cols-2">
+        {extra.map((o) => (
+          <label key={o.key} className="flex items-center gap-2 text-sm">
+            <Checkbox checked={chosen.includes(o.key)} onCheckedChange={(v) => onChange(v === true ? [...chosen, o.key] : chosen.filter((k) => k !== o.key))} />
+            {o.name}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
 }
 
 /**
@@ -399,7 +421,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
 
   const [picked, setPicked] = useState<string[]>(() => (offering[0] ? [offering[0].key] : []));
   const [inputs, setInputs] = useState<Record<string, string>>(() => Object.fromEntries(contract.inputs.map((i) => [i.key, guessColumn(i, columns) ?? ""])));
-  const [outputs, setOutputs] = useState<string[]>(() => [contract.primaryOutput]);
+  const [outputs, setOutputs] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [stopAtCatchAll, setStopAtCatchAll] = useState(false);
   const [maxCost, setMaxCost] = useState("");
@@ -424,7 +446,6 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
     noProvider: offering.length === 0 ? `Connect a provider that can ${outcome.label.toLowerCase()}.` : "Tick a provider.",
     missingInput,
     uncovered,
-    outputs: outputs.filter((k) => outputSpecs.some((o) => o.key === k)).length,
   });
 
   const toggle = (key: string, on: boolean) => setPicked((list) => (on ? [...list, key] : list.filter((k) => k !== key)));
@@ -453,7 +474,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
     const body = waterfall
       ? {
           kind: "waterfall",
-          name: name.trim() || outcome.label,
+          name: name.trim() || outcome.column,
           steps,
           ...base,
           ...(stopAtCatchAll && actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
@@ -461,7 +482,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
           ...(maxCredits.trim() !== "" ? { maxCredits: Math.max(0, Number(maxCredits) || 0) } : {}),
           ...(waitOnLimit ? { onRateLimit: "wait" } : {}),
         }
-      : { kind: "enrichment", providerKey: picked[0], actionKey, ...base };
+      : { kind: "enrichment", name: name.trim() || outcome.column, providerKey: picked[0], actionKey, ...base };
     const res = await createColumn(tableId, body, run);
     if (!res.ok) {
       setBusy(false);
@@ -536,27 +557,15 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
         </fieldset>
 
         <InputFields specs={inputSpecs} inputs={inputs} setInputs={setInputs} columns={columns} uncovered={uncovered} missingInput={missingInput} />
-        <fieldset className="stack-field">
-          <legend className="mb-1 text-sm font-medium">Columns to add</legend>
-          {outputSpecs.map((o) => (
-            <label key={o.key} className="flex items-center gap-2 text-sm">
-              <Checkbox checked={outputs.includes(o.key)} onCheckedChange={(v) => setOutputs((s) => (v === true ? [...s, o.key] : s.filter((k) => k !== o.key)))} />
-              {o.name}
-            </label>
-          ))}
-        </fieldset>
-        {waterfall && (
-          <div className="grid gap-3">
-            <Field label="Column name" htmlFor="wf-name">
-              <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={outcome.label} />
-            </Field>
-            {actionKey === "verify-email" && (
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
-                Stop at a catch-all verdict instead of asking the next verifier
-              </label>
-            )}
-          </div>
+        <Field label="Column name" htmlFor="wf-name">
+          <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={outcome.column} />
+        </Field>
+        <ExtraOutputs outputs={outputSpecs} primary={contract.primaryOutput} chosen={outputs} onChange={setOutputs} />
+        {waterfall && actionKey === "verify-email" && (
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
+            Stop at a catch-all verdict instead of asking the next verifier
+          </label>
         )}
         <SpendAndTiming
           waterfall={waterfall}
@@ -587,10 +596,10 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
   const action = picked?.action;
   // Inputs and outputs follow the action; a pick the person has not touched takes the guess and the primary output.
   const mapped: Record<string, string> = Object.fromEntries((action?.inputs ?? []).map((i) => [i.key, inputs[i.key] ?? guessColumn(i, columns) ?? ""]));
-  const chosenOutputs = outputs ?? (action ? [action.primaryOutput] : []);
+  const chosenOutputs = outputs ?? [];
   const missingInput = action?.inputs.find((i) => i.required && !mapped[i.key]);
   const uncovered = action && !inputsCovered(action, (key) => !!mapped[key]) ? action : undefined;
-  const blocker = blockerOf({ stepCount: picked ? 1 : 0, noProvider: "Connect a provider with another action.", missingInput, uncovered, outputs: chosenOutputs.length });
+  const blocker = blockerOf({ stepCount: picked ? 1 : 0, noProvider: "Connect a provider with another action.", missingInput, uncovered });
 
   async function save(run: boolean) {
     if (!picked) return;
@@ -641,15 +650,7 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
         {action && (
           <>
             <InputFields specs={action.inputs} inputs={mapped} setInputs={setInputs} columns={columns} uncovered={uncovered} missingInput={missingInput} />
-            <fieldset className="stack-field">
-              <legend className="mb-1 text-sm font-medium">Columns to add</legend>
-              {action.outputs.map((o) => (
-                <label key={o.key} className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={chosenOutputs.includes(o.key)} onCheckedChange={(v) => setOutputs(v === true ? [...chosenOutputs, o.key] : chosenOutputs.filter((k) => k !== o.key))} />
-                  {o.name}
-                </label>
-              ))}
-            </fieldset>
+            <ExtraOutputs outputs={action.outputs} primary={action.primaryOutput} chosen={chosenOutputs} onChange={setOutputs} />
             <SpendAndTiming
               waterfall={false}
               noPrice={false}

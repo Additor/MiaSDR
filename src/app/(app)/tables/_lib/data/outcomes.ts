@@ -10,13 +10,15 @@ export interface Outcome {
   label: string;
   /** What the column fills, in a few words. */
   fills: string;
+  /** The new column's name: it shows the action's main answer, so it is named for that answer. */
+  column: string;
 }
 
 export const OUTCOMES: readonly Outcome[] = [
-  { actionKey: "find-work-email", label: "Find work emails", fills: "From a name and a company" },
-  { actionKey: "verify-email", label: "Verify emails", fills: "Valid, invalid or catch-all" },
-  { actionKey: "enrich-person", label: "Enrich people", fills: "Title, company and LinkedIn" },
-  { actionKey: "enrich-company", label: "Enrich companies", fills: "Industry, size and location" },
+  { actionKey: "find-work-email", label: "Find work emails", fills: "From a name and a company", column: "Work email" },
+  { actionKey: "verify-email", label: "Verify emails", fills: "Valid, invalid or catch-all", column: "Email status" },
+  { actionKey: "enrich-person", label: "Enrich people", fills: "Title, company and LinkedIn", column: "Person's work email" },
+  { actionKey: "enrich-company", label: "Enrich companies", fills: "Industry, size and location", column: "Company name" },
 ];
 
 export const outcomeOf = (actionKey: string | undefined): Outcome | undefined => OUTCOMES.find((o) => o.actionKey === actionKey);

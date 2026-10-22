@@ -44,7 +44,10 @@ export function enrichedEmailColumn(columns: GridColumn[]): string | null {
     return source?.type === "waterfall" ? steps?.[0]?.actionKey : source?.config.actionKey;
   };
   const found = columns.find((c) => c.type === "integration_output" && c.config.outputKey === "email" && FINDS_EMAIL.has(String(actionOf(c.config.sourceColumnKey))));
-  return found?.key ?? null;
+  if (found) return found.key;
+  // A finder's own column shows the email it found, when no output column was added for it.
+  const runner = columns.find((c) => (c.type === "enrichment" || c.type === "waterfall") && FINDS_EMAIL.has(String(actionOf(c.key))));
+  return runner?.key ?? null;
 }
 
 /** One guess per field, in field order, never giving one column to two fields. Email prefers an enriched address. */

@@ -6,6 +6,8 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
+import { OUTCOMES } from "../_lib/data/outcomes";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { cellResultText, displayValue, editorText, RUN_OUTCOME_LABELS, runCost, typeLabel } from "../_lib/view/format";
 import type { GridColumn, GridRow } from "../_lib/data/types";
@@ -17,7 +19,25 @@ interface Props {
   rowNumber: number;
   /** Runs the cell again, for a cell a run fills. */
   onRun?: () => void;
+  /** Every column of the table, to find the enrichment behind the cell and the fields it already shows. */
+  columns?: GridColumn[];
+  /** Adds one more field of an enrichment as its own column. */
+  onAddOutput?: (runner: GridColumn, outputKey: string, outputName: string) => Promise<void>;
   onClose: () => void;
+}
+
+/**
+ * The fields an enrichment behind this cell returns that have no column yet. Only the shared outcomes list their fields
+ * here; another action's fields show in its dialog.
+ */
+function missingFields(source: GridColumn | undefined, columns: readonly GridColumn[]): Array<{ key: string; name: string }> {
+  if (!source || (source.type !== "enrichment" && source.type !== "waterfall")) return [];
+  const steps = source.config.steps as Array<{ actionKey?: string }> | undefined;
+  const actionKey = source.type === "waterfall" ? steps?.[0]?.actionKey : (source.config.actionKey as string | undefined);
+  if (!OUTCOMES.some((o) => o.actionKey === actionKey)) return [];
+  const action = contractAction(actionKey as ContractKey);
+  const shown = (source.config.outputs ?? {}) as Record<string, string>;
+  return action.outputs.filter((o) => o.key !== action.primaryOutput && !(shown[o.key] && columns.some((c) => c.key === shown[o.key])));
 }
 
 interface Run {
@@ -53,7 +73,8 @@ function runError(run: Run): string | null {
 }
 
 /** Everything known about one cell: its value, the state of its last run and the history of attempts. */
-export function CellDrawer({ tableId, row, column, rowNumber, onRun, onClose }: Props) {
+export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [], onAddOutput, onClose }: Props) {
+  const [adding, setAdding] = useState<string | null>(null);
   const [details, setDetails] = useState<Details | null>(null);
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [state, setState] = useState<"loading" | "none" | "failed" | "ready">("loading");
@@ -174,6 +195,40 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, onClose }: 
               )}
             </section>
           )}
+
+          {(() => {
+            const source = details ? columns.find((c) => c.key === details.sourceColumnKey) : undefined;
+            const fields = onAddOutput ? missingFields(source, columns) : [];
+            if (!source || fields.length === 0) return null;
+            return (
+              <section aria-labelledby="cd-fields" className="stack-group">
+                <h3 id="cd-fields" className="text-sm font-semibold">
+                  More fields
+                </h3>
+                <p className="text-muted-foreground">{source.name} also returns these. Add one as a column, then run the column again: answers from its reuse window cost nothing.</p>
+                <ul className="divide-y rounded-lg border">
+                  {fields.map((f) => (
+                    <li key={f.key} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                      <span>{f.name}</span>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        className="max-sm:h-11"
+                        disabled={adding !== null}
+                        onClick={async () => {
+                          setAdding(f.key);
+                          await onAddOutput!(source, f.key, f.name);
+                          setAdding(null);
+                        }}
+                      >
+                        {adding === f.key ? "Adding..." : "Add as column"}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })()}
 
           <section aria-labelledby="cd-runs" className="stack-group">
             <h3 id="cd-runs" className="text-sm font-semibold">

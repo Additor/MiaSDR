@@ -586,6 +586,24 @@ describeDb("grid enrichment runs", () => {
     expect((await m.columns.updateRunnableColumn(d.columnDeps, actor, table, single.id, { reuseDays: 7 })).config).toMatchObject({ reuseDays: 7 });
   });
 
+  it("makes one column for an enrichment with no extra outputs, and adds a field as its own column later", async () => {
+    const { actor, table, rows } = await fixture([{ about: "ada@acme.com" }]);
+    const d = deps(fake());
+    await addFake(d, actor, "fake-a");
+    const created = await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { name: "Email status", providerKey: "fake-a", actionKey: "verify-email", inputs: { email: "about" }, selectedOutputs: [] });
+    expect(created.map((c) => [c.name, c.type])).toEqual([["Email status", "enrichment"]]);
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    expect((await sql`select cells from grid_rows where id = ${rows[0]}`)[0].cells[created[0].key]).toBe("valid");
+
+    const edited = await m.columns.updateRunnableColumn(d.columnDeps, actor, table, created[0].id, { addOutput: "score" });
+    const added = (await sql`select key, name, type, config from grid_columns where table_id = ${table} and type = 'integration_output'`)[0];
+    expect(added).toMatchObject({ name: "Score", config: { sourceColumnKey: created[0].key, outputKey: "score" } });
+    expect(edited.config.outputs).toEqual({ score: added.key });
+    await expect(m.columns.updateRunnableColumn(d.columnDeps, actor, table, created[0].id, { addOutput: "score" })).rejects.toThrow("Score already has its own column.");
+    await expect(m.columns.updateRunnableColumn(d.columnDeps, actor, table, created[0].id, { addOutput: "nope" })).rejects.toThrow(/no "nope" field/);
+  });
+
   it("keeps a column on a switched-off provider editable, holds its cells without attempts, and counts what turning it off touches", async () => {
     const { actor, table, rows } = await fixture();
     const f = fake();

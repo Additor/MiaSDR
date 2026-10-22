@@ -8,7 +8,7 @@ const placement = { afterColumnId: z.string().uuid().optional(), autoRun: z.bool
 };
 
 const body = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("enrichment"), providerKey: z.string(), actionKey: z.string(), inputs: z.record(z.string(), z.string()), selectedOutputs: z.array(z.string()), ...placement }),
+  z.object({ kind: z.literal("enrichment"), name: z.string().max(200).optional(), providerKey: z.string(), actionKey: z.string(), inputs: z.record(z.string(), z.string()), selectedOutputs: z.array(z.string()), ...placement }),
   z.object({
     kind: z.literal("waterfall"),
     name: z.string().optional(),
@@ -44,6 +44,7 @@ const patch = z.strictObject({
   onRateLimit: z.enum(["next", "wait"]).optional(),
   reuseDays: z.number().int().min(0).max(365).optional(),
   settledStatuses: z.array(z.enum(["valid", "invalid", "catch_all", "unknown", "disposable"])).min(1).max(5).nullable().optional(),
+  addOutput: z.string().min(1).max(60).optional(),
 });
 
 export const PATCH = async (request: Request, { params }: RouteContext<"/api/grid/tables/[tableId]/enrichments">) => {

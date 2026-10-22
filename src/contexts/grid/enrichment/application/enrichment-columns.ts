@@ -75,6 +75,8 @@ async function writeChange(deps: ColumnDeps, organizationId: string, tableId: st
 }
 
 export interface CreateEnrichmentInput extends Placement {
+  /** The column's name. Defaults to the action's name. */
+  name?: string;
   providerKey: string;
   actionKey: string;
   inputs: Record<string, string>;
@@ -97,15 +99,16 @@ function requireMapped(action: ActionSpec, mapped: Record<string, string>, step?
 
 export async function createEnrichmentColumns(deps: ColumnDeps, actor: Actor, tableId: string, input: CreateEnrichmentInput): Promise<ColumnRow[]> {
   const action = await loadAction(deps, actor.organizationId, input.providerKey, input.actionKey);
+  // The enrichment column shows the action's main answer itself, so extra output columns are optional.
   const selected = action.outputs.filter((o) => input.selectedOutputs.includes(o.key));
-  if (selected.length === 0 || selected.length !== new Set(input.selectedOutputs).size) throw new ValidationError("Select at least one valid output.");
+  if (selected.length !== new Set(input.selectedOutputs).size) throw new ValidationError("Select only outputs this action returns.");
   requireMapped(action, input.inputs);
   const unknown = Object.keys(input.inputs).find((k) => !action.inputs.some((i) => i.key === k));
   if (unknown) throw new ValidationError(`"${unknown}" is not an input of this action.`);
 
   const outputs = selected.map((o) => ({ label: o.name, outputKey: o.key, valueType: o.type, type: "integration_output" as const }));
   const result = await writeChange(deps, actor.organizationId, tableId, (columns) => {
-    const plan = planChain(columns, { label: action.name }, outputs, input.afterColumnId);
+    const plan = planChain(columns, { label: input.name?.trim() || action.name }, outputs, input.afterColumnId);
     checkInputColumns(columns, input.inputs);
     const config = enrichmentConfigSchema.parse({
       providerKey: input.providerKey,
@@ -149,7 +152,7 @@ export async function createWaterfallColumns(deps: ColumnDeps, actor: Actor, tab
   // Every step must offer each output the waterfall exposes, and each input it needs must be mapped.
   const first = actions[0];
   const selected = first.outputs.filter((o) => input.selectedOutputs.includes(o.key));
-  if (selected.length === 0 || selected.length !== new Set(input.selectedOutputs).size) throw new ValidationError("Select at least one valid output.");
+  if (selected.length !== new Set(input.selectedOutputs).size) throw new ValidationError("Select only outputs this action returns.");
   for (const [i, action] of actions.entries()) {
     for (const o of selected) if (!action.outputs.some((x) => x.key === o.key)) throw new ValidationError(`Step ${i + 1} (${action.name}) has no "${o.key}" output.`);
     requireMapped(action, input.inputs, i);
@@ -271,6 +274,8 @@ interface UpdateRunnableInput {
   /** Enrichment and waterfall columns: days to reuse an answer, and the verdicts that end a verification (null: the default). */
   reuseDays?: number;
   settledStatuses?: VerificationStatus[] | null;
+  /** Enrichment and waterfall columns: an output the action returns, added as its own column after the column's others. */
+  addOutput?: string;
 }
 
 /** Re-saves the settings of an existing runnable column, in one locked write with any output columns it adds or retypes. */
@@ -281,7 +286,7 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
   for (const step of input.steps ?? []) stepActions.push(await loadAction(deps, org, step.providerKey, step.actionKey, { allowOff: true }));
   // An inputs edit is checked against the actions the column runs now (or the new steps), as create does.
   let inputActions: ActionSpec[] = stepActions;
-  if (input.inputs !== undefined && input.steps === undefined) {
+  if ((input.inputs !== undefined || input.addOutput !== undefined) && input.steps === undefined) {
     const current = (await deps.store.listColumns(org, tableId)).find((c) => c.id === columnId);
     if (current?.type === "enrichment") {
       const { providerKey, actionKey } = current.config as { providerKey?: string; actionKey?: string };
@@ -351,6 +356,22 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
       dependsOn = [...new Set(Object.values((config.inputs ?? {}) as Record<string, string>))];
       const parsed = (column.type === "enrichment" ? enrichmentConfigSchema : waterfallConfigSchema).safeParse(config);
       if (!parsed.success) throw new ValidationError("The column settings are not valid. Check each field and try again.");
+    }
+    if (input.addOutput !== undefined) {
+      if (column.type === "ai") throw new ValidationError("AI columns add fields from their own dialog.");
+      // A waterfall fills the outputs every step returns; the first step's list is the one the column was made from.
+      const output = inputActions[0]?.outputs.find((o) => o.key === input.addOutput);
+      if (!output || inputActions.some((a) => !a.outputs.some((o) => o.key === input.addOutput))) throw new ValidationError(`This column has no "${input.addOutput}" field to add.`);
+      const existing = { ...((config.outputs ?? {}) as Record<string, string>) };
+      if (existing[output.key] && columns.some((c) => c.key === existing[output.key])) throw new ValidationError(`${output.name} already has its own column.`);
+      const filled = columns.filter((c) => c.config.sourceColumnKey === column.key);
+      const anchor = [column, ...filled].sort((a, b) => b.position - a.position)[0];
+      const placement = chainPlacement(columns, 1, anchor.id);
+      const key = uniqueColumnKey(output.name, new Set(columns.map((c) => c.key)));
+      const name = uniqueColumnName(output.name, columns.map((c) => c.name));
+      change.renumber = placement.renumber;
+      change.inserts.push({ key, name, type: "integration_output", config: { sourceColumnKey: column.key, outputKey: output.key, valueType: output.type }, dependsOn: [column.key], position: placement.positions[0], autoRun: false });
+      config.outputs = { ...existing, [output.key]: key };
     }
     // An input mapped to this column's own output would feed the run its own result and queue it forever.
     const loop = dependsOn.find((k) => own.has(k));
