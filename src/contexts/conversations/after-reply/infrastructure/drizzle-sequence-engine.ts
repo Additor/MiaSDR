@@ -6,8 +6,10 @@ import { NEW_REPLY_MARGIN_MINUTES } from "../domain/after-reply";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
 import { advanceRunTx, asDate, endRunTx, recordEvent, rowsOf, ts, zoneOfTx, type Tx } from "./sequence-run-tx";
 import { knowledgeFor } from "../../infrastructure/thread-context";
+import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
-const OPEN_DRAFT_STATUSES = sql`('generating', 'awaiting_review', 'sending', 'delivery_uncertain')`;
+const PENDING_DRAFTS = sqlValues(PENDING_DRAFT_STATUSES);
 
 interface FactsRow {
   run_id: string;
@@ -191,7 +193,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
             and st.position = r.current_step_position
             and rec.workflow_state not in ('paused', 'closed')
             and ((sr.status = 'scheduled' and sr.due_at <= ${ts(now)}) or (sr.status = 'drafting' and sr.updated_at < ${ts(expired)}))
-            and (st.position = 1 or not exists (select 1 from drafts d where d.record_id = rec.id and d.status in ${OPEN_DRAFT_STATUSES} and d.request->>'sequenceStepRunId' is distinct from sr.id::text))
+            and (st.position = 1 or not exists (select 1 from drafts d where d.record_id = rec.id and d.status in ${PENDING_DRAFTS} and d.request->>'sequenceStepRunId' is distinct from sr.id::text))
           order by sr.due_at
           limit 1
           for update of sr skip locked
@@ -264,7 +266,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
     return rowsOf<{ id: string; status: string; reply_for_message_id: string | null }>(
       await db.execute(sql`
         select d.id, d.status, d.reply_for_message_id from drafts d
-        where d.organization_id = ${organizationId} and d.record_id = ${recordId} and d.status in ${OPEN_DRAFT_STATUSES}
+        where d.organization_id = ${organizationId} and d.record_id = ${recordId} and d.status in ${PENDING_DRAFTS}
           and not exists (select 1 from sequence_step_runs sr where sr.draft_id = d.id)`),
     ).map((r) => ({ id: r.id, status: r.status, replyForMessageId: r.reply_for_message_id }));
   },
@@ -273,7 +275,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
     const [row] = rowsOf<{ id: string }>(
       await db.execute(sql`
         select d.id from drafts d
-        where d.organization_id = ${organizationId} and d.request->>'sequenceStepRunId' = ${stepRunId} and d.status in ('awaiting_review', 'generating')
+        where d.organization_id = ${organizationId} and d.request->>'sequenceStepRunId' = ${stepRunId} and d.status in ${sqlValues(UNSENT_DRAFT_STATUSES)}
           and not exists (select 1 from sequence_step_runs sr where sr.draft_id = d.id)
         order by d.created_at desc limit 1`),
     );
@@ -313,7 +315,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
   async retireDraft(organizationId, draftId, now) {
     await db.execute(sql`
       update drafts set status = 'stale', error = 'The follow-up sequence ended.', updated_at = ${ts(now)}
-      where id = ${draftId} and organization_id = ${organizationId} and status in ('generating', 'awaiting_review', 'failed')`);
+      where id = ${draftId} and organization_id = ${organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
   },
 
   async knowledgeForTags(organizationId, tags) {

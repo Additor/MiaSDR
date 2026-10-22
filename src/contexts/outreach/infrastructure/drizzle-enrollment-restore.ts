@@ -6,6 +6,8 @@ import type { EnrollmentRestoreStore, RestoreRefused } from "../application/enro
 import { lockPersonOutreachTx } from "@/platform/db/sequence-stop";
 import { RESTORE_REFUSAL_TEXT, decideRestore, restoredProgress } from "../domain/enrollment-restore";
 import { notContactSql } from "./contact-guard";
+import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 const uuidList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 const rowsOf = <T>(result: unknown) => result as unknown as T[];
@@ -42,7 +44,7 @@ async function personFacts(tx: DbHandle, organizationId: string, campaignId: str
       select e.person_id as "personId", c.name as "campaignName" from campaign_enrollments e
       join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
       where e.organization_id = ${organizationId} and e.channel = ${channel} and e.campaign_id <> ${campaignId}
-        and e.status in ('pending', 'active') and e.person_id in (${uuidList(personIds)})
+        and e.status in ${sqlValues(LIVE_ENROLLMENT_STATUSES)} and e.person_id in (${uuidList(personIds)})
       order by e.created_at asc
     `),
   ]);

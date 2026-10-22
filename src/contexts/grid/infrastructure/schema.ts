@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
+import { inList } from "@/platform/db/sql-values";
 
 /**
  * Grid: Clay-style enrichment tables. Folder > workbook > table > columns and rows.
@@ -27,9 +28,6 @@ import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
  * Provider secrets live only in `grid_provider_credentials`, encrypted with the
  * integrations AES-256-GCM envelope.
  */
-
-const inList = (column: unknown, values: readonly string[]) =>
-  sql`${column} in (${sql.raw(values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", "))})`;
 
 export const GRID_COLUMN_TYPES = [
   "text", "number", "currency", "boolean", "date", "url", "email", "image", "select", "multiselect", "json",

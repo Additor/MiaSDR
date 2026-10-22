@@ -19,6 +19,8 @@ import { members } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/leads/infrastructure/schema";
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
+import { DRAFT_STATUSES } from "../domain/draft-status";
+import { inList } from "@/platform/db/sql-values";
 
 /**
  * Conversations: replies from every channel land in one model keyed on
@@ -32,10 +34,6 @@ import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
  */
 
 export const CATEGORY_KEYS = ["customer", "interested", "not_interested", "other"] as const;
-
-/** CHECK needs literals: DDL cannot take bind parameters. Values are compile-time constants. */
-const inList = (column: unknown, values: readonly string[]) =>
-  sql`${column} in (${sql.raw(values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", "))})`;
 
 export const pipelines = pgTable(
   "pipelines",
@@ -430,8 +428,6 @@ export const classifications = pgTable(
     index("classifications_record_created_idx").on(t.recordId, t.createdAt),
   ],
 );
-
-export const DRAFT_STATUSES = ["generating", "awaiting_review", "sending", "sent", "discarded", "stale", "failed", "delivery_uncertain"] as const;
 
 /** AI body and human edit stay separate so we can tell what the person changed. */
 export const drafts = pgTable(

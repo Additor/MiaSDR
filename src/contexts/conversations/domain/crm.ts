@@ -200,5 +200,3 @@ export const WORKFLOW_LABELS: Record<string, string> = {
 
 export const workflowLabel = (state: string) => WORKFLOW_LABELS[state] ?? state.replace(/_/g, " ");
 
-/** Draft statuses that count as open: the person still has to act on them, or they hold a send. */
-export const OPEN_DRAFT_STATUSES = ["generating", "awaiting_review", "failed"] as const;

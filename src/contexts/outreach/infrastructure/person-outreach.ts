@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { db, type DbHandle } from "@/platform/db/client";
 import type { Actor } from "@/shared/errors";
+import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 /*
  * Callee-owned functions for deleting a contact ("Contacts and Companies CRUD" in docs/decisions.md). The
@@ -156,7 +158,7 @@ export async function leadsInRunningCampaigns(organizationId: string, companyId:
       join campaign_enrollments e on e.person_id = p.id and e.organization_id = p.organization_id
       join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
       where p.organization_id = ${organizationId} and p.company_id = ${companyId}::uuid and p.lifecycle = 'lead'
-        and e.status in ('pending', 'active') and c.status = 'active'`),
+        and e.status in ${sqlValues(LIVE_ENROLLMENT_STATUSES)} and c.status = 'active'`),
   );
   return row.n;
 }

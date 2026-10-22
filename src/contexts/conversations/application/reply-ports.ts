@@ -1,6 +1,7 @@
 import type { AiPersonContext, DraftChannel, StageChange, TaxonomyEntry, ThreadEntry } from "../ai/domain/ai-contract";
 import type { FailureKind } from "../ai/domain/ai-job-requeue";
 import type { HoldReason } from "../domain/classification-policy";
+import type { DraftStatus } from "../domain/draft-status";
 
 export type JobKind = "classification" | "initial_draft";
 
@@ -110,7 +111,7 @@ export interface NewDraft {
   /** Any other open draft of the record turns `stale`. */
 }
 
-export type DraftStatus = "generating" | "awaiting_review" | "sending" | "sent" | "discarded" | "stale" | "failed" | "delivery_uncertain";
+export type { DraftStatus };
 
 export interface DraftRow {
   id: string;

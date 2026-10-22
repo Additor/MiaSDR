@@ -6,7 +6,8 @@ import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { BeginSend, ReplyStore } from "../application/reply-ports";
 import { ATTEMPT_FROM, ATTEMPT_FROM_CALL } from "../domain/send-attempt-status";
 import { publicConversation } from "@/platform/db/conversation-visibility";
-import { toAttempt, type Snapshot, mailboxFor, sendContextFor, settleSent, blockedAddressesFor } from "./reply-store-shared";
+import { toAttempt, type Snapshot, mailboxFor, sendContextFor, settleSent, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
+import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 
 /** Sending an approved draft and settling the outcome: claim, blockers, sent, failed, uncertain, and the reconcile pass. */
 export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | "markSent" | "markFailed" | "markUncertain" | "listUnsettled" | "resolveUncertain"> = {
@@ -102,7 +103,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
           request: snapshot,
         })
         .returning();
-      await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draft.id), eq(drafts.status, "awaiting_review")));
+      await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draft.id), draftCanBecome("sending")));
       return { kind: "started" as const, attempt, snapshot };
     });
 
@@ -140,7 +141,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       await tx
         .update(drafts)
         .set({ status: draftStatus, error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.attempt.draftId), inArray(drafts.status, ["sending", "delivery_uncertain"])));
+        .where(and(eq(drafts.id, send.attempt.draftId), draftIn(IN_FLIGHT_DRAFT_STATUSES)));
     });
   },
 
@@ -155,7 +156,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       await tx
         .update(drafts)
         .set({ status: "delivery_uncertain", error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.attempt.draftId), eq(drafts.status, "sending")));
+        .where(and(eq(drafts.id, send.attempt.draftId), draftCanBecome("delivery_uncertain")));
     });
   },
 
@@ -189,7 +190,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
         .update(sendAttempts)
         .set({ status: "failed", reconciledAt: input.now, reconciliationNote: `Marked not delivered by a person: ${input.note}` })
         .where(and(eq(sendAttempts.id, attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM.failed])));
-      await tx.update(drafts).set({ status: "failed", error: `Marked not delivered: ${input.note}` }).where(eq(drafts.id, draft.id));
+      await tx.update(drafts).set({ status: "failed", error: `Marked not delivered: ${input.note}` }).where(and(eq(drafts.id, draft.id), draftIn(IN_FLIGHT_DRAFT_STATUSES)));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: snap.personId,

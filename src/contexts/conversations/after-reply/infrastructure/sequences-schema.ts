@@ -3,6 +3,7 @@ import { check, foreignKey, index, integer, pgTable, text, unique, uniqueIndex, 
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { conversations, drafts, messages, records, subcategories } from "../../infrastructure/schema";
+import { inList } from "@/platform/db/sql-values";
 
 /**
  * Follow-up sequences. A sequence has versions; a run pins the version it
@@ -17,9 +18,6 @@ import { conversations, drafts, messages, records, subcategories } from "../../i
  * campaign are the legacy standalone ones, kept as archived rows. Deleting a campaign deletes its sequence
  * with the versions and steps; the RESTRICT keys from runs block that when any run exists.
  */
-
-const inList = (column: unknown, values: readonly string[]) =>
-  sql`${column} in (${sql.raw(values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", "))})`;
 
 export const SEQUENCE_STATUSES = ["active", "archived"] as const;
 export const SEQUENCE_RUN_STATUSES = ["active", "interrupted", "paused", "completed", "cancelled"] as const;

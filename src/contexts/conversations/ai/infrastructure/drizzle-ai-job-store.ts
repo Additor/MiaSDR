@@ -9,6 +9,7 @@ import { startOfLocalDay } from "@/contexts/outreach/domain/working-hours";
 import { canonicalTimeZone } from "@/shared/time-zone";
 import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } from "../../infrastructure/thread-context";
 import { publicConversation, publicConversationText } from "@/platform/db/conversation-visibility";
+import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
 
 interface JobRow {
   id: string;
@@ -499,7 +500,7 @@ export const drizzleAiJobStore: AiJobStore = {
       const [open] = await db
         .select({ id: drafts.id })
         .from(drafts)
-        .where(and(eq(drafts.conversationId, ctx.conversationId), eq(drafts.expectedContextVersion, ctx.contextVersion), sql`${drafts.status} in ('generating', 'awaiting_review', 'sending', 'delivery_uncertain', 'sent')`))
+        .where(and(eq(drafts.conversationId, ctx.conversationId), eq(drafts.expectedContextVersion, ctx.contextVersion), inArray(drafts.status, [...PENDING_DRAFT_STATUSES, "sent"])))
         .limit(1);
       if (open) return "has_draft";
       if (ctx.channel === "linkedin") {

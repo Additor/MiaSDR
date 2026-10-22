@@ -7,6 +7,8 @@ import { AFTER_REPLY_OFF, assertPublishable, assertRunTransition, stepsEqual, st
 import { owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
 import { advanceRunTx, asDate, asDateOrNull, endRunTx, recordEvent, rowsOf, ts, zoneOfTx, type Tx } from "./sequence-run-tx";
 import { publicConversationSql } from "@/platform/db/conversation-visibility";
+import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 interface StepRow {
   id: string;
@@ -466,7 +468,7 @@ export const drizzleRunStore: RunStore = {
       // A draft waiting for review is retired and its step goes back to scheduled, so resuming drafts it afresh.
       await tx.execute(sql`
         update drafts set status = 'stale', error = 'The sequence was paused.', updated_at = ${ts(now)}
-        where organization_id = ${event.organizationId} and status in ('generating', 'awaiting_review', 'failed')
+        where organization_id = ${event.organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}
           and id in (select draft_id from sequence_step_runs where sequence_run_id = ${run.id} and draft_id is not null and status in ('drafting', 'awaiting_review', 'failed'))`);
       await tx.execute(sql`
         update sequence_step_runs set status = 'scheduled', draft_id = null, updated_at = ${ts(now)}
@@ -517,7 +519,7 @@ export const drizzleRunStore: RunStore = {
       if (!current) throw new ConflictError("There is no pending step to skip.");
       if (current.status === "drafting") throw new ConflictError("The step is being drafted. Try again in a moment.");
       if (current.draft_id) {
-        await tx.execute(sql`update drafts set status = 'discarded', updated_at = ${ts(now)} where id = ${current.draft_id} and organization_id = ${event.organizationId} and status in ('generating', 'awaiting_review', 'failed')`);
+        await tx.execute(sql`update drafts set status = 'discarded', updated_at = ${ts(now)} where id = ${current.draft_id} and organization_id = ${event.organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
       }
       await tx.execute(sql`update sequence_step_runs set status = 'skipped', updated_at = ${ts(now)} where id = ${current.id}`);
       // The next step waits its own delay from now, as if the skipped message had just gone out.

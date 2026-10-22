@@ -7,6 +7,8 @@ import type { AttemptRow } from "../application/reply-ports";
 import { ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
 import { replyBlock, replyGapSeconds, utcDayStart } from "../domain/linkedin-reply";
 import { publicConversation } from "@/platform/db/conversation-visibility";
+import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
+import { draftCanBecome, draftIn } from "./reply-store-shared";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -85,7 +87,7 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
     .update(sendAttempts)
     .set({ status: note ? "reconciled" : "sent", providerMessageId: sent.providerMessageId, error: null, ...(note ? { reconciledAt: now, reconciliationNote: note } : {}) })
     .where(and(eq(sendAttempts.id, attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM[note ? "reconciled" : "sent"]])));
-  await tx.update(drafts).set({ status: "sent", error: null }).where(eq(drafts.id, attempt.draftId));
+  await tx.update(drafts).set({ status: "sent", error: null }).where(and(eq(drafts.id, attempt.draftId), draftCanBecome("sent")));
 
   const [account] = await tx.select({ name: linkedinAccounts.name, username: linkedinAccounts.username }).from(linkedinAccounts).where(eq(linkedinAccounts.id, snap.accountId));
   const [person] = await tx.select({ name: people.fullName, first: people.firstName }).from(people).where(eq(people.id, snap.personId));
@@ -158,7 +160,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       const [inFlight] = await tx
         .select({ status: drafts.status })
         .from(drafts)
-        .where(and(eq(drafts.conversationId, conv.id), inArray(drafts.status, ["sending", "delivery_uncertain"])))
+        .where(and(eq(drafts.conversationId, conv.id), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       if (inFlight) {
         throw new ConflictError(inFlight.status === "sending" ? "A reply is already being sent in this chat." : "An earlier reply in this chat has an unconfirmed outcome. Check LinkedIn and mark what you found first.");
@@ -242,7 +244,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         .insert(sendAttempts)
         .values({ organizationId: input.organizationId, draftId, idempotencyKey: input.idempotencyKey, status: "sending", actorUserId: input.actorUserId, provider: "linkedin", accountRef: account.id, request: snapshot })
         .returning();
-      await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draftId), eq(drafts.status, "awaiting_review")));
+      await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draftId), draftCanBecome("sending")));
       return { kind: "started" as const, attempt };
     });
     if (result.kind === "stale") throw new ConflictError("A newer message arrived after this draft was written. Review the thread and regenerate the draft.");
@@ -276,7 +278,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       await tx
         .update(drafts)
         .set({ status: "awaiting_review", error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.draftId), inArray(drafts.status, ["sending", "delivery_uncertain"])));
+        .where(and(eq(drafts.id, send.draftId), draftIn(IN_FLIGHT_DRAFT_STATUSES)));
     });
   },
 
@@ -291,7 +293,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       await tx
         .update(drafts)
         .set({ status: "delivery_uncertain", error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.draftId), eq(drafts.status, "sending")));
+        .where(and(eq(drafts.id, send.draftId), draftCanBecome("delivery_uncertain")));
     });
   },
 

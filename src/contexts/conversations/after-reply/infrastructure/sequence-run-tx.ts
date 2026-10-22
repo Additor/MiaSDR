@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { dueAfter, isTerminalSubcategory, isValidZone } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "@/platform/db/sequence-stop";
+import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 export { endRunTx, interruptRecordRunsTx, recordEvent, type Tx } from "@/platform/db/sequence-stop";
 
@@ -25,7 +27,7 @@ export async function staleOpenDraftsTx(tx: Tx, input: { organizationId: string;
   const rows = rowsOf<{ id: string }>(
     await tx.execute(sql`
       update drafts set status = 'stale', error = ${input.reason}, updated_at = ${ts(input.now)}
-      where organization_id = ${input.organizationId} and record_id = ${input.recordId} and status in ('generating', 'awaiting_review', 'failed')
+      where organization_id = ${input.organizationId} and record_id = ${input.recordId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}
       returning id`),
   );
   return rows.length;

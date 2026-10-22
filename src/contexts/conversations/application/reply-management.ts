@@ -6,6 +6,7 @@ import { needsReply } from "../domain/reply-policy";
 import { AiError, type AiProviderResolver } from "../ai/application/ai-ports";
 import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
 import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext } from "./reply-ports";
+import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
 
 /**
  * Human actions on drafts. Permissions: any member of the organization may edit, regenerate, discard,
@@ -48,8 +49,6 @@ async function requireProvider(deps: ReplyDeps, organizationId: string) {
   return provider;
 }
 
-const OPEN_FOR_NEW_DRAFT = new Set(["awaiting_review", "generating"]);
-
 /** Generates a draft on request, for threads where the job made none (or AI was off when the reply arrived). */
 export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId: string): Promise<{ draftId: string }> {
   assertId(conversationId, "Conversation");
@@ -57,8 +56,8 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
   const ctx = await deps.store.draftContext(actor.organizationId, conversationId);
   if (!ctx) throw new NotFoundError("Conversation not found");
   const panel = await deps.store.panel(actor.organizationId, conversationId);
-  if (panel?.draft && OPEN_FOR_NEW_DRAFT.has(panel.draft.status)) throw new ConflictError("This thread already has a draft. Edit or regenerate it.");
-  if (panel?.draft && (panel.draft.status === "sending" || panel.draft.status === "delivery_uncertain")) {
+  if (panel?.draft && UNSENT_DRAFT_STATUSES.includes(panel.draft.status)) throw new ConflictError("This thread already has a draft. Edit or regenerate it.");
+  if (panel?.draft && IN_FLIGHT_DRAFT_STATUSES.includes(panel.draft.status)) {
     throw new ConflictError("A reply is being sent for this thread.");
   }
   try {

@@ -15,6 +15,8 @@ import {
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { people } from "@/contexts/leads/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
+import { ENROLLMENT_STATUSES } from "../domain/enrollment-status";
+import { inList } from "@/platform/db/sql-values";
 
 /**
  * Outreach: email and LinkedIn share one campaign and enrollment model,
@@ -239,10 +241,7 @@ export const campaignEnrollments = pgTable(
     unique("enrollments_campaign_person_uq").on(t.campaignId, t.personId),
     unique("enrollments_id_org_uq").on(t.id, t.organizationId),
     check("enrollments_channel_ck", sql`${t.channel} in ('email', 'linkedin')`),
-    check(
-      "enrollments_status_ck",
-      sql`${t.status} in ('pending', 'active', 'replied', 'completed', 'bounced', 'suppressed', 'failed', 'cancelled', 'removed')`,
-    ),
+    check("enrollments_status_ck", inList(t.status, ENROLLMENT_STATUSES)),
     check("enrollments_step_ck", sql`${t.currentStep} >= 0`),
     // The claim query scans active enrollments that are due.
     index("enrollments_due_idx").on(t.channel, t.nextSendAt).where(sql`${t.status} = 'active'`),

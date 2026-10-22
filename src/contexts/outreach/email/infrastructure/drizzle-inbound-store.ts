@@ -5,6 +5,7 @@ import type { InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from
 import type { InboundEmail } from "../../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
 import { drizzleSuppressionStore } from "../../infrastructure/drizzle-outreach-store";
+import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -159,7 +160,7 @@ export function createDrizzleInboundStore(inbox: InboxFiling): InboundStore {
                 and(
                   eq(campaignEnrollments.id, enrollmentId),
                   eq(campaignEnrollments.organizationId, mailbox.organizationId),
-                  inArray(campaignEnrollments.status, ["pending", "active"]),
+                  inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES]),
                 ),
               );
             return true;

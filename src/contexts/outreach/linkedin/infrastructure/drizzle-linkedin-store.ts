@@ -37,13 +37,14 @@ import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns } from "../../infrastructure/enrollment-variables";
 import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
+import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const COUNTED = ["sending", "sent", "unknown"];
 const UNRESOLVED = [...SEND_UNRESOLVED];
 /** Statuses an engine write may still change. Anything else (replied, suppressed, removed) stays as it is. */
-const LIVE: Array<"pending" | "active"> = ["pending", "active"];
+const LIVE = [...LIVE_ENROLLMENT_STATUSES];
 
 const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
 /** The claiming worker settling its own row. */
@@ -120,7 +121,7 @@ export async function applyAcceptance(tx: Tx, enrollmentId: string, step2WaitDay
       nextSendAt: step2WaitDays === null ? null : new Date(now.getTime() + step2WaitDays * DAY_MS),
       updatedAt: now,
     })
-    .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, ["pending", "active"])));
+    .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES])));
   return true;
 }
 
@@ -159,7 +160,7 @@ async function advanceAfterMessage(tx: Tx, enrollmentId: string, stepNumber: num
       status: nextWaitDays === null ? "completed" : "active",
       nextSendAt: nextWaitDays === null ? null : new Date(now.getTime() + nextWaitDays * DAY_MS),
     })
-    .where(and(eq(campaignEnrollments.id, enrollmentId), sql`${campaignEnrollments.currentStep} < ${stepNumber}`, inArray(campaignEnrollments.status, ["pending", "active"])));
+    .where(and(eq(campaignEnrollments.id, enrollmentId), sql`${campaignEnrollments.currentStep} < ${stepNumber}`, inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES])));
 }
 
 /** After an invitation went out. Does nothing to the enrollment when the acceptance arrived first. */

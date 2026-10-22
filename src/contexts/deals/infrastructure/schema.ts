@@ -4,6 +4,7 @@ import { users } from "@/contexts/identity/infrastructure/schema";
 import { people } from "@/contexts/leads/infrastructure/schema";
 import { campaignEnrollments } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
+import { inList } from "@/platform/db/sql-values";
 
 /**
  * Deals: the CRM side of the product. A lead becomes a contact when a person creates a deal from it (`people.lifecycle`,
@@ -12,10 +13,6 @@ import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
  */
 
 export const DEAL_STAGE_KINDS = ["open", "won", "lost"] as const;
-
-/** CHECK needs literals: DDL cannot take bind parameters. Values are compile-time constants. */
-const inList = (column: unknown, values: readonly string[]) =>
-  sql`${column} in (${sql.raw(values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", "))})`;
 
 export const dealStages = pgTable(
   "deal_stages",

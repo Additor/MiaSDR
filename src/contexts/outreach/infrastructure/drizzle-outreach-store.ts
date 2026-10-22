@@ -20,11 +20,12 @@ import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../
 import { takeoverCutoff } from "../email/domain/takeover";
 import { buildVariables } from "../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../domain/working-hours";
+import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Enrollment statuses a send may still change. Every later status was set on purpose and must survive a late send result. */
-const LIVE_STATUSES: Array<"pending" | "active"> = ["pending", "active"];
+const LIVE_STATUSES = [...LIVE_ENROLLMENT_STATUSES];
 
 const COUNTED_STATUSES = ["sending", "sent", "unknown"];
 
@@ -479,7 +480,7 @@ export const drizzleSuppressionStore: import("../email/application/unsubscribe")
           and(
             eq(campaignEnrollments.organizationId, organizationId),
             eq(campaignEnrollments.channel, "email"),
-            inArray(campaignEnrollments.status, ["pending", "active"]),
+            inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES]),
             inArray(
               campaignEnrollments.personId,
               tx

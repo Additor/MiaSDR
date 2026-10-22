@@ -1,5 +1,8 @@
 import { sql } from "drizzle-orm";
 import type { db } from "./client";
+import { RETIRABLE_DRAFT_STATUSES } from "@/contexts/conversations/domain/draft-status";
+import { sqlValues } from "./sql-values";
+import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
 
 /**
  * Ending a follow-up sequence run from inside another write's transaction. Every path that makes further contact
@@ -18,7 +21,7 @@ const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 const rowsOf = <T>(result: unknown) => result as unknown as T[];
 
 /** Draft statuses a person has not acted on. A run that ends retires them; a send in flight is left alone. */
-export const RETIRABLE_DRAFTS = sql`('generating', 'awaiting_review', 'failed')`;
+export const RETIRABLE_DRAFTS = sqlValues(RETIRABLE_DRAFT_STATUSES);
 export const OPEN_STEPS = sql`('scheduled', 'drafting', 'awaiting_review', 'failed')`;
 
 export async function recordEvent(
@@ -169,7 +172,7 @@ export async function stopPersonOutreachOnReplyTx(
   const stopped = rowsOf<{ id: string; person_id: string; channel: string }>(
     await tx.execute(sql`
       update campaign_enrollments set status = 'replied', stop_reason = 'replied', next_send_at = null, updated_at = ${ts(input.now)}
-      where organization_id = ${input.organizationId} and person_id in (${ids}) and status in ('pending', 'active')
+      where organization_id = ${input.organizationId} and person_id in (${ids}) and status in ${sqlValues(LIVE_ENROLLMENT_STATUSES)}
       returning id, person_id, channel`),
   );
   const runsEnded = await interruptPersonRunsTx(tx, input.organizationId, personIds, "reply", input.now);

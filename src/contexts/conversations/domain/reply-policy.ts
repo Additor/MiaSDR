@@ -15,4 +15,3 @@ export function replySubject(lastSubject: string | null | undefined): string {
   return /^re:\s/i.test(base) ? base : `Re: ${base}`;
 }
 
-export const DRAFT_OPEN_STATUSES = ["generating", "awaiting_review", "sending", "delivery_uncertain"] as const;

@@ -7,7 +7,8 @@ import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
 import type { HoldReason } from "../domain/classification-policy";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
-import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor } from "./reply-store-shared";
+import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
+import { canMoveDraft, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 
 /** The reply panel and the draft lifecycle: load, write, edit, discard, and the CC and blocked-address checks. */
 export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "draftContextForDraft" | "insertDraft" | "getDraft" | "ccContext" | "ccContextForConversation" | "createManualDraft" | "blockedAddresses" | "updateDraft" | "discardDraft"> = {
@@ -151,13 +152,13 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         await tx
           .update(drafts)
           .set({ status: "discarded" })
-          .where(and(eq(drafts.id, input.regeneratesDraftId), eq(drafts.organizationId, input.organizationId), inArray(drafts.status, ["awaiting_review", "failed", "stale"])));
+          .where(and(eq(drafts.id, input.regeneratesDraftId), eq(drafts.organizationId, input.organizationId), draftCanBecome("discarded")));
       }
       // One reviewable draft per record and channel: older open ones are superseded.
       await tx
         .update(drafts)
         .set({ status: "stale" })
-        .where(and(eq(drafts.recordId, input.recordId), eq(drafts.channel, input.channel ?? "email"), inArray(drafts.status, ["awaiting_review", "generating"]), sql`${drafts.id} <> ${created.id}`));
+        .where(and(eq(drafts.recordId, input.recordId), eq(drafts.channel, input.channel ?? "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
       if (input.citations.length > 0) {
         await tx
           .insert(draftKnowledgeCitations)
@@ -243,7 +244,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       await tx
         .update(drafts)
         .set({ status: "stale" })
-        .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, "email"), inArray(drafts.status, ["awaiting_review", "generating"]), sql`${drafts.id} <> ${created.id}`));
+        .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,
@@ -286,10 +287,10 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         .where(and(eq(drafts.id, draftId), eq(drafts.organizationId, organizationId)))
         .for("update", { of: drafts });
       if (!row) throw new NotFoundError("Draft not found");
-      if (!["awaiting_review", "failed", "stale", "generating"].includes(row.status)) {
+      if (!canMoveDraft(row.status as DraftStatus, "discarded")) {
         throw new ConflictError(`A draft that is ${row.status.replace(/_/g, " ")} cannot be discarded.`);
       }
-      await tx.update(drafts).set({ status: "discarded" }).where(eq(drafts.id, draftId));
+      await tx.update(drafts).set({ status: "discarded" }).where(and(eq(drafts.id, draftId), draftCanBecome("discarded")));
       await tx.insert(events).values({ organizationId, personId: row.personId, recordId: row.recordId, eventType: "draft.discarded", actorType: "human", actorUserId, meta: { draftId } });
     });
   },

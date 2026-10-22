@@ -1,10 +1,17 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { contactPolicies, conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
-import type { AttemptRow, DraftRow, DraftStatus, KnownCc, SendContext } from "../application/reply-ports";
+import type { AttemptRow, DraftRow, KnownCc, SendContext } from "../application/reply-ports";
+import { DRAFT_FROM, type DraftStatus } from "../domain/draft-status";
 import { ATTEMPT_FROM, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
 import { organizationMailboxAddresses } from "./drizzle-conversation-store";
 import { publicConversation } from "@/platform/db/conversation-visibility";
+
+/** The drafts row may move to `to` from where it is now (see `DRAFT_FROM`). */
+export const draftCanBecome = (to: DraftStatus) => inArray(drafts.status, [...DRAFT_FROM[to]]);
+
+/** The drafts row is in one of the named statuses. */
+export const draftIn = (statuses: readonly DraftStatus[]) => inArray(drafts.status, [...statuses]);
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -109,7 +116,7 @@ export async function settleSent(tx: Tx, send: SendContext, sent: { providerMess
       ...(note ? { reconciledAt: now, reconciliationNote: note } : {}),
     })
     .where(and(eq(sendAttempts.id, attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM[note ? "reconciled" : "sent"]])));
-  await tx.update(drafts).set({ status: "sent", error: null }).where(eq(drafts.id, attempt.draftId));
+  await tx.update(drafts).set({ status: "sent", error: null }).where(and(eq(drafts.id, attempt.draftId), draftCanBecome("sent")));
 
   await tx
     .insert(messages)

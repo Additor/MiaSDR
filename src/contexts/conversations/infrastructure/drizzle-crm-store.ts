@@ -34,9 +34,11 @@ import type {
   RecordDetail,
   Taxonomy,
 } from "../application/crm-ports";
-import { CRM_CATEGORIES, OPEN_DRAFT_STATUSES, checkStageMove, type CategoryKey } from "../domain/crm";
+import { CRM_CATEGORIES, checkStageMove, type CategoryKey } from "../domain/crm";
 import { defaultPipelineId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleClassificationSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
+import { draftCanBecome } from "./reply-store-shared";
+import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
 
 const CATEGORY_ORDER = new Map<string, number>(CRM_CATEGORIES.map((c, i) => [c.key, i]));
 const rowsOf = <T>(result: unknown) => result as unknown as T[];
@@ -63,7 +65,7 @@ async function retireOpenDrafts(tx: Tx, recordIds: string[], reason: string) {
   const retired = await tx
     .update(drafts)
     .set({ status: "stale", error: reason })
-    .where(and(inArray(drafts.recordId, recordIds), inArray(drafts.status, [...OPEN_DRAFT_STATUSES])))
+    .where(and(inArray(drafts.recordId, recordIds), draftCanBecome("stale")))
     .returning({ id: drafts.id });
   return retired.length;
 }
@@ -430,7 +432,7 @@ export const drizzleCrmStore: CrmStore = {
       const stopped = await tx
         .update(campaignEnrollments)
         .set({ status: "suppressed", nextSendAt: null, stopReason: "do_not_contact", updatedAt: input.now })
-        .where(and(eq(campaignEnrollments.organizationId, input.organizationId), eq(campaignEnrollments.personId, input.personId), inArray(campaignEnrollments.status, ["pending", "active"])))
+        .where(and(eq(campaignEnrollments.organizationId, input.organizationId), eq(campaignEnrollments.personId, input.personId), inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES])))
         .returning({ id: campaignEnrollments.id });
       await tx.insert(events).values({
         organizationId: input.organizationId,

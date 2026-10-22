@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { publicConversationText } from "@/platform/db/conversation-visibility";
 import { rowsOf, type Tx } from "../after-reply/infrastructure/sequence-run-tx";
+import { RETIRABLE_DRAFT_STATUSES } from "../domain/draft-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 /**
  * An older public thread turns private when its person answers a personal campaign. The thread already moved the
@@ -27,7 +29,7 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
 
   await tx.execute(sql`
     update drafts set status = 'stale', error = ${reason}, updated_at = ${at}
-    where organization_id = ${input.organizationId} and conversation_id = ${input.conversationId} and status in ('generating', 'awaiting_review', 'failed')`);
+    where organization_id = ${input.organizationId} and conversation_id = ${input.conversationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
   await tx.execute(sql`
     update classifications set status = 'stale'
     where organization_id = ${input.organizationId} and status = 'proposed'
