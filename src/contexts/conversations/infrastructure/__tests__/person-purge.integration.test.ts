@@ -104,7 +104,6 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     await sql`
       insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;
-    await sql`insert into record_sequence_overrides (organization_id, record_id, sequence_id, source) values (${o.org}, ${record}, ${sequence}, 'human')`;
     await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'stage.moved', 'system')`;
     await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${o.org}, ${person}, 'lifecycle.converted', 'system')`;
     await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${record}, 'on the record')`;
@@ -144,7 +143,6 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
         (select count(*) from drafts where record_id in ${recs})::int as drafts,
         (select count(*) from send_attempts sa join drafts d on d.id = sa.draft_id where d.record_id in ${recs})::int as send_attempts,
         (select count(*) from sequence_runs where record_id in ${recs})::int as sequence_runs,
-        (select count(*) from record_sequence_overrides where record_id in ${recs})::int as overrides,
         (select count(*) from events where person_id = ${p.person} or record_id in ${recs})::int as events,
         (select count(*) from contact_policies where person_id = ${p.person})::int as policies,
         (select count(*) from notes where person_id = ${p.person})::int as notes,

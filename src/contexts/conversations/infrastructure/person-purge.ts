@@ -44,7 +44,6 @@ export async function purgePersonHandling(tx: DbHandle, organizationId: string, 
             and j.entity_id in (select k.id from classifications k where k.organization_id = ${org} and k.record_id in ${recs})))`);
   // Cascades to sequence_step_runs, which hold the drafts and sent messages of the runs.
   await tx.execute(sql`delete from sequence_runs where organization_id = ${org} and record_id in ${recs}`);
-  await tx.execute(sql`delete from record_sequence_overrides where organization_id = ${org} and record_id in ${recs}`);
   await tx.execute(sql`
     delete from send_attempts where organization_id = ${org}
       and draft_id in (select d.id from drafts d where d.organization_id = ${org} and d.record_id in ${recs})`);

@@ -103,47 +103,6 @@ export const sequenceSteps = pgTable(
   ],
 );
 
-/** The sequence a subcategory starts by default. One per subcategory. */
-export const subcategorySequenceAssignments = pgTable(
-  "subcategory_sequence_assignments",
-  {
-    subcategoryId: uuid("subcategory_id").primaryKey(),
-    organizationId: orgId(),
-    sequenceId: uuid("sequence_id").notNull(),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    foreignKey({ columns: [t.subcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("cascade"),
-    foreignKey({ columns: [t.sequenceId, t.organizationId], foreignColumns: [sequences.id, sequences.organizationId] }).onDelete("restrict"),
-    index("subcategory_sequence_assignments_sequence_idx").on(t.sequenceId),
-  ],
-);
-
-/** A person's manual choice of sequence, taking precedence over the subcategory default while active. */
-export const recordSequenceOverrides = pgTable(
-  "record_sequence_overrides",
-  {
-    id: pk(),
-    organizationId: orgId(),
-    recordId: uuid("record_id").notNull(),
-    sequenceId: uuid("sequence_id").notNull(),
-    source: text("source").notNull(),
-    effectiveAt: tstz("effective_at").defaultNow().notNull(),
-    clearedAt: tstz("cleared_at"),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
-    foreignKey({ columns: [t.sequenceId, t.organizationId], foreignColumns: [sequences.id, sequences.organizationId] }).onDelete("restrict"),
-    uniqueIndex("record_sequence_overrides_active_uq").on(t.recordId).where(sql`${t.clearedAt} is null`),
-    index("record_sequence_overrides_record_idx").on(t.recordId),
-    check("record_sequence_overrides_source_ck", sql`${t.source} in ('human', 'integration')`),
-    check("record_sequence_overrides_time_ck", sql`${t.clearedAt} is null or ${t.clearedAt} >= ${t.effectiveAt}`),
-  ],
-);
-
 export const sequenceRuns = pgTable(
   "sequence_runs",
   {
