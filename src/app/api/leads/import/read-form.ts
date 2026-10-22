@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { CORE_TARGETS, type Mapping } from "@/contexts/leads/domain/import-plan";
+import { CORE_TARGETS, type Mapping } from "@/contexts/people/domain/import-plan";
 import { MAX_FILE_BYTES } from "@/platform/files/csv";
 import { normalizePhoneCountry } from "@/contexts/tenancy/domain/phone-country";
 

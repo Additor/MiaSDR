@@ -125,7 +125,7 @@ export async function aliasTargets(tx: DbHandle, organizationId: string, domains
  */
 
 /**
- * Companies lists a company with a stamp or a contact (M3). The one copy for the leads context: Add company, the merge picker and
+ * Companies lists a company with a stamp or a contact (M3). The one copy for the people context: Add company, the merge picker and
  * the lifecycle store read it here. `deals/infrastructure/crm-read.ts` `companies()` applies the same rule under the alias `c`; a
  * change to the rule goes to both.
  */

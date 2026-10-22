@@ -7,7 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dealSummaryForPeople } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
-import { leadContactPoints } from "@/contexts/leads/domain/lead-activity";
+import { leadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { channelLabel, enrollmentStatusLabel, stopReasonNote } from "@/contexts/outreach/domain/campaign-view";
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";

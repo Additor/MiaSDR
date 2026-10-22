@@ -1,6 +1,6 @@
 import { NextResponse, connection } from "next/server";
 import { batchTemplateCsv } from "@/contexts/outreach/linkedin/domain/linkedin-search-batch";
-import { UTF8_BOM } from "@/contexts/leads/domain/csv-export";
+import { UTF8_BOM } from "@/contexts/people/domain/csv-export";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 
 /** The sheet to fill in for a batch upload: company_name and search_url, with one sample row. */

@@ -15,10 +15,10 @@ describeDb("linkedin sales navigator identity", () => {
   let store: typeof import("../drizzle-linkedin-store").drizzleLinkedInStore;
   let campaignStore: typeof import("../drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
   let enrollPeople: typeof import("../drizzle-linkedin-campaign-store").enrollPeople;
-  let importLeads: typeof import("@/contexts/leads/application/import-leads").importLeads;
-  let leadStore: typeof import("@/contexts/leads/infrastructure/drizzle-lead-store").drizzleLeadStore;
-  let importFoundPeople: typeof import("@/contexts/leads/application/found-people").importFoundPeople;
-  let foundStore: typeof import("@/contexts/leads/infrastructure/drizzle-found-people-store").drizzleFoundPeopleStore;
+  let importLeads: typeof import("@/contexts/people/application/import-leads").importLeads;
+  let leadStore: typeof import("@/contexts/people/infrastructure/drizzle-lead-store").drizzleLeadStore;
+  let importFoundPeople: typeof import("@/contexts/people/application/found-people").importFoundPeople;
+  let foundStore: typeof import("@/contexts/people/infrastructure/drizzle-found-people-store").drizzleFoundPeopleStore;
   const cleanup: string[] = [];
   let user = "";
 
@@ -58,10 +58,10 @@ describeDb("linkedin sales navigator identity", () => {
     engine = await import("../../application/send-next-linkedin");
     ({ drizzleLinkedInStore: store } = await import("../drizzle-linkedin-store"));
     ({ drizzleLinkedInCampaignStore: campaignStore, enrollPeople } = await import("../drizzle-linkedin-campaign-store"));
-    ({ importLeads } = await import("@/contexts/leads/application/import-leads"));
-    ({ drizzleLeadStore: leadStore } = await import("@/contexts/leads/infrastructure/drizzle-lead-store"));
-    ({ importFoundPeople } = await import("@/contexts/leads/application/found-people"));
-    ({ drizzleFoundPeopleStore: foundStore } = await import("@/contexts/leads/infrastructure/drizzle-found-people-store"));
+    ({ importLeads } = await import("@/contexts/people/application/import-leads"));
+    ({ drizzleLeadStore: leadStore } = await import("@/contexts/people/infrastructure/drizzle-lead-store"));
+    ({ importFoundPeople } = await import("@/contexts/people/application/found-people"));
+    ({ drizzleFoundPeopleStore: foundStore } = await import("@/contexts/people/infrastructure/drizzle-found-people-store"));
     [{ id: user }] = await sql`insert into users (name, email) values ('U', ${uniqueKey() + "@sn.test"}) returning id`;
   });
 

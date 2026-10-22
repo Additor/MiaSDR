@@ -29,7 +29,7 @@ function segmentId(segment: string): string {
   return decoded.split(",")[0];
 }
 
-/** Lowercases and decodes a public slug the way the leads context stores it, so a write-back matches an import. */
+/** Lowercases and decodes a public slug the way the people context stores it, so a write-back matches an import. */
 export function normalizePublicSlug(value: string | null | undefined): string | null {
   let slug = (value ?? "").trim();
   if (!slug) return null;
@@ -113,7 +113,7 @@ export function resultMemberId(item: { identifier: string; profileUrl: string | 
   return null;
 }
 
-/** Same shape as the leads context's canonical URL, so a write-back matches what an import stores. */
+/** Same shape as the people context's canonical URL, so a write-back matches what an import stores. */
 export function canonicalProfileUrl(slug: string): string {
   return `https://www.linkedin.com/in/${encodeURIComponent(slug)}/`;
 }

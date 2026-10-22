@@ -3,8 +3,8 @@ import { FILTER_SELECT, FilterField, FilterPanel } from "@/components/shell/filt
 import { ListToolbar } from "@/components/shell/list-toolbar";
 import { SearchField } from "@/components/shell/search-field";
 import { Input } from "@/components/ui/input";
-import { lifecycleOf, type LeadFilter, type LeadSort } from "@/contexts/leads/domain/lead-filter";
-import { sourceLabel } from "@/contexts/leads/domain/lead-labels";
+import { lifecycleOf, type LeadFilter, type LeadSort } from "@/contexts/people/domain/lead-filter";
+import { sourceLabel } from "@/contexts/people/domain/lead-labels";
 import { humanizeToken } from "@/shared/humanize";
 
 const TRISTATE = [

@@ -1,4 +1,4 @@
-import { backfillLinkedinUrls } from "@/contexts/leads/infrastructure/backfill-linkedin-urls";
+import { backfillLinkedinUrls } from "@/contexts/people/infrastructure/backfill-linkedin-urls";
 import type { RolloverStep } from "@/platform/jobs/rollover";
 
 /**

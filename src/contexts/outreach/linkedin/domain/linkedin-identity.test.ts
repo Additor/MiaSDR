@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLinkedinRef } from "@/contexts/leads/domain/linkedin-url";
+import { parseLinkedinRef } from "@/contexts/people/domain/linkedin-url";
 import { canonicalProfileUrl, isMemberReference, normalizePublicSlug, parseLinkedInProfileRef, resultMemberId } from "./linkedin-identity";
 
 const ID = "ACwAAAbCdEfGhIjKlMnOp";
@@ -56,7 +56,7 @@ describe("bare tokens that look like provider ids", () => {
 });
 
 describe("normalizePublicSlug", () => {
-  it("lowercases and decodes like the leads context", () => {
+  it("lowercases and decodes like the people context", () => {
     expect(normalizePublicSlug("Jane-Doe")).toBe("jane-doe");
     expect(normalizePublicSlug("J%C3%B6rg-M")).toBe("jörg-m");
     expect(normalizePublicSlug("  ")).toBeNull();
@@ -98,7 +98,7 @@ describe("resultMemberId", () => {
 });
 
 describe("helpers", () => {
-  it("builds the canonical URL the leads context stores", () => {
+  it("builds the canonical URL the people context stores", () => {
     expect(canonicalProfileUrl("jörg-m")).toBe("https://www.linkedin.com/in/j%C3%B6rg-m/");
   });
   it("flags only member references as replaceable", () => {

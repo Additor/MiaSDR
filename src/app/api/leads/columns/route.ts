@@ -3,9 +3,9 @@ import {
   createCustomColumn,
   listCustomColumns,
   reorderCustomColumns,
-} from "@/contexts/leads/application/custom-columns";
-import { COLUMN_ENTITIES } from "@/contexts/leads/domain/custom-columns";
-import { customColumnStore } from "@/contexts/leads/infrastructure/composition";
+} from "@/contexts/people/application/custom-columns";
+import { COLUMN_ENTITIES } from "@/contexts/people/domain/custom-columns";
+import { customColumnStore } from "@/contexts/people/infrastructure/composition";
 import { withActor, withAdmin } from "@/app/_lib/api";
 
 const entity = z.enum(COLUMN_ENTITIES);

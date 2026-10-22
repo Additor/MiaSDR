@@ -1,4 +1,4 @@
-import { searchPeople } from "@/contexts/leads/infrastructure/composition";
+import { searchPeople } from "@/contexts/people/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
 
 /** People of the organization, any lifecycle: `?q=` over name, email, title, company, LinkedIn and phone. At most 20 rows. */

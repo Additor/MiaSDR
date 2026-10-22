@@ -1,8 +1,8 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { importLeads } from "@/contexts/leads/application/import-leads";
-import type { Mapping } from "@/contexts/leads/domain/import-plan";
-import { leadImportDeps } from "@/contexts/leads/infrastructure/composition";
-import { normalizeEmail, normalizeLinkedinSlug } from "@/contexts/leads/domain/normalize";
+import { importLeads } from "@/contexts/people/application/import-leads";
+import type { Mapping } from "@/contexts/people/domain/import-plan";
+import { leadImportDeps } from "@/contexts/people/infrastructure/composition";
+import { normalizeEmail, normalizeLinkedinSlug } from "@/contexts/people/domain/normalize";
 import { DEFAULT_STEPS } from "@/contexts/outreach/application/campaign-management";
 import { campaignDeps, enrollEmailPeople } from "@/contexts/outreach/infrastructure/composition";
 import { enrollPeople } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
@@ -23,7 +23,7 @@ function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
 const textOf = (value: unknown): string | null => (typeof value === "string" ? value : typeof value === "number" ? String(value) : null);
 
 /**
- * Leads come from the leads context (`importLeads`: the same validation, normalization and
+ * Leads come from the people context (`importLeads`: the same validation, normalization and
  * de-duplication as a file import). Enrollment follows the outreach rules: a suppressed address,
  * a do-not-contact person and a person already in the campaign are skipped, and each skip is reported per row.
  * Nothing is sent here. A draft campaign stays a draft.

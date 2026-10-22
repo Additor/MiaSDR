@@ -16,7 +16,7 @@ describeDb("deals context", () => {
   let deals: typeof import("../../application/deals");
   let stagesApp: typeof import("../../application/deal-stages");
   let composition: typeof import("@/composition/deals");
-  let leadsApp: typeof import("@/contexts/leads/application/convert-to-contact");
+  let leadsApp: typeof import("@/contexts/people/application/convert-to-contact");
   let store: typeof import("../drizzle-deal-store").drizzleDealStore;
   let appDb: typeof import("@/platform/db/client").db;
 
@@ -25,7 +25,7 @@ describeDb("deals context", () => {
     deals = await import("../../application/deals");
     stagesApp = await import("../../application/deal-stages");
     composition = await import("@/composition/deals");
-    leadsApp = await import("@/contexts/leads/application/convert-to-contact");
+    leadsApp = await import("@/contexts/people/application/convert-to-contact");
     store = (await import("../drizzle-deal-store")).drizzleDealStore;
     appDb = (await import("@/platform/db/client")).db;
   }, 60_000);

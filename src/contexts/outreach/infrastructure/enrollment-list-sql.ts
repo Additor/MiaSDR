@@ -1,5 +1,5 @@
 import { and, count, eq, inArray, sql, type SQL } from "drizzle-orm";
-import { leadSearchCondition } from "@/contexts/leads/infrastructure/queries";
+import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db } from "@/platform/db/client";
 import { campaignEnrollments, sends } from "@/platform/db/schema";
 import { countsByTab, statusesForTab, type EnrollmentListQuery, type TabCounts } from "../domain/enrollment-list";

@@ -12,12 +12,12 @@ describeDb("lead list benchmark", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
   let outreach: typeof import("@/contexts/outreach/infrastructure/drizzle-lead-statuses");
-  let q: typeof import("@/contexts/leads/infrastructure/queries");
+  let q: typeof import("@/contexts/people/infrastructure/queries");
   let org: TestOrg;
 
   beforeAll(async () => {
     outreach = await import("@/contexts/outreach/infrastructure/drizzle-lead-statuses");
-    q = await import("@/contexts/leads/infrastructure/queries");
+    q = await import("@/contexts/people/infrastructure/queries");
     org = await createTestOrg(sql, "Bench");
     const o = org.organizationId;
     const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${o}, 'default', true) returning id`;

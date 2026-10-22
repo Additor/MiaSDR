@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { deleteConfirmation, type DeleteQualification } from "@/contexts/leads/application/lead-delete-check";
+import { deleteConfirmation, type DeleteQualification } from "@/contexts/people/application/lead-delete-check";
 import { callApi } from "@/lib/api-client";
 
 /**

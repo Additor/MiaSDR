@@ -16,7 +16,7 @@ import type { ContactSort } from "@/contexts/deals/application/deal-ports";
 import { isUuid, listContacts } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { leadContactPoints } from "@/contexts/leads/domain/lead-activity";
+import { leadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";
 import { cn } from "@/lib/utils";

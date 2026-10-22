@@ -1,4 +1,4 @@
-import { findCompanyByDomain } from "@/contexts/leads/infrastructure/composition";
+import { findCompanyByDomain } from "@/contexts/people/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
 
 /** The live lookup of the domain field: the company that holds `?domain=` as its domain or another domain, or null. 422 for a domain that names no company. */

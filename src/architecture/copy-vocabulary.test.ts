@@ -293,7 +293,7 @@ describe("copy punctuation", () => {
   const files = punctuationFiles();
 
   it("scans the UI, domain, application and infrastructure layers and the platform code", () => {
-    for (const file of ["src/components/shell/confirm-dialog.tsx", "src/contexts/leads/application/make-contact.ts", "src/contexts/outreach/infrastructure/person-outreach.ts", "src/platform/db/person-locks.ts"]) {
+    for (const file of ["src/components/shell/confirm-dialog.tsx", "src/contexts/people/application/make-contact.ts", "src/contexts/outreach/infrastructure/person-outreach.ts", "src/platform/db/person-locks.ts"]) {
       expect(files).toContain(file);
     }
   });

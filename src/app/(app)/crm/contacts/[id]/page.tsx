@@ -13,11 +13,11 @@ import { dealSummaryForPeople, getDeal, isUuid } from "@/contexts/deals/applicat
 import { primaryDeal } from "@/contexts/deals/domain/primary-deal";
 import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { previewContactDelete } from "@/contexts/leads/application/contact-delete";
-import { getLead } from "@/contexts/leads/application/lead-management";
-import { telHref } from "@/contexts/leads/domain/lead-contact-links";
-import { sourceLabel } from "@/contexts/leads/domain/lead-labels";
-import { leadDeps } from "@/contexts/leads/infrastructure/composition";
+import { previewContactDelete } from "@/contexts/people/application/contact-delete";
+import { getLead } from "@/contexts/people/application/lead-management";
+import { telHref } from "@/contexts/people/domain/lead-contact-links";
+import { sourceLabel } from "@/contexts/people/domain/lead-labels";
+import { leadDeps } from "@/contexts/people/infrastructure/composition";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { leadActivityDeps } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";

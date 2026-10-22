@@ -2,7 +2,7 @@ import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Time } from "@/components/shell/time";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { LeadDetail } from "@/contexts/leads/application/lead-ports";
+import type { LeadDetail } from "@/contexts/people/application/lead-ports";
 import type { LeadCrossContext } from "@/contexts/outreach/application/cross-campaign-notices";
 import { campaignStatusLabel, enrollmentDisplayStatus, stopReasonNote } from "@/contexts/outreach/domain/campaign-view";
 import { heldByCampaign } from "@/contexts/outreach/domain/lead-status";

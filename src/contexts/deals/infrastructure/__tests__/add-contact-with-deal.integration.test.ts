@@ -19,8 +19,8 @@ describeDb("add contact with deal", () => {
     deals = await import("../../application/deals");
     const composition = await import("@/composition/deals");
     const { dealTitleParts } = await import("../person-deals");
-    const { addContact } = await import("@/contexts/leads/application/add-contact");
-    const { drizzleContactStore } = await import("@/contexts/leads/infrastructure/drizzle-contact-store");
+    const { addContact } = await import("@/contexts/people/application/add-contact");
+    const { drizzleContactStore } = await import("@/contexts/people/infrastructure/drizzle-contact-store");
     const { appendPersonEvent } = await import("@/contexts/conversations/infrastructure/person-handling");
     deps = (overrides = {}) => ({
       ...composition.dealsDeps(),

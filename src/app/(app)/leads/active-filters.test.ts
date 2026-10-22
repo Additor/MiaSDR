@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LeadFilter } from "@/contexts/leads/domain/lead-filter";
-import { leadFilterParams, parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
+import type { LeadFilter } from "@/contexts/people/domain/lead-filter";
+import { leadFilterParams, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
 import { activeFilterChips, panelFilterCount } from "./active-filters";
 import { leadsHref } from "./list-url";
 

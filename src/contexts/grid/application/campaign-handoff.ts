@@ -15,7 +15,7 @@ export interface PushToCampaignInput {
 }
 
 /**
- * Pushes selected rows to a campaign as leads. The leads context creates or updates the person with its
+ * Pushes selected rows to a campaign as leads. The people context creates or updates the person with its
  * usual validation and de-duplication. Suppressed addresses, do-not-contact people and people already in
  * the campaign are skipped and reported per row. The campaign stays in the state it was in, so nothing is
  * sent: a draft campaign still needs its own review and start.

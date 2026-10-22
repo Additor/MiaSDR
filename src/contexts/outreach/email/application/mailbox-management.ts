@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { normalizeEmail } from "@/contexts/leads/domain/normalize";
+import { normalizeEmail } from "@/contexts/people/domain/normalize";
 import { canonicalTimeZone } from "@/shared/time-zone";
 import { type WorkingHours } from "../../domain/working-hours";
 import type { MailboxProvider } from "../../application/ports";

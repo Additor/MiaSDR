@@ -1,5 +1,5 @@
-import { parseCreationKey, type AddContactInput } from "@/contexts/leads/application/add-contact";
-import { personalCampaignSkip } from "@/contexts/leads/application/convert-to-contact";
+import { parseCreationKey, type AddContactInput } from "@/contexts/people/application/add-contact";
+import { personalCampaignSkip } from "@/contexts/people/application/convert-to-contact";
 import type { DbHandle } from "@/platform/db/client";
 import { retryOnce, TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";

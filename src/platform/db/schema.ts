@@ -1,7 +1,7 @@
 /** Every context's tables, for drizzle-kit and the one shared client. */
 export * from "@/contexts/identity/infrastructure/schema";
 export * from "@/contexts/tenancy/infrastructure/schema";
-export * from "@/contexts/leads/infrastructure/schema";
+export * from "@/contexts/people/infrastructure/schema";
 export * from "@/contexts/integrations/infrastructure/schema";
 export * from "@/contexts/outreach/infrastructure/schema";
 export * from "@/platform/jobs/schema";

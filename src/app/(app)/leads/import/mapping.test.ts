@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CORE_TARGETS } from "@/contexts/leads/domain/import-plan";
+import { CORE_TARGETS } from "@/contexts/people/domain/import-plan";
 import { TARGETS, TARGET_GROUPS, mappingError } from "./mapping";
 
 describe("import targets", () => {

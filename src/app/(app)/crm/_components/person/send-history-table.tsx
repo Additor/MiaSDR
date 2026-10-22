@@ -1,7 +1,7 @@
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Time } from "@/components/shell/time";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { LeadDetail } from "@/contexts/leads/application/lead-ports";
+import type { LeadDetail } from "@/contexts/people/application/lead-ports";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { RecordSection } from "../record/record-header";
 

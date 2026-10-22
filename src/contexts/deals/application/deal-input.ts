@@ -1,4 +1,4 @@
-import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/leads/application/convert-to-contact";
+import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/convert-to-contact";
 import { sqlState } from "@/platform/db/errors";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCloseDate, parseDealTitle } from "../domain/deal";

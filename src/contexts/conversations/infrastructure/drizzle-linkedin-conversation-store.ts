@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { canonicalProfileUrl } from "@/contexts/leads/domain/linkedin-url";
+import { canonicalProfileUrl } from "@/contexts/people/domain/linkedin-url";
 import { db } from "@/platform/db/client";
 import { conversations, messages, people, records } from "@/platform/db/schema";
 import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/linkedin-ports";

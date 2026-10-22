@@ -512,7 +512,7 @@ describeDb("personal campaigns", () => {
 
     it("hides the personal enrollment and its sends from the lead page", async () => {
       const { f, open, ada } = await twoCampaigns();
-      const { drizzleLeadRepository } = await import("@/contexts/leads/infrastructure/drizzle-lead-repository");
+      const { drizzleLeadRepository } = await import("@/contexts/people/infrastructure/drizzle-lead-repository");
       const detail = await drizzleLeadRepository.get(f.org, ada.person);
       expect(detail?.enrollments.map((e) => e.campaignId)).toEqual([open]);
       expect(detail?.sends.map((s) => s.campaignId)).toEqual([open]);

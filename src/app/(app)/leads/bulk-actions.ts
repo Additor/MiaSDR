@@ -7,7 +7,7 @@
 export const MAX_VISIBLE_CONTROLS = 4;
 
 export type BulkControlId = "addToCampaign" | "export" | "more" | "clear";
-import type { LifecycleFilter } from "@/contexts/leads/domain/lead-filter";
+import type { LifecycleFilter } from "@/contexts/people/domain/lead-filter";
 
 export type BulkMenuItemId = "selectAll" | "createDeals" | "deleteSelected" | "deleteMatching";
 

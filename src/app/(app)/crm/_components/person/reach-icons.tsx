@@ -1,6 +1,6 @@
 import { BanIcon, MailIcon, MailXIcon } from "lucide-react";
 import { Time } from "@/components/shell/time";
-import type { LeadContactPoints } from "@/contexts/leads/domain/lead-activity";
+import type { LeadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { suppressionReasonLabel, type Reachability } from "@/contexts/outreach/domain/reachability";
 import { cn } from "@/lib/utils";
 import { StateTip, TipLines } from "./state-tip";

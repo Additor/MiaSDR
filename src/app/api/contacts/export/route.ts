@@ -2,7 +2,7 @@ import { z } from "zod";
 import { organizationTimeZone } from "@/composition/person-lifecycle";
 import { exportContactsCsv } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
-import { MAX_MATCHING_IDS } from "@/contexts/leads/domain/lead-filter";
+import { MAX_MATCHING_IDS } from "@/contexts/people/domain/lead-filter";
 import { withActor } from "@/app/_lib/api";
 import { PayloadTooLargeError, type Actor } from "@/shared/errors";
 

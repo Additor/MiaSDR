@@ -27,7 +27,7 @@ Open `http://localhost:3000`. The first visit asks you to create the owner accou
 
 ```
 src/app/            routes and screens; route handlers stay thin; _lib/api.ts holds the route wrappers
-src/contexts/<ctx>/ one bounded context: leads, outreach, conversations, deals, grid, identity, tenancy, integrations, analytics
+src/contexts/<ctx>/ one bounded context: people (leads, contacts, companies), outreach, conversations, deals, grid, identity, tenancy, integrations, analytics
   domain/           pure rules with unit tests; imports no framework, database or other layer
   application/      use cases and ports; checks permissions; never imports infrastructure
   infrastructure/   Drizzle stores, read models and adapters (Gmail, Unipile, Anthropic)
@@ -47,7 +47,7 @@ The tiers under `src/` import downward only: `shared`, then `platform`, then the
 A route handler calls `withActor`, `withAdmin` or `withUser`, then one use case. These checks keep the layers apart:
 
 - ESLint (`eslint.config.mjs`) stops `domain/` from importing `application/`, `infrastructure/`, `src/platform`, Next.js, React or Drizzle. It stops `application/` from importing `infrastructure/` and runtime `src/platform` code: a use case takes the database and job slots through ports, and may import platform types and the driver-free `@/platform/db/errors`.
-- `src/architecture/context-dependencies.test.ts` keeps contexts in layers (identity, tenancy, integrations, leads, outreach, conversations, then deals, grid and analytics): a context imports only lower layers and never `src/composition`. When a lower context needs a higher one, declare a port in the lower context and wire it in `src/composition`.
+- `src/architecture/context-dependencies.test.ts` keeps contexts in layers (identity, tenancy, integrations, people, outreach, conversations, then deals, grid and analytics): a context imports only lower layers and never `src/composition`. When a lower context needs a higher one, declare a port in the lower context and wire it in `src/composition`.
 - `src/architecture/context-dependencies.test.ts` also keeps `src/shared` free of every tier above it, and lets `src/platform` import a context only where its shrink-only list allows.
 - `src/architecture/context-dependencies.test.ts` also fixes what a context publishes to the contexts above it: `domain/`, `application/`, schema and composition files, plus the few infrastructure modules in `PUBLISHED_INFRASTRUCTURE`. Wiring that spans contexts lives in `src/composition` (`deals.ts`, `person-lifecycle.ts`, `inbox-filing.ts`).
 - `src/architecture/app-boundaries.test.ts` lets `src/app` import a context's `infrastructure/` only through its composition files (`composition.ts`, `*-composition.ts`) and identity's session and auth modules. Add a wired deps function to the composition file instead of importing a store.

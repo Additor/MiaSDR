@@ -12,7 +12,7 @@ import { publicConversation, publicConversationSql, visibleRecordSql } from "@/p
 import { rowsOf } from "../after-reply/infrastructure/sequence-run-tx";
 
 /**
- * Callee-owned functions for turning a lead into a contact. The leads context runs the conversion and calls these in
+ * Callee-owned functions for turning a lead into a contact. The people context runs the conversion and calls these in
  * its transaction; the caller holds the transaction, so every function here takes it (or reads without one).
  */
 

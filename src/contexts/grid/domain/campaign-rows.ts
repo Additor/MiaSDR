@@ -1,7 +1,7 @@
 /**
  * Turns grid rows into rows the lead import understands. The grid column the
  * person mapped to "Email" becomes the CSV header "email", and so on, so the
- * leads context validates, normalizes and de-duplicates them with the same
+ * people context validates, normalizes and de-duplicates them with the same
  * rules as a file import.
  */
 

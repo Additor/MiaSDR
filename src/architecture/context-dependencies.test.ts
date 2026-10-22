@@ -71,8 +71,8 @@ const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
     "@/contexts/grid/infrastructure/schema",
     "@/contexts/identity/infrastructure/schema",
     "@/contexts/integrations/infrastructure/schema",
-    "@/contexts/leads/infrastructure/schema",
     "@/contexts/outreach/infrastructure/schema",
+    "@/contexts/people/infrastructure/schema",
     "@/contexts/tenancy/infrastructure/schema",
   ],
   "src/platform/db/columns.ts": ["@/contexts/tenancy/infrastructure/schema"],
@@ -125,7 +125,7 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // The organization read (time zone, name).
   "tenancy/infrastructure/drizzle-organization-store",
   // The lead search predicate the enrollment lists filter with.
-  "leads/infrastructure/queries",
+  "people/infrastructure/queries",
   // The reply stop and the suppression store, which conversations runs inside its own transactions.
   "outreach/infrastructure/reply-stop",
   "outreach/infrastructure/suppression-store",
@@ -161,14 +161,14 @@ describe("context interfaces", () => {
   it("tells a published module, a composition and a schema from a private module", () => {
     const file = path.join(SRC, "contexts/deals/infrastructure/example.ts");
     const source = [
-      'import { leadSearchCondition } from "@/contexts/leads/infrastructure/queries";',
-      'import { leadDeps } from "@/contexts/leads/infrastructure/composition";',
-      'import { people } from "@/contexts/leads/infrastructure/schema";',
-      'import { drizzleLeadStore } from "@/contexts/leads/infrastructure/drizzle-lead-store";',
+      'import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";',
+      'import { leadDeps } from "@/contexts/people/infrastructure/composition";',
+      'import { people } from "@/contexts/people/infrastructure/schema";',
+      'import { drizzleLeadStore } from "@/contexts/people/infrastructure/drizzle-lead-store";',
       'import { gateway } from "../../outreach/linkedin/infrastructure/unipile-gateway";',
       'import { own } from "./own-store";',
     ].join("\n");
-    expect(privateCrossImports(file, source)).toEqual(["leads/infrastructure/drizzle-lead-store", "outreach/linkedin/infrastructure/unipile-gateway"]);
+    expect(privateCrossImports(file, source)).toEqual(["outreach/linkedin/infrastructure/unipile-gateway", "people/infrastructure/drizzle-lead-store"]);
   });
 });
 
@@ -199,7 +199,7 @@ describe("context dependencies", () => {
   });
 
   it("catches an alias, a relative, a dynamic and a type-only import", () => {
-    const file = path.join(SRC, "contexts/leads/application/example.ts");
+    const file = path.join(SRC, "contexts/people/application/example.ts");
     const source = [
       'import { deals } from "@/contexts/deals/application/deals";',
       'import type { Port } from "../../outreach/application/ports";',
@@ -209,11 +209,11 @@ describe("context dependencies", () => {
       'import { sql } from "drizzle-orm";',
     ].join("\n");
     expect(upwardImports(file, source)).toEqual([
-      "src/contexts/leads/application/example.ts -> @/contexts/deals/application/deals",
-      "src/contexts/leads/application/example.ts -> ../../outreach/application/ports",
-      "src/contexts/leads/application/example.ts -> ../../deals/domain/deal",
-      "src/contexts/leads/application/example.ts -> @/contexts/conversations/infrastructure/person-handling",
+      "src/contexts/people/application/example.ts -> @/contexts/deals/application/deals",
+      "src/contexts/people/application/example.ts -> ../../outreach/application/ports",
+      "src/contexts/people/application/example.ts -> ../../deals/domain/deal",
+      "src/contexts/people/application/example.ts -> @/contexts/conversations/infrastructure/person-handling",
     ]);
-    expect(violations(file, source, CONTEXT_FORBIDDEN)).toEqual(["src/contexts/leads/application/example.ts -> @/composition/person-lifecycle"]);
+    expect(violations(file, source, CONTEXT_FORBIDDEN)).toEqual(["src/contexts/people/application/example.ts -> @/composition/person-lifecycle"]);
   });
 });

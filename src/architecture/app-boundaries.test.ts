@@ -56,9 +56,9 @@ describe("app boundaries", () => {
       'import { mailboxDeps } from "@/contexts/outreach/infrastructure/composition";',
       'import { linkedinJobs } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";',
       'import { requireOrgContext } from "@/contexts/identity/infrastructure/session";',
-      'import { drizzleLeadStore } from "@/contexts/leads/infrastructure/drizzle-lead-store";',
-      'const q = await import("@/contexts/leads/infrastructure/queries");',
+      'import { drizzleLeadStore } from "@/contexts/people/infrastructure/drizzle-lead-store";',
+      'const q = await import("@/contexts/people/infrastructure/queries");',
     ].join("\n");
-    expect(privateImports(source)).toEqual(["leads/infrastructure/drizzle-lead-store", "leads/infrastructure/queries"]);
+    expect(privateImports(source)).toEqual(["people/infrastructure/drizzle-lead-store", "people/infrastructure/queries"]);
   });
 });

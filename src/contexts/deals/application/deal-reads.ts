@@ -1,6 +1,6 @@
-import { MAX_MATCHING_IDS } from "@/contexts/leads/domain/lead-filter";
-import { csvLine, UTF8_BOM } from "@/contexts/leads/domain/csv-export";
-import { canonicalProfileUrl } from "@/contexts/leads/domain/linkedin-url";
+import { MAX_MATCHING_IDS } from "@/contexts/people/domain/lead-filter";
+import { csvLine, UTF8_BOM } from "@/contexts/people/domain/csv-export";
+import { canonicalProfileUrl } from "@/contexts/people/domain/linkedin-url";
 import { canonicalTimeZone } from "@/shared/time-zone";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { primaryDeal } from "../domain/primary-deal";
@@ -342,7 +342,7 @@ export async function listCompanies(deps: DealsDeps, actor: Actor, input: { q?: 
 
 /**
  * A company with its contacts, their deals and the header counts: contacts, open deals and the open amount per currency,
- * by the rules of the Companies list. Any company of the organization answers. `updateCompany` in the leads context edits it.
+ * by the rules of the Companies list. Any company of the organization answers. `updateCompany` in the people context edits it.
  */
 export async function getCompany(deps: DealsDeps, actor: Actor, companyId: string) {
   if (!isUuid(companyId)) throw new NotFoundError("Company not found");

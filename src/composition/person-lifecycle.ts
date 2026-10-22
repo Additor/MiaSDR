@@ -4,14 +4,14 @@ import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-p
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
 import { conversionDeps, dealsDeps } from "@/composition/deals";
 import { dealCountsOfPerson, dealTitleParts, deleteClosedDealsOfPerson, lockDealsOfPerson } from "@/contexts/deals/infrastructure/person-deals";
-import { addContact, type AddContactDeps, type AddContactInput, type AddContactResult } from "@/contexts/leads/application/add-contact";
-import type { CompanyLifecycleDeps, CompanyMergePreviewDeps } from "@/contexts/leads/application/company-lifecycle";
-import type { ContactDeleteDeps } from "@/contexts/leads/application/contact-delete";
-import type { MakeContactDeps } from "@/contexts/leads/application/make-contact";
-import { drizzleCompanyLifecycleStore } from "@/contexts/leads/infrastructure/drizzle-company-lifecycle-store";
-import { drizzleContactDeleteStore } from "@/contexts/leads/infrastructure/drizzle-contact-delete-store";
-import { drizzleContactStore, personTransaction } from "@/contexts/leads/infrastructure/drizzle-contact-store";
-import { drizzleLeadsAudit } from "@/contexts/leads/infrastructure/drizzle-leads-audit";
+import { addContact, type AddContactDeps, type AddContactInput, type AddContactResult } from "@/contexts/people/application/add-contact";
+import type { CompanyLifecycleDeps, CompanyMergePreviewDeps } from "@/contexts/people/application/company-lifecycle";
+import type { ContactDeleteDeps } from "@/contexts/people/application/contact-delete";
+import type { MakeContactDeps } from "@/contexts/people/application/make-contact";
+import { drizzleCompanyLifecycleStore } from "@/contexts/people/infrastructure/drizzle-company-lifecycle-store";
+import { drizzleContactDeleteStore } from "@/contexts/people/infrastructure/drizzle-contact-delete-store";
+import { drizzleContactStore, personTransaction } from "@/contexts/people/infrastructure/drizzle-contact-store";
+import { drizzleLeadsAudit } from "@/contexts/people/infrastructure/drizzle-leads-audit";
 import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
 import { keepEmailSuppressed, leadsInRunningCampaigns, personOutreachBlockers, personOutreachCounts, purgePersonOutreach } from "@/contexts/outreach/infrastructure/person-outreach";
 import { drizzleOrganizationStore } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
@@ -20,7 +20,7 @@ import type { Actor } from "@/shared/errors";
 
 /*
  * The composition root of the people and company use cases of "Contacts and Companies CRUD" in docs/decisions.md. The use
- * cases and their ports live in `contexts/leads/application`, which imports neither deals nor outreach; this file wires those
+ * cases and their ports live in `contexts/people/application`, which imports neither deals nor outreach; this file wires those
  * ports to the callee-owned functions of conversations, deals and outreach. Routes import it, and no context does
  * (`src/architecture/context-dependencies.test.ts`).
  */

@@ -1,5 +1,5 @@
 import { makeContactDeps } from "@/composition/person-lifecycle";
-import { makeContact } from "@/contexts/leads/application/make-contact";
+import { makeContact } from "@/contexts/people/application/make-contact";
 import { withActor } from "@/app/_lib/api";
 
 /**

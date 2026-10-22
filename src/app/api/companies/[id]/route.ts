@@ -2,9 +2,9 @@ import { z } from "zod";
 import { companyLifecycleDeps } from "@/composition/person-lifecycle";
 import { getCompany } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
-import { deleteCompany } from "@/contexts/leads/application/company-lifecycle";
-import { updateCompany } from "@/contexts/leads/application/company-management";
-import { companyDeps } from "@/contexts/leads/infrastructure/composition";
+import { deleteCompany } from "@/contexts/people/application/company-lifecycle";
+import { updateCompany } from "@/contexts/people/application/company-management";
+import { companyDeps } from "@/contexts/people/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
 import { ValidationError } from "@/shared/errors";
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { companyLifecycleDeps } from "@/composition/person-lifecycle";
 import { listCompanies } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
-import { addCompany } from "@/contexts/leads/application/company-lifecycle";
+import { addCompany } from "@/contexts/people/application/company-lifecycle";
 import { withActor } from "@/app/_lib/api";
 
 /**

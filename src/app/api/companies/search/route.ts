@@ -1,4 +1,4 @@
-import { searchCompanies } from "@/contexts/leads/infrastructure/composition";
+import { searchCompanies } from "@/contexts/people/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
 
 /** Step 1 of the merge dialog: up to 20 companies by name or domain. `all=1` includes companies that Companies does not list. */

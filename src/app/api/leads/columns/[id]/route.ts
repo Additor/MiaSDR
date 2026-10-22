@@ -4,8 +4,8 @@ import {
   deleteCustomColumn,
   renameCustomColumn,
   restoreCustomColumn,
-} from "@/contexts/leads/application/custom-columns";
-import { customColumnStore } from "@/contexts/leads/infrastructure/composition";
+} from "@/contexts/people/application/custom-columns";
+import { customColumnStore } from "@/contexts/people/infrastructure/composition";
 import { withAdmin } from "@/app/_lib/api";
 
 const DENIED = "Only an owner or admin can manage custom fields.";

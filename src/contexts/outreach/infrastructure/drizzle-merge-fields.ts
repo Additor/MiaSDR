@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { entityColumns } from "@/contexts/leads/infrastructure/schema";
+import { entityColumns } from "@/contexts/people/infrastructure/schema";
 import type { MergeFieldSource } from "../application/merge-fields";
 
 const SOURCE_SAMPLE = 250;

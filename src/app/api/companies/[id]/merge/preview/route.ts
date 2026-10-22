@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { companyMergePreviewDeps } from "@/composition/person-lifecycle";
-import { previewCompanyMerge } from "@/contexts/leads/application/company-lifecycle";
+import { previewCompanyMerge } from "@/contexts/people/application/company-lifecycle";
 import { withActor } from "@/app/_lib/api";
 
 const bodySchema = z.object({ otherId: z.string().max(64) });

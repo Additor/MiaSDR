@@ -1,6 +1,6 @@
-import { listMatchingLeadIds } from "@/contexts/leads/application/lead-management";
-import { MAX_MATCHING_IDS, parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
-import { leadDeps } from "@/contexts/leads/infrastructure/composition";
+import { listMatchingLeadIds } from "@/contexts/people/application/lead-management";
+import { MAX_MATCHING_IDS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
+import { leadDeps } from "@/contexts/people/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
 
 /**

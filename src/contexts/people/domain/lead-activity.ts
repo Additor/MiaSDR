@@ -2,7 +2,7 @@ import { mailtoHref, profileHref } from "./lead-contact-links";
 import { canonicalProfileUrl } from "./linkedin-url";
 
 /*
- * The contact points of a person (address and profile URL), which the leads context owns. The outreach context adds
+ * The contact points of a person (address and profile URL), which the people context owns. The outreach context adds
  * the lead status and the reachability in `outreach/application/read-lead-activity.ts`.
  */
 

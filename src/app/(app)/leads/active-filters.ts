@@ -1,5 +1,5 @@
-import { DEFAULT_LIFECYCLE, type LeadFilter, type LifecycleFilter } from "@/contexts/leads/domain/lead-filter";
-import { sourceLabel } from "@/contexts/leads/domain/lead-labels";
+import { DEFAULT_LIFECYCLE, type LeadFilter, type LifecycleFilter } from "@/contexts/people/domain/lead-filter";
+import { sourceLabel } from "@/contexts/people/domain/lead-labels";
 import { humanizeToken } from "@/shared/humanize";
 
 /** One applied filter, shown as a removable chip above the list. */

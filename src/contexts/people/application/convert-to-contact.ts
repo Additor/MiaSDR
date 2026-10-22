@@ -3,7 +3,7 @@ import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 
 /*
- * Lead to contact, the one transition the leads context owns ("Leads and CRM" in docs/decisions.md).
+ * Lead to contact, the one transition the people context owns ("Leads and CRM" in docs/decisions.md).
  *
  * The use case runs against ports this file declares. Outreach and conversations own the rows the conversion stops, so
  * their functions arrive through the composition root (the deals context wires them), not through an import. The caller

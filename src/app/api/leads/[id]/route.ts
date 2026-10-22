@@ -1,5 +1,5 @@
-import { BLOCK_MESSAGES, deleteLeads, getLead, updateLead } from "@/contexts/leads/application/lead-management";
-import { leadDeps } from "@/contexts/leads/infrastructure/composition";
+import { BLOCK_MESSAGES, deleteLeads, getLead, updateLead } from "@/contexts/people/application/lead-management";
+import { leadDeps } from "@/contexts/people/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import { editSchema, leadId } from "../validation";

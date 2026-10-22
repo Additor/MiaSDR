@@ -1,4 +1,4 @@
-import { DEFAULT_LEAD_SORT, leadFilterParams, parseLeadFilter, parseLeadSort, type LeadFilter, type LeadSort } from "@/contexts/leads/domain/lead-filter";
+import { DEFAULT_LEAD_SORT, leadFilterParams, parseLeadFilter, parseLeadSort, type LeadFilter, type LeadSort } from "@/contexts/people/domain/lead-filter";
 
 /*
  * The lead page remembers which list it was opened from. The list's row link adds `?list=<the list's query string>`;

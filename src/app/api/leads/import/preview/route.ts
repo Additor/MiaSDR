@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { MAX_IMPORT_ROWS } from "@/contexts/leads/application/import-leads";
-import { suggestMapping } from "@/contexts/leads/domain/import-plan";
+import { MAX_IMPORT_ROWS } from "@/contexts/people/application/import-leads";
+import { suggestMapping } from "@/contexts/people/domain/import-plan";
 import { CsvError, MAX_FILE_BYTES } from "@/platform/files/csv";
-import { collectExamples } from "@/contexts/leads/domain/import-summary";
+import { collectExamples } from "@/contexts/people/domain/import-summary";
 import { parseSpreadsheet } from "@/platform/files/spreadsheet";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 

@@ -121,7 +121,7 @@ export interface SearchLeadSinkInput {
   tx?: DbHandle;
 }
 
-/** Narrow port to the leads context: create or match leads for found people, and enroll them when a campaign is set. */
+/** Narrow port to the people context: create or match leads for found people, and enroll them when a campaign is set. */
 export interface SearchLeadSink {
   /** The person id of each found key, and how many of them are contacts, which no campaign enrolls. */
   importPeople(input: SearchLeadSinkInput): Promise<{ ids: Map<string, string>; skippedContact: number }>;

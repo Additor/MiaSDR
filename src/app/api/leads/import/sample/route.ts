@@ -1,6 +1,6 @@
 import { NextResponse, connection } from "next/server";
-import { UTF8_BOM } from "@/contexts/leads/domain/csv-export";
-import { sampleImportCsv } from "@/contexts/leads/domain/import-summary";
+import { UTF8_BOM } from "@/contexts/people/domain/csv-export";
+import { sampleImportCsv } from "@/contexts/people/domain/import-summary";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 
 /** A sample file for the lead import: the headers the importer maps without help and two example leads. */

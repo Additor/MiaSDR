@@ -1,5 +1,5 @@
 import { contactDeleteDeps } from "@/composition/person-lifecycle";
-import { previewContactDelete } from "@/contexts/leads/application/contact-delete";
+import { previewContactDelete } from "@/contexts/people/application/contact-delete";
 import { withActor } from "@/app/_lib/api";
 
 /** What a delete of the contact removes and what blocks it, as the caller may see it. */

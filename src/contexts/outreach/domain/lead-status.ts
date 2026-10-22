@@ -60,7 +60,7 @@ export interface LeadStatus {
 export const NEW_LEAD_STATUS: LeadStatus = { state: "new", enrollment: null, otherCampaigns: 0, lastContactAt: null };
 
 /**
- * The read the leads context depends on. One call covers a whole page of person ids in a fixed number of queries, scoped
+ * The read the people context depends on. One call covers a whole page of person ids in a fixed number of queries, scoped
  * to the organization. A person outreach knows nothing about has no entry, so callers fall back to `NEW_LEAD_STATUS`.
  */
 export type ReadLeadStatuses = (organizationId: string, personIds: readonly string[]) => Promise<Map<string, LeadStatus>>;

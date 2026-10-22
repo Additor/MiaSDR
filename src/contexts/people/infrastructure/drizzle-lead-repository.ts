@@ -28,7 +28,7 @@ import { resolvePeopleColumns } from "./resolve-custom-columns";
  * The detail and delete checks read outreach and conversation tables
  * (campaign_enrollments, sends, records, events, conversations) through the shared schema
  * barrel. That is a read-only join, kept in this one module so the rest of the
- * leads context does not know those tables exist.
+ * people context does not know those tables exist.
  */
 
 const CHUNK = 500;

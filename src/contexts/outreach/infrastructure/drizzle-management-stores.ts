@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from "drizzle-orm";
-import { leadSearchCondition } from "@/contexts/leads/infrastructure/queries";
+import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
 import { ConflictError } from "@/shared/errors";
 import { campaignEnrollments, campaigns, channelSettings, companies, entityColumns, mailboxes, people, sends } from "@/platform/db/schema";

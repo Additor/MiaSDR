@@ -1,4 +1,4 @@
-import { leadContactPoints, type LeadContactPoints } from "@/contexts/leads/domain/lead-activity";
+import { leadContactPoints, type LeadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { NEW_LEAD_STATUS, type LeadStatus, type ReadLeadStatuses } from "../domain/lead-status";
 import { NO_REACH, type Reachability, type ReadReachability } from "../domain/reachability";
 
@@ -27,7 +27,7 @@ export interface LeadActivitySource {
 
 /**
  * Status, reach and contact points of a set of people, keyed by person id. The lead list calls it for one page and the
- * lead page for its one id, so both show the same state. The leads context owns the contact points, which come from the
+ * lead page for its one id, so both show the same state. The people context owns the contact points, which come from the
  * rows the caller already read, so they cost no query. The status and reach come from one call to each read for the
  * whole set; contacts skip the status read. A lead with no outreach is new. Every id of the set has an entry.
  */

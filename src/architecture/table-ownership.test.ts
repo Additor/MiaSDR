@@ -16,7 +16,7 @@ const FOREIGN_WRITES: Record<string, string[]> = {
   "src/contexts/conversations/infrastructure/drizzle-reply-handling-store.ts": ["campaignEnrollments"],
   "src/contexts/conversations/infrastructure/drizzle-linkedin-conversation-store.ts": ["people"],
   "src/contexts/conversations/infrastructure/drizzle-linkedin-reply-store.ts": ["linkedinAccounts"],
-  "src/contexts/leads/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "contactPolicies", "suppression_list"],
+  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "contactPolicies", "suppression_list"],
   "src/contexts/outreach/infrastructure/drizzle-channel-settings-store.ts": ["channelSettings", "organizations"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["events"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["integrationAccounts", "integrationCredentials"],
@@ -31,9 +31,9 @@ const FOREIGN_WRITES: Record<string, string[]> = {
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
-  "src/contexts/leads/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "events", "records", "sends", "suppressionList"],
-  "src/contexts/leads/infrastructure/people-directory.ts": ["contactPolicies", "suppressionList"],
-  "src/contexts/leads/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "messages", "records"],
+  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "events", "records", "sends", "suppressionList"],
+  "src/contexts/people/infrastructure/people-directory.ts": ["contactPolicies", "suppressionList"],
+  "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["events"],
   "src/contexts/outreach/infrastructure/drizzle-lead-statuses.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
@@ -61,7 +61,7 @@ const SCHEMA_FILES: Record<string, string[]> = {
   identity: ["contexts/identity/infrastructure/schema.ts"],
   tenancy: ["contexts/tenancy/infrastructure/schema.ts"],
   integrations: ["contexts/integrations/infrastructure/schema.ts"],
-  leads: ["contexts/leads/infrastructure/schema.ts"],
+  people: ["contexts/people/infrastructure/schema.ts"],
   outreach: ["contexts/outreach/infrastructure/schema.ts"],
   conversations: ["contexts/conversations/infrastructure/schema.ts", "contexts/conversations/after-reply/infrastructure/sequences-schema.ts"],
   grid: ["contexts/grid/infrastructure/schema.ts"],
@@ -146,8 +146,8 @@ describe("table ownership", () => {
       "await tx.update(people).set({ name });",
       "await tx.execute(sql`delete from campaign_enrollments where id = ${id}`);",
     ].join("\n");
-    expect(foreignWrites("leads", source, table)).toEqual(["campaign_enrollments"]);
+    expect(foreignWrites("people", source, table)).toEqual(["campaign_enrollments"]);
     expect(foreignWrites("outreach", source, table)).toEqual(["people"]);
-    expect(upwardReads("leads", source, table)).toEqual(["conversations", "mailboxes", "records"]);
+    expect(upwardReads("people", source, table)).toEqual(["conversations", "mailboxes", "records"]);
   });
 });

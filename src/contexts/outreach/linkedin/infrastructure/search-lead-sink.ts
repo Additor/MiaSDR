@@ -1,9 +1,9 @@
-import { importFoundPeople } from "@/contexts/leads/application/found-people";
-import { foundPeopleStore } from "@/contexts/leads/infrastructure/composition";
+import { importFoundPeople } from "@/contexts/people/application/found-people";
+import { foundPeopleStore } from "@/contexts/people/infrastructure/composition";
 import type { SearchLeadSink } from "../application/linkedin-search-ports";
 import { enrollPeopleCounted } from "./drizzle-linkedin-campaign-store";
 
-/** Leads for found people through the leads context, then enrollment in the target campaign when the search has one. */
+/** Leads for found people through the people context, then enrollment in the target campaign when the search has one. */
 export const searchLeadSink: SearchLeadSink = {
   async importPeople(input) {
     const report = await importFoundPeople(

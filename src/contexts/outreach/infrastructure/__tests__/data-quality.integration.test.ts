@@ -11,9 +11,9 @@ const step = (subject: string, body: string) => ({ stepNumber: 1, kind: "email",
 describeDb("import to campaign data quality", () => {
   useTestEnv();
   const sql = testSql({ max: 4 });
-  let importLeads: typeof import("@/contexts/leads/application/import-leads").importLeads;
-  let leadStore: typeof import("@/contexts/leads/infrastructure/drizzle-lead-store").drizzleLeadStore;
-  let suggestMapping: typeof import("@/contexts/leads/domain/import-plan").suggestMapping;
+  let importLeads: typeof import("@/contexts/people/application/import-leads").importLeads;
+  let leadStore: typeof import("@/contexts/people/infrastructure/drizzle-lead-store").drizzleLeadStore;
+  let suggestMapping: typeof import("@/contexts/people/domain/import-plan").suggestMapping;
   let uc: typeof import("../../application/campaign-management");
   let stores: typeof import("../drizzle-management-stores");
   let send: typeof import("../../email/application/send-next-email");
@@ -35,9 +35,9 @@ describeDb("import to campaign data quality", () => {
   }
 
   beforeAll(async () => {
-    ({ importLeads } = await import("@/contexts/leads/application/import-leads"));
-    ({ drizzleLeadStore: leadStore } = await import("@/contexts/leads/infrastructure/drizzle-lead-store"));
-    ({ suggestMapping } = await import("@/contexts/leads/domain/import-plan"));
+    ({ importLeads } = await import("@/contexts/people/application/import-leads"));
+    ({ drizzleLeadStore: leadStore } = await import("@/contexts/people/infrastructure/drizzle-lead-store"));
+    ({ suggestMapping } = await import("@/contexts/people/domain/import-plan"));
     uc = await import("../../application/campaign-management");
     stores = await import("../drizzle-management-stores");
     send = await import("../../email/application/send-next-email");

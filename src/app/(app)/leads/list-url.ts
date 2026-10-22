@@ -1,4 +1,4 @@
-import { leadFilterParams, type LeadFilter, type LeadSort } from "@/contexts/leads/domain/lead-filter";
+import { leadFilterParams, type LeadFilter, type LeadSort } from "@/contexts/people/domain/lead-filter";
 
 /** The URL of the people list for a filter, sort, page and page size. Defaults stay out of the URL. */
 export function leadsHref(state: { filter: LeadFilter; sort: LeadSort; page?: number; size?: number }): string {

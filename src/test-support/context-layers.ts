@@ -6,7 +6,7 @@ export const LAYERS: readonly (readonly string[])[] = [
   ["identity"],
   ["tenancy"],
   ["integrations"],
-  ["leads"],
+  ["people"],
   ["outreach"],
   ["conversations"],
   ["deals", "grid", "analytics"],

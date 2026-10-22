@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { normalizeEmail } from "@/contexts/leads/domain/normalize";
+import { normalizeEmail } from "@/contexts/people/domain/normalize";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";

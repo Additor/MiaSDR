@@ -8,8 +8,8 @@ describeDb("transaction handle through stores", () => {
   let user = "";
   let mods: {
     db: typeof import("@/platform/db/client").db;
-    importLeads: typeof import("@/contexts/leads/application/import-leads").importLeads;
-    leadStore: typeof import("@/contexts/leads/infrastructure/drizzle-lead-store").drizzleLeadStore;
+    importLeads: typeof import("@/contexts/people/application/import-leads").importLeads;
+    leadStore: typeof import("@/contexts/people/infrastructure/drizzle-lead-store").drizzleLeadStore;
     campaigns: typeof import("../drizzle-management-stores").drizzleCampaignStore;
     liCampaigns: typeof import("../../linkedin/infrastructure/drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
     enrollEmailPeople: typeof import("../drizzle-management-stores").enrollEmailPeople;
@@ -19,8 +19,8 @@ describeDb("transaction handle through stores", () => {
   beforeAll(async () => {
     const [client, leads, leadStore, email, linkedin] = await Promise.all([
       import("@/platform/db/client"),
-      import("@/contexts/leads/application/import-leads"),
-      import("@/contexts/leads/infrastructure/drizzle-lead-store"),
+      import("@/contexts/people/application/import-leads"),
+      import("@/contexts/people/infrastructure/drizzle-lead-store"),
       import("../drizzle-management-stores"),
       import("../../linkedin/infrastructure/drizzle-linkedin-campaign-store"),
     ]);

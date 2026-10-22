@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { MAX_DELETE_IDS, deleteLeads } from "@/contexts/leads/application/lead-management";
-import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
-import { leadDeps } from "@/contexts/leads/infrastructure/composition";
+import { MAX_DELETE_IDS, deleteLeads } from "@/contexts/people/application/lead-management";
+import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
+import { leadDeps } from "@/contexts/people/infrastructure/composition";
 import { withActor } from "@/app/_lib/api";
 
 /** Every `LeadFilter` key the list sends except `ids`, which belong to the other branch. */

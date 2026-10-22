@@ -19,7 +19,7 @@ How MiaSDR works and why, by area. Each section states what the code does today.
 - A provider call has three outcomes: accepted, refused (`definite`) or unknown. The code claims the work in the database before the call and never retries an unknown outcome on a guess; a reconciler or a person settles it.
 - Attribution stores `users.id`. Secrets and tokens are compared in constant time.
 - Each bounded context lives in `src/contexts/<name>/` with three layers. A large context splits into subdomains with the same three layers each: `outreach/email` and `outreach/linkedin`; `conversations/ai`, `conversations/actions` and `conversations/after-reply`. What both subdomains share stays at the context root. `domain/` is pure and unit tested. `application/` holds ports and use cases that take an `Actor { userId, organizationId, role }`. `infrastructure/` holds the Drizzle adapters and the composition of each context. Wiring across contexts lives in `src/composition`.
-- Contexts form layers, lowest first: identity, tenancy, integrations, leads, outreach, conversations, then deals, grid and analytics. A context imports only lower layers, so the graph has no cycle. When a lower context needs a higher one, it declares a port and `src/composition` passes the implementation in: outreach files received mail through `InboxFiling` (`outreach/application/inbound-ports.ts`), which `src/composition/inbox-filing.ts` binds to conversations. `src/architecture/context-dependencies.test.ts` enforces the layers.
+- Contexts form layers, lowest first: identity, tenancy, integrations, people, outreach, conversations, then deals, grid and analytics. The people context owns leads, contacts and companies; it is named after its `people` table, not one lifecycle stage. A context imports only lower layers, so the graph has no cycle. When a lower context needs a higher one, it declares a port and `src/composition` passes the implementation in: outreach files received mail through `InboxFiling` (`outreach/application/inbound-ports.ts`), which `src/composition/inbox-filing.ts` binds to conversations. `src/architecture/context-dependencies.test.ts` enforces the layers.
 - `src/app` reaches a context's infrastructure only through its composition files, which hand out wired deps, and identity's session and auth modules (`src/architecture/app-boundaries.test.ts`).
 - A table belongs to the context whose `schema.ts` declares it, and only that context writes it. Lower-layer tables may appear in a join; a higher layer's tables are read through that context's read model (`src/architecture/table-ownership.test.ts`). Both tests carry a shrink-only list of older exceptions. Read predicates that every context applies to shared tables, such as `src/platform/db/conversation-visibility.ts`, live in `src/platform/db`.
 
@@ -203,7 +203,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### List, filters and export
 
-- `LeadFilter` (`leads/domain/lead-filter.ts`) is one parser for the page URL, the export, `GET /api/leads/ids` and bulk delete. A filter with no `lifecycle` lists leads; `contact` and `all` widen it.
+- `LeadFilter` (`people/domain/lead-filter.ts`) is one parser for the page URL, the export, `GET /api/leads/ids` and bulk delete. A filter with no `lifecycle` lists leads; `contact` and `all` widen it.
 
 | Param | Meaning |
 |---|---|
@@ -240,7 +240,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
   - a `pending` or `active` enrollment in an active or paused campaign;
   - a reply-handling `records` row or an `events` row;
   - `lifecycle = 'contact'` (contacts have their own delete).
-- The refusal names the reason and points to do not contact. A deletable lead goes with its contact policy and its unsent enrollments. Each batch is one transaction. A foreign key from a table the leads context does not know (`23503`) reruns the batch one lead at a time and reports that lead as `linked_records`.
+- The refusal names the reason and points to do not contact. A deletable lead goes with its contact policy and its unsent enrollments. Each batch is one transaction. A foreign key from a table the people context does not know (`23503`) reruns the batch one lead at a time and reports that lead as `linked_records`.
 - Deleting a person marked do not contact first copies the address to `suppression_list` (reason `manual`), so a later import cannot revive it. Setting do not contact writes history events, so a lead marked through the product counts as having history afterwards.
 - The lead page states the outcome before the click with the same rules (`checkLeadDelete`).
 
@@ -586,16 +586,16 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 #### Context boundaries
 
 - `src/contexts/deals` owns `deals` and `deal_stages`. Its one cross-context write port is `ConvertLead`. `deals/infrastructure/crm-read.ts` is the read model of the CRM screens: read-only SQL over `people`, `companies`, `deals`, `deal_stages` and `events`, with a test that pins the columns it reads.
-- Leads owns `people` and `companies`: `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`leads/infrastructure/people-directory.ts`).
+- The people context owns `people` and `companies`: `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`people/infrastructure/people-directory.ts`).
 - Outreach owns `stopPersonEnrollmentsTx`, `liveEnrollmentSummary`, `latestRepliedEnrollment`, `enrollmentSources` (`drizzle-conversion-outreach.ts`), `notContactSql` and the delete side in `person-outreach.ts`.
 - Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
-- Leads imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
+- The people context imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
 - `src/composition/deals.ts` is the composition root of the conversion and the deal use cases.
 - "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-categories` and `/api/settings/replies`.
 
 #### Conversion and lock order
 
-`convertToContact(deps, tx, { reason, guard? })` (leads) is the one transition. `createDealFromLead` runs it through `ConvertLead` and inserts the deal in the same transaction, so both commit or neither does. `makeContact` runs it with `reason: "added"` and no deal. In order:
+`convertToContact(deps, tx, { reason, guard? })` (people) is the one transition. `createDealFromLead` runs it through `ConvertLead` and inserts the deal in the same transaction, so both commit or neither does. `makeContact` runs it with `reason: "added"` and no deal. In order:
 
 1. Lock the person: the person's `records` rows `FOR UPDATE` in id order, then the person advisory lock (`lockPersonOutreachTx`). `lockPersonForConversion` in `src/platform/db/person-locks.ts` does this for code outside conversations.
 2. Re-read `people.lifecycle`. A contact returns `changed: false` and nothing else happens.
@@ -666,7 +666,7 @@ PRODUCT.md Terminology carries Other domains, Listed in Companies and Make conta
 
 #### Add contact, Make contact, Add company
 
-- Add contact (`leads/application/add-contact.ts`) inserts `lifecycle = 'contact'` with `converted_at = now()` and writes `contact.added`. The order: field plan, replay by creation key (8 to 200 characters), identity match, company, insert, event.
+- Add contact (`people/application/add-contact.ts`) inserts `lifecycle = 'contact'` with `converted_at = now()` and writes `contact.added`. The order: field plan, replay by creation key (8 to 200 characters), identity match, company, insert, event.
 - The identity match tries email, then the LinkedIn slug, against `people_org_email_uq` and `people_org_linkedin_uq`. A match answers 409 `lead_exists` or `contact_exists` and writes nothing. The client offers to make the matching lead a contact, which keeps the lead's own details and drops the typed values.
 - "Also create a deal" runs `addContactWithDeal` (deals) over the `CreateContact` port, so the contact and its deal commit together.
 - Make contact (`POST /api/leads/[id]/make-contact`) converts without a deal. It answers 409 `already_converted` and 409 `personal_campaign`.
@@ -693,7 +693,7 @@ You pick the company to keep. `mergeCompanies` runs one transaction in this orde
 7. Move the people, write the merged values, move the other's aliases, delete the other row, then add its domain as an alias of the kept company (the guard trigger refuses an alias that is still a company domain).
 8. Write `company.merged` with the moved people, dropped field values and dropped raw keys.
 
-Value rule (`leads/domain/company-merge.ts`): the kept company's non-empty values stay, and the other's value fills an empty field. Name, LinkedIn page and every company field key follow that rule, archived fields included. Raw data merges with `mergeRaw(other.raw, kept.raw)`. `crm_listed_at` becomes the earlier stamp of the two, or now. A merge touches no `deals` row, because deals follow their contacts.
+Value rule (`people/domain/company-merge.ts`): the kept company's non-empty values stay, and the other's value fills an empty field. Name, LinkedIn page and every company field key follow that rule, archived fields included. Raw data merges with `mergeRaw(other.raw, kept.raw)`. `crm_listed_at` becomes the earlier stamp of the two, or now. A merge touches no `deals` row, because deals follow their contacts.
 
 `deleteCompany` deletes a company no person points at, with its other domains. A company with a lead or a contact answers 409 `company_in_use { contacts, leads }`; the use case is the guard, because `people_company_fk` is SET NULL. A stale `expectedVersion` answers 409 `company_changed`. Audit: `company.deleted`.
 

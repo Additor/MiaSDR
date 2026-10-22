@@ -13,9 +13,9 @@ import { personReplyHandling } from "@/contexts/conversations/infrastructure/com
 import { getDeal, type DealView } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { getLead } from "@/contexts/leads/application/lead-management";
-import { leadContactPoints } from "@/contexts/leads/domain/lead-activity";
-import { leadDeps } from "@/contexts/leads/infrastructure/composition";
+import { getLead } from "@/contexts/people/application/lead-management";
+import { leadContactPoints } from "@/contexts/people/domain/lead-activity";
+import { leadDeps } from "@/contexts/people/infrastructure/composition";
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";

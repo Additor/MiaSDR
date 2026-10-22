@@ -16,7 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { members } from "@/contexts/tenancy/infrastructure/schema";
-import { people } from "@/contexts/leads/infrastructure/schema";
+import { people } from "@/contexts/people/infrastructure/schema";
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES } from "../domain/draft-status";

@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/leads/application/convert-to-contact";
+import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/convert-to-contact";
 import { callApi } from "@/lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "./company-domain-field";
 import { defaultTitle, newIdempotencyKey, permanenceText, singleEffectsText, type ConvertPreview } from "./deal-effects";

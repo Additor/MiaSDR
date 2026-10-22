@@ -1,4 +1,4 @@
-import { describeCustomLabels } from "@/contexts/leads/domain/custom-fields";
+import { describeCustomLabels } from "@/contexts/people/domain/custom-fields";
 
 export interface TargetOption {
   value: string;

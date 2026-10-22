@@ -1,4 +1,4 @@
-import { previewConvert } from "@/contexts/leads/application/convert-to-contact";
+import { previewConvert } from "@/contexts/people/application/convert-to-contact";
 import { convertPreviewDeps } from "@/composition/deals";
 import { withActor } from "@/app/_lib/api";
 import { idsSchema } from "@/app/api/deals/validation";

@@ -1,4 +1,4 @@
-import { mergeFieldKey } from "@/contexts/leads/domain/custom-fields";
+import { mergeFieldKey } from "@/contexts/people/domain/custom-fields";
 import { mergeTokens } from "./render";
 
 export interface PersonForVariables {

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { ImportInputError, importLeads } from "@/contexts/leads/application/import-leads";
+import { ImportInputError, importLeads } from "@/contexts/people/application/import-leads";
 import { CsvError } from "@/platform/files/csv";
 import { parseSpreadsheet } from "@/platform/files/spreadsheet";
-import { leadImportDeps } from "@/contexts/leads/infrastructure/composition";
+import { leadImportDeps } from "@/contexts/people/infrastructure/composition";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 import { ConflictError } from "@/shared/errors";
 import { readImportForm } from "./read-form";

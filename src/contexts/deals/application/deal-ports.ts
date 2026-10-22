@@ -1,7 +1,7 @@
 import type { DbHandle } from "@/platform/db/client";
 import type { PersonEventInput } from "@/contexts/conversations/application/person-ports";
-import type { AddContactInput, AddContactResult } from "@/contexts/leads/application/add-contact";
-import type { ConvertInput, ConvertResult } from "@/contexts/leads/application/convert-to-contact";
+import type { AddContactInput, AddContactResult } from "@/contexts/people/application/add-contact";
+import type { ConvertInput, ConvertResult } from "@/contexts/people/application/convert-to-contact";
 import type { Actor } from "@/shared/errors";
 import type { ConversionOutreach } from "@/contexts/outreach/application/conversion";
 import type { DealStageKind } from "../domain/stages";

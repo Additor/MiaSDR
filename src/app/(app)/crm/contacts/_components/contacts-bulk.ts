@@ -1,4 +1,4 @@
-import { MAX_MATCHING_IDS, matchingSelection } from "@/contexts/leads/domain/lead-filter";
+import { MAX_MATCHING_IDS, matchingSelection } from "@/contexts/people/domain/lead-filter";
 
 /*
  * What the Contacts selection bar shows and says. The bar holds at most four controls: Export selected, Mark do not

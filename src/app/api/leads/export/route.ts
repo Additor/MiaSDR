@@ -1,7 +1,7 @@
 import { NextResponse, connection } from "next/server";
-import { exportLeadsCsv } from "@/contexts/leads/application/lead-management";
-import { parseLeadFilter } from "@/contexts/leads/domain/lead-filter";
-import { leadDeps } from "@/contexts/leads/infrastructure/composition";
+import { exportLeadsCsv } from "@/contexts/people/application/lead-management";
+import { parseLeadFilter } from "@/contexts/people/domain/lead-filter";
+import { leadDeps } from "@/contexts/people/infrastructure/composition";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 import { toActor } from "@/app/_lib/api";
 

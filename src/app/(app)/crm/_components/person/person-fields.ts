@@ -1,5 +1,5 @@
-import type { LeadDetail } from "@/contexts/leads/application/lead-ports";
-import { canonicalProfileUrl } from "@/contexts/leads/domain/linkedin-url";
+import type { LeadDetail } from "@/contexts/people/application/lead-ports";
+import { canonicalProfileUrl } from "@/contexts/people/domain/linkedin-url";
 
 /** A person's own fields, as the Details rows read and save them. */
 export interface LeadFormValues {
