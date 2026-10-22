@@ -94,12 +94,12 @@ describe("deriveChecklist", () => {
   });
 
   it("points at the first unfinished required step before optional ones", () => {
-    const list = deriveChecklist({ ...empty, timeZoneSaved: true, connectedLinkedInAccounts: 1, aiSetup: { state: "on", running: "Demo mode" } });
+    const list = deriveChecklist({ ...empty, timeZoneSaved: true, connectedLinkedInAccounts: 1, aiSetup: { state: "demo" } });
     expect(list.nextStepId).toBe("mailbox");
   });
 
   it("has no next step when everything is done", () => {
-    const list = deriveChecklist({ ...allRequired, connectedLinkedInAccounts: 1, aiSetup: { state: "on", running: "Demo mode" } });
+    const list = deriveChecklist({ ...allRequired, connectedLinkedInAccounts: 1, aiSetup: { state: "demo" } });
     expect(list.nextStepId).toBeNull();
   });
 });

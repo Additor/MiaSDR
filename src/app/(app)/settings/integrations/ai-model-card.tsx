@@ -33,7 +33,7 @@ const DEFAULT_VALUE = "__default__";
 const initialChoice = (view: ModelView): string | null => view.model ?? (view.defaultModel != null ? DEFAULT_VALUE : null);
 
 /** One line on what AI runs on now, whichever provider the picker shows. Off reads in the warning hue, as DESIGN.md asks for a degraded state. */
-function RunningLine({ status }: { status: AiStatus }) {
+function RunningLine({ status, canPick = true }: { status: AiStatus; canPick?: boolean }) {
   if (status.state === "on") {
     return (
       <p role="status" className="text-sm">
@@ -53,7 +53,7 @@ function RunningLine({ status }: { status: AiStatus }) {
       <p role="status" className="flex items-start gap-2 text-sm">
         <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
         <span>
-          <strong className="font-medium text-warning">AI is off.</strong> {status.provider} has no default model. Pick one below and save it.
+          <strong className="font-medium text-warning">AI is off.</strong> {status.provider} has no default model.{canPick ? " Pick one below and save it." : " Pick one once the key works."}
         </span>
       </p>
     );
@@ -148,7 +148,9 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
   // The default entry and the saved model lead the list; the saved model stays even if the live list dropped it.
   const pinned = useMemo(() => (view ? [...(view.defaultModel != null ? [DEFAULT_VALUE] : []), ...(view.model ? [view.model] : [])] : []), [view]);
   const modelLabel = (value: string) => (value === DEFAULT_VALUE ? `Default (${view?.defaultModel ?? "none"})` : value);
-  const connectionItems = (view?.connections ?? []).map((c) => ({ value: c.key, label: c.key === view?.active ? `${c.label} (runs AI now)` : c.label }));
+  // "Runs AI now" only while AI runs; the chosen connection with AI off is just the one selected for AI.
+  const activeSuffix = view?.status.state === "on" ? " (runs AI now)" : " (selected for AI)";
+  const connectionItems = (view?.connections ?? []).map((c) => ({ value: c.key, label: c.key === view?.active ? `${c.label}${activeSuffix}` : c.label }));
   const labelOf = (key: string | null) => view?.connections.find((c) => c.key === key)?.label;
   // Viewing a provider that does not run AI: say what saving does, and that the running key stays.
   const switching = view !== null && view.active !== null && view.connection !== view.active;
@@ -164,7 +166,7 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
         <p className="text-sm text-muted-foreground">{view.notice}</p>
       ) : (
         <>
-          {view && <RunningLine status={view.status} />}
+          {view && <RunningLine status={view.status} canPick={!view.keyRejected} />}
           {connectionItems.length > 1 && (
             <div className="stack-field">
               <Label htmlFor="ai-connection">AI provider</Label>
@@ -195,13 +197,14 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
                 Loading {labelOf(loading)} models…
               </p>
             )}
-            {view?.keyRejected && view.connection && (
+            {/* The running line already says an unreadable running key is the problem; one warning is enough. */}
+            {view?.keyRejected && view.connection && !(view.status.state === "key_unreadable" && view.connection === view.active) && (
               <div role="status" className="flex items-start gap-2 text-sm">
                 <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
                 <div className="grid gap-2">
                   <p>
                     <strong className="font-medium text-warning">Key rejected.</strong> {labelOf(view.connection)} turned down the saved key, so no model can be listed.{" "}
-                    {view.connection === view.active ? "AI calls fail until you replace it." : "Replace it before you switch AI to it."}
+                    {view.connection === view.active && view.status.state === "on" ? "AI calls fail until you replace it." : "Replace it before AI can run on it."}
                   </p>
                   {onReplaceKey && (
                     <div>
@@ -226,7 +229,7 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
           {error}
         </p>
       )}
-      <div hidden={demo}>
+      <div hidden={demo || view?.connected === false}>
         <Button onClick={() => void save()} disabled={pending || !view?.connected || view.keyRejected || unchanged || choice === null || (choice === DEFAULT_VALUE && !hasDefault)}>
           {pending ? "Saving…" : view && view.connection !== view.active ? "Use this provider" : "Save model"}
         </Button>

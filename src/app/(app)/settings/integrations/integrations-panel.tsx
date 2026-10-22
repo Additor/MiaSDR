@@ -36,7 +36,8 @@ interface Provider {
   fields: Array<{ name: string; label: string }>;
 }
 
-export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]; providers: Provider[] }) {
+/** `aiOn`: AI runs for the organization, so the key selected for AI is marked "Runs AI" and not only "Selected for AI". */
+export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Account[]; providers: Provider[]; aiOn: boolean }) {
   const router = useRouter();
   const [providerKey, setProviderKey] = useState(providers[0]?.key ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -147,7 +148,7 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
               <li key={account.id} className={`flex flex-wrap items-center gap-2 ${RULED_ROW}`}>
                 <span className="font-medium">{account.name}</span>
                 <StatusBadge status={account.enabled ? "connected" : "disabled"} />
-                {account.runsAi && <span className="text-sm font-medium">Runs AI</span>}
+                {account.runsAi && <span className="text-sm font-medium">{aiOn ? "Runs AI" : "Selected for AI"}</span>}
                 <span className="text-sm text-muted-foreground">
                   {account.hasCredential ? (
                     <>

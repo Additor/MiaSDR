@@ -19,12 +19,13 @@ export interface OnboardingFacts {
 
 /**
  * `needs_model`: a key is saved for a provider with no default model, and nobody picked one, so AI is off.
- * `on` carries what runs, such as "Anthropic, claude-sonnet-5-5", or "Demo mode" when no provider is called.
+ * `on` carries what runs, such as "Anthropic, claude-sonnet-5-5". `demo`: AI answers from stand-ins, no provider is called.
  */
-export type AiSetup = { state: "none" } | { state: "needs_model"; provider: string } | { state: "needs_key"; provider: string } | { state: "on"; running: string };
+export type AiSetup = { state: "none" } | { state: "needs_model"; provider: string } | { state: "needs_key"; provider: string } | { state: "on"; running: string } | { state: "demo" };
 
 function aiStepDetail(setup: AiSetup): string | null {
   if (setup.state === "on") return `AI runs on ${setup.running}`;
+  if (setup.state === "demo") return "Demo mode: AI answers come from stand-ins.";
   if (setup.state === "needs_model") return `${setup.provider} key saved. AI is off until a model is picked.`;
   if (setup.state === "needs_key") return `The saved ${setup.provider} key cannot be read. AI is off until it is saved again.`;
   return null;
@@ -142,7 +143,7 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
       title: "Add an AI key",
       description: "Optional. Lets MiaSDR classify replies and draft answers for your approval.",
       optional: true,
-      status: facts.aiSetup.state === "on" ? "done" : facts.aiSetup.state === "none" ? "todo" : "attention",
+      status: facts.aiSetup.state === "on" || facts.aiSetup.state === "demo" ? "done" : facts.aiSetup.state === "none" ? "todo" : "attention",
       detail: aiStepDetail(facts.aiSetup),
       href: "/settings/integrations",
       action: facts.aiSetup.state === "needs_model" ? "Pick a model" : facts.aiSetup.state === "needs_key" ? "Replace key" : "Add key",
