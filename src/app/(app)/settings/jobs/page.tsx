@@ -47,7 +47,7 @@ async function Jobs() {
           {
             id: "attention",
             label: "Needs attention",
-            count: failedAi.total + tickFailures.length + overview.backlog.dead,
+            count: failedAi.total + tickFailures.length,
             content: (
               <>
                 <AiJobsPanel failed={JSON.parse(JSON.stringify(failedAi))} skipped={JSON.parse(JSON.stringify(skippedAi))} tickFailures={JSON.parse(JSON.stringify(tickFailures))} />

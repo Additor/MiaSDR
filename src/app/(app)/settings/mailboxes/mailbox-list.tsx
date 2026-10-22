@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -295,6 +296,9 @@ function SettingsDialog({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox:
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const initialDays = mailbox.workingHours ? Object.entries(mailbox.workingHours.days).filter(([, w]) => w.length > 0).map(([d]) => d) : ["1", "2", "3", "4", "5"];
+  const savedHours = mailbox.workingHours ? "custom" : "organization";
+  // A mailbox without its own hours follows the organization's zone, so saving keeps it unset until someone picks Custom.
+  const [hours, setHours] = useState<"organization" | "custom">(savedHours);
   const [days, setDays] = useState<string[]>(initialDays);
   const savedTimeZone = mailbox.workingHours?.timeZone ?? defaultTimeZone;
   const [timeZone, setTimeZone] = useState(savedTimeZone);
@@ -310,7 +314,7 @@ function SettingsDialog({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox:
       displayName: String(data.get("displayName") ?? "").trim() || null,
       dailySendLimit: Number(data.get("dailySendLimit")),
       signatureHtml: String(data.get("signatureHtml") ?? "").trim() || null,
-      workingHours: { timeZone, days: Object.fromEntries(days.map((d) => [d, [window]])) },
+      workingHours: hours === "organization" ? null : { timeZone, days: Object.fromEntries(days.map((d) => [d, [window]])) },
     });
     setPending(false);
     if (!result.ok) {
@@ -328,6 +332,7 @@ function SettingsDialog({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox:
       onOpenChange={(next) => {
         // Reopening starts from what is saved, not from an abandoned edit.
         if (next) {
+          setHours(savedHours);
           setDays(initialDays);
           setTimeZone(savedTimeZone);
           setError(null);
@@ -350,31 +355,51 @@ function SettingsDialog({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox:
             <Label htmlFor="s-limit">Emails per day (1 to 200)</Label>
             <Input id="s-limit" name="dailySendLimit" type="number" min={1} max={200} defaultValue={mailbox.dailySendLimit} className="w-28" required />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="s-tz">Time zone</Label>
-            <TimeZoneSelect id="s-tz" zones={zones.includes(timeZone) ? zones : [timeZone, ...zones]} value={timeZone} onValueChange={setTimeZone} />
-          </div>
           <fieldset className="grid gap-2">
-            <legend className="text-sm font-medium">Send on</legend>
-            <div className="flex flex-wrap gap-3">
-              {DAYS.map((d) => (
-                <label key={d.key} className="flex items-center gap-1.5 text-sm">
-                  <Checkbox checked={days.includes(d.key)} onCheckedChange={(checked) => setDays((all) => (checked ? [...all, d.key] : all.filter((x) => x !== d.key)))} />
-                  {d.label}
-                </label>
-              ))}
-            </div>
+            <legend className="pb-2 text-sm font-medium">Sending hours</legend>
+            <RadioGroup value={hours} onValueChange={(v) => setHours(v as "organization" | "custom")}>
+              <label className="flex items-start gap-2 text-sm">
+                <RadioGroupItem value="organization" className="mt-0.5" />
+                <span className="grid gap-0.5">
+                  <span>Organization hours</span>
+                  <span className="text-muted-foreground">Monday to Friday, 09:00 to 18:00, {defaultTimeZone}. Follows the organization&apos;s time zone when it changes.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <RadioGroupItem value="custom" className="mt-0.5" />
+                <span>Custom hours for this mailbox</span>
+              </label>
+            </RadioGroup>
           </fieldset>
-          <div className="flex gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="s-start">From</Label>
-              <Input id="s-start" name="start" type="time" defaultValue={firstWindow?.start ?? "09:00"} required />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="s-end">Until</Label>
-              <Input id="s-end" name="end" type="time" defaultValue={firstWindow?.end ?? "18:00"} required />
-            </div>
-          </div>
+          {hours === "custom" && (
+            <>
+              <div className="grid gap-2">
+                <Label htmlFor="s-tz">Time zone</Label>
+                <TimeZoneSelect id="s-tz" zones={zones.includes(timeZone) ? zones : [timeZone, ...zones]} value={timeZone} onValueChange={setTimeZone} />
+              </div>
+              <fieldset className="grid gap-2">
+                <legend className="text-sm font-medium">Send on</legend>
+                <div className="flex flex-wrap gap-3">
+                  {DAYS.map((d) => (
+                    <label key={d.key} className="flex items-center gap-1.5 text-sm">
+                      <Checkbox checked={days.includes(d.key)} onCheckedChange={(checked) => setDays((all) => (checked ? [...all, d.key] : all.filter((x) => x !== d.key)))} />
+                      {d.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="flex gap-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="s-start">From</Label>
+                  <Input id="s-start" name="start" type="time" defaultValue={firstWindow?.start ?? "09:00"} required />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="s-end">Until</Label>
+                  <Input id="s-end" name="end" type="time" defaultValue={firstWindow?.end ?? "18:00"} required />
+                </div>
+              </div>
+            </>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="s-sig">Signature</Label>
             <Textarea id="s-sig" name="signatureHtml" rows={4} defaultValue={mailbox.signatureHtml ?? ""} placeholder={"Ada Lovelace\nAcme"} />
