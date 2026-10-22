@@ -20,9 +20,8 @@ import { NotFoundError } from "@/shared/errors";
 import { AddLeadToCampaign } from "../add-to-campaign";
 import { CampaignsTable } from "../../crm/_components/person/campaigns-table";
 import { SendHistoryTable } from "../../crm/_components/person/send-history-table";
-import { LeadMoreMenu } from "./delete-lead-button";
 import { LeadNav } from "./lead-header";
-import { MakeContactButton } from "./make-contact-button";
+import { LeadMoreMenu } from "./lead-more-menu";
 import { backToListHref, neighborHref, parseListContext, LIST_PARAM } from "./list-context";
 import { SourceDataCard } from "../../crm/_components/person/source-data-card";
 import { PersonActivity } from "../../crm/_components/person/activity";
@@ -94,35 +93,39 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
   const nextHref = context ? neighborHref(nearby?.nextId ?? null, context) : null;
 
   const headline = [person.title, person.companyName ?? person.companyDomain].filter(Boolean).join(" at ");
+  // The status picks the one filled action. A reply leads to the conversation; a lead in no live campaign leads to Add to
+  // campaign; a lead the sequence is working has none, since the status token and Next carry the page. Do not contact
+  // leaves campaigns out.
+  const state = activity.status?.state ?? "new";
+  const primary = state === "replied" && conversationId ? "conversation" : !doNotContact && ["new", "finished", "stopped"].includes(state) ? "campaign" : null;
 
   return (
     <>
-      <PageHeader title={title} titleAs="p" back={{ href: listHref, label: "Leads" }} />
+      <PageHeader title={title} titleAs="p" back={{ href: listHref, label: "Leads" }} actions={context && (prevHref || nextHref) ? <LeadNav prevHref={prevHref} nextHref={nextHref} /> : undefined} />
       <RecordPage>
         <RecordHeader
           testId="lead-header"
           name={title}
           subtitle={headline || undefined}
-          nav={context && (prevHref || nextHref) ? <LeadNav prevHref={prevHref} nextHref={nextHref} /> : undefined}
           state={activity.status && <LeadStatusToken status={activity.status} />}
           reach={<ReachLinks reach={activity.reach} contact={activity.contact} phone={person.phone} phoneHref={telHref(person.phone)} />}
           actions={
             <>
+              {primary === "campaign" && <AddLeadToCampaign personId={person.id} variant="default" />}
+              {conversationId && (
+                <Link href={`/inbox/${conversationId}`} className={buttonVariants({ variant: primary === "conversation" ? "default" : "outline" })}>
+                  Open conversation
+                </Link>
+              )}
               <CreateDealButton
                 mode="lead"
+                variant="outline"
                 person={{ id: person.id, name: person.fullName, email: person.email, companyName: person.companyName, doNotContact, suppressed: suppression !== null }}
                 stages={deals.stages}
                 members={deals.members}
                 currentUserId={deals.currentUserId}
               />
-              <AddLeadToCampaign personId={person.id} />
-              <MakeContactButton personId={person.id} name={person.fullName ?? person.email ?? "this lead"} />
-              {conversationId && (
-                <Link href={`/inbox/${conversationId}`} className={buttonVariants({ variant: "outline" })}>
-                  Open conversation
-                </Link>
-              )}
-              <LeadMoreMenu id={person.id} name={title} qualification={qualification} returnTo={listHref} />
+              <LeadMoreMenu id={person.id} name={title} qualification={qualification} returnTo={listHref} addToCampaign={primary !== "campaign" && !doNotContact} />
             </>
           }
         />

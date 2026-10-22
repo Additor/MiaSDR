@@ -7,18 +7,35 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { deleteConfirmation, type DeleteQualification } from "@/contexts/people/application/lead-delete-check";
 import { callApi } from "@/lib/api-client";
+import { AddLeadToCampaign } from "../add-to-campaign";
+import { MakeContactDialog } from "./make-contact-dialog";
 
 /**
- * The lead's rare actions: a ghost More menu in the header with Delete lead, as company and deal pages keep theirs. A lead
- * the rules protect still offers the item; the dialog says why it stays and has nothing to confirm. The server applies the
- * same rules again.
+ * The lead's rare actions in a ghost More menu in the header, as company and deal pages keep theirs: Add to campaign while the
+ * lead's status does not put it first, Make contact without a deal, then Delete lead. A lead the rules protect still offers
+ * Delete lead; the dialog says why it stays and has nothing to confirm. The server applies the same rules again.
  */
-export function LeadMoreMenu({ id, name, qualification, returnTo }: { id: string; name: string; qualification: DeleteQualification; returnTo: string }) {
+export function LeadMoreMenu({
+  id,
+  name,
+  qualification,
+  returnTo,
+  addToCampaign,
+}: {
+  id: string;
+  name: string;
+  qualification: DeleteQualification;
+  returnTo: string;
+  /** Offer Add to campaign here: the header shows it as the main action only for a lead that is in no live campaign. */
+  addToCampaign: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [campaignOpen, setCampaignOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
 
   async function remove() {
     const result = await callApi(`/api/leads/${id}`, "DELETE");
@@ -36,11 +53,22 @@ export function LeadMoreMenu({ id, name, qualification, returnTo }: { id: string
           <EllipsisIcon aria-hidden />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-48">
+          {addToCampaign && (
+            <DropdownMenuItem className="max-sm:min-h-11" onClick={() => setCampaignOpen(true)}>
+              Add to campaign…
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem className="max-sm:min-h-11" onClick={() => setContactOpen(true)}>
+            Make contact without a deal…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" className="max-sm:min-h-11" onClick={() => setOpen(true)}>
             Delete lead
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {addToCampaign && <AddLeadToCampaign personId={id} open={campaignOpen} onOpenChange={setCampaignOpen} />}
+      <MakeContactDialog personId={id} name={name} open={contactOpen} onOpenChange={setContactOpen} />
       {qualification.canDelete ? (
         <ConfirmDialog
           open={open}

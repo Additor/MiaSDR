@@ -4,18 +4,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
-import { Button } from "@/components/ui/button";
 import { callApi } from "@/lib/api-client";
 import { permanenceText, singleEffectsText, type ConvertPreview } from "../../crm/_components/deal-effects";
 
 /**
- * Make contact on the lead page: the lead becomes a contact without a deal. The dialog says first what the conversion
+ * Make contact without a deal, from the lead page's More menu: the lead becomes a contact without a deal. The dialog says first what the conversion
  * stops (`POST /api/leads/convert/preview`) and that it cannot be undone, then calls `POST /api/leads/[id]/make-contact`. An
  * `already_converted` answer counts as done and opens the contact page.
  */
-export function MakeContactButton({ personId, name }: { personId: string; name: string }) {
+export function MakeContactDialog({ personId, name, open, onOpenChange: setOpen }: { personId: string; name: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<ConvertPreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [wasOpen, setWasOpen] = useState(open);
@@ -68,21 +66,16 @@ export function MakeContactButton({ personId, name }: { personId: string; name: 
   else description = `${singleEffectsText(name, preview)} ${permanenceText(name, { withDeal: false })}`;
 
   return (
-    <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        Make contact
-      </Button>
-      <ConfirmDialog
-        open={open}
-        onOpenChange={setOpen}
-        title={`Make ${name} a contact?`}
-        description={description}
-        confirmLabel="Make contact"
-        pendingLabel="Making contact…"
-        confirmDisabled={preview === null}
-        className="sm:max-w-md"
-        onConfirm={make}
-      />
-    </>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={setOpen}
+      title={`Make ${name} a contact?`}
+      description={description}
+      confirmLabel="Make contact"
+      pendingLabel="Making contact…"
+      confirmDisabled={preview === null}
+      className="sm:max-w-md"
+      onConfirm={make}
+    />
   );
 }

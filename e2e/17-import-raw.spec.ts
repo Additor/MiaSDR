@@ -38,6 +38,7 @@ test.describe("import keeps source data", () => {
     // The LinkedIn field shows the canonical URL.
     await expect(page.getByTestId("person-details").getByRole("link", { name: "LinkedIn profile (opens in a new tab)" })).toHaveAttribute("href", "https://www.linkedin.com/in/ada-lov-17/");
 
+    await page.getByTestId("imported-fields").locator("summary").click();
     const source = page.getByTestId("source-data");
     await expect(source).toContainText("Region");
     await expect(source).toContainText(region);

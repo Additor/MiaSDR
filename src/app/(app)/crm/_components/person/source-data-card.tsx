@@ -6,10 +6,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { callApi } from "@/lib/api-client";
-import { RecordSection } from "../record/record-header";
+import { RecordDisclosure } from "../record/record-header";
 
 type Entry = { key: string; value: string };
 
+/**
+ * Columns of the imported file that no lead field took, folded behind their count at the end of the page. A person opens them
+ * now and then, to copy them or to map one to a custom field, so the per-column Map buttons stay out of sight until then.
+ */
 export function SourceDataCard({ person, company, companyName }: { person: Entry[]; company: Entry[]; companyName: string | null }) {
   const [mapping, setMapping] = useState<string | null>(null);
 
@@ -27,7 +31,7 @@ export function SourceDataCard({ person, company, companyName }: { person: Entry
   }
 
   return (
-    <RecordSection title="Imported fields" count={person.length + company.length} testId="imported-fields">
+    <RecordDisclosure title="Imported fields" count={person.length + company.length} testId="imported-fields">
       <p className="text-sm text-muted-foreground">Columns of the imported file that were not mapped to a lead field. Map one to a custom field to use it in the table and in templates.</p>
       <div className="stack-group">
         {person.length > 0 && (
@@ -56,7 +60,7 @@ export function SourceDataCard({ person, company, companyName }: { person: Entry
         {company.length > 0 && (
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Company{companyName ? `: ${companyName}` : ""}</h3>
+              <h4 className="text-sm font-medium">Company{companyName ? `: ${companyName}` : ""}</h4>
               <Button variant="outline" size="sm" onClick={() => copy(company)}>
                 Copy
               </Button>
@@ -72,7 +76,7 @@ export function SourceDataCard({ person, company, companyName }: { person: Entry
           </div>
         )}
       </div>
-    </RecordSection>
+    </RecordDisclosure>
   );
 }
 

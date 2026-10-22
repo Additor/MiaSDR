@@ -80,11 +80,15 @@ test.describe("lead page header, collapsed cards and groups", () => {
     await expect(linkedin).toHaveAttribute("rel", /noopener/);
     await expect(linkedin).toHaveAccessibleName(/opens in a new tab/);
     await expect(header.getByRole("link", { name: "+15550100123" })).toHaveAttribute("href", "tel:+15550100123");
-    await expect(header.getByRole("button", { name: "Add to campaign" })).toBeVisible();
-    // Create deal is the primary action and comes first.
-    const actions = header.getByRole("button", { name: /^(Create deal|Add to campaign)$/ });
-    await expect(actions).toHaveText(["Create deal", "Add to campaign"]);
+    // A new lead's status makes Add to campaign the one filled action, first; Create deal follows, and the rare actions sit in More.
+    const actions = header.getByRole("button", { name: /^(Create deal|Add to campaign|Make contact)$/ });
+    await expect(actions).toHaveText(["Add to campaign", "Create deal"]);
     expect(await actions.first().evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+    const more = header.getByRole("button", { name: "More actions for S34 Bea Beta" });
+    await waitForHydrated(more);
+    await more.click();
+    await expect(page.getByRole("menuitem")).toHaveText(["Make contact without a deal…", "Delete lead"]);
+    await page.keyboard.press("Escape");
     await expect(page.getByTestId("person-stop").getByRole("heading", { level: 2, name: "Do not contact" })).toBeVisible();
     await expect(header.getByRole("heading", { level: 1 })).toHaveText("S34 Bea Beta");
 
@@ -137,6 +141,10 @@ test.describe("lead page header, collapsed cards and groups", () => {
     await page.goto(`/leads/${ids[NAMES[4]]}`);
     const token = page.getByTestId("lead-header").getByTestId("lead-status");
     await expect(token).toHaveAttribute("data-state", "in_sequence");
+    // The sequence is working this lead: no filled action, and Add to campaign waits in More.
+    const working = page.getByTestId("lead-header");
+    await expect(working.getByRole("button", { name: "Add to campaign" })).toHaveCount(0);
+    await expect(working.getByRole("button", { name: "Create deal" })).toBeVisible();
     await waitForHydrated(token);
     await token.hover();
     const tip = page.locator('[data-slot="tooltip-content"]');
@@ -148,7 +156,11 @@ test.describe("lead page header, collapsed cards and groups", () => {
     await signInAdmin(page);
     const ids = await seed();
     await page.goto(`/leads/${ids[NAMES[1]]}`);
-    await expect(page.getByText("Imported fields", { exact: true }).first()).toBeVisible();
+    // The section starts folded behind its count; opening it shows the columns and their Map buttons.
+    const imported = page.getByTestId("imported-fields");
+    await expect(imported.getByText("Imported fields", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Map this field: Region" })).toBeHidden();
+    await imported.locator("summary").click();
     await expect(page.getByText("Columns of the imported file that were not mapped to a lead field.")).toBeVisible();
     await expect(page.getByText("Source data")).toHaveCount(0);
     const map = page.getByRole("button", { name: "Map this field: Region" });
@@ -178,7 +190,12 @@ test.describe("previous and next follow the list", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("S34 Alpha Adams");
     // First lead of the list: no link, and the control says why.
     await expect(nav.getByRole("link", { name: /Previous/ })).toHaveCount(0);
-    await expect(nav.getByText("Previous")).toHaveAttribute("aria-disabled", "true");
+    await expect(nav.locator('[aria-disabled="true"]')).toContainText("Previous lead, none: this is the first in the list");
+    // `]` and `[` walk the list too, as `]` does in an Inbox queue.
+    await page.keyboard.press("]");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("S34 Bea Beta");
+    await page.keyboard.press("[");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("S34 Alpha Adams");
 
     // The back link returns to the same filtered and sorted list.
     await page.getByRole("link", { name: "Back to Leads" }).click();

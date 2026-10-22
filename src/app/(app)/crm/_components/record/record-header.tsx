@@ -13,7 +13,6 @@ export function RecordHeader({
   status,
   reach,
   actions,
-  nav,
   testId,
 }: {
   name: string;
@@ -25,10 +24,8 @@ export function RecordHeader({
   status?: ReactNode;
   /** `ReachLinks`: email, phone and LinkedIn with their reach state. */
   reach?: ReactNode;
-  /** The record's primary actions, the main one first. */
+  /** The record's actions, the main one first: at most one filled button, then outline ones, then a ghost More menu. */
   actions?: ReactNode;
-  /** Previous and next in the list the person came from. */
-  nav?: ReactNode;
   testId?: string;
 }) {
   return (
@@ -47,12 +44,7 @@ export function RecordHeader({
         {actions && <div className="flex flex-wrap items-center gap-2 max-sm:[&_a]:h-11 max-sm:[&_button]:h-11">{actions}</div>}
       </div>
       {status}
-      {(reach || nav) && (
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          {reach ?? <span />}
-          {nav}
-        </div>
-      )}
+      {reach}
     </section>
   );
 }

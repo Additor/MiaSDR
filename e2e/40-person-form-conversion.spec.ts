@@ -91,7 +91,10 @@ test.describe("conversion dialogs", () => {
     await expect(deal).toContainText(`${name} cannot go back to Leads or join a campaign again, even if you delete the deal.`);
     await deal.getByRole("button", { name: "Cancel" }).click();
 
-    await header.getByRole("button", { name: "Make contact" }).click();
+    // Make contact without a deal is rare, so it sits in the header's More menu.
+    await expect(header.getByRole("button", { name: "Make contact" })).toHaveCount(0);
+    await header.getByRole("button", { name: `More actions for ${name}` }).click();
+    await page.getByRole("menuitem", { name: "Make contact without a deal…" }).click();
     const dialog = page.getByRole("dialog", { name: `Make ${name} a contact?` });
     await expect(dialog).toContainText(`Moves ${name} to Contacts.`);
     await expect(dialog).toContainText(`${name} cannot go back to Leads or join a campaign again.`);

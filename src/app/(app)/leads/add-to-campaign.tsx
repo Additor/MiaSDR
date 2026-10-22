@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSelection } from "@/components/shell/selection";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,14 +28,33 @@ export function AddToCampaign() {
   return <CampaignAdder personIds={selectedIds} onAdded={clear} label="Add to campaign" variant="default" />;
 }
 
-/** The same dialog for one lead, from the lead page. It refreshes the page so the Campaigns table shows the new row. */
-export function AddLeadToCampaign({ personId }: { personId: string }) {
+/**
+ * The same dialog for one lead, from the lead page. It refreshes the page so the Campaigns table shows the new row. With `open`
+ * the page's More menu opens it and no button shows.
+ */
+export function AddLeadToCampaign({ personId, variant, open, onOpenChange }: { personId: string; variant?: "default" | "outline"; open?: boolean; onOpenChange?: (open: boolean) => void }) {
   const router = useRouter();
-  return <CampaignAdder personIds={[personId]} onAdded={() => router.refresh()} label="Add to campaign" />;
+  return <CampaignAdder personIds={[personId]} onAdded={() => router.refresh()} label="Add to campaign" variant={variant} open={open} onOpenChange={onOpenChange} />;
 }
 
-function CampaignAdder({ personIds, onAdded, label, variant = "outline" }: { personIds: string[]; onAdded: () => void; label: string; variant?: "default" | "outline" }) {
-  const [open, setOpen] = useState(false);
+function CampaignAdder({
+  personIds,
+  onAdded,
+  label,
+  variant = "outline",
+  open: controlled,
+  onOpenChange,
+}: {
+  personIds: string[];
+  onAdded: () => void;
+  label: string;
+  variant?: "default" | "outline";
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [own, setOwn] = useState(false);
+  const open = controlled ?? own;
+  const setOpen = onOpenChange ?? setOwn;
   const [campaigns, setCampaigns] = useState<CampaignOption[] | null>(null);
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
@@ -43,20 +62,33 @@ function CampaignAdder({ personIds, onAdded, label, variant = "outline" }: { per
   const [counts, setCounts] = useState<Counts | null>(null);
   const [progress, setProgress] = useState(0);
 
-  async function show() {
-    setOpen(true);
-    setError(null);
-    setCounts(null);
-    if (campaigns) return;
-    const [email, linkedin] = await Promise.all([
+  // Each open starts clean; the open campaigns load once.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setError(null);
+      setCounts(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!open || campaigns) return;
+    let live = true;
+    void Promise.all([
       callApi<Array<Omit<CampaignOption, "channel">>>("/api/campaigns", "GET"),
       callApi<Array<Omit<CampaignOption, "channel">>>("/api/linkedin/campaigns", "GET"),
-    ]);
-    if (!email.ok || !linkedin.ok) setError(email.error ?? linkedin.error);
-    const usable = (rows: Array<Omit<CampaignOption, "channel">> | null, channel: CampaignOption["channel"]) =>
-      (rows ?? []).filter(acceptsEnrollments).map((c) => ({ ...c, channel }));
-    setCampaigns([...usable(email.data, "email"), ...usable(linkedin.data, "linkedin")]);
-  }
+    ]).then(([email, linkedin]) => {
+      if (!live) return;
+      if (!email.ok || !linkedin.ok) setError(email.error ?? linkedin.error);
+      const usable = (rows: Array<Omit<CampaignOption, "channel">> | null, channel: CampaignOption["channel"]) =>
+        (rows ?? []).filter(acceptsEnrollments).map((c) => ({ ...c, channel }));
+      setCampaigns([...usable(email.data, "email"), ...usable(linkedin.data, "linkedin")]);
+    });
+    return () => {
+      live = false;
+    };
+  }, [open, campaigns]);
 
   const chosen = campaigns?.find((c) => `${c.channel}:${c.id}` === target);
 
@@ -92,9 +124,11 @@ function CampaignAdder({ personIds, onAdded, label, variant = "outline" }: { per
 
   return (
     <>
-      <Button variant={variant} onClick={show}>
-        {label}
-      </Button>
+      {controlled === undefined && (
+        <Button variant={variant} onClick={() => setOpen(true)}>
+          {label}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
         <DialogContent>
           <DialogHeader>
