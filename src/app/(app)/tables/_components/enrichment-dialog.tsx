@@ -13,7 +13,7 @@ import { contractAction, SETTLED_STATUSES } from "@/contexts/grid/enrichment/dom
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { OUTCOMES, outcomeOf } from "../_lib/data/outcomes";
 import { coverageText, fullRunText, useEnrichmentPreview } from "../_lib/data/enrichment-preview";
-import { guessColumn, lookupPrice, usableProviders, useProviders, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
+import { guessColumn, lookupCents, lookupPrice, usableProviders, useProviders, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
 import { centsToDollarsText, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, type RunEstimate } from "../_lib/data/run-request";
 import { spendSummary, type WaterfallStep } from "../_lib/data/waterfall-steps";
@@ -249,6 +249,7 @@ function CreateBody(props: Props) {
         usable={usable}
         providers={providers}
         catalog={catalog}
+        loadError={loadError}
         refresh={refresh}
         onBack={direct ? props.onClose : () => setView({ kind: "outcomes" })}
         backLabel={direct ? "Cancel" : "Back"}
@@ -387,6 +388,12 @@ function ExtraOutputs({ outputs, primary, chosen, onChange }: { outputs: ActionS
  */
 export function CreateFooter({ blocker, summary, busy, onBack, onSave, backLabel = "Back" }: { blocker: string | null; summary?: string | null; busy: boolean; onBack: () => void; onSave: (run: boolean) => void; backLabel?: string }) {
   const note = blocker ?? summary;
+  // The button you pressed shows the progress.
+  const [running, setRunning] = useState(false);
+  const save = (run: boolean) => {
+    setRunning(run);
+    onSave(run);
+  };
   return (
     <DialogFooter className="items-center">
       {note && (
@@ -397,11 +404,11 @@ export function CreateFooter({ blocker, summary, busy, onBack, onSave, backLabel
       <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
         {backLabel}
       </Button>
-      <Button type="button" variant="outline" onClick={() => onSave(true)} disabled={blocker !== null || busy}>
-        <PlayIcon /> Add and run first {DEFAULT_FIRST_N} rows
+      <Button type="button" variant="outline" onClick={() => save(true)} disabled={blocker !== null || busy}>
+        <PlayIcon /> {busy && running ? "Adding..." : `Add and run first ${DEFAULT_FIRST_N} rows`}
       </Button>
-      <Button type="button" onClick={() => onSave(false)} disabled={blocker !== null || busy}>
-        {busy ? "Adding..." : "Add column"}
+      <Button type="button" onClick={() => save(false)} disabled={blocker !== null || busy}>
+        {busy && !running ? "Adding..." : "Add column"}
       </Button>
     </DialogFooter>
   );
@@ -452,7 +459,7 @@ const listText = (items: string[]) => (items.length <= 1 ? (items[0] ?? "") : `$
  * Each line opens its fields with Change. Until a connected provider offers the outcome, the dialog shows only the
  * vendors that do, and the form keeps what you set while you connect one.
  */
-function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, actionKey, usable, providers, catalog, refresh, onBack, backLabel }: Props & { actionKey: string; usable: ProviderView[]; providers: ProviderView[]; catalog: CatalogEntry[]; refresh: () => Promise<void>; onBack: () => void; backLabel: string }) {
+function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, actionKey, usable, providers, catalog, loadError, refresh, onBack, backLabel }: Props & { actionKey: string; usable: ProviderView[]; providers: ProviderView[]; catalog: CatalogEntry[]; loadError: string | null; refresh: () => Promise<void>; onBack: () => void; backLabel: string }) {
   const outcome = outcomeOf(actionKey)!;
   const offering = usable.filter((p) => p.actions.some((a) => a.key === actionKey));
   const actionOf = (key: string) => offering.find((p) => p.key === key)?.actions.find((a) => a.key === actionKey);
@@ -560,6 +567,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
     return (
       <>
         {header}
+        <ErrorText>{loadError}</ErrorText>
         <ConnectProviders
           entries={vendors}
           providers={providers}
@@ -650,7 +658,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
         </ul>
         <SpendAndTiming
           waterfall={waterfall}
-          noPrice={picked.every((k) => Math.max(offering.find((p) => p.key === k)?.defaultCostCents ?? 0, actionOf(k)?.defaultCostCents ?? 0) === 0)}
+          noPrice={picked.every((k) => lookupCents(offering.find((p) => p.key === k)?.defaultCostCents ?? 0, actionOf(k)) === 0)}
           {...{ maxCost, setMaxCost, maxCredits, setMaxCredits, waitOnLimit, setWaitOnLimit, autoRun, setAutoRun, delay, setDelay, reuseDays, setReuseDays }}
         />
         <ErrorText>{error}</ErrorText>

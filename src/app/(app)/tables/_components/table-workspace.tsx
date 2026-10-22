@@ -453,7 +453,7 @@ export function TableWorkspace({ tableId }: Props) {
           }}
         />
       )}
-      {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} tableRows={grid.total} onClose={closeDialog} onStarted={() => void grid.reload()} />}
+      {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} onStarted={() => void grid.reload()} />}
       {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} allRows={dialog.allRows} onClose={closeDialog} />}
       {dialog?.kind === "column" && (
         <ColumnDialogs tableId={tableId} columns={columns} view={view} request={dialog.request} onClose={closeDialog} onChanged={grid.reload} saveView={grid.saveView} />

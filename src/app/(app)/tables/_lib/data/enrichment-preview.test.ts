@@ -15,5 +15,7 @@ describe("enrichment preview text", () => {
     expect(fullRunText(preview({ ready: 4, perCell: { cents: 1.5, credits: 0.5 } }))).toBe("A full run uses up to 2 credits and $0.06.");
     expect(fullRunText(preview({ perCell: { cents: 0, credits: 0 } }))).toBe("These providers have no price set.");
     expect(fullRunText(preview({ ready: 0 }))).toBeNull();
+    // An upper bound rounds a fraction of a cent up.
+    expect(fullRunText(preview({ ready: 1, perCell: { cents: 0.4, credits: 0 } }))).toBe("A full run uses up to $0.01.");
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { gridRequest, gridUrl } from "./client";
-import { dollars } from "./run-request";
+import { credits, dollars } from "./run-request";
 
 /** What a new enrichment column would match and cost, as `POST /enrichments/preview` returns it. */
 export interface EnrichmentPreview {
@@ -16,7 +16,6 @@ export interface EnrichmentPreview {
 }
 
 const count = (n: number) => n.toLocaleString("en-US");
-const creditText = (n: number) => `${Number(n.toFixed(2)).toLocaleString("en-US")} ${n === 1 ? "credit" : "credits"}`;
 
 /** "1,842 of 2,000 rows have these inputs", or why none do. */
 export function coverageText(p: EnrichmentPreview): string {
@@ -29,7 +28,8 @@ export function coverageText(p: EnrichmentPreview): string {
 /** "A full run uses up to 1,842 credits and $18.42", from one cell's worst case times the ready rows. Null with nothing to run. */
 export function fullRunText(p: EnrichmentPreview): string | null {
   if (p.ready === 0) return null;
-  const spend = [p.perCell.credits > 0 ? creditText(p.perCell.credits * p.ready) : null, p.perCell.cents > 0 ? dollars(p.perCell.cents * p.ready) : null].filter(Boolean).join(" and ");
+  // An upper bound rounds up, so a fraction of a cent never reads as less than it can cost.
+  const spend = [p.perCell.credits > 0 ? credits(p.perCell.credits * p.ready) : null, p.perCell.cents > 0 ? dollars(Math.ceil(p.perCell.cents * p.ready)) : null].filter(Boolean).join(" and ");
   return spend ? `A full run uses up to ${spend}.` : "These providers have no price set.";
 }
 
@@ -38,9 +38,11 @@ export function fullRunText(p: EnrichmentPreview): string | null {
  * never shows, and a failed preview shows nothing: the dialog still works without it.
  */
 export function useEnrichmentPreview(tableId: string, steps: Array<{ providerKey: string; actionKey: string }>, inputs: Record<string, string>): EnrichmentPreview | null {
-  const draft = JSON.stringify({ steps, inputs: Object.fromEntries(Object.entries(inputs).filter(([, v]) => v)) });
+  // Without a provider the dialog shows the connect step, which has no use for a preview, so nothing scans the table.
+  const draft = steps.length === 0 ? null : JSON.stringify({ steps, inputs: Object.fromEntries(Object.entries(inputs).filter(([, v]) => v)) });
   const [answer, setAnswer] = useState<{ draft: string; preview: EnrichmentPreview } | null>(null);
   useEffect(() => {
+    if (draft === null) return;
     let live = true;
     const timer = setTimeout(() => {
       void gridRequest<EnrichmentPreview>(gridUrl.sub(tableId, "enrichments/preview"), "POST", JSON.parse(draft)).then((res) => {

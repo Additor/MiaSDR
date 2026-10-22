@@ -104,7 +104,7 @@ export interface RunEstimate {
 }
 
 export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-const credits = (n: number) => `${Number(n.toFixed(2)).toLocaleString("en-US")} ${n === 1 ? "credit" : "credits"}`;
+export const credits = (n: number) => `${Number(n.toFixed(2)).toLocaleString("en-US")} ${n === 1 ? "credit" : "credits"}`;
 
 /**
  * "4 rows · up to 8 calls · 4 AI calls · up to 6 credits · up to $0.08". Credits lead, because vendors bill in credits;

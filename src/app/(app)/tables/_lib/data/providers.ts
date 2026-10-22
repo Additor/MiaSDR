@@ -67,12 +67,15 @@ export function catalogGroups(catalog: CatalogEntry[]): Array<{ label: string; e
   return out.filter((g) => g.entries.length > 0);
 }
 
+/** Cents one lookup costs: the provider's price or the action's, whichever is higher, as the server's estimateStepCents. */
+export const lookupCents = (providerCents: number, action: Pick<ActionSpec, "defaultCostCents"> | undefined): number => Math.max(providerCents, action?.defaultCostCents ?? 0);
+
 /**
  * "$0.01 a lookup", "0.5 credits a lookup" or "No price set". The price is the provider's or the action's, whichever is
  * higher, as the server prices a call; credits show when neither has a price.
  */
 export function lookupPrice(providerCents: number, action: Pick<ActionSpec, "defaultCostCents" | "creditsPerCall"> | undefined): string {
-  const cents = Math.max(providerCents, action?.defaultCostCents ?? 0);
+  const cents = lookupCents(providerCents, action);
   if (cents > 0) return `$${(cents / 100).toFixed(cents % 1 === 0 ? 2 : 3)} a lookup`;
   const credits = action?.creditsPerCall ?? 0;
   return credits > 0 ? `${credits} ${credits === 1 ? "credit" : "credits"} a lookup` : "No price set";

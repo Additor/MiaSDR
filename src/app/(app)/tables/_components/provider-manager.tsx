@@ -62,8 +62,8 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
   const [baseUrl, setBaseUrl] = useState("");
   const [configText, setConfigText] = useState("");
   const [rate, setRate] = useState(provider?.rateLimitPerMin === null || provider?.rateLimitPerMin === undefined ? "" : String(provider.rateLimitPerMin));
-  // A new connection starts from the catalog's price, so estimates and dollar caps work from the first run.
-  const [price, setPrice] = useState(centsToDollarsText(provider ? provider.defaultCostCents : Math.max(0, ...entry.actions.map((a) => a.defaultCostCents))));
+  // The catalog's own price per action still applies when this is 0, as the server takes the higher of the two.
+  const [price, setPrice] = useState(centsToDollarsText(provider?.defaultCostCents ?? 0));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const available = entry.status === "available";
@@ -191,7 +191,7 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
             </Field>
           ))}
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Price per lookup ($)" htmlFor={`price-${entry.key}`} hint="What one lookup costs you on your plan. Estimates and dollar caps use it. Leave 0 to count vendor credits only.">
+            <Field label="Price per lookup ($)" htmlFor={`price-${entry.key}`} hint="What one lookup costs you on your plan. Estimates and dollar caps use it. Leave 0 to use the vendor's listed price or count its credits.">
               <Input id={`price-${entry.key}`} type="number" min={0} step={0.001} value={price} onChange={(e) => setPrice(e.target.value)} className="w-28" />
             </Field>
             {provider && (

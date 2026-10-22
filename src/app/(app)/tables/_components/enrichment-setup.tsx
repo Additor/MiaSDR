@@ -38,8 +38,8 @@ export function SetupRow({ label, noun, summary, detail, action = "Change", open
 export function ColumnChips({ names }: { names: string[] }) {
   return (
     <ul className="flex flex-wrap gap-1.5" aria-label="Columns this adds">
-      {names.map((name) => (
-        <li key={name} className="rounded-md border bg-muted/40 px-1.5 py-0.5 text-xs">
+      {names.map((name, i) => (
+        <li key={`${i}:${name}`} className="rounded-md border bg-muted/40 px-1.5 py-0.5 text-xs">
           {name}
         </li>
       ))}
