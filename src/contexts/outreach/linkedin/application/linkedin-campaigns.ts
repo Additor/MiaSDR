@@ -1,6 +1,6 @@
 import { inTransaction, type DbHandle } from "@/platform/db/client";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { parseCampaignType, canArchive, canTransition, stepsEditable, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignType } from "../../domain/campaign";
+import { parseCampaignType, canArchive, canTransition, stepsEditable, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
 import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "../../application/enrollment-admin";
 import { DEFAULT_LINKEDIN_STEPS, INVITE_NOTE_MAX, inviteNoteLength, renderLinkedInText, validateLinkedInSteps, type LinkedInStep } from "../domain/linkedin";
 import type { EnrollmentListQuery, TabCounts } from "../../domain/enrollment-list";
@@ -103,8 +103,10 @@ export interface LinkedInCampaignStore {
   furthestStep(organizationId: string, id: string): Promise<number>;
   /** Whether any send row exists for the campaign, in any status. */
   hasSends(organizationId: string, id: string): Promise<boolean>;
-  update(organizationId: string, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[] }, tx?: DbHandle): Promise<void>;
-  setStatus(organizationId: string, id: string, status: CampaignStatus): Promise<void>;
+  /** A patch with steps applies only while the campaign is in `STEPS_EDITABLE`. Returns false when it no longer is. */
+  update(organizationId: string, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[] }, tx?: DbHandle): Promise<boolean>;
+  /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
+  setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>): Promise<boolean>;
   delete(organizationId: string, id: string): Promise<void>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
@@ -178,7 +180,7 @@ export async function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: 
   }
   // One transaction: a failed sender replacement must not leave the new name or steps behind.
   await inTransaction(undefined, async (tx) => {
-    await deps.campaigns.update(actor.organizationId, id, next, tx);
+    if (!(await deps.campaigns.update(actor.organizationId, id, next, tx))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
     if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "linkedin", senderIds, tx);
   });
 }
@@ -197,7 +199,9 @@ export async function changeLinkedInCampaignStatus(deps: LinkedInCampaignDeps, a
       throw new ValidationError("Connect a LinkedIn account in Settings before starting a campaign.");
     }
   }
-  await deps.campaigns.setStatus(actor.organizationId, id, to);
+  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps }))) {
+    throw new ConflictError("The campaign changed while you were saving. Reload it and try again.");
+  }
 }
 
 /** Hides a completed campaign from the default list. Its sends, enrollments and analytics stay. */

@@ -1,5 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
-import type { ArchiveFilter, CampaignStatus, StepInput } from "../domain/campaign";
+import type { ArchiveFilter, CampaignStatus, CampaignStatusChange, StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery, TabCounts } from "../domain/enrollment-list";
 import type { WorkingHours } from "../domain/working-hours";
 
@@ -83,8 +83,10 @@ export interface CampaignStore {
   create(organizationId: string, input: { name: string; createdBy: string; steps: StepInput[] }, tx?: DbHandle): Promise<string>;
   /** The highest step any enrollment has completed. A sequence may not shrink below it. */
   furthestStep(organizationId: string, id: string): Promise<number>;
-  update(organizationId: string, id: string, patch: { name?: string; steps?: StepInput[] }, tx?: DbHandle): Promise<void>;
-  setStatus(organizationId: string, id: string, status: CampaignStatus): Promise<void>;
+  /** A patch with steps applies only while the campaign is in `STEPS_EDITABLE`. Returns false when it no longer is. */
+  update(organizationId: string, id: string, patch: { name?: string; steps?: StepInput[] }, tx?: DbHandle): Promise<boolean>;
+  /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
+  setStatus(organizationId: string, id: string, change: CampaignStatusChange<StepInput>): Promise<boolean>;
   delete(organizationId: string, id: string): Promise<void>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;

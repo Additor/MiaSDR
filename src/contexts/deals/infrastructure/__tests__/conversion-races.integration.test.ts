@@ -189,7 +189,7 @@ describeDb("conversion races", () => {
       await kit.sql`update campaign_enrollments set current_step = ${status === "active" ? 1 : 0} where id = ${enrollmentId}`;
       const step = status === "active" ? 2 : 1;
       const [{ id: sendId }] = await kit.sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id) values (${f.org}, ${enrollmentId}, ${step}, 'email', 'sending', ${mailbox}) returning id`;
-      rows.push({ personId, claim: { sendId, enrollmentId, stepNumber: step, nextStep: { waitDays: 2 }, mailbox: { id: mailbox } } });
+      rows.push({ personId, claim: { sendId, attempt: 1, enrollmentId, stepNumber: step, nextStep: { waitDays: 2 }, mailbox: { id: mailbox } } });
     }
     const retries = lockRetryStats.retries;
     const lanes = <T,>(items: T[], run: (item: T) => Promise<unknown>) =>

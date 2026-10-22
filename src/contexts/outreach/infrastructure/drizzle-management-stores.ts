@@ -3,7 +3,7 @@ import { leadSearchCondition } from "@/contexts/leads/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
 import { ConflictError } from "@/shared/errors";
 import { campaignEnrollments, campaigns, channelSettings, companies, entityColumns, mailboxes, people, sends } from "@/platform/db/schema";
-import type { ArchiveFilter, CampaignStatus, StepInput } from "../domain/campaign";
+import { STEPS_EDITABLE, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type StepInput } from "../domain/campaign";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../domain/working-hours";
 import { buildVariables } from "../domain/variables";
 import { enrollmentVariableColumns, personVariableColumns } from "./enrollment-variables";
@@ -61,6 +61,13 @@ export async function enrollEmailPeopleCounted(organizationId: string, campaignI
 export async function enrollEmailPeople(organizationId: string, campaignId: string, personIds: string[], tx?: DbHandle): Promise<number> {
   return (await enrollEmailPeopleCounted(organizationId, campaignId, personIds, tx)).added;
 }
+
+/** A step edit lands only while the campaign is still editable, so a launch that commits first makes the edit miss. */
+export const stepsStillEditable = (patch: { steps?: unknown }) => (patch.steps === undefined ? undefined : inArray(campaigns.status, [...STEPS_EDITABLE]));
+
+/** The campaign still has the status and the steps the use case checked: a concurrent change makes the write miss. */
+export const checkedStatusChange = (organizationId: string, id: string, change: CampaignStatusChange<unknown>) =>
+  and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, change.from), sql`${campaigns.steps} = ${JSON.stringify(change.checkedSteps)}::jsonb`);
 
 export const drizzleCampaignStore: CampaignStore = {
   async list(organizationId, now = new Date(), archived = "hide") {
@@ -165,15 +172,18 @@ export const drizzleCampaignStore: CampaignStore = {
   async update(organizationId, id, patch, tx) {
     const set = { ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.steps !== undefined ? { steps: patch.steps } : {}) };
     // An empty patch changes nothing. Drizzle throws "No values to set" for an empty SET, which would answer 500.
-    if (Object.keys(set).length === 0) return;
-    await (tx ?? db)
+    if (Object.keys(set).length === 0) return true;
+    const rows = await (tx ?? db)
       .update(campaigns)
       .set(set)
-      .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id)));
+      .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), stepsStillEditable(patch)))
+      .returning({ id: campaigns.id });
+    return rows.length > 0;
   },
 
-  async setStatus(organizationId, id, status) {
-    await db.update(campaigns).set({ status }).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id)));
+  async setStatus(organizationId, id, change) {
+    const rows = await db.update(campaigns).set({ status: change.to }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
+    return rows.length > 0;
   },
 
   async delete(organizationId, id) {

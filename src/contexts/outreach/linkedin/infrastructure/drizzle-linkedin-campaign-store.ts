@@ -7,7 +7,7 @@ import type { LinkedInCampaignStore, LinkedInEnrollResult } from "../application
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
 import { peopleWithPrivateThread } from "./drizzle-personal-thread-store";
 import { insertSkippingContacts, notContactSql } from "../../infrastructure/contact-guard";
-import { archiveCondition } from "../../infrastructure/drizzle-management-stores";
+import { archiveCondition, checkedStatusChange, stepsStillEditable } from "../../infrastructure/drizzle-management-stores";
 import { parseCampaignType, type CampaignStatus } from "../../domain/campaign";
 import { retriesUsed } from "../../domain/enrollment-list";
 import { filteredScope, sentCount, tabCounts } from "../../infrastructure/enrollment-list-sql";
@@ -132,8 +132,8 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
   async update(organizationId, id, patch, handle) {
     const set = { ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.type !== undefined ? { type: patch.type } : {}), ...(patch.steps !== undefined ? { steps: patch.steps as never } : {}) };
     // An empty patch changes nothing. Drizzle throws "No values to set" for an empty SET, which would answer 500.
-    if (Object.keys(set).length === 0) return;
-    await inTransaction(handle, async (tx) => {
+    if (Object.keys(set).length === 0) return true;
+    return inTransaction(handle, async (tx) => {
       if (patch.type !== undefined) {
         // The type guard runs under the campaign row lock. The LinkedIn claim takes the same row `for share` before it inserts a send,
         // so a claim in flight either committed (this check sees its send) or waits for this commit.
@@ -160,12 +160,18 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
           }
         }
       }
-      await tx.update(campaigns).set(set).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id)));
+      const rows = await tx
+        .update(campaigns)
+        .set(set)
+        .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), stepsStillEditable(patch)))
+        .returning({ id: campaigns.id });
+      return rows.length > 0;
     });
   },
 
-  async setStatus(organizationId, id, status) {
-    await db.update(campaigns).set({ status }).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id)));
+  async setStatus(organizationId, id, change) {
+    const rows = await db.update(campaigns).set({ status: change.to }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
+    return rows.length > 0;
   },
 
   async delete(organizationId, id) {

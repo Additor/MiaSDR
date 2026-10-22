@@ -253,10 +253,11 @@ export interface AiJobStore {
   enqueueMissing(now: Date): Promise<number>;
   /** Takes one runnable job (queued and due, or running with an expired lease). Exhausted stale jobs are failed first. */
   claim(kind: JobKind, workerId: string, now: Date, leaseMs: number): Promise<ClaimedJob | null>;
-  complete(jobId: string, now: Date): Promise<void>;
+  /** Settles the claim only while this worker still holds it: a job reclaimed after its lease ran out belongs to the new claim. */
+  complete(job: ClaimedJob, now: Date): Promise<void>;
   /** Back to queued without using the attempt, for a job that could not start (AI not configured). */
-  release(jobId: string, runAfter: Date): Promise<void>;
-  retry(jobId: string, error: string, runAfter: Date): Promise<void>;
+  release(job: ClaimedJob, runAfter: Date): Promise<void>;
+  retry(job: ClaimedJob, error: string, runAfter: Date): Promise<void>;
   /** Final failure. `failureKind` decides whether the sweep may requeue it (default transient). */
   fail(job: ClaimedJob, error: string, now: Date, failureKind?: FailureKind): Promise<void>;
 

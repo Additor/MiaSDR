@@ -48,6 +48,8 @@ const LIVE: Array<"pending" | "active"> = ["pending", "active"];
 const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
 /** The claiming worker settling its own row. */
 const fromCall = inArray(sends.status, [...SEND_FROM_CALL]);
+/** The claiming worker settling its own claim: a later attempt on the same row belongs to another worker. */
+const ownClaim = (claim: { sendId: string; attempt: number }) => and(eq(sends.id, claim.sendId), fromCall, eq(sends.attempt, claim.attempt));
 const SLUG_COLLISION_REASON = "This LinkedIn profile already belongs to another lead in your organization.";
 
 function isUniqueViolation(error: unknown): boolean {
@@ -379,10 +381,10 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   async abandon(claim, reason, now) {
     await db.transaction(async (tx) => {
       if (reason === "campaign_inactive") {
-        await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: reason }).where(and(eq(sends.id, claim.sendId), fromCall));
+        await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: reason }).where(ownClaim(claim));
         return;
       }
-      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: reason }).where(and(eq(sends.id, claim.sendId), fromCall)).returning({ id: sends.id });
+      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: reason }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
       await tx
         .update(campaignEnrollments)
@@ -393,7 +395,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
   async recordRendered(claim, rendered) {
     // The marker doubles as the "provider call may have started" flag for reconciliation. Unique per send.
-    await db.update(sends).set({ body: rendered.body, rfcMessageId: `li:${claim.sendId}` }).where(eq(sends.id, claim.sendId));
+    await db.update(sends).set({ body: rendered.body, rfcMessageId: `li:${claim.sendId}` }).where(ownClaim(claim));
   },
 
   async markSent(claim, sent, now) {
@@ -401,7 +403,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const moved = await tx
         .update(sends)
         .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.chatId, sentAt: now, error: null })
-        .where(and(eq(sends.id, claim.sendId), fromCall))
+        .where(ownClaim(claim))
         .returning({ id: sends.id });
       // A send that is already final stays as it is.
       if (moved.length === 0) return;
@@ -416,7 +418,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const moved = await tx
         .update(sends)
         .set({ status: "failed", error, ...(fatal ? { attempt: maxAttempts } : {}) })
-        .where(and(eq(sends.id, claim.sendId), fromCall))
+        .where(ownClaim(claim))
         .returning({ id: sends.id });
       if (moved.length === 0) return;
       await scheduleRetry(tx, claim.enrollmentId, claim.attempt, now, retryAfterMinutes, maxAttempts, error, fatal);
@@ -424,16 +426,16 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   },
 
   async markUnknown(claim, error) {
-    await db.update(sends).set({ status: "unknown", error }).where(and(eq(sends.id, claim.sendId), fromCall));
+    await db.update(sends).set({ status: "unknown", error }).where(ownClaim(claim));
   },
 
   async release(claim) {
-    await db.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "released" }).where(and(eq(sends.id, claim.sendId), fromCall));
+    await db.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "released" }).where(ownClaim(claim));
   },
 
   async markAlreadyConnected(claim, now) {
     await db.transaction(async (tx) => {
-      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: "already_connected" }).where(and(eq(sends.id, claim.sendId), fromCall)).returning({ id: sends.id });
+      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: "already_connected" }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
       await applyAcceptance(tx, claim.enrollmentId, claim.nextStep?.waitDays ?? null, now);
       await tx.update(campaignEnrollments).set({ linkedinAccountId: claim.account.id }).where(eq(campaignEnrollments.id, claim.enrollmentId));
@@ -442,7 +444,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
   async pauseAccountForLimit(claim, until) {
     await db.transaction(async (tx) => {
-      await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "limit_reached" }).where(and(eq(sends.id, claim.sendId), fromCall));
+      await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "limit_reached" }).where(ownClaim(claim));
       await tx.update(linkedinAccounts).set({ limitReachedUntil: until }).where(eq(linkedinAccounts.id, claim.account.id));
     });
   },

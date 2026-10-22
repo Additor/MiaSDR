@@ -16,6 +16,8 @@ export const SEND_FROM: Record<SendStatus, readonly SendStatus[]> = {
 /**
  * The worker that made the provider call settles its own row only from `sending`. A row that already
  * moved to `unknown`, `sent` or `failed` belongs to reconciliation or a person, so a late call changes nothing.
+ * A reclaim puts a failed row back to `sending` with the next attempt, so the claimer also matches its own
+ * attempt: a worker whose call outlived the grace period cannot settle the row another worker now holds.
  */
 export const SEND_FROM_CALL: readonly SendStatus[] = ["sending"];
 

@@ -453,7 +453,7 @@ describeDb("contacts and campaign enrollment", () => {
         const enrollmentId = await f.enrollment(c, personId, "email", "active");
         await sql`update campaign_enrollments set current_step = 1 where id = ${enrollmentId}`;
         const [{ id: sendId }] = await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id) values (${f.org}, ${enrollmentId}, 2, 'email', 'sending', ${mailbox}) returning id`;
-        claims.push({ personId, claim: { sendId, enrollmentId, stepNumber: 2, nextStep: { waitDays: 2 }, mailbox: { id: mailbox } } });
+        claims.push({ personId, claim: { sendId, attempt: 1, enrollmentId, stepNumber: 2, nextStep: { waitDays: 2 }, mailbox: { id: mailbox } } });
       }
       const sendLoop = inSlices(claims, ({ claim }) => outreachStore.markSent(claim as never, { providerMessageId: `pm-${Math.random()}`, threadId: "t" }, new Date()));
       const convertLoop = inSlices([...claims].reverse(), ({ personId }) => convert(f.org, personId));

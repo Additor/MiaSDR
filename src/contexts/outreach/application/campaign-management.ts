@@ -77,7 +77,7 @@ export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: strin
   }
   // One transaction: a failed sender replacement must not leave the new name or steps behind.
   await inTransaction(undefined, async (tx) => {
-    await deps.campaigns.update(actor.organizationId, id, next, tx);
+    if (!(await deps.campaigns.update(actor.organizationId, id, next, tx))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
     if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "email", senderIds, tx);
   });
 }
@@ -121,7 +121,9 @@ export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id:
       throw new ValidationError("Connect a mailbox in Settings before starting a campaign.");
     }
   }
-  await deps.campaigns.setStatus(actor.organizationId, id, to);
+  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps }))) {
+    throw new ConflictError("The campaign changed while you were saving. Reload it and try again.");
+  }
   return { emptySubjectLeads, sampled };
 }
 

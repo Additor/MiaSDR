@@ -36,6 +36,12 @@ const DUE_NOW = sql`now() - interval '1 minute'`;
 
 const UNLOCK = { lockedAt: null, lockedBy: null } as const;
 
+/**
+ * The claim this worker still holds. A claim adds one attempt, so a job reclaimed after its lease ran out carries a
+ * higher count, and the first worker's late settle matches nothing.
+ */
+const heldClaim = (job: ClaimedJob) => and(eq(aiJobs.id, job.id), eq(aiJobs.status, "running"), eq(aiJobs.attempts, job.attempts));
+
 /** Stores why a job failed, and the requeue ceiling the first time it fails, in the job's own payload. */
 const failureMarks = (kind: FailureKind) =>
   sql`${aiJobs.payload} || jsonb_build_object('failureKind', ${kind}::text, 'requeueCeiling', coalesce(${aiJobs.payload}->'requeueCeiling', to_jsonb(${AUTO_REQUEUE_CEILING}::int)))`;
@@ -149,26 +155,26 @@ export const drizzleAiJobStore: AiJobStore = {
     return rows[0] ? toClaimed(rows[0]) : null;
   },
 
-  async complete(jobId, now) {
-    await db.update(aiJobs).set({ status: "succeeded", completedAt: now, lastError: null, ...UNLOCK }).where(eq(aiJobs.id, jobId));
+  async complete(job, now) {
+    await db.update(aiJobs).set({ status: "succeeded", completedAt: now, lastError: null, ...UNLOCK }).where(heldClaim(job));
   },
 
-  async release(jobId, runAfter) {
+  async release(job, runAfter) {
     await db
       .update(aiJobs)
       .set({ status: "queued", runAfter, attempts: sql`greatest(${aiJobs.attempts} - 1, 0)`, ...UNLOCK })
-      .where(eq(aiJobs.id, jobId));
+      .where(heldClaim(job));
   },
 
-  async retry(jobId, error, runAfter) {
-    await db.update(aiJobs).set({ status: "queued", runAfter, lastError: error.slice(0, 1000) || "retry", ...UNLOCK }).where(eq(aiJobs.id, jobId));
+  async retry(job, error, runAfter) {
+    await db.update(aiJobs).set({ status: "queued", runAfter, lastError: error.slice(0, 1000) || "retry", ...UNLOCK }).where(heldClaim(job));
   },
 
   async fail(job, error, now, failureKind = "transient") {
     const lastError = error.slice(0, 1000) || "failed";
     await db.transaction(async (tx) => {
-      await tx.update(aiJobs).set({ status: "failed", failedAt: now, lastError, payload: failureMarks(failureKind), ...UNLOCK }).where(eq(aiJobs.id, job.id));
-      if (job.kind !== "classification") return;
+      const moved = await tx.update(aiJobs).set({ status: "failed", failedAt: now, lastError, payload: failureMarks(failureKind), ...UNLOCK }).where(heldClaim(job)).returning({ id: aiJobs.id });
+      if (moved.length === 0 || job.kind !== "classification") return;
       const [record] = await tx
         .select({ id: records.id, personId: records.personId, version: records.contextVersion })
         .from(messages)

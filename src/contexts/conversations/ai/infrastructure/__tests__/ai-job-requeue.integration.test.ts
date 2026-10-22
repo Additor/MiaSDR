@@ -117,6 +117,22 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect(j.payload).toMatchObject({ failureKind: "shape" });
     });
 
+    it("a worker whose lease ran out cannot settle the job another worker reclaimed", async () => {
+      const f = await fixture();
+      await receive(f);
+      const j = await job(f.org);
+      const stale = { id: j.id as string, organizationId: f.org, kind: "classification" as const, entityId: j.entity_id as string, attempts: 1, maxAttempts: 3 };
+      // The lease ran out and a second worker holds attempt 2.
+      await sql`update ai_jobs set status = 'running', attempts = 2, locked_at = now(), locked_by = 'worker-b', started_at = now() where id = ${j.id}`;
+      await store.fail(stale, "late failure", new Date());
+      await store.retry(stale, "late retry", new Date());
+      await store.release(stale, new Date());
+      await store.complete(stale, new Date());
+      expect(await job(f.org)).toMatchObject({ status: "running", attempts: 2, locked_by: "worker-b" });
+      expect(await sql`select 1 from classifications where organization_id = ${f.org}`).toHaveLength(0);
+      expect(await sql`select 1 from events where organization_id = ${f.org} and event_type = 'classification.failed'`).toHaveLength(0);
+    });
+
     it("keeps an organization without an AI key waiting: queued, no attempt used, never failed", async () => {
       const f = await fixture({ withKey: false });
       await receive(f);

@@ -33,6 +33,8 @@ const UNRESOLVED = [...SEND_UNRESOLVED];
 const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
 /** The claiming worker settling its own row. */
 const fromCall = inArray(sends.status, [...SEND_FROM_CALL]);
+/** The claiming worker settling its own claim: a later attempt on the same row belongs to another worker. */
+const ownClaim = (claim: { sendId: string; attempt: number }) => and(eq(sends.id, claim.sendId), fromCall, eq(sends.attempt, claim.attempt));
 
 interface CandidateRow {
   id: string;
@@ -235,10 +237,10 @@ export const drizzleOutreachStore: OutreachStore = {
         await tx
           .update(sends)
           .set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: reason })
-          .where(and(eq(sends.id, claim.sendId), fromCall));
+          .where(ownClaim(claim));
         return;
       }
-      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: reason }).where(and(eq(sends.id, claim.sendId), fromCall)).returning({ id: sends.id });
+      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: reason }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
       // A stopped enrollment keeps the status that stopped it (replied, bounced, ...).
       if (reason === "enrollment_stopped") return;
@@ -253,7 +255,7 @@ export const drizzleOutreachStore: OutreachStore = {
     await db
       .update(sends)
       .set({ subject: rendered.subject, body: rendered.body, rfcMessageId: rendered.rfcMessageId })
-      .where(eq(sends.id, claim.sendId));
+      .where(ownClaim(claim));
   },
 
   async markSent(claim, sent, now) {
@@ -261,7 +263,7 @@ export const drizzleOutreachStore: OutreachStore = {
       const moved = await tx
         .update(sends)
         .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.threadId, sentAt: now, error: null })
-        .where(and(eq(sends.id, claim.sendId), fromCall))
+        .where(ownClaim(claim))
         .returning({ id: sends.id });
       // A send that is already final (for example failed by a reconciler) stays as it is.
       if (moved.length === 0) return;
@@ -271,14 +273,14 @@ export const drizzleOutreachStore: OutreachStore = {
 
   async markFailed(claim, error, now, retryAfterMinutes, maxAttempts) {
     await db.transaction(async (tx) => {
-      const moved = await tx.update(sends).set({ status: "failed", error }).where(and(eq(sends.id, claim.sendId), fromCall)).returning({ id: sends.id });
+      const moved = await tx.update(sends).set({ status: "failed", error }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
       await scheduleRetry(tx, claim.enrollmentId, claim.attempt, now, retryAfterMinutes, maxAttempts, error);
     });
   },
 
   async markUnknown(claim, error) {
-    await db.update(sends).set({ status: "unknown", error }).where(and(eq(sends.id, claim.sendId), fromCall));
+    await db.update(sends).set({ status: "unknown", error }).where(ownClaim(claim));
   },
 
   async listUncertain(olderThan, limit): Promise<UncertainSend[]> {

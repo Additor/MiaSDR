@@ -22,8 +22,9 @@ function setup(options: { steps?: LinkedInStep[]; status?: LinkedInCampaignRecor
   const calls: string[] = [];
   const store = {
     get: async (org: string, id: string) => (org === "org1" && id === "c1" ? campaign : null),
-    setStatus: async (_org: string, _id: string, status: LinkedInCampaignRecord["status"]) => {
-      calls.push(`status:${status}`);
+    setStatus: async (_org: string, _id: string, change: { to: LinkedInCampaignRecord["status"] }) => {
+      calls.push(`status:${change.to}`);
+      return true;
     },
     setArchived: async (_org: string, _id: string, archived: boolean) => {
       calls.push(`archived:${archived}`);

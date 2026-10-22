@@ -86,6 +86,21 @@ describeDb("send status guard", () => {
     expect(await enr(f.enrollment)).toMatchObject({ current_step: 0 });
   });
 
+  it("a worker whose claim was reclaimed cannot settle the next attempt", async () => {
+    const f = await fixture("refuse");
+    const before = await enr(f.enrollment);
+    // Another worker reclaimed the row: attempt 2 is in flight with its own rendering.
+    await sql`update sends set status = 'sending', attempt = 2, body = 'attempt 2', rfc_message_id = '<two@test>' where id = ${f.sendId}`;
+    const stale = { sendId: f.sendId, attempt: 1, enrollmentId: f.enrollment, stepNumber: 1, nextStep: { waitDays: 2 }, mailbox: { id: f.mailbox } } as never;
+    await outreachStore.recordRendered(stale, { subject: "late", body: "attempt 1", rfcMessageId: "<one@test>" } as never);
+    await outreachStore.markSent(stale, { providerMessageId: "late-pm", threadId: "late-th" }, current);
+    await outreachStore.markFailed(stale, "late failure", current, 5, 3);
+    await outreachStore.markUnknown(stale, "late unknown");
+    await outreachStore.abandon(stale, "suppressed", current);
+    expect(await row(f.sendId)).toMatchObject({ status: "sending", attempt: 2, body: "attempt 2", rfc_message_id: "<two@test>", provider_message_id: null });
+    expect(await enr(f.enrollment)).toMatchObject({ status: before.status, current_step: before.current_step });
+  });
+
   it("settles an unknown send once: reconcile after a person's answer changes nothing", async () => {
     const f = await fixture("timeout-lost");
     advance(60);

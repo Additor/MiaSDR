@@ -167,7 +167,7 @@ export function createAiJobs(deps: AiJobDeps): Job[] {
             if (!job) break;
             const provider = await deps.ai.forOrganization(job.organizationId);
             if (!provider) {
-              await deps.jobs.release(job.id, new Date(deps.now().getTime() + deps.notConfiguredDelayMs));
+              await deps.jobs.release(job, new Date(deps.now().getTime() + deps.notConfiguredDelayMs));
               count("not_configured");
               continue;
             }
@@ -178,7 +178,7 @@ export function createAiJobs(deps: AiJobDeps): Job[] {
                 continue;
               }
               const outcome = kind === "classification" ? await classify(deps, provider, job) : await draft(deps, provider, job);
-              await deps.jobs.complete(job.id, deps.now());
+              await deps.jobs.complete(job, deps.now());
               count(outcome);
               processed += 1;
             } catch (error) {
@@ -187,7 +187,7 @@ export function createAiJobs(deps: AiJobDeps): Job[] {
                 await deps.jobs.fail(job, message(error), deps.now(), failureKindOf(error));
                 count("failed");
               } else {
-                await deps.jobs.retry(job.id, message(error), new Date(deps.now().getTime() + retryDelayMs(job.attempts)));
+                await deps.jobs.retry(job, message(error), new Date(deps.now().getTime() + retryDelayMs(job.attempts)));
                 count("retry");
               }
             }

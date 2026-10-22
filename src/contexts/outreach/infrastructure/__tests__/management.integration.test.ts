@@ -140,6 +140,37 @@ describeDb("campaign and mailbox management", () => {
       await expect(campaignsUc.deleteCampaign(t.campaignDeps, t.actor, id)).rejects.toThrow(/Only a draft/);
     });
 
+    it("a resume and a step edit that race cannot launch unchecked steps", async () => {
+      const t = await org();
+      await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: `race${Math.random().toString(36).slice(2, 6)}@corp.test` });
+      const { id } = await campaignsUc.createCampaign(t.campaignDeps, t.actor, { name: "race" });
+      const finished = campaignsUc.DEFAULT_STEPS.map((s) => ({ ...s, body: s.body.replace("[[what you help them with]]", "reporting") }));
+      await campaignsUc.updateCampaign(t.campaignDeps, t.actor, id, { steps: finished });
+      await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active");
+      await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "paused");
+      const unfinished = sql.json(campaignsUc.DEFAULT_STEPS as never);
+      const status = async () => (await sql`select status, steps from campaigns where id = ${id}`)[0];
+
+      // The step edit commits after the resume read the campaign: the resume must not activate the new steps.
+      const editLands = { ...t.campaignDeps.campaigns, get: async (...a: Parameters<typeof stores.drizzleCampaignStore.get>) => {
+        const row = await stores.drizzleCampaignStore.get(...a);
+        await sql`update campaigns set steps = ${unfinished} where id = ${id}`;
+        return row;
+      } };
+      await expect(campaignsUc.changeCampaignStatus({ ...t.campaignDeps, campaigns: editLands }, t.actor, id, "active")).rejects.toBeInstanceOf(ConflictError);
+      expect((await status()).status).toBe("paused");
+
+      // The resume commits after the step edit read the campaign: the edit must not change a running campaign.
+      await sql`update campaigns set steps = ${sql.json(finished as never)} where id = ${id}`;
+      const resumeLands = { ...t.campaignDeps.campaigns, get: async (...a: Parameters<typeof stores.drizzleCampaignStore.get>) => {
+        const row = await stores.drizzleCampaignStore.get(...a);
+        await sql`update campaigns set status = 'active' where id = ${id}`;
+        return row;
+      } };
+      await expect(campaignsUc.updateCampaign({ ...t.campaignDeps, campaigns: resumeLands }, t.actor, id, { steps: campaignsUc.DEFAULT_STEPS })).rejects.toBeInstanceOf(ConflictError);
+      expect(await status()).toMatchObject({ status: "active", steps: finished });
+    });
+
     describe("archive", () => {
       const names = async (t: Awaited<ReturnType<typeof org>>, filter?: "hide" | "only" | "all") => (await campaignsUc.listCampaigns(t.campaignDeps, t.member, filter)).map((c) => c.name).sort();
 

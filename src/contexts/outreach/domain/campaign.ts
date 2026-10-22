@@ -70,8 +70,20 @@ export function canTransition(from: CampaignStatus, to: CampaignStatus): boolean
 }
 
 /** Steps may change while no mail is going out. Existing enrollments keep their position, so the sequence may not shrink under them. */
+export const STEPS_EDITABLE: readonly CampaignStatus[] = ["draft", "paused"];
+
 export function stepsEditable(status: CampaignStatus): boolean {
-  return status === "draft" || status === "paused";
+  return STEPS_EDITABLE.includes(status);
+}
+
+/**
+ * A status change as the use case checked it. The store writes it only while the campaign still has `from` and
+ * `checkedSteps`, so a concurrent status change or step edit makes the write miss instead of launching unchecked steps.
+ */
+export interface CampaignStatusChange<Step> {
+  from: CampaignStatus;
+  to: CampaignStatus;
+  checkedSteps: readonly Step[];
 }
 
 /** Starter templates mark what the author must write as [[like this]]. */
