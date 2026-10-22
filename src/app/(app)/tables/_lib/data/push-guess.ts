@@ -1,4 +1,5 @@
 import type { CampaignField } from "@/contexts/grid/domain/campaign-rows";
+import { verifyColumns } from "@/contexts/grid/domain/verified-push";
 import type { GridColumn } from "./types";
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -28,12 +29,30 @@ export function guessField(field: CampaignField, columns: GridColumn[], taken: R
   return null;
 }
 
-/** One guess per field, in field order, never giving one column to two fields. */
+const FINDS_EMAIL = new Set(["find-work-email", "enrich-person", "find-email"]);
+
+/**
+ * The address a push should send to, when the table enriched one: the column a verification checked, else a work
+ * email an enrichment found. Null leaves the guess by name, which reads the raw imported column.
+ */
+export function enrichedEmailColumn(columns: GridColumn[]): string | null {
+  const checked = verifyColumns(columns).find((c) => c.emailColumnKey && columns.some((x) => x.key === c.emailColumnKey));
+  if (checked) return checked.emailColumnKey;
+  const actionOf = (key: unknown) => {
+    const source = columns.find((c) => c.key === key);
+    const steps = source?.config.steps as Array<{ actionKey?: unknown }> | undefined;
+    return source?.type === "waterfall" ? steps?.[0]?.actionKey : source?.config.actionKey;
+  };
+  const found = columns.find((c) => c.type === "integration_output" && c.config.outputKey === "email" && FINDS_EMAIL.has(String(actionOf(c.config.sourceColumnKey))));
+  return found?.key ?? null;
+}
+
+/** One guess per field, in field order, never giving one column to two fields. Email prefers an enriched address. */
 export function guessFields(fields: readonly CampaignField[], columns: GridColumn[]): Partial<Record<CampaignField, string | null>> {
   const taken = new Set<string>();
   const out: Partial<Record<CampaignField, string | null>> = {};
   for (const f of fields) {
-    const key = guessField(f, columns, taken);
+    const key = (f === "email" ? enrichedEmailColumn(columns) : null) ?? guessField(f, columns, taken);
     out[f] = key;
     if (key) taken.add(key);
   }

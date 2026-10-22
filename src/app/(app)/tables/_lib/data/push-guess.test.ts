@@ -27,4 +27,13 @@ describe("guessFields", () => {
   it("finds an email-typed column under any name", () => {
     expect(guessFields(["email"], [col("x", "Contact", "email")]).email).toBe("x");
   });
+
+  it("maps Email to the address a verification checked, else to a found work email, over the imported column", () => {
+    const imported = col("email", "email", "email");
+    const find = { ...col("find", "Find work email", "enrichment"), config: { actionKey: "find-work-email" } };
+    const work = { ...col("work", "Work email", "integration_output"), config: { sourceColumnKey: "find", outputKey: "email" } };
+    expect(guessFields(["email"], [imported, find, work]).email).toBe("work");
+    const verify = { ...col("check", "Verify email", "enrichment"), config: { actionKey: "verify-email", inputs: { email: "email" } } };
+    expect(guessFields(["email"], [imported, find, work, verify]).email).toBe("email");
+  });
 });

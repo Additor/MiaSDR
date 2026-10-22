@@ -45,7 +45,7 @@ type Open =
   | { kind: "enrichment"; column: GridColumn | null; after?: string; outcome?: string }
   | { kind: "ai"; column: GridColumn | null; after?: string }
   | { kind: "run"; column: GridColumn | null; firstN?: number }
-  | { kind: "push"; rowIds: string[] }
+  | { kind: "push"; rowIds: string[]; allRows?: boolean }
   | { kind: "details"; rowId: string; columnKey: string }
   | { kind: "deleteRows"; count: number }
   | { kind: "addRows" }
@@ -267,7 +267,7 @@ export function TableWorkspace({ tableId }: Props) {
   async function pushToCampaign() {
     const ids = selectedIds.length > 0 ? selectedIds : await selectAllMatching();
     if (ids.length === 0) return void toast.message("There are no rows to push.");
-    setDialog({ kind: "push", rowIds: ids });
+    setDialog({ kind: "push", rowIds: ids, allRows: selectedIds.length === 0 });
   }
 
   async function toggleAutoRun(next: boolean) {
@@ -434,7 +434,7 @@ export function TableWorkspace({ tableId }: Props) {
       {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} outcome={dialog.outcome} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "ai" && <AiDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} onStarted={() => void grid.reload()} />}
-      {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} onClose={closeDialog} />}
+      {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} allRows={dialog.allRows} onClose={closeDialog} />}
       {dialog?.kind === "column" && (
         <ColumnDialogs tableId={tableId} columns={columns} view={view} request={dialog.request} onClose={closeDialog} onChanged={grid.reload} saveView={grid.saveView} />
       )}
