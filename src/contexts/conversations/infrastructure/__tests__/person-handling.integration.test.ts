@@ -26,7 +26,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
     runs: typeof import("../../after-reply/infrastructure/drizzle-sequence-store").drizzleRunStore;
     engine: typeof import("../../after-reply/infrastructure/drizzle-sequence-engine").drizzleSequenceEngine;
   };
-  let FakeAi: typeof import("../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
+  let FakeAi: typeof import("../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   const orgs: TestOrg[] = [];
   let counter = 0;
 
@@ -134,7 +134,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       runs: seqStore.drizzleRunStore,
       engine: (await import("../../after-reply/infrastructure/drizzle-sequence-engine")).drizzleSequenceEngine,
     };
-    FakeAi = (await import("../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
+    FakeAi = (await import("../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
   });
 
   afterAll(async () => {

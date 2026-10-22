@@ -130,7 +130,7 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
       description: "Optional. Lets MiaSDR classify replies and draft answers for your approval.",
       optional: true,
       status: facts.aiKeyStored ? "done" : "todo",
-      detail: facts.aiKeyStored ? "Anthropic key stored" : null,
+      detail: facts.aiKeyStored ? "AI provider connected" : null,
       href: "/settings/integrations",
       action: "Add key",
     },

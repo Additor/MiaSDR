@@ -172,6 +172,17 @@ describe("context interfaces", () => {
   });
 });
 
+/** Model provider SDKs. Only the ai context talks to a model; every feature goes through its `LanguageModel` port. */
+const MODEL_SDKS = /^(@anthropic-ai\/|openai$|openai\/|@openrouter\/|@ai-sdk\/|ai$)/;
+
+describe("model providers", () => {
+  it("keeps model provider SDKs inside the ai context", () => {
+    const outside = [...sourceFiles(SRC)].filter((f) => !path.relative(SRC, f).startsWith(`contexts${path.sep}ai${path.sep}`) && !f.includes(`${path.sep}architecture${path.sep}`));
+    const found = outside.flatMap((f) => specifiers(readFileSync(f, "utf8")).filter((s) => MODEL_SDKS.test(s)).map((s) => `${path.relative(ROOT, f)} -> ${s}`));
+    expect(found).toEqual([]);
+  });
+});
+
 describe("context dependencies", () => {
   it("places every context in a layer", () => {
     const contexts = readdirSync(path.join(SRC, "contexts")).filter((name) => statSync(path.join(SRC, "contexts", name)).isDirectory());

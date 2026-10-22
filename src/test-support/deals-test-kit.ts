@@ -30,7 +30,7 @@ export async function bootDealsKit(url: string) {
   const jobs = (await import("@/contexts/conversations/ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore;
   const replies = (await import("@/contexts/conversations/infrastructure/drizzle-reply-store")).drizzleReplyStore;
   const engine = (await import("@/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine")).drizzleSequenceEngine;
-  const FakeAi = (await import("@/contexts/conversations/ai/infrastructure/fake-ai-provider")).FakeAiProvider;
+  const FakeAi = (await import("@/contexts/conversations/ai/infrastructure/fake-reply-ai")).FakeReplyAi;
   const orgs: string[] = [];
   const users: string[] = [];
   let counter = 0;

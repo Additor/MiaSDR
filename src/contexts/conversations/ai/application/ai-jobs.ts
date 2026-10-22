@@ -5,7 +5,8 @@ import { needsReply } from "../../domain/reply-policy";
 import { normalizeSubject } from "../../domain/subject";
 import { detectsStopRequest } from "../../domain/stop-request";
 import { DO_NOT_CONTACT_KEY } from "../../domain/classification-policy";
-import { AiError, type AiProvider, type AiProviderResolver } from "./ai-ports";
+import { AiError } from "@/contexts/ai/domain/ai-error";
+import type { ReplyAi, ReplyAiResolver } from "./ai-ports";
 import type { AiJobStore, ClaimedJob, DraftContext, ReplyStore } from "../../application/reply-ports";
 import { sweepFailedAiJobs, type AuditPort } from "./ai-job-ops";
 import type { FailureKind } from "../domain/ai-job-requeue";
@@ -13,7 +14,7 @@ import type { FailureKind } from "../domain/ai-job-requeue";
 export interface AiJobDeps {
   jobs: AiJobStore;
   replies: ReplyStore;
-  ai: AiProviderResolver;
+  ai: ReplyAiResolver;
   now: () => Date;
   workerId: string;
   /** A running job whose lease is older than this is taken over. */
@@ -37,7 +38,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 
 /** Shared by the draft job, `requestDraft` and `regenerateDraft`: asks the provider and validates the answer. */
 export async function produceDraft(
-  provider: AiProvider,
+  provider: ReplyAi,
   ctx: DraftContext,
   options: { feedback?: string | null; previousDraft?: string | null } = {},
 ): Promise<{ output: { subject: string | null; bodyText: string }; usage?: Record<string, number> }> {
@@ -70,7 +71,7 @@ export function draftCitations(ctx: DraftContext) {
   return ctx.knowledge.map((k) => ({ documentVersionId: k.documentVersionId, excerpt: k.content.slice(0, 400) }));
 }
 
-async function classify(deps: AiJobDeps, provider: AiProvider, job: ClaimedJob): Promise<string> {
+async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promise<string> {
   const ctx = await deps.jobs.loadClassifyContext(job.organizationId, job.entityId);
   if (!ctx) return "skipped";
   if (ctx.taxonomy.length === 0) throw new AiError("The reply categories have no active subcategory.", "permanent");
@@ -115,7 +116,7 @@ async function classify(deps: AiJobDeps, provider: AiProvider, job: ClaimedJob):
   return outcome.status;
 }
 
-async function draft(deps: AiJobDeps, provider: AiProvider, job: ClaimedJob): Promise<string> {
+async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promise<string> {
   const ctx = await deps.jobs.loadDraftContext(job.organizationId, job.entityId);
   if (!ctx) return "skipped";
   if (ctx.skip) return ctx.skip;

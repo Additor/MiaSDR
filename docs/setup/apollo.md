@@ -11,7 +11,7 @@ Apollo's rate limits are per team and per endpoint. The free plan allows 50 requ
 ## Connect
 
 1. In Apollo, open Settings, Integrations, API and create an API key. A master key is not required for the two actions below.
-2. In MiaSDR, open a table, press Enrichment, then "Connect or manage providers", press Connect on Apollo and paste the key. Every other vendor's key goes in the same place, and Settings, Integrations does not list either of them (it holds the Anthropic key only). MiaSDR checks the key with `GET https://api.apollo.io/api/v1/auth/health` before it saves anything. A rejected key is not stored.
+2. In MiaSDR, open a table, press Enrichment, then "Connect or manage providers", press Connect on Apollo and paste the key. Every other vendor's key goes in the same place, and Settings, Integrations does not list either of them (it holds the AI provider keys only). MiaSDR checks the key with `GET https://api.apollo.io/api/v1/auth/health` before it saves anything. A rejected key is not stored.
 3. Optionally set a price in cents per call (`defaultCostCents`) with `PATCH /api/grid/providers/<id>`. The UI has no field for it, and Apollo credits are not money, so MiaSDR cost totals use this number.
 
 ## Actions

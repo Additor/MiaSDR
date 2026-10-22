@@ -255,7 +255,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
         >
           {!draft && !panel.aiConfigured && (
             <div className="grid gap-2 text-sm" data-testid="ai-not-configured">
-              <p>AI is not configured, so no draft is written. Write the reply yourself below, or add an Anthropic key to draft replies.</p>
+              <p>AI is not configured, so no draft is written. Write the reply yourself below, or connect an AI provider in Settings, Integrations to draft replies.</p>
               <div>
                 <Link href="/settings/integrations" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                   Open integrations

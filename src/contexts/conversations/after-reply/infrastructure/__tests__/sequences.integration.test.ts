@@ -24,7 +24,7 @@ describeDb("After a reply flows", () => {
     runs: typeof import("../drizzle-sequence-store").drizzleRunStore;
     engine: typeof import("../drizzle-sequence-engine").drizzleSequenceEngine;
   };
-  let FakeAi: typeof import("../../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
+  let FakeAi: typeof import("../../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   let createReplyMailer: typeof import("../../../infrastructure/reply-mailer").createReplyMailer;
   let mailbox: FakeMailboxProvider;
   const orgs: string[] = [];
@@ -156,7 +156,7 @@ describeDb("After a reply flows", () => {
       runs: seqStore.drizzleRunStore,
       engine: (await import("../drizzle-sequence-engine")).drizzleSequenceEngine,
     };
-    FakeAi = (await import("../../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
+    FakeAi = (await import("../../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     createReplyMailer = (await import("../../../infrastructure/reply-mailer")).createReplyMailer;
     mailbox = (await import("@/contexts/outreach/infrastructure/composition")).mailboxProvider() as FakeMailboxProvider;
   });

@@ -1,7 +1,7 @@
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { REQUEUE_BATCH } from "../domain/ai-job-requeue";
-import type { AiProviderResolver } from "./ai-ports";
+import type { ReplyAiResolver } from "./ai-ports";
 import type { AiJobStore, FailedAiJob, SkippedAiJob } from "../../application/reply-ports";
 
 /** Same shape as the audit sink other contexts use; each composition root passes the `audit_log` writer. */
@@ -16,7 +16,7 @@ export interface AiJobOpsDeps {
 }
 
 export interface SweepDeps extends AiJobOpsDeps {
-  ai: AiProviderResolver;
+  ai: ReplyAiResolver;
 }
 
 export const FAILED_LIST_LIMIT = 25;

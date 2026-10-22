@@ -79,7 +79,7 @@ Provider keys are saved per provider in the app (encrypted with `INTEGRATION_CRE
 
 ## Rotating the credential key
 
-`INTEGRATION_CREDENTIALS_KEY` encrypts every saved credential: Anthropic and Unipile keys, and the keys of grid providers. Stored envelopes look like `v2:<keyId>:<iv>:<tag>:<ciphertext>`. The key id is the first 8 hex characters of the key's SHA-256, so the app finds the right key without trying them all. Older `v1:` envelopes (no key id) still decrypt.
+`INTEGRATION_CREDENTIALS_KEY` encrypts every saved credential: AI provider keys (Anthropic, Vercel AI Gateway, OpenRouter), Unipile keys, and the keys of grid providers. Stored envelopes look like `v2:<keyId>:<iv>:<tag>:<ciphertext>`. The key id is the first 8 hex characters of the key's SHA-256, so the app finds the right key without trying them all. Older `v1:` envelopes (no key id) still decrypt.
 
 Rotate when the key leaked or on your own schedule. Nothing needs re-entering and the app stays up.
 

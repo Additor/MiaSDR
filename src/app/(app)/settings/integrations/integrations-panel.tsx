@@ -115,7 +115,7 @@ export function IntegrationsPanel({ accounts, providers }: { accounts: Account[]
         {accounts.length === 0 ? (
           <EmptyState
             title="Nothing connected yet"
-            description="Save an Anthropic key above so the AI can classify replies and write drafts. LinkedIn connects on its own page."
+            description="Connect an AI provider above (Anthropic, Vercel AI Gateway or OpenRouter) so the AI can classify replies and write drafts. LinkedIn connects on its own page."
             action={{ label: "Open LinkedIn settings", href: "/settings/linkedin" }}
           />
         ) : (

@@ -1,57 +1,41 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { and, eq } from "drizzle-orm";
-import { credentialCipher } from "@/contexts/integrations/infrastructure/credential-cipher";
 import { mailboxProvider } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinGateways } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { db } from "@/platform/db/client";
-import { integrationAccounts, integrationCredentials } from "@/platform/db/schema";
+import { aiFakeMode, languageModels } from "@/contexts/ai/infrastructure/composition";
 import { env } from "@/shared/env";
 import type { Job } from "@/platform/jobs/types";
 import { auditSink } from "@/platform/db/audit";
 import type { AiJobOpsDeps } from "../application/ai-job-ops";
 import { AI_JOB_LEASE_MS, createAiJobs } from "../application/ai-jobs";
-import type { AiProvider, AiProviderResolver } from "../application/ai-ports";
+import type { ReplyAi, ReplyAiResolver } from "../application/ai-ports";
 import { reconcileLinkedInReplies, type LinkedInReplyDeps } from "../../application/linkedin-reply";
 import { reconcileReplies, type ReplyDeps } from "../../application/reply-management";
-import { AnthropicAiProvider } from "./anthropic-ai-provider";
 import { drizzleAiJobStore } from "./drizzle-ai-job-store";
 import { drizzleLinkedInReplyStore } from "../../infrastructure/drizzle-linkedin-reply-store";
 import { drizzleReplyStore } from "../../infrastructure/drizzle-reply-store";
-import { FakeAiProvider } from "./fake-ai-provider";
+import { FakeReplyAi } from "./fake-reply-ai";
+import { createReplyAi } from "./reply-ai";
 import { createLinkedInReplySender } from "../../infrastructure/linkedin-reply-sender";
 import { createReplyMailer } from "../../infrastructure/reply-mailer";
 
-const globalForAi = globalThis as unknown as { __miasdrFakeAi?: FakeAiProvider };
+const globalForAi = globalThis as unknown as { __miasdrFakeAi?: FakeReplyAi };
 
 /**
- * AI_PROVIDER=fake (demos and tests) answers for every organization. Otherwise the organization's own
- * Anthropic key is read and decrypted for this call only. No stored key means null: AI is not configured.
+ * AI_PROVIDER=fake (demos and tests) answers for every organization with the keyword classifier and template drafts.
+ * Otherwise the organization's configured language model runs the prompts; no model means null: AI is not configured.
  */
-export const aiResolver: AiProviderResolver = {
-  async forOrganization(organizationId): Promise<AiProvider | null> {
-    if (env().AI_PROVIDER === "fake") return (globalForAi.__miasdrFakeAi ??= new FakeAiProvider());
-    const [row] = await db
-      .select({ payload: integrationCredentials.encryptedPayload, config: integrationAccounts.config })
-      .from(integrationAccounts)
-      .innerJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
-      .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, "anthropic"), eq(integrationAccounts.enabled, true)));
-    if (!row) return null;
-    try {
-      const { apiKey } = JSON.parse(credentialCipher.decrypt(row.payload)) as { apiKey?: string };
-      if (!apiKey) return null;
-      const configured = typeof row.config?.model === "string" ? row.config.model : undefined;
-      return new AnthropicAiProvider({ apiKey, model: configured || env().AI_MODEL });
-    } catch {
-      console.error("The stored Anthropic credential could not be read. Save the key again in Settings, Integrations.");
-      return null;
-    }
+export const replyAiResolver: ReplyAiResolver = {
+  async forOrganization(organizationId): Promise<ReplyAi | null> {
+    if (aiFakeMode()) return (globalForAi.__miasdrFakeAi ??= new FakeReplyAi());
+    const model = await languageModels.forOrganization(organizationId);
+    return model ? createReplyAi(model) : null;
   },
 };
 
 export const replyDeps = (): ReplyDeps => ({
   store: drizzleReplyStore,
-  ai: aiResolver,
+  ai: replyAiResolver,
   mailer: createReplyMailer(mailboxProvider),
   now: () => new Date(),
   newToken: () => randomUUID(),
@@ -63,7 +47,7 @@ export const linkedinReplyDeps = (): LinkedInReplyDeps => ({
   store: drizzleLinkedInReplyStore,
   sender: createLinkedInReplySender(linkedinGateways()),
   now: () => new Date(),
-  aiConfigured: async (organizationId) => (await aiResolver.forOrganization(organizationId)) !== null,
+  aiConfigured: async (organizationId) => (await replyAiResolver.forOrganization(organizationId)) !== null,
 });
 
 /** Registered once in the kernel registry. Always on: an organization without a key just sees `not_configured` in the tick report. */
@@ -71,7 +55,7 @@ export function conversationJobs(): Job[] {
   const deps = {
     jobs: drizzleAiJobStore,
     replies: drizzleReplyStore,
-    ai: aiResolver,
+    ai: replyAiResolver,
     now: () => new Date(),
     workerId: `${hostname()}:${process.pid}`,
     leaseMs: AI_JOB_LEASE_MS,

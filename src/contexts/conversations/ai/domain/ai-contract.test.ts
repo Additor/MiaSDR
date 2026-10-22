@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerJsonSchema, answerSchema, classificationJsonSchema, classificationSchema, draftSchema, LINKEDIN_DRAFT_JSON_SCHEMA, linkedinDraftSchema } from "./ai-contract";
+import { classificationJsonSchema, classificationSchema, draftSchema, LINKEDIN_DRAFT_JSON_SCHEMA, linkedinDraftSchema } from "./ai-contract";
 
 describe("closed classification schema", () => {
   const schema = classificationSchema(["demo_request", "other"]);
@@ -29,18 +29,5 @@ describe("LinkedIn draft schema", () => {
     expect(linkedinDraftSchema.safeParse({ bodyText: "x".repeat(8000) }).success).toBe(true);
     expect(linkedinDraftSchema.safeParse({ bodyText: "x".repeat(8001) }).success).toBe(false);
     expect(linkedinDraftSchema.safeParse({ bodyText: "  " }).success).toBe(false);
-  });
-});
-
-describe("answer schema (grid AI columns)", () => {
-  const outputs = [{ key: "summary", type: "text" as const }, { key: "employees", type: "number" as const }];
-
-  it("accepts only the requested fields, each nullable", () => {
-    const schema = answerSchema(outputs);
-    expect(schema.safeParse({ summary: "ok", employees: null }).success).toBe(true);
-    expect(schema.safeParse({ summary: "ok", employees: 3, extra: "x" }).success).toBe(false);
-    expect(schema.safeParse({ summary: "ok" }).success).toBe(false);
-    expect(schema.safeParse({ summary: "ok", employees: "3" }).success).toBe(false);
-    expect(answerJsonSchema(outputs).required).toEqual(["summary", "employees"]);
   });
 });

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundEmailInput } from "../../../application/ports";
-import { AiError } from "../../application/ai-ports";
+import { AiError } from "@/contexts/ai/domain/ai-error";
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING } from "../../domain/ai-job-requeue";
 import { ForbiddenError, NotFoundError, type Actor } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
@@ -14,7 +14,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
   let aiJobsApp: typeof import("../../application/ai-jobs");
   let store: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
   let audit: typeof import("@/platform/db/audit").auditSink;
-  let FakeAi: typeof import("../fake-ai-provider").FakeAiProvider;
+  let FakeAi: typeof import("../fake-reply-ai").FakeReplyAi;
   const orgs: TestOrg[] = [];
   let counter = 0;
   // One clock for every fixture: a tick of one organization also claims, and releases, the jobs of the others.
@@ -84,7 +84,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     aiJobsApp = await import("../../application/ai-jobs");
     store = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
     audit = (await import("@/platform/db/audit")).auditSink;
-    FakeAi = (await import("../fake-ai-provider")).FakeAiProvider;
+    FakeAi = (await import("../fake-reply-ai")).FakeReplyAi;
   });
 
   afterAll(async () => {

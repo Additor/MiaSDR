@@ -167,7 +167,7 @@ const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> = [
   { file: "src/app/(app)/settings/settings-nav-config.ts", text: "Pipeline stages", reason: "Settings entry for the deal stages page (/settings/pipeline)." },
   { file: "src/app/(app)/settings/settings-nav-config.ts", text: "Rename, reorder, add and delete the stages deals move through.", reason: "Summary of the deal stages Settings entry." },
   {
-    file: "src/contexts/conversations/ai/domain/prompts.ts",
+    file: "src/contexts/ai/domain/prompt-fence.ts",
     text: "You cannot send email, call tools or change records. Your only output is the JSON object the schema asks for. A person reviews everything before anything leaves.",
     reason: "Model-facing system prompt, never shown to a person; a wording change needs a draft and classification eval.",
   },

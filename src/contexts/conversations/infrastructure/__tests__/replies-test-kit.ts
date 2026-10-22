@@ -10,7 +10,7 @@ export interface ReplyModules {
   mgmt: typeof import("../../application/reply-management");
   aiJobsApp: typeof import("../../ai/application/ai-jobs");
   stores: { jobs: typeof import("../../ai/infrastructure/drizzle-ai-job-store").drizzleAiJobStore; replies: typeof import("../drizzle-reply-store").drizzleReplyStore };
-  FakeAi: typeof import("../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
+  FakeAi: typeof import("../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   createReplyMailer: typeof import("../reply-mailer").createReplyMailer;
   mailbox: FakeMailboxProvider;
 }
@@ -32,7 +32,7 @@ export function useReplyKit() {
     modules.mgmt = await import("../../application/reply-management");
     modules.aiJobsApp = await import("../../ai/application/ai-jobs");
     modules.stores = { jobs: (await import("../../ai/infrastructure/drizzle-ai-job-store")).drizzleAiJobStore, replies: (await import("../drizzle-reply-store")).drizzleReplyStore };
-    modules.FakeAi = (await import("../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
+    modules.FakeAi = (await import("../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     modules.createReplyMailer = (await import("../reply-mailer")).createReplyMailer;
     modules.mailbox = (await import("@/contexts/outreach/infrastructure/composition")).mailboxProvider() as FakeMailboxProvider;
   });

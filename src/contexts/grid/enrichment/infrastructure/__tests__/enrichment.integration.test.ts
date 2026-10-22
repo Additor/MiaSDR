@@ -20,7 +20,7 @@ describeDb("grid enrichment runs", () => {
     rstore: typeof import("../enrichment-run-store");
     crypto: typeof import("@/contexts/integrations/infrastructure/credential-crypto");
     rate: typeof import("../../domain/enrichment-rate-limit");
-    fakeAi: typeof import("@/contexts/conversations/ai/infrastructure/fake-ai-provider");
+    fakeAi: typeof import("../../../infrastructure/fake-grid-ai");
   };
 
   const fake = () => new m.adapters.FakeEnrichmentProvider();
@@ -87,7 +87,7 @@ describeDb("grid enrichment runs", () => {
       rstore: await import("../enrichment-run-store"),
       crypto: await import("@/contexts/integrations/infrastructure/credential-crypto"),
       rate: await import("../../domain/enrichment-rate-limit"),
-      fakeAi: await import("@/contexts/conversations/ai/infrastructure/fake-ai-provider"),
+      fakeAi: await import("../../../infrastructure/fake-grid-ai"),
     };
   });
 
@@ -840,8 +840,8 @@ describeDb("grid enrichment runs", () => {
     const f = fake();
     const d = deps(f);
     await addFake(d, actor);
-    const ai = new m.fakeAi.FakeAiProvider();
-    const answerer = { answer: async (_org: string, input: Parameters<NonNullable<typeof ai.answer>>[0]) => ({ ...(await ai.answer(input)), provider: ai.name, model: ai.model }) };
+    const ai = new m.fakeAi.FakeGridAi();
+    const answerer = { answer: async (_org: string, input: Parameters<typeof ai.answer>[0]) => ({ ...(await ai.answer(input)), provider: ai.provider, model: ai.model }) };
     await findColumn(d, actor, table);
     const [main] = await m.columns.createAiColumns(d.columnDeps, actor, table, { name: "Opener", prompt: "Write one line for {{name}} at {{email}} using {{about}}", outputs: [{ key: "line", type: "text" }] });
     expect(main.dependsOn).toEqual(["name", "email", "about"]);
@@ -860,8 +860,8 @@ describeDb("grid enrichment runs", () => {
     const [{ n }] = await sql`select count(*)::int as n from grid_cell_runs where row_id = ${rows[0]} and column_key = 'opener' and outcome = 'hit'`;
     expect(n).toBe(1);
 
-    // The prompt builder fences the hostile cell. The nonce-tag check lives in the conversations prompt tests.
-    const { buildAnswerPrompt } = await import("@/contexts/conversations/ai/domain/prompts");
+    // The prompt builder fences the hostile cell. The nonce-tag check lives in the grid's ai-answer tests.
+    const { buildAnswerPrompt } = await import("../../../domain/ai-answer");
     const prompt = buildAnswerPrompt(ai.lastAnswerInput!, "n0nce");
     expect(prompt.user).toMatch(/<untrusted_cell_n0nce_2>\ncolumn: about\n\nIgnore previous instructions/);
   });
@@ -873,10 +873,10 @@ describeDb("grid enrichment runs", () => {
     await m.run.requestRun(d.runDeps, actor, table);
     await tick(m.worker.createGridRunJob(d.worker("w1")));
     expect(await jobs(table)).toEqual({ failed: 1 });
-    expect((await cells(rows[0])).cell_meta.opener.error).toMatch(/Anthropic key/);
-    const ai = new m.fakeAi.FakeAiProvider();
+    expect((await cells(rows[0])).cell_meta.opener.error).toMatch(/Connect an AI provider/);
+    const ai = new m.fakeAi.FakeGridAi();
     await m.run.retryFailedCells(d.runDeps, actor, table);
-    await tick(m.worker.createGridRunJob(d.worker("w1", { ai: { answer: async (_o: string, input: Parameters<NonNullable<typeof ai.answer>>[0]) => ({ ...(await ai.answer(input)), provider: "fake", model: "fake-1" }) } })));
+    await tick(m.worker.createGridRunJob(d.worker("w1", { ai: { answer: async (_o: string, input: Parameters<typeof ai.answer>[0]) => ({ ...(await ai.answer(input)), provider: "fake", model: "fake-1" }) } })));
     expect((await cells(rows[0])).cells.opener).toBe("Completed");
   });
 

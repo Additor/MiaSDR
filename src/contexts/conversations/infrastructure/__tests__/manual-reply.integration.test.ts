@@ -9,7 +9,7 @@ describeDb("manual email replies (no AI)", () => {
   const sql = testSql({ max: 6 });
   let composition: typeof import("../composition");
   let mgmt: typeof import("../../application/reply-management");
-  let FakeAi: typeof import("../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
+  let FakeAi: typeof import("../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   let store: typeof import("../drizzle-reply-store").drizzleReplyStore;
   let createReplyMailer: typeof import("../reply-mailer").createReplyMailer;
   let mailbox: FakeMailboxProvider;
@@ -64,7 +64,7 @@ describeDb("manual email replies (no AI)", () => {
     composition = await import("../composition");
     mgmt = await import("../../application/reply-management");
     store = (await import("../drizzle-reply-store")).drizzleReplyStore;
-    FakeAi = (await import("../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
+    FakeAi = (await import("../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     createReplyMailer = (await import("../reply-mailer")).createReplyMailer;
     mailbox = (await import("@/contexts/outreach/infrastructure/composition")).mailboxProvider() as FakeMailboxProvider;
   });
@@ -84,7 +84,7 @@ describeDb("manual email replies (no AI)", () => {
     expect(row.expected_context_version).toBe(record.context_version);
     expect(row.reply_for_message_id).toBe(record.latest_inbound_message_id);
     expect(await count("events", f.org, "event_type = 'draft.created_manual'")).toBe(1);
-    expect(f.ai.classifyCalls + f.ai.draftCalls + f.ai.answerCalls).toBe(0);
+    expect(f.ai.classifyCalls + f.ai.draftCalls).toBe(0);
 
     const panel = (await mgmt.getReplyPanel(f.replyDeps, f.actor, f.conversationId))!;
     expect(panel.draft).toMatchObject({ id: created.draftId, source: "manual", status: "awaiting_review" });

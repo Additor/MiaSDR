@@ -157,7 +157,8 @@ describeDb("AI columns: output types, editing and placement", () => {
     });
 
     it("stores one cell error and pays once when the real provider returns a json answer over 5,000 characters", async () => {
-      const { AnthropicAiProvider } = await import("@/contexts/conversations/ai/infrastructure/anthropic-ai-provider");
+      const { AnthropicMessagesModel } = await import("@/contexts/ai/infrastructure/anthropic-messages-model");
+      const { createGridAnswerer } = await import("../../../infrastructure/grid-ai");
       const { actor, table, rows } = await fixture();
       const d = deps();
       await m.columns.createAiColumns(d.columnDeps, actor, table, { name: "J", prompt: "x {{name}}", outputs: [{ key: "blob", type: "json" }, { key: "line", type: "text" }] });
@@ -166,10 +167,10 @@ describeDb("AI columns: output types, editing and placement", () => {
       const fetchMock = async () => {
         paid += 1;
         const text = JSON.stringify({ blob: JSON.stringify({ k: "y".repeat(6000) }), line: "ok" });
-        return new Response(JSON.stringify({ content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 });
+        return new Response(JSON.stringify({ id: "msg_1", type: "message", role: "assistant", model: "m", content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200, headers: { "content-type": "application/json" } });
       };
-      const provider = new AnthropicAiProvider({ apiKey: "sk-test-123", fetch: fetchMock as unknown as typeof fetch, sleep: async () => undefined });
-      const ai = { answer: async (_org: string, input: Parameters<typeof provider.answer>[0]) => ({ ...(await provider.answer(input)), provider: "anthropic", model: "m" }) };
+      const answerer = createGridAnswerer(new AnthropicMessagesModel({ apiKey: "sk-test-123", model: "m", fetch: fetchMock as unknown as typeof fetch }));
+      const ai = { answer: async (_org: string, input: Parameters<typeof answerer.answer>[0]) => ({ ...(await answerer.answer(input)), provider: "anthropic", model: "m" }) };
       await tick(d.worker({ ai }));
       await tick(d.worker({ ai }));
       expect(paid).toBe(1);

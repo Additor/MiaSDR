@@ -32,8 +32,8 @@ describeDb("organization AI model", () => {
     decrypt: (e: string) => cipher.decrypt(e),
     skipLive: false,
   });
-  const save = (organizationId: string, actor: Actor) =>
-    uc.saveIntegrationCredential({ integrations: store.drizzleIntegrationStore, cipher: { encrypt: (p: string) => cipher.encrypt(p) }, verifier: { verify: async () => ({ ok: true }) } }, actor, { providerKey: "anthropic", values: { apiKey: "sk-ant-one" } });
+  const save = (organizationId: string, actor: Actor, providerKey = "anthropic") =>
+    uc.saveIntegrationCredential({ integrations: store.drizzleIntegrationStore, cipher: { encrypt: (p: string) => cipher.encrypt(p) }, verifier: { verify: async () => ({ ok: true }) } }, actor, { providerKey, values: { apiKey: `sk-${providerKey}-one` } });
 
   beforeAll(async () => {
     model = await import("../../application/ai-model");
@@ -55,23 +55,23 @@ describeDb("organization AI model", () => {
     await sql`update integration_accounts set config = ${sql.json({ keep: "me" })} where id = ${account.id}`;
     await model.setAiModel(deps(), t.actor, { model: "claude-live-only" });
     const [row] = await sql`select config from integration_accounts where id = ${account.id}`;
-    expect(row.config).toEqual({ keep: "me", model: "claude-live-only" });
+    expect(row.config).toEqual({ keep: "me", model: "claude-live-only", primary: true });
     const audit = await sql`select actor_user_id, meta from audit_log where organization_id = ${t.id} and action = 'integration.ai_model_changed'`;
     expect(audit).toHaveLength(1);
     expect(audit[0].actor_user_id).toBe(t.actor.userId);
-    expect(audit[0].meta).toEqual({ providerKey: "anthropic", from: null, to: "claude-live-only" });
+    expect(audit[0].meta).toEqual({ providerKey: "anthropic", from: null, to: "claude-live-only", fromProvider: "anthropic" });
     expect(JSON.stringify(audit[0].meta)).not.toContain("sk-ant");
 
     await save(t.id, t.actor);
     const [rotated] = await sql`select config from integration_accounts where id = ${account.id}`;
-    expect(rotated.config).toEqual({ keep: "me", model: "claude-live-only" });
+    expect(rotated.config).toEqual({ keep: "me", model: "claude-live-only", primary: true });
 
-    const provider = await resolver.aiResolver.forOrganization(t.id);
+    const provider = await resolver.replyAiResolver.forOrganization(t.id);
     expect((provider as unknown as { model: string }).model).toBe("claude-live-only");
 
     await model.setAiModel(deps(), t.actor, { model: null });
     const [cleared] = await sql`select config from integration_accounts where id = ${account.id}`;
-    expect(cleared.config).toEqual({ keep: "me" });
+    expect(cleared.config).toEqual({ keep: "me", primary: true });
     expect(await sql`select 1 from audit_log where organization_id = ${t.id} and action = 'integration.ai_model_changed'`).toHaveLength(2);
   });
 
@@ -84,5 +84,26 @@ describeDb("organization AI model", () => {
     const [row] = await sql`select config from integration_accounts where id = ${account.id}`;
     expect(row.config).toEqual({});
     expect(await sql`select 1 from audit_log where organization_id = ${t.id} and action = 'integration.ai_model_changed'`).toHaveLength(0);
+  });
+
+  it("switches AI to a second connection, moves the mark, and the resolver builds that provider's client", async () => {
+    const t = await org();
+    const anthropic = await save(t.id, t.actor);
+    const router = await save(t.id, t.actor, "openrouter");
+    const routerIds = { ok: true as const, ids: ["openai/gpt-6"] };
+    expect((await resolver.replyAiResolver.forOrganization(t.id))?.name).toBe("anthropic");
+
+    await expect(model.setAiModel(deps(routerIds), t.actor, { connection: "openrouter", model: null })).rejects.toBeInstanceOf(ValidationError);
+    const view = await model.setAiModel(deps(routerIds), t.actor, { connection: "openrouter", model: "openai/gpt-6" });
+    expect(view).toMatchObject({ active: "openrouter", model: "openai/gpt-6" });
+    const configs = Object.fromEntries((await sql`select id, config from integration_accounts where organization_id = ${t.id}`).map((r) => [r.id, r.config]));
+    expect(configs[router.id]).toEqual({ model: "openai/gpt-6", primary: true });
+    expect(configs[anthropic.id]).toEqual({});
+
+    const replyAi = await resolver.replyAiResolver.forOrganization(t.id);
+    expect(replyAi).toMatchObject({ name: "openrouter", model: "openai/gpt-6" });
+
+    await model.setAiModel(deps(), t.actor, { connection: "anthropic", model: null });
+    expect((await resolver.replyAiResolver.forOrganization(t.id))?.name).toBe("anthropic");
   });
 });

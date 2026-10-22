@@ -83,7 +83,7 @@ export async function generateFormula(
   const table = await deps.structure.getTable(org, tableId);
   if (!table) throw new NotFoundError("Table not found");
   const author = await deps.formulaAuthor.forOrganization(org);
-  if (!author) throw new ConflictError("AI is not configured. Add an Anthropic key in Settings, Integrations.");
+  if (!author) throw new ConflictError("AI is not configured. Connect an AI provider in Settings, Integrations.");
 
   const tables = (await deps.structure.listTables(org, table.workbookId)).slice(0, MAX_SCHEMA_TABLES);
   const schema = await Promise.all(

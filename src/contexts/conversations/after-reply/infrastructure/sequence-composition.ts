@@ -3,7 +3,7 @@ import type { Job } from "@/platform/jobs/types";
 import { createSequenceJobs, SEQUENCE_LEASE_MS } from "../application/sequence-jobs";
 import type { AfterReplyDeps } from "../application/after-reply";
 import type { SequenceDeps } from "../application/sequences";
-import { aiResolver } from "../../ai/infrastructure/ai-composition";
+import { replyAiResolver } from "../../ai/infrastructure/ai-composition";
 import { drizzleSequenceEngine } from "./drizzle-sequence-engine";
 import { drizzleAfterReplyStore, drizzleRunStore } from "./drizzle-sequence-store";
 
@@ -22,7 +22,7 @@ export function sequenceJobs(): Job[] {
     engine: drizzleSequenceEngine,
     runs: drizzleRunStore,
     replies: drizzleReplyStore,
-    ai: aiResolver,
+    ai: replyAiResolver,
     now: () => new Date(),
     workerId: `${hostname()}:${process.pid}`,
     leaseMs: SEQUENCE_LEASE_MS,

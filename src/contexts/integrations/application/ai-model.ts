@@ -1,49 +1,71 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, ValidationError, type Actor } from "@/shared/errors";
+import { aiConnection, effectiveAiModel, pickActiveAiConnection, type AiConnectionKey, type AiConnectionSpec } from "../domain/ai-connections";
 
-/** The model the code uses when neither the organization nor `AI_MODEL` names one. */
-export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
+export { DEFAULT_AI_MODEL } from "../domain/ai-connections";
 
 /**
- * Models accepted when Anthropic's live list cannot be reached. The live list is the source of truth;
- * this list only keeps a save possible during an outage for ids that were valid when it was written.
+ * Anthropic models accepted when Anthropic's live list cannot be reached. The live list is the source of truth; this
+ * list only keeps a save possible during an outage for ids that were valid when it was written. The gateways list
+ * their models without a key, so they have no fallback.
  */
-export const KNOWN_AI_MODELS: readonly string[] = ["claude-sonnet-5-5", "claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-1"];
+export const KNOWN_AI_MODELS: readonly string[] = ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-opus-5", "claude-sonnet-5"];
 
-const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,99}$/;
+/** Anthropic ids, and gateway ids such as `anthropic/claude-sonnet-5.5` or `openai/gpt-6:free`. */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,149}$/;
 
 export type ModelListResult = { ok: true; ids: string[] } | { ok: false; reason: "rejected" | "unreachable" };
 
-/** Lists the models the saved Anthropic key can use (GET /v1/models). */
+/** Lists the models a connection offers. Anthropic needs the saved key; the gateways' lists are public. */
 export interface ModelCatalog {
-  list(apiKey: string): Promise<ModelListResult>;
+  list(spec: AiConnectionSpec, apiKey: string): Promise<ModelListResult>;
+}
+
+export interface AiAccount {
+  accountId: string;
+  key: AiConnectionKey;
+  encryptedPayload: string;
+  model: string | null;
+  /** Marked as the connection AI runs on. */
+  primary: boolean;
 }
 
 export interface AiModelStore {
-  /** The organization's enabled Anthropic account with its decrypted-on-demand credential and config. */
-  getAnthropic(organizationId: string): Promise<{ accountId: string; encryptedPayload: string; model: string | null } | null>;
-  /** Merges `model` into `config` (other keys stay) and writes the `integration.ai_model_changed` audit row in the same transaction. A null model removes the key. */
-  saveModel(organizationId: string, accountId: string, model: string | null, audit: { actorUserId: string; from: string | null }): Promise<void>;
+  /** The organization's enabled AI accounts, with their encrypted credential and config. */
+  listAi(organizationId: string): Promise<AiAccount[]>;
+  /**
+   * Makes `accountId` the connection AI runs on, with `model` (null clears it), and unmarks the others. Writes the
+   * `integration.ai_model_changed` audit row in the same transaction.
+   */
+  saveChoice(organizationId: string, accountId: string, model: string | null, audit: { actorUserId: string; from: { connection: string | null; model: string | null }; to: { connection: string; model: string | null } }): Promise<void>;
 }
 
 export interface AiModelDeps {
   store: AiModelStore;
   catalog: ModelCatalog;
   decrypt(envelope: string): string;
-  /** AI_PROVIDER=fake: no call to Anthropic, the known list applies. */
+  /** AI_PROVIDER=fake: no call to any provider, the known list applies. */
   skipLive: boolean;
-  /** `AI_MODEL` from the environment, shown as the effective default. */
+  /** `AI_MODEL` from the environment, the default on a direct Anthropic connection. */
   envModel?: string;
 }
 
 export interface AiModelView {
   connected: boolean;
-  /** The organization's own choice. Null means the default applies. */
+  /** Every connection with a saved key, in settings order. */
+  connections: Array<{ key: string; label: string }>;
+  /** The connection AI runs on. */
+  active: string | null;
+  /** The connection this view describes: the one asked for, else the active one. */
+  connection: string | null;
+  /** The organization's own choice on `connection`. Null means the default applies. */
   model: string | null;
-  /** What `aiResolver` uses right now. */
-  effective: string;
+  /** What runs on `connection`. Null when it has no default and nothing is picked. */
+  effective: string | null;
+  /** What runs on `connection` with no pick. Null on the gateways, which need one. */
+  defaultModel: string | null;
   choices: string[];
-  /** True when `choices` came from Anthropic, false when it is the built-in list. */
+  /** True when `choices` came from the provider, false when it is the built-in list or empty. */
   live: boolean;
   notice: string | null;
 }
@@ -52,7 +74,7 @@ function requireAdmin(actor: Actor) {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can choose the AI model.");
 }
 
-async function keyOf(deps: AiModelDeps, encryptedPayload: string): Promise<string | null> {
+function keyOf(deps: AiModelDeps, encryptedPayload: string): string | null {
   try {
     const { apiKey } = JSON.parse(deps.decrypt(encryptedPayload)) as { apiKey?: string };
     return apiKey || null;
@@ -61,43 +83,74 @@ async function keyOf(deps: AiModelDeps, encryptedPayload: string): Promise<strin
   }
 }
 
-async function liveChoices(deps: AiModelDeps, encryptedPayload: string): Promise<ModelListResult> {
+async function liveChoices(deps: AiModelDeps, spec: AiConnectionSpec, account: AiAccount): Promise<ModelListResult> {
   if (deps.skipLive) return { ok: false, reason: "unreachable" };
-  const apiKey = await keyOf(deps, encryptedPayload);
+  const apiKey = keyOf(deps, account.encryptedPayload);
   if (!apiKey) return { ok: false, reason: "rejected" };
-  return deps.catalog.list(apiKey);
+  return deps.catalog.list(spec, apiKey);
 }
 
-export async function getAiModel(deps: AiModelDeps, actor: Actor): Promise<AiModelView> {
+const fallbackChoices = (spec: AiConnectionSpec) => (spec.key === "anthropic" ? [...KNOWN_AI_MODELS] : []);
+
+async function load(deps: AiModelDeps, actor: Actor, connection?: string) {
+  const accounts = (await deps.store.listAi(actor.organizationId)).filter((a) => aiConnection(a.key));
+  const active = pickActiveAiConnection(accounts);
+  const target = connection ? accounts.find((a) => a.key === connection) : active;
+  if (connection && !target) throw new ValidationError("That AI provider is not connected. Save its key above first.");
+  return { accounts, active, target: target ?? null };
+}
+
+export async function getAiModel(deps: AiModelDeps, actor: Actor, query: { connection?: string } = {}): Promise<AiModelView> {
   requireAdmin(actor);
-  const account = await deps.store.getAnthropic(actor.organizationId);
-  const fallback = deps.envModel || DEFAULT_AI_MODEL;
-  if (!account) return { connected: false, model: null, effective: fallback, choices: [], live: false, notice: "Save an Anthropic key above, then choose a model here." };
-  const result = await liveChoices(deps, account.encryptedPayload);
-  const effective = account.model || fallback;
-  if (result.ok) return { connected: true, model: account.model, effective, choices: result.ids, live: true, notice: null };
+  const { accounts, active, target } = await load(deps, actor, query.connection);
+  const connections = accounts.map((a) => ({ key: a.key, label: aiConnection(a.key)!.label }));
+  if (!target) {
+    return { connected: false, connections, active: null, connection: null, model: null, effective: null, defaultModel: null, choices: [], live: false, notice: "Connect an AI provider above, then choose a model here." };
+  }
+  const spec = aiConnection(target.key)!;
+  const effective = effectiveAiModel(spec, target.model, deps.envModel);
+  const base = { connected: true, connections, active: active?.key ?? null, connection: target.key, model: target.model, effective, defaultModel: effectiveAiModel(spec, null, deps.envModel) };
+  const result = await liveChoices(deps, spec, target);
+  const missing = effective ? null : `Choose a ${spec.label} model. AI stays off until one is saved.`;
+  if (result.ok) return { ...base, choices: result.ids, live: true, notice: missing };
   const notice =
-    result.reason === "rejected" ? "Anthropic rejected the saved key, so the live model list is unavailable. Save the key again." : "The live model list could not be loaded. Showing the built-in list.";
-  return { connected: true, model: account.model, effective, choices: [...KNOWN_AI_MODELS], live: false, notice };
+    result.reason === "rejected"
+      ? `${spec.label} rejected the saved key, so the live model list is unavailable. Save the key again.`
+      : spec.key === "anthropic"
+        ? "The live model list could not be loaded. Showing the built-in list."
+        : "The live model list could not be loaded. Try again shortly.";
+  return { ...base, choices: fallbackChoices(spec), live: false, notice: missing ? `${notice} ${missing}` : notice };
 }
 
-/** Saves the organization's default model, or clears it with null or an empty string. */
-export async function setAiModel(deps: AiModelDeps, actor: Actor, input: { model: string | null }): Promise<AiModelView> {
+/** Runs AI on `connection` (default: the active one) with `model`, or that connection's default with null. */
+export async function setAiModel(deps: AiModelDeps, actor: Actor, input: { connection?: string; model: string | null }): Promise<AiModelView> {
   requireAdmin(actor);
-  const account = await deps.store.getAnthropic(actor.organizationId);
-  if (!account) throw new ValidationError("Save an Anthropic key before you choose a model.");
+  const { active, target } = await load(deps, actor, input.connection);
+  if (!target) throw new ValidationError("Connect an AI provider before you choose a model.");
+  const spec = aiConnection(target.key)!;
   const model = input.model?.trim() || null;
+  if (model === null && !spec.defaultModel) throw new ValidationError(`Pick a ${spec.label} model from the list.`);
   if (model !== null) {
     if (!MODEL_ID.test(model)) throw new ValidationError("That is not a valid model ID. Pick one from the list.");
-    const result = await liveChoices(deps, account.encryptedPayload);
+    const result = await liveChoices(deps, spec, target);
     if (result.ok) {
-      if (!result.ids.includes(model)) throw new ValidationError(`Anthropic does not list ${model} for this key. Pick one from the list.`);
+      if (!result.ids.includes(model)) throw new ValidationError(`${spec.label} does not list ${model} for this key. Pick one from the list.`);
     } else if (result.reason === "rejected") {
-      throw new ValidationError("Anthropic rejected the saved key, so the model cannot be checked. Save the key again.");
-    } else if (!KNOWN_AI_MODELS.includes(model)) {
-      throw new ValidationError(`Anthropic's model list could not be reached, and ${model} is not in the built-in list. Try again shortly.`);
+      throw new ValidationError(`${spec.label} rejected the saved key, so the model cannot be checked. Save the key again.`);
+    } else if (!fallbackChoices(spec).includes(model)) {
+      throw new ValidationError(
+        spec.key === "anthropic"
+          ? `Anthropic's model list could not be reached, and ${model} is not in the built-in list. Try again shortly.`
+          : `${spec.label}'s model list could not be reached, so ${model} cannot be checked. Try again shortly.`,
+      );
     }
   }
-  if (model !== account.model) await deps.store.saveModel(actor.organizationId, account.accountId, model, { actorUserId: actor.userId, from: account.model });
-  return getAiModel(deps, actor);
+  if (target.accountId !== active?.accountId || model !== target.model) {
+    await deps.store.saveChoice(actor.organizationId, target.accountId, model, {
+      actorUserId: actor.userId,
+      from: { connection: active?.key ?? null, model: active?.model ?? null },
+      to: { connection: target.key, model },
+    });
+  }
+  return getAiModel(deps, actor, { connection: target.key });
 }

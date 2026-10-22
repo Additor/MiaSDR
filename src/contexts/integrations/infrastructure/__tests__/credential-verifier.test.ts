@@ -130,4 +130,17 @@ describe("credential verifier, keys outside printable ASCII", () => {
     await expect(assertCredentialVerified(verifier, { key: vendor, name }, { apiKey: key })).rejects.toThrow(`${name} rejected this API key.`);
     expect(stub).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1/credits"],
+    ["openrouter", "https://openrouter.ai/api/v1/key"],
+  ] as const)("checks a %s key with a bearer GET to its key endpoint", async (providerKey, url) => {
+    const stub = respond(401);
+    const result = await createCredentialVerifier({ fetch: stub as unknown as typeof fetch }).verify(providerKey, { apiKey: KEY });
+    expect(result).toEqual({ ok: false, reason: "rejected" });
+    const [called, init] = stub.mock.calls[0] as unknown as [string, RequestInit];
+    expect(called).toBe(url);
+    expect(called).not.toContain(KEY);
+    expect(init.headers).toMatchObject({ authorization: `Bearer ${KEY}` });
+  });
 });

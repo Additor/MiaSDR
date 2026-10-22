@@ -1,6 +1,6 @@
 import { hostname } from "node:os";
-import { aiResolver } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { AiError } from "@/contexts/conversations/ai/application/ai-ports";
+import { AiError } from "@/contexts/ai/domain/ai-error";
+import { createGridAnswererResolver } from "../../infrastructure/grid-ai";
 import { credentialCipher } from "@/contexts/integrations/infrastructure/credential-cipher";
 import { env } from "@/shared/env";
 import { kickJob } from "@/platform/jobs/kick";
@@ -29,15 +29,16 @@ export function gridUrlPolicy(options: { allowLoopback?: boolean } = {}): UrlPol
 
 export const gridCipher: CredentialCipher = credentialCipher;
 
-/** The organization's own AI key through the shared resolver. The model sees cell text only inside nonce-fenced blocks. */
+const gridAnswerers = createGridAnswererResolver();
+
+/** The organization's configured language model. The model sees cell text only inside nonce-fenced blocks. */
 export const cellAnswerer: CellAnswerer = {
   async answer(organizationId, input) {
-    const provider = await aiResolver.forOrganization(organizationId);
-    if (!provider) return null;
-    if (!provider.answer) throw new GridAiError("The configured AI provider cannot fill table columns.", false);
+    const answerer = await gridAnswerers.forOrganization(organizationId);
+    if (!answerer) return null;
     try {
-      const result = await provider.answer(input);
-      return { output: result.output, provider: provider.name, model: provider.model, usage: result.usage };
+      const result = await answerer.answer(input);
+      return { output: result.output, provider: answerer.provider, model: answerer.model, usage: result.usage };
     } catch (error) {
       if (error instanceof AiError) throw new GridAiError(error.message, error.kind === "transient");
       throw error;

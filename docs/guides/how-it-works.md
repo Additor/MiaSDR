@@ -66,7 +66,7 @@ MiaSDR runs on your server and database. It talks to these services, and only wh
 | --- | --- | --- |
 | Gmail (Google) | Each outgoing email with its recipient, subject and body. Requests to read new mail in the connected mailboxes. | Mailbox connected |
 | Unipile | Your Unipile API key, LinkedIn profile lookups, invitations with their note, messages and search URLs, for the LinkedIn accounts you connect. | LinkedIn connected |
-| Anthropic | The inbound message text and thread subject, the lead's name, title and company (and email for some prompts), your knowledge documents, operator instructions and business context, notes left on a category change, and the sender name. The grid's AI columns send the cell values their prompt uses. Calls use your organization's own key. | An Anthropic key is saved |
+| AI provider (Anthropic, Vercel AI Gateway or OpenRouter) | The inbound message text and thread subject, the lead's name, title and company (and email for some prompts), your knowledge documents, operator instructions and business context, notes left on a category change, and the sender name. The grid's AI columns send the cell values their prompt uses. Calls use your organization's own key. A gateway forwards each request to the provider of the model you picked. | An AI provider is connected |
 | Resend | Auth emails: invitations, password resets and verification. | `RESEND_API_KEY` and `AUTH_EMAIL_FROM` set. Without them the text goes to the server log. |
 | Enrichment providers | The cell values a Tables enrichment sends to the provider you configured. Only the hosts in `GRID_HTTP_ALLOWED_HOSTS` can be called. | You run an enrichment |
 

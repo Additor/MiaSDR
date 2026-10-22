@@ -1,7 +1,8 @@
 import type { Job } from "@/platform/jobs/types";
 import { assertStepsBelongToVersion, draftRetryDelayMs, interruptReason, MAX_DRAFT_ATTEMPTS, renderTemplate, stepGuidance } from "../domain/sequences";
 import { produceDraft, draftCitations } from "../../ai/application/ai-jobs";
-import { AiError, type AiProviderResolver } from "../../ai/application/ai-ports";
+import { AiError } from "@/contexts/ai/domain/ai-error";
+import type { ReplyAiResolver } from "../../ai/application/ai-ports";
 import type { ReplyStore } from "../../application/reply-ports";
 import type { ClaimedStep, RunStore, SequenceEngineStore } from "./sequence-ports";
 import { startRun } from "./sequences";
@@ -10,7 +11,7 @@ export interface SequenceJobDeps {
   engine: SequenceEngineStore;
   runs: RunStore;
   replies: ReplyStore;
-  ai: AiProviderResolver;
+  ai: ReplyAiResolver;
   now: () => Date;
   workerId: string;
   /** A step drafting for longer than this is taken over. */

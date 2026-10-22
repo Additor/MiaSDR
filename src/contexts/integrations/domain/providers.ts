@@ -1,3 +1,5 @@
+import { AI_CONNECTIONS } from "./ai-connections";
+
 export interface ProviderField {
   name: string;
   label: string;
@@ -14,15 +16,7 @@ export interface ProviderSpec {
 }
 
 /** Providers this screen manages. Add one here and the form, the validation and the list pick it up. */
-export const MANAGED_PROVIDERS: ProviderSpec[] = [
-  {
-    key: "anthropic",
-    kind: "ai",
-    label: "Anthropic",
-    description: "API key for reply classification and drafts.",
-    fields: [{ name: "apiKey", label: "API key" }],
-  },
-];
+export const MANAGED_PROVIDERS: ProviderSpec[] = AI_CONNECTIONS.map((c) => ({ key: c.key, kind: "ai", label: c.label, description: c.description, fields: [{ name: "apiKey", label: "API key" }] }));
 
 /** Providers with their own settings page. They are listed here but never edited here. */
 export const EXTERNAL_PROVIDERS: Record<string, { label: string; href: string }> = {

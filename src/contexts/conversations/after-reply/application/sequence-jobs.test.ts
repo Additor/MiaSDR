@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AiProvider } from "../../ai/application/ai-ports";
+import type { ReplyAi } from "../../ai/application/ai-ports";
 import type { DraftContext, NewDraft } from "../../application/reply-ports";
 import { createSequenceJobs } from "./sequence-jobs";
 
@@ -26,7 +26,7 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
     knowledge: [],
     senderName: null,
   } as unknown as DraftContext;
-  const ai: AiProvider = {
+  const ai: ReplyAi = {
     name: "fake",
     model: "fake-1",
     classify: async () => {

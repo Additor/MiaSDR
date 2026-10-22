@@ -40,7 +40,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     engine: typeof import("../../after-reply/infrastructure/drizzle-sequence-engine").drizzleSequenceEngine;
     crm: typeof import("../drizzle-reply-handling-store").drizzleReplyHandlingStore;
   };
-  let FakeAi: typeof import("../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
+  let FakeAi: typeof import("../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   let createReplyMailer: typeof import("../reply-mailer").createReplyMailer;
   let mailbox: FakeMailboxProvider;
   const orgs: TestOrg[] = [];
@@ -157,7 +157,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       engine: (await import("../../after-reply/infrastructure/drizzle-sequence-engine")).drizzleSequenceEngine,
       crm: (await import("../drizzle-reply-handling-store")).drizzleReplyHandlingStore,
     };
-    FakeAi = (await import("../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
+    FakeAi = (await import("../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     createReplyMailer = (await import("../reply-mailer")).createReplyMailer;
     mailbox = (await import("@/contexts/outreach/infrastructure/composition")).mailboxProvider() as FakeMailboxProvider;
   });

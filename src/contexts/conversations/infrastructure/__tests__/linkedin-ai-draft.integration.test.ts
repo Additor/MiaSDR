@@ -23,7 +23,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
     knowledge: typeof import("../../ai/infrastructure/drizzle-knowledge-store").drizzleKnowledgeStore;
     crm: typeof import("../drizzle-reply-handling-store").drizzleReplyHandlingStore;
   };
-  let FakeAi: typeof import("../../ai/infrastructure/fake-ai-provider").FakeAiProvider;
+  let FakeAi: typeof import("../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   let Fake: typeof import("@/contexts/outreach/linkedin/infrastructure/fake-linkedin-gateway").FakeLinkedInGateway;
   let makeSender: typeof import("../linkedin-reply-sender").createLinkedInReplySender;
   let createReplyMailer: typeof import("../reply-mailer").createReplyMailer;
@@ -96,7 +96,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       knowledge: (await import("../../ai/infrastructure/drizzle-knowledge-store")).drizzleKnowledgeStore,
       crm: (await import("../drizzle-reply-handling-store")).drizzleReplyHandlingStore,
     };
-    FakeAi = (await import("../../ai/infrastructure/fake-ai-provider")).FakeAiProvider;
+    FakeAi = (await import("../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     Fake = (await import("@/contexts/outreach/linkedin/infrastructure/fake-linkedin-gateway")).FakeLinkedInGateway;
     makeSender = (await import("../linkedin-reply-sender")).createLinkedInReplySender;
     createReplyMailer = (await import("../reply-mailer")).createReplyMailer;

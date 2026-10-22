@@ -10,7 +10,7 @@ An AI SDR for email and LinkedIn that runs on your server and sends from your ow
 - **A reply anywhere stops everything.** Someone answers on LinkedIn and their email sequence stops too.
 - **Your leads stay yours.** Leads, conversations and deals live in your Postgres, not a vendor's.
 
-Free to run on your own server. You pay only for Anthropic API usage, plus Unipile if you use LinkedIn.
+Free to run on your own server. You pay only for your AI provider's usage (Anthropic, Vercel AI Gateway or OpenRouter), plus Unipile if you use LinkedIn.
 
 ## Quick start
 

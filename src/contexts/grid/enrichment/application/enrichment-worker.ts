@@ -391,7 +391,7 @@ async function runAiColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awai
     return "failed";
   }
   if (!answered) {
-    const message = "Connect an Anthropic key in Settings, Integrations before running AI columns.";
+    const message = "Connect an AI provider in Settings, Integrations before running AI columns.";
     await deps.store.fail(job, message, [{ provider: "ai", outcome: "failed", costCents: 0, response: { error: message } }]);
     return "failed";
   }

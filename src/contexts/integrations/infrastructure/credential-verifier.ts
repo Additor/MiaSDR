@@ -1,8 +1,8 @@
 import type { CredentialVerifier } from "@/platform/credentials/verify";
 import { createKeyCheck, headerSafe, standardStatus } from "@/platform/credentials/key-check";
+import { aiConnection } from "../domain/ai-connections";
 
-const ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models?limit=1";
-// Same version header as the Anthropic provider in the conversations context.
+// The version header the Anthropic SDK sends on every request.
 const ANTHROPIC_VERSION = "2023-06-01";
 
 export interface VerifierOptions {
@@ -13,18 +13,21 @@ export interface VerifierOptions {
 }
 
 /**
- * Verifies the Anthropic key with one fixed GET. The key travels in a header, never in a URL. Enrichment vendors check
- * their keys in the grid context, which owns them.
+ * Verifies an AI provider key with the one fixed GET its spec names. The key travels in a header, never in a URL.
+ * Enrichment vendors check their keys in the grid context, which owns them.
  */
 export function createCredentialVerifier(options: VerifierOptions = {}): CredentialVerifier {
   return {
     async verify(providerKey, values, opts) {
       if (options.skip?.(providerKey)) return { ok: true, verified: false };
+      const spec = aiConnection(providerKey);
+      if (!spec) return { ok: true, verified: false };
       const apiKey = values.apiKey;
-      if (providerKey !== "anthropic") return { ok: true, verified: false };
       if (!apiKey || !headerSafe(apiKey)) return { ok: false, reason: "rejected" };
+      const headers: Record<string, string> =
+        spec.keyCheck.auth === "anthropic" ? { "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION, accept: "application/json" } : { authorization: `Bearer ${apiKey}`, accept: "application/json" };
       const check = createKeyCheck({ fetch: options.fetch, timeoutMs: options.timeoutMs, signal: opts?.signal });
-      return check({ url: ANTHROPIC_MODELS_URL, headers: { "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION, accept: "application/json" }, map: standardStatus });
+      return check({ url: spec.keyCheck.url, headers, map: standardStatus });
     },
   };
 }

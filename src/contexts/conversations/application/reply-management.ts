@@ -3,7 +3,8 @@ import { checkManualReply, MANUAL_BODY_MAX, MANUAL_SUBJECT_MAX } from "../domain
 import { normalizeSubject } from "../domain/subject";
 import { validateReplyCc, MAX_REPLY_CC, type ReplyCcError } from "../domain/lead-cc";
 import { needsReply } from "../domain/reply-policy";
-import { AiError, type AiProviderResolver } from "../ai/application/ai-ports";
+import { AiError } from "@/contexts/ai/domain/ai-error";
+import type { ReplyAiResolver } from "../ai/application/ai-ports";
 import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
 import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext } from "./reply-ports";
 import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
@@ -19,7 +20,7 @@ import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft
 
 export interface ReplyDeps {
   store: ReplyStore;
-  ai: AiProviderResolver;
+  ai: ReplyAiResolver;
   mailer: ReplyMailer;
   now: () => Date;
   /** Random local part for the Message-ID of a reply. The store adds the mailbox's domain. */
@@ -45,7 +46,7 @@ export async function getReplyPanel(deps: ReplyDeps, actor: Actor, conversationI
 
 async function requireProvider(deps: ReplyDeps, organizationId: string) {
   const provider = await deps.ai.forOrganization(organizationId);
-  if (!provider) throw new ValidationError("AI is not configured. Add an Anthropic key in Settings, Integrations.");
+  if (!provider) throw new ValidationError("AI is not configured. Connect an AI provider in Settings, Integrations.");
   return provider;
 }
 

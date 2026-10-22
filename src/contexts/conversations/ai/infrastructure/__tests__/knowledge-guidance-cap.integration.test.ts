@@ -14,7 +14,7 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
   let engine: typeof import("../../../after-reply/infrastructure/drizzle-sequence-engine").drizzleSequenceEngine;
   let aiJobsApp: typeof import("../../application/ai-jobs");
   let jobStore: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
-  let FakeAi: typeof import("../fake-ai-provider").FakeAiProvider;
+  let FakeAi: typeof import("../fake-reply-ai").FakeReplyAi;
   const orgs: TestOrg[] = [];
   const users: string[] = [];
   let counter = 0;
@@ -76,7 +76,7 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
     engine = (await import("../../../after-reply/infrastructure/drizzle-sequence-engine")).drizzleSequenceEngine;
     aiJobsApp = await import("../../application/ai-jobs");
     jobStore = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
-    FakeAi = (await import("../fake-ai-provider")).FakeAiProvider;
+    FakeAi = (await import("../fake-reply-ai")).FakeReplyAi;
   });
 
   afterAll(async () => {

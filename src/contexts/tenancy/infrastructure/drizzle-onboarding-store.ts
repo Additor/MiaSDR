@@ -42,7 +42,7 @@ export const drizzleOnboardingStore: OnboardingStore = {
         .select({ id: integrationAccounts.id })
         .from(integrationAccounts)
         .innerJoin(integrationCredentials, eq(integrationCredentials.accountId, integrationAccounts.id))
-        .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, "anthropic"), eq(integrationAccounts.enabled, true)))
+        .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.kind, "ai"), eq(integrationAccounts.enabled, true)))
         .limit(1),
     ]);
     const sum = (rows: Array<{ n: number }>) => rows.reduce((total, r) => total + r.n, 0);
