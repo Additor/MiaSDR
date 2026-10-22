@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogGroups, impactText, usageLine } from "./providers";
+import { catalogGroups, guessColumn, impactText, usageLine } from "./providers";
 
 describe("provider usage line", () => {
   it("names calls, the found rate, errors, reuses, credits and the typical latency", () => {
@@ -32,5 +32,21 @@ describe("catalog groups", () => {
       ["Enrich people and companies", ["apollo"]],
       ["Other", ["http", "fake"]],
     ]);
+  });
+});
+
+describe("input column guess", () => {
+  const col = (key: string, name: string, type = "text") => ({ key, name, type });
+  const fullName = { key: "fullName", name: "Full name", type: "text" };
+
+  it("maps the columns people name name, company and domain", () => {
+    const cols = [col("name", "name"), col("company", "company"), col("domain", "domain")];
+    expect(guessColumn(fullName, cols)).toBe("name");
+    expect(guessColumn({ key: "companyName", name: "Company name", type: "text" }, cols)).toBe("company");
+    expect(guessColumn({ key: "companyDomain", name: "Company domain", type: "domain" }, cols)).toBe("domain");
+  });
+
+  it("does not take an email column renamed from the starter key as the full name", () => {
+    expect(guessColumn(fullName, [col("name", "Email", "email")])).toBeNull();
   });
 });

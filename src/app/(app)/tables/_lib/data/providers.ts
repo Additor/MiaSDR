@@ -148,12 +148,27 @@ export function usableProviders(providers: ProviderView[], catalog: CatalogEntry
   });
 }
 
-/** Best guess of the column that feeds an action input. */
+/** Column names people use for an action input, normalized (lowercase letters and digits). Tried after an exact match. */
+const INPUT_ALIASES: Record<string, string[]> = {
+  fullName: ["name", "fullname", "contactname", "personname", "leadname"],
+  companyDomain: ["domain", "website", "companywebsite", "companyurl", "site"],
+  companyName: ["company", "organization", "organisation", "account", "employer"],
+  email: ["email", "workemail", "emailaddress", "mail"],
+  linkedinUrl: ["linkedin", "linkedinurl", "linkedinprofile", "profileurl"],
+};
+
+/** Best guess of the column that feeds an action input: its own key or name, then a common alias, then its type. */
 export function guessColumn(input: { key: string; type: string; name: string }, columns: ReadonlyArray<{ key: string; name: string; type: string }>): string | null {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
   const wanted = [norm(input.key), norm(input.name)];
   const exact = columns.find((c) => wanted.includes(norm(c.key)) || wanted.includes(norm(c.name)));
   if (exact) return exact.key;
+  const aliases = INPUT_ALIASES[input.key] ?? [];
+  // Visible names only: an import can leave the starter key "name" on a column it renamed "Email". A text input never
+  // takes an email or URL column.
+  const fits = (c: { type: string }) => input.type !== "text" || (c.type !== "email" && c.type !== "url");
+  const alias = aliases.map((a) => columns.find((c) => norm(c.name) === a && fits(c))).find(Boolean);
+  if (alias) return alias.key;
   if (input.type === "email") return columns.find((c) => c.type === "email")?.key ?? null;
   if (input.type === "url") return columns.find((c) => c.type === "url")?.key ?? null;
   if (input.type === "domain") return columns.find((c) => /domain|website|url/.test(norm(c.key)))?.key ?? null;

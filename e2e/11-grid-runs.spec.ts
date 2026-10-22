@@ -94,16 +94,13 @@ test.describe("grid runs", () => {
     await page.goto(`/tables/${workbookId}`);
     await expect(page.getByRole("gridcell", { name: "Email: ann@acme.test" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Add column" }).click();
-    await page.getByRole("menuitem", { name: "Enrichment" }).click();
-    const dialog = page.getByRole("dialog", { name: "Add enrichment" });
-    await dialog.getByRole("tab", { name: "Waterfall" }).click();
-    await dialog.getByRole("button", { name: "Verify email (2 providers)" }).click();
-    await expect(dialog.locator("#step-p-0")).toContainText("Hunter");
-    await expect(dialog.locator("#step-p-1")).toContainText("ZeroBounce");
-    // Both steps run the same action, so "Add step" has no third verifier to offer.
-    await expect(dialog.getByRole("button", { name: "Add step" })).toBeDisabled();
-    await dialog.getByRole("button", { name: "Add columns" }).click();
+    await page.getByRole("button", { name: "Enrich", exact: true }).click();
+    await page.getByRole("dialog", { name: "Add enrichment" }).getByRole("button", { name: /^Verify emails/ }).click();
+    // The outcome opens with the first connected verifier ticked; ticking a second makes it a waterfall.
+    const dialog = page.getByRole("dialog", { name: "Verify emails" });
+    await expect(dialog.getByRole("checkbox", { name: /Hunter/ })).toBeChecked();
+    await dialog.getByRole("checkbox", { name: /ZeroBounce/ }).click();
+    await dialog.getByRole("button", { name: "Add waterfall (2 providers)" }).click();
     await expect(dialog).toBeHidden();
 
     const { columns } = await gridPage(page.request, tableId);
