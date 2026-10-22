@@ -435,6 +435,13 @@ describe("moveDealStage, updateDeal, deleteDeal", () => {
 });
 
 describe("stage settings", () => {
+  it("refuses a member every stage write", async () => {
+    const w = world();
+    await expect(createDealStage(w.deps, member, { name: "Demo", kind: "open" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(createDefaultDealStages(w.deps, member)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(w.state().stages).toEqual([]);
+  });
+
   it("lists the defaults as virtual without writing; the first write creates them", async () => {
     const w = world();
     const listed = await listDealStages(w.deps, admin);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import {
   closeRecord,
   createSubcategory,
@@ -20,6 +20,7 @@ import type { ReplyDeps } from "./reply-management";
 const ORG = "11111111-1111-4111-8111-111111111111";
 const OTHER_ORG = "22222222-2222-4222-8222-222222222222";
 const actor: Actor = { userId: "33333333-3333-4333-8333-333333333333", organizationId: ORG, role: "member" };
+const admin: Actor = { ...actor, role: "admin" };
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const NOW = new Date("2026-01-01T00:00:00Z");
 
@@ -120,18 +121,18 @@ describe("taxonomy", () => {
   it("rejects a duplicate key and a duplicate name in the category", async () => {
     const { store, calls } = fakeStore({ subs: [sub({})] });
     const { d } = deps(store);
-    await expect(createSubcategory(d, actor, { categoryKey: "interested", name: "Something else", key: "demo_request" })).rejects.toThrow(/already exists/);
-    await expect(createSubcategory(d, actor, { categoryKey: "interested", name: "demo REQUEST" })).rejects.toThrow(/already exists/);
-    await createSubcategory(d, actor, { categoryKey: "other", name: "Demo ask" });
+    await expect(createSubcategory(d, admin, { categoryKey: "interested", name: "Something else", key: "demo_request" })).rejects.toThrow(/already exists/);
+    await expect(createSubcategory(d, admin, { categoryKey: "interested", name: "demo REQUEST" })).rejects.toThrow(/already exists/);
+    await createSubcategory(d, admin, { categoryKey: "other", name: "Demo ask" });
     expect(calls.createSubcategory).toHaveLength(1);
   });
 
   it("never archives or deletes Do not contact", async () => {
     const dnc = sub({ id: id(4), key: "do_not_contact", categoryKey: "not_interested", name: "Do not contact", stageRank: null });
     const { d } = deps(fakeStore({ subs: [dnc] }).store);
-    await expect(updateSubcategory(d, actor, id(4), { active: false })).rejects.toThrow(/cannot be archived/);
-    await expect(deleteSubcategory(d, actor, id(4))).rejects.toThrow(/cannot be deleted/);
-    await expect(updateSubcategory(d, actor, id(4), { reviewRequired: true })).resolves.toBeUndefined();
+    await expect(updateSubcategory(d, admin, id(4), { active: false })).rejects.toThrow(/cannot be archived/);
+    await expect(deleteSubcategory(d, admin, id(4))).rejects.toThrow(/cannot be deleted/);
+    await expect(updateSubcategory(d, admin, id(4), { reviewRequired: true })).resolves.toBeUndefined();
   });
 
   it("blocks a delete while records or history use the subcategory", async () => {
@@ -140,14 +141,21 @@ describe("taxonomy", () => {
     const free = sub({ id: id(10), key: "free", name: "Free" });
     const { store, calls } = fakeStore({ subs: [used, past, free] });
     const { d } = deps(store);
-    await expect(deleteSubcategory(d, actor, id(5))).rejects.toThrow(/2 people are in/);
-    await expect(deleteSubcategory(d, actor, id(6))).rejects.toThrow(/Archive it/);
-    await deleteSubcategory(d, actor, id(10));
+    await expect(deleteSubcategory(d, admin, id(5))).rejects.toThrow(/2 people are in/);
+    await expect(deleteSubcategory(d, admin, id(6))).rejects.toThrow(/Archive it/);
+    await deleteSubcategory(d, admin, id(10));
     expect(calls.deleteSubcategory).toEqual([id(10)]);
   });
 
+  it("refuses a member", async () => {
+    const { d } = deps(fakeStore({ subs: [sub({ id: id(5) })] }).store);
+    await expect(createSubcategory(d, actor, { categoryKey: "other", name: "Demo ask" })).rejects.toThrow(ForbiddenError);
+    await expect(updateSubcategory(d, actor, id(5), { active: false })).rejects.toThrow(ForbiddenError);
+    await expect(deleteSubcategory(d, actor, id(5))).rejects.toThrow(ForbiddenError);
+  });
+
   it("answers 404 for a subcategory of another organization", async () => {
-    const other: Actor = { ...actor, organizationId: OTHER_ORG };
+    const other: Actor = { ...admin, organizationId: OTHER_ORG };
     const { d } = deps(fakeStore({ subs: [sub({ id: id(5) })] }).store);
     await expect(deleteSubcategory(d, other, id(5))).rejects.toThrow(NotFoundError);
     await expect(updateSubcategory(d, other, id(5), { active: false })).rejects.toThrow(NotFoundError);

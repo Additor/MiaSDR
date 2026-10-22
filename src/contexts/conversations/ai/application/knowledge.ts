@@ -1,5 +1,6 @@
 import { KNOWLEDGE_KINDS, parseTags } from "../domain/knowledge";
-import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 
 /**
  * Pasted-text knowledge documents that drafts may draw on. Any member can manage them.
@@ -62,15 +63,21 @@ function clean(input: Partial<KnowledgeInput>) {
   return out;
 }
 
+function requireAdmin(actor: Actor): void {
+  if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can change knowledge documents.");
+}
+
 export const listKnowledge = (store: KnowledgeStore, actor: Actor) => store.list(actor.organizationId);
 
 export async function createKnowledge(store: KnowledgeStore, actor: Actor, input: KnowledgeInput) {
+  requireAdmin(actor);
   const checked = clean(input) as KnowledgeInput;
   if (!checked.title || !checked.kind || !checked.content) throw new ValidationError("Title, kind and text are required.");
   return store.create(actor.organizationId, { ...checked, alwaysInclude: input.alwaysInclude, tags: checked.tags ?? [] });
 }
 
 export async function updateKnowledge(store: KnowledgeStore, actor: Actor, id: string, input: Partial<KnowledgeInput> & { active?: boolean }) {
+  requireAdmin(actor);
   const ok = await store.update(actor.organizationId, id, { ...clean(input), ...(input.active === undefined ? {} : { active: input.active }) });
   if (!ok) throw new NotFoundError("Document not found");
 }

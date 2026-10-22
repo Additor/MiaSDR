@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { StageSetting, StageSettings } from "@/contexts/deals/application/deal-stages";
 import { callApi } from "@/lib/api-client";
+import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, SettingsSection } from "../settings-section";
 import { moveTarget, stageBlocker } from "./stage-rules";
 
@@ -24,7 +25,7 @@ const KIND_ITEMS = [
 const KIND_LABEL: Record<string, string> = { won: "Won", lost: "Lost" };
 
 /** Settings > Pipeline stages: rename, move up and down, add and delete. Every write answers with the new list. */
-export function StagesPanel({ settings: initial }: { settings: StageSettings }) {
+export function StagesPanel({ settings: initial, canManage }: { settings: StageSettings; canManage: boolean }) {
   const router = useRouter();
   const [settings, setSettings] = useState(initial);
   const [seen, setSeen] = useState(initial);
@@ -104,7 +105,8 @@ export function StagesPanel({ settings: initial }: { settings: StageSettings }) 
             : "Deals move through these stages in this order. Won and Lost come last. A stage never stops outreach."
         }
       >
-        {settings.virtual && (
+        {!canManage && <AdminNotice action="change the stages" />}
+        {canManage && settings.virtual && (
           <div>
             <Button size="sm" disabled={pending} onClick={() => void write("/api/deal-stages/defaults", "POST", undefined, "Default stages created.")}>
               {pending ? "Creating..." : "Create default stages"}
@@ -142,7 +144,7 @@ export function StagesPanel({ settings: initial }: { settings: StageSettings }) 
                   </div>
                 )}
                 <span className="text-xs text-muted-foreground tabular-nums">{stage.dealCount === 1 ? "1 deal" : `${stage.dealCount} deals`}</span>
-                {!settings.virtual && !editing && (
+                {canManage && !settings.virtual && !editing && (
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="icon-sm" aria-label={`Move ${stage.name} up`} disabled={pending || moveTarget(stages, index, -1) === null} onClick={() => move(index, -1)}>
                       <ArrowUpIcon />
@@ -169,32 +171,34 @@ export function StagesPanel({ settings: initial }: { settings: StageSettings }) 
         )}
       </SettingsSection>
 
-      <SettingsSection title="Add a stage" description="A new stage goes after the last stage of its kind.">
-        <form onSubmit={add} className="flex flex-wrap items-end gap-3">
-          <div className="stack-field min-w-0 flex-1 basis-48">
-            <Label htmlFor="new-stage-name">Name</Label>
-            <Input id="new-stage-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="Negotiation" />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="new-stage-kind">Kind</Label>
-            <Select items={KIND_ITEMS} value={kind} onValueChange={(v) => v && setKind(v)}>
-              <SelectTrigger id="new-stage-kind" className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {KIND_ITEMS.map((k) => (
-                  <SelectItem key={k.value} value={k.value}>
-                    {k.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button type="submit" disabled={pending || name.trim() === ""}>
-            Add stage
-          </Button>
-        </form>
-      </SettingsSection>
+      {canManage && (
+        <SettingsSection title="Add a stage" description="A new stage goes after the last stage of its kind.">
+          <form onSubmit={add} className="flex flex-wrap items-end gap-3">
+            <div className="stack-field min-w-0 flex-1 basis-48">
+              <Label htmlFor="new-stage-name">Name</Label>
+              <Input id="new-stage-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="Negotiation" />
+            </div>
+            <div className="stack-field">
+              <Label htmlFor="new-stage-kind">Kind</Label>
+              <Select items={KIND_ITEMS} value={kind} onValueChange={(v) => v && setKind(v)}>
+                <SelectTrigger id="new-stage-kind" className="w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {KIND_ITEMS.map((k) => (
+                    <SelectItem key={k.value} value={k.value}>
+                      {k.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" disabled={pending || name.trim() === ""}>
+              Add stage
+            </Button>
+          </form>
+        </SettingsSection>
+      )}
 
       <ConfirmDialog
         open={deleting !== null}

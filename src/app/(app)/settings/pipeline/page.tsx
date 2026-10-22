@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { listDealStages } from "@/contexts/deals/application/deal-stages";
 import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { StagesPanel } from "./stages-panel";
 
@@ -22,6 +23,7 @@ export default function PipelineStagesPage() {
 
 async function Stages() {
   await connection();
-  const settings = await listDealStages(dealsDeps(), toActor(await requireOrgContext()));
-  return <StagesPanel settings={settings} />;
+  const ctx = await requireOrgContext();
+  const settings = await listDealStages(dealsDeps(), toActor(ctx));
+  return <StagesPanel settings={settings} canManage={isOwnerOrAdmin(ctx.role)} />;
 }

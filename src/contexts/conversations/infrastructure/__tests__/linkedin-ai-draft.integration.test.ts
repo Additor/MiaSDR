@@ -153,7 +153,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
 
     it("puts the stage move note and the matching knowledge in the prompt", async () => {
       const f = await drafted();
-      await knowledgeApp.createKnowledge(stores.knowledge, f.actor, { title: "Demo process", kind: "faq", content: "Demos run 30 minutes on Zoom.", alwaysInclude: true, tags: [] });
+      await knowledgeApp.createKnowledge(stores.knowledge, { ...f.actor, role: "admin" }, { title: "Demo process", kind: "faq", content: "Demos run 30 minutes on Zoom.", alwaysInclude: true, tags: [] });
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
       const target = await one("select id, category_key from subcategories where organization_id = $1 and key = 'meeting_done' limit 1", [f.org]);
       await replyHandlingApp.moveRecordStage(f.replyHandlingDeps, f.actor, record.id, { categoryKey: target.category_key, subcategoryId: target.id, expectedContextVersion: Number(record.context_version), note: "We met on a call, send the contract" });

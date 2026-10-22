@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { listKnowledge } from "@/contexts/conversations/ai/application/knowledge";
 import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { KnowledgePanel } from "./knowledge-panel";
 
@@ -22,6 +23,7 @@ export default function KnowledgePage() {
 
 async function Knowledge() {
   await connection();
-  const docs = await listKnowledge(knowledgeStore, toActor(await requireOrgContext()));
-  return <KnowledgePanel docs={JSON.parse(JSON.stringify(docs))} />;
+  const ctx = await requireOrgContext();
+  const docs = await listKnowledge(knowledgeStore, toActor(ctx));
+  return <KnowledgePanel docs={JSON.parse(JSON.stringify(docs))} canManage={isOwnerOrAdmin(ctx.role)} />;
 }

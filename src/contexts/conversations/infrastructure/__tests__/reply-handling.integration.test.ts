@@ -23,7 +23,8 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     orgs.push(created);
     const org = created.organizationId;
     const actor: Actor = { userId: created.userId, organizationId: org, role: "member" };
-    return { org, actor, mailbox: `me-${tag}@corp.test`, tag };
+    const admin: Actor = { ...actor, role: "admin" };
+    return { org, actor, admin, mailbox: `me-${tag}@corp.test`, tag };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
@@ -127,7 +128,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(/already in this category/);
       await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "customer", subcategoryId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(ValidationError);
       const trial = await sub(f, "trial_user");
-      await replies.updateSubcategory(deps, f.actor, trial.id, { active: false });
+      await replies.updateSubcategory(deps, f.admin, trial.id, { active: false });
       await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: trial.id, expectedContextVersion: v + 1 })).rejects.toThrow(/archived/);
     });
 
@@ -334,8 +335,8 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.setPersonDoNotContact(deps, b.actor, la.personId, { enabled: true, reason: "x" })).rejects.toThrow(NotFoundError);
       await expect(replies.closeRecord(deps, b.actor, la.recordId, { reason: "x" })).rejects.toThrow(NotFoundError);
       await expect(replies.addRecordNote(deps, b.actor, la.recordId, { body: "hi" })).rejects.toThrow(NotFoundError);
-      await expect(replies.updateSubcategory(deps, b.actor, meeting.id, { active: false })).rejects.toThrow(NotFoundError);
-      await expect(replies.deleteSubcategory(deps, b.actor, meeting.id)).rejects.toThrow(NotFoundError);
+      await expect(replies.updateSubcategory(deps, b.admin, meeting.id, { active: false })).rejects.toThrow(NotFoundError);
+      await expect(replies.deleteSubcategory(deps, b.admin, meeting.id)).rejects.toThrow(NotFoundError);
       expect(await rec(la.recordId)).toMatchObject({ context_version: v, category_source: "ai" });
       expect((await sql`select count(*)::int as n from contact_policies where person_id = ${la.personId}`)[0].n).toBe(0);
       expect((await sql`select active from subcategories where id = ${meeting.id}`)[0].active).toBe(true);
@@ -380,33 +381,33 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     });
 
     it("creates a subcategory and saves edits to it", async () => {
-      const created = await replies.createSubcategory(deps, f.actor, { categoryKey: "interested", name: "Pricing question", classificationGuidance: "Asks what it costs.", reviewRequired: true, stageRank: 2 });
+      const created = await replies.createSubcategory(deps, f.admin, { categoryKey: "interested", name: "Pricing question", classificationGuidance: "Asks what it costs.", reviewRequired: true, stageRank: 2 });
       expect(await sub(f, "pricing_question")).toMatchObject({ id: created.id, reviewRequired: true, stageRank: 2, classificationGuidance: "Asks what it costs.", recordCount: 0 });
-      await replies.updateSubcategory(deps, f.actor, created.id, { name: "Pricing questions", reviewRequired: false, stageRank: null });
+      await replies.updateSubcategory(deps, f.admin, created.id, { name: "Pricing questions", reviewRequired: false, stageRank: null });
       expect(await sub(f, "pricing_question")).toMatchObject({ name: "Pricing questions", reviewRequired: false, stageRank: null });
     });
 
     it("refuses to delete a subcategory a record is in, and archives it instead", async () => {
-      const created = await replies.createSubcategory(deps, f.actor, { categoryKey: "interested", name: "Contract review" });
+      const created = await replies.createSubcategory(deps, f.admin, { categoryKey: "interested", name: "Contract review" });
       const l = await lead(f);
       await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: created.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      await expect(replies.deleteSubcategory(deps, f.actor, created.id)).rejects.toThrow(/1 person is in/);
-      await replies.updateSubcategory(deps, f.actor, created.id, { active: false });
+      await expect(replies.deleteSubcategory(deps, f.admin, created.id)).rejects.toThrow(/1 person is in/);
+      await replies.updateSubcategory(deps, f.admin, created.id, { active: false });
       expect((await sub(f, "contract_review")).active).toBe(false);
     });
 
     it("deletes an unused subcategory", async () => {
-      const spare = await replies.createSubcategory(deps, f.actor, { categoryKey: "other", name: "Spare" });
-      await replies.deleteSubcategory(deps, f.actor, spare.id);
+      const spare = await replies.createSubcategory(deps, f.admin, { categoryKey: "other", name: "Spare" });
+      await replies.deleteSubcategory(deps, f.admin, spare.id);
       expect((await replies.getReplyTaxonomy(deps, f.actor)).subcategories.some((s) => s.id === spare.id)).toBe(false);
     });
 
     it("saves the thresholds and draft instructions, and rejects a confidence above 1", async () => {
-      await replies.updateReplySettings(deps, f.actor, { autoApplyConfidence: 0.7, reviewOther: false });
-      await replies.updateReplyAiInstructions(deps, f.actor, { draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }] });
+      await replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 0.7, reviewOther: false });
+      await replies.updateReplyAiInstructions(deps, f.admin, { draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }] });
       const { settings } = await replies.getReplyTaxonomy(deps, f.actor);
       expect(settings).toMatchObject({ autoApplyConfidence: 0.7, reviewOther: false, customerRequiresReview: true, draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }], classificationInstructions: [] });
-      await expect(replies.updateReplySettings(deps, f.actor, { autoApplyConfidence: 2 })).rejects.toThrow(ValidationError);
+      await expect(replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 2 })).rejects.toThrow(ValidationError);
     });
   });
 

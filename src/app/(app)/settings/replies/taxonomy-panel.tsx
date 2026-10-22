@@ -34,7 +34,7 @@ const CATEGORY_ITEMS = REPLY_CATEGORIES.map((c) => ({ value: c.key, label: c.lab
 
 const archiveRecords = (count: number) => (count === 0 ? "Nobody is in it now." : `${count} ${count === 1 ? "person keeps" : "people keep"} this subcategory.`);
 
-export function TaxonomyPanel({ subcategories }: { subcategories: Sub[] }) {
+export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub[]; canManage: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState<Sub | null>(null);
   const [confirming, setConfirming] = useState<{ sub: Sub; action: "archive" | "delete" } | null>(null);
@@ -93,65 +93,67 @@ export function TaxonomyPanel({ subcategories }: { subcategories: Sub[] }) {
 
   return (
     <>
-      <SettingsSection
-        title={editing ? `Edit ${editing.name}` : "Add a subcategory"}
-        description="The four reply categories are fixed. Their subcategories are what the AI picks from, and the guidance tells it when to choose one. A position orders the subcategories from first reply to outcome, and the AI never moves a person to a lower position on its own."
-      >
-        <form onSubmit={save} className="stack-group">
-          <div className="flex flex-wrap gap-3">
-            <div className="stack-field">
-              <Label htmlFor="sub-category">Category</Label>
-              <Select items={CATEGORY_ITEMS} value={category} onValueChange={(v) => v && setCategory(v)} disabled={editing !== null}>
-                <SelectTrigger id="sub-category" className="w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORY_ITEMS.map((c) => (
-                    <SelectItem key={c.value} value={c.value}>
-                      {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      {canManage && (
+        <SettingsSection
+          title={editing ? `Edit ${editing.name}` : "Add a subcategory"}
+          description="The four reply categories are fixed. Their subcategories are what the AI picks from, and the guidance tells it when to choose one. A position orders the subcategories from first reply to outcome, and the AI never moves a person to a lower position on its own."
+        >
+          <form onSubmit={save} className="stack-group">
+            <div className="flex flex-wrap gap-3">
+              <div className="stack-field">
+                <Label htmlFor="sub-category">Category</Label>
+                <Select items={CATEGORY_ITEMS} value={category} onValueChange={(v) => v && setCategory(v)} disabled={editing !== null}>
+                  <SelectTrigger id="sub-category" className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORY_ITEMS.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="stack-field">
+                <Label htmlFor="sub-name">Name</Label>
+                <Input id="sub-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} className="w-64 max-w-full" />
+              </div>
+              <div className="stack-field">
+                <Label htmlFor="sub-rank">Position</Label>
+                <Input id="sub-rank" type="number" min={1} max={100} value={rank} onChange={(e) => setRank(e.target.value)} placeholder="Outcome" className="w-28" />
+              </div>
             </div>
             <div className="stack-field">
-              <Label htmlFor="sub-name">Name</Label>
-              <Input id="sub-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} className="w-64 max-w-full" />
+              <Label htmlFor="sub-description">Description (optional)</Label>
+              <Input id="sub-description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
             </div>
             <div className="stack-field">
-              <Label htmlFor="sub-rank">Position</Label>
-              <Input id="sub-rank" type="number" min={1} max={100} value={rank} onChange={(e) => setRank(e.target.value)} placeholder="Outcome" className="w-28" />
+              <Label htmlFor="sub-guidance">Guidance for the AI (optional)</Label>
+              <Textarea id="sub-guidance" value={guidance} onChange={(e) => setGuidance(e.target.value)} maxLength={2000} placeholder="Choose this when the sender asks for pricing or a quote." />
             </div>
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="sub-description">Description (optional)</Label>
-            <Input id="sub-description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="sub-guidance">Guidance for the AI (optional)</Label>
-            <Textarea id="sub-guidance" value={guidance} onChange={(e) => setGuidance(e.target.value)} maxLength={2000} placeholder="Choose this when the sender asks for pricing or a quote." />
-          </div>
-          <div className="flex items-center gap-2">
-            <Checkbox id="sub-review" checked={review} onCheckedChange={(c) => setReview(c === true)} />
-            <Label htmlFor="sub-review">A person confirms every AI choice of this subcategory</Label>
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" disabled={pending}>
-              {pending ? "Saving…" : editing ? "Save changes" : "Add subcategory"}
-            </Button>
-            {editing && (
-              <Button type="button" size="sm" variant="ghost" onClick={() => edit(null)}>
-                Cancel
-              </Button>
+            <div className="flex items-center gap-2">
+              <Checkbox id="sub-review" checked={review} onCheckedChange={(c) => setReview(c === true)} />
+              <Label htmlFor="sub-review">A person confirms every AI choice of this subcategory</Label>
+            </div>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
             )}
-          </div>
-        </form>
-      </SettingsSection>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" size="sm" disabled={pending}>
+                {pending ? "Saving…" : editing ? "Save changes" : "Add subcategory"}
+              </Button>
+              {editing && (
+                <Button type="button" size="sm" variant="ghost" onClick={() => edit(null)}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </form>
+        </SettingsSection>
+      )}
 
       {/* Two levels only: a category is a group with an h3, its subcategories are the rows of one ruled list. */}
       <SettingsSection title="Subcategories">
@@ -176,21 +178,23 @@ export function TaxonomyPanel({ subcategories }: { subcategories: Sub[] }) {
                         </div>
                         {s.description && <p className="text-muted-foreground">{s.description}</p>}
                         {s.classificationGuidance && <p className="whitespace-pre-wrap text-muted-foreground">Guidance: {s.classificationGuidance}</p>}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <Button size="xs" variant="outline" onClick={() => edit(s)}>
-                            Edit
-                          </Button>
-                          {s.key !== "do_not_contact" && (
-                            <Button size="xs" variant="ghost" onClick={() => (s.active ? setConfirming({ sub: s, action: "archive" }) : restore(s))}>
-                              {s.active ? "Archive" : "Restore"}
+                        {canManage && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button size="xs" variant="outline" onClick={() => edit(s)}>
+                              Edit
                             </Button>
-                          )}
-                          {s.key !== "do_not_contact" && s.recordCount === 0 && s.historyCount === 0 && (
-                            <Button size="xs" variant="ghost" onClick={() => setConfirming({ sub: s, action: "delete" })}>
-                              Delete
-                            </Button>
-                          )}
-                        </div>
+                            {s.key !== "do_not_contact" && (
+                              <Button size="xs" variant="ghost" onClick={() => (s.active ? setConfirming({ sub: s, action: "archive" }) : restore(s))}>
+                                {s.active ? "Archive" : "Restore"}
+                              </Button>
+                            )}
+                            {s.key !== "do_not_contact" && s.recordCount === 0 && s.historyCount === 0 && (
+                              <Button size="xs" variant="ghost" onClick={() => setConfirming({ sub: s, action: "delete" })}>
+                                Delete
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>

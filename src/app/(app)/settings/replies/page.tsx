@@ -7,8 +7,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { cn } from "@/lib/utils";
 import { toActor } from "@/app/_lib/api";
+import { AdminNotice } from "../admin-notice";
 import { SettingsSection } from "../settings-section";
 import { InstructionsPanel } from "./instructions-panel";
 import { TaxonomyPanel } from "./taxonomy-panel";
@@ -28,9 +30,16 @@ export default function ReplySettingsPage() {
 
 async function Settings() {
   await connection();
-  const { subcategories, settings } = await getReplyTaxonomy(replyHandlingDeps(), toActor(await requireOrgContext()));
+  const ctx = await requireOrgContext();
+  const canManage = isOwnerOrAdmin(ctx.role);
+  const { subcategories, settings } = await getReplyTaxonomy(replyHandlingDeps(), toActor(ctx));
   return (
     <>
+      {!canManage && (
+        <div className="pb-section">
+          <AdminNotice action="change reply settings" />
+        </div>
+      )}
       <SettingsSection title="Knowledge" description="Pasted text the AI draws on when it writes replies. It has its own page.">
         <div>
           <Link href="/settings/knowledge" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
@@ -38,9 +47,9 @@ async function Settings() {
           </Link>
         </div>
       </SettingsSection>
-      <ThresholdsForm settings={{ autoApplyConfidence: settings.autoApplyConfidence, reviewOther: settings.reviewOther, customerRequiresReview: settings.customerRequiresReview }} />
-      <TaxonomyPanel subcategories={subcategories} />
-      <InstructionsPanel draft={settings.draftInstructions} classification={settings.classificationInstructions} />
+      <ThresholdsForm settings={{ autoApplyConfidence: settings.autoApplyConfidence, reviewOther: settings.reviewOther, customerRequiresReview: settings.customerRequiresReview }} canManage={canManage} />
+      <TaxonomyPanel subcategories={subcategories} canManage={canManage} />
+      <InstructionsPanel draft={settings.draftInstructions} classification={settings.classificationInstructions} canManage={canManage} />
     </>
   );
 }

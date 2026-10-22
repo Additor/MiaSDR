@@ -27,7 +27,7 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
     const org = created.organizationId;
     const address = `me-${tag}@corp.test`;
     await sql`insert into mailboxes (organization_id, email_address, status, display_name) values (${org}, ${address}, 'connected', 'Mia Rep')`;
-    const actor = { userId: "00000000-0000-0000-0000-000000000001", organizationId: org, role: "member" };
+    const actor = { userId: "00000000-0000-0000-0000-000000000001", organizationId: org, role: "admin" };
     return { org, address, tag, actor };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;

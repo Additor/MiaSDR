@@ -2,12 +2,13 @@ import { z } from "zod";
 import { createKnowledge, listKnowledge } from "@/contexts/conversations/ai/application/knowledge";
 import { knowledgeStore } from "@/contexts/conversations/infrastructure/composition";
 import { KNOWLEDGE_KINDS } from "@/contexts/conversations/ai/domain/knowledge";
-import { withActor } from "@/app/_lib/api";
+import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () => withActor((actor) => listKnowledge(knowledgeStore, actor));
 
 export const POST = (request: Request) =>
-  withActor(
+  withAdmin(
+    "Only an owner or admin can change knowledge documents.",
     async (actor) =>
       createKnowledge(
         knowledgeStore,

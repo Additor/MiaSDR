@@ -19,7 +19,7 @@ interface Block {
 
 const newId = () => `b${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
-export function InstructionsPanel({ draft, classification }: { draft: Block[]; classification: Block[] }) {
+export function InstructionsPanel({ draft, classification, canManage }: { draft: Block[]; classification: Block[]; canManage: boolean }) {
   return (
     <>
       <BlockList
@@ -27,18 +27,32 @@ export function InstructionsPanel({ draft, classification }: { draft: Block[]; c
         title="Drafting instructions"
         description="Added to every reply the AI drafts. Use them for tone, length, what to offer and what to avoid. They cannot override the fixed safety rules."
         initial={draft}
+        canManage={canManage}
       />
       <BlockList
         field="classificationInstructions"
         title="Classification instructions"
         description="Added to every classification. Use them to explain how your sales process works and how to read ambiguous replies."
         initial={classification}
+        canManage={canManage}
       />
     </>
   );
 }
 
-function BlockList({ field, title, description, initial }: { field: "draftInstructions" | "classificationInstructions"; title: string; description: string; initial: Block[] }) {
+function BlockList({
+  field,
+  title,
+  description,
+  initial,
+  canManage,
+}: {
+  field: "draftInstructions" | "classificationInstructions";
+  title: string;
+  description: string;
+  initial: Block[];
+  canManage: boolean;
+}) {
   const router = useRouter();
   const [blocks, setBlocks] = useState<Block[]>(initial);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +70,25 @@ function BlockList({ field, title, description, initial }: { field: "draftInstru
     if (!result.ok) return setError(result.error);
     toast.success(`${title} saved.`);
     router.refresh();
+  }
+
+  if (!canManage) {
+    return (
+      <SettingsSection title={title} description={description}>
+        {blocks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No instructions yet.</p>
+        ) : (
+          <ul className={RULED_LIST} aria-label={title}>
+            {blocks.map((b) => (
+              <li key={b.id} className={cn(RULED_ROW, "stack-field")}>
+                <h3 className="text-sm font-medium">{b.title || "Untitled"}</h3>
+                <p className="text-sm whitespace-pre-wrap text-muted-foreground">{b.content}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsSection>
+    );
   }
 
   return (

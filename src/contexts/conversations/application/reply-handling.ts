@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { retryOnce } from "@/platform/db/errors";
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import {
   PROTECTED_SUBCATEGORY_KEY,
   isCategoryKey,
@@ -236,9 +237,14 @@ export async function reconcileSendAttempt(
 
 // Settings
 
+function requireAdmin(actor: Actor): void {
+  if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can change reply settings.");
+}
+
 export const getReplyTaxonomy = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.taxonomy(actor.organizationId);
 
 export async function createSubcategory(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
+  requireAdmin(actor);
   const input = parseSubcategoryInput(raw);
   const { subcategories } = await deps.store.taxonomy(actor.organizationId);
   if (subcategories.some((s) => s.key === input.key)) throw new ConflictError(`A subcategory with the key "${input.key}" already exists.`);
@@ -249,6 +255,7 @@ export async function createSubcategory(deps: ReplyHandlingDeps, actor: Actor, r
 }
 
 export async function updateSubcategory(deps: ReplyHandlingDeps, actor: Actor, id: string, raw: Record<string, unknown>): Promise<void> {
+  requireAdmin(actor);
   assertId(id, "Subcategory");
   const patch = parseSubcategoryPatch(raw);
   const { subcategories } = await deps.store.taxonomy(actor.organizationId);
@@ -263,6 +270,7 @@ export async function updateSubcategory(deps: ReplyHandlingDeps, actor: Actor, i
 
 /** Delete is blocked while records or classification history use the subcategory. Archive it instead. */
 export async function deleteSubcategory(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {
+  requireAdmin(actor);
   assertId(id, "Subcategory");
   const { subcategories } = await deps.store.taxonomy(actor.organizationId);
   const current = subcategories.find((s) => s.id === id);
@@ -274,10 +282,12 @@ export async function deleteSubcategory(deps: ReplyHandlingDeps, actor: Actor, i
 }
 
 export async function updateReplySettings(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>): Promise<void> {
+  requireAdmin(actor);
   await deps.store.updateSettings(actor.organizationId, parsePipelineSettings(raw));
 }
 
 export async function updateReplyAiInstructions(deps: ReplyHandlingDeps, actor: Actor, raw: { draftInstructions?: unknown; classificationInstructions?: unknown }): Promise<void> {
+  requireAdmin(actor);
   const patch: { draftInstructions?: ReturnType<typeof parseInstructionBlocks>; classificationInstructions?: ReturnType<typeof parseInstructionBlocks> } = {};
   if (raw.draftInstructions !== undefined) patch.draftInstructions = parseInstructionBlocks(raw.draftInstructions, "Drafting instructions");
   if (raw.classificationInstructions !== undefined) patch.classificationInstructions = parseInstructionBlocks(raw.classificationInstructions, "Classification instructions");

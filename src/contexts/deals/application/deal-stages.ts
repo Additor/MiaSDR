@@ -1,4 +1,5 @@
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { DbHandle } from "@/platform/db/client";
 import { DEFAULT_DEAL_STAGES, insertStage, isLastOfKind, isStageKind, MAX_STAGES, parseStageName, renumber, reorderStages, type DealStageKind } from "../domain/stages";
 import type { DealsDeps, DealStage } from "./deal-ports";
@@ -24,6 +25,10 @@ export interface StageSetting {
 export interface StageSettings {
   virtual: boolean;
   stages: StageSetting[];
+}
+
+function requireAdmin(actor: Actor): void {
+  if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can change pipeline stages.");
 }
 
 export async function listDealStages(deps: DealsDeps, actor: Actor): Promise<StageSettings> {
@@ -53,6 +58,7 @@ async function writePositions(deps: DealsDeps, tx: DbHandle, actor: Actor, curre
 
 /** "Create default stages" for an organization that has none yet. A pipeline that already has stages stays as it is. */
 export async function createDefaultDealStages(deps: DealsDeps, actor: Actor): Promise<StageSettings> {
+  requireAdmin(actor);
   await deps.uow.run(async (tx) => {
     if ((await deps.store.lockStages(tx, actor.organizationId)).length > 0) return;
     const created = await deps.store.ensureStages(tx, actor.organizationId);
@@ -63,6 +69,7 @@ export async function createDefaultDealStages(deps: DealsDeps, actor: Actor): Pr
 
 /** Adds a stage after the last stage of its kind. */
 export async function createDealStage(deps: DealsDeps, actor: Actor, input: { name: unknown; kind: unknown }): Promise<StageSettings> {
+  requireAdmin(actor);
   const name = parseStageName(input.name);
   if (!isStageKind(input.kind)) throw new ValidationError("A stage is open, won or lost.");
   const kind = input.kind;
@@ -79,6 +86,7 @@ export async function createDealStage(deps: DealsDeps, actor: Actor, input: { na
 }
 
 export async function renameDealStage(deps: DealsDeps, actor: Actor, stageId: string, input: { name: unknown }): Promise<StageSettings> {
+  requireAdmin(actor);
   if (!isUuid(stageId)) throw new NotFoundError("Stage not found");
   const name = parseStageName(input.name);
   return underLock(deps, actor, async (tx, stages) => {
@@ -93,6 +101,7 @@ export async function renameDealStage(deps: DealsDeps, actor: Actor, stageId: st
 
 /** Puts the stages in the order of `ids`, which names every stage once. Open stays before Won, Won before Lost. */
 export async function reorderDealStages(deps: DealsDeps, actor: Actor, ids: readonly string[]): Promise<StageSettings> {
+  requireAdmin(actor);
   return underLock(deps, actor, async (tx, stages) => {
     const next = reorderStages(stages, ids);
     await writePositions(deps, tx, actor, stages, next);
@@ -109,6 +118,7 @@ const stageInUse = (count: number) =>
  * `deals_stage_fk`, the transaction rolls back, and the answer is `stage_in_use` with a count read after the rollback.
  */
 export async function deleteDealStage(deps: DealsDeps, actor: Actor, stageId: string): Promise<StageSettings> {
+  requireAdmin(actor);
   if (!isUuid(stageId)) throw new NotFoundError("Stage not found");
   try {
     return await underLock(deps, actor, async (tx, stages) => {

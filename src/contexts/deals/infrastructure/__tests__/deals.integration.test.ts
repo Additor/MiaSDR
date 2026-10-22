@@ -247,10 +247,10 @@ describeDb("deals context", () => {
   });
 
   describe("stage settings", () => {
-    /** An organization with its stages written, plus an open stage Demo that the member added. */
+    /** An organization with its stages written, plus an open stage Demo that the owner added. */
     async function withDemo() {
       const f = await kit.organization();
-      const created = await stagesApp.createDealStage(deps(), f.member, { name: "Demo", kind: "open" });
+      const created = await stagesApp.createDealStage(deps(), f.owner, { name: "Demo", kind: "open" });
       const id = (name: string) => created.stages.find((s) => s.name === name)!.id as string;
       return { f, created, id };
     }
@@ -303,7 +303,7 @@ describeDb("deals context", () => {
       await stagesApp.deleteDealStage(deps(), f.owner, id("Proposal"));
       const audits = await kit.sql`select action, actor_user_id from audit_log where organization_id = ${f.org} order by created_at, action`;
       expect(audits.map((a) => [a.action, a.actor_user_id])).toEqual([
-        ["deal_stage.created", f.member.userId],
+        ["deal_stage.created", f.owner.userId],
         ["deal_stage.reordered", f.owner.userId],
         ["deal_stage.renamed", f.owner.userId],
         ["deal_stage.deleted", f.owner.userId],

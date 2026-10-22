@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/lib/api-client";
 import { splitTagInput } from "@/contexts/conversations/ai/domain/knowledge";
 import { cn } from "@/lib/utils";
+import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface Doc {
@@ -39,7 +40,7 @@ const KIND_LABELS: Record<string, string> = {
 const kindLabel = (kind: string) => KIND_LABELS[kind] ?? kind.replace(/_/g, " ");
 const KINDS = Object.keys(KIND_LABELS).map((k) => ({ value: k, label: kindLabel(k) }));
 
-export function KnowledgePanel({ docs }: { docs: Doc[] }) {
+export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState<Doc | null>(null);
   const [title, setTitle] = useState("");
@@ -82,57 +83,64 @@ export function KnowledgePanel({ docs }: { docs: Doc[] }) {
 
   return (
     <div>
-      <SettingsSection title={editing ? `Edit ${editing.title}` : "Add a document"} description="Paste text. Each change to the text keeps the earlier version, so past drafts still cite what the AI saw.">
-        <form onSubmit={save} className="stack-group">
-          <div className="stack-field">
-            <Label htmlFor="k-title">Title</Label>
-            <Input id="k-title" value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={200} />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="k-kind">Kind</Label>
-            <Select items={KINDS} value={kind} onValueChange={(v) => v && setKind(v)}>
-              <SelectTrigger id="k-kind" className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {KINDS.map((k) => (
-                  <SelectItem key={k.value} value={k.value}>
-                    {k.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="k-content">Text</Label>
-            <Textarea id="k-content" className="min-h-40" value={content} onChange={(e) => setContent(e.target.value)} required />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="k-tags">Tags, comma separated</Label>
-            <Input id="k-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="pricing, onboarding" />
-            <p className="text-sm text-muted-foreground">Follow-up drafts receive the documents that share the most tags with the After a reply setting. Up to 50 tags, 80 characters each, lowercase.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Checkbox id="k-always" checked={always} onCheckedChange={(c) => setAlways(c === true)} />
-            <Label htmlFor="k-always">Always include in prompts</Label>
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : editing ? "Save changes" : "Add document"}
-            </Button>
-            {editing && (
-              <Button type="button" variant="ghost" onClick={() => edit(null)}>
-                Cancel
-              </Button>
+      {!canManage && (
+        <div className="pb-section">
+          <AdminNotice action="add or change knowledge documents" />
+        </div>
+      )}
+      {canManage && (
+        <SettingsSection title={editing ? `Edit ${editing.title}` : "Add a document"} description="Paste text. Each change to the text keeps the earlier version, so past drafts still cite what the AI saw.">
+          <form onSubmit={save} className="stack-group">
+            <div className="stack-field">
+              <Label htmlFor="k-title">Title</Label>
+              <Input id="k-title" value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={200} />
+            </div>
+            <div className="stack-field">
+              <Label htmlFor="k-kind">Kind</Label>
+              <Select items={KINDS} value={kind} onValueChange={(v) => v && setKind(v)}>
+                <SelectTrigger id="k-kind" className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {KINDS.map((k) => (
+                    <SelectItem key={k.value} value={k.value}>
+                      {k.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="stack-field">
+              <Label htmlFor="k-content">Text</Label>
+              <Textarea id="k-content" className="min-h-40" value={content} onChange={(e) => setContent(e.target.value)} required />
+            </div>
+            <div className="stack-field">
+              <Label htmlFor="k-tags">Tags, comma separated</Label>
+              <Input id="k-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="pricing, onboarding" />
+              <p className="text-sm text-muted-foreground">Follow-up drafts receive the documents that share the most tags with the After a reply setting. Up to 50 tags, 80 characters each, lowercase.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox id="k-always" checked={always} onCheckedChange={(c) => setAlways(c === true)} />
+              <Label htmlFor="k-always">Always include in prompts</Label>
+            </div>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
             )}
-          </div>
-        </form>
-      </SettingsSection>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={pending}>
+                {pending ? "Saving…" : editing ? "Save changes" : "Add document"}
+              </Button>
+              {editing && (
+                <Button type="button" variant="ghost" onClick={() => edit(null)}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </form>
+        </SettingsSection>
+      )}
 
       {docs.length > 0 && (
         <SettingsSection title="Documents">
@@ -154,14 +162,16 @@ export function KnowledgePanel({ docs }: { docs: Doc[] }) {
                   </div>
                   <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">{doc.content}</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => edit(doc)}>
-                    Edit
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => toggle(doc)}>
-                    {doc.active ? "Archive" : "Restore"}
-                  </Button>
-                </div>
+                {canManage && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => edit(doc)}>
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => toggle(doc)}>
+                      {doc.active ? "Archive" : "Restore"}
+                    </Button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

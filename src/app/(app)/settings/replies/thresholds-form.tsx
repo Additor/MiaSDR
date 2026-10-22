@@ -16,7 +16,7 @@ interface Settings {
   customerRequiresReview: boolean;
 }
 
-export function ThresholdsForm({ settings }: { settings: Settings }) {
+export function ThresholdsForm({ settings, canManage }: { settings: Settings; canManage: boolean }) {
   const router = useRouter();
   const [percent, setPercent] = useState(String(Math.round(settings.autoApplyConfidence * 1000) / 10));
   const [reviewOther, setReviewOther] = useState(settings.reviewOther);
@@ -39,28 +39,32 @@ export function ThresholdsForm({ settings }: { settings: Settings }) {
   return (
     <SettingsSection title="Auto-apply rules" description="The AI applies a classification alone only when none of these rules hold it back. A held suggestion waits for a person. Replies are never sent without approval.">
       <form onSubmit={save} className="stack-group">
-        <div className="stack-field">
-          <Label htmlFor="threshold">Auto-apply at or above (percent confidence)</Label>
-          <Input id="threshold" type="number" min={0} max={100} step={0.1} value={percent} onChange={(e) => setPercent(e.target.value)} className="w-32" required />
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox id="review-other" checked={reviewOther} onCheckedChange={(c) => setReviewOther(c === true)} />
-          <Label htmlFor="review-other">Always review the category Other</Label>
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox id="review-customer" checked={customer} onCheckedChange={(c) => setCustomer(c === true)} />
-          <Label htmlFor="review-customer">Always review a move to Existing customer</Label>
-        </div>
+        <fieldset disabled={!canManage} className="contents">
+          <div className="stack-field">
+            <Label htmlFor="threshold">Auto-apply at or above (percent confidence)</Label>
+            <Input id="threshold" type="number" min={0} max={100} step={0.1} value={percent} onChange={(e) => setPercent(e.target.value)} className="w-32" required />
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox id="review-other" checked={reviewOther} onCheckedChange={(c) => setReviewOther(c === true)} />
+            <Label htmlFor="review-other">Always review the category Other</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox id="review-customer" checked={customer} onCheckedChange={(c) => setCustomer(c === true)} />
+            <Label htmlFor="review-customer">Always review a move to Existing customer</Label>
+          </div>
+        </fieldset>
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
         )}
-        <div>
-          <Button type="submit" size="sm" disabled={pending}>
-            {pending ? "Saving…" : "Save rules"}
-          </Button>
-        </div>
+        {canManage && (
+          <div>
+            <Button type="submit" size="sm" disabled={pending}>
+              {pending ? "Saving…" : "Save rules"}
+            </Button>
+          </div>
+        )}
       </form>
     </SettingsSection>
   );
