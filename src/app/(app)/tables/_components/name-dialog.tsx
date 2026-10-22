@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MAX_NAME } from "@/components/shell/editable-title";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** One text field in a dialog. Used to name and rename folders, workbooks and tables. */
+/** One text field in a dialog. The tables browser uses it to name and rename folders and workbooks. */
 export function NameDialog({ title, description, initial = "", label = "Name", submitLabel, onSubmit, onClose }: Props) {
   const [name, setName] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export function NameDialog({ title, description, initial = "", label = "Name", s
         </DialogHeader>
         <form onSubmit={(e) => (e.preventDefault(), void submit())} className="grid gap-3">
           <Field label={label} htmlFor="name-dialog-input">
-            <Input id="name-dialog-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={120} onFocus={(e) => e.currentTarget.select()} />
+            <Input id="name-dialog-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={MAX_NAME} onFocus={(e) => e.currentTarget.select()} />
           </Field>
           <ErrorText>{error}</ErrorText>
         </form>

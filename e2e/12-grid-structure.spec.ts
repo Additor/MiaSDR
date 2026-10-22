@@ -6,8 +6,8 @@ test.describe("grid structure", () => {
     await signInAdmin(page);
     const { workbookId } = await newWorkbook(page.request, "C2 xlsx import");
     await page.goto(`/tables/${workbookId}`);
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("menuitem", { name: "Import" }).click();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Import file" }).click();
     await page.getByLabel("File to import").setInputFiles(
       xlsxFile("c2-leads.xlsx", [
         ["Email", "Company", "Seats"],
@@ -35,9 +35,10 @@ test.describe("grid structure", () => {
     await expect(tabs).toHaveText(["Custom Table"]);
 
     for (const name of ["Second", "Third"]) {
+      // A new table opens with its tab in rename.
       await page.getByRole("button", { name: "New table" }).click();
-      await page.getByRole("dialog").getByLabel("Name").fill(name);
-      await page.getByRole("button", { name: "Create table" }).click();
+      await page.getByRole("textbox", { name: "Table name" }).fill(name);
+      await page.keyboard.press("Enter");
       await expect(page.getByRole("tab", { name, selected: true })).toBeVisible();
     }
     await expect(tabs).toHaveText(["Custom Table", "Second", "Third"]);
@@ -61,6 +62,38 @@ test.describe("grid structure", () => {
     await page.getByRole("tab", { name: "Custom Table" }).click();
     await expect(page.getByRole("tab", { name: "Custom Table", selected: true })).toBeVisible();
     await expect(page.getByRole("grid", { name: "Custom Table" })).toBeVisible();
+  });
+
+  test("the workbook and a tab rename in place; an empty name is refused and Escape keeps the old one", async ({ page }) => {
+    await signInAdmin(page);
+    const { workbookId } = await newWorkbook(page.request, "C2 rename");
+    await page.goto(`/tables/${workbookId}`);
+
+    const title = page.getByRole("heading", { name: "C2 rename" }).getByRole("button");
+    await title.click();
+    const field = page.getByRole("textbox", { name: "Workbook name" });
+    await field.fill("");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("alert").filter({ hasText: "Give it a name." })).toBeVisible();
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("heading", { name: "C2 rename" })).toBeVisible();
+
+    await page.getByRole("heading", { name: "C2 rename" }).getByRole("button").click();
+    await field.fill("C2 renamed");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "C2 renamed" }).getByRole("button")).toBeFocused();
+    await expect(page).toHaveTitle("C2 renamed · MiaSDR");
+
+    await page.getByRole("tab", { name: "Custom Table" }).focus();
+    await page.keyboard.press("F2");
+    await page.getByRole("textbox", { name: "Table name" }).fill("Leads");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("tab", { name: "Leads" })).toBeFocused();
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "C2 renamed" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Leads" })).toBeVisible();
   });
 
   test("a column is resized by dragging and hidden from its menu, and the hidden state sticks", async ({ page }) => {
