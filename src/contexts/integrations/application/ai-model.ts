@@ -147,7 +147,7 @@ export async function setAiModel(deps: AiModelDeps, actor: Actor, input: { conne
   if (!target) throw new ValidationError("Connect an AI provider before you choose a model.");
   const spec = aiConnection(target.key)!;
   const model = input.model?.trim() || null;
-  if (model === null && !spec.defaultModel) throw new ValidationError(`Pick a ${spec.label} model from the list.`);
+  if (model === null && !spec.defaultModel) throw new ValidationError(`${spec.label} has no default model. Pick one from the list.`);
   if (model !== null) {
     if (!MODEL_ID.test(model)) throw new ValidationError("That is not a valid model ID. Pick one from the list.");
     const result = await liveChoices(deps, spec, target);

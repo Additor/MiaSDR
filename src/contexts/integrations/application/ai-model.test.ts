@@ -111,7 +111,7 @@ describe("AI model setting", () => {
 
     it("needs a model on a gateway, and switches AI to it when saved", async () => {
       const { deps, saveChoice } = setup({ extra: [router] });
-      await expect(setAiModel(deps, owner, { connection: "openrouter", model: null })).rejects.toThrow("Pick a OpenRouter model from the list.");
+      await expect(setAiModel(deps, owner, { connection: "openrouter", model: null })).rejects.toThrow("OpenRouter has no default model. Pick one from the list.");
       await expect(setAiModel(deps, owner, { connection: "openrouter", model: "claude-sonnet-5-5" })).rejects.toThrow(/OpenRouter does not list/);
       const view = await setAiModel(deps, owner, { connection: "openrouter", model: "openai/gpt-6" });
       expect(saveChoice).toHaveBeenCalledWith("o1", "a2", "openai/gpt-6", { actorUserId: "u1", from: { connection: "anthropic", model: null }, to: { connection: "openrouter", model: "openai/gpt-6" } });

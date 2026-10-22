@@ -39,7 +39,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     items: [
       { href: "/settings/replies", title: "Replies", summary: "Reply categories, how much the AI may decide alone, and what it is told." },
       { href: "/settings/knowledge", title: "Knowledge", summary: "Paste text the AI can use when it drafts replies." },
-      { href: "/settings/integrations", title: "Integrations", summary: "Store provider API keys, encrypted, for AI and other services.", adminOnly: true },
+      { href: "/settings/integrations", title: "Integrations", summary: "Connect an AI provider and pick the model AI runs on. Keys are stored encrypted.", adminOnly: true },
     ],
   },
   {

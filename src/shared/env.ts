@@ -82,7 +82,7 @@ const schema = z.object({
   LINKEDIN_PROVIDER: z.enum(["unipile", "fake"]).optional(),
   /** Extra Unipile DSN hosts besides `*.unipile.com`, comma separated (`host`, `host:port` or `*.domain`). Empty by default. */
   LINKEDIN_DSN_ALLOWED_HOSTS: z.string().optional(),
-  /** `fake` answers AI calls with a keyword classifier and template drafts (demos and tests only). Default: each organization's own Anthropic key. */
+  /** `fake` answers AI calls with a keyword classifier and template drafts (demos and tests only). Default: each organization's own AI provider key (Anthropic, Vercel AI Gateway or OpenRouter). */
   AI_PROVIDER: z.enum(["anthropic", "fake"]).optional(),
   /** Anthropic model id when an organization's integration does not set one. Default claude-sonnet-5-5. */
   AI_MODEL: z.string().optional(),
