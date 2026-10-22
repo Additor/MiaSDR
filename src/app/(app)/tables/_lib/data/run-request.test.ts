@@ -54,7 +54,8 @@ describe("buildRunBody", () => {
     expect(buildRunBody({ ...form, maxRows: "" })).toEqual({ body: { onlyEmpty: true, maxRows: 1000 } });
   });
   it("sends the cost cap when set", () => {
-    expect(buildRunBody({ ...form, maxCost: "50" })).toEqual({ body: { onlyEmpty: true, maxRows: 1000, maxCostCents: 50 } });
+    expect(buildRunBody({ ...form, maxCost: "0.50" })).toEqual({ body: { onlyEmpty: true, maxRows: 1000, maxCostCents: 50 } });
+    expect(buildRunBody({ ...form, maxCost: "$2" })).toMatchObject({ body: { maxCostCents: 200 } });
     expect(buildRunBody({ ...form, maxCost: "-1" })).toHaveProperty("error");
   });
 });
@@ -86,6 +87,7 @@ describe("run estimate", () => {
   it("leads with rows, calls and credits, and shows dollars once a provider has a price", () => {
     expect(estimateHeadline(estimate)).toBe("4 rows · up to 8 calls · up to 6 credits");
     expect(estimateHeadline({ ...estimate, worstCaseCostCents: 8 })).toBe("4 rows · up to 8 calls · up to 6 credits · up to $0.08");
+    expect(estimateHeadline({ ...estimate, aiCells: 4 })).toBe("4 rows · up to 8 calls · 4 AI calls · up to 6 credits");
     expect(estimateByProvider(estimate)).toBe("Hunter 4 calls, 2 credits · ZeroBounce 4 calls, 4 credits");
   });
 
@@ -98,5 +100,17 @@ describe("run estimate", () => {
     expect(runSummary({ ...estimate, queued: 8 })).toBe("Queued 8 cells across 4 rows. Up to 6 credits.");
     expect(runSummary({ ...estimate, queued: 8, worstCaseCredits: 0 })).toBe("Queued 8 cells across 4 rows.");
     expect(runSummary({ ...estimate, queued: 0 })).toBe("Nothing to run. Inputs are empty or the cells are already filled.");
+  });
+});
+
+describe("dollar amounts", () => {
+  it("reads dollars as cents and shows cents as dollars", async () => {
+    const { dollarsToCents, centsToDollarsText } = await import("./run-request");
+    expect(dollarsToCents("0.5")).toBe(50);
+    expect(dollarsToCents("$1.255")).toBe(125.5);
+    expect(dollarsToCents("")).toBeNull();
+    expect(dollarsToCents("-1")).toBeNull();
+    expect(centsToDollarsText(125)).toBe("1.25");
+    expect(centsToDollarsText(50)).toBe("0.5");
   });
 });

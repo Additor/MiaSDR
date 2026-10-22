@@ -144,7 +144,8 @@ export function TableToolbar(props: Props) {
             <PlayIcon /> Run
           </Button>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Run settings" />}>
+            <DropdownMenuTrigger render={<Button variant="ghost" size={props.autoRun ? "sm" : "icon-sm"} aria-label={props.autoRun ? "Run options, auto-run is on" : "Run options"} />}>
+              {props.autoRun && <span className="text-xs">Auto-run on</span>}
               <ChevronDownIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56">

@@ -24,13 +24,15 @@ interface DialogProps {
   selectedRowIds: string[];
   /** Opens with "First N rows" chosen and N filled in. */
   initialFirstN?: number;
+  /** The table has never run: open on the first rows, so the first spend is a small test. */
+  firstRun?: boolean;
   onClose: () => void;
   onStarted: () => void;
 }
 
 /** Choose what to run: rows, whether to skip filled cells, and how much a run may cost. */
-export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onClose, onStarted }: DialogProps) {
-  const [scope, setScope] = useState<RunScope>(initialFirstN !== undefined ? "first" : selectedRowIds.length > 0 ? "selected" : "all");
+export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firstRun, onClose, onStarted }: DialogProps) {
+  const [scope, setScope] = useState<RunScope>(initialFirstN !== undefined ? "first" : selectedRowIds.length > 0 ? "selected" : firstRun ? "first" : "all");
   const [firstN, setFirstN] = useState(String(initialFirstN ?? DEFAULT_FIRST_N));
   const [onlyEmpty, setOnlyEmpty] = useState(true);
   const [maxRows, setMaxRows] = useState("1000");
@@ -119,11 +121,11 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
               <Input id="run-rows" type="number" min={1} max={10000} value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
             </Field>
             <Field
-              label="Cost cap (cents)"
+              label="Cost cap ($)"
               htmlFor="run-cost"
-              hint={estimate && centsCapIsInert(estimate) ? "Your providers have no price, so a cents cap cannot stop this run. Give a provider a price, or cap credits on the column." : "Optional. The run does not start if its worst case cost is above this."}
+              hint={estimate && centsCapIsInert(estimate) ? "Your providers have no price, so a dollar cap cannot stop this run. Give a provider a price, or cap credits on the column." : "Optional. The run does not start if its worst case cost is above this."}
             >
-              <Input id="run-cost" type="number" min={0} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} />
+              <Input id="run-cost" type="number" min={0} step={0.01} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} />
             </Field>
           </div>
           <section aria-live="polite" aria-label="Worst case of this run" className="grid gap-1 rounded-md border bg-muted/40 p-3 text-sm">
@@ -131,6 +133,8 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, onCl
               <>
                 <p className="font-medium tabular-nums">{estimate.cells === 0 ? "Nothing to run. Inputs are empty or the cells are already filled." : estimateHeadline(estimate)}</p>
                 {estimate.cells > 0 && estimate.providers.length > 0 && <p className="text-xs text-muted-foreground tabular-nums">{estimateByProvider(estimate)}</p>}
+                {estimate.cells > 0 && (estimate.aiCells ?? 0) > 0 && <p className="text-xs text-muted-foreground">AI calls use your organization&apos;s AI key and are billed by that provider.</p>}
+                {!column && estimate.columnNames && estimate.columnNames.length > 0 && <p className="text-xs text-muted-foreground">Columns: {estimate.columnNames.join(", ")}.</p>}
                 {estimate.dependents.length > 0 && <p className="text-xs text-muted-foreground">Includes the auto-run {estimate.dependents.length === 1 ? "column" : "columns"} {estimate.dependents.join(", ")}, which fill after this run.</p>}
                 {estimate.problem && <p className="text-xs text-destructive">{estimate.problem}</p>}
               </>

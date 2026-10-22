@@ -51,7 +51,7 @@ export interface RunForm {
   maxRows: string;
   /** Text of the first-N input. */
   firstN: string;
-  /** Text of the cost cap input. */
+  /** Text of the cost cap input, in dollars. */
   maxCost: string;
 }
 
@@ -68,18 +68,33 @@ export function buildRunBody(form: RunForm): { body: Record<string, unknown> } |
     body.firstN = n;
   }
   if (form.maxCost.trim() !== "") {
-    const cents = Number(form.maxCost);
-    if (!Number.isFinite(cents) || cents < 0) return { error: "Cost cap must be zero or more." };
+    const cents = dollarsToCents(form.maxCost);
+    if (cents === null) return { error: "Cost cap must be zero or more dollars." };
     body.maxCostCents = cents;
   }
   return { body };
 }
+
+/** Cents from a dollar amount someone typed ("0.50", "$2", "1.255"), or null when it is not zero or more. */
+export function dollarsToCents(text: string): number | null {
+  const value = Number(text.trim().replace(/^\$/, ""));
+  if (text.trim() === "" || !Number.isFinite(value) || value < 0) return null;
+  // Prices can be fractions of a cent, so keep three decimals of a cent and drop float noise.
+  return Math.round(value * 100 * 1000) / 1000;
+}
+
+/** A cents amount as a dollar field shows it: 50 as "0.5", 125 as "1.25". */
+export const centsToDollarsText = (cents: number) => String(Number((cents / 100).toFixed(5)));
 
 const count = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
 /** The worst case of a run, from POST /run, real or dry. */
 export interface RunEstimate {
   cells: number;
+  /** Cells an AI column answers, on the organization's AI key. Absent on an older server. */
+  aiCells?: number;
+  /** Names of the columns the run covers. */
+  columnNames?: string[];
   rows: number;
   worstCaseCostCents: number;
   worstCaseCredits: number;
@@ -91,11 +106,15 @@ export interface RunEstimate {
 export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const credits = (n: number) => `${Number(n.toFixed(2)).toLocaleString("en-US")} ${n === 1 ? "credit" : "credits"}`;
 
-/** "4 rows · up to 8 calls · up to 6 credits · up to $0.08". Credits lead, because vendors bill in credits; $ shows once a provider has a price. */
+/**
+ * "4 rows · up to 8 calls · 4 AI calls · up to 6 credits · up to $0.08". Credits lead, because vendors bill in credits;
+ * $ shows once a provider has a price. AI calls run on the organization's AI key, so they have no price here.
+ */
 export function estimateHeadline(e: RunEstimate): string {
   const calls = e.providers.reduce((sum, p) => sum + p.calls, 0);
   const parts = [count(e.rows, "row", "rows")];
   if (calls > 0) parts.push(`up to ${count(calls, "call", "calls")}`);
+  if ((e.aiCells ?? 0) > 0) parts.push(count(e.aiCells!, "AI call", "AI calls"));
   if (e.worstCaseCredits > 0) parts.push(`up to ${credits(e.worstCaseCredits)}`);
   if (e.worstCaseCostCents > 0) parts.push(`up to ${dollars(e.worstCaseCostCents)}`);
   return parts.join(" · ");

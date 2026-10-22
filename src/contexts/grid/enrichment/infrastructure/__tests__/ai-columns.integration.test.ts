@@ -100,6 +100,15 @@ describeDb("AI columns: output types, editing and placement", () => {
       { key: "score", type: "number" as const },
     ];
 
+    it("counts AI cells in a run's estimate and names the columns it covers", async () => {
+      const { actor, table } = await fixture();
+      const d = deps();
+      await m.columns.createAiColumns(d.columnDeps, actor, table, { name: "Profile", prompt: "Profile {{name}}", outputs: [{ key: "line", type: "text" as const }] });
+      const dry = await m.run.requestRun(d.runDeps, actor, table, { dryRun: true });
+      expect(dry.cells).toBeGreaterThan(0);
+      expect(dry).toMatchObject({ aiCells: dry.cells, columnNames: ["Profile"], providers: [] });
+    });
+
     it("converts valid answers and stores them under the output column's type", async () => {
       const { actor, table, rows } = await fixture();
       const d = deps();

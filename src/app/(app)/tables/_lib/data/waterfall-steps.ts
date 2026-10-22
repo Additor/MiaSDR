@@ -12,7 +12,7 @@ export function spendSummary(s: { autoRun: boolean; delay: string; reuseDays: st
   const reuse = Math.floor(Number(s.reuseDays) || 0);
   parts.push(reuse > 0 ? `reuse ${reuse} ${reuse === 1 ? "day" : "days"}` : "no reuse");
   if (s.maxCredits?.trim()) parts.push(`up to ${Number(s.maxCredits)} credits a cell`);
-  if (s.maxCost?.trim()) parts.push(`up to ${Number(s.maxCost)}c a cell`);
+  if (s.maxCost?.trim()) parts.push(`up to $${Number(s.maxCost)} a cell`);
   if (s.waitOnLimit) parts.push("waits for rate limits");
   return parts.join(" · ");
 }

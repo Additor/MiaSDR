@@ -1,7 +1,8 @@
 "use client";
 
-import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, PlayIcon } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,6 +14,7 @@ import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/en
 import { OUTCOMES, outcomeOf } from "../_lib/data/outcomes";
 import { guessColumn, usableProviders, useProviders, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
+import { centsToDollarsText, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, type RunEstimate } from "../_lib/data/run-request";
 import { spendSummary, type WaterfallStep } from "../_lib/data/waterfall-steps";
 import { ColumnChoice, Choice, ErrorText, Field } from "./form-bits";
 import { ProviderManager } from "./provider-manager";
@@ -68,7 +70,7 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
     delay: String(config.delaySeconds ?? 0),
     reuseDays: String(config.reuseDays ?? DEFAULT_REUSE_DAYS),
     stopAtCatchAll: config.settledStatuses?.includes("catch_all") ?? false,
-    maxCost: config.maxCostCents === undefined ? "" : String(config.maxCostCents),
+    maxCost: config.maxCostCents === undefined ? "" : centsToDollarsText(config.maxCostCents),
     maxCredits: config.maxCredits === undefined ? "" : String(config.maxCredits),
     waitOnLimit: config.onRateLimit === "wait",
   };
@@ -103,7 +105,7 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
     if (form.stopAtCatchAll !== initial.stopAtCatchAll) patch.settledStatuses = form.stopAtCatchAll ? [...SETTLED_STATUSES, "catch_all"] : null;
     if (isWaterfall) {
       const cap = (text: string) => (text.trim() === "" ? null : Math.max(0, Number(text) || 0));
-      if (form.maxCost !== initial.maxCost) patch.maxCostCents = cap(form.maxCost);
+      if (form.maxCost !== initial.maxCost) patch.maxCostCents = form.maxCost.trim() === "" ? null : (dollarsToCents(form.maxCost) ?? 0);
       if (form.maxCredits !== initial.maxCredits) patch.maxCredits = cap(form.maxCredits);
       if (form.waitOnLimit !== initial.waitOnLimit) patch.onRateLimit = form.waitOnLimit ? "wait" : "next";
     }
@@ -142,8 +144,8 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
         )}
         {isWaterfall && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Spend cap per cell (cents)" htmlFor="edit-cap" hint="Optional. A step that would pass it is skipped. Leave empty for no cap.">
-              <Input id="edit-cap" type="number" min={0} value={form.maxCost} onChange={(e) => set("maxCost", e.target.value)} className="w-28" />
+            <Field label="Spend cap per cell ($)" htmlFor="edit-cap" hint="Optional. A step that would pass it is skipped. Leave empty for no cap.">
+              <Input id="edit-cap" type="number" min={0} step={0.01} value={form.maxCost} onChange={(e) => set("maxCost", e.target.value)} className="w-28" />
             </Field>
             <Field label="Credit cap per cell" htmlFor="edit-credits" hint="Optional. Counts vendor credits. Leave empty for no cap.">
               <Input id="edit-credits" type="number" min={0} step={0.5} value={form.maxCredits} onChange={(e) => set("maxCredits", e.target.value)} className="w-28" />
@@ -307,8 +309,8 @@ function SpendAndTiming(p: {
       <div className="grid gap-3 border-t px-3 py-3">
         {p.waterfall && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Spend cap per cell (cents)" htmlFor="wf-cap" hint={p.maxCost.trim() !== "" && p.noPrice ? "These providers have no price, so a cents cap never stops a call. Use the credit cap." : "Optional. A step that would pass it is skipped."}>
-              <Input id="wf-cap" type="number" min={0} value={p.maxCost} onChange={(e) => p.setMaxCost(e.target.value)} className="w-28" />
+            <Field label="Spend cap per cell ($)" htmlFor="wf-cap" hint={p.maxCost.trim() !== "" && p.noPrice ? "These providers have no price, so a dollar cap never stops a call. Use the credit cap." : "Optional. A step that would pass it is skipped."}>
+              <Input id="wf-cap" type="number" min={0} step={0.01} value={p.maxCost} onChange={(e) => p.setMaxCost(e.target.value)} className="w-28" />
             </Field>
             <Field label="Credit cap per cell" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">
               <Input id="wf-credits" type="number" min={0} step={0.5} value={p.maxCredits} onChange={(e) => p.setMaxCredits(e.target.value)} className="w-28" />
@@ -337,19 +339,38 @@ function blockerOf(state: { stepCount: number; noProvider: string; missingInput?
   return null;
 }
 
-/** The footer: the reason the add button is off, Back, and Add. */
-function CreateFooter({ blocker, busy, onBack, onSave, label }: { blocker: string | null; busy: boolean; onBack: () => void; onSave: () => void; label: string }) {
+/**
+ * The footer: the reason the add buttons are off, Back, and two ways to add. "Add and run" leads, because the first
+ * thing to do with a new column is try it on a few rows; it runs the first rows only, so the first spend stays small.
+ */
+function CreateFooter({ blocker, busy, onBack, onSave }: { blocker: string | null; busy: boolean; onBack: () => void; onSave: (run: boolean) => void }) {
   return (
     <DialogFooter className="items-center">
       {blocker && <p className="mr-auto text-sm text-muted-foreground">{blocker}</p>}
-      <Button type="button" variant="outline" onClick={onBack} disabled={busy}>
+      <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
         Back
       </Button>
-      <Button type="button" onClick={onSave} disabled={blocker !== null || busy}>
-        {busy ? "Adding..." : label}
+      <Button type="button" variant="outline" onClick={() => onSave(false)} disabled={blocker !== null || busy}>
+        Add without running
+      </Button>
+      <Button type="button" onClick={() => onSave(true)} disabled={blocker !== null || busy}>
+        <PlayIcon /> {busy ? "Adding..." : `Add and run first ${DEFAULT_FIRST_N} rows`}
       </Button>
     </DialogFooter>
   );
+}
+
+/** Creates the column, then on `run` queues its first rows. A refused run leaves the column added and says why. */
+async function createColumn(tableId: string, body: Record<string, unknown>, run: boolean): Promise<{ ok: true } | { ok: false; error: string | null }> {
+  const res = await gridRequest<{ primaryColumnKey?: string }>(gridUrl.sub(tableId, "enrichments"), "POST", body);
+  if (!res.ok) return { ok: false, error: res.error };
+  const columnKey = res.data?.primaryColumnKey;
+  if (run && columnKey) {
+    const started = await gridRequest<RunEstimate & { queued: number }>(gridUrl.sub(tableId, "run"), "POST", { columnKey, firstN: DEFAULT_FIRST_N, onlyEmpty: true, maxRows: RUN_MAX_ROWS });
+    if (started.ok && started.data) toast.success(runSummary(started.data));
+    else toast.error(`The column was added, but the run did not start: ${started.error ?? "unknown error"}`);
+  } else toast.success("Column added. Press Run when you are ready.");
+  return { ok: true };
 }
 
 /** Inputs for the chosen actions: one column per input, guessed from the table, and the combinations still missing. */
@@ -417,7 +438,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
     });
   const ordered = [...picked.map((k) => offering.find((p) => p.key === k)!).filter(Boolean), ...offering.filter((p) => !picked.includes(p.key))];
 
-  async function save() {
+  async function save(run: boolean) {
     setBusy(true);
     setError(null);
     const base = {
@@ -436,12 +457,12 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
           steps,
           ...base,
           ...(stopAtCatchAll && actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
-          ...(maxCost.trim() !== "" ? { maxCostCents: Math.max(0, Number(maxCost) || 0) } : {}),
+          ...(maxCost.trim() !== "" ? { maxCostCents: dollarsToCents(maxCost) ?? 0 } : {}),
           ...(maxCredits.trim() !== "" ? { maxCredits: Math.max(0, Number(maxCredits) || 0) } : {}),
           ...(waitOnLimit ? { onRateLimit: "wait" } : {}),
         }
       : { kind: "enrichment", providerKey: picked[0], actionKey, ...base };
-    const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "POST", body);
+    const res = await createColumn(tableId, body, run);
     if (!res.ok) {
       setBusy(false);
       return setError(res.error);
@@ -544,7 +565,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
         />
         <ErrorText>{error}</ErrorText>
       </div>
-      <CreateFooter blocker={blocker} busy={busy} onBack={onBack} onSave={save} label={waterfall ? `Add waterfall (${picked.length} providers)` : "Add columns"} />
+      <CreateFooter blocker={blocker} busy={busy} onBack={onBack} onSave={save} />
     </>
   );
 }
@@ -571,11 +592,11 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
   const uncovered = action && !inputsCovered(action, (key) => !!mapped[key]) ? action : undefined;
   const blocker = blockerOf({ stepCount: picked ? 1 : 0, noProvider: "Connect a provider with another action.", missingInput, uncovered, outputs: chosenOutputs.length });
 
-  async function save() {
+  async function save(run: boolean) {
     if (!picked) return;
     setBusy(true);
     setError(null);
-    const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "POST", {
+    const body = {
       kind: "enrichment",
       providerKey: picked.provider.key,
       actionKey: picked.action.key,
@@ -585,7 +606,8 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
       autoRun,
       delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
       reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
-    });
+    };
+    const res = await createColumn(tableId, body, run);
     if (!res.ok) {
       setBusy(false);
       return setError(res.error);
@@ -643,7 +665,7 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
         )}
         <ErrorText>{error}</ErrorText>
       </div>
-      <CreateFooter blocker={blocker} busy={busy} onBack={onBack} onSave={save} label="Add columns" />
+      <CreateFooter blocker={blocker} busy={busy} onBack={onBack} onSave={save} />
     </>
   );
 }

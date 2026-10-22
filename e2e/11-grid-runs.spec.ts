@@ -100,7 +100,7 @@ test.describe("grid runs", () => {
     const dialog = page.getByRole("dialog", { name: "Verify emails" });
     await expect(dialog.getByRole("checkbox", { name: /Hunter/ })).toBeChecked();
     await dialog.getByRole("checkbox", { name: /ZeroBounce/ }).click();
-    await dialog.getByRole("button", { name: "Add waterfall (2 providers)" }).click();
+    await dialog.getByRole("button", { name: "Add without running" }).click();
     await expect(dialog).toBeHidden();
 
     const { columns } = await gridPage(page.request, tableId);

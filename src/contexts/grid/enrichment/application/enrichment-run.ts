@@ -28,8 +28,12 @@ export interface RunReport {
   queued: number;
   rows: number;
   columns: string[];
+  /** The names of `columns`, for the run dialog. */
+  columnNames: string[];
   /** Cells the run queues, or would queue on a dry run. */
   cells: number;
+  /** Of those, and of the auto-run columns they set off, the cells an AI column answers: calls on the organization's AI key, outside the provider totals. */
+  aiCells: number;
   /** Highest cost in cents the run can add up to, from each provider's price, auto-run columns it sets off included. */
   worstCaseCostCents: number;
   /** Highest number of vendor credits the run can use, counted the same way. */
@@ -101,6 +105,9 @@ export async function requestRun(deps: RunDeps, actor: Actor, tableId: string, r
   };
 
   const queue: EnqueueTarget[] = [];
+  const isAi = (key: string) => columns.find((c) => c.key === key)?.type === "ai";
+  const aiDependents = dependents.filter((c) => isAi(c.key)).length;
+  let aiCells = 0;
   let worst = 0;
   let credits = 0;
   const byProvider = new Map<string, ProviderEstimate>();
@@ -115,10 +122,14 @@ export async function requestRun(deps: RunDeps, actor: Actor, tableId: string, r
   const add = (cells: EnqueueTarget[]) => {
     for (const cell of cells) {
       queue.push(cell);
+      if (isAi(cell.columnKey)) aiCells += 1;
       const estimate = perCell.get(cell.columnKey);
       if (estimate) spend(estimate);
     }
-    if (cells.length > 0) for (const estimate of dependentEstimates) spend(estimate);
+    if (cells.length > 0) {
+      for (const estimate of dependentEstimates) spend(estimate);
+      aiCells += aiDependents;
+    }
   };
   let rowCount: number;
   if (firstN === undefined) {
@@ -140,7 +151,7 @@ export async function requestRun(deps: RunDeps, actor: Actor, tableId: string, r
       if (page.length < SCAN_PAGE_ROWS) break;
     }
   }
-  const estimate = { cells: queue.length, rows: rowCount, columns: targets.map((c) => c.key), worstCaseCostCents: worst, worstCaseCredits: credits, providers: [...byProvider.values()], dependents: dependents.map((c) => columns.find((x) => x.key === c.key)?.name ?? c.key) };
+  const estimate = { cells: queue.length, aiCells, rows: rowCount, columns: targets.map((c) => c.key), columnNames: targets.map((c) => c.name), worstCaseCostCents: worst, worstCaseCredits: credits, providers: [...byProvider.values()], dependents: dependents.map((c) => columns.find((x) => x.key === c.key)?.name ?? c.key) };
   if (request.dryRun) {
     let problem: string | undefined;
     try {
