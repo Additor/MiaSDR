@@ -48,9 +48,15 @@ describeDb("AI classification, drafts and approval", () => {
       expect(p.classification).toMatchObject({ status: "proposed", holdReason: "low_confidence", current: true });
       expect(p.classification?.proposed?.replyTypeKey).toBe("demo_request");
 
-      // A person accepts: the category is applied as human and a draft is queued and written.
+      // A person accepts: the category is applied as human and a draft is queued and written. The pick takes the type's
+      // rules as they are at the accept, not as they were when the AI held it.
+      await sql`update reply_types set follow_ups = 'stop' where organization_id = ${f.org} and key = 'demo_request'`;
       const accepted = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: null, expectedContextVersion: await version(f) });
       expect(accepted).toMatchObject({ replyTypeKey: "demo_request", draftQueued: true });
+      expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
+        status: "accepted",
+        rules: { checkMode: "after", replyDraft: true, followUps: "stop" },
+      });
       expect(await one("select reply_type_source from records where organization_id = $1", [f.org])).toMatchObject({ reply_type_source: "human" });
       await f.run();
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
@@ -414,18 +420,36 @@ describeDb("AI classification, drafts and approval", () => {
       expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "overridden" });
     });
 
-    it("marks the person do not contact when a person's reading lands in Do not contact, as a move off the thread does", async () => {
+    it("never marks do not contact when a person picks the stop request type: it only changes the type", async () => {
       const f = await fixture({ ai: null });
       const r = await composition.ingestInbound(mail(f));
-      const handling = await import("../../application/reply-handling");
-      const handlingDeps = (await import("../reply-handling-composition")).replyHandlingDeps();
-      const other = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: await version(f) });
-      await handling.followDoNotContactCategory(handlingDeps, f.actor, other);
-      expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
       const stop = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "do_not_contact", expectedContextVersion: await version(f) });
       expect(stop).toMatchObject({ replyTypeKey: "do_not_contact", draftQueued: false });
-      await handling.followDoNotContactCategory(handlingDeps, f.actor, stop);
-      expect(await one("select do_not_contact, reason from contact_policies where organization_id = $1", [f.org])).toMatchObject({ do_not_contact: true, reason: "Moved to Do not contact by a person." });
+      expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
+      expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
+        status: "overridden",
+        rules: { checkMode: "before", replyDraft: false, followUps: "stop" },
+      });
+    });
+
+    it("refuses to accept a held stop request with 409 stop_review and changes nothing", async () => {
+      const f = await fixture();
+      f.ai!.classifyWith = () => ({ subcategoryKey: "do_not_contact", confidence: 0.97, reason: "Asked to be removed." });
+      const r = await receive(f);
+      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
+      const before = { v: await version(f), events: await count("events", f.org) };
+      const refused = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: null, expectedContextVersion: before.v }).catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(ConflictError);
+      expect((refused as ConflictError).details).toEqual({ code: "stop_review" });
+      expect((refused as ConflictError).message).toMatch(/Review the stop request/);
+      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
+      expect({ v: await version(f), events: await count("events", f.org) }).toEqual(before);
+      expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
+
+      // Overriding with a type of the person's own choice still works and leaves contact alone.
+      await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "other", expectedContextVersion: before.v });
+      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "overridden" });
+      expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
     });
 
     it("cites knowledge in the draft and gives the model the active documents only", async () => {

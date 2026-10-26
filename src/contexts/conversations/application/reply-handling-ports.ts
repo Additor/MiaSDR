@@ -173,6 +173,19 @@ export interface ReplyTypeChangeResult {
   replyTypeKey: string | null;
   contextVersion: number;
   draftsRetired: number;
+  /** A follow-up run of the owning campaign started for the new type. */
+  runStarted: boolean;
+}
+
+/** What an undo retired, so the client can say it. */
+export interface UndoReplyTypePickResult {
+  recordId: string;
+  /** Open drafts of the record that turned stale. */
+  draftsRetired: number;
+  /** An active or paused follow-up run ended. */
+  runEnded: boolean;
+  /** A draft job queued for the undone pick was cancelled before it wrote anything. */
+  draftJobCancelled: boolean;
 }
 
 export interface DncResult {
@@ -215,7 +228,7 @@ export interface ReplyHandlingStore {
   typeChangeFacts(organizationId: string, recordId: string): Promise<TypeChangeFacts | null>;
 
   changeReplyType(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
-  undoReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<{ recordId: string; draftsRetired: number }>;
+  undoReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<UndoReplyTypePickResult>;
   acknowledgeReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<void>;
   /** Sets or clears the person's do-not-contact flag and stops everything that would contact them. */
   setDoNotContact(input: { organizationId: string; actorUserId: string; personId: string; enabled: boolean; reason: string; now: Date }): Promise<DncResult>;

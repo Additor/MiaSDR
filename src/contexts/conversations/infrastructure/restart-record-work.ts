@@ -1,22 +1,25 @@
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { startRun } from "../after-reply/application/sequences";
 import { createRunOn, loadStartOn } from "../after-reply/infrastructure/drizzle-sequence-store";
 import type { DbTx as Tx } from "@/platform/db/client";
+import { aiJobs } from "@/platform/db/schema";
 import { rowsOf } from "@/platform/db/sql-values";
 import { interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
+import { decideReplyType, type ReplyTypeDecision, type ReplyType, type FollowUpsOutcome } from "../domain/reply-type";
 import { staleOpenDraftsTx } from "./stale-drafts-sql";
+import { typeChangeFactsOf } from "./type-change-facts-read";
 
 /**
- * A person changed what the record is: a stage move or a corrected classification. Work that was prepared for the old
- * reading of the thread ends in the same transaction, and the owning campaign's flow starts from the new one.
+ * A person changed what the record is: a type change off the thread, or their own pick for the latest reply. Work that
+ * was prepared for the old type ends in the same transaction, and the owning campaign's flow starts from the new one.
  *
- * 1. Open drafts retire (`stale`), so nobody sends a reply written for the old stage.
+ * 1. Open drafts retire (`stale`), so nobody sends a reply written for the old type.
  * 2. The active or paused sequence run ends as `interrupted` with `reason`.
  * 3. `context_version` goes up by one, so draft and classification jobs queued for the old version skip.
- * 4. A new run starts when the campaign that most recently emailed the person has After a reply on and the new
- *    subcategory wants a reply; otherwise no run starts.
+ * 4. A new run starts only when the person's decision says follow-ups keep going (`followUps` of `decideReplyType`)
+ *    and the campaign that most recently emailed the person has After a reply on; otherwise no run starts.
  *
- * The caller holds the record's lock and has already written the new category. Undo only ends work, so it calls
+ * The caller holds the record's lock and has already written the new type. Undo only ends work, so it calls
  * `interruptRecordRunsTx` and retires drafts itself.
  */
 export type RestartReason = "stage_moved" | "classification_corrected";
@@ -30,13 +33,14 @@ export interface RestartResult {
 
 export async function restartRecordWorkTx(
   tx: Tx,
-  input: { organizationId: string; recordId: string; reason: RestartReason; draftReason: string; now: Date; actorUserId: string },
+  input: { organizationId: string; recordId: string; reason: RestartReason; draftReason: string; followUps: FollowUpsOutcome; now: Date; actorUserId: string },
 ): Promise<RestartResult> {
   const draftsRetired = await staleOpenDraftsTx(tx, { organizationId: input.organizationId, recordId: input.recordId, reason: input.draftReason, now: input.now });
   const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, input.recordId, input.reason, input.now);
   const [bumped] = rowsOf<{ context_version: number }>(
     await tx.execute(sql`update records set context_version = context_version + 1 where id = ${input.recordId} and organization_id = ${input.organizationId} returning context_version`),
   );
+  if (input.followUps !== "continue") return { contextVersion: bumped.context_version, draftsRetired, runsEnded, runStarted: false };
 
   // The same code that starts a run for a new reply, bound to this transaction, so a failed start rolls the change back.
   const started = await startRun(
@@ -50,4 +54,39 @@ export async function restartRecordWorkTx(
     { organizationId: input.organizationId, recordId: input.recordId, source: "ai_assignment", actorUserId: input.actorUserId },
   );
   return { contextVersion: bumped.context_version, draftsRetired, runsEnded, runStarted: Boolean(started?.created) };
+}
+
+/**
+ * What a person's choice of `target` means for the record, read inside the caller's transaction after it locked the
+ * record and before it writes the new type. A person's pick has no confidence, so it never holds. Null when the record
+ * is not visible in the organization.
+ */
+export async function personTypeDecisionTx(
+  tx: Tx,
+  organizationId: string,
+  recordId: string,
+  target: Pick<ReplyType, "groupKey" | "rules">,
+): Promise<ReplyTypeDecision | null> {
+  const read = await typeChangeFactsOf(organizationId, recordId, tx);
+  if (!read) return null;
+  return decideReplyType(target, { ...read.facts, currentType: read.current, confidence: null });
+}
+
+/**
+ * Queues the initial draft for a pick at `contextVersion`. One draft job exists per pick (unique on kind and entity): a
+ * job that already finished for an earlier version goes back to the queue under a key for this version, and a queued job
+ * stays and picks up the new version. True when a job now waits or runs.
+ */
+export async function queuePickDraftTx(tx: Tx, input: { organizationId: string; replyTypePickId: string; contextVersion: number }): Promise<boolean> {
+  const key = `initial_draft:classification:${input.replyTypePickId}:v${input.contextVersion}`;
+  await tx
+    .insert(aiJobs)
+    .values({ organizationId: input.organizationId, kind: "initial_draft", entityType: "classification", entityId: input.replyTypePickId, idempotencyKey: key, runAfter: sql`now() - interval '1 minute'`, payload: { humanInitiated: true } })
+    .onConflictDoUpdate({
+      target: [aiJobs.kind, aiJobs.entityType, aiJobs.entityId],
+      set: { status: "queued", attempts: 0, runAfter: sql`now() - interval '1 minute'`, idempotencyKey: key, payload: sql`${aiJobs.payload} || '{"humanInitiated":true}'::jsonb`, completedAt: null, failedAt: null, lastError: null, lockedAt: null, lockedBy: null },
+      setWhere: sql`${aiJobs.status} in ('succeeded', 'failed', 'skipped')`,
+    });
+  const [job] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, input.replyTypePickId)));
+  return job?.status === "queued" || job?.status === "running";
 }

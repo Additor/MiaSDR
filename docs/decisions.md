@@ -495,7 +495,9 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 - `decideReplyType` (`domain/reply-type.ts`) is the only reader of the rules. The AI apply path, a person's type change and the Change type outcome lines all call it. Fixed rules sit on top of the type's: an AI pick below the confidence floor waits for a person, a locked customer stays in its group until a person moves it, a stop request gets no draft, and follow-ups apply only to an email reply of a campaign in `ai_drafts` mode whose person is a lead.
 - Rules apply at decision time. An edit changes the picks made after it. Each pick stores the rules it used in `reply_type_picks.rules`.
 - `system_role` marks the two types that drive fixed paths, in place of their keys. `stop_request` (Asked to stop) is checked before it applies, never drafts, stops follow-ups and stays active; `reply_types_stop_request_ck` holds it. `customer` (Customer question) locks the person as a customer and stays in the customer group. A set has at most one type per role, and a type's role never changes.
-- A type change never marks the person do not contact. Contact stops only through Stop contacting.
+- A type change never marks the person do not contact: a move off the thread, a person's own pick, accepting or overriding an AI pick, and undo all leave contact alone, the stop request type included. Contact stops only through Stop contacting.
+- Accepting a held stop request pick answers 409 with `code: "stop_review"`, and the client opens Stop contacting. Choosing the stop request type through Change type or an override is allowed and changes only the type.
+- A person's type change and pick run `decideReplyType` with no confidence: `afterTypeChange` sets the workflow state from its draft decision, and a new follow-up run starts only when its follow-ups decision is `continue`. Archiving or deleting a type with a system role answers 409 `code: "system_role"` with the role's reason.
 - Progress belongs to deal stages. A reply type has no rank, and no pick waits to protect a position. `reply_type.changed` is the event a deal can follow.
 - Out of office stops follow-ups. Pausing them until the person is back is a later decision.
 
@@ -507,7 +509,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 - **Stop requests.** A reply that asks to stop, or a pick of the stop request type, shows a banner whose button opens Stop contacting, which asks how far the stop reaches. A held stop request pick reads "Review stop request". Nothing stops contact on its own.
 - **Unknown senders.** At most 50 AI replies a day for unknown senders (`channel_settings.general`, 0 blocks all). Over-cap jobs end `skipped` with reason `daily_cap`; an admin can requeue them.
 - **Failure kinds** (`payload.failureKind`): `transient` and `lease` failures are requeued by the sweep with backoff from 15 minutes (capped at 6 hours, ceiling 5); `shape` and `permanent` wait for an admin (`POST /api/jobs/ai/requeue`, `/api/jobs/ai/[id]/requeue`).
-- **Corrections.** A stage move or a person's classification takes `expectedContextVersion` (409 on mismatch), bumps the version, retires open drafts, ends runs and queues a fresh draft (`restartRecordWorkTx`). Undo reverts only the latest classification while the record still carries it.
+- **Corrections.** A type change off the thread or a person's pick takes `expectedContextVersion` (409 on mismatch), bumps the version, retires open drafts and ends runs (`restartRecordWorkTx`). A person's pick for the latest reply also queues a fresh draft when its type writes one; a change off the thread writes none. Each person's pick stores the rules of its type, and `reply_type.changed` carries them in `meta.rules`. Undo reverts only the latest pick while the record still carries it, and answers with what it retired: `draftsRetired`, `runEnded` and `draftJobCancelled`.
 
 ### Drafts and approval
 

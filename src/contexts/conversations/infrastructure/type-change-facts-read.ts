@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbHandle } from "@/platform/db/client";
 import { people, records, replyHandlingSettings, replyTypePicks, replyTypes } from "@/platform/db/schema";
 import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { afterReplyLockedReason, afterReplyModeOf } from "../after-reply/domain/after-reply";
@@ -24,10 +24,10 @@ export const replyTypeOption = (t: typeof replyTypes.$inferSelect): ReplyTypeOpt
  * The facts `typeChangeOutcome` reads for one record: its current type, the active types of its set, whether the latest
  * reply asked to stop (the latest pick's `stopRequested`), whether the person is a contact, and the After a reply mode
  * and channel that decide whether follow-ups apply. Null for a record outside the organization or with only private
- * conversations.
+ * conversations. A write path passes its transaction, after it locked the record, so the facts match what it changes.
  */
-export async function typeChangeFactsOf(organizationId: string, recordId: string): Promise<TypeChangeFacts | null> {
-  const [head] = await db
+export async function typeChangeFactsOf(organizationId: string, recordId: string, exec: DbHandle = db): Promise<TypeChangeFacts | null> {
+  const [head] = await exec
     .select({ record: records, lifecycle: people.lifecycle })
     .from(records)
     .innerJoin(people, eq(people.id, records.personId))
@@ -36,17 +36,17 @@ export async function typeChangeFactsOf(organizationId: string, recordId: string
   const { record } = head;
 
   const [types, [settings], [latestPick], start] = await Promise.all([
-    db.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, record.replyTypeSetId))),
-    db.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
+    exec.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, record.replyTypeSetId))),
+    exec.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
     record.latestInboundMessageId
-      ? db
+      ? exec
           .select({ response: replyTypePicks.response })
           .from(replyTypePicks)
           .where(and(eq(replyTypePicks.organizationId, organizationId), eq(replyTypePicks.messageId, record.latestInboundMessageId)))
           .orderBy(desc(replyTypePicks.createdAt))
           .limit(1)
       : Promise.resolve([]),
-    loadStartOn(db, organizationId, recordId, {}),
+    loadStartOn(exec, organizationId, recordId, {}),
   ]);
 
   const owner = start?.owner ?? null;

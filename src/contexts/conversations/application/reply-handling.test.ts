@@ -15,7 +15,7 @@ import {
   type IdentityPayload,
 } from "./reply-handling";
 import type { ReplyHandlingStore, IdentityExceptionRow, ReplyTypeRow } from "./reply-handling-ports";
-import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES } from "../domain/reply-type";
+import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES, SYSTEM_ROLE_REASONS } from "../domain/reply-type";
 import type { ReplyDeps } from "./reply-management";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -41,7 +41,7 @@ function fakeStore(over: Partial<ReplyHandlingStore> & { subs?: ReplyTypeRow[]; 
     createReplyType: async (_org: string, input: unknown) => (record("createReplyType", input), { id: id(50) }),
     updateReplyType: async (_org: string, sid: string, patch: unknown) => void record("updateReplyType", { sid, patch }),
     deleteReplyType: async (_org: string, sid: string) => void record("deleteReplyType", sid),
-    changeReplyType: async (input: { personId?: string }) => (record("changeReplyType", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1 }),
+    changeReplyType: async (input: { personId?: string }) => (record("changeReplyType", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1, runStarted: false }),
     setDoNotContact: async (input: unknown) => (record("setDoNotContact", input), { changed: true, doNotContact: true, recordsUpdated: 1, draftsRetired: 0, enrollmentsStopped: 2 }),
     closeRecord: async (input: unknown) => void record("closeRecord", input),
     getIdentityException: async (org: string, eid: string) => exceptions.find((e) => e.id === eid && org === ORG) ?? null,
@@ -69,18 +69,12 @@ function deps(store: ReplyHandlingStore) {
 }
 
 describe("stage moves", () => {
-  it("passes the move to the store and sets do not contact when the target is the Do not contact subcategory", async () => {
+  it("passes the change to the store and never sets do not contact, the stop request type included", async () => {
     const { store, calls } = fakeStore();
     const { d } = deps(store);
     const result = await changeReplyType(d, actor, id(2), { groupKey: "not_interested", replyTypeId: id(5), expectedContextVersion: 3, note: "  asked to stop  " });
-    expect(result.contextVersion).toBe(4);
+    expect(result).toMatchObject({ contextVersion: 4, replyTypeKey: "do_not_contact" });
     expect(calls.changeReplyType[0]).toMatchObject({ organizationId: ORG, actorUserId: actor.userId, recordId: id(2), note: "asked to stop", confirmUnlock: false });
-    expect(calls.setDoNotContact[0]).toMatchObject({ organizationId: ORG, personId: id(3), enabled: true });
-  });
-
-  it("does not touch do not contact for other subcategories", async () => {
-    const { store, calls } = fakeStore({ changeReplyType: async () => ({ recordId: id(2), personId: id(3), groupKey: "interested", replyTypeKey: "meeting_done", contextVersion: 4, draftsRetired: 0 }) });
-    await changeReplyType(deps(store).d, actor, id(2), { groupKey: "interested", replyTypeId: id(5), expectedContextVersion: 3 });
     expect(calls.setDoNotContact).toBeUndefined();
   });
 
@@ -128,12 +122,20 @@ describe("taxonomy", () => {
     expect(calls.createReplyType).toHaveLength(1);
   });
 
-  it("never archives or deletes Do not contact", async () => {
+  it("never archives or deletes a type with a system role, and says why", async () => {
     const dnc = sub({ id: id(4), key: "do_not_contact", groupKey: "not_interested", name: "Asked to stop", rules: { ...STOP_REQUEST_RULES }, systemRole: "stop_request" });
-    const { d } = deps(fakeStore({ subs: [dnc] }).store);
-    await expect(updateReplyType(d, admin, id(4), { active: false })).rejects.toThrow(/cannot be archived/);
-    await expect(deleteReplyType(d, admin, id(4))).rejects.toThrow(/cannot be deleted/);
+    const customer = sub({ id: id(6), key: "customer", groupKey: "customer", name: "Customer question", systemRole: "customer" });
+    // The key alone carries no role: a type keyed do_not_contact without one archives like any other.
+    const plain = sub({ id: id(7), key: "do_not_contact_old", name: "Old stop" });
+    const { store, calls } = fakeStore({ subs: [dnc, customer, plain] });
+    const { d } = deps(store);
+    for (const [tid, role] of [[id(4), "stop_request"], [id(6), "customer"]] as const) {
+      await expect(updateReplyType(d, admin, tid, { active: false })).rejects.toThrow(SYSTEM_ROLE_REASONS[role]);
+      await expect(deleteReplyType(d, admin, tid)).rejects.toThrow(SYSTEM_ROLE_REASONS[role]);
+    }
     await expect(updateReplyType(d, admin, id(4), { name: "Stop" })).resolves.toBeUndefined();
+    await updateReplyType(d, admin, id(7), { active: false });
+    expect(calls.deleteReplyType).toBeUndefined();
   });
 
   it("merges the rules a change names with the stored ones and checks them against the system role", async () => {
