@@ -1,0 +1,324 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Combobox, ComboboxCollection, ComboboxContent, ComboboxEmpty, ComboboxGroup, ComboboxInput, ComboboxItem, ComboboxLabel, ComboboxList } from "@/components/ui/combobox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/components/ui/utils";
+import { REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
+import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
+import { callApi } from "@/app/_lib/api-client";
+import { saveDraftEdits } from "../_lib/draft-edits";
+import { confidenceText } from "../_lib/type-line";
+import { useStopScope, type StopTarget } from "./stop-contacting";
+
+export interface TypeOption {
+  id: string;
+  /** The type's key, which a person's pick for the latest reply names. */
+  key: string;
+  groupKey: string;
+  name: string;
+  systemRole: SystemRole | null;
+}
+
+/** The AI's pick for the last reply, shown above the picker so you correct it with it in view. */
+export interface AiReading {
+  name: string;
+  confidence: number | null;
+  reasoning: string | null;
+}
+
+interface Option {
+  value: string;
+  label: string;
+  type: TypeOption;
+}
+
+type Outcomes = ReadonlyMap<string, TypeChangeOutcome>;
+
+/** The draft line for a change that takes the off-thread path, which writes no draft (`changeReplyType`). */
+const OFF_THREAD_DRAFT = "Reply draft: none written now. Write a draft from the reply when you need one.";
+
+/**
+ * Changes the reply type, from the thread's type line. The person says why, and that picks the path:
+ *
+ * - The AI read the last reply wrong: a person's pick for the latest reply (`POST /api/inbox/[id]/reply-type` with the type's
+ *   key). The new type's rules apply as for any pick, so a type set to write a draft gets one.
+ * - Something happened off the thread: the record's type moves (`POST /api/records/[id]/reply-type`), the AI's pick stays, and
+ *   no draft is written, so the draft line says so instead of the server's "the AI writes a new one".
+ *
+ * The three outcome lines come from `GET /api/records/[id]/reply-type/outcomes`. Choosing the stop request type asks how far
+ * the stop reaches inside this dialog: Stop contacting changes the type and stops contact, Only change the type does not
+ * stop anything. Unsaved edits in the reply editor are saved first, so the out-of-date draft keeps them.
+ */
+export function ChangeTypeButton({
+  recordId,
+  conversationId,
+  personName,
+  contextVersion,
+  currentReplyTypeId,
+  replyTypeLocked,
+  types,
+  aiReading = null,
+  stop,
+  variant = "link",
+}: {
+  recordId: string;
+  /** The conversation on screen. Without it only an off-thread change is offered. */
+  conversationId?: string;
+  personName: string;
+  contextVersion: number;
+  currentReplyTypeId: string | null;
+  replyTypeLocked: boolean;
+  types: TypeOption[];
+  aiReading?: AiReading | null;
+  /** What Stop contacting needs, and whether the person is already marked. */
+  stop: StopTarget & { doNotContact: boolean };
+  /** A link at the end of the type line, or an outline button beside Accept or Looks right. */
+  variant?: "link" | "outline";
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<Option | null>(null);
+  const [note, setNote] = useState("");
+  const [unlock, setUnlock] = useState(false);
+  const [why, setWhy] = useState<"reply" | "offThread">(conversationId ? "reply" : "offThread");
+  const [outcomes, setOutcomes] = useState<Outcomes | null>(null);
+  const [outcomeError, setOutcomeError] = useState<string | null>(null);
+  const [pending, setPending] = useState<"change" | "stop" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const running = useRef(false);
+  const stopScope = useStopScope(stop);
+
+  const correcting = why === "reply" && conversationId !== undefined;
+  const groups = useMemo(
+    () =>
+      REPLY_TYPE_GROUPS.map((g) => ({
+        value: g.label,
+        items: types.filter((t) => t.groupKey === g.key && t.id !== currentReplyTypeId).map((t) => ({ value: t.id, label: t.name, type: t })),
+      })).filter((g) => g.items.length > 0),
+    [types, currentReplyTypeId],
+  );
+  const chosen = target?.type;
+  const leavesCustomer = !correcting && replyTypeLocked && chosen !== undefined && chosen.groupKey !== "customer";
+  const asksStop = chosen?.systemRole === "stop_request" && !stop.doNotContact;
+  const outcome = chosen ? outcomes?.get(chosen.id) : undefined;
+
+  // The outcome lines depend on the record as it is now, so they load each time the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    void callApi<{ outcomes: Array<{ replyTypeId: string; outcome: TypeChangeOutcome }> }>(`/api/records/${recordId}/reply-type/outcomes`, "GET", undefined, { signal: controller.signal }).then((result) => {
+      if (controller.signal.aborted) return;
+      if (result.ok && result.data) setOutcomes(new Map(result.data.outcomes.map((o) => [o.replyTypeId, o.outcome])));
+      else setOutcomeError(result.error ?? "What the change does did not load.");
+    });
+    return () => controller.abort();
+  }, [open, recordId, contextVersion]);
+
+  function change(next: boolean) {
+    if (pending) return;
+    setOpen(next);
+    if (next) return;
+    setTarget(null);
+    setNote("");
+    setUnlock(false);
+    setWhy(conversationId ? "reply" : "offThread");
+    setOutcomes(null);
+    setOutcomeError(null);
+    setError(null);
+    stopScope.reset();
+  }
+
+  async function changeType(type: TypeOption) {
+    const result = correcting
+      ? await callApi(`/api/inbox/${conversationId}/reply-type`, "POST", { replyTypeKey: type.key, expectedContextVersion: contextVersion })
+      : await callApi(`/api/records/${recordId}/reply-type`, "POST", {
+          groupKey: type.groupKey,
+          replyTypeId: type.id,
+          expectedContextVersion: contextVersion,
+          confirmUnlock: unlock,
+          note: note.trim() || null,
+        });
+    if (!result.ok) throw new Error(result.error ?? "The reply type did not change. Try again.");
+  }
+
+  async function submit(mode: "change" | "stop") {
+    if (!chosen || running.current) return;
+    if (mode === "stop" && !stopScope.ready()) return;
+    running.current = true;
+    setPending(mode);
+    setError(null);
+    let changed = false;
+    try {
+      const unsaved = await saveDraftEdits();
+      if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
+      await changeType(chosen);
+      changed = true;
+      const changedText = `Changed the reply type of ${personName} to ${chosen.name}.`;
+      if (mode === "stop") {
+        const stopped = await stopScope.stop().catch((e: unknown) => {
+          throw new Error(`The reply type changed, but contact did not stop. ${e instanceof Error ? e.message : ""} Use Stop contacting under Next step.`.trim());
+        });
+        toast.success(`${changedText} ${stopped}`);
+      } else {
+        toast.success(changedText);
+      }
+      running.current = false;
+      setPending(null);
+      change(false);
+      router.refresh();
+    } catch (e) {
+      running.current = false;
+      setPending(null);
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+      if (changed) router.refresh();
+    }
+  }
+
+  const ready = chosen !== undefined && !(leavesCustomer && !unlock);
+  const draftLine = outcome && !correcting && !outcome.replyDraft.startsWith("Reply draft: none") ? OFF_THREAD_DRAFT : outcome?.replyDraft;
+
+  return (
+    <>
+      <Button
+        variant={variant}
+        size="sm"
+        className={cn(variant === "link" ? "h-auto px-0 text-foreground underline decoration-muted-foreground/50 hover:decoration-foreground max-sm:min-h-11" : "max-sm:h-11")}
+        onClick={() => setOpen(true)}
+      >
+        Change type
+      </Button>
+      <Dialog open={open} onOpenChange={change}>
+        <DialogContent showCloseButton={!pending} className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-md">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Change the reply type of {personName}</DialogTitle>
+            <DialogDescription>{correcting ? "Your pick for the last reply replaces the AI's." : "The AI's pick for the last reply stays. The type changes because of something that happened elsewhere."}</DialogDescription>
+          </DialogHeader>
+          <div className="-mx-4 -my-1 grid min-h-0 gap-4 overflow-y-auto px-4 py-1">
+            <FieldGroup>
+              {correcting && aiReading && (
+                <p className="text-sm text-muted-foreground" data-testid="ai-reading">
+                  The AI picked <span className="text-foreground">{aiReading.name}</span>
+                  {aiReading.confidence != null && `, ${confidenceText(aiReading.confidence)}`}
+                  {aiReading.reasoning ? `: ${aiReading.reasoning}` : "."}
+                </p>
+              )}
+              {conversationId && (
+                <FieldSet>
+                  <FieldLegend variant="label">What changed?</FieldLegend>
+                  <RadioGroup value={why} onValueChange={(v) => setWhy(v as "reply" | "offThread")}>
+                    <Field orientation="horizontal">
+                      <RadioGroupItem value="reply" id={`why-reply-${recordId}`} />
+                      <FieldLabel htmlFor={`why-reply-${recordId}`} className="font-normal">
+                        The AI read the last reply wrong
+                      </FieldLabel>
+                    </Field>
+                    <Field orientation="horizontal">
+                      <RadioGroupItem value="offThread" id={`why-off-${recordId}`} />
+                      <FieldLabel htmlFor={`why-off-${recordId}`} className="font-normal">
+                        Something happened off the thread, like a meeting
+                      </FieldLabel>
+                    </Field>
+                  </RadioGroup>
+                </FieldSet>
+              )}
+              <Field>
+                <FieldLabel htmlFor={`type-${recordId}`}>New type</FieldLabel>
+                <Combobox items={groups} value={target} onValueChange={(next) => setTarget((next as Option | null) ?? null)} itemToStringLabel={(o: Option) => `${o.label} · ${groupLabel(o.type.groupKey)}`} autoHighlight>
+                  <ComboboxInput id={`type-${recordId}`} placeholder="Search reply types" className="w-full" />
+                  <ComboboxContent>
+                    <ComboboxEmpty>No reply type matches.</ComboboxEmpty>
+                    <ComboboxList>
+                      {(group: (typeof groups)[number]) => (
+                        <ComboboxGroup key={group.value} items={group.items}>
+                          <ComboboxLabel>{group.value}</ComboboxLabel>
+                          <ComboboxCollection>
+                            {(option: Option) => (
+                              <ComboboxItem key={option.value} value={option}>
+                                {option.label}
+                              </ComboboxItem>
+                            )}
+                          </ComboboxCollection>
+                        </ComboboxGroup>
+                      )}
+                    </ComboboxList>
+                  </ComboboxContent>
+                </Combobox>
+                {chosen && (
+                  <div className="text-sm" data-testid="type-outcome">
+                    {outcome && draftLine ? (
+                      <ul className="grid gap-0.5">
+                        <li>{draftLine}</li>
+                        <li>{outcome.followUps}</li>
+                        <li>{outcome.contact}</li>
+                      </ul>
+                    ) : outcomeError ? (
+                      <p className="text-destructive">{outcomeError}</p>
+                    ) : (
+                      <p className="text-muted-foreground">Checking what the change does…</p>
+                    )}
+                  </div>
+                )}
+              </Field>
+              {asksStop && (
+                <FieldSet data-testid="type-stop">
+                  <FieldLegend variant="label">Stop contacting {personName} too?</FieldLegend>
+                  <FieldDescription>{stopScope.description} Only change the type stops nothing.</FieldDescription>
+                  {stopScope.fields}
+                </FieldSet>
+              )}
+              {!correcting && (
+                <Field>
+                  <FieldLabel htmlFor={`note-${recordId}`}>Note (optional)</FieldLabel>
+                  <Textarea id={`note-${recordId}`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} placeholder="Met on Tuesday, wants a trial" />
+                </Field>
+              )}
+              {leavesCustomer && (
+                <Field orientation="horizontal">
+                  <Checkbox id={`unlock-${recordId}`} checked={unlock} onCheckedChange={(c) => setUnlock(c === true)} />
+                  <FieldContent>
+                    <FieldLabel htmlFor={`unlock-${recordId}`} className="font-normal">
+                      This person is locked as Existing customer. Take them out of it.
+                    </FieldLabel>
+                    <FieldDescription>Existing customers stay locked so the AI cannot move them to another group. You can still change the type.</FieldDescription>
+                  </FieldContent>
+                </Field>
+              )}
+            </FieldGroup>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" disabled={pending !== null} onClick={() => change(false)}>
+              Cancel
+            </Button>
+            {asksStop ? (
+              <>
+                <Button variant="outline" disabled={pending !== null || !ready} onClick={() => void submit("change")}>
+                  {pending === "change" ? "Changing…" : "Only change the type"}
+                </Button>
+                <Button variant="destructive" disabled={pending !== null || !ready} onClick={() => void submit("stop")}>
+                  {pending === "stop" ? "Stopping…" : "Stop contacting"}
+                </Button>
+              </>
+            ) : (
+              <Button disabled={pending !== null || !ready} onClick={() => void submit("change")}>
+                {pending === "change" ? "Changing…" : "Change type"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

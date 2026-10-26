@@ -5,13 +5,12 @@ import { useEffect, useState } from "react";
 import { DRAFT_POLL_INTERVAL_MS, initialWatch, isWatching, observe, type WatchSnapshot } from "../_lib/draft-watch";
 
 /**
- * Shows "Drafting a reply…" and refreshes the server data every 3 s (up to 45 s) after a reclassification,
- * so the new draft appears without a reload. The reply panel refreshes the page once after a change; a version
- * bump in the fresh props starts the watch.
+ * Refreshes the server data every 3 s (up to 45 s) while a draft job waits or runs, so the new draft appears without a
+ * reload. The reply card shows "Drafting…"; this announces it once, in a live region that is always in the page.
  */
 export function DraftWatch(snapshot: WatchSnapshot) {
   const router = useRouter();
-  const { contextVersion, draftStatus, workflowState } = snapshot;
+  const { contextVersion, draftStatus, workflowState, drafting } = snapshot;
   const [state, setState] = useState(() => initialWatch(snapshot, Date.now()));
   const [now, setNow] = useState(() => Date.now());
 
@@ -20,12 +19,12 @@ export function DraftWatch(snapshot: WatchSnapshot) {
     const timer = setTimeout(() => {
       const at = Date.now();
       setNow(at);
-      setState((prev) => observe(prev, { contextVersion, draftStatus, workflowState }, at));
+      setState((prev) => observe(prev, { contextVersion, draftStatus, workflowState, drafting }, at));
     }, 0);
     return () => clearTimeout(timer);
-  }, [contextVersion, draftStatus, workflowState]);
+  }, [contextVersion, draftStatus, workflowState, drafting]);
 
-  const watching = isWatching(state, { contextVersion, draftStatus, workflowState }, now);
+  const watching = isWatching(state, { contextVersion, draftStatus, workflowState, drafting }, now);
 
   useEffect(() => {
     if (!watching) return;
@@ -36,11 +35,9 @@ export function DraftWatch(snapshot: WatchSnapshot) {
     return () => clearInterval(timer);
   }, [watching, router]);
 
-  if (!watching) return null;
   return (
-    <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground" data-slot="draft-watch">
-      <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-      Drafting a reply…
+    <p role="status" className="sr-only" data-slot="draft-watch">
+      {watching ? "Drafting a reply…" : ""}
     </p>
   );
 }

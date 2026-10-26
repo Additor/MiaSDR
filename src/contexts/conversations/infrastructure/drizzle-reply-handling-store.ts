@@ -38,7 +38,7 @@ import type {
 } from "../application/reply-handling-ports";
 import { REPLY_TYPE_GROUPS, checkReplyTypeChange, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
-import { typeRulesOf, type TypeRules } from "../domain/reply-type";
+import { typeRulesOf, type HoldReason, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
@@ -160,10 +160,21 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       ? await db.select({ id: sendAttempts.id, draftId: sendAttempts.draftId }).from(sendAttempts).where(and(eq(sendAttempts.organizationId, organizationId), inArray(sendAttempts.draftId, draftRows.map((d) => d.id)))).orderBy(sendAttempts.createdAt)
       : [];
     const attemptOf = new Map(attempts.map((a) => [a.draftId, a.id]));
+    const currentType = subs.find((s) => s.id === record.replyTypeId);
+    const pickIds = cls.map(({ c }) => c.id);
+    const [pendingJob] = pickIds.length
+      ? await db
+          .select({ id: aiJobs.id })
+          .from(aiJobs)
+          .where(and(eq(aiJobs.organizationId, organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), inArray(aiJobs.entityId, pickIds), inArray(aiJobs.status, ["queued", "running"])))
+          .limit(1)
+      : [];
+    const draftJobPending = pendingJob !== undefined;
 
     const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
       const latest = c.messageId === record.latestInboundMessageId;
       const applied = ["auto_applied", "accepted", "overridden"].includes(c.status) && c.appliedGroupKey !== null;
+      const response = (c.response ?? {}) as { holdReason?: HoldReason | null; stopRequested?: boolean };
       return {
         id: c.id,
         status: c.status,
@@ -178,8 +189,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         provider: c.provider,
         acknowledged: c.acknowledgedAt !== null,
         rules: (c.rules as TypeRules | null) ?? null,
+        proposedSystemRole: subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null,
+        holdReason: response.holdReason ?? null,
+        stopRequested: response.stopRequested === true,
         createdAt: c.createdAt,
         latest,
+        current: c.expectedContextVersion === record.contextVersion && c.status !== "stale",
         canUndo: latest && applied,
         canAcknowledge: c.acknowledgedAt === null && (c.status === "auto_applied" || c.status === "failed"),
       };
@@ -194,6 +209,9 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         replyTypeName: subName(record.replyTypeId),
         replyTypeSource: record.replyTypeSource,
         replyTypeLocked: record.replyTypeLocked,
+        replyTypeRules: currentType ? typeRulesOf(currentType) : null,
+        replyTypeSystemRole: currentType?.systemRole ?? null,
+        draftJobPending,
         workflowState: record.workflowState,
         activeChannel: record.activeChannel,
         contextVersion: record.contextVersion,
