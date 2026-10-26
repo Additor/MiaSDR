@@ -14,6 +14,7 @@ import { listCompanies } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { toActor } from "@/app/_lib/api";
+import { ListToolbar } from "@/components/shell/list-toolbar";
 import { SearchField } from "@/components/shell/search-field";
 import { ListPager, pageCountOf, SortHeader } from "@/components/shell/list-pager";
 import { AddCompanyButton } from "../_components/add-company-dialog";
@@ -77,9 +78,11 @@ async function Companies({ searchParams }: { searchParams: PageProps<"/crm/compa
 
   return (
     <>
-      <form action="/crm/companies" className="flex flex-wrap items-center gap-2" aria-label="Company search">
+      <form action="/crm/companies" aria-label="Company search">
         {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
-        <SearchField label="Search companies" defaultValue={q} placeholder="Search company name or domain" />
+        <ListToolbar>
+          <SearchField label="Search companies" defaultValue={q} placeholder="Search company name or domain" />
+        </ListToolbar>
       </form>
 
       {total === 0 ? (

@@ -23,6 +23,7 @@ import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { AddContactButton } from "../_components/add-contact-dialog";
 import { dealDialogData } from "../_components/deal-dialog-data";
+import { stageVariant } from "../_components/deals-list";
 import { DealFilterFields, dealFilterChips } from "../_components/deal-filter-fields";
 import { AppliedFilters, type AppliedFilter } from "@/components/shell/filter-chip";
 import { FilterPopover } from "@/components/shell/filter-popover";
@@ -262,7 +263,7 @@ async function Contacts({ searchParams }: { searchParams: PageProps<"/crm/contac
                         </TableCell>
                         <TableCell className="max-w-56 truncate text-muted-foreground max-md:hidden">{contact.email ?? ""}</TableCell>
                         <TableCell className="max-w-56 truncate max-md:hidden">{contact.companyName ?? ""}</TableCell>
-                        <TableCell className="max-md:hidden">{contact.latestDeal && <Badge variant="outline">{contact.latestDeal.stageName}</Badge>}</TableCell>
+                        <TableCell className="max-md:hidden">{contact.latestDeal && <Badge variant={stageVariant(contact.latestDeal.stageKind)}>{contact.latestDeal.stageName}</Badge>}</TableCell>
                         <TableCell className="max-w-40 truncate text-muted-foreground max-md:hidden">{contact.latestDeal ? ownerText(contact.latestDeal.owner) : ""}</TableCell>
                         <TableCell className="text-right tabular-nums">{contact.openDeals}</TableCell>
                         <TableCell className="text-muted-foreground max-md:hidden">{contact.lastActivityAt ? <Time value={contact.lastActivityAt} relativeTo={now} /> : "None yet"}</TableCell>

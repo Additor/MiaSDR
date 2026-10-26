@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,11 +27,9 @@ export type NotesPanelProps = NoteTarget & {
   notes: Note[];
   currentUserId: string;
   isAdmin: boolean;
-  /** False inside a page section that already names it, such as the Activity tabs. */
-  heading?: boolean;
 };
 
-export function NotesPanel({ notes, currentUserId, isAdmin, heading = true, ...target }: NotesPanelProps) {
+export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPanelProps) {
   const router = useRouter();
   const base = target.recordId !== undefined ? `/api/records/${target.recordId}/notes` : `/api/people/${target.personId}/notes`;
   const [body, setBody] = useState("");
@@ -158,23 +155,14 @@ export function NotesPanel({ notes, currentUserId, isAdmin, heading = true, ...t
 
   return (
     <>
-      {heading ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Notes</CardTitle>
-            <CardDescription>Private to your organization. Notes follow the person, not the thread.</CardDescription>
-          </CardHeader>
-          <CardContent>{content}</CardContent>
-        </Card>
-      ) : (
-        content
-      )}
+      {content}
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title={`Delete the note "${deleting?.title ?? "Note"}"?`}
         description="The note is removed for everyone in your organization. This cannot be undone."
         confirmLabel="Delete note"
+        cancelLabel="Keep note"
         pendingLabel="Deleting…"
         destructive
         onConfirm={() => deleting && remove(deleting.id)}

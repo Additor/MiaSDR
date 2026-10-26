@@ -82,7 +82,7 @@ const DealCard = memo(function DealCard({ card, stageId, stages, nowMs, from, dr
             {daysInStage(card.stageChangedAt, nowMs)}
           </span>
           <div className="relative z-10">
-            <MoveDealStageButton deal={{ id: card.id, title: card.title, version: card.version, stageId }} stages={stages} size="xs" disabled={moving} />
+            <MoveDealStageButton deal={{ id: card.id, title: card.title, version: card.version, stageId }} stages={stages} size="xs" className="max-sm:h-11 max-sm:px-4" disabled={moving} />
           </div>
         </div>
       </CardContent>
@@ -173,7 +173,7 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
         <DealCard key={card.id} card={card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} dragged={dragging?.card.id === card.id} moving={pending} />
       ))}
       {remaining > 0 && cursor && (
-        <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={more} disabled={pending}>
+        <Button variant="ghost" size="sm" className="justify-start text-muted-foreground max-sm:h-11" onClick={more} disabled={pending}>
           {pending ? "Loading…" : `${remaining} more`}
         </Button>
       )}
