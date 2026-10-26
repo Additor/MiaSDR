@@ -48,7 +48,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     label: "AI",
     items: [
-      { href: "/settings/replies", title: "Reply handling", summary: "Reply categories, how much the AI may decide alone, and its daily limit for unknown senders." },
+      { href: "/settings/replies", title: "Reply handling", summary: "Reply types and their rules, the confidence floor, and the AI's daily limit for unknown senders." },
       { href: "/settings/instructions", title: "AI instructions", summary: "What the AI is told when it classifies a reply and when it drafts one." },
       { href: "/settings/knowledge", title: "Knowledge", summary: "Paste text the AI can use when it drafts replies." },
     ],
