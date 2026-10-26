@@ -24,7 +24,7 @@ describeDb("conversion races", () => {
   let leadsApp: typeof import("@/contexts/people/application/convert-to-contact");
   let conversations: typeof import("@/contexts/conversations/infrastructure/composition");
   let suppression: Awaited<ReturnType<typeof import("@/test-support/suppression").suppressionStore>>;
-  let outreachStore: typeof import("@/contexts/outreach/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
+  let outreachStore: typeof import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
 
   beforeAll(async () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
@@ -32,7 +32,7 @@ describeDb("conversion races", () => {
     composition = await import("@/composition/deals");
     leadsApp = await import("@/contexts/people/application/convert-to-contact");
     conversations = await import("@/contexts/conversations/infrastructure/composition");
-    const outreach = await import("@/contexts/outreach/infrastructure/drizzle-outreach-store");
+    const outreach = await import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store");
     suppression = await (await import("@/test-support/suppression")).suppressionStore();
     outreachStore = outreach.drizzleOutreachStore;
   }, 60_000);
@@ -90,7 +90,7 @@ describeDb("conversion races", () => {
     await waitForLockWaiters(kit.sql, 2);
     await gate.release();
     const [ingested, converted] = await Promise.all([ingest, conversion]);
-    expect(sqlState(ingested.error)).toBeUndefined();
+    expect(sqlState(ingested.error)).toBeNull();
     expect(ingested.error).toBeNull();
     expect(converted.error).toBeNull();
     expect(lockRetryStats.retries).toBe(retries);
@@ -131,7 +131,7 @@ describeDb("conversion races", () => {
     await waitForLockWaiters(kit.sql, 1);
     resume();
     const [suppressed, converted] = await Promise.all([suppressing, converting]);
-    expect(sqlState(suppressed.error)).toBeUndefined();
+    expect(sqlState(suppressed.error)).toBeNull();
     expect(suppressed.error).toBeNull();
     expect(suppressed.value).toEqual({ stopped: 1, added: true });
     expect(converted.error).toBeNull();
@@ -165,7 +165,7 @@ describeDb("conversion races", () => {
     // The ingest goes on to end B's run and asks for B's record: a cycle that the conversion breaks by giving way.
     await gate.release();
     const [ingested, converted] = await Promise.all([ingest, conversion]);
-    expect(sqlState(ingested.error)).toBeUndefined();
+    expect(sqlState(ingested.error)).toBeNull();
     expect(ingested.error).toBeNull();
     expect(converted.error).toBeNull();
     expect(lockRetryStats.retries - retries).toBeLessThanOrEqual(1);

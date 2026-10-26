@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { callApi } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { callApi } from "@/app/_lib/api-client";
+import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 

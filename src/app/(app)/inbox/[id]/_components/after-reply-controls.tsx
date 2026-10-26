@@ -7,9 +7,9 @@ import { toast } from "sonner";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import type { RecordAfterReply } from "@/contexts/conversations/after-reply/application/sequences";
-import type { Json } from "@/app/(app)/crm/_components/serialize";
+import type { Json } from "@/app/(app)/_components/serialize";
 
 type State = Json<RecordAfterReply>;
 type Command = "pause" | "resume" | "skip" | "cancel" | "restart";

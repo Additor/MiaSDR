@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { sqlState, TRY_AGAIN } from "@/platform/db/errors";
+import { TRY_AGAIN, violatedConstraint } from "@/platform/db/errors";
 import { companies, companyDomainAliases } from "@/platform/db/schema";
 import { ConflictError, ValidationError } from "@/shared/errors";
 import { checkCompanyDomain } from "../domain/company-domain";
@@ -14,17 +14,6 @@ import { checkCompanyDomain } from "../domain/company-domain";
 
 /** The guard triggers of migration 0027 raise 23505 with these names when a path skipped the domain lock. */
 export const DOMAIN_GUARD_CONSTRAINTS: ReadonlySet<string> = new Set(["company_domain_is_alias", "alias_is_company_domain"]);
-
-/** The constraint a 23505 names, also under a wrapping error's `cause`. */
-export function uniqueViolation(error: unknown): string | null {
-  if (sqlState(error) !== "23505") return null;
-  let current = error as { constraint_name?: unknown; cause?: unknown } | null | undefined;
-  for (let depth = 0; depth < 5 && current; depth += 1) {
-    if (typeof current.constraint_name === "string") return current.constraint_name;
-    current = current.cause as typeof current;
-  }
-  return null;
-}
 
 /** Holds the domain until commit, hashed as the other leads locks are. */
 export async function lockCompanyDomain(tx: DbHandle, organizationId: string, domain: string): Promise<void> {
@@ -44,7 +33,7 @@ export interface ResolvedCompany {
 /**
  * The company a typed domain lands on, for the person form and Add contact: the domain lock, then an alias, then the company
  * row `FOR KEY SHARE`, else an insert. The conflict arm covers a company an import inserted under `leads-import` and not the
- * domain lock. `domain` is normalized. The caller compares `name` with what it was sent (M8).
+ * domain lock. `domain` is normalized. The caller compares `name` with what it was sent.
  */
 export async function resolveCompanyDomain(tx: DbHandle, organizationId: string, domain: string, input: { name: string | null }): Promise<ResolvedCompany> {
   await lockCompanyDomain(tx, organizationId, domain);
@@ -78,14 +67,14 @@ export async function resolveCompanyDomain(tx: DbHandle, organizationId: string,
       .returning({ id: companies.id, name: companies.name, inserted: sql<boolean>`(xmax = 0)` });
     return { companyId: row.id, name: row.name, domain, viaAlias: false, created: row.inserted };
   } catch (error) {
-    const constraint = uniqueViolation(error);
+    const constraint = violatedConstraint(error, "23505");
     if (constraint && DOMAIN_GUARD_CONSTRAINTS.has(constraint)) throw new ConflictError(TRY_AGAIN, { code: "try_again" });
     throw error;
   }
 }
 
 /**
- * M3: a company whose last contact moved away or went stays in Companies. Stamps `crm_listed_at` on each of these companies that
+ * A company whose last contact moved away or went stays in Companies. Stamps `crm_listed_at` on each of these companies that
  * has no stamp and no contact left. Run after the people writes, in the same transaction.
  */
 export async function stampCompaniesLeftByContacts(tx: DbHandle, organizationId: string, companyIds: readonly string[]): Promise<void> {
@@ -125,7 +114,7 @@ export async function aliasTargets(tx: DbHandle, organizationId: string, domains
  */
 
 /**
- * Companies lists a company with a stamp or a contact (M3). The one copy for the people context: Add company, the merge picker and
+ * Companies lists a company with a stamp or a contact. The one copy for the people context: Add company, the merge picker and
  * the lifecycle store read it here. `deals/infrastructure/crm-read.ts` `companies()` applies the same rule under the alias `c`; a
  * change to the rule goes to both.
  */

@@ -19,6 +19,17 @@ export function sqlState(error: unknown): string | null {
   return null;
 }
 
+/** The constraint a foreign key (23503) or unique (23505) violation names, also under a wrapping error's `cause`. Null for any other error. */
+export function violatedConstraint(error: unknown, code: "23503" | "23505"): string | null {
+  if (sqlState(error) !== code) return null;
+  let current = error as { constraint_name?: unknown; cause?: unknown } | null | undefined;
+  for (let depth = 0; depth < 5 && current; depth += 1) {
+    if (typeof current.constraint_name === "string") return current.constraint_name;
+    current = current.cause as typeof current;
+  }
+  return null;
+}
+
 export const isRetryableLockError = (error: unknown) => {
   const code = sqlState(error);
   return code === "40P01" || code === "55P03";

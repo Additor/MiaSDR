@@ -1,4 +1,5 @@
 // Pure rules of the LinkedIn search queue: URL validation, status moves, limits, retry pacing. No I/O.
+import { BARE_SLUG } from "@/contexts/people/domain/linkedin-slug";
 
 export type SearchStatus = "queued" | "running" | "paused" | "paused_limit" | "completed" | "failed" | "cancelled";
 export type SearchAction = "pause" | "resume" | "cancel";
@@ -250,7 +251,7 @@ export function resultSlug(item: { identifier: string; profileUrl: string | null
       if (MEMBER_ID.test(path)) continue;
       return path.toLowerCase();
     }
-    if (/^[\w%.-]+$/.test(text) && !MEMBER_ID.test(text)) return safeDecode(text).toLowerCase();
+    if (BARE_SLUG.test(text) && !MEMBER_ID.test(text)) return safeDecode(text).toLowerCase();
   }
   return null;
 }

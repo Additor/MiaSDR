@@ -4,7 +4,7 @@ import { CheckIcon, ChevronDownIcon, EyeOffIcon } from "lucide-react";
 import Link from "next/link";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 export interface MoreView {
   href: string;

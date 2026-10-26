@@ -6,8 +6,8 @@ import { useState } from "react";
 import { useSelection } from "@/components/shell/selection";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { callApi } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { callApi } from "@/app/_lib/api-client";
+import { cn } from "@/components/ui/utils";
 import { BulkDncDialog } from "./bulk-dnc-dialog";
 import { contactsBarModel, selectedText } from "./contacts-bulk";
 

@@ -47,7 +47,7 @@ export interface CompanyLifecycleStore {
   holdLockTimeout(tx: DbHandle): Promise<void>;
   /** The company that holds `domain` as another domain. */
   aliasOwner(tx: DbHandle, organizationId: string, domain: string): Promise<string | null>;
-  /** The company of `domain` `FOR UPDATE`, and whether Companies lists it (M3). */
+  /** The company of `domain` `FOR UPDATE`, and whether Companies lists it. */
   companyByDomainForUpdate(tx: DbHandle, organizationId: string, domain: string): Promise<{ id: string; name: string | null; listed: boolean } | null>;
   /** Inserts a listed company; null when another writer holds the domain already. */
   insertListedCompany(tx: DbHandle, organizationId: string, row: { domain: string; name: string | null; linkedinUrl: string | null }): Promise<string | null>;

@@ -1,6 +1,6 @@
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { isStaticColumnType } from "@/contexts/grid/domain/column-types";
-import { neutralizeFormula, restoreFormula } from "@/contexts/grid/domain/csv";
+import { neutralizeFormula, restoreFormula } from "@/shared/csv";
 import { editorText } from "../view/format";
 import type { Bounds } from "../view/selection";
 import type { CellEditInput, GridColumn, GridRow } from "../data/types";

@@ -18,8 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { describeSearch, isActiveStatus, searchActions, searchNotice, searchStatusLabel, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
-import { callApi } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { callApi } from "@/app/_lib/api-client";
+import { cn } from "@/components/ui/utils";
 import { capacityReturnText } from "./capacity-return";
 import { SearchCapacityCard, type CapacityCardData } from "./search-capacity-card";
 import { UploadSheet, type UploadSheetConfig } from "./upload-sheet";

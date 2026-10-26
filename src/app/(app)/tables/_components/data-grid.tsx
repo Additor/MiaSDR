@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { cellStatus, columnWidth, displayValue, editorText, isEditableColumn, selectOptions, typeLabel, columnRunSummary, missingInputHint } from "../_lib/view/format";
 import { planFill } from "../_lib/edit/fill";
 import { historyKey } from "../_lib/view/keymap";

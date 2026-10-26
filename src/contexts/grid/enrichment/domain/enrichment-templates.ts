@@ -1,5 +1,6 @@
 /** Token substitution for provider requests and AI prompts. Tokens are `{{key}}`. */
 
+import { normalizeDomain as normalizeLeadDomain } from "@/contexts/people/domain/normalize";
 import { SINGLE_TOKEN, TOKEN, normalizeKey } from "../../domain/keys";
 
 export const tokensIn = (text: string | undefined | null): string[] => (text ? [...new Set([...text.matchAll(TOKEN)].map((m) => normalizeKey(m[1])))] : []);
@@ -70,12 +71,5 @@ export function validateInput(type: string, value: unknown): string | null {
   return null;
 }
 
-/** "https://www.Acme.com/about" becomes "acme.com". */
-export function normalizeDomain(value: string): string {
-  const text = value.trim();
-  try {
-    return new URL(text.includes("://") ? text : `https://${text}`).hostname.toLowerCase().replace(/^www\./, "");
-  } catch {
-    return text.toLowerCase();
-  }
-}
+/** "https://www.Acme.com/about" becomes "acme.com", by the rule leads use. Text with no domain in it goes out as it is, lowercased. */
+export const normalizeDomain = (value: string): string => normalizeLeadDomain(value) ?? value.trim().toLowerCase();

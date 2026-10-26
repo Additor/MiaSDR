@@ -1,14 +1,14 @@
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { conversations, leadCcs, mailboxes, messages, people, pipelines, pipelineSettings, records, subcategories } from "@/platform/db/schema";
 import { DEFAULT_PIPELINE_NAME, DEFAULT_SUBCATEGORIES } from "../domain/default-pipeline";
 import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundConversationStore, InboundEmailInput } from "../application/ports";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
-import { staleOpenDraftsTx } from "../after-reply/infrastructure/sequence-run-tx";
+import { staleOpenDraftsTx } from "./stale-drafts-sql";
 
-export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = DbTx;
 
 /** The organization's default pipeline, created with its settings and starter subcategories on first use. */
 export async function defaultPipelineId(tx: Tx, organizationId: string): Promise<string> {

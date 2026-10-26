@@ -1,6 +1,7 @@
+import { sqlState, violatedConstraint } from "@/platform/db/errors";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { publicConversation } from "@/platform/db/conversation-visibility";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import {
   campaignEnrollments,
   campaigns,
@@ -34,12 +35,7 @@ import { resolvePeopleColumns } from "./resolve-custom-columns";
 const CHUNK = 500;
 const EXPORT_BATCH = 1000;
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-const pgError = (error: unknown): { code?: string; constraint?: string } => {
-  const e = error as { code?: string; constraint_name?: string; cause?: { code?: string; constraint_name?: string } };
-  return { code: e?.cause?.code ?? e?.code, constraint: e?.cause?.constraint_name ?? e?.constraint_name };
-};
+type Tx = DbTx;
 
 function filterWhere(organizationId: string, filter: LeadFilter) {
   return and(eq(people.organizationId, organizationId), leadFilterCondition(filter));
@@ -158,13 +154,13 @@ async function deletePeople(organizationId: string, rows: Array<{ id: string; na
     try {
       outcome.deleted += await deleteBatch(organizationId, deletable.map((r) => r.id));
     } catch (error) {
-      if (pgError(error).code !== "23503") throw error;
+      if (sqlState(error) !== "23503") throw error;
       // Some table this context does not know points at one of them. Find which, one by one.
       for (const row of deletable) {
         try {
           outcome.deleted += await deleteBatch(organizationId, [row.id]);
         } catch (single) {
-          if (pgError(single).code !== "23503") throw single;
+          if (sqlState(single) !== "23503") throw single;
           outcome.blocked.push({ id: row.id, name: row.name, reason: "linked_records" });
         }
       }
@@ -327,7 +323,7 @@ export const drizzleLeadRepository: LeadRepository = {
         );
 
         // The company, after the registry lock and before the people row lock: the domain lock, then the alias
-        // or the company row. An existing company keeps its name; a different name sent with its domain is refused (M8).
+        // or the company row. An existing company keeps its name; a different name sent with its domain is refused.
         const company = early?.company ? await resolveCompanyDomain(tx, organizationId, early.company.domain, { name: early.company.name }) : null;
         if (company && early?.company && !company.created && early.company.name !== null && early.company.name !== company.name) {
           throw new ValidationError(renameOnCompanyPage({ name: company.name, domain: company.domain }));
@@ -368,14 +364,14 @@ export const drizzleLeadRepository: LeadRepository = {
           .set({ ...edit.patch, ...(companyId !== undefined ? { companyId } : {}), custom, updatedAt: new Date() })
           .where(and(eq(people.organizationId, organizationId), eq(people.id, id)));
 
-        // A contact who leaves a company keeps that company in Companies (M3).
+        // A contact who leaves a company keeps that company in Companies.
         if (current.lifecycle === "contact" && current.companyId && companyId !== undefined && companyId !== current.companyId) {
           await stampCompaniesLeftByContacts(tx, organizationId, [current.companyId]);
         }
       });
     } catch (error) {
-      if (pgError(error).code !== "23505") throw error;
-      const { constraint } = pgError(error);
+      if (sqlState(error) !== "23505") throw error;
+      const constraint = violatedConstraint(error, "23505") ?? undefined;
       if (constraint && DOMAIN_GUARD_CONSTRAINTS.has(constraint)) throw new ConflictError(TRY_AGAIN, { code: "try_again" });
       const field = constraint === "people_org_linkedin_uq" ? "LinkedIn profile" : "email address";
       const patch = await conflictingLead(organizationId, id, constraint, attempted);

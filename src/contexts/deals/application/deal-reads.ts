@@ -1,5 +1,5 @@
 import { MAX_MATCHING_IDS } from "@/contexts/people/domain/lead-filter";
-import { csvLine, UTF8_BOM } from "@/contexts/people/domain/csv-export";
+import { csvLine, UTF8_BOM } from "@/shared/csv";
 import { canonicalProfileUrl } from "@/contexts/people/domain/linkedin-url";
 import { canonicalTimeZone } from "@/shared/time-zone";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
@@ -328,7 +328,7 @@ export async function* exportContactsCsv(
 }
 
 /**
- * The Companies list (M3): a company listed in Companies (`crm_listed_at`, from Add company, a merge, or losing its last
+ * The Companies list: a company listed in Companies (`crm_listed_at`, from Add company, a merge, or losing its last
  * contact) or with a contact today, with its contact and open-deal counts, last activity and open amounts. A company with
  * only leads from an import stays off.
  */

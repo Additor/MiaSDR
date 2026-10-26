@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
-import { rowsOf } from "../after-reply/infrastructure/sequence-run-tx";
+import { rowsOf } from "@/platform/db/sql-values";
 
 /**
  * Step 10 of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md): removes everything this context holds

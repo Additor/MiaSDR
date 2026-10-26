@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES, formatMinor } from "@/contexts/deals/domain/money";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { MoveDealStageButton } from "../../_components/move-deal-stage-dialog";
 import { NO_OWNER, type DealMemberOption, type DealStageList } from "../../_components/deal-form";
 

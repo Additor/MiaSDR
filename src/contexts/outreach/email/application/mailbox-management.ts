@@ -3,7 +3,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { normalizeEmail } from "@/contexts/people/domain/normalize";
 import { canonicalTimeZone } from "@/shared/time-zone";
 import { type WorkingHours } from "../../domain/working-hours";
-import type { MailboxProvider } from "../../application/ports";
+import type { MailboxProvider } from "./ports";
 import type { MailboxRecord, MailboxStore } from "../../application/management-ports";
 
 /**

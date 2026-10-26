@@ -1,3 +1,4 @@
+import { BARE_SLUG } from "@/contexts/people/domain/linkedin-slug";
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import {
   INVITE_EXPIRES_DAYS,
@@ -72,7 +73,7 @@ function lookupInput(identifier: string): { identifier: string; linkedinApi?: "s
   }
   if (ref) return { identifier };
   // Stored text that is not a profile or member URL. A bare slug-like value keeps the classic path.
-  return /^[\w%.-]+$/.test(identifier) ? { identifier } : null;
+  return BARE_SLUG.test(identifier) ? { identifier } : null;
 }
 
 /** Definite answers to the classic lookup after which a Sales Navigator or Recruiter lookup can still succeed. */

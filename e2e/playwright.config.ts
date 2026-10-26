@@ -8,7 +8,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: /\d{2}-.*\.spec\.ts$/,
-  outputDir: process.env.E2E_OUTPUT_DIR ?? "../test-results",
+  outputDir: process.env.E2E_OUTPUT_DIR ?? ".run/test-results",
   fullyParallel: false,
   workers: 1,
   retries: 0,

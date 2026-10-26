@@ -1,3 +1,4 @@
+import { BARE_SLUG } from "./linkedin-slug";
 import { normalizeLinkedinSlug } from "./normalize";
 
 export type LinkedinRef =
@@ -57,7 +58,7 @@ export function parseLinkedinRef(value: string | null | undefined): LinkedinRef 
 
   if (PROVIDER_ID.test(text)) return { kind: "member", slug: null, url: text, memberId: text, api: "classic" };
 
-  if (/^[\w%.-]+$/.test(text) && !/linkedin\.com/i.test(text)) {
+  if (BARE_SLUG.test(text) && !/linkedin\.com/i.test(text)) {
     const slug = normalizeLinkedinSlug(text);
     return slug ? { kind: "profile", slug, url: canonicalProfileUrl(slug) } : null;
   }

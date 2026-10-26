@@ -2,7 +2,7 @@ import { ArrowDownIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /**
  * "12 contacts" and, when there is more than one page, "page 2 of 3" with Previous and Next links. A one-page list

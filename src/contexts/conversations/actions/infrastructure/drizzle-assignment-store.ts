@@ -5,8 +5,7 @@ import { NotFoundError } from "@/shared/errors";
 import type { AssignmentStore } from "../application/assignment";
 import { ASSIGNED_EVENT, planAssign, planClaim } from "../domain/assignment";
 import { visibleRecordSql } from "@/platform/db/conversation-visibility";
-
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
+import { rowsOf } from "@/platform/db/sql-values";
 
 export const drizzleAssignmentStore: AssignmentStore = {
   async change({ organizationId, recordId, actorUserId, change, now }) {

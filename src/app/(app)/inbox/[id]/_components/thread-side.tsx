@@ -14,11 +14,11 @@ import type { Actor } from "@/shared/errors";
 import { CreateDealButton } from "@/app/(app)/crm/_components/create-deal-dialog";
 import { dealDialogData } from "@/app/(app)/crm/_components/deal-dialog-data";
 import { dealHref } from "@/app/(app)/crm/_components/deal-href";
-import { DoNotContactCard } from "@/app/(app)/crm/_components/person/do-not-contact-card";
-import { TasksSection } from "@/app/(app)/crm/_components/person/tasks-section";
-import { personHref } from "@/app/(app)/crm/_components/person/person-href";
-import { ReachLinks } from "@/app/(app)/crm/_components/person/reach-links";
-import { AsideDisclosure, AsideSection } from "@/app/(app)/crm/_components/record/record-header";
+import { DoNotContactCard } from "@/app/(app)/_components/person/do-not-contact-card";
+import { TasksSection } from "@/app/(app)/_components/person/tasks-section";
+import { personHref } from "@/app/(app)/_components/person/person-href";
+import { ReachLinks } from "@/app/(app)/_components/person/reach-links";
+import { AsideDisclosure, AsideSection } from "@/app/(app)/_components/record/record-header";
 import { AssigneeControls } from "./assignee-controls";
 import { recordAfterReply, recordDetail } from "./thread-data";
 

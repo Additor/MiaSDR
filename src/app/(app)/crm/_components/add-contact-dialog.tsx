@@ -10,8 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/convert-to-contact";
-import { callApi } from "@/lib/api-client";
-import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "./company-domain-field";
+import { callApi } from "@/app/_lib/api-client";
+import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
 import { defaultTitle, newIdempotencyKey, permanenceText, singleEffectsText, type ConvertPreview } from "./deal-effects";
 import { DealFields, useDealStages } from "./deal-fields";
 import { dealFieldsReady, dealRequestFields, firstOpenChoice, initialDealFields, type DealFieldValues, type DealMemberOption, type DealStageList } from "./deal-form";
@@ -186,7 +186,7 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       linkedinUrl: blankToNull(fields.linkedinUrl),
       title: blankToNull(fields.title),
       companyDomain: blankToNull(fields.companyDomain),
-      // M8: a company that exists keeps its name, so the form sends a name only for a new domain.
+      // A company that exists keeps its name, so the form sends a name only for a new domain.
       companyName: namesNewCompany ? blankToNull(fields.companyName) : null,
       deal: withDeal ? dealBody() : null,
       idempotencyKey: key,

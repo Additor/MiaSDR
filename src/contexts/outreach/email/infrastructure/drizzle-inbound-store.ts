@@ -1,13 +1,13 @@
 import { and, asc, count, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { campaignEnrollments, inboundEvents, mailboxes, people, sends } from "@/platform/db/schema";
 import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, SyncMailbox } from "../../application/inbound-ports";
-import type { InboundEmail } from "../../application/ports";
+import type { InboundEmail } from "../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
 import { createSuppressionStore } from "../../infrastructure/suppression-store";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

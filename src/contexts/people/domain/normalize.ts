@@ -1,4 +1,5 @@
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
+import { BARE_SLUG } from "./linkedin-slug";
 
 export { customColumnKey, CUSTOM_LABEL_MAX, mergeFieldKey } from "./custom-fields";
 export { normalizeEmail } from "@/shared/email";
@@ -37,7 +38,7 @@ export function normalizeLinkedinSlug(value: string | null | undefined): string 
     const match = text.match(/linkedin\.com\/in\/([^/?#\s]+)/i);
     if (!match) return null;
     slug = match[1];
-  } else if (/^[\w%.-]+$/.test(text)) {
+  } else if (BARE_SLUG.test(text)) {
     slug = text;
   } else {
     return null;

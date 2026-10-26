@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
 import { dropOrgs } from "./db";
+import { signedInUser } from "./identity-fixture";
 
 /*
  * In-process client for the App Router route handlers.
@@ -195,8 +196,6 @@ export interface World {
   close(): Promise<void>;
 }
 
-const PASSWORD = "route-matrix-pw-1";
-
 /** Needs TEST_DATABASE_URL. Migrates it, creates the world, signs the three users in through Better Auth. */
 export async function createWorld(databaseUrl: string): Promise<World> {
   const secret = "r".repeat(40);
@@ -228,11 +227,9 @@ export async function createWorld(databaseUrl: string): Promise<World> {
 
   const { runMigrations } = await import("@/platform/db/migrate");
   await runMigrations();
-  const { auth } = await import("@/contexts/identity/infrastructure/auth");
 
   const sql = postgres(databaseUrl, { max: 4, onnotice: () => undefined });
   const tag = Math.random().toString(36).slice(2, 8);
-  const hash = await (await auth().$context).password.hash(PASSWORD);
 
   const makeOrg = async (name: string) => {
     const [row] = await sql<{ id: string; slug: string }[]>`insert into organizations (name, slug) values (${`Matrix ${name} ${tag}`}, ${`matrix-${name}-${tag}`}) returning id, slug`;
@@ -241,19 +238,7 @@ export async function createWorld(databaseUrl: string): Promise<World> {
   const orgA = await makeOrg("a");
   const orgB = await makeOrg("b");
 
-  const makeIdentity = async (name: string, organizationId: string, role: string): Promise<Identity> => {
-    const email = `${name}-${tag}@matrix.test`;
-    const [{ id }] = await sql<{ id: string }[]>`insert into users (name, email, email_verified) values (${name}, ${email}, true) returning id`;
-    await sql`insert into accounts (user_id, provider_id, account_id, password) values (${id}, 'credential', ${id}, ${hash})`;
-    await sql`insert into members (organization_id, user_id, role) values (${organizationId}, ${id}, ${role})`;
-    const signedIn = await auth().api.signInEmail({ body: { email, password: PASSWORD }, returnHeaders: true });
-    const cookie = signedIn.headers
-      .getSetCookie()
-      .map((c) => c.split(";")[0])
-      .join("; ");
-    if (!cookie) throw new Error(`sign-in for ${email} returned no cookie`);
-    return { name, userId: id, email, cookie, organizationId, role };
-  };
+  const makeIdentity = (name: string, organizationId: string, role: string): Promise<Identity> => signedInUser(sql, name, [{ organizationId, role }], `${name}-${tag}@matrix.test`);
   const admin = await makeIdentity("admin", orgA.id, "owner");
   const member = await makeIdentity("member", orgA.id, "member");
   const other = await makeIdentity("other", orgB.id, "owner");

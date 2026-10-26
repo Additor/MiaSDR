@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { layerOf, sourceFiles } from "@/test-support/context-layers";
+import { layerOf, sourceFiles } from "./context-layers";
 
 /**
  * Context boundaries. Contexts form layers, and a context imports only contexts in lower layers, so the graph has no
@@ -57,10 +57,10 @@ export function upwardImports(file: string, source: string): string[] {
  * tiers. `shared` imports no framework or driver either.
  */
 const TIER_FORBIDDEN: Record<string, { paths: string[]; packages: RegExp | null }> = {
-  shared: { paths: ["contexts", "platform", "composition", "app", "components", "lib", "hooks"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
-  platform: { paths: ["composition", "app", "components", "lib", "hooks"], packages: null },
+  shared: { paths: ["contexts", "platform", "composition", "app", "components"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
+  platform: { paths: ["composition", "app", "components"], packages: null },
   // Composition wires contexts together. A query there is a rule no context owns, so tables and drivers stay out.
-  composition: { paths: ["app", "components", "lib", "hooks", "platform/db/schema"], packages: /^(drizzle-orm|postgres)(\/|$)/ },
+  composition: { paths: ["app", "components", "platform/db/schema"], packages: /^(drizzle-orm|postgres)(\/|$)/ },
 };
 
 /** Platform files that import a context, as the code stood when the rule arrived. Shrink only. */

@@ -6,11 +6,11 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Time, useOrgTimeZone } from "@/components/shell/time";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { formatDateTime } from "@/shared/format-time";
 import { isRequeueableSkip } from "@/contexts/conversations/ai/domain/ai-job-requeue";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface FailedAiJob {

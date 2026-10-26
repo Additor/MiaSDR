@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
-import { sqlValues } from "@/platform/db/sql-values";
+import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 import { stopEnrollmentsOnReplyTx } from "@/contexts/outreach/infrastructure/reply-stop";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports";
@@ -12,6 +12,8 @@ import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports
  * calls one of these in the transaction that records the trigger, so the run stops and its unsent drafts retire
  * in the same commit. The 60 second sweep stays as a safety net. Conversations owns the runs, so outreach, a lower
  * layer, reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which src/composition wires to this module.
+ * The conversations core reaches After a reply through this module and, to restart a run, `createRunOn` and
+ * `loadStartOn` in drizzle-sequence-store.ts. Every other file here depends on the core, not the other way.
  */
 
 export type Tx = DbTx;
@@ -19,8 +21,6 @@ export type Tx = DbTx;
 export type StopFinal = "interrupted" | "cancelled";
 
 const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
-
 /** Draft statuses a person has not acted on. A run that ends retires them; a send in flight is left alone. */
 export const RETIRABLE_DRAFTS = sqlValues(RETIRABLE_DRAFT_STATUSES);
 export const OPEN_STEPS = sql`('scheduled', 'drafting', 'awaiting_review', 'failed')`;

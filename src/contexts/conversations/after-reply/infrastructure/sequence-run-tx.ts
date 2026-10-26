@@ -1,10 +1,8 @@
 import { sql } from "drizzle-orm";
-import { dueAfter, isTerminalSubcategory, isValidZone } from "../domain/sequences";
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
+import { dueAfter, isTerminalSubcategory } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
-import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
-import { sqlValues } from "@/platform/db/sql-values";
-
-export { endRunTx, interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
+import { rowsOf } from "@/platform/db/sql-values";
 
 export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 
@@ -12,26 +10,8 @@ export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 export const asDate = (value: Date | string): Date => (value instanceof Date ? value : new Date(value));
 export const asDateOrNull = (value: Date | string | null): Date | null => (value === null ? null : asDate(value));
 
-export const rowsOf = <T>(result: unknown) => result as unknown as T[];
-
-export async function zoneOfTx(tx: Tx, organizationId: string): Promise<string> {
-  const [row] = rowsOf<{ zone: string | null }>(await tx.execute(sql`select "values"->>'timeZone' as zone from channel_settings where organization_id = ${organizationId} and channel = 'general'`));
-  return row?.zone && isValidZone(row.zone) ? row.zone : "UTC";
-}
-
-/**
- * Drafts nobody has acted on turn `stale` with `reason`: a new inbound message, a stage move or a correction made the
- * text outdated. A draft that is sending or already sent stays as it is. Returns how many changed.
- */
-export async function staleOpenDraftsTx(tx: Tx, input: { organizationId: string; recordId: string; reason: string; now: Date }): Promise<number> {
-  const rows = rowsOf<{ id: string }>(
-    await tx.execute(sql`
-      update drafts set status = 'stale', error = ${input.reason}, updated_at = ${ts(input.now)}
-      where organization_id = ${input.organizationId} and record_id = ${input.recordId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}
-      returning id`),
-  );
-  return rows.length;
-}
+/** The organization's zone, read inside the run's transaction. */
+export const zoneOfTx = (tx: Tx, organizationId: string): Promise<string> => organizationTimeZone(organizationId, tx);
 
 /**
  * After a step is sent or skipped: the next open step comes due its own delay after `from`, or the run completes.

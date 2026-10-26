@@ -124,6 +124,12 @@ describe("linkedinSlug", () => {
     expect(linkedinSlug("linkedin.com/in/jane?trk=x")).toBe("jane");
     expect(linkedinSlug("jane-doe")).toBe("jane-doe");
   });
+  it("keeps a slug in any script, bare or percent-encoded in a URL", () => {
+    // People store the decoded slug, and a resolve sends it back bare.
+    expect(linkedinSlug("김철수-a1b2")).toBe("김철수-a1b2");
+    expect(linkedinSlug("jöhn-doe")).toBe("jöhn-doe");
+    expect(linkedinSlug("https://www.linkedin.com/in/%EA%B9%80%EC%B2%A0%EC%88%98-a1b2/")).toBe("김철수-a1b2");
+  });
   it("rejects other hosts and Sales Navigator URLs", () => {
     expect(linkedinSlug("https://example.com/in/jane")).toBeNull();
     expect(linkedinSlug("https://www.linkedin.com/sales/lead/ACwAAA")).toBeNull();

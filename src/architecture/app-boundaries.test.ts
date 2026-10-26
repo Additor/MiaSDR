@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The public surface of a context for UI code: `src/app`, `src/components`, `src/hooks` and `src/lib`. Pages and route handlers import a context's `domain/` and
+ * The public surface of a context for UI code: `src/app` and `src/components`. Pages and route handlers import a context's `domain/` and
  * `application/` freely, but from `infrastructure/` only its composition files (`composition.ts`, `*-composition.ts`),
  * which hand out wired deps, plus the identity entry points below. Everything else in `infrastructure/` is private, so
  * a context can rename or split a store without touching a route.
@@ -44,7 +44,7 @@ export function privateImports(source: string): string[] {
 describe("app boundaries", () => {
   it("imports private infrastructure only where the shrink-only list allows it", () => {
     const found: Record<string, string[]> = {};
-    for (const file of ["src/app", "src/components", "src/hooks", "src/lib"].flatMap((dir) => appFiles(path.join(ROOT, dir)))) {
+    for (const file of ["src/app", "src/components"].flatMap((dir) => appFiles(path.join(ROOT, dir)))) {
       const hits = privateImports(readFileSync(file, "utf8"));
       if (hits.length > 0) found[path.relative(ROOT, file).split(path.sep).join("/")] = hits;
     }

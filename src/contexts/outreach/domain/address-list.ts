@@ -9,9 +9,8 @@ export interface ParsedAddress {
 const EMAIL = /^[^\s@<>(),;:"[\]\\]+@[^\s@<>(),;:"[\]\\]+\.[^\s@<>(),;:"[\]\\]+$/;
 const MAX_EMAIL_LENGTH = 320;
 
-export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
+/** An address as a header carries it, trimmed and lowercased. `normalizeEmail` in `@/shared/email` also validates. */
+const lowerAddress = (value: string): string => value.trim().toLowerCase();
 
 export function isValidEmail(value: string): boolean {
   return value.length <= MAX_EMAIL_LENGTH && EMAIL.test(value);
@@ -105,10 +104,10 @@ function parseMailbox(entry: string): ParsedAddress | null {
   let email: string;
   let name: string | null = null;
   if (angle) {
-    email = normalizeEmail(unquote(angle[1]!));
+    email = lowerAddress(unquote(angle[1]!));
     name = unquote(text.slice(0, angle.index)).trim() || null;
   } else {
-    email = normalizeEmail(unquote(text));
+    email = lowerAddress(unquote(text));
   }
   if (!isValidEmail(email)) return null;
   if (name && name.toLowerCase() === email) name = null;
@@ -117,10 +116,10 @@ function parseMailbox(entry: string): ParsedAddress | null {
 
 /** Keeps the first occurrence of each address (case-insensitive), preserving order. */
 export function dedupeAddresses<T extends { email: string }>(list: T[], exclude: Iterable<string> = []): T[] {
-  const seen = new Set(Array.from(exclude, normalizeEmail));
+  const seen = new Set(Array.from(exclude, lowerAddress));
   const out: T[] = [];
   for (const item of list) {
-    const email = normalizeEmail(item.email);
+    const email = lowerAddress(item.email);
     if (seen.has(email)) continue;
     seen.add(email);
     out.push({ ...item, email });

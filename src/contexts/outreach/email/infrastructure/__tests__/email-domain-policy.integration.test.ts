@@ -9,7 +9,7 @@ const STEPS = [{ stepNumber: 1, kind: "email", subject: "Hi", body: "Hello", wai
 describeDb("send-time mailbox domain policy", () => {
   useTestEnv();
   const sql = testSql({ max: 4 });
-  let store: typeof import("../../../infrastructure/drizzle-outreach-store").drizzleOutreachStore;
+  let store: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
   let send: typeof import("../../application/send-next-email");
   let jobs: typeof import("../../application/email-jobs");
   const orgs: string[] = [];
@@ -35,7 +35,7 @@ describeDb("send-time mailbox domain policy", () => {
   beforeAll(async () => {
     send = await import("../../application/send-next-email");
     jobs = await import("../../application/email-jobs");
-    ({ drizzleOutreachStore: store } = await import("../../../infrastructure/drizzle-outreach-store"));
+    ({ drizzleOutreachStore: store } = await import("../drizzle-outreach-store"));
   });
 
   afterAll(async () => {

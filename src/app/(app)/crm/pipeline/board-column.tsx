@@ -1,19 +1,20 @@
 "use client";
 
 import { memo, useEffect, useMemo, useState, type DragEvent } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Board, BoardCard } from "@/contexts/deals/application/deals";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { MoveDealStageButton } from "../_components/move-deal-stage-dialog";
 import type { DealStageList } from "../_components/deal-form";
-import type { Json } from "../_components/serialize";
+import type { Json } from "@/app/(app)/_components/serialize";
 import { dealHref } from "../_components/deal-href";
 import { boardHref } from "./board-url";
 import { useBoardActions, useBoardState } from "./board-moves";
-import { daysInStage, formatAmount, formatTotals, ownerText, shiftTotals } from "./deal-format";
+import { moneyText, moneyTotalsText } from "../_components/money-text";
+import { daysInStage, ownerText, shiftTotals } from "./deal-format";
 
 export type CardData = Json<BoardCard>;
 
@@ -45,7 +46,7 @@ const DealCard = memo(function DealCard({ card, stageId, stages, nowMs, from, dr
   // A card that leaves the page mid-drag never gets its dragend, so it ends its own drag on the way out.
   useEffect(() => () => endDrag(card.id), [card.id, endDrag]);
   const contact = card.personName ?? "Unnamed contact";
-  const facts = [card.amountMinor !== null && card.currency ? formatAmount(card.amountMinor, card.currency) : null, ownerText(card.owner)].filter(Boolean);
+  const facts = [moneyText(card.amountMinor, card.currency), ownerText(card.owner)].filter(Boolean);
   const draggable = stageId !== "" && !moving;
 
   function onDragStart(event: DragEvent<HTMLDivElement>) {
@@ -110,7 +111,7 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
   const arriving = [...moves.here.values()].filter((m) => !loaded.has(m.card.id));
   const shown = cards.filter((c) => (stageOf(c.id) ?? column.id) === column.id).map((c) => ({ card: moves.here.get(c.id)?.card ?? c, pending: moves.here.get(c.id)?.pending ?? false }));
   const total = column.total - moves.departed.length + moves.arrived.length;
-  const totals = formatTotals(shiftTotals(column.amounts, moves.departed, moves.arrived));
+  const totals = moneyTotalsText(shiftTotals(column.amounts, moves.departed, moves.arrived));
   const accepts = dragging !== null && column.id !== null && dragging.from !== column.id;
   const from = boardHref(query);
 

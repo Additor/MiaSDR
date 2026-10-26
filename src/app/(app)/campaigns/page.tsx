@@ -16,7 +16,7 @@ import { campaignStatusLabel, CHANNEL_LABELS, emailProgressText, linkedinProgres
 import { campaignDeps, enrollmentAdminStore } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { toActor } from "@/app/_lib/api";
-import { LabeledStatusBadge } from "./labeled-status-badge";
+import { StatusBadge } from "@/components/shell/status-badge";
 import { NewCampaignButton } from "./new-campaign-button";
 import { FilterChips } from "@/components/shell/filter-chips";
 import { ListPager } from "@/components/shell/list-pager";
@@ -158,7 +158,7 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
                 )}
               </TableCell>
               <TableCell>
-                <LabeledStatusBadge status={c.status} label={campaignStatusLabel(c.status)} />
+                <StatusBadge status={c.status} label={campaignStatusLabel(c.status)} />
                 {c.archived && (
                   <Badge variant="outline" className="ml-2">
                     Archived

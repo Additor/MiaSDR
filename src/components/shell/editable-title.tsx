@@ -3,7 +3,7 @@
 import { PencilIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /** What a save answers: null when it went through, else the reason to show under the field. */
 export type RenameResult = string | null;

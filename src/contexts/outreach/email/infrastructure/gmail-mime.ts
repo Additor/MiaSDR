@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { OutgoingEmail } from "../../application/ports";
+import type { OutgoingEmail } from "../application/ports";
 
 const CRLF = "\r\n";
 

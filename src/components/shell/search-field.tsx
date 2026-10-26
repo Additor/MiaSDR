@@ -1,6 +1,6 @@
 import { SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /**
  * The search box of a list: the icon sits inside the field and Enter submits the surrounding form. The submit button

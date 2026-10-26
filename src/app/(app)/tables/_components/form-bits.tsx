@@ -3,7 +3,7 @@
 import { cloneElement, isValidElement } from "react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { typeLabel } from "../_lib/view/format";
 import type { GridColumn } from "../_lib/data/types";
 

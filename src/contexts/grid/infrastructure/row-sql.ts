@@ -1,10 +1,10 @@
 import { sql } from "drizzle-orm";
-import type { db } from "@/platform/db/client";
+import type { DbTx } from "@/platform/db/client";
 import { ValidationError } from "@/shared/errors";
 import type { CellEdit, RowRecord } from "../application/ports";
 import type { gridRows } from "@/platform/db/schema";
 
-export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Tx = DbTx;
 
 export const asRow = (row: typeof gridRows.$inferSelect): RowRecord => ({
   id: row.id,

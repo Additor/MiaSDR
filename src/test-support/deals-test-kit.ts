@@ -182,12 +182,4 @@ export async function holdLocks(url: string, take: (tx: postgres.TransactionSql)
   };
 }
 
-/** The SQLSTATE of a driver error, or of its cause. */
-export function sqlState(error: unknown): string | undefined {
-  let current = error as { code?: unknown; cause?: unknown } | undefined;
-  for (let i = 0; i < 5 && current; i += 1) {
-    if (typeof current.code === "string" && /^[0-9A-Z]{5}$/.test(current.code)) return current.code;
-    current = current.cause as typeof current;
-  }
-  return undefined;
-}
+export { sqlState } from "@/platform/db/errors";

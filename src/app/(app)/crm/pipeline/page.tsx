@@ -15,7 +15,7 @@ import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { toActor } from "@/app/_lib/api";
 import type { DealStageList } from "../_components/deal-form";
-import { toJson } from "../_components/serialize";
+import { toJson } from "@/app/(app)/_components/serialize";
 import { BoardColumn } from "./board-column";
 import { BoardMovesProvider } from "./board-moves";
 import { boardHref, parseBoardUrl, type BoardUrlState } from "./board-url";

@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES } from "@/contexts/deals/domain/money";
-import { callApi } from "@/lib/api-client";
-import { memberItems } from "./member-select";
+import { callApi } from "@/app/_lib/api-client";
+import { memberItems } from "@/app/(app)/_components/member-select";
 import { NO_OWNER, stageChoices, type DealFieldValues, type DealMemberOption, type DealStageList } from "./deal-form";
 
 /** The stages for a dialog: the `given` list, or one fetch the first time the dialog opens. */

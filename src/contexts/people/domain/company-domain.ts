@@ -19,5 +19,5 @@ export function checkCompanyDomain(raw: string): CompanyDomainCheck {
 /** The label of a company in copy: its name, else its domain. */
 export const companyLabel = (company: { name: string | null; domain: string }): string => company.name ?? company.domain;
 
-/** M8: the person form and Add contact never rename an existing company. */
+/** The person form and Add contact never rename an existing company. */
 export const renameOnCompanyPage = (company: { name: string | null; domain: string }): string => `Rename ${companyLabel(company)} on its company page.`;

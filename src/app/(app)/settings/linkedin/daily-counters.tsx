@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { SettingsSection } from "../settings-section";
 
 /** Clears the pause LinkedIn set after a limit error and the search lead counter, on every account. */

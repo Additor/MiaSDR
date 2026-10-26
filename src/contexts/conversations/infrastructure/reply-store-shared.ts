@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { contactPolicies, conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
 import type { AttemptRow, DraftRow, KnownCc, SendContext } from "../application/reply-ports";
 import { DRAFT_FROM, type DraftStatus } from "../domain/draft-status";
@@ -13,7 +13,7 @@ export const draftCanBecome = (to: DraftStatus) => inArray(drafts.status, [...DR
 /** The drafts row is in one of the named statuses. */
 export const draftIn = (statuses: readonly DraftStatus[]) => inArray(drafts.status, [...statuses]);
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 interface DraftMeta {
   source?: string;

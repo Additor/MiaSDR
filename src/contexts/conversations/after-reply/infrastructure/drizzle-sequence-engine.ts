@@ -4,7 +4,9 @@ import type { ClaimedStep, InterruptCandidate, SequenceEngineStore } from "../ap
 import { MAX_DRAFT_ATTEMPTS, NO_START_KEYS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
 import { NEW_REPLY_MARGIN_MINUTES } from "../domain/after-reply";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
-import { advanceRunTx, asDate, endRunTx, recordEvent, rowsOf, ts, zoneOfTx, type Tx } from "./sequence-run-tx";
+import { rowsOf } from "@/platform/db/sql-values";
+import { advanceRunTx, asDate, ts, zoneOfTx } from "./sequence-run-tx";
+import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
 import { knowledgeFor } from "../../infrastructure/thread-context";
 import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";

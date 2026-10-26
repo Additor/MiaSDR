@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { InboundStore, SyncMailbox } from "../../application/inbound-ports";
-import type { InboundEmail } from "../../application/ports";
+import type { InboundEmail } from "../../email/application/ports";
 import type { LinkedInInboundStore } from "../../linkedin/application/linkedin-ports";
 import type { LinkedInInboundEvent } from "../../linkedin/domain/linkedin";
 

@@ -6,11 +6,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
 import { Tabs } from "@/components/shell/tabs";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { ReorderButtons } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 

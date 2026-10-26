@@ -48,7 +48,7 @@ describeDb("person deals", () => {
     const f = await kit.organization();
     const { personId, ids, stages } = await contactWith(f, ["open", "won"]);
     const other = await contactWith(f, ["open"]);
-    let probe: string | undefined;
+    let probe: string | null | undefined;
     const locked = await inTx(async (tx) => {
       const rows = await personDeals.lockDealsOfPerson(tx, f.org, personId);
       probe = await kit.sql`select id from deals where id = ${ids[0]} for update nowait`.then(() => "free", (error: unknown) => sqlState(error));

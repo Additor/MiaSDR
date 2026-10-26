@@ -18,8 +18,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { batchRowActions, hasActiveSearch, searchNotice, searchStatusLabel, type BatchRowActionId, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
 import { runNowConfirmation, searchableLeft } from "@/contexts/outreach/linkedin/domain/linkedin-search-capacity";
-import { callApi } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { callApi } from "@/app/_lib/api-client";
+import { cn } from "@/components/ui/utils";
 import { capacityReturnText } from "../../capacity-return";
 import { useActiveRefresh } from "../../use-active-refresh";
 import { SearchCapacityCard, type CapacityCardData } from "../../search-capacity-card";

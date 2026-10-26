@@ -1,6 +1,6 @@
 import type { DbTx } from "@/platform/db/client";
 import type { InboundClass } from "../email/domain/inbound";
-import type { InboundEmail } from "./ports";
+import type { InboundEmail } from "../email/application/ports";
 
 export interface SyncMailbox {
   id: string;

@@ -1,5 +1,4 @@
 import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/convert-to-contact";
-import { sqlState } from "@/platform/db/errors";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCloseDate, parseDealTitle } from "../domain/deal";
 import { parseAmountToMinor, parseCurrency } from "../domain/money";
@@ -18,16 +17,6 @@ export const MAX_IDEMPOTENCY_KEY = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
 
-/** The constraint a 23503 or 23505 names (`constraint_name` from the driver, also under a wrapping error's `cause`). */
-export function violatedConstraint(error: unknown, code: "23503" | "23505"): string | null {
-  if (sqlState(error) !== code) return null;
-  let current = error as { constraint_name?: unknown; cause?: unknown } | null | undefined;
-  for (let depth = 0; depth < 5 && current; depth += 1) {
-    if (typeof current.constraint_name === "string") return current.constraint_name;
-    current = current.cause as typeof current;
-  }
-  return null;
-}
 
 /** The person has a live enrollment in another member's personal campaign. */
 export class PersonalCampaignError extends ForbiddenError {

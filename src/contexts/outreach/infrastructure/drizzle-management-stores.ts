@@ -1,8 +1,10 @@
+import { sqlState } from "@/platform/db/errors";
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from "drizzle-orm";
 import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
 import { ConflictError } from "@/shared/errors";
-import { campaignEnrollments, campaigns, channelSettings, companies, entityColumns, mailboxes, people, sends } from "@/platform/db/schema";
+import { campaignEnrollments, campaigns, companies, entityColumns, mailboxes, people, sends } from "@/platform/db/schema";
 import { STEPS_EDITABLE, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type StepInput } from "../domain/campaign";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../domain/working-hours";
 import { buildVariables } from "../domain/variables";
@@ -12,14 +14,8 @@ import { insertSkippingContacts, notContactSql } from "./contact-guard";
 import type { SendResolutionStore } from "../application/send-resolution";
 import { filteredScope, sentCount, tabCounts } from "./enrollment-list-sql";
 import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
-import { resolveUnknownEmailSend } from "./drizzle-outreach-store";
+import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
-
-const pgCode = (error: unknown): string | undefined => {
-  // drizzle wraps driver errors; the Postgres error is on `cause` or on the error itself.
-  const e = error as { code?: string; cause?: { code?: string } };
-  return e?.cause?.code ?? e?.code;
-};
 
 /** SQL condition for an archive filter on `campaigns`. */
 export const archiveCondition = (filter: ArchiveFilter): SQL | undefined =>
@@ -399,11 +395,7 @@ export const drizzleMailboxStore: MailboxStore = {
       .groupBy(campaignEnrollments.mailboxId);
     const waitingBy = new Map(waiting.map((r) => [r.mailboxId, r.n]));
     // A mailbox without its own hours sends by the organization's time zone, so show and count by that too.
-    const [general] = await db
-      .select({ values: channelSettings.values })
-      .from(channelSettings)
-      .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, "general")));
-    const orgZone = typeof general?.values?.timeZone === "string" ? general.values.timeZone : "UTC";
+    const orgZone = await organizationTimeZone(organizationId);
     return Promise.all(
       rows.map(async (row): Promise<MailboxRecord> => {
         const hours = (row.workingHours as WorkingHours | null) ?? defaultWorkingHours(orgZone);
@@ -438,7 +430,7 @@ export const drizzleMailboxStore: MailboxStore = {
         .returning({ id: mailboxes.id });
       return row.id;
     } catch (error) {
-      if (pgCode(error) === "23505") throw new ConflictError("This address is already connected to a mailbox.");
+      if (sqlState(error) === "23505") throw new ConflictError("This address is already connected to a mailbox.");
       throw error;
     }
   },
@@ -488,7 +480,7 @@ export const drizzleMailboxStore: MailboxStore = {
     try {
       await db.delete(mailboxes).where(and(eq(mailboxes.organizationId, organizationId), eq(mailboxes.id, id)));
     } catch (error) {
-      if (pgCode(error) === "23503") throw new ConflictError("This mailbox has sending history, so it cannot be deleted. Disable it instead.");
+      if (sqlState(error) === "23503") throw new ConflictError("This mailbox has sending history, so it cannot be deleted. Disable it instead.");
       throw error;
     }
   },

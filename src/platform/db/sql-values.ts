@@ -6,3 +6,6 @@ export const sqlValues = (values: readonly string[]): SQL => sql`(${sql.join(val
 /** `column in ('a', 'b')` with literals, for a CHECK constraint: DDL cannot take bind parameters. Values are compile-time constants. */
 export const inList = (column: unknown, values: readonly string[]): SQL =>
   sql`${column} in (${sql.raw(values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", "))})`;
+
+/** The rows of a raw `db.execute`, typed. The driver returns an array-like result. */
+export const rowsOf = <T>(result: unknown) => result as unknown as T[];

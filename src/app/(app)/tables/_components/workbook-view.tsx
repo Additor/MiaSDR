@@ -12,7 +12,7 @@ import { ScrollCue } from "@/components/shell/scroll-cue";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { MoveDialog, type FolderNode } from "./move-dialog";
 import { DescriptionDialog, MoveTableDialog } from "./table-dialogs";

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { layerOf, sourceFiles } from "@/test-support/context-layers";
+import { layerOf, sourceFiles } from "./context-layers";
 
 /**
  * Table ownership. Each table belongs to the context whose `infrastructure/schema.ts` declares it, and only that
@@ -43,7 +43,7 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["contactPolicies", "conversations"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store.ts": ["contactPolicies"],
-  "src/contexts/outreach/infrastructure/drizzle-outreach-store.ts": ["contactPolicies"],
+  "src/contexts/outreach/email/infrastructure/drizzle-outreach-store.ts": ["contactPolicies"],
   "src/contexts/outreach/infrastructure/drizzle-management-stores.ts": ["contactPolicies"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-reachability.ts": ["contactPolicies"],

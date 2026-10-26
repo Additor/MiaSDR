@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 export interface TabItem {
   id: string;

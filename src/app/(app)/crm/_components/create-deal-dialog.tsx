@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import {
   CREATE_CHUNK,
   PREVIEW_CHUNK,
@@ -28,7 +28,7 @@ import {
   type BulkReport,
   type ConvertPreview,
 } from "./deal-effects";
-import { chunks } from "./chunks";
+import { chunks } from "@/app/(app)/_components/chunks";
 import { DealFields, useDealStages } from "./deal-fields";
 import { dealHref } from "./deal-href";
 import { dealFieldsReady, dealRequestFields, firstOpenChoice, initialDealFields, type DealFieldValues, type DealMemberOption, type DealStageList } from "./deal-form";

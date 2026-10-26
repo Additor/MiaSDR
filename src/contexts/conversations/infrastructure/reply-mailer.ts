@@ -1,7 +1,7 @@
 import { env } from "@/shared/env";
 import { unsubscribeLinks } from "@/contexts/outreach/email/domain/unsubscribe-token";
 import { applySignature, toHtmlBody } from "@/contexts/outreach/domain/render";
-import { ProviderSendError, type MailboxProvider } from "@/contexts/outreach/application/ports";
+import { ProviderSendError, type MailboxProvider } from "@/contexts/outreach/email/application/ports";
 import { ReplySendError, type ReplyMailer } from "../application/reply-ports";
 
 /**

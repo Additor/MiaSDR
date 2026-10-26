@@ -48,9 +48,9 @@ test.describe("deals pipeline", () => {
     await page.goto("/crm/pipeline?q=S35%20Lena");
     const card = column(page, "New").getByTestId("deal-card").filter({ hasText: LENA_DEAL });
     await expect(card).toContainText("Lena Stone, S35 Alpha");
-    await expect(card).toContainText("USD 12,000.00");
+    await expect(card).toContainText("$12,000.00");
     await expect(card).toContainText("From S35 campaign");
-    await expect(column(page, "New").locator("header")).toContainText("USD 12,000.00");
+    await expect(column(page, "New").locator("header")).toContainText("$12,000.00");
 
     // AC2: Move stage from the card.
     await card.getByRole("button", { name: "Move stage" }).click();
@@ -121,7 +121,7 @@ test.describe("deals pipeline", () => {
     const edit = page.getByRole("dialog", { name: `Edit ${LENA_DEAL}` });
     await edit.getByLabel("Amount (optional)").fill("15000");
     await edit.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByTestId("deal-summary").getByText("USD 15,000.00")).toBeVisible();
+    await expect(page.getByTestId("deal-summary").getByText("$15,000.00")).toBeVisible();
 
     // The board shows the won deal in the Won column, closed within the window.
     await page.goto("/crm/pipeline?q=S35%20Lena");

@@ -7,11 +7,9 @@ import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { RESTORE_REFUSAL_TEXT, decideRestore, restoredProgress } from "../domain/enrollment-restore";
 import { notContactSql } from "./contact-guard";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
-import { sqlValues } from "@/platform/db/sql-values";
+import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 
 const uuidList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
-
 /** Facts about the people of the named enrollments, read inside the restore transaction. */
 async function personFacts(tx: DbHandle, organizationId: string, campaignId: string, channel: string, personIds: string[]) {
   const [replied, dnc, suppressed, contacts, elsewhere] = await Promise.all([

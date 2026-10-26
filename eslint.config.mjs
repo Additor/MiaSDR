@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     ".next/**",
     ".next-*/**",
+    // The e2e runner's builds, logs and Playwright output.
+    "e2e/.run/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
@@ -25,7 +27,7 @@ const eslintConfig = defineConfig([
   // A module past 700 lines of code gets split by use case. shadcn primitives and test doubles stay out.
   {
     files: ["src/**/*.{ts,tsx}"],
-    ignores: ["src/components/ui/**", "src/test-support/**", "**/*.test.{ts,tsx}"],
+    ignores: ["src/components/ui/**", "src/test-support/**", "**/__tests__/**", "**/*.test.{ts,tsx}"],
     rules: { "max-lines": ["error", { max: 700, skipBlankLines: true, skipComments: true }] },
   },
   // DDD dependency direction: domain is pure, application never touches infrastructure.

@@ -22,7 +22,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { SETTINGS_GROUPS } from "@/app/(app)/settings/settings-nav-config";
 import { CommandPalette, type PaletteDestination } from "./command-palette";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";

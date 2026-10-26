@@ -16,7 +16,7 @@ import { withGridFocus } from "../_lib/edit/history-focus";
 import { layoutPins, pinPhoneNotice, withPin } from "../_lib/view/pin-layout";
 import { filtersNarrow, keepsTableOrder, setSort, toggleHidden, withRunFailures } from "../_lib/view/view";
 import { activeConditionCount } from "@/contexts/grid/domain/view-query";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/components/hooks/use-mobile";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import { pasteSummary, type BlockPasteRequest } from "../_lib/edit/paste";
 import type { GridColumn } from "../_lib/data/types";
@@ -32,7 +32,7 @@ import { EnrichStart } from "./enrich-start";
 import { EnrichmentDialog } from "./enrichment-dialog";
 import { FilterPanel } from "./filter-panel";
 import { FormulaDialog } from "./formula-dialog";
-import { ImportWizard } from "./import-wizard";
+import { TableImportDialog } from "./table-import-dialog";
 import { PushCampaignDialog } from "./push-campaign-dialog";
 import { RunDialog } from "./run-controls";
 import { TableToolbar } from "./table-toolbar";
@@ -433,7 +433,7 @@ export function TableWorkspace({ tableId }: Props) {
 
       {dialog?.kind === "filters" && <FilterPanel columns={columns} view={view} saveView={grid.saveView} onClose={closeDialog} />}
       {dialog?.kind === "addRows" && <AddRowsDialog onAdd={addRows} onClose={closeDialog} />}
-      {dialog?.kind === "import" && <ImportWizard tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
+      {dialog?.kind === "import" && <TableImportDialog tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
       {dialog?.kind === "formula" && <FormulaDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} previewRowId={active?.row.id} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} outcome={dialog.outcome} onClose={closeDialog} onSaved={async (key) => {
             await grid.reload();

@@ -4,6 +4,7 @@ import { identityExceptions } from "@/platform/db/schema";
 import type { ActionQueue, ActionQueueCounts, ActionQueueExtras, QueueGroupPage, QueueItem, QueuePosition, WorkQueueStore } from "../application/work-queue-ports";
 import { QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
 import { publicConversationSql, visibleClassificationSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
+import { rowsOf } from "@/platform/db/sql-values";
 
 /*
  * work-queue-read: the explicit read model of the Actions queue, built like `deals/infrastructure/crm-read.ts`.
@@ -27,7 +28,6 @@ import { publicConversationSql, visibleClassificationSql, visibleDraftSql, visib
  * `domain/action-queue.ts`; `action-queue.integration.test.ts` checks that this SQL agrees with them.
  */
 
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
 const date = (value: unknown) => (value === null || value === undefined ? null : new Date(value as string));
 
 /**

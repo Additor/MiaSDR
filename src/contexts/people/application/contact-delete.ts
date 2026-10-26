@@ -75,7 +75,7 @@ export interface ContactDeleteStore {
   limitStatements(tx: DbHandle): Promise<void>;
   /** Step 14: deletes the people row. Notes, tasks and `lead_ccs` go with it. */
   deletePerson(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
-  /** Step 13 (M3): a company whose last contact went stays in Companies. */
+  /** A company whose last contact went stays in Companies. */
   stampCompaniesLeftByContacts(tx: DbHandle, organizationId: string, companyIds: readonly string[]): Promise<void>;
 }
 

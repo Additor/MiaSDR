@@ -1,8 +1,8 @@
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { channelSettings, gridCellRuns, gridColumns, gridRows, gridTables, organizations } from "@/platform/db/schema";
-import { canonicalTimeZone } from "@/shared/time-zone";
+import { gridCellRuns, gridColumns, gridRows, gridTables } from "@/platform/db/schema";
 import { NotFoundError } from "@/shared/errors";
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import type { CellRunStore, ColumnRecord, FormulaStore } from "../application/ports";
 import type { ColumnType } from "../domain/column-types";
 import { LookupFailure, lookupSignature, lookupValueKey, type FormulaLookupRegistry } from "../domain/formula";
@@ -12,14 +12,7 @@ import { asRow } from "./row-sql";
 const MAX_LOOKUP_ROWS = 50_000;
 
 export const drizzleFormulaStore: FormulaStore = {
-  async organizationTimeZone(organizationId) {
-    // Same rule as the organization settings: the `general` channel row wins when it holds a valid zone.
-    const [org] = await db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, organizationId));
-    const [general] = await db.select({ values: channelSettings.values }).from(channelSettings).where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, "general")));
-    const mirrored = general?.values?.timeZone;
-    const zone = typeof mirrored === "string" ? canonicalTimeZone(mirrored) : null;
-    return zone ?? canonicalTimeZone(org?.timezone) ?? "UTC";
-  },
+  organizationTimeZone: (organizationId) => organizationTimeZone(organizationId),
 
   async lookupRegistry(organizationId, tableId, calls) {
     const registry: FormulaLookupRegistry = {};

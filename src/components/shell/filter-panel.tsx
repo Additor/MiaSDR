@@ -2,7 +2,7 @@ import { XIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /** The select of a filter field, sized like an Input. */
 export const FILTER_SELECT =

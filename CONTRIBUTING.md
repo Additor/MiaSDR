@@ -26,7 +26,7 @@ Open `http://localhost:3000`. The first visit asks you to create the owner accou
 ## Where code goes
 
 ```
-src/app/            routes and screens; route handlers stay thin; _lib/api.ts holds the route wrappers
+src/app/            routes and screens; route handlers stay thin; _lib/api.ts holds the route wrappers, _lib/api-client.ts the browser caller
 src/contexts/<ctx>/ one bounded context: ai (every model call), people (leads, contacts, companies), outreach, conversations, deals, grid, identity, tenancy, integrations, analytics
   domain/           pure rules with unit tests; imports no framework, database or other layer
   application/      use cases and ports; checks permissions; never imports infrastructure
@@ -37,8 +37,12 @@ src/composition/    wiring that spans contexts; routes import it, no context doe
 src/platform/       the database (client, schema barrel, migrations, shared read predicates) and the job scheduler
 src/shared/         the kernel: errors, env, time zones, formatting; imports nothing above it
 src/architecture/   tests that check the whole repository: layers, boundaries, table ownership, copy, docs
-src/components/     ui/ primitives (shadcn) and shell/ app-wide components
+src/components/     ui/ primitives (shadcn, with cn in ui/utils.ts), hooks/ and shell/ app-wide components
 ```
+
+A screen's own pieces sit next to its `page.tsx`. Once a route folder holds more than a handful of them, components go in `_components/` and pure logic with its tests in `_lib/`, as `tables`, `campaigns/[id]`, `inbox/[id]` and `leads` do. UI that several areas share lives in `src/app/(app)/_components` (the person views, the record header); primitives and the app shell live in `src/components`.
+
+New infrastructure files take one of these names: `drizzle-<noun>-store.ts` for a store that implements a port, `<noun>-read-model.ts` or `<noun>-read.ts` for a read across tables, `<noun>-sql.ts` for SQL helpers that run inside another write's transaction, and `composition.ts` or `<module>-composition.ts` for wiring. Some older files predate the rule.
 
 Unit tests of `domain/` and `application/` sit next to the file they test. Tests of `infrastructure/` and `src/platform/db`, most of them integration tests against Postgres, sit in that folder's `__tests__/`.
 
@@ -50,7 +54,7 @@ A route handler calls `withActor`, `withAdmin` or `withUser`, then one use case.
 - `src/architecture/context-dependencies.test.ts` keeps contexts in layers (identity, tenancy, integrations, ai, people, outreach, conversations, then deals, grid and analytics): a context imports only lower layers and never `src/composition`. When a lower context needs a higher one, declare a port in the lower context and wire it in `src/composition`.
 - `src/architecture/context-dependencies.test.ts` also keeps `src/shared` free of every tier above it, lets `src/platform` import a context only where its shrink-only list allows, and keeps Drizzle, the driver and the schema barrel out of `src/composition`: a query there belongs in the context that owns the table.
 - `src/architecture/context-dependencies.test.ts` also fixes what a context publishes to the contexts above it: `domain/`, `application/`, schema and composition files, plus the few infrastructure modules in `PUBLISHED_INFRASTRUCTURE`. Wiring that spans contexts lives in `src/composition` (`deals.ts`, `person-lifecycle.ts`, `inbox-filing.ts`).
-- `src/architecture/app-boundaries.test.ts` lets `src/app`, `src/components`, `src/hooks` and `src/lib` import a context's `infrastructure/` only through its composition files (`composition.ts`, `*-composition.ts`) and identity's session and auth modules. Add a wired deps function to the composition file instead of importing a store.
+- `src/architecture/app-boundaries.test.ts` lets `src/app` and `src/components` import a context's `infrastructure/` only through its composition files (`composition.ts`, `*-composition.ts`) and identity's session and auth modules. Add a wired deps function to the composition file instead of importing a store.
 - `src/architecture/table-ownership.test.ts` lets only the context that declares a table write it, and lets a context read a higher layer's tables only through that context's read model. It reads imported tables and the table names after `from` and `join` in raw `sql` templates, and scans `src/platform` too.
 - `src/architecture/status-guards.test.ts` checks that every write of `drafts.status` and `campaign_enrollments.status` names the statuses it moves from, as the transition tables in `conversations/domain/draft-status.ts` and `outreach/domain/enrollment-status.ts` define.
 
@@ -73,7 +77,7 @@ pnpm test
 ```bash
 docker run -d --name miasdr-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=miasdr_test -p 127.0.0.1:55432:5432 postgres:17
 export TEST_DATABASE_URL=postgres://postgres:test@127.0.0.1:55432/miasdr_test
-DATABASE_URL=$TEST_DATABASE_URL pnpm exec drizzle-kit migrate
+DATABASE_URL=$TEST_DATABASE_URL DATABASE_SSL=disable pnpm db:migrate
 pnpm test
 ```
 
@@ -112,7 +116,7 @@ Timing runs stay out of the suite and live in `scripts/bench`: the grid change f
 
 ## Reporting problems
 
-Open an issue for bugs and feature ideas. Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Open an issue for bugs and feature ideas. Report security problems privately, as described in [SECURITY.md](.github/SECURITY.md).
 
 ## License
 

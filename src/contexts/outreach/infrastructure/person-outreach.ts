@@ -3,7 +3,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { db, type DbHandle } from "@/platform/db/client";
 import type { Actor } from "@/shared/errors";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
-import { sqlValues } from "@/platform/db/sql-values";
+import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 
 /*
  * Callee-owned functions for deleting a contact ("Contacts and Companies CRUD" in docs/decisions.md). The
@@ -11,8 +11,6 @@ import { sqlValues } from "@/platform/db/sql-values";
  * advisory lock, and the people row lock: `personOutreachBlockers` (step 5), `personOutreachCounts` (step 8),
  * `keepEmailSuppressed` (step 9) and `purgePersonOutreach` (step 12). `leadsInRunningCampaigns` feeds the merge preview.
  */
-
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
 
 const HOUR_MS = 60 * 60 * 1000;
 /** A campaign send this recent blocks a delete, so today's mailbox limit keeps counting it (P3). */

@@ -1,3 +1,7 @@
+/**
+ * The server side of our JSON API: route handlers wrap their use case in `withActor`, `withAdmin` or `withUser`, which
+ * map domain errors to status codes and one error shape. `./api-client.ts` reads that shape in the browser.
+ */
 import { NextResponse, connection } from "next/server";
 import { ZodError } from "zod";
 import { apiOrgContext, apiUser, type OrgContext, type SessionUser } from "@/contexts/identity/infrastructure/session";

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startUnipileStandin, type UnipileStandin } from "@/test-support/unipile-standin";
+import { startUnipileStandin, type UnipileStandin } from "./unipile-standin";
 import { UnipileGateway } from "../unipile-gateway";
 
 /** The real adapter against the local stand-in, which enforces the documented request rules. The stand-in is not Unipile. */

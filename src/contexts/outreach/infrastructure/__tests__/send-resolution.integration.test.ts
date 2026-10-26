@@ -13,7 +13,7 @@ describeDb("resolving unconfirmed email sends", () => {
   let uc: typeof import("../../application/send-resolution");
   let campaignsUc: typeof import("../../application/campaign-management");
   let stores: typeof import("../drizzle-management-stores");
-  let outreachStore: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
+  let outreachStore: typeof import("../../email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
   const orgs: TestOrg[] = [];
   const start = new Date("2026-10-14T10:00:00Z");
   let current = start;
@@ -45,7 +45,7 @@ describeDb("resolving unconfirmed email sends", () => {
     uc = await import("../../application/send-resolution");
     campaignsUc = await import("../../application/campaign-management");
     stores = await import("../drizzle-management-stores");
-    ({ drizzleOutreachStore: outreachStore } = await import("../drizzle-outreach-store"));
+    ({ drizzleOutreachStore: outreachStore } = await import("../../email/infrastructure/drizzle-outreach-store"));
   });
 
   afterAll(async () => {

@@ -40,7 +40,7 @@ import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 const COUNTED = ["sending", "sent", "unknown"];
 const UNRESOLVED = [...SEND_UNRESOLVED];

@@ -4,8 +4,8 @@ import { seedGrid } from "./support/grid-seed";
 import type { Locator, Page } from "@playwright/test";
 
 /**
- * G3: the filter and sort panel and the partial run controls (first N rows, one cell). GRID_PROVIDER=fake and
- * AI_PROVIDER=fake come from e2e/run.mjs. Specs 27 and 28 belong to G1 and G2.
+ * The filter and sort panel and the partial run controls (first N rows, one cell). GRID_PROVIDER=fake and
+ * AI_PROVIDER=fake come from e2e/run.mjs.
  */
 
 async function choose(page: Page, scope: Locator, label: string, option: string | RegExp) {
@@ -23,7 +23,7 @@ const openPanel = async (page: Page) => {
 test.describe("filter and sort panel", () => {
   test("filters with a condition, a muted condition and a nested group, and sorts by two columns", async ({ page }) => {
     await signInAdmin(page);
-    const seeded = await seedGrid(page.request, { rows: 120, name: "G3 filter panel" });
+    const seeded = await seedGrid(page.request, { rows: 120, name: "S29 filter panel" });
     // The seed puts the top Score (Person 120) in company 0 as well, so both sort orders would start with the same row.
     // Move Person 120 to company 9, which sorts last. Now "company, then Score high to low" starts with Person 113 (the top
     // Score of company 0) and "Score high to low" alone starts with Person 120.
@@ -103,7 +103,7 @@ test.describe("filter and sort panel", () => {
 
   test("a validation message keeps the panel open", async ({ page }) => {
     await signInAdmin(page);
-    const seeded = await seedGrid(page.request, { rows: 5, name: "G3 filter validation" });
+    const seeded = await seedGrid(page.request, { rows: 5, name: "S29 filter validation" });
     await page.goto(`/tables/${seeded.workbookId}`);
     const panel = await openPanel(page);
     await panel.getByRole("button", { name: "Add condition", exact: true }).click();
@@ -121,7 +121,7 @@ test.describe("filter and sort panel", () => {
 
     test("the panel fits the phone and applies", async ({ page }) => {
       await signInAdmin(page);
-      const seeded = await seedGrid(page.request, { rows: 30, name: "G3 filter phone" });
+      const seeded = await seedGrid(page.request, { rows: 30, name: "S29 filter phone" });
       await page.goto(`/tables/${seeded.workbookId}`);
       await expect(page.getByText("30 rows", { exact: true })).toBeVisible();
       const panel = await openPanel(page);
@@ -143,8 +143,8 @@ const PEOPLE = [["Full name", "Domain"], ...Array.from({ length: 12 }, (_, i) =>
 async function runnableTable(page: Page, name: string) {
   const { workbookId, tableId } = await newWorkbook(page.request, name);
   await importCsv(page.request, tableId, PEOPLE);
-  const providerKey = `g3-${Math.random().toString(36).slice(2, 7)}`;
-  const provider = await page.request.post("/api/grid/providers", { data: { adapter: "fake", key: providerKey, name: "G3 fake finder", credentials: { apiKey: "g3-key" } } });
+  const providerKey = `s29-${Math.random().toString(36).slice(2, 7)}`;
+  const provider = await page.request.post("/api/grid/providers", { data: { adapter: "fake", key: providerKey, name: "S29 fake finder", credentials: { apiKey: "s29-key" } } });
   expect(provider.status(), "connect fake provider").toBe(201);
   const { columns } = await gridPage(page.request, tableId);
   const keyOf = (n: string) => columns.find((c) => c.name === n)!.key;
@@ -170,7 +170,7 @@ async function runnableTable(page: Page, name: string) {
 test.describe("partial runs", () => {
   test("runs the first N rows in table order, then the next N after the empty-cells filter", async ({ page }) => {
     await signInAdmin(page);
-    const t = await runnableTable(page, "G3 first N");
+    const t = await runnableTable(page, "S29 first N");
 
     await page.getByRole("button", { name: `Column menu for ${t.source.name}` }).click();
     await page.getByRole("menuitem", { name: "Run first 10 rows" }).click();
@@ -201,7 +201,7 @@ test.describe("partial runs", () => {
 
   test("runs one output cell from the keyboard and from the cell's run button", async ({ page }) => {
     await signInAdmin(page);
-    const t = await runnableTable(page, "G3 run cell");
+    const t = await runnableTable(page, "S29 run cell");
 
     // Keyboard only: focus the grid by clicking a name cell, then arrow to the Email cell of row 8 and press Ctrl or Cmd+Enter.
     await page.getByRole("gridcell", { name: "Full name: Pat8 Lee", exact: true }).click();
@@ -234,7 +234,7 @@ test.describe("partial runs", () => {
 
     test("the run dialog and the cell run button fit the phone", async ({ page }) => {
       await signInAdmin(page);
-      const t = await runnableTable(page, "G3 run phone");
+      const t = await runnableTable(page, "S29 run phone");
       await page.getByRole("button", { name: "Run", exact: true }).first().click();
       const dialog = page.getByRole("dialog", { name: "Run enrichments" });
       await dialog.getByLabel("Number of first rows").fill("2");
@@ -252,7 +252,7 @@ test.describe("AI column output types and editing", () => {
     // The refused retype answers 422 on purpose.
     watch.tolerate(/response 422: PATCH .*\/ai/, /status of 422/);
     await signInAdmin(page);
-    const { workbookId, tableId } = await newWorkbook(page.request, "G3 AI types");
+    const { workbookId, tableId } = await newWorkbook(page.request, "S29 AI types");
     await importCsv(page.request, tableId, [["Full name"], ["Ann Lee"], ["Bob Ray"]]);
     const key = (await gridPage(page.request, tableId)).columns.find((c) => c.name === "Full name")!.key;
     await page.goto(`/tables/${workbookId}`);

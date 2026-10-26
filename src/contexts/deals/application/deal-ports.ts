@@ -270,7 +270,7 @@ export interface CompanyDetailRow {
   createdAt: Date;
   /** Bumped by every company write; the merge and the company delete send it back. */
   version: number;
-  /** Set once the company is listed in Companies without a contact (M3); null for a company listed only by its contacts. */
+  /** Set once the company is listed in Companies without a contact; null for a company listed only by its contacts. */
   crmListedAt: Date | null;
   /** Other domains, oldest first. `mergedName` is the name of the company a merge removed, when known. */
   aliases: Array<{ domain: string; mergedName: string | null }>;

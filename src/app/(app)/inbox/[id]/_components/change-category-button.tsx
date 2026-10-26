@@ -12,9 +12,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { PROTECTED_SUBCATEGORY_KEY, REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
 import { needsReply } from "@/contexts/conversations/domain/reply-policy";
-import { callApi } from "@/lib/api-client";
-import { categoryLabel } from "@/app/(app)/crm/_components/labels";
-import { saveDraftEdits } from "../draft-edits";
+import { callApi } from "@/app/_lib/api-client";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { saveDraftEdits } from "../_lib/draft-edits";
 
 export interface StageOption {
   id: string;

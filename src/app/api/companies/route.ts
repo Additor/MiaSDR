@@ -7,7 +7,7 @@ import { addCompany } from "@/contexts/people/application/company-lifecycle";
 import { withActor } from "@/app/_lib/api";
 
 /**
- * The Companies list (M3): companies listed in Companies or with a contact. `q`, `page`, `sort` (`name`, the default;
+ * The Companies list: companies listed in Companies or with a contact. `q`, `page`, `sort` (`name`, the default;
  * `contacts`; `open_deals`). 25 per page.
  */
 export function GET(request: Request) {

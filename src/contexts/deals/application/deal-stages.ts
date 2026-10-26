@@ -3,7 +3,8 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { DbHandle } from "@/platform/db/client";
 import { DEFAULT_DEAL_STAGES, insertStage, isLastOfKind, isStageKind, MAX_STAGES, parseStageName, renumber, reorderStages, type DealStageKind } from "../domain/stages";
 import type { DealsDeps, DealStage } from "./deal-ports";
-import { isUuid, violatedConstraint } from "./deals";
+import { violatedConstraint } from "@/platform/db/errors";
+import { isUuid } from "./deals";
 
 /*
  * Settings > Pipeline stages. Every write takes the organization's pipeline lock first, so two admins editing at once see each

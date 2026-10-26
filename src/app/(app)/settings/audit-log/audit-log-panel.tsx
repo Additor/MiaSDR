@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { ListPager } from "@/components/shell/list-pager";
 import { Time } from "@/components/shell/time";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { AUDIT_AREAS, type AuditArea } from "@/contexts/tenancy/application/audit-log";
 import { humanizeToken } from "@/shared/humanize";
 import { RULED_LIST, RULED_ROW } from "../settings-section";

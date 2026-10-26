@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { SettingsSection } from "../settings-section";
 
 interface Pause {

@@ -131,7 +131,7 @@ describeDb("positions stay distinct and ordered", () => {
   });
 
   it("lets enrichment columns land after a renumber without a tie", async () => {
-    // layout() in enrichment-columns.ts (G3) reads the columns outside the table lock. After 60 inserts
+    // layout() in enrichment-columns.ts reads the columns outside the table lock. After 60 inserts
     // squeezed the gap and renumbered the table, it must still place its three columns in order.
     const { actor } = await org();
     const { table: t } = await table(actor);

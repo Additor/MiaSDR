@@ -6,11 +6,11 @@ import type { EventEntry } from "@/contexts/conversations/application/reply-hand
 import { dealsDeps } from "@/composition/deals";
 import type { Actor } from "@/shared/errors";
 import { humanizeToken } from "@/shared/humanize";
-import { eventLabel } from "@/app/(app)/crm/_components/event-labels";
-import { categoryLabel } from "@/app/(app)/crm/_components/labels";
-import { personHref } from "@/app/(app)/crm/_components/person/person-href";
-import { RecordDisclosure } from "@/app/(app)/crm/_components/record/record-header";
-import { toJson } from "@/app/(app)/crm/_components/serialize";
+import { eventLabel } from "@/app/(app)/_components/event-labels";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { personHref } from "@/app/(app)/_components/person/person-href";
+import { RecordDisclosure } from "@/app/(app)/_components/record/record-header";
+import { toJson } from "@/app/(app)/_components/serialize";
 import { AfterReplyControls } from "./after-reply-controls";
 import { ClassificationHistory } from "./classification-history";
 import { recordAfterReply, recordDetail } from "./thread-data";

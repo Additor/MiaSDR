@@ -11,7 +11,7 @@ describeDb("send status guard", () => {
   let engine: typeof import("../../email/application/send-next-email");
   let uc: typeof import("../../application/send-resolution");
   let stores: typeof import("../drizzle-management-stores");
-  let outreachStore: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
+  let outreachStore: typeof import("../../email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
   const orgs: TestOrg[] = [];
   const start = new Date("2026-10-14T10:00:00Z");
   let current = start;
@@ -54,7 +54,7 @@ describeDb("send status guard", () => {
     engine = await import("../../email/application/send-next-email");
     uc = await import("../../application/send-resolution");
     stores = await import("../drizzle-management-stores");
-    ({ drizzleOutreachStore: outreachStore } = await import("../drizzle-outreach-store"));
+    ({ drizzleOutreachStore: outreachStore } = await import("../../email/infrastructure/drizzle-outreach-store"));
   });
 
   afterAll(async () => {

@@ -54,6 +54,10 @@ Migrations live in `drizzle/` and run at boot under an advisory lock (`src/platf
 | 0026 | `0026_existing_customer_label.sql` | Renames the seeded `customer` subcategory. | Data only. |
 | 0027 | `0027_contacts_companies_crud.sql` | Company version and CRM listing, person creation key, `company_domain_aliases`, seven indexes. | ACCESS EXCLUSIVE on `companies` and `people`. Roll forward only. |
 | 0028 | `0028_record_assigned_to.sql` | `records.assigned_to` and `assigned_source` for the Actions queue, with a backfill. | ACCESS EXCLUSIVE on `records`. Roll forward only. |
+| 0029 | `0029_ledger_credits.sql` | `grid_cell_runs.credits`, the vendor credits a call used, with a check that it is not negative. | The check scans `grid_cell_runs` under ACCESS EXCLUSIVE. |
+| 0030 | `0030_ledger_reuse.sql` | `grid_cell_runs.lookup_key`, `answer` and `reused`, so a column can reuse a found answer, and an index on the lookup key. | The index build blocks writes to `grid_cell_runs`. |
+| 0031 | `0031_drop_dormant_sequence_tables.sql` | Drops `record_sequence_overrides` and `subcategory_sequence_assignments`, which nothing used. | Roll forward only. |
+| 0032 | `0032_suppression_added_in_settings.sql` | `suppression_list.added_in_settings`, set for addresses a person adds in Settings. | Catalog change only. |
 
 Migrations 0011 to 0013 (schema hardening) add constraints to existing tables. They check your data first:
 

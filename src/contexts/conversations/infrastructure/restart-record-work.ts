@@ -1,7 +1,10 @@
 import { sql } from "drizzle-orm";
 import { startRun } from "../after-reply/application/sequences";
 import { createRunOn, loadStartOn } from "../after-reply/infrastructure/drizzle-sequence-store";
-import { interruptRecordRunsTx, rowsOf, staleOpenDraftsTx, type Tx } from "../after-reply/infrastructure/sequence-run-tx";
+import type { DbTx as Tx } from "@/platform/db/client";
+import { rowsOf } from "@/platform/db/sql-values";
+import { interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
+import { staleOpenDraftsTx } from "./stale-drafts-sql";
 
 /**
  * A person changed what the record is: a stage move or a corrected classification. Work that was prepared for the old

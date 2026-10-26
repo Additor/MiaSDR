@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { channelSettings, contactPolicies, conversations, drafts, events, linkedinAccounts, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
@@ -10,7 +10,7 @@ import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Attempts that sent or may have sent. A definite refusal used no quota. */

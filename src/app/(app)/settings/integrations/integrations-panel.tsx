@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { AiModelCard } from "./ai-model-card";
 import { EnrichmentProviders } from "./enrichment-providers";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";

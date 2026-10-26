@@ -17,7 +17,7 @@ describeDb("import to campaign data quality", () => {
   let uc: typeof import("../../application/campaign-management");
   let stores: typeof import("../drizzle-management-stores");
   let send: typeof import("../../email/application/send-next-email");
-  let engineStore: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
+  let engineStore: typeof import("../../email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
   let mergeFields: typeof import("../../application/merge-fields");
   let mergeSource: typeof import("../drizzle-merge-fields").drizzleMergeFieldSource;
   const orgs: TestOrg[] = [];
@@ -41,7 +41,7 @@ describeDb("import to campaign data quality", () => {
     uc = await import("../../application/campaign-management");
     stores = await import("../drizzle-management-stores");
     send = await import("../../email/application/send-next-email");
-    ({ drizzleOutreachStore: engineStore } = await import("../drizzle-outreach-store"));
+    ({ drizzleOutreachStore: engineStore } = await import("../../email/infrastructure/drizzle-outreach-store"));
     mergeFields = await import("../../application/merge-fields");
     ({ drizzleMergeFieldSource: mergeSource } = await import("../drizzle-merge-fields"));
   });
