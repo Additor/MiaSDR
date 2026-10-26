@@ -12,7 +12,7 @@ import {
   type ReplyTypeFacts,
   type TypeRules,
 } from "./reply-type";
-import { settlesAfterAiCategory, settlesAfterAiPick } from "./workflow-state";
+import { settlesAfterAiPick } from "./workflow-state";
 
 /** An AI pick at high confidence on an email reply of a campaign that drafts follow-ups: every rule is in play. */
 const facts: ReplyTypeFacts = {
@@ -59,11 +59,10 @@ describe("decideReplyType against the rules it replaces, for every default type"
       // (`systemRole: stop_request`), where do_not_contact used to apply on its own.
       if (d.systemRole === "stop_request") expect(decision.hold).toBe("requires_review");
       else expect(decision.hold === "requires_review").toBe(oldReviewHold(d.groupKey, d.key === "customer"));
-      // workflow-state settle, for a pick that applied
+      // workflow-state settle, for a pick that applied. The old rule settled `action_required` when no draft was wanted
+      // and nothing asked to stop.
       if (decision.hold === null) {
-        expect(settlesAfterAiPick("action_required", decision, false)).toBe(
-          settlesAfterAiCategory("action_required", { wantsDraft: needsReply(d.groupKey, d.key), stopRequested: false }),
-        );
+        expect(settlesAfterAiPick("action_required", decision, false)).toBe(!needsReply(d.groupKey, d.key));
       }
     });
   }
