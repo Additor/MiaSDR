@@ -100,6 +100,11 @@ describeDb("final status guard", () => {
       await expect(reclaim(capped)).rejects.toThrow(/is final and cannot change/);
       const noCount = await insertSend("failed");
       await expect(sql`update sends set status = 'sending' where id = ${noCount}`).rejects.toThrow(/is final and cannot change/);
+      // The re-claim raises attempt by exactly one: a jump from 1 to 3 skips an attempt and stays closed.
+      const skipped = await insertSend("failed");
+      await sql`update sends set attempt = 1 where id = ${skipped}`;
+      await expect(sql`update sends set status = 'sending', attempt = 3 where id = ${skipped}`).rejects.toThrow(/is final and cannot change/);
+      expect((await sql`select status, attempt from sends where id = ${skipped}`)[0]).toEqual({ status: "failed", attempt: 1 });
     });
 
     it("lets a final row change other columns and keep its status", async () => {
