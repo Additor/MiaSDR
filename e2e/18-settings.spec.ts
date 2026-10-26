@@ -100,7 +100,7 @@ test.describe("organization settings", () => {
     await page.goto("/settings/organization");
     await expect(page.getByLabel("Name")).toHaveValue(ADMIN.organization);
     // The slug is shown as text under the name, never as a field.
-    const { slug } = (await (await page.request.get("/api/settings/organization")).json()) as { slug: string };
+    const { id: organizationId, slug } = (await (await page.request.get("/api/settings/organization")).json()) as { id: string; slug: string };
     await expect(page.getByText(slug, { exact: true })).toBeVisible();
     // Save stays off until something changes.
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -114,8 +114,9 @@ test.describe("organization settings", () => {
       await expect(page.getByText("Organization saved.")).toBeVisible();
       await page.reload();
       await expect(page.getByLabel("Name")).toHaveValue("E2E Corp Renamed");
+      await expect(page.getByLabel("Default time zone")).toHaveValue("Asia/Seoul");
       await expect(page.getByText(slug, { exact: true })).toBeVisible();
-      const audit = await sql()`select action, meta from audit_log where action in ('organization.renamed', 'organization.timezone_changed') order by created_at desc limit 2`;
+      const audit = await sql()`select action, meta from audit_log where organization_id = ${organizationId} and action in ('organization.renamed', 'organization.timezone_changed') order by created_at desc limit 2`;
       expect(audit.map((a) => a.action).sort()).toEqual(["organization.renamed", "organization.timezone_changed"]);
     } finally {
       const res = await page.request.patch("/api/settings/organization", { data: { name: ADMIN.organization, timeZone: "UTC" } });

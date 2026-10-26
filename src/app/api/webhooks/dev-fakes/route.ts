@@ -22,7 +22,9 @@ import { FakeLinkedInGateway, type FakeLinkedInBehavior } from "@/contexts/outre
 function allowed(request: Request): boolean {
   if (!testHelpersBuilt() || process.env.E2E_FAKE_CONTROLS !== "1") return false;
   if (env().MAILBOX_PROVIDER !== "fake" && env().LINKEDIN_PROVIDER !== "fake") return false;
-  return request.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
 export async function POST(request: Request) {

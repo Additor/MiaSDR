@@ -9,15 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { GoogleButton } from "../google-button";
+import { safeNext } from "./safe-next";
 
 const NOTICES: Record<string, string> = {
   "no-organization": "Your account does not belong to an organization yet. Ask an admin to invite you.",
 };
-
-/** Only same-site paths: a crafted ?next= must not send people elsewhere. */
-function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/leads";
-}
 
 export function SignInForm({ signupAvailable, googleEnabled = false }: { signupAvailable: boolean; googleEnabled?: boolean }) {
   const router = useRouter();
