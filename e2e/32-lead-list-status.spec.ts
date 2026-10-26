@@ -86,7 +86,7 @@ test.describe("lead list status columns, chips and column set", () => {
 
     // One submit button, one Clear filters while the search is applied, none once its chip is removed.
     const form = page.locator('form[aria-label="Filter leads"]');
-    // The search's hidden submit and Apply filters.
+    // The search's hidden submit and the Filters popover's Apply, which stays in the form while it is closed.
     await expect(form.locator('button[type="submit"]')).toHaveCount(2);
     await expect(page.getByRole("link", { name: "Clear filters" })).toHaveCount(1);
     await page.getByRole("link", { name: "Remove filter Search: s30" }).click();
@@ -94,8 +94,8 @@ test.describe("lead list status columns, chips and column set", () => {
 
     await page.goto("/leads?q=s30");
     await openFilters(page);
-    await page.getByLabel("Replied", { exact: true }).selectOption("yes");
-    await page.getByRole("button", { name: "Apply filters" }).click();
+    await page.getByRole("radiogroup", { name: "Replied" }).getByText("Yes", { exact: true }).click();
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(/replied=yes/);
     await expect.poll(() => names(page)).toEqual(["S30 Rita Replied"]);
     await expect(page.getByTestId("filters-toggle")).toHaveText(/^Filters\s*1 in use$/);

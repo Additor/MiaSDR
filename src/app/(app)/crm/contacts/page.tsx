@@ -23,7 +23,10 @@ import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { AddContactButton } from "../_components/add-contact-dialog";
 import { dealDialogData } from "../_components/deal-dialog-data";
-import { DealOwnerFilter, DealStageFilter, type DealFilterOption } from "../_components/deal-filters";
+import { DealFilterFields, dealFilterChips } from "../_components/deal-filter-fields";
+import { AppliedFilters, type AppliedFilter } from "@/components/shell/filter-chip";
+import { FilterPopover } from "@/components/shell/filter-popover";
+import { ListToolbar } from "@/components/shell/list-toolbar";
 import { SearchField } from "@/components/shell/search-field";
 import { ListPager, pageCountOf, SortHeader } from "@/components/shell/list-pager";
 import { contactLabel } from "../_components/labels";
@@ -127,13 +130,17 @@ async function Contacts({ searchParams }: { searchParams: PageProps<"/crm/contac
   const now = new Date().toISOString();
   const filtered = Boolean(q || owner || stage);
   const sortTo = (key: ContactSort) => contactsHref({ ...state, sort: sort === key ? "converted" : key });
-  const ownerOptions: DealFilterOption[] = [
+  const ownerOptions = [
     { value: "me", label: "Me" },
     ...choices.members.filter((m) => m.userId !== actor.userId).map((m) => ({ value: m.userId, label: m.name })),
     { value: "none", label: "No owner" },
-  ].map((o) => ({ ...o, href: contactsHref({ ...state, owner: o.value }) }));
-  // A pipeline without stages yet has no ids to filter by, so the filter waits for the first deal.
-  const stageOptions: DealFilterOption[] = choices.stages.stages.flatMap((s) => (s.id ? [{ value: s.id, label: s.name, href: contactsHref({ ...state, stage: s.id }) }] : []));
+  ];
+  const stageOptions = choices.stages.stages.flatMap((s) => (s.id ? [{ value: s.id, label: s.name }] : []));
+  const dealFilters = { owner, stage, owners: ownerOptions, stages: stageOptions };
+  const chips: AppliedFilter[] = [
+    ...(q ? [{ key: "q", name: "Search", value: q, href: contactsHref({ ...state, q: "" }) }] : []),
+    ...dealFilterChips({ ...dealFilters, without: (key) => contactsHref({ ...state, [key]: undefined }) }),
+  ];
 
   const query = filterQuery(state);
   // Rows link with the list they came from, so the contact page lands back here after a delete.
@@ -142,30 +149,35 @@ async function Contacts({ searchParams }: { searchParams: PageProps<"/crm/contac
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <form action="/crm/contacts" className="flex min-w-0 flex-1 basis-72 flex-wrap items-center gap-2" aria-label="Contact search">
-          {sort !== "converted" && <input type="hidden" name="sort" value={sort} />}
-          {owner && <input type="hidden" name="owner" value={owner} />}
-          {stage && <input type="hidden" name="stage" value={stage} />}
+      <form action="/crm/contacts" aria-label="Filter contacts">
+        {sort !== "converted" && <input type="hidden" name="sort" value={sort} />}
+        <ListToolbar
+          filters={
+            <FilterPopover count={(owner ? 1 : 0) + (stage ? 1 : 0)}>
+              <DealFilterFields {...dealFilters} />
+            </FilterPopover>
+          }
+          end={
+            total === 0 ? (
+              <div className="flex items-center gap-2">
+                <button type="button" aria-disabled="true" aria-describedby="export-reason" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-not-allowed opacity-50 max-sm:h-11")}>
+                  {exportLabel}
+                </button>
+                <span id="export-reason" className="text-xs text-muted-foreground">
+                  {filtered ? "No contacts match, so there is nothing to export." : "Add contacts to export them."}
+                </span>
+              </div>
+            ) : (
+              <a href={`/api/contacts/export${query ? `?${query}` : ""}`} download className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-sm:h-11")}>
+                {exportLabel}
+              </a>
+            )
+          }
+        >
           <SearchField label="Search contacts" defaultValue={q} placeholder="Search name, email or company" />
-        </form>
-        <DealOwnerFilter anyHref={contactsHref({ ...state, owner: undefined })} value={owner} options={ownerOptions} />
-        {stageOptions.length > 0 && <DealStageFilter anyHref={contactsHref({ ...state, stage: undefined })} value={stage} options={stageOptions} />}
-        {total === 0 ? (
-          <div className="flex items-center gap-2">
-            <button type="button" aria-disabled="true" aria-describedby="export-reason" className={cn(buttonVariants({ variant: "outline" }), "cursor-not-allowed opacity-50")}>
-              {exportLabel}
-            </button>
-            <span id="export-reason" className="text-xs text-muted-foreground">
-              {filtered ? "No contacts match, so there is nothing to export." : "Add contacts to export them."}
-            </span>
-          </div>
-        ) : (
-          <a href={`/api/contacts/export${query ? `?${query}` : ""}`} download className={cn(buttonVariants({ variant: "outline" }))}>
-            {exportLabel}
-          </a>
-        )}
-      </div>
+        </ListToolbar>
+      </form>
+      <AppliedFilters chips={chips} clear={{ href: contactsHref({ q: "", sort }) }} />
 
       {total === 0 ? (
         filtered ? (

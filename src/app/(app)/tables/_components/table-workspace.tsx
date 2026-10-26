@@ -15,7 +15,6 @@ import { cellRunBody, recalcSummary, retrySummary, runCellSource } from "../_lib
 import { withGridFocus } from "../_lib/edit/history-focus";
 import { layoutPins, pinPhoneNotice, withPin } from "../_lib/view/pin-layout";
 import { filtersNarrow, keepsTableOrder, setSort, toggleHidden, withRunFailures } from "../_lib/view/view";
-import { activeConditionCount } from "@/contexts/grid/domain/view-query";
 import { useIsMobile } from "@/components/hooks/use-mobile";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import { pasteSummary, type BlockPasteRequest } from "../_lib/edit/paste";
@@ -30,7 +29,7 @@ import { ConflictDialog } from "./conflict-dialog";
 import { DataGrid, type ActiveCell } from "./data-grid";
 import { EnrichStart } from "./enrich-start";
 import { EnrichmentDialog } from "./enrichment-dialog";
-import { FilterPanel } from "./filter-panel";
+import { TableFilterPopover, TableSortPopover } from "./view-popovers";
 import { FormulaDialog } from "./formula-dialog";
 import { TableImportDialog } from "./table-import-dialog";
 import { PushCampaignDialog } from "./push-campaign-dialog";
@@ -40,7 +39,6 @@ import { ViewBar } from "./view-bar";
 
 type Open =
   | { kind: "import" }
-  | { kind: "filters" }
   | { kind: "formula"; column: GridColumn | null; after?: string }
   | { kind: "enrichment"; column: GridColumn | null; after?: string; outcome?: string }
   | { kind: "ai"; column: GridColumn | null; after?: string }
@@ -350,9 +348,12 @@ export function TableWorkspace({ tableId }: Props) {
         onRun={() => setDialog({ kind: "run", column: null })}
         onToggleAutoRun={(next) => void toggleAutoRun(next)}
         onToggleHidden={(key, hide) => void grid.saveView(toggleHidden(view, key, hide))}
-        onOpenFilters={() => setDialog({ kind: "filters" })}
-        activeFilters={activeConditionCount(view.filters, types)}
-        sortCount={view.sorts?.length ?? 0}
+        viewControls={
+          <>
+            <TableFilterPopover columns={columns} view={view} saveView={grid.saveView} />
+            <TableSortPopover columns={columns} view={view} saveView={grid.saveView} />
+          </>
+        }
         onJobsChanged={() => void grid.reload()}
         onShowFailed={() => void grid.saveView(withRunFailures(view, columns.filter((c) => c.type === "enrichment" || c.type === "waterfall" || c.type === "ai").map((c) => c.key)))}
       />
@@ -431,7 +432,6 @@ export function TableWorkspace({ tableId }: Props) {
       />
       {grid.conflict && <ConflictDialog items={grid.conflict.items} columns={columns} rowNumbers={rowNumbers} onResolve={(choice) => { grid.resolveConflict(choice); setFocusToken((t) => t + 1); }} />}
 
-      {dialog?.kind === "filters" && <FilterPanel columns={columns} view={view} saveView={grid.saveView} onClose={closeDialog} />}
       {dialog?.kind === "addRows" && <AddRowsDialog onAdd={addRows} onClose={closeDialog} />}
       {dialog?.kind === "import" && <TableImportDialog tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
       {dialog?.kind === "formula" && <FormulaDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} previewRowId={active?.row.id} onClose={closeDialog} onSaved={grid.reload} />}

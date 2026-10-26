@@ -105,7 +105,7 @@ test.describe("inbox filters and views", () => {
     await page.goto("/inbox");
     await openFilters(page);
     await page.getByRole("form", { name: "Inbox filters" }).getByLabel("Mailbox").selectOption({ label: BOX_A });
-    await page.getByRole("button", { name: "Apply filters" }).click();
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`mailbox=${boxA}`));
     await expect(page.getByText("27 conversations, page 1 of 2")).toBeVisible();
     await expect(page.getByRole("link", { name: /Bulk Lead 01/ })).toBeVisible();
@@ -124,7 +124,6 @@ test.describe("inbox filters and views", () => {
     await expect(page).not.toHaveURL(/page=2/);
 
     // Clear filters keeps the view and drops the mailbox.
-    await openFilters(page);
     await page.getByRole("link", { name: "Clear filters" }).click();
     await expect(page).toHaveURL(/\/inbox\?view=unread$/);
 
@@ -173,9 +172,9 @@ test.describe("inbox filters and views", () => {
     await page.goto(`/inbox?mailbox=${boxA}`);
     await openFilters(page);
     await page.getByRole("form", { name: "Inbox filters" }).getByLabel("Last message").selectOption("custom");
-    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("From (date, custom range)").fill("2020-01-01");
-    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("To (date, custom range)").fill("2020-01-01");
-    await page.getByRole("button", { name: "Apply filters" }).click();
+    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("Custom range from").fill("2020-01-01");
+    await page.getByRole("form", { name: "Inbox filters" }).getByLabel("Custom range to").fill("2020-01-01");
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(/range=custom/);
     await expect(page.getByText("No conversations match")).toBeVisible();
     await page.getByRole("link", { name: /Remove filter Dates/ }).click();

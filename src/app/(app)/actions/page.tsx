@@ -29,7 +29,7 @@ import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { ListKeys } from "@/components/shell/list-keys";
 import { ListSkeleton } from "@/components/shell/list-skeleton";
 import { FilterChips } from "@/components/shell/filter-chips";
-import { ActiveFilterChips } from "@/components/shell/filter-panel";
+import { AppliedFilters } from "@/components/shell/filter-chip";
 import { ListToolbar } from "@/components/shell/list-toolbar";
 import { InfoTip, KeyboardHint } from "@/components/shell/info-tip";
 import { PageHeader } from "@/components/shell/page-header";
@@ -238,14 +238,11 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
       <ListKeys />
       <ListToolbar
         end={groups.length > 0 || scopedTasks.length > 0 ? <KeyboardHint noun="rows" /> : undefined}
-        filters={{
-          count: queueChips.length,
-          panel: <QueueFilters values={filterValues} scope={scope} subcategories={subcategories} campaigns={campaigns} />,
-        }}
+        filters={<QueueFilters values={filterValues} scope={scope} count={queueChips.length} subcategories={subcategories} campaigns={campaigns} />}
       >
         <FilterChips label="Whose work" items={scopeChips.map((c) => ({ href: scopeHref(c.scope), active: scope === c.scope, testId: `scope-${c.scope}`, label: c.label, count: counts.work[c.scope] }))} />
       </ListToolbar>
-      <ActiveFilterChips chips={queueChips} clearHref={`/actions?scope=${scope}`} />
+      <AppliedFilters chips={queueChips} clear={{ href: `/actions?scope=${scope}` }} />
       {!clear && (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
           <nav aria-label="Jump to a list" className="flex flex-wrap gap-x-4 text-muted-foreground" data-testid="queue-jumps">

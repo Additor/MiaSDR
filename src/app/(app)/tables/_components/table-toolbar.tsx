@@ -1,14 +1,13 @@
 "use client";
 
-import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, ListFilterIcon, Loader2Icon, PlayIcon, PlusIcon, Rows3Icon, SearchIcon, SendIcon, SigmaIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
-import type { ComponentProps } from "react";
+import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, Loader2Icon, PlayIcon, PlusIcon, Rows3Icon, SearchIcon, SendIcon, SigmaIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { OUTCOMES } from "../_lib/data/outcomes";
 import type { GridColumn } from "../_lib/data/types";
-import { plural } from "../_lib/view/format";
 import { RunProgress } from "./run-controls";
 
 type Progress = ComponentProps<typeof RunProgress>;
@@ -45,24 +44,21 @@ interface Props {
   onRun: () => void;
   onToggleAutoRun: (next: boolean) => void;
   onToggleHidden: (columnKey: string, hide: boolean) => void;
-  /** Opens the filter and sort panel. `activeFilters` counts conditions that narrow rows; muted ones do not count. */
-  onOpenFilters: () => void;
-  activeFilters: number;
-  sortCount: number;
+  /** The Filter and Sort popovers. */
+  viewControls: ReactNode;
   onJobsChanged: () => void;
   /** Filters the grid to the rows whose run failed. */
   onShowFailed?: () => void;
 }
 
 /**
- * The row of controls above the grid, in two groups. On the left, what you see: search, filter and sort, columns and
+ * The row of controls above the grid, in two groups. On the left, what you see: search, Filter, Sort, columns and
  * the row count. On the right, what you do, ending on the one filled button: Add, Push to campaign, Enrich, then Run
  * once the table has a column that runs. Enrich is filled until then. Push and Export share one group: the two ways rows
  * leave the table. On a phone the left group takes the first line.
  */
 export function TableToolbar(props: Props) {
   const { columns, hidden } = props;
-  const filterCount = [props.activeFilters > 0 ? plural(props.activeFilters, "filter") : "", props.sortCount > 0 ? plural(props.sortCount, "sort") : ""].filter(Boolean).join(", ");
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <div className="flex min-w-0 items-center gap-2 max-sm:w-full">
@@ -70,15 +66,7 @@ export function TableToolbar(props: Props) {
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input aria-label="Search rows" placeholder="Search rows" className="w-56 pl-7 max-sm:w-full" value={props.search} onChange={(e) => props.onSearch(e.target.value)} />
         </div>
-        <Button variant="outline" size="sm" onClick={props.onOpenFilters}>
-          <ListFilterIcon /> <span className="max-sm:sr-only">Filter and sort</span>
-          {filterCount && (
-            <>
-              <span className="sm:hidden">{props.activeFilters + props.sortCount}</span>
-              <span className="max-sm:sr-only"> ({filterCount})</span>
-            </>
-          )}
-        </Button>
+        {props.viewControls}
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
             <Columns3Icon /> <span className="max-sm:sr-only">Columns</span>

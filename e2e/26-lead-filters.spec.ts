@@ -49,12 +49,22 @@ test.describe("lead list filters, sort and lifecycle", () => {
     await page.goto("/leads?q=s26");
     await expect(page.getByText("5 leads", { exact: true })).toBeVisible();
     await openFilters(page);
-    await page.getByLabel("Has LinkedIn").selectOption("yes");
-    await page.getByRole("button", { name: "Apply filters" }).click();
+    await page.getByRole("radiogroup", { name: "Has LinkedIn" }).getByText("Yes", { exact: true }).click();
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(/linkedin=yes/);
     await expect(page).toHaveURL(/q=s26/);
     await expect(page.getByText("3 leads", { exact: true })).toBeVisible();
     await expect.poll(async () => (await firstNames(page)).sort()).toEqual(["S26 Amy Archer", "S26 Cat Cole", "S26 Eli Eaves"]);
+
+    // Escape throws the draft away, so Enter in the search sends only the filters in force.
+    await openFilters(page);
+    await page.getByRole("radiogroup", { name: "Has email" }).getByText("No", { exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("filters-toggle")).toHaveAttribute("aria-expanded", "false");
+    await page.getByRole("searchbox", { name: "Search leads" }).press("Enter");
+    await expect(page).toHaveURL(/linkedin=yes/);
+    await expect(page).not.toHaveURL(/email=no/);
+    await expect(page.getByText("3 leads", { exact: true })).toBeVisible();
 
     // Campaign filter through the URL, and the clear link.
     await page.goto("/leads?q=s26&campaign=any");
@@ -119,7 +129,7 @@ test.describe("lead list filters, sort and lifecycle", () => {
     await openFilters(page);
     await expect(page.getByLabel("Lifecycle", { exact: true })).toHaveValue("");
     await page.getByLabel("Lifecycle", { exact: true }).selectOption("all");
-    await page.getByRole("button", { name: "Apply filters" }).click();
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(/lifecycle=all/);
     await expect(page.getByText("6 people", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Remove filter Lifecycle: Leads and contacts" })).toBeVisible();
@@ -167,7 +177,7 @@ test.describe("lead list filters, sort and lifecycle", () => {
     await expect(page.getByRole("link", { name: "Remove filter Lifecycle: Leads and contacts" })).toBeVisible();
     await openFilters(page);
     await page.getByLabel("Lifecycle", { exact: true }).selectOption("");
-    await page.getByRole("button", { name: "Apply filters" }).click();
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(/lifecycle=(&|$)/);
     await expect(page.getByText("5 leads", { exact: true })).toBeVisible();
     await expect(page.getByTestId("filter-chip-lifecycle")).toHaveCount(0);

@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
-import { ActiveFilterChips } from "@/components/shell/filter-panel";
+import { AppliedFilters } from "@/components/shell/filter-chip";
 import { PageHeader } from "@/components/shell/page-header";
 import { SelectionProvider } from "@/components/shell/selection";
 import { buttonVariants } from "@/components/ui/button";
@@ -111,7 +111,7 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
           </>
         }
       />
-      <ActiveFilterChips chips={chips.map((chip) => ({ key: chip.key, name: chip.name, value: chip.value, href: leadsHref({ filter: chip.without, sort, size: pageSize }) }))} clearHref={leadsHref({ filter: {}, sort, size: pageSize })} />
+      <AppliedFilters chips={chips.map((chip) => ({ key: chip.key, name: chip.name, value: chip.value, href: leadsHref({ filter: chip.without, sort, size: pageSize }) }))} clear={{ href: leadsHref({ filter: {}, sort, size: pageSize }) }} />
 
       {total === 0 ? (
         <EmptyState
