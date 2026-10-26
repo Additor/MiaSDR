@@ -5,7 +5,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import * as script from "../../../../scripts/migrate.mjs";
 import { describeDb, TEST_DATABASE_URL } from "../../../test-support/db";
-import { adminAndScratchUrls, folderUpTo, readJournal } from "../../../test-support/migration-test-kit";
+import { adminAndScratchUrls, folderWithNext, readJournal } from "../../../test-support/migration-test-kit";
 
 /** Needs TEST_DATABASE_URL (any database on the test server). Builds and drops its own scratch database. */
 describeDb("scripts/migrate.mjs against an empty database", () => {
@@ -53,17 +53,17 @@ describeDb("scripts/migrate.mjs against an empty database", () => {
     expect(second.out).toContain("nothing pending");
   });
 
-  it("applies only the pending files on a database that is partly migrated", async () => {
+  it("applies only the pending files on a database that is already migrated", async () => {
     const partial = `${name}_p`;
     await adminSql.unsafe(`create database ${partial}`);
     try {
-      const partialUrl = adminAndScratchUrls(TEST_DATABASE_URL ?? "", partial).scratch;
-      const upTo = folderUpTo(mkdtempSync(path.join(tmpdir(), "migrate-script-")), 5);
-      const first = await lines(() => script.main({ DATABASE_URL: partialUrl, DATABASE_SSL: "disable" }, upTo));
-      expect(first.out).toContain("applied 6 (6 in total)");
-      const rest = await lines(() => script.main({ DATABASE_URL: partialUrl, DATABASE_SSL: "disable" }, migrations));
+      const partialEnv = { DATABASE_URL: adminAndScratchUrls(TEST_DATABASE_URL ?? "", partial).scratch, DATABASE_SSL: "disable" };
       const total = readJournal().entries.length;
-      expect(rest.out).toContain(`applied ${total - 6} (${total} in total)`);
+      const first = await lines(() => script.main(partialEnv, migrations));
+      expect(first.out).toContain(`applied ${total} (${total} in total)`);
+      const withNext = folderWithNext(mkdtempSync(path.join(tmpdir(), "migrate-script-")), "create table next_release_probe (id int);");
+      const rest = await lines(() => script.main(partialEnv, withNext));
+      expect(rest.out).toContain(`applied 1 (${total + 1} in total)`);
     } finally {
       await adminSql.unsafe(`drop database if exists ${partial} with (force)`);
     }
