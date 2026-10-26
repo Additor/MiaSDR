@@ -200,7 +200,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     expect((await sql`select count(*)::int as n from lead_ccs where person_id = ${neighbour.person}`)[0].n).toBe(0);
     expect(await allTables(elsewhere.org)).toEqual(elsewhereBefore);
     expect((await sql`select count(*)::int as n from records where person_id = ${stranger.person}`)[0].n).toBe(1);
-    // The relaxed check of 0027: the exception stays resolved, now with no person.
+    // identity_exceptions_resolution_ck: the exception stays resolved, now with no person.
     const [exception] = await sql`select status, resolved_person_id from identity_exceptions where source_event_key = ${`ev-${o.tag}-target`}`;
     expect(exception).toEqual({ status: "resolved", resolved_person_id: null });
     // The switch was transaction-local and the next transaction cannot delete a message.

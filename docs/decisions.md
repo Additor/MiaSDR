@@ -73,7 +73,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 
 - Child tables reference their parents with composite `(column, organization_id)` foreign keys, so a row cannot point into another organization.
 - `src/platform/db/schema-audit.ts` requires every public table to have `organization_id uuid not null`, a foreign key to `organizations` and an index containing the column. Exceptions sit in `NO_SCOPE` (Better Auth tables, `organizations`, `integration_credentials`), `NULLABLE_SCOPE` (`inbound_events`, `job_runs`) and `INDEX_DEBT`, each with a reason. A stale entry fails the audit, so the lists only shrink.
-- `events`, `audit_log` and `messages` are append-only by trigger (migration 0013). `messages` accepts updates to `important` and `opened_at`. Deletes pass inside a cascade or in a transaction that sets `miasdr.allow_purge` to `on`.
+- `events`, `audit_log` and `messages` are append-only by trigger. `messages` accepts updates to `important` and `opened_at`. Deletes pass inside a cascade or in a transaction that sets `miasdr.allow_purge` to `on`.
 - `recordAudit` (`src/platform/db/audit.ts`) writes an `audit_log` row inside the caller's transaction, so the row commits with the change. `meta` never holds a secret.
 - Organization deletion is disabled. Foreign keys to `organizations` cascade, which tests use for cleanup.
 
@@ -455,7 +455,7 @@ A campaign setting with two modes, stored as state on a campaign-owned row in `s
 | AI drafts follow-ups for my approval (`ai_drafts`) | status `active` with a published version |
 
 - **Flow.** Step 1, "Reply to their answer", has delay 0 and adopts the reply draft the classification already queued. Later steps have a delay in days, a Goal, optional starting text and knowledge tags. The job (`conversations.sequences`) only writes drafts; `approveAndSendDraft` sends each one after a person approves it.
-- **Save publishes.** Published versions are frozen (migration 0016 triggers). A run keeps the version it started on. Switching to handoff asks first and ends runs in progress with reason `after_reply_off`; the steps stay.
+- **Save publishes.** Published versions are frozen by trigger. A run keeps the version it started on. Switching to handoff asks first and ends runs in progress with reason `after_reply_off`; the steps stay.
 - **LinkedIn and personal** campaigns are locked to handoff.
 - **Start rule.** A run starts for a reply whose owning campaign is the one that most recently emailed the person: a `sends` row of `kind = 'campaign'`, channel `email`, status `sent`, latest `sent_at` no later than the reply. That campaign must be email, regular, not archived, `active` or `completed`, and in `ai_drafts` mode. Its mode decides, even when an older campaign has a flow. The reply must be classified (auto-applied, accepted or overridden at the current context version) into a subcategory outside `NO_START_KEYS` and outside the not-interested category. It must arrive no earlier than 10 minutes (`NEW_REPLY_MARGIN_MINUTES`) before `sequences.after_reply_enabled_at`, the moment the flow last switched from off to on. Contacts, do not contact and suppressed people start nothing. A person's Restart skips the recency rule.
 - **Paused campaign.** It starts no runs and holds draft creation for runs in progress. Completed and archived campaigns let runs continue.
@@ -521,7 +521,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### Send status tables
 
-Store queries compare and set on the previous status; migration 0008's triggers reject any change out of a final status (SQLSTATE 23514). The one exception is the engines' re-claim `failed -> sending` with the attempt raised by one while below 3.
+Store queries compare and set on the previous status; the final status triggers reject any change out of a final status (SQLSTATE 23514). The one exception is the engines' re-claim `failed -> sending` with the attempt raised by one while below 3.
 
 `sends` (campaign and test; `sent` and `failed` are final):
 

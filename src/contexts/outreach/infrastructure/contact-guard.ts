@@ -9,7 +9,7 @@ import { people } from "@/platform/db/schema";
  */
 export const notContactSql = sql`(people.lifecycle <> 'contact')`;
 
-/** The message of the `campaign_enrollments` triggers (migration 0025). SQLSTATE 23514 is shared with every CHECK, so match the message. */
+/** The message of the `campaign_enrollments` triggers. SQLSTATE 23514 is shared with every CHECK, so match the message. */
 export const CONTACT_ENROLL_MESSAGE = "contact_cannot_be_enrolled";
 
 export function isContactEnrollError(error: unknown): boolean {

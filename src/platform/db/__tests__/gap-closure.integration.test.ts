@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, type TestOrg } from "../../../test-support/db";
 
-/** Invariants added by migration 0007. Needs TEST_DATABASE_URL, like the other integration tests. */
-describeDb("gap-closure schema (0007)", () => {
+/** CHECKs, keys and defaults on sends, tasks, people, LinkedIn tables and audit_log. Needs TEST_DATABASE_URL, like the other integration tests. */
+describeDb("gap-closure schema", () => {
   const sql = testSql();
   let orgA = "";
   let orgB = "";

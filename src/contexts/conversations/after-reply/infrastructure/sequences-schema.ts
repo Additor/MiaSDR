@@ -132,7 +132,7 @@ export const sequenceRuns = pgTable(
     unique("sequence_runs_id_org_uq").on(t.id, t.organizationId),
     uniqueIndex("sequence_runs_one_active_uq").on(t.recordId).where(sql`${t.status} = 'active'`),
     index("sequence_runs_record_created_idx").on(t.recordId, t.createdAt),
-    // The RESTRICT checks of a deleted message and a deleted conversation (migration 0027).
+    // The RESTRICT checks of a deleted message and a deleted conversation.
     index("sequence_runs_trigger_message_idx").on(t.triggerMessageId),
     index("sequence_runs_conversation_idx").on(t.conversationId),
     check("sequence_runs_status_ck", inList(t.status, SEQUENCE_RUN_STATUSES)),
@@ -167,7 +167,7 @@ export const sequenceStepRuns = pgTable(
     unique("sequence_step_runs_run_step_uq").on(t.sequenceRunId, t.sequenceStepId),
     uniqueIndex("sequence_step_runs_draft_uq").on(t.draftId).where(sql`${t.draftId} is not null`),
     index("sequence_step_runs_due_idx").on(t.status, t.dueAt),
-    // The RESTRICT check of a deleted message (migration 0027).
+    // The RESTRICT check of a deleted message.
     index("sequence_step_runs_sent_message_idx").on(t.sentMessageId).where(sql`${t.sentMessageId} is not null`),
     check("sequence_step_runs_status_ck", inList(t.status, STEP_RUN_STATUSES)),
     check("sequence_step_runs_attempts_ck", sql`${t.attemptCount} >= 0 and ${t.expectedContextVersion} >= 0`),

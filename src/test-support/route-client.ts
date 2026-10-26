@@ -276,14 +276,14 @@ export const SEED_OVERRIDES: Record<string, Record<string, unknown>> = {
   sequence_steps: { position: 1, step_type: "reply", delay_minutes: 0 },
   ai_jobs: { kind: "classification", entity_type: "message" },
   contact_policies: { do_not_contact: false, source: null, set_at: null, cleared_at: null },
-  // The message must be inbound (0020); parentForce shapes the message the foreign key walk seeds.
+  // The message must be inbound (cross-row validator); parentForce shapes the message the foreign key walk seeds.
   classifications: { confidence: 0.5, parentForce: { messages: { direction: "inbound" } } },
   campaign_senders: { seedFrom: { mailbox_id: "mailboxes.id" } },
   notes: { seedFrom: { record_id: "records.id", person_id: "records.person_id" } },
   // enrollment_id and step_number became nullable (test sends), so the seeder no longer follows the foreign key by itself.
   sends: { step_number: 1, seedFrom: { enrollment_id: "campaign_enrollments.id" } },
   grid_provider_credentials: { encryption_version: "v1", encrypted_payload: "v1:seed" },
-  // A deal's person must be a contact (trigger in 0025), so the person the foreign key walk seeds is one.
+  // A deal's person must be a contact (trigger on `deals`), so the person the foreign key walk seeds is one.
   deals: { parentForce: { people: { lifecycle: "contact", converted_at: new Date("2026-10-16T00:00:00Z") } } },
 };
 
@@ -292,14 +292,14 @@ type Tx = postgres.TransactionSql;
 /**
  * Per-table fix-ups the generic seeder cannot derive from foreign keys. `before` adjusts the values just before the insert.
  * `after` runs in the insert's transaction: the seeder commits one table per transaction, and a deferred foreign key is
- * checked at commit (knowledge_documents.latest_version, 0017, needs its version row).
+ * checked at commit (knowledge_documents.latest_version needs its version row).
  */
 const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<string, unknown>) => Promise<void>; after?: (tx: Tx, row: Record<string, unknown>) => Promise<unknown> }> = {
   knowledge_documents: {
     after: (tx, row) =>
       tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${row.organization_id as string}, ${row.id as string}, ${row.latest_version as number}, 'seeded')`,
   },
-  // The classification validator (0020) wants the message to belong to the classification's record. The foreign key walk
+  // The classification validator wants the message to belong to the classification's record. The foreign key walk
   // seeds an unrelated record, so point record_id at the record of the seeded message's conversation.
   // Positions are unique per organization (checked at commit), so each seeded stage goes after the last one.
   deal_stages: {

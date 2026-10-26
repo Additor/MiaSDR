@@ -63,7 +63,7 @@ const SAMPLE_UUID = "00000000-0000-4000-8000-000000000001";
 const batch: IdSpec = { table: "linkedin_search_batches", force: { kind: "bulk" } };
 const admin = (valid?: unknown): HandlerSpec => ({ admin: true, ...(valid === undefined ? {} : { valid }) });
 const ok = (valid?: unknown): HandlerSpec => (valid === undefined ? {} : { valid });
-/** A person at lifecycle `contact` (the CHECK of 0025 wants `converted_at` with it). */
+/** A person at lifecycle `contact` (a CHECK on `people` wants `converted_at` with it). */
 const contact: IdSpec = { table: "people", force: { lifecycle: "contact", converted_at: new Date("2026-10-19T00:00:00Z") } };
 
 export const ROUTES: Record<string, RouteSpec> = {

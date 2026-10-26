@@ -9,10 +9,10 @@ import { checkCompanyDomain } from "../domain/company-domain";
  * Company domains and their other domains (`company_domain_aliases`), plan 4.3 and 4.5 of
  * "Contacts and Companies CRUD" in docs/decisions.md. Every writer of one domain takes `leads-company-domain:{org}:{domain}` before
  * it reads the aliases (the import holds `leads-import:{org}` instead, which every alias writer takes first), so a person save
- * and a merge of that domain run one after the other. Two guard triggers of migration 0027 back the rule up.
+ * and a merge of that domain run one after the other. Two guard triggers back the rule up.
  */
 
-/** The guard triggers of migration 0027 raise 23505 with these names when a path skipped the domain lock. */
+/** The guard triggers raise 23505 with these names when a path skipped the domain lock. */
 export const DOMAIN_GUARD_CONSTRAINTS: ReadonlySet<string> = new Set(["company_domain_is_alias", "alias_is_company_domain"]);
 
 /** Holds the domain until commit, hashed as the other leads locks are. */

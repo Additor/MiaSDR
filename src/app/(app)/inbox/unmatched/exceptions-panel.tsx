@@ -22,7 +22,7 @@ interface Row {
   sender: string | null;
   subject: string | null;
   excerpt: string;
-  /** Present for a reviewed row. A resolved row whose person was deleted keeps a null person (migration 0027). */
+  /** Present for a reviewed row. A resolved row whose person was deleted keeps a null person. */
   status?: string;
   resolvedPersonId?: string | null;
 }

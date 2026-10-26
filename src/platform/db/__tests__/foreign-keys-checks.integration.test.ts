@@ -220,9 +220,9 @@ describeDb("foreign keys and checks", () => {
       await expect(sql`update classifications set confidence = 1.5 where id = ${w.classification}`).rejects.toThrow(fails("classifications_confidence_range_ck"));
       await expect(sql`update classifications set confidence = -0.1 where id = ${w.classification}`).rejects.toThrow(fails("classifications_confidence_range_ck"));
       await expect(sql`update classifications set expected_context_version = -1 where id = ${w.classification}`).rejects.toThrow(fails("classifications_context_version_ck"));
-      // Detaching the subcategory first keeps the 0020 validator out of the way; the CHECK is under test here.
+      // Detaching the subcategory first keeps the cross-row validator out of the way; the CHECK is under test here.
       await expect(sql`update classifications set applied_subcategory_id = null, applied_category_key = 'maybe' where id = ${w.classification}`).rejects.toThrow(fails("classifications_category_keys_ck"));
-      // The subcategory of the fixture is in 'interested': a different key would trip classifications_subcategories_upd_trg (0020).
+      // The subcategory of the fixture is in 'interested': a different key would trip classifications_subcategories_upd_trg.
       await sql`update classifications set confidence = 1, applied_category_key = 'interested' where id = ${w.classification}`;
     });
 
@@ -244,7 +244,7 @@ describeDb("foreign keys and checks", () => {
 
     it("blank keys and references", async () => {
       const w = await world();
-      // An insert: an update of account_ref now stops at conversations_identity_trg (0016) before the CHECK runs.
+      // An insert: an update of account_ref now stops at conversations_identity_trg before the CHECK runs.
       await expect(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${w.org}, ${w.record}, 'email', ' ')`).rejects.toThrow(fails("conversations_account_ref_ck"));
       await expect(
         sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)

@@ -3,7 +3,7 @@ import { describeDb, dropOrgs, testSql } from "../../../test-support/db";
 import { seedWorld, uid, type World } from "../../../test-support/full-world";
 
 /**
- * Migration 0016: conversation identity, subcategory keys, knowledge versions and published sequence
+ * Conversation identity, subcategory keys, knowledge versions and published sequence
  * versions stay as written. Each test names the trigger it protects, so dropping the trigger fails exactly that test.
  * Every trigger also gets a pass case for the update paths the application uses. Needs TEST_DATABASE_URL.
  */
@@ -26,7 +26,7 @@ const GUARDED: Record<string, string[]> = {
   deals: ["person_id", "organization_id"],
 };
 
-describeDb("immutable identity and versions (0016)", () => {
+describeDb("immutable identity and versions", () => {
   const sql = testSql();
   const worlds: World[] = [];
   const world = async () => {

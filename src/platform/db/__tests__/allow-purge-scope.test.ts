@@ -7,7 +7,7 @@ import { purgePersonHandling } from "@/contexts/conversations/infrastructure/per
 import type { DbHandle } from "@/platform/db/client";
 
 /**
- * `events` and `messages` are append-only; `ledger_reject_delete()` (migration 0013) lets a delete through only while the
+ * `events` and `messages` are append-only; `ledger_reject_delete()` lets a delete through only while the
  * transaction has `miasdr.allow_purge` on. The contact delete's `purgePersonHandling` is the one product path that turns
  * it on ("Contacts and Companies CRUD" in docs/decisions.md), and it turns it off before it returns. The integration tests
  * of the guards themselves also set it.

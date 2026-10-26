@@ -8,7 +8,7 @@ import { rowsOf } from "@/platform/db/sql-values";
  * about one person. The leads use case calls it inside its transaction after `lockPersonForDelete`, the people row lock,
  * `lockContactPolicy` and the blockers, so no reply, draft or AI job of the person lands while it runs.
  *
- * `events` and `messages` are append-only (`ledger_reject_delete`, migration 0013). This function alone turns the purge
+ * `events` and `messages` are append-only (trigger function `ledger_reject_delete`). This function alone turns the purge
  * switch `miasdr.allow_purge` on for its own deletes and off before it returns; allow-purge-scope.test.ts fails when any
  * other source file sets it. The switch is transaction-local, so an error that aborts the transaction drops it too.
  *

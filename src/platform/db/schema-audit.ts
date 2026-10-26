@@ -30,10 +30,9 @@ export const INDEX_DEBT_REASON =
   "Reached through an indexed parent key. Only an organization delete would scan it, and organization deletion is disabled (disableOrganizationDeletion in auth.ts).";
 
 /**
- * Scoped tables with no index that contains `organization_id`. T8b-index-debt triaged the 22 entries of T8: grid_jobs, sends,
- * ai_jobs and contact_policies got an index (migration 0019) and linkedin_search_batches and linkedin_search_queries got one
- * (0021) because an organization-filtered query reads them. The rest stay
- * here. Frozen: add no entry. The audit test pins this exact list, so it can only shrink.
+ * Scoped tables with no index that contains `organization_id`. grid_jobs, sends, ai_jobs, contact_policies,
+ * linkedin_search_batches and linkedin_search_queries have one because an organization-filtered query reads them. The rest
+ * stay here. Frozen: add no entry. The audit test pins this exact list, so it can only shrink.
  */
 export const INDEX_DEBT: Record<string, string> = Object.fromEntries(
   [

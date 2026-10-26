@@ -3,7 +3,7 @@ import { describeDb, dropOrgs, testSql } from "../../../test-support/db";
 import { seedWorld, type World } from "../../../test-support/full-world";
 
 /**
- * Migration 0018: messages_reject_immutable_update compares the columns of messages one by one with
+ * messages_reject_immutable_update compares the columns of messages one by one with
  * IS DISTINCT FROM instead of serializing both rows to jsonb. That makes a column added later invisible to the trigger
  * until someone adds it to the function. The guard test lists information_schema.columns and fails for any column that is
  * neither compared in the function definition nor named in WRITABLE below. Needs TEST_DATABASE_URL.
@@ -13,7 +13,7 @@ const WRITABLE = ["important", "opened_at"];
 
 const FUNCTION = "messages_reject_immutable_update";
 
-describeDb("messages_reject_immutable_update column coverage (0018)", () => {
+describeDb("messages_reject_immutable_update column coverage", () => {
   const sql = testSql();
   const worlds: World[] = [];
   const world = async () => {

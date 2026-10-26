@@ -22,8 +22,8 @@ export const startableCampaignSql = (campaign: { channel: SQL; type: SQL; status
 
 /**
  * A run's flow may keep running. A campaign-owned flow runs only while its status is `active`: switching After a reply
- * off archives it and ends its runs. A legacy standalone flow (no campaign) runs on whatever its status. Migration 0022
- * archived those so no new run starts from them, and promised that runs already in flight finish on their pinned version.
+ * off archives it and ends its runs. A legacy standalone flow (no campaign) runs on whatever its status, so a run already in flight finishes on its pinned
+ * version.
  * The interrupt sweep and the step claim both use this condition, so they agree.
  */
 export const flowRunnableSql = (alias: string) => sql`(${sql.raw(alias)}.campaign_id is null or ${sql.raw(alias)}.status = 'active')`;

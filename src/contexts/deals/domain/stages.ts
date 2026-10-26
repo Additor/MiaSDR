@@ -2,7 +2,7 @@ import { ValidationError } from "@/shared/errors";
 
 /**
  * The organization's deal pipeline: one ordered list of stages. A stage's kind is `open`, `won` or `lost` and never
- * changes (trigger in migration 0025). The list always holds at least one stage of each kind, and every open stage comes before
+ * changes (a trigger on `deal_stages`). The list always holds at least one stage of each kind, and every open stage comes before
  * every won stage, which come before every lost stage. Deal stages carry no stop rule: those belong to reply categories.
  */
 
@@ -18,7 +18,7 @@ export interface StageDraft {
   position: number;
 }
 
-/** The stages an organization starts with. Migration 0025 seeds the same list for organizations that existed then. */
+/** The stages an organization starts with. */
 export const DEFAULT_DEAL_STAGES: readonly StageDraft[] = [
   { name: "New", kind: "open", position: 1 },
   { name: "Meeting", kind: "open", position: 2 },

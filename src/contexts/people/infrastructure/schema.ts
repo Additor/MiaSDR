@@ -37,7 +37,7 @@ export const companies = pgTable(
     source: text("source"),
     /**
      * When the company entered the CRM: Add company, a merge into it, or a use case that moved its last contact away. Companies
-     * lists a company with this set or with a contact. No trigger writes it and nothing clears it. Migration 0027.
+     * lists a company with this set or with a contact. No trigger writes it and nothing clears it.
      */
     crmListedAt: tstz("crm_listed_at"),
     /** Optimistic lock. Every company write sets `version = version + 1`, so a merge or delete preview sees a change. */
@@ -56,7 +56,7 @@ export const companies = pgTable(
 /**
  * Other domains of a company: the domain of a company that merged into it, and that company's own other domains. A domain is
  * a company domain or an alias in one organization, never both; the domain lock of every writer keeps it so, and two guard
- * triggers of migration 0027 (`companies_domain_not_alias_trg`, `company_aliases_not_domain_trg`) back it up. Rows move to
+ * triggers (`companies_domain_not_alias_trg`, `company_aliases_not_domain_trg`) back it up. Rows move to
  * the kept company on a later merge, so `company_id` is not immutable.
  */
 export const companyDomainAliases = pgTable(
@@ -107,12 +107,12 @@ export const people = pgTable(
     source: text("source"),
     /**
      * `lead` or `contact`. Add contact inserts a contact; a lead becomes one when a deal is created from it or someone makes it a
-     * contact, and never goes back (trigger in migration 0025).
+     * contact, and never goes back (trigger `people_lifecycle_trg`).
      */
     lifecycle: text("lifecycle").notNull().default("lead"),
     /** Set once, when the person became a contact. */
     convertedAt: tstz("converted_at"),
-    /** The idempotency key of the Add contact request that created the person; nothing else writes it. Migration 0027. */
+    /** The idempotency key of the Add contact request that created the person; nothing else writes it. */
     creationKey: text("creation_key"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -128,16 +128,16 @@ export const people = pgTable(
       .where(sql`${t.linkedinSlug} is not null`),
     // Target of composite FKs from other contexts, so a child can never point at another tenant's person.
     unique("people_id_org_uq").on(t.id, t.organizationId),
-    // Migration 0024 writes `ON DELETE SET NULL (company_id)`; Drizzle cannot express the column list.
+    // The migration writes `ON DELETE SET NULL (company_id)`; Drizzle cannot express the column list.
     foreignKey({ name: "people_company_fk", columns: [t.companyId, t.organizationId], foreignColumns: [companies.id, companies.organizationId] }).onDelete("set null"),
     index("people_org_company_idx").on(t.organizationId, t.companyId),
-    // Lead list order (created, either direction: a backward scan serves `desc`) and the ascending name sort. Migration 0011.
+    // Lead list order (created, either direction: a backward scan serves `desc`) and the ascending name sort.
     index("people_org_created_idx").on(t.organizationId, t.createdAt, t.id),
     index("people_org_name_idx").on(t.organizationId, sql`lower(${t.fullName})`, t.id),
     check("people_lifecycle_ck", sql`${t.lifecycle} in ('lead', 'contact')`),
     check("people_converted_at_ck", sql`(${t.lifecycle} = 'contact') = (${t.convertedAt} is not null)`),
     // Contacts list, newest conversion first. Contacts are few among many leads, so the created_at index would scan them all.
-    // Queries write the predicate as a literal so a generic plan can still use this index. Migration 0025.
+    // Queries write the predicate as a literal so a generic plan can still use this index.
     index("people_org_contacts_idx")
       .on(t.organizationId, t.convertedAt.desc().nullsFirst(), t.id)
       .where(sql`${t.lifecycle} = 'contact'`),
@@ -193,7 +193,7 @@ export const importRuns = pgTable(
   (t) => [
     check("import_runs_destination_ck", sql`${t.destination} in ('database', 'campaign')`),
     // `destination_campaign_id -> campaigns (id, organization_id) ON DELETE SET NULL (destination_campaign_id)` lives in
-    // migration 0012 only: the target table is in the outreach schema, which imports this one.
+    // the migration SQL only: the target table is in the outreach schema, which imports this one.
     index("import_runs_org_created_idx").on(t.organizationId, t.createdAt),
   ],
 );
