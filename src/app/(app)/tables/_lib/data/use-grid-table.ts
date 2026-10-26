@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import type { TableView } from "@/contexts/grid/domain/view-query";
 import { gridRequest, gridUrl } from "./client";
@@ -12,8 +13,8 @@ import type { BlockPasteRequest } from "../edit/paste";
 import { keepsTableOrder } from "../view/view";
 
 const PAGE = 200;
-/** The most rows one table request returns (`GRID_LIMITS.pageSize`). */
-const KEEP_CAP = 1_000;
+/** The most rows one table request returns. */
+const KEEP_CAP = GRID_LIMITS.pageSize;
 const POLL_IDLE_MS = 5_000;
 const POLL_BUSY_MS = 1_500;
 /** Most changes pages one poll follows. The cursor keeps its place, so the next poll carries on. */

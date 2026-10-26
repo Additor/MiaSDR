@@ -21,6 +21,9 @@ export const ALL_COLUMN_TYPES: readonly ColumnType[] = [...STATIC_COLUMN_TYPES, 
 export const isStaticColumnType = (type: string): type is StaticColumnType => (STATIC_COLUMN_TYPES as readonly string[]).includes(type);
 export const isColumnType = (type: string): type is ColumnType => (ALL_COLUMN_TYPES as readonly string[]).includes(type);
 
+/** Runner columns that call something per cell (a vendor, a model) and keep a run history in the cell. */
+export const RUNNABLE_TYPES: ReadonlySet<string> = new Set(["enrichment", "waterfall", "ai"]);
+
 /** Column types whose cells hold plain strings. A formula sees a blank one as "". */
 export const TEXT_LIKE_TYPES: ReadonlySet<string> = new Set(["text", "url", "email", "select", "image"]);
 

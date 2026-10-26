@@ -1,3 +1,4 @@
+import { RUNNABLE_TYPES } from "../../domain/column-types";
 import { CONTRACTS, type ContractKey } from "./enrichment-contracts";
 import { inputsCovered } from "./enrichment-inputs";
 import { hasCellValue, ownCell, tokensIn } from "./enrichment-templates";
@@ -11,7 +12,7 @@ export interface CascadeColumn {
   autoRun: boolean;
 }
 
-export const RUNNABLE_TYPES: ReadonlySet<string> = new Set(["enrichment", "waterfall", "ai"]);
+export { RUNNABLE_TYPES };
 
 /** Column keys a runnable column reads from its row. */
 export function inputColumns(column: Pick<CascadeColumn, "type" | "config">): string[] {

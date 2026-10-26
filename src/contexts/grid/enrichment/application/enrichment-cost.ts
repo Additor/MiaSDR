@@ -2,6 +2,7 @@ import { ValidationError } from "@/shared/errors";
 import { catalogEntry } from "../domain/enrichment-catalog";
 import { RUNNABLE_TYPES } from "../domain/enrichment-cascade";
 import { aiConfigSchema, enrichmentConfigSchema, waterfallConfigSchema } from "../domain/enrichment-config";
+import { lookupCents } from "../domain/enrichment-pricing";
 import type { ActionSpec } from "../domain/enrichment-catalog";
 import type { AdapterRegistry, CascadeSpec, ColumnRow, ProviderRecord, ProviderStore } from "./enrichment-ports";
 
@@ -12,7 +13,7 @@ interface CostDeps {
 
 /** Cents one call to this action costs when the adapter does not report a price. */
 export function estimateStepCents(provider: ProviderRecord, action: ActionSpec | undefined): number {
-  return Math.max(provider.defaultCostCents, action?.defaultCostCents ?? 0);
+  return lookupCents(provider.defaultCostCents, action);
 }
 
 /** What one cell of a column can spend at worst, in cents and vendor credits, and with which providers. */

@@ -1,9 +1,10 @@
+import { DEFAULT_MAX_ROWS, HARD_MAX_ROWS } from "@/contexts/grid/enrichment/domain/enrichment-run-limits";
 import { RUNNER_TYPES_WITH_RUN } from "../view/format";
 
 /** The row count the run dialog and the column menu start from for "first N rows". */
 export const DEFAULT_FIRST_N = 10;
-export const RUN_MAX_ROWS = 10_000;
-const DEFAULT_MAX_ROWS = 1000;
+/** The server's run limits, so the dialog refuses what the run would refuse. */
+export const RUN_MAX_ROWS = HARD_MAX_ROWS;
 
 interface ColumnLike {
   key: string;

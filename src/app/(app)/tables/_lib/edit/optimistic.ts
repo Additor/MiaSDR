@@ -1,3 +1,4 @@
+import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import type { CellEditInput, GridRow, RowConflict } from "../data/types";
 
 /** A cell edit the user made that the server has not confirmed. */
@@ -43,8 +44,8 @@ export interface EditBatch {
   updates: Array<CellEditInput & { expectedVersion: number }>;
 }
 
-/** Most cells and rows one cells request may carry. Match `GRID_LIMITS.cellUpdates` and `cellUpdateRows`. */
-export const BATCH_LIMITS = { cells: 5_000, rows: 1_000 } as const;
+/** Most cells and rows one cells request may carry. */
+export const BATCH_LIMITS = { cells: GRID_LIMITS.cellUpdates, rows: GRID_LIMITS.cellUpdateRows } as const;
 
 /**
  * The pending edits as requests the server accepts: whole rows per request (a row's updates share one version),

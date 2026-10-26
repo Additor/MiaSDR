@@ -1,8 +1,9 @@
+import type { DraftStatus } from "@/contexts/conversations/domain/draft-status";
 import { workflowLabel } from "@/contexts/conversations/domain/reply-handling";
 import { humanizeToken } from "@/shared/humanize";
 
 /** Reply draft statuses as the person reads them. `stale` shows as "Out of date" everywhere. */
-const DRAFT_STATUS_LABEL: Record<string, string> = {
+const DRAFT_STATUS_LABEL: Readonly<Record<string, string>> = {
   generating: "Drafting",
   awaiting_review: "Awaiting review",
   sending: "Sending",
@@ -11,7 +12,7 @@ const DRAFT_STATUS_LABEL: Record<string, string> = {
   stale: "Out of date",
   failed: "Failed",
   delivery_uncertain: "Delivery not confirmed",
-};
+} satisfies Record<DraftStatus, string>;
 
 export const draftStatusLabel = (status: string) => DRAFT_STATUS_LABEL[status] ?? humanizeToken(status);
 

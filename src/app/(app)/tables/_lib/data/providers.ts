@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { lookupCents } from "@/contexts/grid/enrichment/domain/enrichment-pricing";
 import { gridRequest } from "./client";
 
 export interface ActionInput {
@@ -67,8 +68,7 @@ export function catalogGroups(catalog: CatalogEntry[]): Array<{ label: string; e
   return out.filter((g) => g.entries.length > 0);
 }
 
-/** Cents one lookup costs: the provider's price or the action's, whichever is higher, as the server's estimateStepCents. */
-export const lookupCents = (providerCents: number, action: Pick<ActionSpec, "defaultCostCents"> | undefined): number => Math.max(providerCents, action?.defaultCostCents ?? 0);
+export { lookupCents };
 
 /**
  * "$0.01 a lookup", "0.5 credits a lookup" or "No price set". The price is the provider's or the action's, whichever is

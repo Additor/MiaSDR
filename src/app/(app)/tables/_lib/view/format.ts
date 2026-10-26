@@ -1,4 +1,4 @@
-import { effectiveColumnType, isStaticColumnType, STATIC_COLUMN_TYPES, type ColumnType } from "@/contexts/grid/domain/column-types";
+import { effectiveColumnType, isStaticColumnType, RUNNABLE_TYPES, STATIC_COLUMN_TYPES, type ColumnType } from "@/contexts/grid/domain/column-types";
 import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { runnerActionKey } from "@/contexts/grid/domain/verified-push";
@@ -36,7 +36,7 @@ export const typeLabel = (type: string) => TYPE_LABELS[type] ?? type;
 
 export const EDITABLE_TYPE_OPTIONS = STATIC_COLUMN_TYPES.map((value) => ({ value, label: typeLabel(value) }));
 
-export const RUNNER_TYPES_WITH_RUN: ReadonlySet<string> = new Set(["enrichment", "waterfall", "ai"]);
+export const RUNNER_TYPES_WITH_RUN = RUNNABLE_TYPES;
 
 /** Only static columns take typed values. A runner column's value comes from its run. */
 export const isEditableColumn = (column: Pick<GridColumn, "type">) => isStaticColumnType(column.type);
