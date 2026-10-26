@@ -12,9 +12,11 @@ import {
   groupsAfter,
   parseQueueFilter,
   pickNextQueueItem,
+  pickReviewOf,
   queueGroupOf,
   scopeOf,
   waitingSince,
+  type PickReviewFacts,
   type QueueFacts,
   type WaitingFacts,
 } from "./action-queue";
@@ -191,5 +193,50 @@ describe("queue scopes", () => {
     expect(parseQueueFilter({ scope: "mine" }).scope).toBe("mine");
     expect(parseQueueFilter({ scope: "" }).scope).toBeUndefined();
     expect(() => parseQueueFilter({ scope: "everyone" })).toThrow(ValidationError);
+  });
+});
+
+describe("what an AI pick waits for", () => {
+  const pick = (partial: Partial<PickReviewFacts> = {}): PickReviewFacts => ({
+    status: "proposed",
+    current: true,
+    hasProposedType: true,
+    proposedSystemRole: null,
+    stopRequested: false,
+    acknowledged: false,
+    appliedIsCurrentType: false,
+    checkMode: "before",
+    stopped: false,
+    ...partial,
+  });
+  const applied = (partial: Partial<PickReviewFacts> = {}) => pick({ status: "auto_applied", appliedIsCurrentType: true, checkMode: "after", ...partial });
+
+  it("asks to accept a current held pick, and nothing once the record version moved on", () => {
+    expect(pickReviewOf(pick())).toBe("held");
+    expect(pickReviewOf(pick({ current: false }))).toBeNull();
+    expect(pickReviewOf(pick({ hasProposedType: false }))).toBeNull();
+    expect(pickReviewOf(pick({ status: "stale", current: false }))).toBeNull();
+  });
+
+  it("asks Looks right only for an applied pick decided with Check after, still the record's type, not looked at", () => {
+    expect(pickReviewOf(applied())).toBe("looks_right");
+    expect(pickReviewOf(applied({ checkMode: null }))).toBe("looks_right");
+    expect(pickReviewOf(applied({ checkMode: "skip" }))).toBeNull();
+    expect(pickReviewOf(applied({ checkMode: "before" }))).toBeNull();
+    expect(pickReviewOf(applied({ acknowledged: true }))).toBeNull();
+    expect(pickReviewOf(applied({ appliedIsCurrentType: false }))).toBeNull();
+    for (const status of ["accepted", "overridden", "rejected", "failed"]) expect(pickReviewOf(applied({ status }))).toBeNull();
+  });
+
+  it("turns an open pick that reads as a stop request into a stop review, unless contact already stopped", () => {
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request" }))).toBe("stop_review");
+    expect(pickReviewOf(pick({ stopRequested: true }))).toBe("stop_review");
+    expect(pickReviewOf(applied({ stopRequested: true, checkMode: "skip" }))).toBe("stop_review");
+    // Do not contact or a suppressed address: nothing is left to stop, and a held stop request is not offered for Accept.
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", stopped: true }))).toBeNull();
+    expect(pickReviewOf(pick({ stopRequested: true, stopped: true }))).toBe("held");
+    expect(pickReviewOf(applied({ stopRequested: true, stopped: true }))).toBe("looks_right");
+    // A stop request whose record moved on is answered.
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", current: false }))).toBeNull();
   });
 });

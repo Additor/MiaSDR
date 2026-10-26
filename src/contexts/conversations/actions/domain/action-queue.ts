@@ -1,11 +1,13 @@
 import { ValidationError } from "@/shared/errors";
 import { isCalendarDay, shiftDay, startOfDayInZone } from "@/shared/time-zone";
+import type { CheckMode, SystemRole } from "../../domain/reply-type";
 
 /**
  * The Actions queue lists records, not source rows. A record is in the queue when it is `action_required`
  * or `error`, or `waiting` with `next_action_at` due. Each one sits in exactly one group, picked in this
  * order: problem, reply, classification, follow_up, next_step. The page lists the groups in `QUEUE_GROUPS` order, problems
- * first: a draft that failed or a send that may not have gone out outranks the rest, whatever its age.
+ * first: a draft that failed or a send that may not have gone out outranks the rest, whatever its age. The `classification`
+ * group is "AI picks" on screen; the key stays because URLs and the API carry it.
  */
 export const QUEUE_GROUPS = ["problem", "reply", "follow_up", "classification", "next_step"] as const;
 export type QueueGroup = (typeof QUEUE_GROUPS)[number];
@@ -15,15 +17,16 @@ export const isQueueGroup = (value: string): value is QueueGroup => (QUEUE_GROUP
 export const QUEUE_GROUP_LABELS: Record<QueueGroup, { title: string; description: string }> = {
   reply: { title: "Replies to approve", description: "Drafts waiting for your review. Nothing is sent until you approve." },
   follow_up: { title: "Follow-ups due", description: "Leads you waited on who are due another touch." },
-  classification: { title: "Classifications to review", description: "AI suggestions to decide, and changes it applied that you have not looked at." },
-  next_step: { title: "Needs a next step", description: "Nothing is drafted or classified yet. Write a reply, change the reply category or add a task." },
+  classification: { title: "AI picks", description: "Reply types the AI picked that wait for you: a held pick to accept, an applied pick to check, or a possible stop request to review." },
+  next_step: { title: "Needs a next step", description: "No draft or AI pick waits on this reply. Write a reply, change the type or add a task." },
   problem: { title: "Problems", description: "A draft or AI job failed, a send is unconfirmed, or reply handling hit an error." },
 };
 
 /**
  * What the queue knows about one visible record. Each flag is true when the thing exists and applies: a failed or
- * unconfirmed draft, a failed AI job that no newer draft answers, a draft awaiting review, a held or unseen
- * classification, an open task. The SQL in `work-queue-read.ts` computes the same facts; `queueGroupOf` and `isInQueue`
+ * unconfirmed draft, a failed AI job that no newer draft answers, a draft awaiting review, an AI pick that waits for a
+ * person (`pickReviewOf`), an open task. `workflowState` is the record's state as the domain wrote it; the queue reads it
+ * and never works it out again. The SQL in `work-queue-read.ts` computes the same facts; `queueGroupOf` and `isInQueue`
  * are the rule, and `action-queue.integration.test.ts` checks that the query agrees with them.
  */
 export interface QueueFacts {
@@ -34,6 +37,50 @@ export interface QueueFacts {
   hasDraftToReview: boolean;
   hasReplyTypePickToReview: boolean;
   hasOpenTask: boolean;
+}
+
+/**
+ * What an AI pick of the latest reply asks of a person, as a row of AI picks shows it. The thread's type line asks the same
+ * (`typeDecision` in `inbox/[id]/_lib/type-line.ts`); `work-queue-read.ts` computes it in SQL and
+ * `action-queue.integration.test.ts` checks that the two agree.
+ *
+ * - `stop_review`: the reply seems to ask to stop, and the pick is still open (held and current, or applied and not looked
+ *   at). Accept would only change the type, so the row offers Review stop request. A person already marked do not contact,
+ *   or an email address on the suppression list, has nothing left to stop.
+ * - `held`: a current held pick of a type other than the stop request type. Accept applies it.
+ * - `looks_right`: an applied pick nobody looked at, of the record's current type, decided with Check after.
+ *
+ * Null when nothing waits: the pick is stale, its record version moved on (a type change elsewhere answered it), a person
+ * already looked at it, or it is a held stop request for someone who can no longer be contacted.
+ */
+export type PickReviewKind = "stop_review" | "held" | "looks_right";
+
+export interface PickReviewFacts {
+  status: string;
+  /** The pick was written for the record's current version and is not stale. */
+  current: boolean;
+  /** The held pick names a type that still exists. */
+  hasProposedType: boolean;
+  proposedSystemRole: SystemRole | null;
+  /** The AI read the reply as a request to stop (`response.stopRequested`). */
+  stopRequested: boolean;
+  acknowledged: boolean;
+  /** The applied type is the record's type now. A person who changed the type since has answered the pick. */
+  appliedIsCurrentType: boolean;
+  /** Check from the pick's rules snapshot. Null for a pick written before snapshots, read as after. */
+  checkMode: CheckMode | null;
+  /** Do not contact, or the address on the suppression list on an email thread. */
+  stopped: boolean;
+}
+
+export function pickReviewOf(f: PickReviewFacts): PickReviewKind | null {
+  const held = f.status === "proposed" && f.current;
+  const applied = f.status === "auto_applied" && !f.acknowledged && f.appliedIsCurrentType;
+  const stopAsked = f.stopRequested || f.proposedSystemRole === "stop_request";
+  if ((held || applied) && stopAsked && !f.stopped) return "stop_review";
+  if (held && f.hasProposedType && f.proposedSystemRole !== "stop_request") return "held";
+  if (applied && (f.checkMode === null || f.checkMode === "after")) return "looks_right";
+  return null;
 }
 
 /** The first match of problem, reply, classification, follow_up, next_step. */
@@ -139,7 +186,7 @@ export function scopeOf(assignedTo: string | null, actorUserId: string): QueueSc
 export type QueueProblemKind = "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed";
 
 export interface QueueFilter {
-  /** A category key, or `unclassified`. */
+  /** A group key, or `unclassified` for a record with no reply type yet. */
   groupKey?: string;
   channel?: string;
   group?: QueueGroup;
@@ -246,7 +293,7 @@ export function parseQueueFilter(raw: Record<string, unknown>, timeZone = "UTC")
     if (!isQueueScope(scope)) throw new ValidationError(`Scope must be one of ${QUEUE_SCOPES.join(", ")}.`);
     filter.scope = scope;
   }
-  for (const [key, label] of [["replyTypeId", "Subcategory"], ["campaignId", "Campaign"]] as const) {
+  for (const [key, label] of [["replyTypeId", "Reply type"], ["campaignId", "Campaign"]] as const) {
     const id = text(raw[key]);
     if (id) {
       if (!UUID.test(id)) throw new ValidationError(`${label} is not a valid id.`);
