@@ -230,11 +230,15 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     expect(left).not.toContain(stale.id);
   });
 
-  it("blocks on a reply send in flight", async () => {
+  it.each(["prepared", "sending", "delivery_uncertain"])("blocks on a reply send in flight: an attempt in %s", async (status) => {
     const o = await organization();
     const target = await contact(o, "sending");
+    // The fixture draft already holds a sent attempt, and a draft takes one terminal attempt, so the attempt goes on a second draft.
+    const draft = await one(sql`
+      insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
+      values (${o.org}, ${target.record}, ${target.conversation}, ${target.inbound}, 0, 'email') returning id`);
     await sql`
-      insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${target.draft}, ${`sa2-${o.tag}`}, ${o.actors.member.userId}, 'prepared')`;
+      insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${draft}, ${`sa2-${o.tag}`}, ${o.actors.member.userId}, ${status})`;
     expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.actors.admin, target.person))).toEqual([{ reason: "send_in_flight" }]);
   });
 
