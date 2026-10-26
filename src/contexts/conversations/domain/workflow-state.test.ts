@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterPersonDecision, afterReopen, afterTypeChange, settlesAfterAiCategory, settlesAfterAiPick, WORKFLOW_STATES } from "./workflow-state";
+import { afterPersonDecision, afterReopen, afterTypeChange, settlesAfterAiPick, WORKFLOW_STATES } from "./workflow-state";
 
 describe("workflow state", () => {
   it("keeps a closed conversation closed when a person decides, and brings any other back to someone", () => {
@@ -30,12 +30,5 @@ describe("workflow state", () => {
     expect(settlesAfterAiPick("action_required", { ...applied, hold: "requires_review" }, false)).toBe(false);
     expect(settlesAfterAiPick("action_required", applied, true)).toBe(false);
     expect(settlesAfterAiPick("waiting", applied, false)).toBe(false);
-  });
-
-  it("settles an AI category only when nothing is left to do (the rule before type rules)", () => {
-    expect(settlesAfterAiCategory("action_required", { wantsDraft: false, stopRequested: false })).toBe(true);
-    expect(settlesAfterAiCategory("action_required", { wantsDraft: true, stopRequested: false })).toBe(false);
-    expect(settlesAfterAiCategory("action_required", { wantsDraft: false, stopRequested: true })).toBe(false);
-    expect(settlesAfterAiCategory("waiting", { wantsDraft: false, stopRequested: false })).toBe(false);
   });
 });

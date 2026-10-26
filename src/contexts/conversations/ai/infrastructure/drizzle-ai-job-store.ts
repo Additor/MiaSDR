@@ -10,8 +10,37 @@ import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } fr
 import { publicConversation, publicConversationText } from "@/platform/db/conversation-visibility";
 import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
-import { settlesAfterAiCategory } from "../../domain/workflow-state";
-import { typeRulesOf } from "../../domain/reply-type";
+import { settlesAfterAiPick } from "../../domain/workflow-state";
+import { decideReplyType, typeRulesOf, type CampaignMode, type ReplyTypeFacts } from "../../domain/reply-type";
+import { afterReplyLockedReason, afterReplyModeOf } from "../../after-reply/domain/after-reply";
+import { loadStartOn } from "../../after-reply/infrastructure/drizzle-sequence-store";
+import type { Tx } from "../../after-reply/infrastructure/sequence-stop";
+
+/**
+ * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: the
+ * confidence floor, whether the person is a contact, and the After a reply mode and channel that decide whether
+ * follow-ups apply. Mirrors `typeChangeFactsOf`.
+ */
+async function followUpFactsTx(
+  tx: Tx,
+  organizationId: string,
+  record: { id: string; replyTypeSetId: string; activeChannel: string | null },
+): Promise<Pick<ReplyTypeFacts, "floor" | "isContact" | "campaignMode" | "channel">> {
+  const [settings] = await tx.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId));
+  const start = await loadStartOn(tx, organizationId, record.id, {});
+  const owner = start?.owner ?? null;
+  const campaignMode: CampaignMode = owner
+    ? afterReplyLockedReason(owner)
+      ? "handoff"
+      : afterReplyModeOf(start?.flow ? { status: start.flow.status, hasPublishedVersion: start.flow.hasPublished } : null)
+    : null;
+  return {
+    floor: Number(settings?.floor ?? 0.85),
+    isContact: start?.contact ?? false,
+    campaignMode,
+    channel: start?.conversation?.channel ?? record.activeChannel,
+  };
+}
 
 interface JobRow {
   id: string;
@@ -389,6 +418,8 @@ export const drizzleAiJobStore: AiJobStore = {
           latest: records.latestInboundMessageId,
           groupKey: records.groupKey,
           replyTypeId: records.replyTypeId,
+          locked: records.replyTypeLocked,
+          activeChannel: records.activeChannel,
           state: records.workflowState,
         })
         .from(messages)
@@ -444,7 +475,19 @@ export const drizzleAiJobStore: AiJobStore = {
       if (!row) return { status: "stale" as const };
 
       if (auto) {
-        const settle = settlesAfterAiCategory(record.state, input);
+        // The decision again, under the record lock and with the facts that decide the follow-ups. A hold here that the
+        // job did not see (a newer floor or lock) only keeps the record from settling.
+        const decision = decideReplyType(
+          { groupKey: proposed.groupKey, rules: typeRulesOf(proposed) },
+          {
+            ...(await followUpFactsTx(tx, input.job.organizationId, record)),
+            stopRequested: input.stopRequested,
+            confidence: input.confidence,
+            locked: record.locked,
+            currentType: { id: record.replyTypeId, groupKey: record.groupKey, systemRole: null },
+          },
+        );
+        const settle = settlesAfterAiPick(record.state, decision, input.stopRequested);
         await tx
           .update(records)
           .set({
@@ -454,7 +497,15 @@ export const drizzleAiJobStore: AiJobStore = {
             ...(settle ? { workflowState: "idle" } : {}),
           })
           .where(eq(records.id, record.id));
-        await interruptOnTerminalStageTx(tx, { organizationId: input.job.organizationId, recordId: record.id, groupKey: proposed.groupKey, replyTypeKey: proposed.key, replyTypeId: proposed.id, now: new Date() });
+        await interruptOnTerminalStageTx(tx, {
+          organizationId: input.job.organizationId,
+          recordId: record.id,
+          groupKey: proposed.groupKey,
+          replyTypeKey: proposed.key,
+          replyTypeId: proposed.id,
+          followUps: decision.followUps,
+          now: new Date(),
+        });
         if (input.wantsDraft) {
           await tx
             .insert(aiJobs)

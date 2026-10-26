@@ -39,10 +39,3 @@ export function afterTypeChange(current: WorkflowState, decision: Pick<ReplyType
  */
 export const settlesAfterAiPick = (current: string, decision: ReplyTypeDecision, stopRequested: boolean): boolean =>
   current === "action_required" && decision.hold === null && !decision.needsLooksRight && !decision.wantsDraft && !stopRequested;
-
-/**
- * The settle rule before type rules, kept for the AI apply path until it reads `decideReplyType` (W1). For every default
- * type it agrees with `settlesAfterAiPick`; `reply-type.test.ts` compares them.
- */
-export const settlesAfterAiCategory = (current: string, input: { wantsDraft: boolean; stopRequested: boolean }): boolean =>
-  !input.wantsDraft && !input.stopRequested && current === "action_required";
