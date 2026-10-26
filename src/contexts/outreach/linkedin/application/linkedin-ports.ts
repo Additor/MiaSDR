@@ -1,6 +1,6 @@
 import type { WorkingHours } from "../../domain/working-hours";
 import type { LinkedInInboundEvent } from "../domain/linkedin";
-import type { Clock } from "../../application/ports";
+import type { Clock } from "../../application/clock";
 
 /**
  * Why a gateway call failed. `kind` carries the outcome discipline of the email path:

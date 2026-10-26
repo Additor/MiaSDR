@@ -27,7 +27,7 @@ describeDb("contacts and campaign enrollment", () => {
   let admin: typeof import("../drizzle-enrollment-admin").drizzleEnrollmentAdminStore;
   let guard: typeof import("../contact-guard");
   let conversion: typeof import("../drizzle-conversion-outreach");
-  let outreachStore: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
+  let outreachStore: typeof import("../../email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
   let linkedinEngineStore: typeof import("../../linkedin/infrastructure/drizzle-linkedin-store");
   let inboundStore: ReturnType<typeof import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
   let appDb: typeof import("@/platform/db/client").db;
@@ -115,7 +115,7 @@ describeDb("contacts and campaign enrollment", () => {
     ({ drizzleEnrollmentAdminStore: admin } = await import("../drizzle-enrollment-admin"));
     guard = await import("../contact-guard");
     conversion = await import("../drizzle-conversion-outreach");
-    ({ drizzleOutreachStore: outreachStore } = await import("../drizzle-outreach-store"));
+    ({ drizzleOutreachStore: outreachStore } = await import("../../email/infrastructure/drizzle-outreach-store"));
     linkedinEngineStore = await import("../../linkedin/infrastructure/drizzle-linkedin-store");
     inboundStore = (await import("../../linkedin/infrastructure/drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
     ({ db: appDb } = await import("@/platform/db/client"));

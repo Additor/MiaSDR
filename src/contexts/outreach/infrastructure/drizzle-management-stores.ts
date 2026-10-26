@@ -14,7 +14,7 @@ import { insertSkippingContacts, notContactSql } from "./contact-guard";
 import type { SendResolutionStore } from "../application/send-resolution";
 import { filteredScope, sentCount, tabCounts } from "./enrollment-list-sql";
 import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
-import { resolveUnknownEmailSend } from "./drizzle-outreach-store";
+import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
 
 /** SQL condition for an archive filter on `campaigns`. */

@@ -92,7 +92,7 @@ describeDb("inbound mail sync", () => {
     send = await import("../../application/send-next-email");
     sync = await import("../../application/sync-inbox");
     jobs = await import("../../application/inbox-jobs");
-    ({ drizzleOutreachStore: outreachStore } = await import("../../../infrastructure/drizzle-outreach-store"));
+    ({ drizzleOutreachStore: outreachStore } = await import("../drizzle-outreach-store"));
     inboundStore = (await import("../drizzle-inbound-store")).createDrizzleInboundStore((await import("@/composition/inbox-filing")).inboxFiling, (await import("@/composition/inbox-filing")).followUps);
   });
 

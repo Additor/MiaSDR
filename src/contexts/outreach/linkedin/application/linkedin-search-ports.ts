@@ -2,7 +2,7 @@ import type { DbHandle } from "@/platform/db/client";
 import type { SearchAction, SearchStatus } from "../domain/linkedin-search";
 import type { LinkedInCampaignStore } from "./linkedin-campaigns";
 import type { LinkedInGatewayProvider, SearchItem } from "./linkedin-ports";
-import type { Clock } from "../../application/ports";
+import type { Clock } from "../../application/clock";
 
 export interface LinkedInSearchRecord {
   id: string;

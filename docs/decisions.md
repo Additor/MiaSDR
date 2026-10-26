@@ -261,7 +261,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ## Email outreach
 
-Code: `src/contexts/outreach`. The domain layer holds working hours, send policy, rendering, threading, bounce checks and unsubscribe tokens. `sendNextEmail` and `reconcileUncertainSends` live in `application/send-next-email.ts`; the claim lives in `infrastructure/drizzle-outreach-store.ts`.
+Code: `src/contexts/outreach`, the email engine under `email/`. `outreach/domain` holds working hours, send policy and rendering; `email/domain` holds threading, bounce checks and unsubscribe tokens. `sendNextEmail` and `reconcileUncertainSends` live in `email/application/send-next-email.ts`, the ports in `email/application/ports.ts`, and the claim in `email/infrastructure/drizzle-outreach-store.ts`.
 
 ### Send engine
 

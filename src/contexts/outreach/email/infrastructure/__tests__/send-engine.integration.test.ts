@@ -13,7 +13,7 @@ describeDb("email send engine", () => {
   useTestEnv();
   const sql = testSql({ max: 6 });
   let send: typeof import("../../application/send-next-email");
-  let store: typeof import("../../../infrastructure/drizzle-outreach-store").drizzleOutreachStore;
+  let store: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
   const cleanup: string[] = [];
 
   const start = new Date("2026-10-14T10:00:00Z");
@@ -70,7 +70,7 @@ describeDb("email send engine", () => {
 
   beforeAll(async () => {
     send = await import("../../application/send-next-email");
-    ({ drizzleOutreachStore: store } = await import("../../../infrastructure/drizzle-outreach-store"));
+    ({ drizzleOutreachStore: store } = await import("../drizzle-outreach-store"));
   });
 
   afterAll(async () => {

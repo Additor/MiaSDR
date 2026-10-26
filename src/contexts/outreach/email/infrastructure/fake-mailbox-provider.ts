@@ -1,4 +1,4 @@
-import { ProviderSendError, type InboundBatch, type InboundEmail, type MailboxProvider, type OutgoingEmail, type SentEmail, type FindSentResult } from "../../application/ports";
+import { ProviderSendError, type InboundBatch, type InboundEmail, type MailboxProvider, type OutgoingEmail, type SentEmail, type FindSentResult } from "../application/ports";
 
 export type FakeBehavior =
   /** The message is accepted. */

@@ -202,7 +202,7 @@ describeDb("mailbox test send", () => {
     at = new Date("2026-10-15T10:00:00Z");
     f.provider.behavior = () => "timeout-lost";
     await app.sendTestEmail(f.deps, f.actor(), f.mailbox, { to: "dev@example.com" });
-    const { drizzleOutreachStore } = await import("../../../infrastructure/drizzle-outreach-store");
+    const { drizzleOutreachStore } = await import("../drizzle-outreach-store");
     const uncertain = await drizzleOutreachStore.listUncertain(new Date(at.getTime() + 3600_000), 100);
     expect(uncertain.filter((u) => u.organizationId === f.org)).toHaveLength(0);
   });

@@ -13,14 +13,14 @@ import {
   suppressionList,
 } from "@/platform/db/schema";
 import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend } from "../application/ports";
-import { mailboxPolicyViolation } from "../email/application/mailbox-management";
-import { readSendPause } from "../domain/send-pause";
-import { mailboxBlock } from "../domain/send-policy";
-import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../domain/send-status";
-import { takeoverCutoff } from "../email/domain/takeover";
-import { buildVariables } from "../domain/variables";
-import { startOfLocalDay, type WorkingHours } from "../domain/working-hours";
-import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
+import { mailboxPolicyViolation } from "../application/mailbox-management";
+import { readSendPause } from "../../domain/send-pause";
+import { mailboxBlock } from "../../domain/send-policy";
+import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { takeoverCutoff } from "../domain/takeover";
+import { buildVariables } from "../../domain/variables";
+import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
+import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
 type Tx = DbTx;
 

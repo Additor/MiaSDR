@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { OutgoingEmail } from "../../../application/ports";
+import type { OutgoingEmail } from "../../application/ports";
 import { buildMime } from "../gmail-mime";
 
 const email: OutgoingEmail = {

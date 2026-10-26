@@ -1,6 +1,6 @@
-import type { WorkingHours } from "../domain/working-hours";
-import type { PriorSend } from "../email/domain/threading";
-import type { MailboxDomainPolicy } from "../email/application/mailbox-management";
+import type { WorkingHours } from "../../domain/working-hours";
+import type { PriorSend } from "../domain/threading";
+import type { MailboxDomainPolicy } from "./mailbox-management";
 
 /** Outcome classes a provider adapter must report. The engine never guesses. */
 export class ProviderSendError extends Error {
@@ -100,9 +100,7 @@ export interface MailboxProvider {
   fetchMessages(mailbox: { emailAddress: string }, providerMessageIds: string[]): Promise<{ messages: InboundEmail[]; missing: string[] }>;
 }
 
-export interface Clock {
-  now(): Date;
-}
+export type { Clock } from "../../application/clock";
 
 /** Everything the engine needs to render and send one claimed step. */
 export interface SendClaim {

@@ -14,7 +14,7 @@ describeDb("follow-up takeover by another mailbox", () => {
   useTestEnv();
   const sql = testSql({ max: 8 });
   let send: typeof import("../../application/send-next-email");
-  let store: typeof import("../../../infrastructure/drizzle-outreach-store").drizzleOutreachStore;
+  let store: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
   let mailboxStore: typeof import("../../../infrastructure/drizzle-management-stores").drizzleMailboxStore;
   let campaignStore: typeof import("../../../infrastructure/drizzle-management-stores").drizzleCampaignStore;
   const cleanup: string[] = [];
@@ -89,7 +89,7 @@ describeDb("follow-up takeover by another mailbox", () => {
 
   beforeAll(async () => {
     send = await import("../../application/send-next-email");
-    ({ drizzleOutreachStore: store } = await import("../../../infrastructure/drizzle-outreach-store"));
+    ({ drizzleOutreachStore: store } = await import("../drizzle-outreach-store"));
     ({ drizzleMailboxStore: mailboxStore, drizzleCampaignStore: campaignStore } = await import("../../../infrastructure/drizzle-management-stores"));
   });
 

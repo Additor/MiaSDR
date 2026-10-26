@@ -26,7 +26,7 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
   let linkedin: typeof import("../../linkedin/application/linkedin-campaigns");
   let sendEmail: typeof import("../../email/application/send-next-email");
   let liEngine: typeof import("../../linkedin/application/send-next-linkedin");
-  let emailStore: typeof import("../drizzle-outreach-store").drizzleOutreachStore;
+  let emailStore: typeof import("../../email/infrastructure/drizzle-outreach-store").drizzleOutreachStore;
   let liStore: typeof import("../../linkedin/infrastructure/drizzle-linkedin-store").drizzleLinkedInStore;
   let stores: typeof import("../drizzle-management-stores");
   let liCampaignStore: typeof import("../../linkedin/infrastructure/drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
@@ -87,7 +87,7 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
     linkedin = await import("../../linkedin/application/linkedin-campaigns");
     sendEmail = await import("../../email/application/send-next-email");
     liEngine = await import("../../linkedin/application/send-next-linkedin");
-    ({ drizzleOutreachStore: emailStore } = await import("../drizzle-outreach-store"));
+    ({ drizzleOutreachStore: emailStore } = await import("../../email/infrastructure/drizzle-outreach-store"));
     ({ drizzleLinkedInStore: liStore } = await import("../../linkedin/infrastructure/drizzle-linkedin-store"));
     stores = await import("../drizzle-management-stores");
     ({ drizzleLinkedInCampaignStore: liCampaignStore } = await import("../../linkedin/infrastructure/drizzle-linkedin-campaign-store"));

@@ -1,4 +1,4 @@
-import type { InboundEmail } from "../../application/ports";
+import type { InboundEmail } from "../application/ports";
 import { dedupeAddresses, parseAddressList } from "../../domain/address-list";
 
 /** The slice of a Gmail API `users.messages` resource (format=full) that parsing reads. */

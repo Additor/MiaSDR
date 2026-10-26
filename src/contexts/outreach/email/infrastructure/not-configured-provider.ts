@@ -1,4 +1,4 @@
-import type { MailboxProvider } from "../../application/ports";
+import type { MailboxProvider } from "../application/ports";
 
 const REASON = "Google is not connected yet. Add the service account in Settings, Integrations.";
 

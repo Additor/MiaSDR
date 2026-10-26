@@ -1,6 +1,6 @@
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { ProviderSendError, type OutgoingEmail } from "../../../application/ports";
+import { ProviderSendError, type OutgoingEmail } from "../../application/ports";
 import { GmailMailboxProvider, parseServiceAccountJson } from "../gmail-mailbox-provider";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {

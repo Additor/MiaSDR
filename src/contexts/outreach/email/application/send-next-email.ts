@@ -6,7 +6,7 @@ import { resolveThreading } from "../domain/threading";
 import { unsubscribeLinks } from "../domain/unsubscribe-token";
 import { defaultWorkingHours } from "../../domain/working-hours";
 import type { MailboxDomainPolicy } from "./mailbox-management";
-import { ProviderSendError, type Clock, type MailboxProvider, type OutreachStore, type SendClaim } from "../../application/ports";
+import { ProviderSendError, type Clock, type MailboxProvider, type OutreachStore, type SendClaim } from "./ports";
 
 export interface EngineDeps {
   store: OutreachStore;

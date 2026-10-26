@@ -8,7 +8,7 @@ import { NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../domain/s
 import { TEST_BODY_TEMPLATE, TEST_SEND_IN_FLIGHT_MINUTES, TEST_SEND_LIMIT, TEST_SEND_WINDOW_MINUTES, TEST_SUBJECT_TEMPLATE, minutesUntilTestSlot } from "../domain/test-send";
 import { unsubscribeLinks } from "../domain/unsubscribe-token";
 import type { MailboxDomainPolicy } from "./mailbox-management";
-import { ProviderSendError, type Clock, type MailboxProvider, type SentEmail } from "../../application/ports";
+import { ProviderSendError, type Clock, type MailboxProvider, type SentEmail } from "./ports";
 
 export type TestClaim =
   | {

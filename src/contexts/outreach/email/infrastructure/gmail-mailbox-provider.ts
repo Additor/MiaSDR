@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import { ProviderSendError, type InboundBatch, type InboundEmail, type MailboxProvider, type OutgoingEmail, type SentEmail, type FindSentResult, type FindSentHint } from "../../application/ports";
+import { ProviderSendError, type InboundBatch, type InboundEmail, type MailboxProvider, type OutgoingEmail, type SentEmail, type FindSentResult, type FindSentHint } from "../application/ports";
 import { parseGmailMessage, type GmailMessage } from "./gmail-inbound";
 import { SEND_ID_HEADER, buildMime, toBase64Url } from "./gmail-mime";
 

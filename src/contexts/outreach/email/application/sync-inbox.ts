@@ -1,6 +1,6 @@
 import { classifyInbound } from "../domain/inbound";
 import type { InboundOutcome, InboundStore } from "../../application/inbound-ports";
-import type { Clock, MailboxProvider } from "../../application/ports";
+import type { Clock, MailboxProvider } from "./ports";
 
 export interface InboxDeps {
   store: InboundStore;
