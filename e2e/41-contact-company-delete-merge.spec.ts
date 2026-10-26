@@ -76,7 +76,7 @@ test.describe("contact delete", () => {
     await reach.getByRole("button", { name: "mark them do not contact" }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("person-stop").getByLabel("Reason")).toBeFocused();
-    await page.getByTestId("person-stop").getByRole("button", { name: "Cancel" }).click();
+    await page.getByTestId("person-stop").getByRole("button", { name: "Keep contacting" }).click();
 
     dialog = await openDeleteDialog(page);
     await dialog.getByRole("button", { name: "Delete contact" }).click();

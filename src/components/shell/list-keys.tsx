@@ -5,6 +5,15 @@ import { useEffect, useRef } from "react";
 import { listKeyAction, moveActive } from "./list-nav";
 
 const ROW = "[data-list-row]";
+const POPUPS = '[role="dialog"], [role="menu"], [role="listbox"]';
+
+/**
+ * True while a dialog, menu or listbox is open on screen; it owns the keyboard then. A popup that stays mounted while
+ * closed (a list's Filters popover) does not count, because a person cannot see it.
+ */
+export function popupOpen(): boolean {
+  return Array.from(document.querySelectorAll<HTMLElement>(POPUPS)).some((popup) => popup.checkVisibility());
+}
 
 /**
  * Keyboard for a list of rows: j and k move the focus row, Enter opens it. Rows are server-rendered elements with
@@ -23,8 +32,7 @@ export function ListKeys() {
       const target = event.target instanceof HTMLElement ? event.target : null;
       const action = listKeyAction(event, target);
       if (!action) return;
-      // A dialog or menu owns the keyboard while it is open.
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+      if (popupOpen()) return;
       const rows = Array.from(document.querySelectorAll<HTMLElement>(ROW));
       // A row reached with Tab counts as the active one, so j and k continue from where the focus is.
       const focusedRow = target?.closest<HTMLElement>(ROW);

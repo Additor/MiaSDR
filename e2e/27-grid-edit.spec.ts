@@ -263,7 +263,7 @@ test.describe("grid pinned columns", () => {
     await expect.poll(headers).toEqual(expect.arrayContaining(["Score"]));
     await expect.poll(async () => (await headers())[1]).toBe("Score");
     await page.getByRole("button", { name: "Column menu for Site" }).click();
-    await page.getByRole("menuitem", { name: "Pin column" }).click();
+    await page.getByRole("menuitem", { name: "Pin column", exact: true }).click();
     await expect.poll(async () => (await headers()).slice(1, 3)).toEqual(["Score", "Site"]);
 
     // The pin reached storage as this member's own view.

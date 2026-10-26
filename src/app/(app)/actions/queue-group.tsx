@@ -234,7 +234,8 @@ export function QueueGroup({
   // the name needs it, then one bordered list with hairlines between the items. The count stays lavender: it is work that waits for a person.
   return (
     <section id={`group-${group}`} aria-label={title} data-slot="queue-group" data-group={group} className="grid scroll-mt-4 gap-2">
-      <div className="flex items-baseline gap-2">
+      {/* The row wraps, so a long bulk button drops under the title on a phone instead of widening the page. */}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h2 className="text-sm font-semibold">{title}</h2>
         <span className="text-xs font-semibold text-sidebar-count tabular-nums" data-testid={`queue-total-${group}`}>
           {total}
