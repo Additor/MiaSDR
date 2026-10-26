@@ -19,7 +19,7 @@ import { MAX_INVITE_ATTEMPTS, INVITE_NOTE_MAX, describeLinkedInProgress, validat
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { RecordPage } from "../../crm/_components/record/record-header";
 import { LeadStatusToken } from "../../crm/_components/person/lead-status-token";
-import { LabeledStatusBadge } from "../labeled-status-badge";
+import { StatusBadge } from "@/components/shell/status-badge";
 import { CampaignControls } from "./campaign-controls";
 import { CampaignHeader } from "./campaign-header";
 import { CampaignSection } from "./campaign-section";
@@ -255,7 +255,7 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                     {accounts.map((a) => (
                       <li key={a.id} className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 py-2">
                         <span className="min-w-0 font-medium break-words">{a.name ?? a.username ?? "LinkedIn account"}</span>
-                        <LabeledStatusBadge status={a.status} label={humanizeToken(a.status)} />
+                        <StatusBadge status={a.status} label={humanizeToken(a.status)} />
                         <span className="tabular-nums">
                           Today {a.invitesToday}/{a.dailyLimit}
                         </span>

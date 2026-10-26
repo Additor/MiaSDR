@@ -32,7 +32,7 @@ import { EnrichStart } from "./enrich-start";
 import { EnrichmentDialog } from "./enrichment-dialog";
 import { FilterPanel } from "./filter-panel";
 import { FormulaDialog } from "./formula-dialog";
-import { ImportWizard } from "./import-wizard";
+import { TableImportDialog } from "./table-import-dialog";
 import { PushCampaignDialog } from "./push-campaign-dialog";
 import { RunDialog } from "./run-controls";
 import { TableToolbar } from "./table-toolbar";
@@ -433,7 +433,7 @@ export function TableWorkspace({ tableId }: Props) {
 
       {dialog?.kind === "filters" && <FilterPanel columns={columns} view={view} saveView={grid.saveView} onClose={closeDialog} />}
       {dialog?.kind === "addRows" && <AddRowsDialog onAdd={addRows} onClose={closeDialog} />}
-      {dialog?.kind === "import" && <ImportWizard tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
+      {dialog?.kind === "import" && <TableImportDialog tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
       {dialog?.kind === "formula" && <FormulaDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} previewRowId={active?.row.id} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} outcome={dialog.outcome} onClose={closeDialog} onSaved={async (key) => {
             await grid.reload();

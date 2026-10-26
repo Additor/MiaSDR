@@ -18,7 +18,7 @@ import { gridRequest, gridUrl } from "../_lib/data/client";
 import { plural } from "../_lib/view/format";
 import type { FolderSummary, WorkbookSummary } from "../_lib/data/types";
 import { ErrorText } from "./form-bits";
-import { ImportWizard } from "./import-wizard";
+import { TableImportDialog } from "./table-import-dialog";
 import { MoveDialog, type FolderNode } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
 
@@ -268,7 +268,7 @@ export function TablesBrowser() {
           ))}
 
         {fromFile && (
-          <ImportWizard
+          <TableImportDialog
             tableId={fromFile.tableId}
             initialFile={fromFile.file}
             onImported={async () => {

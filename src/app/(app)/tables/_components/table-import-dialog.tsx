@@ -39,7 +39,7 @@ interface Props {
 const MAX_BYTES = 5 * 1024 * 1024;
 
 /** CSV or XLSX import in two steps: upload for a preview and a suggested mapping, then confirm the mapping. A workbook with several sheets gets a sheet picker. */
-export function ImportWizard({ tableId, onClose, onImported, initialFile }: Props) {
+export function TableImportDialog({ tableId, onClose, onImported, initialFile }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Mapping[]>([]);

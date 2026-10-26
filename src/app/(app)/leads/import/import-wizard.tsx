@@ -11,7 +11,7 @@ import { CUSTOM_LABEL_MAX, describeCustomLabels } from "@/contexts/people/domain
 import { confirmLabel, RESULT_EXAMPLES, summaryChangesAnything, type ImportSummary, type SkipGroup } from "@/contexts/people/domain/import-summary";
 import { cn } from "@/lib/utils";
 import { TARGETS, TARGET_GROUPS, customLabelOf, describeCustom, mappingError, selectValue, type Mapping } from "./mapping";
-import { useMinWidth } from "./use-min-width";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 interface Preview {
   headers: string[];
@@ -45,7 +45,8 @@ const SKIP_LABELS: Record<SkipGroup["kind"], string> = {
 export function ImportWizard() {
   const fileRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
-  const wide = useMinWidth(640);
+  // Server render and first paint assume wide.
+  const wide = useMediaQuery("(min-width: 640px)", true);
   const [step, setStep] = useState<1 | 2>(1);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
