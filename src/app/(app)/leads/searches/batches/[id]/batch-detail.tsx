@@ -371,7 +371,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
               Cancel
             </Button>
             <Button type="button" onClick={addSearches} disabled={busy || pasted.trim() === ""}>
-              {busy ? "Working…" : "Queue searches"}
+              {busy ? "Queuing searches…" : "Queue searches"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -393,7 +393,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
         title={dangerTitle(danger, batch.name)}
         description={dangerDescription(danger, batch.queries)}
         confirmLabel={danger?.kind === "batch" ? "Delete batch" : danger?.kind === "remove" ? "Remove searches" : danger?.kind === "cancel" ? "Stop search" : "Delete results"}
-        pendingLabel="Working…"
+        pendingLabel={danger?.kind === "batch" ? "Deleting batch…" : danger?.kind === "remove" ? "Removing searches…" : danger?.kind === "cancel" ? "Stopping search…" : "Deleting results…"}
         destructive
         onConfirm={confirmDanger}
       />
