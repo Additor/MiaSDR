@@ -213,7 +213,7 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
           <ErrorText>{error}</ErrorText>
           <div>
             <Button type="submit" size="sm" disabled={busy}>
-              {busy ? "Saving..." : provider ? "Save" : "Connect"}
+              {busy ? "Saving…" : provider ? "Save" : "Connect"}
             </Button>
           </div>
         </form>

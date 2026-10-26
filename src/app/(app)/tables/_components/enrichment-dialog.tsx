@@ -173,7 +173,7 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
           Cancel
         </Button>
         <Button type="button" onClick={save} disabled={busy}>
-          {busy ? "Saving..." : "Save"}
+          {busy ? "Saving…" : "Save"}
         </Button>
       </DialogFooter>
     </>
@@ -233,7 +233,7 @@ function CreateBody(props: Props) {
       <>
         <DialogHeader>
           <DialogTitle>Add enrichment</DialogTitle>
-          <DialogDescription>Loading providers...</DialogDescription>
+          <DialogDescription>Loading providers…</DialogDescription>
         </DialogHeader>
       </>
     );
@@ -405,10 +405,10 @@ export function CreateFooter({ blocker, summary, busy, onBack, onSave, backLabel
         {backLabel}
       </Button>
       <Button type="button" variant="outline" onClick={() => save(true)} disabled={blocker !== null || busy}>
-        <PlayIcon /> {busy && running ? "Adding..." : `Add and run first ${DEFAULT_FIRST_N} rows`}
+        <PlayIcon /> {busy && running ? "Adding…" : `Add and run first ${DEFAULT_FIRST_N} rows`}
       </Button>
       <Button type="button" onClick={() => save(false)} disabled={blocker !== null || busy}>
-        {busy && !running ? "Adding..." : "Add column"}
+        {busy && !running ? "Adding…" : "Add column"}
       </Button>
     </DialogFooter>
   );

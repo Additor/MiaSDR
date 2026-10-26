@@ -269,7 +269,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
           <section aria-label="Test answer" className="grid gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" size="sm" variant="outline" onClick={() => void test()} disabled={!ready || testing || !!aiOff}>
-                <FlaskConicalIcon /> {testing ? "Asking..." : "Test on row 1"}
+                <FlaskConicalIcon /> {testing ? "Asking…" : "Test on row 1"}
               </Button>
               <span className="text-xs text-muted-foreground">One AI call. Nothing is saved.</span>
             </div>
@@ -294,7 +294,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
               Cancel
             </Button>
             <Button type="button" onClick={() => void save(false)} disabled={!ready || busy}>
-              {busy ? "Saving..." : "Save"}
+              {busy ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         ) : (
