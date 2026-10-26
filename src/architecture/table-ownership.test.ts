@@ -27,7 +27,10 @@ const FOREIGN_WRITES: Record<string, string[]> = {
   "src/platform/db/audit.ts": ["auditLog"],
 };
 
-/** Source files that import a higher layer's tables from a schema module, with those tables. `platform` sits below every context. Shrink only. */
+/**
+ * Source files that read a higher layer's tables, by schema import or in a raw `sql` template, with those tables.
+ * `platform` sits below every context. Shrink only. The scan stops at a nested template and skips `sql.raw` text.
+ */
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],

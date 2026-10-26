@@ -9,7 +9,7 @@ const noKey = (value: unknown) => {
 
 describe("ZeroBounce", () => {
   // https://www.zerobounce.net/docs/email-validation-api-quickstart/v2-validate-emails, read 2026-10-20.
-  const docValid = { address: "john.doe@zerobounce.net", status: "valid", sub_status: "", free_email: false, catchall_domain: true, did_you_mean: null, account: "johndoe", domain: "zerobounce.net", domain_age_days: "3431", smtp_provider: "g-suite", mx_found: "true", firstname: "john", lastname: "doe", gender: "male", country: null, processed_at: "2026-06-18 07:05:00.033" };
+  const docValid = { address: "john.doe@zerobounce.net", status: "valid", sub_status: "", free_email: false, catchall_domain: true, did_you_mean: null, account: "johndoe", domain: "zerobounce.net", domain_age_days: "3431", smtp_provider: "g-suite", mx_found: "true", firstname: "john", lastname: "roe", gender: "male", country: null, processed_at: "2026-06-18 07:05:00.033" };
   const verify = (status: number, body: unknown) => ask("zerobounce", status, body, "verify-email", { email: "john.doe@zerobounce.net" });
 
   it("posts the key in a form body, never the URL, and keeps only the verdict in the audit", async () => {
@@ -20,7 +20,7 @@ describe("ZeroBounce", () => {
     expect(new URLSearchParams(String(seen[0].init.body)).get("timeout")).toBe("20");
     expect(result).toMatchObject({ outcome: "hit", primary: "valid", outputs: { email: "john.doe@zerobounce.net", status: "valid", providerStatus: "valid", freeEmail: false, role: false } });
     expect(result.request).toEqual({ method: "POST", endpoint: "/v2/validate", inputKeys: ["email"] });
-    expect(JSON.stringify(result.response)).not.toContain("\"lastname\"");
+    expect(JSON.stringify(result.response)).not.toContain("roe");
     noKey([result.request, result.response]);
   });
 
