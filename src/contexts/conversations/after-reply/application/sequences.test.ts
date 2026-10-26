@@ -98,13 +98,15 @@ describe("startRun invariants", () => {
     expect(s.created[0].steps.map((x) => x.position)).toEqual([2]);
   });
 
-  it("starts nothing for terminal, no-reply and non-email cases or when there is no sequence", async () => {
+  it("starts nothing for a type set to stop follow-ups, a non-email reply or no sequence", async () => {
     const terminal = facts();
     terminal.record.groupKey = "not_interested";
     terminal.record.replyTypeKey = "not_required_right_now";
+    terminal.record.followUps = "stop";
     const ooo = facts();
     ooo.record.groupKey = "other";
     ooo.record.replyTypeKey = "out_of_office";
+    ooo.record.followUps = "stop";
     const cases = [terminal, ooo, facts({ conversation: { id: "c1", recordId: "rec1", channel: "linkedin" } }), facts({ selection: null })];
     for (const f of cases) {
       const s = store(f);
@@ -139,7 +141,7 @@ describe("restartSequenceRun", () => {
     ["AI drafts were never turned on", { flow: null, selection: null }, /AI drafts are off for the campaign Autumn/],
     ["the flow has no published steps", { flow: { status: "active", hasPublished: false }, selection: null }, /no published follow-up steps/],
     ["no campaign emailed the person", { owner: null, flow: null, selection: null }, /No campaign has emailed this person/],
-    ["the reply is a closing category", { record: { ...facts().record, groupKey: "not_interested", replyTypeKey: "not_required_right_now", replyTypeName: "Not required right now" } }, /classified as Not required right now, so follow-ups do not apply/],
+    ["the reply type stops follow-ups", { record: { ...facts().record, groupKey: "not_interested", replyTypeKey: "not_required_right_now", replyTypeName: "Not now", followUps: "stop" } }, /^Not now is set to stop follow-ups\.$/],
     ["the person is marked do not contact", { doNotContact: true }, /marked do not contact/],
     ["the address is suppressed", { suppressed: true }, /suppression list/],
     ["reply handling is closed", { record: { ...facts().record, workflowState: "closed" } }, /Reply handling is closed/],

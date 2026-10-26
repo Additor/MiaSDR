@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import type { ClaimedStep, InterruptCandidate, SequenceEngineStore } from "../application/sequence-ports";
-import { MAX_DRAFT_ATTEMPTS, NO_START_KEYS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
+import { MAX_DRAFT_ATTEMPTS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
 import { NEW_REPLY_MARGIN_MINUTES } from "../domain/after-reply";
 import type { FollowUpsRule } from "../../domain/reply-type";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
@@ -63,7 +63,8 @@ const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
   where ${where} ${tail}`;
 
 export const drizzleSequenceEngine: SequenceEngineStore = {
-  // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned on.
+  // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned
+  // on, and the record's reply type keeps follow-ups going (`reply_types.follow_ups`, the rule `startBlockedReason` reads).
   async startCandidates(limit) {
     return rowsOf<{ organization_id: string; id: string }>(
       await db.execute(sql`
@@ -84,8 +85,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and ${startableCampaignSql({ channel: sql`own.channel`, type: sql`own.type`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}
           and lm.sent_at >= pick.enabled_at - make_interval(mins => ${NEW_REPLY_MARGIN_MINUTES})
           and r.workflow_state not in ('closed', 'paused')
-          and s.group_key <> 'not_interested'
-          and s.key not in ${NO_START_KEYS}
+          and s.follow_ups = 'continue'
           and p.email is not null
           and p.lifecycle <> 'contact'
           and exists (select 1 from reply_type_picks cl where cl.message_id = r.latest_inbound_message_id and cl.expected_context_version = r.context_version and cl.status in ('auto_applied', 'accepted', 'overridden'))

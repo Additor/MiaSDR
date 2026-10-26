@@ -628,6 +628,62 @@ describeDb("After a reply flows", () => {
     });
   });
 
+  describe("the type's Follow-ups rule decides the start", () => {
+    it("a reply type set to stop starts no run, and the same type set to keep going starts one", async () => {
+      const stopped = await fixture();
+      await ingest(stopped, { bodyText: "Not now, thanks." });
+      await emailedBy(stopped);
+      await stopped.cycle();
+      expect(await one("select s.key from records r join reply_types s on s.id = r.reply_type_id where r.organization_id = $1", [stopped.org])).toMatchObject({ key: "not_required_right_now" });
+      expect(await count("sequence_runs", stopped.org)).toBe(0);
+
+      const going = await fixture();
+      await ingest(going, { bodyText: "Not now, thanks." });
+      await sql`update reply_types set follow_ups = 'continue' where organization_id = ${going.org} and key = 'not_required_right_now'`;
+      await emailedBy(going);
+      await going.cycle();
+      expect(await count("sequence_runs", going.org, "status = 'active'")).toBe(1);
+    });
+
+    it("an Interested type set to stop starts no run", async () => {
+      const f = await fixture();
+      await ingest(f);
+      await sql`update reply_types set follow_ups = 'stop' where organization_id = ${f.org} and key = 'demo_request'`;
+      await emailedBy(f);
+      await f.cycle();
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      const record = (await one("select id from records where organization_id = $1", [f.org])).id as string;
+      const state = await seqApp.getRecordSequence(f.seqDeps, f.actor, record);
+      expect(state).toMatchObject({ canRestart: false, restartBlockedReason: "Demo request is set to stop follow-ups." });
+    });
+
+    it("the campaign lists the organization's active stop types of its default set, with their reasons", async () => {
+      const f = await fixture();
+      await ingest(f);
+      const campaignId = await emailedBy(f);
+      await sql`update reply_types set active = false where organization_id = ${f.org} and key = 'already_using_a_tool'`;
+      await sql`update reply_types set follow_ups = 'stop' where organization_id = ${f.org} and key = 'meeting_requested'`;
+      const other = await fixture();
+      await ingest(other);
+      await sql`update reply_types set follow_ups = 'stop' where organization_id = ${other.org} and key = 'demo_request'`;
+
+      const expected = (await sql`select key from reply_types where organization_id = ${f.org} and follow_ups = 'stop' and active`).map((r) => r.key as string);
+      const types = await arApp.getFollowUpStopTypes(f.arDeps, f.actor);
+      expect(types.map((t) => t.key).sort()).toEqual(expected.sort());
+      expect(types.map((t) => t.key)).toEqual(expect.arrayContaining(["out_of_office", "do_not_contact", "meeting_requested", "customer"]));
+      expect(types.map((t) => t.key)).not.toContain("already_using_a_tool");
+      expect(types.map((t) => t.key)).not.toContain("demo_request");
+      expect(types.find((t) => t.key === "out_of_office")).toMatchObject({ name: "Out of office", groupKey: "other", systemRole: null, reason: "Out of office is set to stop follow-ups." });
+      expect(types.find((t) => t.key === "do_not_contact")).toMatchObject({ systemRole: "stop_request" });
+      // Interested first, then Existing customer, Not interested, Other.
+      expect(types[0].key).toBe("meeting_requested");
+
+      const view = await arApp.getCampaignAfterReply(f.arDeps, f.actor, campaignId);
+      expect(view.stopReplyTypes).toEqual(types);
+      expect(view.stopsOn.map((l) => l.label)).toContain("The reply is classified Out of office");
+    });
+  });
+
   describe("only new replies start a run", () => {
     const MIN = 60_000;
 
@@ -812,12 +868,12 @@ describeDb("After a reply flows", () => {
       await expect(seqApp.restartSequenceRun(f.seqDeps, f.actor, record)).rejects.toThrow("no email reply");
     });
 
-    it("a reply classified into a closing category", async () => {
+    it("a reply type set to stop follow-ups, named", async () => {
       const r = await blocked(async ({ f, run }) => {
         const sub = await one("select id, group_key from reply_types where organization_id = $1 and key = 'customer'", [f.org]);
         await sql`update records set reply_type_id = ${sub.id}, group_key = ${sub.group_key} where id = ${run.record_id}`;
       });
-      expect(r.message).toMatch(/^The reply is classified as .+, so follow-ups do not apply\.$/);
+      expect(r.message).toBe("Customer question is set to stop follow-ups.");
     });
 
     it("do not contact", async () => {
@@ -1030,12 +1086,45 @@ describeDb("After a reply flows", () => {
       await expectStopped(f, run.id, "bounce");
     });
 
-    it("a stage change to a terminal subcategory", async () => {
+    it("a type change to a type set to stop follow-ups", async () => {
       const { f, run } = await withRun();
       const sub = await replyTypeId(f.org, "not_required_right_now");
       await sql`update records set group_key = 'not_interested', reply_type_id = ${sub}, context_version = context_version where organization_id = ${f.org}`;
       await f.seqRun();
       await expectStopped(f, run.id, "terminal_stage");
+    });
+
+    it("a type change to Out of office, which the seed sets to stop follow-ups", async () => {
+      const { f, run } = await withRun();
+      const ooo = await one("select id, group_key, follow_ups from reply_types where organization_id = $1 and key = 'out_of_office'", [f.org]);
+      expect(ooo.follow_ups).toBe("stop");
+      await sql`update records set group_key = ${ooo.group_key}, reply_type_id = ${ooo.id} where organization_id = ${f.org}`;
+      await f.seqRun();
+      await expectStopped(f, run.id, "terminal_stage");
+    });
+
+    it("reads the type's Follow-ups rule, not its group or key", async () => {
+      // A Not interested type set to keep going does not end the run; an Interested type set to stop does.
+      const kept = await withRun();
+      const keepGoing = await one("select id, group_key from reply_types where organization_id = $1 and key = 'already_using_a_tool'", [kept.f.org]);
+      await sql`update reply_types set follow_ups = 'continue' where id = ${keepGoing.id}`;
+      await sql`update records set group_key = ${keepGoing.group_key}, reply_type_id = ${keepGoing.id} where organization_id = ${kept.f.org}`;
+      await kept.f.seqRun();
+      expect(await one("select status from sequence_runs where id = $1", [kept.run.id])).toMatchObject({ status: "active" });
+
+      const { f, run } = await withRun();
+      const stop = await one("select id, group_key from reply_types where organization_id = $1 and key = 'meeting_requested'", [f.org]);
+      await sql`update reply_types set follow_ups = 'stop' where id = ${stop.id}`;
+      await sql`update records set group_key = ${stop.group_key}, reply_type_id = ${stop.id} where organization_id = ${f.org}`;
+      await f.seqRun();
+      await expectStopped(f, run.id, "terminal_stage");
+    });
+
+    it("an edit of the rule of the type a run started on leaves the run going", async () => {
+      const { f, run } = await withRun();
+      await sql`update reply_types set follow_ups = 'stop' where id = ${run.reply_type_id}`;
+      await f.seqRun();
+      expect(await one("select status from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
     });
 
     it("a trigger after the step was claimed still stops the draft", async () => {
@@ -1148,6 +1237,21 @@ describeDb("After a reply flows", () => {
         now: f.clock(),
       });
       expect(await one("select status from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "interrupted" });
+    });
+
+    it("interruptOnTerminalStageTx reads the record's current type when the caller passes no decision", async () => {
+      const { interruptOnTerminalStageTx } = await import("../sequence-run-tx");
+      const { db } = await import("@/platform/db/client");
+      const { f, run } = await withRun();
+      const record = await one("select id from records where organization_id = $1", [f.org]);
+      const ooo = await one("select id, group_key from reply_types where organization_id = $1 and key = 'out_of_office'", [f.org]);
+      // Still on the type the run started on, which keeps going: nothing ends.
+      expect(await db.transaction((tx) => interruptOnTerminalStageTx(tx, { organizationId: f.org, recordId: record.id, replyTypeId: run.reply_type_id, now: f.clock() }))).toBe(0);
+      await sql`update records set group_key = ${ooo.group_key}, reply_type_id = ${ooo.id} where id = ${record.id}`;
+      // The caller's decision wins over the stored rule.
+      expect(await db.transaction((tx) => interruptOnTerminalStageTx(tx, { organizationId: f.org, recordId: record.id, replyTypeId: ooo.id, followUps: "continue", now: f.clock() }))).toBe(0);
+      expect(await db.transaction((tx) => interruptOnTerminalStageTx(tx, { organizationId: f.org, recordId: record.id, replyTypeId: ooo.id, now: f.clock() }))).toBe(1);
+      await expectStoppedNow(f, run.id, "terminal_stage");
     });
 
     it("another organization's person with the same address keeps its run", async () => {

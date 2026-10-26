@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
-import { dueAfter, isTerminalReplyType } from "../domain/sequences";
+import { dueAfter } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 import { rowsOf } from "@/platform/db/sql-values";
-import type { FollowUpsOutcome } from "../../domain/reply-type";
+import type { FollowUpsOutcome, FollowUpsRule } from "../../domain/reply-type";
 
 export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 
@@ -44,22 +44,35 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
 
 /**
  * A record moved to a reply type whose follow-ups stop: its runs end in the caller's transaction. A run that started at
- * that same type is spared, as in the sweep's rule. A caller that passes `followUps` (the decision of `decideReplyType`)
- * decides by it; without it the key and group rule `isTerminalReplyType` decides, until every caller passes it.
+ * that same type is spared, as in the sweep's rule. The caller's `followUps` (the decision of `decideReplyType`) is
+ * the rule. A caller that passes none gets the Follow-ups rule of the record's current reply type, read here, so the
+ * caller writes the record first. No key or group decides.
  */
 export async function interruptOnTerminalStageTx(
   tx: Tx,
   input: {
     organizationId: string;
     recordId: string;
-    groupKey: string | null;
-    replyTypeKey: string | null;
+    /** @deprecated Unused: the type's Follow-ups rule decides. W1 drops it from the AI path's call. */
+    groupKey?: string | null;
+    /** @deprecated Unused: the type's Follow-ups rule decides. W1 drops it from the AI path's call. */
+    replyTypeKey?: string | null;
     replyTypeId: string | null;
     followUps?: FollowUpsOutcome;
     now: Date;
   },
 ): Promise<number> {
-  const stops = input.followUps === undefined ? isTerminalReplyType(input.groupKey, input.replyTypeKey) : input.followUps === "stop";
-  if (!stops) return 0;
+  const followUps = input.followUps ?? (await currentFollowUpsTx(tx, input.organizationId, input.recordId));
+  if (followUps !== "stop") return 0;
   return interruptRecordRunsTx(tx, input.organizationId, input.recordId, "terminal_stage", input.now, input.replyTypeId ?? undefined);
+}
+
+/** The Follow-ups rule of the record's current reply type, or null when the record has none. */
+async function currentFollowUpsTx(tx: Tx, organizationId: string, recordId: string): Promise<FollowUpsRule | null> {
+  const [row] = rowsOf<{ follow_ups: FollowUpsRule }>(
+    await tx.execute(sql`
+      select rt.follow_ups from records r join reply_types rt on rt.id = r.reply_type_id and rt.organization_id = r.organization_id
+      where r.id = ${recordId} and r.organization_id = ${organizationId}`),
+  );
+  return row?.follow_ups ?? null;
 }

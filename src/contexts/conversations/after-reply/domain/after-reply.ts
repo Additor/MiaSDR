@@ -1,5 +1,5 @@
-import type { FollowUpsRule } from "../../domain/reply-type";
-import { AFTER_REPLY_OFF, isTerminalReplyType, startPosition, type InterruptReason, type RunStatus } from "./sequences";
+import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
+import { AFTER_REPLY_OFF, followUpsContinue, startPosition, type InterruptReason, type RunStatus } from "./sequences";
 
 export { AFTER_REPLY_OFF };
 
@@ -99,7 +99,7 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (f.suppressed) return "This address is on the suppression list, so follow-ups do not apply.";
   if (!record.hasEmail) return "This person has no email address, so follow-ups cannot start.";
   if (!record.replyTypeId) return "The reply is not classified yet, so follow-ups cannot start.";
-  if (isTerminalReplyType(record.groupKey, record.replyTypeKey)) return `The reply is classified as ${record.replyTypeName ?? record.replyTypeKey ?? "a closing category"}, so follow-ups do not apply.`;
+  if (!followUpsContinue(record.followUps)) return followUpsStopReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
   if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply }) === null) return "A person already answered, and the flow has no follow-up step after the reply.";
   return null;
 }
@@ -137,7 +137,7 @@ export const INTERRUPT_REASON_LABELS: Record<StopReason, string> = {
   unsubscribed: "The person unsubscribed",
   bounce: "The email address bounced",
   suppressed: "The address is on the suppression list",
-  terminal_stage: "The reply moved to a category that ends outreach",
+  terminal_stage: "The reply moved to a reply type that stops follow-ups",
   record_closed: "A person closed reply handling",
   converted: "The person became a contact",
   [AFTER_REPLY_OFF]: "Follow-ups turned off for this campaign",
@@ -165,48 +165,43 @@ export function stopReasonLabel(reason: string | null | undefined): string {
 
 // What always stops follow-ups ---------------------------------------------------------------------------
 
-/** A category and subcategory key pair, the shape `isTerminalReplyType` reads. */
-export interface ReplyTypeFact {
-  groupKey: string | null;
-  replyTypeKey: string | null;
-}
-
-export interface AlwaysStopRule {
+/** A fact about the person or the record that ends a run whatever the reply type's rules say. */
+export interface FixedStopRule {
   id: string;
   /** One line for the read-only list in the campaign's After a reply settings. */
   label: string;
-  /** The reason the engine stores when this fact ends a run. Null for a rule that only keeps a flow from starting. */
-  reason: InterruptReason | null;
-  /** Classifications that trigger the rule. Absent for rules about the lead or the record. */
-  replyTypes?: readonly ReplyTypeFact[];
+  /** The reason the engine stores when this fact ends a run. */
+  reason: InterruptReason;
 }
 
-/**
- * Facts after which a follow-up would be wrong. The first five come from `interruptReason`; the rest are the
- * reply types `isTerminalReplyType` treats as terminal, plus Out of office, which keeps a flow from starting
- * but does not end one that is running (the engine's no-start list holds it next to the terminal keys).
- */
-export const ALWAYS_STOPS_ON: readonly AlwaysStopRule[] = [
+/** The fixed rules, in the order `interruptReason` checks them. The reply types that stop follow-ups are data: see `StopReplyType`. */
+export const FIXED_STOP_RULES: readonly FixedStopRule[] = [
   { id: "reply", label: "The person replies again", reason: "reply" },
   { id: "do_not_contact", label: "The person is marked do not contact", reason: "do_not_contact" },
   { id: "unsubscribe", label: "The person unsubscribes", reason: "unsubscribed" },
   { id: "bounce", label: "The address bounces", reason: "bounce" },
   { id: "record_closed", label: "Reply handling is closed", reason: "record_closed" },
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
-  { id: "not_interested", label: "The reply is classified Not interested", reason: "terminal_stage", replyTypes: [{ groupKey: "not_interested", replyTypeKey: null }] },
-  { id: "out_of_office", label: "The reply is classified Out of office", reason: null, replyTypes: [{ groupKey: null, replyTypeKey: "out_of_office" }] },
-  { id: "left_company", label: "The reply is classified Left company", reason: "terminal_stage", replyTypes: [{ groupKey: null, replyTypeKey: "left_company" }] },
-  {
-    id: "wrong_contact",
-    label: "The reply is classified Wrong or different contact",
-    reason: "terminal_stage",
-    replyTypes: [
-      { groupKey: null, replyTypeKey: "wrong_contact" },
-      { groupKey: null, replyTypeKey: "connected_to_different_contact" },
-    ],
-  },
-  { id: "customer", label: "The reply is classified Existing customer", reason: "terminal_stage", replyTypes: [{ groupKey: null, replyTypeKey: "customer" }] },
 ];
 
-/** Whether a classification ends a running flow, by the same rule the engine's interrupt sweep applies. */
-export const endsFlow = (fact: ReplyTypeFact): boolean => isTerminalReplyType(fact.groupKey, fact.replyTypeKey);
+/** @deprecated W8 moves `src/architecture/copy-vocabulary.test.ts` to `FIXED_STOP_RULES` and removes this alias. */
+export const ALWAYS_STOPS_ON: readonly FixedStopRule[] = FIXED_STOP_RULES;
+
+/** Why a reply type ends follow-ups, worded as the Restart button and the campaign settings show it. */
+export const followUpsStopReason = (typeName: string): string => `${typeName} is set to stop follow-ups.`;
+
+/** An active reply type of the organization whose Follow-ups rule is Stop. A move into it ends a running run, and no run starts on it. */
+export interface StopReplyType {
+  id: string;
+  key: string;
+  name: string;
+  groupKey: string;
+  systemRole: SystemRole | null;
+  /** `followUpsStopReason` for this type. */
+  reason: string;
+}
+
+/** One line per thing that ends follow-ups: the fixed rules, then each stop type by name. */
+export function stopsOnLines(stopTypes: readonly Pick<StopReplyType, "id" | "name">[]): Array<{ id: string; label: string }> {
+  return [...FIXED_STOP_RULES.map(({ id, label }) => ({ id, label })), ...stopTypes.map((t) => ({ id: `reply_type:${t.id}`, label: `The reply is classified ${t.name}` }))];
+}
