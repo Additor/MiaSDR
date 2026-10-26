@@ -35,12 +35,13 @@ describeDb("create organization (AUTH_SIGNUP=invite-only)", () => {
   });
 
   it("refuses a plain member and a user with no organization with 403, and creates nothing", async () => {
-    const before = (await sql`select count(*)::int as n from organizations`)[0].n;
     for (const user of [member, outsider]) {
       const res = await callRoute("organizations/route.ts", "POST", { as: user, json: { name: `Nope ${tag}` } });
       expect(res.status, res.text).toBe(403);
     }
-    expect((await sql`select count(*)::int as n from organizations`)[0].n).toBe(before);
+    // Other test files create organizations in parallel, so count only what these two users could have made.
+    expect(await sql`select 1 from organizations where name = ${`Nope ${tag}`}`).toHaveLength(0);
+    expect(await sql`select 1 from members where user_id in ${sql([member.userId, outsider.userId])} and organization_id <> ${first}`).toHaveLength(0);
   });
 
   it("reports canCreate false to them and true to an admin of the first organization", async () => {

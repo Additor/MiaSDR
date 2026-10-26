@@ -74,6 +74,26 @@ describeDb("sign-up guard on an invite-only instance", () => {
     expect(created.user.email).toBe(invited);
   });
 
+  it("refuses a sign-up whose only invitation expired or was canceled, and hides it from the sign-up page", async () => {
+    const context = await auth().$context;
+    const { pendingInvitationEmail } = await import("../signup-facts");
+    const cases = [
+      { email: `expired-${tag}@guard.test`, status: "pending", expiresIn: "-1 minute" },
+      { email: `canceled-${tag}@guard.test`, status: "canceled", expiresIn: "1 day" },
+    ];
+    for (const c of cases) {
+      const [{ id }] = await sql`insert into invitations (organization_id, email, role, status, expires_at, inviter_id)
+        values (${organizationId}, ${c.email}, 'member', ${c.status}, now() + ${c.expiresIn}::interval, ${ownerId}) returning id`;
+      expect(await pendingInvitationEmail(id)).toBeNull();
+      const signup = context.internalAdapter.createOAuthUser(
+        { name: "Google Person", email: c.email, emailVerified: true },
+        { providerId: "google", accountId: `g-${c.email}`, accessToken: "token" },
+      );
+      await expect(signup).rejects.toMatchObject({ statusCode: 403 });
+      expect(await sql`select 1 from users where email = ${c.email}`).toHaveLength(0);
+    }
+  });
+
   it("builds the invitation link without a double slash when APP_URL ends in a slash", async () => {
     const logged: string[] = [];
     vi.spyOn(console, "log").mockImplementation((...args) => void logged.push(args.join(" ")));

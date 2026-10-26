@@ -141,6 +141,23 @@ describeDb("invitation view and decline", () => {
     expect(await statusOf(id)).toBe("pending");
   });
 
+  it("invites through Better Auth for 7 days, and a second invitation to the address cancels the first", async () => {
+    const email = `again-${tag}@matrix.test`;
+    const sendInvite = async () => {
+      const res = await callRoute("members/route.ts", "POST", { as: world.admin, json: { email, role: "member" } });
+      expect(res.status, res.text).toBe(201);
+      return (res.body as { id: string }).id;
+    };
+    const first = await sendInvite();
+    const [{ expires_at: expiresAt }] = await world.sql`select expires_at from invitations where id = ${first}`;
+    const week = 7 * 24 * 60 * 60 * 1000;
+    expect(Math.abs(new Date(expiresAt).getTime() - (Date.now() + week))).toBeLessThan(60_000);
+    const second = await sendInvite();
+    expect(second).not.toBe(first);
+    expect(await statusOf(first)).toBe("canceled");
+    expect(await statusOf(second)).toBe("pending");
+  });
+
   it("accepting makes the invitation used and the person a member", async () => {
     const joiner = await newcomer("joiner");
     const id = await invite({ email: joiner.email, role: "member" });
