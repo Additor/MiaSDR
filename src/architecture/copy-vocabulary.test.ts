@@ -163,9 +163,9 @@ const broken = (file: string, text: string): string[] => RULES.filter((rule) => 
  * Keep this short. Fix user-visible text instead of adding it here.
  */
 const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> = [
-  { file: "src/app/(app)/crm/_components/event-labels.ts", text: "Moved deal to {stage}", reason: "Activity line of a deal event; {stage} is the deal stage name placeholder." },
-  { file: "src/app/(app)/crm/_components/event-labels.ts", text: "{stage}", reason: "The placeholder token that eventLabel replaces with the deal stage name." },
-  { file: "src/app/(app)/crm/_components/event-labels.ts", text: "Moved deal to another stage", reason: "Fallback Activity line of a deal event without a stage name; a deal stage." },
+  { file: "src/app/(app)/_components/event-labels.ts", text: "Moved deal to {stage}", reason: "Activity line of a deal event; {stage} is the deal stage name placeholder." },
+  { file: "src/app/(app)/_components/event-labels.ts", text: "{stage}", reason: "The placeholder token that eventLabel replaces with the deal stage name." },
+  { file: "src/app/(app)/_components/event-labels.ts", text: "Moved deal to another stage", reason: "Fallback Activity line of a deal event without a stage name; a deal stage." },
   { file: "src/app/(app)/settings/settings-nav-config.ts", text: "Pipeline stages", reason: "Settings entry for the deal stages page (/settings/pipeline)." },
   { file: "src/app/(app)/settings/settings-nav-config.ts", text: "Rename, reorder, add and delete the stages deals move through.", reason: "Summary of the deal stages Settings entry." },
   {
@@ -320,7 +320,7 @@ function stringValues(value: unknown): string[] {
 
 const ACTION_QUEUE_FILE = "src/contexts/conversations/actions/domain/action-queue.ts";
 const AFTER_REPLY_FILE = "src/contexts/conversations/after-reply/domain/after-reply.ts";
-const EVENT_LABELS_FILE = "src/app/(app)/crm/_components/event-labels.ts";
+const EVENT_LABELS_FILE = "src/app/(app)/_components/event-labels.ts";
 const CAMPAIGN_VIEW_FILE = "src/contexts/outreach/domain/campaign-view.ts";
 
 const baseFacts: afterReply.StartBlockFacts = {
@@ -469,7 +469,7 @@ function reasonParameter(file: string, fn: string): string[] {
 function writtenEventTypes(): Array<{ file: string; value: string }> {
   const out: Array<{ file: string; value: string }> = [];
   for (const file of allSources("src")) {
-    if (file.startsWith("src/app/(app)/crm/_components/event-labels")) continue;
+    if (file.startsWith("src/app/(app)/_components/event-labels")) continue;
     walk(parse(file), (node) => {
       if (ts.isPropertyAssignment(node) && node.name.getText() === "eventType") {
         let inLedger = false;
