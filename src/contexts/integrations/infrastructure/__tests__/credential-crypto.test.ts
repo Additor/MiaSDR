@@ -4,7 +4,27 @@ import { credentialKeyId, decryptCredential, encryptCredential, encryptCredentia
 const key = "k".repeat(40);
 const oldKey = "o".repeat(40);
 
+/**
+ * Envelopes written once by this module and stored here. They pin the key derivation (HKDF-SHA256, empty salt, info
+ * "miasdr:integration-credentials:v1"), the key id and the layout, so a change that would orphan stored rows fails.
+ * A round trip cannot catch that: it encrypts and decrypts with the same changed code.
+ */
+const FIXED = {
+  key: "fixed-vector-key-0123456789abcdefghij",
+  legacyKey: "fixed-vector-legacy-key-0123456789abcd",
+  v2: "v2:8f35df7f:GXhIX14ReocRVgOO:UWjTH3rqrUoiiDVno4wkSQ:VMZTUWZIwbz2_HOvl2r8gqhrF2zJm-be",
+  v2Legacy: "v2:a24a3cf7:ZH0wD6ui6GRN9Zj6:wo_JT0akqnHsEYYisIJNsQ:ExstTdCzRaxGxl3T5j0YO_UreW8UHbfyiDDJX9aEaQ",
+  v1Legacy: "v1:NR7th5VJMPJ68QuU:2nvIRDZNWmNyLW3O-Cx7jA:HMQ7akkxAj_bOSQ-af5bNe5l9YFMJpb8",
+};
+
 describe("credential envelope", () => {
+  it("opens stored v1 and v2 envelopes", () => {
+    expect(credentialKeyId(FIXED.key)).toBe("8f35df7f");
+    expect(credentialKeyId(FIXED.legacyKey)).toBe("a24a3cf7");
+    expect(decryptCredential(FIXED.v2, FIXED.key)).toBe('{"apiKey":"sk-fixed-v2"}');
+    expect(decryptCredential(FIXED.v2Legacy, FIXED.key, [FIXED.legacyKey])).toBe('{"apiKey":"sk-fixed-v2-legacy"}');
+    expect(decryptCredential(FIXED.v1Legacy, FIXED.key, [FIXED.legacyKey])).toBe('{"apiKey":"sk-fixed-v1"}');
+  });
   it("round-trips and uses the v2 layout with the key id", () => {
     const envelope = encryptCredential('{"apiKey":"sk-secret"}', key);
     const parts = envelope.split(":");
