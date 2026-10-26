@@ -186,7 +186,7 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       linkedinUrl: blankToNull(fields.linkedinUrl),
       title: blankToNull(fields.title),
       companyDomain: blankToNull(fields.companyDomain),
-      // M8: a company that exists keeps its name, so the form sends a name only for a new domain.
+      // A company that exists keeps its name, so the form sends a name only for a new domain.
       companyName: namesNewCompany ? blankToNull(fields.companyName) : null,
       deal: withDeal ? dealBody() : null,
       idempotencyKey: key,

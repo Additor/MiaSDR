@@ -4,7 +4,7 @@ import { gridPage } from "./support/grid";
 import { SEED_HEADERS, seedGrid, type SeededGrid } from "./support/grid-seed";
 
 /**
- * G1 edit pipeline gestures (spec 27 reserved for G1): undo and redo by key and by toolbar button, one undo
+ * Edit gestures: undo and redo by key and by toolbar button, one undo
  * step for a pasted block, another person's edit surviving an undo, copy of a formula-looking cell.
  * Logic is unit tested; these steps cover what only a browser can: key events, the clipboard and the toolbar.
  */
@@ -50,7 +50,7 @@ test.describe("grid seed helper", () => {
 
 test.describe("grid undo and redo", () => {
   test("Ctrl/Cmd+Z, Shift+Z and Y step through a typed edit, and the formula follows", async ({ page }) => {
-    const seeded = await open(page, "G1 undo keys");
+    const seeded = await open(page, "S27 undo keys");
     const score = page.getByRole("gridcell", { name: /^Score: 1$/ });
     await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
 
@@ -88,7 +88,7 @@ test.describe("grid undo and redo", () => {
   });
 
   test("the toolbar buttons undo and redo, and disable at the ends", async ({ page }) => {
-    const seeded = await open(page, "G1 undo buttons");
+    const seeded = await open(page, "S27 undo buttons");
     const undo = page.getByRole("button", { name: "Undo", exact: true });
     const redo = page.getByRole("button", { name: "Redo", exact: true });
     await page.getByRole("gridcell", { name: "Name: Person 2", exact: true }).click();
@@ -108,7 +108,7 @@ test.describe("grid undo and redo", () => {
   });
 
   test("a pasted block is one undo step and one redo step", async ({ page }) => {
-    const seeded = await open(page, "G1 undo paste");
+    const seeded = await open(page, "S27 undo paste");
     await page.evaluate((text) => navigator.clipboard.writeText(text), "Ann\tann@x.test\nBob\tbob@x.test\nCy\tcy@x.test");
     await page.getByRole("gridcell", { name: "Name: Person 1", exact: true }).click();
     await page.keyboard.press(`${MOD}+v`);
@@ -128,7 +128,7 @@ test.describe("grid undo and redo", () => {
   });
 
   test("an undo leaves a cell someone else changed afterwards", async ({ page }) => {
-    const seeded = await open(page, "G1 undo conflict");
+    const seeded = await open(page, "S27 undo conflict");
     await page.getByRole("gridcell", { name: "Name: Person 1", exact: true }).click();
     await page.keyboard.type("Mine");
     await page.keyboard.press("Enter");
@@ -146,7 +146,7 @@ test.describe("grid undo and redo", () => {
   });
 
   test("deleting a column clears the history", async ({ page }) => {
-    await open(page, "G1 undo columns");
+    await open(page, "S27 undo columns");
     await page.getByRole("gridcell", { name: "Name: Person 1", exact: true }).click();
     await page.keyboard.type("Typed");
     await page.keyboard.press("Enter");
@@ -162,7 +162,7 @@ test.describe("grid undo and redo", () => {
 
 test.describe("grid copy", () => {
   test("copy prefixes a formula-looking text cell, keeps numbers plain, and paste restores the text", async ({ page }) => {
-    const seeded = await open(page, "G1 copy");
+    const seeded = await open(page, "S27 copy");
     const first = (await gridPage(page.request, seeded.tableId)).rows;
     const write = await page.request.patch(`/api/grid/tables/${seeded.tableId}/cells`, {
       data: { updates: [{ rowId: first[0].id, columnKey: seeded.keys.Name, value: "=1+1" }, { rowId: first[1].id, columnKey: seeded.keys.Name, value: "-5" }, { rowId: first[0].id, columnKey: seeded.keys.Score, value: -5 }] },
@@ -197,7 +197,7 @@ test.describe("grid copy", () => {
 
 test.describe("grid paste past the end", () => {
   test("a block past the last row and column adds rows and a column, and one undo restores the values", async ({ page }) => {
-    const seeded = await open(page, "G1 paste grow");
+    const seeded = await open(page, "S27 paste grow");
     const site = (n: number) => seeded.expected(n - 1).Site;
     await page.evaluate((text) => navigator.clipboard.writeText(text), "a1\tb1\tc1\td1\na2\tb2\tc2\td2\na3\tb3\tc3\td3");
     await page.getByRole("gridcell", { name: `Site: ${site(1)}`, exact: true }).click();
@@ -237,7 +237,7 @@ test.describe("grid paste past the end", () => {
   });
 
   test("a filtered view refuses a paste that would add rows", async ({ page }) => {
-    const seeded = await open(page, "G1 paste filtered");
+    const seeded = await open(page, "S27 paste filtered");
     const view = { filters: { conjunction: "and", conditions: [{ columnKey: seeded.keys.Name, operator: "contains", value: "Person 1" }] } };
     const saved = await page.request.patch(`/api/grid/tables/${seeded.tableId}`, { data: { view } });
     expect(saved.status()).toBe(200);
@@ -255,7 +255,7 @@ test.describe("grid paste past the end", () => {
 
 test.describe("grid pinned columns", () => {
   test("pinned columns lead the grid, stay in view while it scrolls sideways, and phone width ignores them", async ({ page }) => {
-    const seeded = await open(page, "G1 pin");
+    const seeded = await open(page, "S27 pin");
     const headers = () => page.getByRole("columnheader").evaluateAll((els) => els.map((el) => (el.querySelector("span")?.textContent ?? "").trim()));
 
     await page.getByRole("button", { name: "Column menu for Score", exact: true }).click();
@@ -307,7 +307,7 @@ test.describe("grid pinned columns", () => {
 
 test.describe("grid fill handle", () => {
   test("dragging the corner copies the selection down, skips a formula column, and undoes as one step", async ({ page }) => {
-    const seeded = await open(page, "G1 fill");
+    const seeded = await open(page, "S27 fill");
     const row1 = seeded.expected(0);
     await page.getByRole("gridcell", { name: `Site: ${row1.Site}`, exact: true }).click();
     await page.getByRole("gridcell", { name: "Score x2: 2", exact: true }).click({ modifiers: ["Shift"] });

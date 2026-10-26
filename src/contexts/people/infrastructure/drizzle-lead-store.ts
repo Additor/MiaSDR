@@ -147,7 +147,7 @@ export const drizzleLeadStore: LeadStore = {
           })
           .where(and(eq(people.id, update.id), eq(people.organizationId, input.organizationId)));
       }
-      // A company whose last contact this file moved away stays in Companies (M3).
+      // A company whose last contact this file moved away stays in Companies.
       await stampCompaniesLeftByContacts(tx, input.organizationId, leftByContacts);
 
       const stats: ImportStats = {

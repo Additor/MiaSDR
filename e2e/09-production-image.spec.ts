@@ -2,7 +2,7 @@ import { request as playwrightRequest, type APIRequestContext } from "@playwrigh
 import { ADMIN, cronSecret, ensureMailbox, expect, test } from "./support/fixtures";
 
 /**
- * M3: the test-only routes stay 404 in the production image.
+ * The test-only routes stay 404 in the production image.
  *
  * The runner builds a second copy of the app with the Dockerfile's build flags (no E2E_BUILD), starts it with
  * the Dockerfile's runner ENV (NODE_ENV=production) and sets every runtime helper variable to "on":

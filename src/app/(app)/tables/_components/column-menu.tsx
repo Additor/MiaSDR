@@ -46,7 +46,7 @@ interface Props {
   index: number;
   count: number;
   sort: "asc" | "desc" | null;
-  /** Whether this column is pinned and how many are pinned in all. The grid passes them once pins render (G1-pin). */
+  /** Whether this column is pinned and how many are pinned in all. The grid passes them once pins render. */
   pinned?: boolean;
   pinCount?: number;
   /** A runner column's results across the loaded rows, shown at the top of its menu. */

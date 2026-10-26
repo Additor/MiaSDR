@@ -328,7 +328,7 @@ export async function* exportContactsCsv(
 }
 
 /**
- * The Companies list (M3): a company listed in Companies (`crm_listed_at`, from Add company, a merge, or losing its last
+ * The Companies list: a company listed in Companies (`crm_listed_at`, from Add company, a merge, or losing its last
  * contact) or with a contact today, with its contact and open-deal counts, last activity and open amounts. A company with
  * only leads from an import stays off.
  */

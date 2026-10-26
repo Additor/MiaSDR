@@ -23,7 +23,7 @@ export interface AddContactInput {
   linkedinUrl?: string | null;
   title?: string | null;
   companyDomain?: string | null;
-  /** Names the company when the domain is new. A different name for an existing company answers 422 (M8). */
+  /** Names the company when the domain is new. A different name for an existing company answers 422. */
   companyName?: string | null;
   /** One per dialog open, 8 to 200 characters. A repeat with the same key replays the first result. */
   creationKey: string;

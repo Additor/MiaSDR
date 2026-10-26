@@ -323,7 +323,7 @@ export const drizzleLeadRepository: LeadRepository = {
         );
 
         // The company, after the registry lock and before the people row lock: the domain lock, then the alias
-        // or the company row. An existing company keeps its name; a different name sent with its domain is refused (M8).
+        // or the company row. An existing company keeps its name; a different name sent with its domain is refused.
         const company = early?.company ? await resolveCompanyDomain(tx, organizationId, early.company.domain, { name: early.company.name }) : null;
         if (company && early?.company && !company.created && early.company.name !== null && early.company.name !== company.name) {
           throw new ValidationError(renameOnCompanyPage({ name: company.name, domain: company.domain }));
@@ -364,7 +364,7 @@ export const drizzleLeadRepository: LeadRepository = {
           .set({ ...edit.patch, ...(companyId !== undefined ? { companyId } : {}), custom, updatedAt: new Date() })
           .where(and(eq(people.organizationId, organizationId), eq(people.id, id)));
 
-        // A contact who leaves a company keeps that company in Companies (M3).
+        // A contact who leaves a company keeps that company in Companies.
         if (current.lifecycle === "contact" && current.companyId && companyId !== undefined && companyId !== current.companyId) {
           await stampCompaniesLeftByContacts(tx, organizationId, [current.companyId]);
         }

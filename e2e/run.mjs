@@ -6,7 +6,7 @@
  * Two builds:
  *   .next-e2e        built with E2E_BUILD=1, so the test-only routes exist. Served on port A.
  *   .next-e2e-prod   built exactly like the Dockerfile builds it (no E2E_BUILD). Served on port B with every
- *                    runtime helper variable set, to prove the routes stay 404 in the production image (M3).
+ *                    runtime helper variable set, to prove the routes stay 404 in the production image.
  *
  * Environment:
  *   E2E_SKIP_BUILD=1   reuse existing builds; "prod" rebuilds only the test build

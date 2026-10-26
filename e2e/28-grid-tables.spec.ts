@@ -3,7 +3,7 @@ import { csvFile, expect, signInAdmin, test } from "./support/fixtures";
 import { gridPage, newWorkbook } from "./support/grid";
 import { seedGrid } from "./support/grid-seed";
 
-/** E2E 28: G2, tables, workbooks, import and export. Wave 1 covers the export and the sheet picker of the import wizard. */
+/** Tables, workbooks, import and export, including the export view and the sheet picker of the import wizard. */
 
 const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const colName = (i: number) => String.fromCharCode(65 + (i % 26));
@@ -43,7 +43,7 @@ function workbookFile(name: string, sheets: Array<{ name: string; rows: Array<Ar
 test.describe("grid tables: export and import", () => {
   test("Export follows the default view, the member's own view and the search box", async ({ page }) => {
     await signInAdmin(page);
-    const seeded = await seedGrid(page.request, { rows: 120, name: "G2 export view" });
+    const seeded = await seedGrid(page.request, { rows: 120, name: "S28 export view" });
     const score = seeded.keys.Score;
     const cond = (operator: string, value: string) => ({ conjunction: "and", conditions: [{ columnKey: score, operator, value }] });
 
@@ -92,7 +92,7 @@ test.describe("grid tables: export and import", () => {
 
   test("The import wizard offers the sheets of a workbook and imports the one that is chosen", async ({ page }) => {
     await signInAdmin(page);
-    const { workbookId, tableId } = await newWorkbook(page.request, "G2 sheet picker");
+    const { workbookId, tableId } = await newWorkbook(page.request, "S28 sheet picker");
     await page.goto(`/tables/${workbookId}`);
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("menuitem", { name: "Import file" }).click();
@@ -134,7 +134,7 @@ test.describe("grid tables: export and import", () => {
 
   test("Add rows adds up to 1,000 blank rows and scrolls to the end", async ({ page }) => {
     await signInAdmin(page);
-    const { workbookId, tableId } = await newWorkbook(page.request, "G2 add rows");
+    const { workbookId, tableId } = await newWorkbook(page.request, "S28 add rows");
     await page.goto(`/tables/${workbookId}`);
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("menuitem", { name: "Add rows..." }).click();
@@ -157,7 +157,7 @@ test.describe("grid tables: export and import", () => {
 
   test("Duplicate column copies a data column's values and a formula's expression", async ({ page }) => {
     await signInAdmin(page);
-    const seeded = await seedGrid(page.request, { rows: 30, name: "G2 duplicate column" });
+    const seeded = await seedGrid(page.request, { rows: 30, name: "S28 duplicate column" });
     await page.goto(`/tables/${seeded.workbookId}`);
 
     await page.getByRole("button", { name: "Column menu for 회사" }).click();
@@ -181,8 +181,8 @@ test.describe("grid tables: export and import", () => {
 
   test("The table menu edits the description and moves a table to another workbook", async ({ page }) => {
     await signInAdmin(page);
-    const a = await newWorkbook(page.request, "G2 move from");
-    const b = await newWorkbook(page.request, "G2 move to");
+    const a = await newWorkbook(page.request, "S28 move from");
+    const b = await newWorkbook(page.request, "S28 move to");
     const made = await page.request.post("/api/grid/tables", { data: { workbookId: a.workbookId, name: "Mover" } });
     expect(made.status()).toBe(201);
     await page.goto(`/tables/${a.workbookId}`);
@@ -202,9 +202,9 @@ test.describe("grid tables: export and import", () => {
     await page.getByRole("menuitem", { name: "Move to workbook" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("combobox", { name: "Destination workbook" }).click();
-    await page.getByRole("option", { name: /^G2 move to/ }).click();
+    await page.getByRole("option", { name: /^S28 move to/ }).click();
     await dialog.getByRole("button", { name: "Move table" }).click();
-    await expect(page.getByText('Moved "Mover" to "G2 move to".')).toBeVisible();
+    await expect(page.getByText('Moved "Mover" to "S28 move to".')).toBeVisible();
     // The page follows the table: the URL names the destination workbook and the moved table, which is the open tab.
     await expect(page).toHaveURL(new RegExp(`/tables/${b.workbookId}\\?table=`));
     await expect(tabs).toHaveText(["Custom Table", "Mover"]);
@@ -217,10 +217,10 @@ test.describe("grid tables: export and import", () => {
 
   test("A new workbook can start from a file and opens its mapping step", async ({ page }) => {
     await signInAdmin(page);
-    await seedGrid(page.request, { rows: 2, name: "G2 file host" });
+    await seedGrid(page.request, { rows: 2, name: "S28 file host" });
     await page.goto("/tables");
     // The file input has no click to wait on, so wait for the list to load, which means the page is hydrated.
-    await expect(page.getByRole("link", { name: "G2 file host" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "S28 file host" })).toBeVisible();
     await page.getByLabel("Spreadsheet file to start from").setInputFiles(csvFile("g2-from-file.csv", [["Email", "Company"], ["ada@g2-file.test", "Acme"], ["bo@g2-file.test", "Globex"]]));
     const dialog = page.getByRole("dialog", { name: "Import a file" });
     await expect(dialog.getByText("2 rows, 2 columns.")).toBeVisible();
@@ -234,7 +234,7 @@ test.describe("grid tables: export and import", () => {
   test("Cancelling the mapping of a new workbook from a file removes the empty workbook again", async ({ page }) => {
     await signInAdmin(page);
     // Its own data, so the test does not depend on the others in this file.
-    await seedGrid(page.request, { rows: 2, name: "G2 cancel host" });
+    await seedGrid(page.request, { rows: 2, name: "S28 cancel host" });
     const workbookNames = async () => {
       const res = await page.request.get("/api/grid/workbooks");
       expect(res.ok()).toBe(true);
@@ -242,7 +242,7 @@ test.describe("grid tables: export and import", () => {
     };
     await page.goto("/tables");
     // The file input has no click to wait on, so wait for the list to load, which means the page is hydrated.
-    await expect(page.getByRole("link", { name: "G2 cancel host" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "S28 cancel host" })).toBeVisible();
     await page.getByLabel("Spreadsheet file to start from").setInputFiles(csvFile("g2-cancelled.csv", [["Email"], ["x@g2-file.test"]]));
     await expect(page.getByRole("dialog", { name: "Import a file" }).getByText("1 row, 1 column.")).toBeVisible();
     // The workbook exists before the mapping step shows. Without this the check below would also pass if it never did.
@@ -251,6 +251,6 @@ test.describe("grid tables: export and import", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     // The delete is a request after the click; the list on screen does not prove it ran.
     await expect.poll(workbookNames, { timeout: 15_000 }).not.toContain("g2-cancelled");
-    expect(await workbookNames()).toContain("G2 cancel host");
+    expect(await workbookNames()).toContain("S28 cancel host");
   });
 });

@@ -33,7 +33,7 @@ export interface ResolvedCompany {
 /**
  * The company a typed domain lands on, for the person form and Add contact: the domain lock, then an alias, then the company
  * row `FOR KEY SHARE`, else an insert. The conflict arm covers a company an import inserted under `leads-import` and not the
- * domain lock. `domain` is normalized. The caller compares `name` with what it was sent (M8).
+ * domain lock. `domain` is normalized. The caller compares `name` with what it was sent.
  */
 export async function resolveCompanyDomain(tx: DbHandle, organizationId: string, domain: string, input: { name: string | null }): Promise<ResolvedCompany> {
   await lockCompanyDomain(tx, organizationId, domain);
@@ -74,7 +74,7 @@ export async function resolveCompanyDomain(tx: DbHandle, organizationId: string,
 }
 
 /**
- * M3: a company whose last contact moved away or went stays in Companies. Stamps `crm_listed_at` on each of these companies that
+ * A company whose last contact moved away or went stays in Companies. Stamps `crm_listed_at` on each of these companies that
  * has no stamp and no contact left. Run after the people writes, in the same transaction.
  */
 export async function stampCompaniesLeftByContacts(tx: DbHandle, organizationId: string, companyIds: readonly string[]): Promise<void> {
@@ -114,7 +114,7 @@ export async function aliasTargets(tx: DbHandle, organizationId: string, domains
  */
 
 /**
- * Companies lists a company with a stamp or a contact (M3). The one copy for the people context: Add company, the merge picker and
+ * Companies lists a company with a stamp or a contact. The one copy for the people context: Add company, the merge picker and
  * the lifecycle store read it here. `deals/infrastructure/crm-read.ts` `companies()` applies the same rule under the alias `c`; a
  * change to the rule goes to both.
  */

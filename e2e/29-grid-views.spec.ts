@@ -4,8 +4,8 @@ import { seedGrid } from "./support/grid-seed";
 import type { Locator, Page } from "@playwright/test";
 
 /**
- * G3: the filter and sort panel and the partial run controls (first N rows, one cell). GRID_PROVIDER=fake and
- * AI_PROVIDER=fake come from e2e/run.mjs. Specs 27 and 28 belong to G1 and G2.
+ * The filter and sort panel and the partial run controls (first N rows, one cell). GRID_PROVIDER=fake and
+ * AI_PROVIDER=fake come from e2e/run.mjs.
  */
 
 async function choose(page: Page, scope: Locator, label: string, option: string | RegExp) {
