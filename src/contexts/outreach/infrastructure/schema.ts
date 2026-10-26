@@ -390,12 +390,17 @@ export const linkedinSearchBatches = pgTable(
     rejections: jsonb("rejections").$type<Array<{ row: number; reason: string }>>(),
     /** Result limit and target campaign the batch was created with. New searches added later take them, even when every earlier search was removed. */
     maxResults: integer("max_results"),
-    targetCampaignId: uuid("target_campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    targetCampaignId: uuid("target_campaign_id"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  // listBatches() reads the organization's batches newest first.
-  (t) => [index("linkedin_search_batches_org_created_idx").on(t.organizationId, t.createdAt)],
+  (t) => [
+    // The migration writes `ON DELETE SET NULL (target_campaign_id)`.
+    foreignKey({ name: "linkedin_search_batches_target_campaign_fk", columns: [t.targetCampaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }).onDelete("set null"),
+    unique("linkedin_search_batches_id_org_uq").on(t.id, t.organizationId),
+    // listBatches() reads the organization's batches newest first.
+    index("linkedin_search_batches_org_created_idx").on(t.organizationId, t.createdAt),
+  ],
 );
 
 export const linkedinSearchQueries = pgTable(
@@ -403,9 +408,7 @@ export const linkedinSearchQueries = pgTable(
   {
     id: pk(),
     organizationId: orgId(),
-    batchId: uuid("batch_id")
-      .notNull()
-      .references(() => linkedinSearchBatches.id, { onDelete: "cascade" }),
+    batchId: uuid("batch_id").notNull(),
     url: text("url").notNull(),
     companyName: text("company_name"),
     /** 1-based CSV row the query came from. */
@@ -419,7 +422,7 @@ export const linkedinSearchQueries = pgTable(
     /** Stop after this many results. */
     maxResults: integer("max_results").notNull().default(100),
     /** Campaign that found people are enrolled into. Null: leads only. */
-    targetCampaignId: uuid("target_campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+    targetCampaignId: uuid("target_campaign_id"),
     /** Results that became or matched a lead (the rest had no public profile slug). */
     importedCount: integer("imported_count").notNull().default(0),
     pagesFetched: integer("pages_fetched").notNull().default(0),
@@ -438,6 +441,10 @@ export const linkedinSearchQueries = pgTable(
   (t) => [
     // The migration writes `ON DELETE SET NULL (current_account_id)`.
     foreignKey({ name: "linkedin_search_queries_current_account_fk", columns: [t.currentAccountId, t.organizationId], foreignColumns: [linkedinAccounts.id, linkedinAccounts.organizationId] }).onDelete("set null"),
+    foreignKey({ name: "linkedin_search_queries_batch_fk", columns: [t.batchId, t.organizationId], foreignColumns: [linkedinSearchBatches.id, linkedinSearchBatches.organizationId] }).onDelete("cascade"),
+    // The migration writes `ON DELETE SET NULL (target_campaign_id)`.
+    foreignKey({ name: "linkedin_search_queries_target_campaign_fk", columns: [t.targetCampaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }).onDelete("set null"),
+    unique("linkedin_search_queries_id_org_uq").on(t.id, t.organizationId),
     check(
       "linkedin_search_queries_status_ck",
       sql`${t.status} in ('queued', 'running', 'paused', 'paused_limit', 'completed', 'failed', 'cancelled')`,
@@ -456,11 +463,9 @@ export const linkedinSearchResults = pgTable(
   {
     id: pk(),
     organizationId: orgId(),
-    queryId: uuid("query_id")
-      .notNull()
-      .references(() => linkedinSearchQueries.id, { onDelete: "cascade" }),
+    queryId: uuid("query_id").notNull(),
     profileUrl: text("profile_url").notNull(),
-    personId: uuid("person_id").references(() => people.id, { onDelete: "set null" }),
+    personId: uuid("person_id"),
     name: text("name"),
     headline: text("headline"),
     location: text("location"),
@@ -470,7 +475,12 @@ export const linkedinSearchResults = pgTable(
     raw: jsonb("raw").$type<unknown>(),
     createdAt: createdAt(),
   },
-  (t) => [unique("linkedin_search_results_query_url_uq").on(t.queryId, t.profileUrl)],
+  (t) => [
+    foreignKey({ name: "linkedin_search_results_query_fk", columns: [t.queryId, t.organizationId], foreignColumns: [linkedinSearchQueries.id, linkedinSearchQueries.organizationId] }).onDelete("cascade"),
+    // The migration writes `ON DELETE SET NULL (person_id)`.
+    foreignKey({ name: "linkedin_search_results_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("set null"),
+    unique("linkedin_search_results_query_url_uq").on(t.queryId, t.profileUrl),
+  ],
 );
 
 /**

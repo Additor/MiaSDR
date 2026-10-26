@@ -174,10 +174,16 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     const neighbour = await contact(o, "neighbour");
     // A cc of the neighbour that the target's message carried goes with that message.
     await sql`insert into lead_ccs (organization_id, person_id, email, source_message_id) values (${o.org}, ${neighbour.person}, ${`cc-${o.tag}@lead.test`}, ${target.inbound})`;
-    // A neighbour draft that replies to the target's message keeps its row with a null target.
-    const crossDraft = await one(sql`
-      insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
-      values (${o.org}, ${neighbour.record}, ${neighbour.conversation}, ${target.inbound}, 0, 'email') returning id`);
+    // A neighbour draft that replies to the target's message keeps its row with a null target. drafts_reply_target_ins_trg
+    // refuses that target since migration 0001, but a draft written before it can still hold one.
+    const crossDraft = await sql.begin(async (tx) => {
+      await tx`alter table drafts disable trigger drafts_reply_target_ins_trg`;
+      const id = await one(tx`
+        insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
+        values (${o.org}, ${neighbour.record}, ${neighbour.conversation}, ${target.inbound}, 0, 'email') returning id`);
+      await tx`alter table drafts enable trigger drafts_reply_target_ins_trg`;
+      return id;
+    });
     const elsewhere = await organization();
     const stranger = await contact(elsewhere, "stranger");
     const neighbourBefore = await rowsOf(o, neighbour);

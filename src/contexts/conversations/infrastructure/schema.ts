@@ -295,11 +295,13 @@ export const identityExceptions = pgTable(
     reason: text("reason").notNull(),
     payload: jsonb("payload").$type<unknown>(),
     status: text("status").notNull().default("open"),
-    resolvedPersonId: uuid("resolved_person_id").references(() => people.id, { onDelete: "set null" }),
+    resolvedPersonId: uuid("resolved_person_id"),
     resolvedAt: tstz("resolved_at"),
     createdAt: createdAt(),
   },
   (t) => [
+    // The migration writes `ON DELETE SET NULL (resolved_person_id)`.
+    foreignKey({ name: "identity_exceptions_resolved_person_fk", columns: [t.resolvedPersonId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("set null"),
     unique("identity_exceptions_event_uq").on(t.channel, t.accountRef, t.sourceEventKey),
     check("identity_exceptions_status_ck", sql`${t.status} in ('open', 'resolved', 'ignored')`),
     check("identity_exceptions_channel_ck", inList(t.channel, CHANNELS)),

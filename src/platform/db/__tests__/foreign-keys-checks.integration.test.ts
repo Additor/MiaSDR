@@ -19,6 +19,12 @@ const FOREIGN_KEYS: Array<[string, string, string | null]> = [
   ["sends", "sends_linkedin_account_fk", null],
   ["linkedin_connections", "linkedin_connections_enrollment_fk", "enrollment_id"],
   ["linkedin_search_queries", "linkedin_search_queries_current_account_fk", "current_account_id"],
+  ["linkedin_search_batches", "linkedin_search_batches_target_campaign_fk", "target_campaign_id"],
+  ["linkedin_search_queries", "linkedin_search_queries_batch_fk", "CASCADE"],
+  ["linkedin_search_queries", "linkedin_search_queries_target_campaign_fk", "target_campaign_id"],
+  ["linkedin_search_results", "linkedin_search_results_query_fk", "CASCADE"],
+  ["linkedin_search_results", "linkedin_search_results_person_fk", "person_id"],
+  ["identity_exceptions", "identity_exceptions_resolved_person_fk", "resolved_person_id"],
   ["notes", "notes_record_fk", "record_id"],
   ["tasks", "tasks_record_fk", "record_id"],
   ["import_runs", "import_runs_destination_campaign_fk", "destination_campaign_id"],
@@ -113,6 +119,27 @@ describeDb("foreign keys and checks", () => {
       await expect(sql`update deals set source_enrollment_id = ${b.enrollment} where id = ${a.deal}`).rejects.toThrow(/deals_source_enrollment_fk/);
       await expect(sql`update company_domain_aliases set company_id = ${b.company} where id = ${a.companyAlias}`).rejects.toThrow(/company_domain_aliases_company_fk/);
     });
+
+    it("refuses another organization's parent for search rows and identity exceptions", async () => {
+      const a = await world();
+      const b = await world();
+      const [result] = await sql`insert into linkedin_search_results (organization_id, query_id, profile_url) values (${a.org}, ${a.searchQuery}, 'https://example.test/in/a') returning id`;
+      const [exception] = await sql`
+        insert into identity_exceptions (organization_id, channel, account_ref, source_event_key, reason) values (${a.org}, 'email', ${"x@" + a.tag + ".test"}, ${"ev-" + a.tag}, 'unknown sender') returning id`;
+      await expect(sql`update linkedin_search_batches set target_campaign_id = ${b.campaign} where id = ${a.searchBatch}`).rejects.toThrow(/linkedin_search_batches_target_campaign_fk/);
+      await expect(sql`update linkedin_search_queries set batch_id = ${b.searchBatch}, url = 'https://example.test/moved' where id = ${a.searchQuery}`).rejects.toThrow(/linkedin_search_queries_batch_fk/);
+      await expect(sql`update linkedin_search_queries set target_campaign_id = ${b.campaign} where id = ${a.searchQuery}`).rejects.toThrow(/linkedin_search_queries_target_campaign_fk/);
+      await expect(sql`update linkedin_search_results set query_id = ${b.searchQuery} where id = ${result.id}`).rejects.toThrow(/linkedin_search_results_query_fk/);
+      await expect(sql`update linkedin_search_results set person_id = ${b.person} where id = ${result.id}`).rejects.toThrow(/linkedin_search_results_person_fk/);
+      await expect(sql`update identity_exceptions set status = 'resolved', resolved_person_id = ${b.person}, resolved_at = now() where id = ${exception.id}`).rejects.toThrow(
+        /identity_exceptions_resolved_person_fk/,
+      );
+      // The same updates with the organization's own parents pass.
+      await sql`update linkedin_search_batches set target_campaign_id = ${a.campaign} where id = ${a.searchBatch}`;
+      await sql`update linkedin_search_queries set target_campaign_id = ${a.campaign} where id = ${a.searchQuery}`;
+      await sql`update linkedin_search_results set person_id = ${a.person} where id = ${result.id}`;
+      await sql`update identity_exceptions set status = 'resolved', resolved_person_id = ${a.person}, resolved_at = now() where id = ${exception.id}`;
+    });
   });
 
   describe("delete behavior", () => {
@@ -156,6 +183,21 @@ describeDb("foreign keys and checks", () => {
       await sql`delete from campaigns where id = ${w.campaign}`;
       const [b] = await sql`select organization_id, target_campaign_id from linkedin_search_batches where id = ${w.searchBatch}`;
       expect(b).toEqual({ organization_id: w.org, target_campaign_id: null });
+    });
+
+    it("deleting a person nulls the search result and identity exception pointers and keeps both rows", async () => {
+      const w = await world();
+      const [{ id: person }] = await sql`insert into people (organization_id, email) values (${w.org}, ${"gone-" + w.tag + "@lead.test"}) returning id`;
+      const [result] = await sql`
+        insert into linkedin_search_results (organization_id, query_id, profile_url, person_id) values (${w.org}, ${w.searchQuery}, 'https://example.test/in/gone', ${person}) returning id`;
+      const [exception] = await sql`
+        insert into identity_exceptions (organization_id, channel, account_ref, source_event_key, reason, status, resolved_person_id, resolved_at)
+        values (${w.org}, 'email', ${"x@" + w.tag + ".test"}, ${"gone-" + w.tag}, 'unknown sender', 'resolved', ${person}, now()) returning id`;
+      await sql`delete from people where id = ${person}`;
+      const [r] = await sql`select organization_id, person_id from linkedin_search_results where id = ${result.id}`;
+      expect(r).toEqual({ organization_id: w.org, person_id: null });
+      const [e] = await sql`select organization_id, status, resolved_person_id from identity_exceptions where id = ${exception.id}`;
+      expect(e).toEqual({ organization_id: w.org, status: "resolved", resolved_person_id: null });
     });
 
     it("deleting a record nulls the note and task pointers", async () => {

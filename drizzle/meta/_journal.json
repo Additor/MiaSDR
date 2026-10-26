@@ -8,6 +8,13 @@
       "when": 1792668534851,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792995184750,
+      "tag": "0001_tenant_scoped_search_and_reply_keys",
+      "breakpoints": true
     }
   ]
 }

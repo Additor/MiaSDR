@@ -5,7 +5,8 @@ import type postgres from "postgres";
  * integration test can assert an empty list and also feed it a scratch table that breaks a rule.
  *
  * A table is scoped when it has `organization_id uuid not null`, a foreign key to `organizations (id)` and an index that
- * contains the column. A table that cannot meet a rule must be named below with a reason. The lists only shrink: an
+ * contains the column. A foreign key between two tables that both have `organization_id` pairs that column on both
+ * sides, so a row cannot point into another organization. A table that cannot meet a rule must be named below with a reason. The lists only shrink: an
  * entry that is no longer needed fails the audit, so nobody forgets to remove it.
  */
 
@@ -52,6 +53,19 @@ export const INDEX_DEBT: Record<string, string> = Object.fromEntries(
   ].map((table) => [table, INDEX_DEBT_REASON]),
 );
 
+/**
+ * Foreign keys between two scoped tables that leave out `organization_id`, keyed by `table.constraint`. Each one sits
+ * beside a composite key on the same row that already pins the parent to the organization.
+ */
+export const SCOPED_BY_SIBLING_KEY: Record<string, string> = {
+  "knowledge_documents.knowledge_documents_latest_version_fk":
+    "Points at a version of the document itself (document_id = id). knowledge_document_versions reaches the document through (document_id, organization_id).",
+  "messages.messages_conversation_id_channel_account_ref_conversations_id_c":
+    "Pins channel and account_ref to the conversation. messages_conversation_id_organization_id_conversations_id_organization_id_fk scopes the same conversation_id.",
+  "records.records_subcategory_id_pipeline_id_category_key_subcategories_i":
+    "The subcategory shares the record's pipeline_id. records and subcategories both reach pipelines through (pipeline_id, organization_id).",
+};
+
 interface TableFacts {
   table: string;
   has_org: boolean;
@@ -77,6 +91,31 @@ export async function tableFacts(sql: postgres.Sql): Promise<TableFacts[]> {
       ) as org_fk,
       exists (select 1 from pg_index i where i.indrelid = t.oid and t.org_attnum = any (i.indkey::smallint[])) as org_indexed
     from t order by t.relname`;
+  return [...rows];
+}
+
+interface ForeignKeyFacts {
+  table: string;
+  name: string;
+  parent: string;
+  columns: string[];
+}
+
+/** Foreign keys from a table with `organization_id` to another such table that do not pair the two `organization_id` columns. */
+export async function unscopedForeignKeys(sql: postgres.Sql): Promise<ForeignKeyFacts[]> {
+  const rows = await sql<ForeignKeyFacts[]>`
+    with org as (
+      select a.attrelid, a.attnum from pg_attribute a join pg_class c on c.oid = a.attrelid join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and a.attname = 'organization_id' and not a.attisdropped
+    )
+    select k.conrelid::regclass::text as "table", k.conname as name, k.confrelid::regclass::text as parent,
+      array(select a.attname::text from unnest(k.conkey) with ordinality u(attnum, i) join pg_attribute a on a.attrelid = k.conrelid and a.attnum = u.attnum order by u.i) as columns
+    from pg_constraint k
+    join org child on child.attrelid = k.conrelid
+    join org parent on parent.attrelid = k.confrelid
+    where k.contype = 'f'
+      and not exists (select 1 from unnest(k.conkey, k.confkey) pair(c, p) where pair.c = child.attnum and pair.p = parent.attnum)
+    order by 1, 2`;
   return [...rows];
 }
 
@@ -112,6 +151,16 @@ export async function auditSchema(sql: postgres.Sql): Promise<string[]> {
     } else if (!f.org_indexed) {
       problems.push(`${table} has no index that contains organization_id. Add one.`);
     }
+  }
+
+  const unscoped = await unscopedForeignKeys(sql);
+  const unscopedNames = new Set(unscoped.map((k) => `${k.table}.${k.name}`));
+  for (const key of Object.keys(SCOPED_BY_SIBLING_KEY)) {
+    if (!unscopedNames.has(key)) problems.push(`SCOPED_BY_SIBLING_KEY names ${key}, which is not an unscoped foreign key. Remove the entry.`);
+  }
+  for (const k of unscoped) {
+    if (`${k.table}.${k.name}` in SCOPED_BY_SIBLING_KEY) continue;
+    problems.push(`${k.table}.${k.name} (${k.columns.join(", ")}) references ${k.parent} without organization_id. Make it a composite (column, organization_id) key.`);
   }
   return problems;
 }
