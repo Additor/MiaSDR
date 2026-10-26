@@ -2,7 +2,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { identityExceptions } from "@/platform/db/schema";
 import type { ActionQueue, ActionQueueCounts, ActionQueueExtras, QueueGroupPage, QueueItem, QueuePosition, WorkQueueStore } from "../application/work-queue-ports";
-import { QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
+import { QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type PickReviewKind, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
 import { publicConversationSql, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 
@@ -15,7 +15,8 @@ import { rowsOf } from "@/platform/db/sql-values";
  *   reply_types     s   (the record's current reply type)
  *   drafts          d   (a draft to review, a failed or unconfirmed draft)
  *   ai_jobs         j   (a failed classification or draft job that still applies)
- *   reply_type_picks k  (a held or unseen AI pick)
+ *   reply_type_picks k  (the AI pick of the latest reply, and what it waits for)
+ *   contact_policies, suppression_list (whether a stop request is still open)
  *   conversations   c   (the thread to open, public ones only)
  *   tasks           t   (an open task takes a next_step record out of the queue; open tasks are counted by assignee)
  *   users           au  (the assignee's name)
@@ -25,7 +26,8 @@ import { rowsOf } from "@/platform/db/sql-values";
  *
  * It is read only: no statement here writes. Every statement filters by organization and by the visibility rules of
  * `conversation-visibility.ts`. The rule behind a row's group and membership is `queueGroupOf` and `isInQueue` in
- * `domain/action-queue.ts`; `action-queue.integration.test.ts` checks that this SQL agrees with them.
+ * `domain/action-queue.ts`, and what an AI pick waits for is `pickReviewOf`; `action-queue.integration.test.ts` checks that
+ * this SQL agrees with them. Membership reads `records.workflow_state` as the domain wrote it and works none of it out again.
  */
 
 const date = (value: unknown) => (value === null || value === undefined ? null : new Date(value as string));
@@ -48,12 +50,12 @@ const queueRowsSql = (organizationId: string) => sql`
            pd.id as pd_id, pd.status as pd_status, pd.error as pd_error, pd.conversation_id as pd_conv, pd.subject as pd_subject, pd.updated_at as pd_updated,
            rd.id as rd_id, rd.conversation_id as rd_conv, rd.subject as rd_subject, rd.updated_at as rd_updated,
            fj.id as fj_id, fj.last_error as fj_error, fj.failed_at as fj_at,
-           nk.id as k_id, nk.status as k_status, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub,
+           nk.id as k_id, nk.kind as k_kind, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub,
            cv.id as conv_id,
            case
              when r.workflow_state = 'error' or pd.id is not null or fj.id is not null then 'problem'
              when rd.id is not null then 'reply'
-             when nk.id is not null then 'classification'
+             when nk.kind is not null then 'classification'
              when r.workflow_state = 'waiting' then 'follow_up'
              else 'next_step'
            end as grp,
@@ -84,11 +86,29 @@ const queueRowsSql = (organizationId: string) => sql`
       order by j.failed_at desc limit 1
     ) fj on true
     left join lateral (
-      select k.id, k.status, k.confidence, k.expected_context_version as ctx, coalesce(k.applied_group_key, k.proposed_group_key) as cat, ks.name as sub_name
-      from reply_type_picks k left join reply_types ks on ks.id = coalesce(k.applied_reply_type_id, k.proposed_reply_type_id)
-      where k.record_id = r.id and k.message_id = r.latest_inbound_message_id and ${visibleReplyTypePickSql("k")}
-        and ((k.status = 'proposed' and k.expected_context_version = r.context_version) or (k.status = 'auto_applied' and k.acknowledged_at is null))
-      order by (k.status = 'proposed') desc, k.created_at desc limit 1
+      -- The pick of the latest reply (a stale one only when nothing else exists), and what it waits for: pickReviewOf.
+      select lp.id, lp.confidence, lp.ctx, lp.cat, lp.sub_name,
+             case
+               when (lp.held or lp.applied) and lp.stop_asked and not lp.stopped then 'stop_review'
+               when lp.held and lp.proposed_role is distinct from 'stop_request' and lp.proposed_name is not null then 'held'
+               when lp.applied and coalesce(lp.check_mode, 'after') = 'after' then 'looks_right'
+             end as kind
+      from (
+        select k.id, k.confidence, k.expected_context_version as ctx, coalesce(k.applied_group_key, k.proposed_group_key) as cat, ks.name as sub_name,
+               kp.name as proposed_name, kp.system_role as proposed_role, k.rules->>'checkMode' as check_mode,
+               k.status = 'proposed' and k.expected_context_version = r.context_version as held,
+               k.status = 'auto_applied' and k.acknowledged_at is null
+                 and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied,
+               coalesce((k.response->>'stopRequested')::boolean, false) or kp.system_role = 'stop_request' as stop_asked,
+               exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact)
+                 or (coalesce(r.active_channel, 'email') = 'email' and p.email is not null
+                     and exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email))) as stopped
+        from reply_type_picks k
+        left join reply_types ks on ks.id = coalesce(k.applied_reply_type_id, k.proposed_reply_type_id)
+        left join reply_types kp on kp.id = k.proposed_reply_type_id
+        where k.record_id = r.id and k.message_id = r.latest_inbound_message_id and ${visibleReplyTypePickSql("k")}
+        order by (k.status = 'stale'), k.created_at desc limit 1
+      ) lp
     ) nk on true
     left join lateral (
       select c.id from conversations c where c.record_id = r.id and ${publicConversationSql("c")} order by (c.channel = r.active_channel) desc, c.updated_at desc limit 1
@@ -192,8 +212,8 @@ function toQueueItem(r: Record<string, unknown>): QueueItem {
         ? { draftId: (usesProblemDraft ? r.pd_id : r.rd_id) as string, status: usesProblemDraft ? (r.pd_status as string) : "awaiting_review", subject: (usesProblemDraft ? r.pd_subject : r.rd_subject) as string | null, updatedAt: new Date((usesProblemDraft ? r.pd_updated : r.rd_updated) as string), preview: null }
         : null
       : null,
-    classification: r.k_id
-      ? { replyTypePickId: r.k_id as string, kind: r.k_status === "proposed" ? "held" : "changed", groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx) }
+    classification: r.k_kind
+      ? { replyTypePickId: r.k_id as string, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx) }
       : null,
     problem: problemKind ? { kind: problemKind, message: problemMessage[problemKind] } : null,
   };

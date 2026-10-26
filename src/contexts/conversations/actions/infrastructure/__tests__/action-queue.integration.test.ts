@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { encodeQueueCursor, isInQueue, queueGroupOf, waitingSince, type QueueFacts, type QueueGroup } from "../../domain/action-queue";
+import { encodeQueueCursor, isInQueue, pickReviewOf, queueGroupOf, waitingSince, type PickReviewFacts, type QueueFacts, type QueueGroup } from "../../domain/action-queue";
 import type { InboundEmailInput } from "../../../application/ports";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
@@ -72,6 +72,28 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       values (${f.org}, ${l.recordId}, ${r.latest_inbound_message_id}, ${r.context_version}, null, null,
         ${target.group_key}, ${target.id}, ${status === "proposed" ? null : target.group_key}, ${status === "proposed" ? null : target.id}, 0.9, 'asked for a demo', ${status}, 'fake') returning id`;
     return c.id as string;
+  }
+
+  /**
+   * An AI pick of the latest reply with the parts `pickReviewOf` reads. An applied pick also sets the record's type, as the
+   * apply path does. `rules` is the snapshot's Check, or null for a pick written before snapshots.
+   */
+  async function aiPick(
+    f: Fx,
+    l: { recordId: string },
+    input: { status: "proposed" | "auto_applied"; key?: string; checkMode?: string | null; stopRequested?: boolean; acknowledged?: boolean },
+  ) {
+    const [target] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and key = ${input.key ?? "demo_request"}`;
+    const r = await rec(l.recordId);
+    const applied = input.status === "auto_applied";
+    const rules = input.checkMode === null || input.checkMode === undefined ? null : sql.json({ checkMode: input.checkMode, replyDraft: true, followUps: "continue" });
+    await sql`
+      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, proposed_group_key, proposed_reply_type_id,
+        applied_group_key, applied_reply_type_id, confidence, reasoning, status, provider, rules, response, acknowledged_at)
+      values (${f.org}, ${l.recordId}, ${r.latest_inbound_message_id}, ${r.context_version}, ${target.group_key}, ${target.id},
+        ${applied ? target.group_key : null}, ${applied ? target.id : null}, 0.8, 'read it', ${input.status}, 'fake', ${rules},
+        ${sql.json({ stopRequested: input.stopRequested === true })}, ${input.acknowledged ? new Date() : null})`;
+    if (applied) await sql`update records set reply_type_id = ${target.id}, group_key = ${target.group_key}, reply_type_source = 'ai' where id = ${l.recordId}`;
   }
 
   const queue = (f: Fx, input: Parameters<typeof workQueue.getWorkQueue>[2] = {}) => workQueue.getWorkQueue(deps, f.actor, input);
@@ -608,5 +630,96 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       });
       expect([b.name, item.waitingSince]).toEqual([b.name, expectedClock]);
     }
+  });
+
+  it("lists an AI pick by what it waits for, as pickReviewOf says, and drops one that nothing waits on", async () => {
+    const f = await fixture();
+    const base: PickReviewFacts = {
+      status: "proposed",
+      current: true,
+      hasProposedType: true,
+      proposedSystemRole: null,
+      stopRequested: false,
+      acknowledged: false,
+      appliedIsCurrentType: false,
+      checkMode: null,
+      stopped: false,
+    };
+    const applied = { ...base, status: "auto_applied", appliedIsCurrentType: true };
+    type L = Awaited<ReturnType<typeof lead>>;
+    const dnc = (l: L) => sql`insert into contact_policies (person_id, organization_id, do_not_contact, reason, source, set_at) values (${l.personId}, ${f.org}, true, 'Asked to stop', 'human', now())`;
+    const suppress = async (l: L) => {
+      const [p] = await sql`select email from people where id = ${l.personId}`;
+      await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, ${String(p.email).toLowerCase()}, 'manual')`;
+    };
+    const scenarios: Array<{ name: string; facts: PickReviewFacts; setup: (l: L) => Promise<unknown> }> = [
+      { name: "held", facts: base, setup: (l) => aiPick(f, l, { status: "proposed", checkMode: "before" }) },
+      {
+        name: "held, record version moved on",
+        facts: { ...base, current: false },
+        setup: async (l) => {
+          await aiPick(f, l, { status: "proposed", checkMode: "before" });
+          await sql`update records set context_version = context_version + 1 where id = ${l.recordId}`;
+        },
+      },
+      { name: "held stop request", facts: { ...base, proposedSystemRole: "stop_request" }, setup: (l) => aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" }) },
+      {
+        name: "held stop request, person do not contact",
+        facts: { ...base, proposedSystemRole: "stop_request", stopped: true },
+        setup: async (l) => {
+          await aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" });
+          await dnc(l);
+        },
+      },
+      {
+        name: "held stop request, address suppressed",
+        facts: { ...base, proposedSystemRole: "stop_request", stopped: true },
+        setup: async (l) => {
+          await aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" });
+          await suppress(l);
+        },
+      },
+      { name: "held, reply reads as a stop", facts: { ...base, stopRequested: true }, setup: (l) => aiPick(f, l, { status: "proposed", checkMode: "before", stopRequested: true }) },
+      { name: "applied, Check after", facts: { ...applied, checkMode: "after" }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "after" }) },
+      { name: "applied, no snapshot", facts: { ...applied, checkMode: null }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: null }) },
+      { name: "applied, Skip", facts: { ...applied, checkMode: "skip" }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "skip" }) },
+      { name: "applied, looked at", facts: { ...applied, checkMode: "after", acknowledged: true }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "after", acknowledged: true }) },
+      {
+        name: "applied, type changed since",
+        facts: { ...applied, checkMode: "after", appliedIsCurrentType: false },
+        setup: async (l) => {
+          await aiPick(f, l, { status: "auto_applied", checkMode: "after" });
+          await sql`update records set (reply_type_id, group_key) = (select id, group_key from reply_types where organization_id = ${f.org} and key = 'not_required_right_now') where id = ${l.recordId}`;
+        },
+      },
+      { name: "applied, Skip, reply reads as a stop", facts: { ...applied, checkMode: "skip", stopRequested: true }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "skip", stopRequested: true }) },
+    ];
+
+    const built: Array<{ name: string; recordId: string; facts: PickReviewFacts }> = [];
+    for (const { name, facts, setup } of scenarios) {
+      const l = await lead(f);
+      await setup(l);
+      built.push({ name, recordId: l.recordId, facts });
+    }
+
+    const q = await queue(f, { limit: 200 });
+    const items = new Map(Object.values(q.groups).flatMap((page) => page.items.map((item) => [item.recordId, item] as const)));
+    const actual = built.map((b) => [b.name, items.get(b.recordId)?.group ?? null, items.get(b.recordId)?.classification?.kind ?? null]);
+    // Every record here is action_required, so one that nothing waits on is a next step.
+    const expected = built.map((b) => {
+      const kind = pickReviewOf(b.facts);
+      return [b.name, kind ? "classification" : "next_step", kind];
+    });
+    expect(actual).toEqual(expected);
+    // The cases the brief names, spelled out.
+    expect(Object.fromEntries(expected.map(([name, , kind]) => [name, kind]))).toMatchObject({
+      held: "held",
+      "held, record version moved on": null,
+      "held stop request": "stop_review",
+      "held stop request, person do not contact": null,
+      "held stop request, address suppressed": null,
+      "applied, Check after": "looks_right",
+      "applied, Skip": null,
+    });
   });
 });
