@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/shell/empty-state";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Time } from "@/components/shell/time";
 import { cn } from "@/components/ui/utils";
@@ -22,7 +23,7 @@ export function JobsHistory({ overview }: { overview: Overview }) {
     <>
       <SettingsSection title="Recent runs" description="Slot claims and manual runs. Scheduled work is reported by each tick, which does not keep a log.">
         {overview.runs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No runs yet.</p>
+          <EmptyState className="py-0" title="No runs yet" />
         ) : (
           <ul className={cn(RULED_LIST, "text-sm")}>
             {overview.runs.map((run) => (
@@ -41,7 +42,7 @@ export function JobsHistory({ overview }: { overview: Overview }) {
 
       <SettingsSection title="Recent actions">
         {overview.audit.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
+          <EmptyState className="py-0" title="Nothing recorded yet" />
         ) : (
           <ul className={cn(RULED_LIST, "text-sm")}>
             {overview.audit.map((row) => (

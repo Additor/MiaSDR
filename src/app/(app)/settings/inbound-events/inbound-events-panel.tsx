@@ -176,7 +176,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
                   <TableCell className="max-w-72 whitespace-normal break-words text-xs text-muted-foreground">{row.error ?? "No error recorded."}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
                     {(row.state === "dead" || row.state === "dismissed") && (
-                      <Button variant="outline" size="sm" disabled={busy === row.id} onClick={() => act(row, "retry")}>
+                      <Button variant="ghost" size="sm" disabled={busy === row.id} onClick={() => act(row, "retry")}>
                         Retry
                       </Button>
                     )}{" "}

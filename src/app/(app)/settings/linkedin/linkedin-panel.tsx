@@ -12,7 +12,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { callApi } from "@/app/_lib/api-client";
 import { formatDateTime } from "@/shared/format-time";
 import { syncLine, type StoredSyncStatus } from "./sync-status";
@@ -247,25 +246,25 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
                 </div>
               ))}
               {setup ? (
-                <div className="grid gap-2">
-                  <div className="grid gap-1">
-                    <Label>Request URL</Label>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="webhook-request-url">Request URL</FieldLabel>
                     <div className="flex gap-2">
-                      <Input readOnly value={setup.requestUrl} />
+                      <Input id="webhook-request-url" readOnly value={setup.requestUrl} />
                       <Button type="button" variant="outline" onClick={() => copy(setup.requestUrl, "URL")}>
                         Copy
                       </Button>
                     </div>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label>Header {setup.headerName}</Label>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="webhook-secret">Header {setup.headerName}</FieldLabel>
                     <div className="flex gap-2">
-                      <Input readOnly value={setup.secret} />
+                      <Input id="webhook-secret" readOnly value={setup.secret} />
                       <Button type="button" variant="outline" onClick={() => copy(setup.secret, "Secret")}>
                         Copy
                       </Button>
                     </div>
-                  </div>
+                  </Field>
                   <p className="text-muted-foreground">
                     Events: {setup.webhooks.map((h) => `${h.source} / ${h.event}`).join(", ")}. Viewing the secret is recorded in the audit log.
                   </p>
@@ -274,7 +273,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
                       Hide
                     </Button>
                   </div>
-                </div>
+                </FieldGroup>
               ) : (
                 <div>
                   <Button type="button" variant="outline" onClick={revealSetup}>
@@ -327,7 +326,9 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
         onOpenChange={setConfirmDisconnect}
         title="Disconnect Unipile?"
         description="MiaSDR deletes the saved key and removes its webhooks at Unipile. Every LinkedIn account shows as disconnected until you connect again."
-        confirmLabel="Disconnect"
+        confirmLabel="Disconnect Unipile"
+        cancelLabel="Stay connected"
+        pendingLabel="Disconnecting…"
         destructive
         onConfirm={() => act("Disconnected", () => callApi("/api/linkedin", "DELETE"))}
       />
@@ -411,7 +412,7 @@ function AccountRow({
           </p>
         </div>
         {account.status !== "connected" && (
-          <Button variant="outline" size="sm" onClick={onReconnect} disabled={reconnecting}>
+          <Button variant="ghost" size="sm" onClick={onReconnect} disabled={reconnecting}>
             {reconnecting ? "Opening Unipile…" : "Reconnect"}
           </Button>
         )}
