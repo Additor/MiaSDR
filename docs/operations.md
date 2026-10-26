@@ -127,7 +127,7 @@ Mailbox errors show in the Mailboxes page as the mailbox's last error.
 | `lint` | `pnpm lint` |
 | `test` | `drizzle-kit migrate` against a `postgres:17` service, then `pnpm test` with `TEST_DATABASE_URL` set. Require the check named `test` in branch protection. |
 | `build` | `pnpm build` |
-| `e2e` | `pnpm exec playwright install --with-deps chromium`, then `pnpm e2e` against a `postgres:17` service. A failed run uploads `playwright-report/` and `test-results/` as artifacts. |
+| `e2e` | `pnpm exec playwright install --with-deps chromium`, then `pnpm e2e` against a `postgres:17` service. A failed run uploads `test-results/` and the server logs in `e2e/.run/` as artifacts. |
 | `docker` | `scripts/docker-image-check.sh`: builds the Dockerfile without pushing, starts the image, waits for `/api/health` and asserts that `/api/dev/inbound` and `/api/webhooks/dev-fakes` answer 404 with every helper variable on |
 
 Node 22 and the pnpm version in `package.json` (`packageManager`) are used. Actions are pinned by commit SHA; refresh one with `git ls-remote --tags <repo>`.

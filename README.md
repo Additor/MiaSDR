@@ -50,7 +50,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 
 Docker Compose runs the app and Postgres 17, with Caddy in front for HTTPS. [Self-hosting](docs/deploy/self-host.md) covers the server, backups and upgrades.
 
-- `PAUSE_OUTBOUND=true` stops every email and LinkedIn send until you turn it off.
+- `PAUSE_OUTBOUND=true` holds every campaign send, email and LinkedIn, until you turn it off. Replies you approve still send.
 - LinkedIn prohibits automation and can restrict accounts, and CAN-SPAM, GDPR and CASL limit who you may contact. Read [Responsible use](docs/responsible-use.md) before you send to real people.
 
 ## Docs
