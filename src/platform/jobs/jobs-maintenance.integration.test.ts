@@ -224,6 +224,9 @@ describeDb("slot claims, daily rollover and history pruning", () => {
       };
       const [{ id: oldSess }] = await sql`insert into sessions (token, user_id, expires_at) values (${`t-${tag}-s1`}, ${ids.oldSession}, ${ago(3)}) returning id`;
       const [{ id: liveSess }] = await sql`insert into sessions (token, user_id, expires_at) values (${`t-${tag}-s2`}, ${ids.oldSession}, ${new Date(now.getTime() + day).toISOString()}) returning id`;
+      // Expired sessions get one day of grace: 12 hours past expiry stays, 25 hours goes.
+      const [{ id: graceSess }] = await sql`insert into sessions (token, user_id, expires_at) values (${`t-${tag}-s3`}, ${ids.oldSession}, ${ago(0.5)}) returning id`;
+      const [{ id: pastGraceSess }] = await sql`insert into sessions (token, user_id, expires_at) values (${`t-${tag}-s4`}, ${ids.oldSession}, ${ago(25 / 24)}) returning id`;
       const [{ id: oldVer }] = await sql`insert into verifications (identifier, value, expires_at) values (${`t-${tag}`}, 'v', ${ago(3)}) returning id`;
       const [{ id: liveVer }] = await sql`insert into verifications (identifier, value, expires_at) values (${`t-${tag}`}, 'v', ${new Date(now.getTime() + 3600_000).toISOString()}) returning id`;
 
@@ -245,6 +248,8 @@ describeDb("slot claims, daily rollover and history pruning", () => {
       expect(await exists("inbound_events", processingOld)).toBe(true);
       expect(await exists("sessions", oldSess)).toBe(false);
       expect(await exists("sessions", liveSess)).toBe(true);
+      expect(await exists("sessions", graceSess)).toBe(true);
+      expect(await exists("sessions", pastGraceSess)).toBe(false);
       expect(await exists("verifications", oldVer)).toBe(false);
       expect(await exists("verifications", liveVer)).toBe(true);
 
@@ -316,6 +321,27 @@ describeDb("slot claims, daily rollover and history pruning", () => {
       const second = await job.run(ctx);
       expect(second).toEqual({ processed: 0, more: false });
       await sql`delete from job_runs where job = 'history-prune' and slot = '2031-01-01'`;
+    });
+
+    it("reopens the same day's slot at once when a run is cut short", async () => {
+      // decisions.md "History pruning": a run cut short marks its slot failed with no delay and continues on the next tick.
+      // The slot follows the wall clock here because finishSlot stamps the retry time with it.
+      const job = prune.createHistoryPruneJob(() => retention);
+      const slot = prune.pruneSlotKey(new Date());
+      await sql`delete from job_runs where job = 'history-prune' and slot = ${slot}`;
+      try {
+        const cut = await job.run({ deadline: Date.now() - 1, now: () => new Date() });
+        expect(cut.more).toBe(true);
+        const [row] = await sql`select status, lease_until <= now() as open from job_runs where job = 'history-prune' and slot = ${slot}`;
+        expect(row).toEqual({ status: "failed", open: true });
+        const resumed = await job.run({ deadline: Date.now() + 60_000, now: () => new Date() });
+        expect(resumed.more).toBe(false);
+        expect(resumed.detail).toBeDefined();
+        const [done] = await sql`select status from job_runs where job = 'history-prune' and slot = ${slot}`;
+        expect(done.status).toBe("succeeded");
+      } finally {
+        await sql`delete from job_runs where job = 'history-prune' and slot = ${slot}`;
+      }
     });
   });
 });
