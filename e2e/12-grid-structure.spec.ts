@@ -47,6 +47,8 @@ test.describe("grid structure", () => {
     await page.getByRole("button", { name: "Actions for Third" }).click();
     await page.getByRole("menuitem", { name: "Move left" }).click();
     await expect(tabs).toHaveText(["Custom Table", "Third", "Second"]);
+    // The closed menu hands focus back to its trigger; take it only after that, or the key goes to the trigger.
+    await expect(page.getByRole("button", { name: "Actions for Third" })).toBeFocused();
     await page.getByRole("tab", { name: "Second" }).focus();
     await page.keyboard.press("Alt+ArrowLeft");
     await expect(tabs).toHaveText(["Custom Table", "Second", "Third"]);
