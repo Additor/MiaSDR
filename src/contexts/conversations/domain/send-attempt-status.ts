@@ -1,8 +1,8 @@
 /**
  * Allowed status transitions of a `send_attempts` row (email and LinkedIn replies).
- * `sent`, `reconciled` and `failed` are final. `delivery_uncertain` moves to `sent` or `reconciled`
- * (the message was found, or a person confirmed it), to `failed` (a person confirmed it did not go out),
- * or stays. Every UPDATE of `send_attempts.status` filters on `ATTEMPT_FROM[target]`.
+ * `sent`, `reconciled` and `failed` are final. Only the worker that made the call writes `sent`, from `sending`.
+ * `delivery_uncertain` moves to `reconciled` (the message was found, or a person confirmed it), to `failed`
+ * (a person confirmed it did not go out), or stays. Every UPDATE of `send_attempts.status` filters on `ATTEMPT_FROM[target]`.
  * The drafts row follows the attempt inside the same transaction and only when the attempt moved.
  */
 export type AttemptStatus = "prepared" | "sending" | "sent" | "failed" | "delivery_uncertain" | "reconciled";
@@ -10,7 +10,7 @@ export type AttemptStatus = "prepared" | "sending" | "sent" | "failed" | "delive
 export const ATTEMPT_FROM: Record<AttemptStatus, readonly AttemptStatus[]> = {
   prepared: [],
   sending: ["prepared"],
-  sent: ["sending", "delivery_uncertain"],
+  sent: ["sending"],
   reconciled: ["sending", "delivery_uncertain"],
   failed: ["sending", "delivery_uncertain"],
   delivery_uncertain: ["sending"],

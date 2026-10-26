@@ -134,6 +134,51 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect(await sql`select 1 from events where organization_id = ${f.org} and event_type = 'classification.failed'`).toHaveLength(0);
     });
 
+    it("leaves a running job with a live lease alone and takes over one whose lease is older than 5 minutes", async () => {
+      const f = await fixture();
+      const now = new Date();
+      // Top priority, so the claim looks at these two before any job another test left queued.
+      const running = (worker: string, lockedAt: Date, priority: number) => sql`
+        insert into ai_jobs (organization_id, kind, status, entity_type, entity_id, idempotency_key, priority, attempts, locked_at, locked_by, started_at)
+        values (${f.org}, 'classification', 'running', 'message', gen_random_uuid(), ${`lease-${worker}-${f.tag}`}, ${priority}, 1, ${lockedAt}, ${worker}, ${lockedAt})
+        returning id`;
+      const [live] = await running("live", new Date(now.getTime() - MINUTE), 1_000_000);
+      const [stale] = await running("stale", new Date(now.getTime() - 6 * MINUTE), 999_999);
+      try {
+        const claimed = await store.claim("classification", "taker", now, aiJobsApp.AI_JOB_LEASE_MS);
+        expect(claimed).toMatchObject({ id: stale.id, attempts: 2 });
+        expect(await sql`select locked_by, attempts from ai_jobs where id = ${live.id}`).toEqual([{ locked_by: "live", attempts: 1 }]);
+        expect(await sql`select locked_by from ai_jobs where id = ${stale.id}`).toEqual([{ locked_by: "taker" }]);
+      } finally {
+        await sql`delete from ai_jobs where id in ${sql([live.id, stale.id])}`;
+      }
+    });
+
+    it("waits min(5 min, 2 s * 2^(attempts-1)) before the next attempt", async () => {
+      const f = await fixture();
+      await receive(f);
+      f.ai.failWith = new AiError("The AI service is unavailable (status 503).", "transient");
+      const delayAfterRun = async () => {
+        const before = f.clock().getTime();
+        await f.run();
+        const after = f.clock().getTime();
+        const j = await job(f.org);
+        expect(j.status).toBe("queued");
+        return { from: new Date(j.run_after).getTime() - after, to: new Date(j.run_after).getTime() - before };
+      };
+      const expectDelay = (d: { from: number; to: number }, ms: number) => {
+        expect(d.from).toBeLessThanOrEqual(ms);
+        expect(d.to).toBeGreaterThanOrEqual(ms);
+      };
+      expectDelay(await delayAfterRun(), 2_000);
+      f.advance(10 * MINUTE);
+      expectDelay(await delayAfterRun(), 4_000);
+      // Attempt 10 of 12 would wait 2 s * 2^9, past the 5 minute cap.
+      await sql`update ai_jobs set attempts = 9, max_attempts = 12 where organization_id = ${f.org} and kind = 'classification'`;
+      f.advance(10 * MINUTE);
+      expectDelay(await delayAfterRun(), 5 * MINUTE);
+    });
+
     it("keeps an organization without an AI key waiting: queued, no attempt used, never failed", async () => {
       const f = await fixture({ withKey: false });
       await receive(f);

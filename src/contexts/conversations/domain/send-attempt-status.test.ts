@@ -8,7 +8,11 @@ describe("send attempt transitions", () => {
     for (const from of ATTEMPT_FINAL) for (const to of ALL) expect(canMoveAttempt(from, to)).toBe(false);
   });
 
-  it("lets delivery_uncertain move only to sent, reconciled or failed", () => {
-    expect(ALL.filter((to) => canMoveAttempt("delivery_uncertain", to)).sort()).toEqual(["failed", "reconciled", "sent"]);
+  it("lets delivery_uncertain move only to reconciled or failed", () => {
+    expect(ALL.filter((to) => canMoveAttempt("delivery_uncertain", to)).sort()).toEqual(["failed", "reconciled"]);
+  });
+
+  it("writes sent only from sending, for the worker that made the call", () => {
+    expect(ALL.filter((from) => canMoveAttempt(from, "sent"))).toEqual(["sending"]);
   });
 });
