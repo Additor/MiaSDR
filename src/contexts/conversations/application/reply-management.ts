@@ -363,22 +363,22 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
 }
 
 /**
- * Accept the AI's held proposal (subcategoryKey null) or choose another category. Recorded as a human decision. The
+ * Accept the AI's held proposal (replyTypeKey null) or choose another category. Recorded as a human decision. The
  * person sends the context version they looked at; a mismatch is a 409. A correction retires open drafts, ends the
  * sequence run, and starts the new category's sequence and a fresh draft.
  */
-export async function setClassification(
+export async function setReplyType(
   deps: ReplyDeps,
   actor: Actor,
   conversationId: string,
-  input: { subcategoryKey: string | null; expectedContextVersion: number },
+  input: { replyTypeKey: string | null; expectedContextVersion: number },
 ) {
   assertId(conversationId, "Conversation");
   if (!Number.isInteger(input.expectedContextVersion) || input.expectedContextVersion < 0) throw new ValidationError("The reply handling version is missing. Reload and try again.");
-  return deps.store.applyHumanClassification({
+  return deps.store.applyHumanReplyTypePick({
     organizationId: actor.organizationId,
     conversationId,
-    subcategoryKey: input.subcategoryKey,
+    replyTypeKey: input.replyTypeKey,
     expectedContextVersion: input.expectedContextVersion,
     actorUserId: actor.userId,
     wantsDraft: needsReply,

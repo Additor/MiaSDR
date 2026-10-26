@@ -9,7 +9,7 @@ import { STOP_REASON_LABELS, stopReasonLabel as enrollmentStopLabel } from "@/co
 
 /**
  * Vocabulary gate for the Leads and CRM split ("Leads and CRM" in docs/decisions.md). People read
- * "reply handling", "category", "deal" and "stage" (of a deal); code and tables keep `records` and `pipelines`. The
+ * "reply handling", "category", "deal" and "stage" (of a deal); code and tables keep `records` and `reply_type_sets`. The
  * scan reads the string literals, template text and JSX text of the UI and the domain layers and rejects the old words.
  */
 
@@ -324,7 +324,7 @@ const EVENT_LABELS_FILE = "src/app/(app)/_components/event-labels.ts";
 const CAMPAIGN_VIEW_FILE = "src/contexts/outreach/domain/campaign-view.ts";
 
 const baseFacts: afterReply.StartBlockFacts = {
-  record: { subcategoryId: "s", categoryKey: "interested", subcategoryKey: "interested", subcategoryName: "Interested", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
+  record: { replyTypeId: "s", groupKey: "interested", replyTypeKey: "interested", replyTypeName: "Interested", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
   conversation: { channel: "email" },
   doNotContact: false,
   suppressed: false,
@@ -350,8 +350,8 @@ const blockedFacts: afterReply.StartBlockFacts[] = [
   { ...baseFacts, doNotContact: true },
   { ...baseFacts, suppressed: true },
   { ...baseFacts, record: { ...baseFacts.record, hasEmail: false } },
-  { ...baseFacts, record: { ...baseFacts.record, subcategoryId: null } },
-  { ...baseFacts, record: { ...baseFacts.record, categoryKey: "not_interested", subcategoryKey: "not_interested", subcategoryName: "Not interested" } },
+  { ...baseFacts, record: { ...baseFacts.record, replyTypeId: null } },
+  { ...baseFacts, record: { ...baseFacts.record, groupKey: "not_interested", replyTypeKey: "not_interested", replyTypeName: "Not interested" } },
   { ...baseFacts, stepCount: 1, answered: true },
 ];
 
@@ -522,7 +522,7 @@ describe("stored values have labels", () => {
   it("labels every event type the code writes, deal events included", () => {
     const written = writtenEventTypes();
     const values = new Set(written.map((w) => w.value));
-    for (const expected of ["lifecycle.converted", "deal.created", "deal.stage_moved", "deal.updated", "deal.deleted", "stage.moved"]) expect(values).toContain(expected);
+    for (const expected of ["lifecycle.converted", "deal.created", "deal.stage_moved", "deal.updated", "deal.deleted", "reply_type.changed"]) expect(values).toContain(expected);
     expect(written.filter((w) => !Object.hasOwn(EVENT_LABELS, w.value)).map((w) => `${w.file}: ${w.value}`)).toEqual([]);
   });
 });

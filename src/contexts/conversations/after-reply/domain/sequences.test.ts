@@ -8,7 +8,7 @@ import {
   assertStepTransition,
   dueAfter,
   interruptReason,
-  isTerminalSubcategory,
+  isTerminalReplyType,
   parseSteps,
   planDueDates,
   renderTemplate,
@@ -71,8 +71,8 @@ describe("state machines", () => {
 
 describe("interruptReason", () => {
   const facts = (over: { run?: Partial<InterruptFacts["run"]>; record?: Partial<InterruptFacts["record"]>; doNotContact?: boolean; contact?: boolean; suppression?: InterruptFacts["suppression"]; flowActive?: boolean } = {}): InterruptFacts => ({
-    run: { triggerMessageId: "m1", subcategoryId: "s1", ...over.run },
-    record: { latestInboundMessageId: "m1", subcategoryId: "s1", categoryKey: "interested", subcategoryKey: "demo_request", workflowState: "waiting", ...over.record },
+    run: { triggerMessageId: "m1", replyTypeId: "s1", ...over.run },
+    record: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", workflowState: "waiting", ...over.record },
     doNotContact: over.doNotContact ?? false,
     contact: over.contact ?? false,
     suppression: over.suppression ?? null,
@@ -99,24 +99,24 @@ describe("interruptReason", () => {
   });
   it("stops when the record closes", () => expect(interruptReason(facts({ record: { workflowState: "closed" } }))).toBe("record_closed"));
   it("stops on a move to a terminal subcategory, not on a start there", () => {
-    const moved = facts({ record: { subcategoryId: "s2", categoryKey: "not_interested", subcategoryKey: "not_required_right_now" } });
+    const moved = facts({ record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now" } });
     expect(interruptReason(moved)).toBe("terminal_stage");
-    const startedThere = facts({ run: { subcategoryId: "s2" }, record: { subcategoryId: "s2", categoryKey: "not_interested", subcategoryKey: "not_required_right_now" } });
+    const startedThere = facts({ run: { replyTypeId: "s2" }, record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now" } });
     expect(interruptReason(startedThere)).toBeNull();
-    expect(interruptReason(facts({ record: { subcategoryId: "s3", subcategoryKey: "meeting_requested" } }))).toBeNull();
+    expect(interruptReason(facts({ record: { replyTypeId: "s3", replyTypeKey: "meeting_requested" } }))).toBeNull();
   });
   it("names terminal subcategories", () => {
-    expect(isTerminalSubcategory("not_interested", "already_using_a_tool")).toBe(true);
-    expect(isTerminalSubcategory("other", "left_company")).toBe(true);
-    expect(isTerminalSubcategory("customer", "customer")).toBe(true);
-    expect(isTerminalSubcategory("interested", "demo_request")).toBe(false);
+    expect(isTerminalReplyType("not_interested", "already_using_a_tool")).toBe(true);
+    expect(isTerminalReplyType("other", "left_company")).toBe(true);
+    expect(isTerminalReplyType("customer", "customer")).toBe(true);
+    expect(isTerminalReplyType("interested", "demo_request")).toBe(false);
   });
 });
 
 describe("no-start keys", () => {
   it("lists the terminal subcategories and Out of office", () => {
     expect([...NO_START_KEYS].sort()).toEqual(["connected_to_different_contact", "customer", "do_not_contact", "left_company", "out_of_office", "wrong_contact"]);
-    for (const key of NO_START_KEYS) if (key !== "out_of_office") expect(isTerminalSubcategory(null, key)).toBe(true);
+    for (const key of NO_START_KEYS) if (key !== "out_of_office") expect(isTerminalReplyType(null, key)).toBe(true);
   });
 });
 

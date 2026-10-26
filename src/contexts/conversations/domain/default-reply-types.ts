@@ -3,8 +3,8 @@
 
 export const DEFAULT_PIPELINE_NAME = "Default";
 
-export interface DefaultSubcategory {
-  categoryKey: "customer" | "interested" | "not_interested" | "other";
+export interface DefaultReplyType {
+  groupKey: "customer" | "interested" | "not_interested" | "other";
   key: string;
   name: string;
   /** Position in the reply categories. Null marks an unranked outcome. */
@@ -16,9 +16,9 @@ export interface DefaultSubcategory {
   classificationGuidance: string;
 }
 
-export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
+export const DEFAULT_REPLY_TYPES: readonly DefaultReplyType[] = [
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "information_requested",
     name: "Information requested",
     stageRank: 1,
@@ -26,7 +26,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the main ask is for answers or material and the person names no case study, meeting, demo, or trial. A question about price or how something works belongs here. If the reply also asks for a call, prefer Meeting requested.",
   },
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "case_study",
     name: "Case study",
     stageRank: 1,
@@ -34,7 +34,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the person asks for a case study, a customer example, numbers from a similar company, or a reference call with a customer. A general request for more information belongs under Information requested.",
   },
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "demo_request",
     name: "Demo request",
     stageRank: 1,
@@ -42,7 +42,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the person asks for a demo, a walkthrough, a product tour, or a recording of the product. If they only ask to talk, pick Meeting requested. If they ask for hands-on access, pick Trial requested.",
   },
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "meeting_requested",
     name: "Meeting requested",
     stageRank: 2,
@@ -50,7 +50,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the person proposes times, asks for your availability or a calendar link, or says yes to a call you suggested. A reply that only says they are interested, with no mention of a call, belongs under Information requested.",
   },
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "meeting_no_show",
     name: "Meeting no show",
     stageRank: 2,
@@ -58,7 +58,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the person writes that they missed the meeting or asks to rebook after a missed slot, or when the thread shows a confirmed time that has passed with no attendance. Do not pick it for a person who cancels in advance; that is a new Meeting requested.",
   },
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "meeting_done",
     name: "Meeting done",
     stageRank: 3,
@@ -66,7 +66,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the thread shows that the call happened and the next message should recap what was discussed, who owns which action, and what comes next. Thanks for your time after a call is a typical signal.",
   },
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "trial_requested",
     name: "Trial requested",
     stageRank: 4,
@@ -74,7 +74,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the person asks to start, activate, or get access to a trial or a sandbox, or asks what the next step to begin is. Once they are already using the trial, pick Trial user.",
   },
   {
-    categoryKey: "interested",
+    groupKey: "interested",
     key: "trial_user",
     name: "Trial user",
     stageRank: 5,
@@ -82,7 +82,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when a person with an active trial writes about setup, an integration, a feature they tried, an error, or onboarding. A first request for access belongs under Trial requested.",
   },
   {
-    categoryKey: "customer",
+    groupKey: "customer",
     key: "customer",
     name: "Existing customer",
     stageRank: 6,
@@ -91,7 +91,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the sender is already a paying customer and writes about their account, an invoice, a renewal, or support for the product they use. A cold prospect who sounds enthusiastic is not a customer. This subcategory always goes to a person for review.",
   },
   {
-    categoryKey: "not_interested",
+    groupKey: "not_interested",
     key: "do_not_contact",
     name: "Do not contact",
     stageRank: null,
@@ -99,7 +99,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this only for an explicit request to unsubscribe, stop emailing, remove the address, or never be contacted again. Irritation, a polite no, or a request to come back later do not qualify. Nothing is sent to this person afterward.",
   },
   {
-    categoryKey: "not_interested",
+    groupKey: "not_interested",
     key: "not_required_right_now",
     name: "Not required right now",
     stageRank: null,
@@ -107,7 +107,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the person says the offer is not needed at this time, the timing is wrong, budget or priorities are elsewhere, or asks you to reach out later. Keep the door open: the person has not rejected future contact.",
   },
   {
-    categoryKey: "not_interested",
+    groupKey: "not_interested",
     key: "already_using_a_tool",
     name: "Already using a tool",
     stageRank: null,
@@ -115,7 +115,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the person says a current vendor, product, agency, or in-house process already does the job and they see no reason to switch. A refusal without naming an existing solution belongs under Not required right now.",
   },
   {
-    categoryKey: "other",
+    groupKey: "other",
     key: "wrong_contact",
     name: "Did not connect to different contact",
     stageRank: null,
@@ -123,7 +123,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the reply says the message reached the wrong person, or that someone else handles this, but gives no name, address, or introduction. If the reply names or copies a colleague, pick Connected to different contact.",
   },
   {
-    categoryKey: "other",
+    groupKey: "other",
     key: "connected_to_different_contact",
     name: "Connected to different contact",
     stageRank: null,
@@ -131,7 +131,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when the reply gives another person's name or email address, copies a colleague into the thread, or introduces the person who handles this topic. The new contact is the person to continue with.",
   },
   {
-    categoryKey: "other",
+    groupKey: "other",
     key: "left_company",
     name: "Left company",
     stageRank: null,
@@ -139,7 +139,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this when an automatic reply, a colleague, or the person says they left the company or their address is closed. A temporary absence belongs under Out of office, even when the message mentions a long leave.",
   },
   {
-    categoryKey: "other",
+    groupKey: "other",
     key: "out_of_office",
     name: "Out of office",
     stageRank: null,
@@ -147,7 +147,7 @@ export const DEFAULT_SUBCATEGORIES: readonly DefaultSubcategory[] = [
     classificationGuidance: "Pick this for vacation, leave, travel, or other temporary absence notices, often automatic and with a return date. If the notice says the person has left the company, pick Left company. No reply is needed; the sequence resumes on schedule.",
   },
   {
-    categoryKey: "other",
+    groupKey: "other",
     key: "other",
     name: "Other",
     stageRank: null,

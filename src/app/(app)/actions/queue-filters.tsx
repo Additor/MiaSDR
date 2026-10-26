@@ -2,13 +2,13 @@ import type { AppliedFilter } from "@/components/shell/filter-chip";
 import { CheckField, DateRangeField, SelectField } from "@/components/shell/filter-fields";
 import { FilterPopover } from "@/components/shell/filter-popover";
 import { QUEUE_GROUPS, QUEUE_GROUP_LABELS } from "@/contexts/conversations/actions/domain/action-queue";
-import { REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
+import { REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
 
 export interface QueueFilterValues {
   category: string;
   channel: string;
   group: string;
-  subcategoryId: string;
+  replyTypeId: string;
   campaignId: string;
   dueAfter: string;
   dueBefore: string;
@@ -30,7 +30,7 @@ export function QueueFilters({
   /** The scope chip in view. The form carries it, so applying filters keeps whose work is shown. */
   scope: string;
   count: number;
-  subcategories: Array<{ id: string; name: string; categoryKey: string }>;
+  subcategories: Array<{ id: string; name: string; groupKey: string }>;
   campaigns: Array<{ id: string; name: string }>;
 }) {
   return (
@@ -58,14 +58,14 @@ export function QueueFilters({
       </SelectField>
       <SelectField label="Reply category" name="category" defaultValue={values.category}>
         <option value="">All reply categories</option>
-        {REPLY_CATEGORIES.map((c) => (
+        {REPLY_TYPE_GROUPS.map((c) => (
           <option key={c.key} value={c.key}>
             {c.label}
           </option>
         ))}
         <option value="unclassified">Unclassified</option>
       </SelectField>
-      <SelectField label="Reply subcategory" name="subcategoryId" defaultValue={values.subcategoryId}>
+      <SelectField label="Reply subcategory" name="replyTypeId" defaultValue={values.replyTypeId}>
         <option value="">All reply subcategories</option>
         {subcategories.map((s) => (
           <option key={s.id} value={s.id}>
@@ -92,10 +92,10 @@ export function queueFilterChips(
   };
   const chips: AppliedFilter[] = [];
   const add = (key: keyof QueueFilterValues, name: string, value: string) => chips.push({ key, name, value, href: without(key) });
-  if (values.category) add("category", "Reply category", values.category === "unclassified" ? "Unclassified" : (REPLY_CATEGORIES.find((c) => c.key === values.category)?.label ?? values.category));
+  if (values.category) add("category", "Reply category", values.category === "unclassified" ? "Unclassified" : (REPLY_TYPE_GROUPS.find((c) => c.key === values.category)?.label ?? values.category));
   if (values.channel) add("channel", "Channel", values.channel === "linkedin" ? "LinkedIn" : "Email");
   if (values.group) add("group", "Group", QUEUE_GROUP_LABELS[values.group as (typeof QUEUE_GROUPS)[number]]?.title ?? values.group);
-  if (values.subcategoryId) add("subcategoryId", "Reply subcategory", names.subcategories.find((s) => s.id === values.subcategoryId)?.name ?? values.subcategoryId);
+  if (values.replyTypeId) add("replyTypeId", "Reply subcategory", names.subcategories.find((s) => s.id === values.replyTypeId)?.name ?? values.replyTypeId);
   if (values.campaignId) add("campaignId", "Campaign", names.campaigns.find((c) => c.id === values.campaignId)?.name ?? values.campaignId);
   if (values.dueAfter) add("dueAfter", "Due after", values.dueAfter);
   if (values.dueBefore) add("dueBefore", "Due before", values.dueBefore);

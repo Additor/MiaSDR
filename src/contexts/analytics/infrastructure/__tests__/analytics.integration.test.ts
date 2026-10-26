@@ -52,13 +52,13 @@ describeDb("analytics read model", () => {
       return world;
     }
 
-    const pipeline = (await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'default', true) returning id`)[0].id as string;
-    const subInterested = (await sql`insert into subcategories (organization_id, pipeline_id, category_key, key, name) values (${org}, ${pipeline}, 'interested', 'meeting', 'Meeting requested') returning id`)[0].id as string;
-    const subNo = (await sql`insert into subcategories (organization_id, pipeline_id, category_key, key, name) values (${org}, ${pipeline}, 'not_interested', 'no_budget', 'No budget') returning id`)[0].id as string;
+    const pipeline = (await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`)[0].id as string;
+    const subInterested = (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'meeting', 'Meeting requested') returning id`)[0].id as string;
+    const subNo = (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'not_interested', 'no_budget', 'No budget') returning id`)[0].id as string;
 
     const reply = async (personId: string, channel: "email" | "linkedin", at: string, classification?: { status: string; category?: string; sub?: string }) => {
       const ref = channel === "email" ? "a@sender.test" : account;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${org}, ${personId}, ${pipeline}) on conflict (person_id, pipeline_id) do update set updated_at = now() returning id`;
+      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) on conflict (person_id, reply_type_set_id) do update set updated_at = now() returning id`;
       const [conv] = await sql`select id from conversations where record_id = ${record} and channel = ${channel}`;
       const conversation = conv?.id ?? (await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, ${channel}, ${ref}) returning id`)[0].id;
       const [{ id: message }] = await sql`
@@ -66,7 +66,7 @@ describeDb("analytics read model", () => {
         values (${org}, ${conversation}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at}) returning id`;
       if (classification) {
         await sql`
-          insert into classifications (organization_id, record_id, message_id, expected_context_version, status, confidence, proposed_category_key, applied_category_key, applied_subcategory_id)
+          insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, status, confidence, proposed_group_key, applied_group_key, applied_reply_type_id)
           values (${org}, ${record}, ${message}, 0, ${classification.status}, 0.9, ${classification.category ?? null}, ${classification.status === "proposed" ? null : (classification.category ?? null)}, ${classification.sub ?? null})`;
       }
     };
@@ -150,10 +150,10 @@ describeDb("analytics read model", () => {
    */
   async function rivalActivity(w: World) {
     const org = w.actor.organizationId;
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
     const reply = async (personId: string, channel: "email" | "linkedin", at: string) => {
       const ref = channel === "email" ? "a@sender.test" : w.account;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${org}, ${personId}, ${pipeline}) returning id`;
+      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${personId}, ${pipeline}) returning id`;
       const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, ${channel}, ${ref}) returning id`;
       await sql`
         insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
@@ -211,8 +211,8 @@ describeDb("analytics read model", () => {
   it("does not count auto-replies or unverified bounce notices as replies", async () => {
     const org = other.actor.organizationId;
     const [enrollment] = await sql`select e.person_id from campaign_enrollments e where e.organization_id = ${org} limit 1`;
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
-    const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${org}, ${enrollment.person_id}, ${pipeline}) returning id`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
+    const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${enrollment.person_id}, ${pipeline}) returning id`;
     const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, 'email', 'a@sender.test') returning id`;
     await sql`
       insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at, raw)
@@ -287,7 +287,7 @@ describeDb("analytics read model", () => {
     const counts = Object.fromEntries(data.byBucket.map((b) => [b.bucket, b.replies]));
     expect(counts).toEqual({ customer: 0, interested: 1, not_interested: 1, other: 0, pending_review: 1, unclassified: 1 });
     expect(data.classifiedShare).toBe(0.5);
-    expect(data.bySubcategory).toEqual([
+    expect(data.byReplyType).toEqual([
       { bucket: "interested", name: "Meeting requested", replies: 1 },
       { bucket: "not_interested", name: "No budget", replies: 1 },
     ]);

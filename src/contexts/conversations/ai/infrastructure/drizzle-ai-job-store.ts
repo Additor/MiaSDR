@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { interruptOnTerminalStageTx } from "../../after-reply/infrastructure/sequence-run-tx";
-import { aiJobs, classifications, conversations, drafts, events, messages, pipelineSettings, records, subcategories, suppressionList, contactPolicies, people } from "@/platform/db/schema";
+import { aiJobs, replyTypePicks, conversations, drafts, events, messages, replyHandlingSettings, records, replyTypes, suppressionList, contactPolicies, people } from "@/platform/db/schema";
 import type { AiJobStore, ClaimedJob, ClassifyContext, DraftContext, FailedAiJob, JobKind, SkippedAiJob } from "../../application/reply-ports";
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING, AUTO_REQUEUE_MAX_SECONDS, nextAutoRequeueAt, REQUEUEABLE_SKIP_REASONS, SWEEP_KINDS, type FailureKind } from "../domain/ai-job-requeue";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "@/contexts/tenancy/domain/ai-cap";
@@ -88,7 +88,7 @@ async function requeue(organizationId: string, picked: ReturnType<typeof sql>, m
     `)) as unknown as Array<{ id: string; kind: JobKind; entity_id: string }>;
     const messageIds = rows.filter((r) => r.kind === "classification").map((r) => r.entity_id);
     if (messageIds.length > 0) {
-      await tx.delete(classifications).where(and(eq(classifications.organizationId, organizationId), eq(classifications.status, "failed"), inArray(classifications.messageId, messageIds)));
+      await tx.delete(replyTypePicks).where(and(eq(replyTypePicks.organizationId, organizationId), eq(replyTypePicks.status, "failed"), inArray(replyTypePicks.messageId, messageIds)));
     }
     return rows.map((r) => r.id);
   });
@@ -122,7 +122,7 @@ export const drizzleAiJobStore: AiJobStore = {
       where r.latest_inbound_message_id is not null
         and r.workflow_state not in ('paused', 'closed')
         and not exists (select 1 from ai_jobs j where j.kind = 'classification' and j.entity_type = 'message' and j.entity_id = r.latest_inbound_message_id)
-        and not exists (select 1 from classifications c where c.message_id = r.latest_inbound_message_id and c.expected_context_version = r.context_version)
+        and not exists (select 1 from reply_type_picks c where c.message_id = r.latest_inbound_message_id and c.expected_context_version = r.context_version)
       on conflict do nothing
       returning id
     `)) as unknown as unknown[];
@@ -186,14 +186,14 @@ export const drizzleAiJobStore: AiJobStore = {
       if (!record) return;
       // Recorded so the panel can say why, and so the sweep does not queue the same message again.
       await tx
-        .insert(classifications)
+        .insert(replyTypePicks)
         .values({ organizationId: job.organizationId, recordId: record.id, messageId: job.entityId, expectedContextVersion: record.version, status: "failed", error: lastError })
         .onConflictDoNothing();
       await tx.insert(events).values({
         organizationId: job.organizationId,
         personId: record.personId,
         recordId: record.id,
-        eventType: "classification.failed",
+        eventType: "reply_type_pick.failed",
         actorType: "ai",
         meta: { error: lastError },
         contextVersion: record.version,
@@ -263,14 +263,14 @@ export const drizzleAiJobStore: AiJobStore = {
       with me as (
         select j.id, j.started_at, m.id as message_id, ${senderKnown("m")} as known
         from ai_jobs j
-        left join classifications c on j.kind = 'initial_draft' and c.id = j.entity_id
+        left join reply_type_picks c on j.kind = 'initial_draft' and c.id = j.entity_id
         join messages m on m.id = case when j.kind = 'classification' then j.entity_id else c.message_id end
         where j.id = ${job.id}
       ),
       earlier as (
         select distinct m.id as message_id
         from ai_jobs j
-        left join classifications c on j.kind = 'initial_draft' and c.id = j.entity_id
+        left join reply_type_picks c on j.kind = 'initial_draft' and c.id = j.entity_id
         join messages m on m.id = case when j.kind = 'classification' then j.entity_id else c.message_id end
         join me on true
         where j.organization_id = ${job.organizationId}
@@ -323,12 +323,12 @@ export const drizzleAiJobStore: AiJobStore = {
         conversationId: conversations.id,
         body: messages.bodyText,
         recordId: records.id,
-        pipelineId: records.pipelineId,
+        replyTypeSetId: records.replyTypeSetId,
         contextVersion: records.contextVersion,
         latest: records.latestInboundMessageId,
-        categoryKey: records.categoryKey,
-        locked: records.categoryLocked,
-        subcategoryId: records.subcategoryId,
+        groupKey: records.groupKey,
+        locked: records.replyTypeLocked,
+        replyTypeId: records.replyTypeId,
       })
       .from(messages)
       .innerJoin(conversations, eq(conversations.id, messages.conversationId))
@@ -338,21 +338,21 @@ export const drizzleAiJobStore: AiJobStore = {
 
     const taxonomyRows = await db
       .select()
-      .from(subcategories)
-      .where(and(eq(subcategories.pipelineId, row.pipelineId), eq(subcategories.active, true)))
-      .orderBy(subcategories.sortOrder);
-    const [settings] = await db.select().from(pipelineSettings).where(eq(pipelineSettings.pipelineId, row.pipelineId));
+      .from(replyTypes)
+      .where(and(eq(replyTypes.replyTypeSetId, row.replyTypeSetId), eq(replyTypes.active, true)))
+      .orderBy(replyTypes.sortOrder);
+    const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, row.replyTypeSetId));
     const thread = await threadEntries(organizationId, row.conversationId);
     if (!thread) return null;
-    const currentRank = row.subcategoryId ? (taxonomyRows.find((t) => t.id === row.subcategoryId)?.stageRank ?? null) : null;
+    const currentRank = row.replyTypeId ? (taxonomyRows.find((t) => t.id === row.replyTypeId)?.stageRank ?? null) : null;
     const knowledge = await knowledgeFor(organizationId, { alwaysOnly: true });
 
     const ctx: ClassifyContext = {
       recordId: row.recordId,
       contextVersion: row.contextVersion,
       latestInboundMessageId: row.latest,
-      categoryKey: row.categoryKey,
-      categoryLocked: row.locked,
+      groupKey: row.groupKey,
+      replyTypeLocked: row.locked,
       currentStageRank: currentRank,
       settings: {
         autoApplyConfidence: Number(settings?.autoApplyConfidence ?? 0.85),
@@ -365,7 +365,7 @@ export const drizzleAiJobStore: AiJobStore = {
         id: t.id,
         key: t.key,
         name: t.name,
-        categoryKey: t.categoryKey,
+        groupKey: t.groupKey,
         description: t.description,
         guidance: t.classificationGuidance,
         reviewRequired: t.reviewRequired,
@@ -384,11 +384,11 @@ export const drizzleAiJobStore: AiJobStore = {
         .select({
           id: records.id,
           personId: records.personId,
-          pipelineId: records.pipelineId,
+          replyTypeSetId: records.replyTypeSetId,
           version: records.contextVersion,
           latest: records.latestInboundMessageId,
-          categoryKey: records.categoryKey,
-          subcategoryId: records.subcategoryId,
+          groupKey: records.groupKey,
+          replyTypeId: records.replyTypeId,
           state: records.workflowState,
         })
         .from(messages)
@@ -399,18 +399,18 @@ export const drizzleAiJobStore: AiJobStore = {
       if (!record) return { status: "stale" as const };
       const [proposed] = await tx
         .select()
-        .from(subcategories)
-        .where(and(eq(subcategories.pipelineId, record.pipelineId), eq(subcategories.key, input.proposedSubcategoryKey)));
+        .from(replyTypes)
+        .where(and(eq(replyTypes.replyTypeSetId, record.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey)));
 
       const base = {
         organizationId: input.job.organizationId,
         recordId: record.id,
         messageId: input.messageId,
         expectedContextVersion: input.expectedContextVersion,
-        previousCategoryKey: record.categoryKey,
-        previousSubcategoryId: record.subcategoryId,
-        proposedCategoryKey: proposed?.categoryKey ?? null,
-        proposedSubcategoryId: proposed?.id ?? null,
+        previousGroupKey: record.groupKey,
+        previousReplyTypeId: record.replyTypeId,
+        proposedGroupKey: proposed?.groupKey ?? null,
+        proposedReplyTypeId: proposed?.id ?? null,
         confidence: input.confidence.toFixed(4),
         reasoning: input.reason,
         provider: input.provider,
@@ -421,7 +421,7 @@ export const drizzleAiJobStore: AiJobStore = {
       // A newer reply or a person's decision since the work started: this result must not overwrite it.
       if (record.version !== input.expectedContextVersion || record.latest !== input.messageId || !proposed) {
         await tx
-          .insert(classifications)
+          .insert(replyTypePicks)
           .values({ ...base, status: "stale", response: input.response })
           .onConflictDoNothing();
         return { status: "stale" as const };
@@ -429,16 +429,16 @@ export const drizzleAiJobStore: AiJobStore = {
 
       const auto = input.decision.action === "auto_apply";
       const [row] = await tx
-        .insert(classifications)
+        .insert(replyTypePicks)
         .values({
           ...base,
           status: auto ? "auto_applied" : "proposed",
-          appliedCategoryKey: auto ? proposed.categoryKey : null,
-          appliedSubcategoryId: auto ? proposed.id : null,
+          appliedGroupKey: auto ? proposed.groupKey : null,
+          appliedReplyTypeId: auto ? proposed.id : null,
           response: { ...(input.response as object), holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested },
         })
         .onConflictDoNothing()
-        .returning({ id: classifications.id });
+        .returning({ id: replyTypePicks.id });
       // Someone (a person, or another worker) already settled this message at this context version.
       if (!row) return { status: "stale" as const };
 
@@ -447,13 +447,13 @@ export const drizzleAiJobStore: AiJobStore = {
         await tx
           .update(records)
           .set({
-            categoryKey: proposed.categoryKey,
-            subcategoryId: proposed.id,
-            categorySource: "ai",
+            groupKey: proposed.groupKey,
+            replyTypeId: proposed.id,
+            replyTypeSource: "ai",
             ...(settle ? { workflowState: "idle" } : {}),
           })
           .where(eq(records.id, record.id));
-        await interruptOnTerminalStageTx(tx, { organizationId: input.job.organizationId, recordId: record.id, categoryKey: proposed.categoryKey, subcategoryKey: proposed.key, subcategoryId: proposed.id, now: new Date() });
+        await interruptOnTerminalStageTx(tx, { organizationId: input.job.organizationId, recordId: record.id, groupKey: proposed.groupKey, replyTypeKey: proposed.key, replyTypeId: proposed.id, now: new Date() });
         if (input.wantsDraft) {
           await tx
             .insert(aiJobs)
@@ -465,10 +465,10 @@ export const drizzleAiJobStore: AiJobStore = {
         organizationId: input.job.organizationId,
         personId: record.personId,
         recordId: record.id,
-        eventType: auto ? "classification.applied" : "classification.proposed",
+        eventType: auto ? "reply_type_pick.applied" : "reply_type_pick.proposed",
         actorType: "ai",
-        fromData: { categoryKey: record.categoryKey, subcategoryId: record.subcategoryId },
-        toData: { categoryKey: proposed.categoryKey, subcategoryId: proposed.id },
+        fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
+        toData: { groupKey: proposed.groupKey, replyTypeId: proposed.id },
         meta: { confidence: input.confidence, holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested },
         contextVersion: input.expectedContextVersion,
       });
@@ -476,19 +476,19 @@ export const drizzleAiJobStore: AiJobStore = {
     });
   },
 
-  async loadDraftContext(organizationId, classificationId) {
+  async loadDraftContext(organizationId, replyTypePickId) {
     const [cls] = await db
       .select({
-        status: classifications.status,
-        expected: classifications.expectedContextVersion,
-        messageId: classifications.messageId,
-        recordId: classifications.recordId,
+        status: replyTypePicks.status,
+        expected: replyTypePicks.expectedContextVersion,
+        messageId: replyTypePicks.messageId,
+        recordId: replyTypePicks.recordId,
         conversationId: messages.conversationId,
-        response: classifications.response,
+        response: replyTypePicks.response,
       })
-      .from(classifications)
-      .innerJoin(messages, eq(messages.id, classifications.messageId))
-      .where(and(eq(classifications.id, classificationId), eq(classifications.organizationId, organizationId)));
+      .from(replyTypePicks)
+      .innerJoin(messages, eq(messages.id, replyTypePicks.messageId))
+      .where(and(eq(replyTypePicks.id, replyTypePickId), eq(replyTypePicks.organizationId, organizationId)));
     if (!cls) return null;
     const ctx = await buildDraftContext(organizationId, cls.conversationId);
     if (!ctx) return null;

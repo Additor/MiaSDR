@@ -100,8 +100,8 @@ describeDb("lead list filters, sort and companies", () => {
     await enroll(o.id, c2, carol, "linkedin");
     // A cancelled enrollment still counts as membership; only "removed" does not.
     await enroll(o.id, c2, frank, "linkedin", "cancelled");
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name) values (${o.id}, 'P') returning id`;
-    await sql`insert into records (organization_id, person_id, pipeline_id, category_key, category_source) values (${o.id}, ${bob}, ${pipeline}, 'interested', 'human')`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name) values (${o.id}, 'P') returning id`;
+    await sql`insert into records (organization_id, person_id, reply_type_set_id, group_key, reply_type_source) values (${o.id}, ${bob}, ${pipeline}, 'interested', 'human')`;
     return { ...o, acme, zeta, c1, c2, alice, bob, carol, dan, eve, frank, all: sorted(alice, bob, carol, dan, eve, frank) };
   }
 
@@ -329,8 +329,8 @@ describeDb("lead list filters, sort and companies", () => {
     const toContact = async (personId: string) => {
       await sql`update people set lifecycle = 'contact', converted_at = '2026-10-01T10:00:00Z' where id = ${personId}`;
     };
-    const pipelineOf = async (orgId: string) => {
-      const [{ id }] = await sql`insert into pipelines (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
+    const replyTypeSetOf = async (orgId: string) => {
+      const [{ id }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
       return id as string;
     };
     let msg = 0;
@@ -338,7 +338,7 @@ describeDb("lead list filters, sort and companies", () => {
     const thread = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound", privateCampaignId: string | null = null) => {
       msg += 1;
       const [existing] = await sql`select id from records where organization_id = ${orgId} and person_id = ${personId}`;
-      const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, pipeline_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
+      const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
       const [{ id: conversationId }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${orgId}, ${recordId}, 'email', ${"acct-" + msg}, ${privateCampaignId}) returning id`;
       await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
         values (${orgId}, ${conversationId}, 'email', ${"acct-" + msg}, ${direction}, ${"k" + msg + "-" + orgId}, 'hello', now())`;
@@ -416,7 +416,7 @@ describeDb("lead list filters, sort and companies", () => {
 
     it("defines Replied as a replied enrollment or an inbound public message, in the filter and in the lead status alike", async () => {
       const o = await org();
-      const pipeline = await pipelineOf(o.id);
+      const pipeline = await replyTypeSetOf(o.id);
       const regular = await campaign(o.id, "email", "Regular");
       const [{ id: personalCampaign }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${o.id}, 'linkedin', 'Private', 'active', 'personal') returning id`;
       const unknownSender = await person(o.id, { email: "u@x.test" });
@@ -443,7 +443,7 @@ describeDb("lead list filters, sort and companies", () => {
 
     it("filters by hasConversation: a record with a public conversation counts, a private-only or record-only person does not", async () => {
       const o = await org();
-      const pipeline = await pipelineOf(o.id);
+      const pipeline = await replyTypeSetOf(o.id);
       const [{ id: personalCampaign }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${o.id}, 'linkedin', 'Private', 'active', 'personal') returning id`;
       const outbound = await person(o.id, { email: "a@x.test" });
       const inbound = await person(o.id, { email: "b@x.test" });
@@ -453,7 +453,7 @@ describeDb("lead list filters, sort and companies", () => {
       await thread(o.id, pipeline, outbound, "outbound");
       await thread(o.id, pipeline, inbound, "inbound");
       await thread(o.id, pipeline, privateOnly, "outbound", personalCampaign);
-      await sql`insert into records (organization_id, person_id, pipeline_id) values (${o.id}, ${recordOnly}, ${pipeline})`;
+      await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.id}, ${recordOnly}, ${pipeline})`;
       expect(await ids(o.id, { hasConversation: true })).toEqual(sorted(outbound, inbound));
       expect(await ids(o.id, { hasConversation: false })).toEqual(sorted(privateOnly, recordOnly, none));
       expect(await ids(o.id, { hasConversation: true, lifecycle: "contact" })).toEqual([]);
@@ -462,15 +462,15 @@ describeDb("lead list filters, sort and companies", () => {
 
   describe("last contact", () => {
     let msg = 0;
-    const pipelineOf = async (orgId: string) => {
-      const [{ id }] = await sql`insert into pipelines (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
+    const replyTypeSetOf = async (orgId: string) => {
+      const [{ id }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
       return id as string;
     };
     /** One outbound or inbound message on the person's record, in the conversation of that channel. */
     const message = async (orgId: string, pipeline: string, personId: string, channel: "email" | "linkedin", direction: "inbound" | "outbound", sentAt: string) => {
       msg += 1;
       const [existing] = await sql`select id from records where organization_id = ${orgId} and person_id = ${personId}`;
-      const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, pipeline_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
+      const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
       const account = `${channel}-acct-${orgId}`;
       const [conv] = await sql`select id from conversations where record_id = ${recordId} and channel = ${channel} and private_campaign_id is null`;
       const conversationId =
@@ -482,7 +482,7 @@ describeDb("lead list filters, sort and companies", () => {
 
     it("filters on last contact from and to, and excludes leads never contacted", async () => {
       const o = await org();
-      const pipeline = await pipelineOf(o.id);
+      const pipeline = await replyTypeSetOf(o.id);
       const old = await lead(o.id);
       const recent = await lead(o.id);
       const mixed = await lead(o.id);
@@ -502,7 +502,7 @@ describeDb("lead list filters, sort and companies", () => {
 
     it("matches both bounds against the one latest contact", async () => {
       const o = await org();
-      const pipeline = await pipelineOf(o.id);
+      const pipeline = await replyTypeSetOf(o.id);
       const inside = await lead(o.id);
       const straddler = await lead(o.id);
       const edgeEnd = await lead(o.id);

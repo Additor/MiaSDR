@@ -249,7 +249,7 @@ export async function personHandlingBlockers(tx: DbHandle, actor: Actor, personI
                    select m.id from messages m join conversations mc on mc.id = m.conversation_id and mc.organization_id = m.organization_id
                    where m.organization_id = ${org} and mc.record_id in ${recs}))
               or (j.kind = 'initial_draft' and j.entity_type = 'classification' and j.entity_id in (
-                   select k.id from classifications k where k.organization_id = ${org} and k.record_id in ${recs})))
+                   select k.id from reply_type_picks k where k.organization_id = ${org} and k.record_id in ${recs})))
         ) as ai_job_running,
         exists (
           select 1 from conversations c where c.organization_id = ${org} and c.record_id in ${recs} and not ${seenBy(actor, "c")}

@@ -46,8 +46,8 @@ export function startBlocker(facts: StartFacts, input: { source: RunSource; skip
     skipReply: input.skipReply,
   });
   if (blocked) return blocked;
-  if (input.source === "ai_assignment" && (!record.categoryKey || !record.subcategoryKey || !needsReply(record.categoryKey, record.subcategoryKey))) {
-    return `The reply is classified as ${record.subcategoryName ?? "this category"}, which needs no answer, so follow-ups do not apply.`;
+  if (input.source === "ai_assignment" && (!record.groupKey || !record.replyTypeKey || !needsReply(record.groupKey, record.replyTypeKey))) {
+    return `The reply is classified as ${record.replyTypeName ?? "this category"}, which needs no answer, so follow-ups do not apply.`;
   }
   // The owner passed every check but the store found no flow to run: a campaign or flow changed between the reads.
   return facts.selection ? null : "Follow-ups cannot start for this conversation right now.";
@@ -67,7 +67,7 @@ export async function attemptRun(deps: { runs: Pick<RunStore, "loadStart" | "cre
   const { record } = facts;
   if (facts.conversation) assertConversationBelongsToRecord(facts.conversation, record.id);
   const blocked = startBlocker(facts, { source: input.source, skipReply: input.skipReply });
-  if (blocked || !facts.selection || !facts.conversation || !record.subcategoryId || !record.latestInboundMessageId || !record.lastInboundAt) {
+  if (blocked || !facts.selection || !facts.conversation || !record.replyTypeId || !record.latestInboundMessageId || !record.lastInboundAt) {
     return { blocked: blocked ?? "Follow-ups cannot start for this conversation right now." };
   }
 
@@ -83,7 +83,7 @@ export async function attemptRun(deps: { runs: Pick<RunStore, "loadStart" | "cre
     conversationId: facts.conversation.id,
     sequenceId: facts.selection.sequenceId,
     sequenceVersionId: facts.selection.sequenceVersionId,
-    subcategoryId: record.subcategoryId,
+    replyTypeId: record.replyTypeId,
     source: input.source,
     startPosition: from,
     triggerMessageId: record.latestInboundMessageId,

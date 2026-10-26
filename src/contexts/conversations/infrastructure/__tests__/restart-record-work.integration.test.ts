@@ -116,7 +116,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     { name: `${label} reply`, delayMinutes: 0, subjectTemplate: null, bodyTemplate: null, aiInstructions: `${label}: answer.`, knowledgeTags: [] },
     { name: `${label} nudge`, delayMinutes: 2 * 1440, subjectTemplate: null, bodyTemplate: null, aiInstructions: `${label}: check in.`, knowledgeTags: [] },
   ];
-  const sub = async (org: string, key: string) => (await one("select id, category_key from subcategories where organization_id = $1 and key = $2 order by created_at limit 1", [org, key])) as unknown as { id: string; category_key: string };
+  const sub = async (org: string, key: string) => (await one("select id, group_key from reply_types where organization_id = $1 and key = $2 order by created_at limit 1", [org, key])) as unknown as { id: string; group_key: string };
 
   /**
    * One classified reply from a lead that a campaign emailed an hour earlier. The campaign drafts follow-ups ("Flow"
@@ -138,7 +138,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
 
   const move = async (f: Fx, recordId: string, key: string, expectedContextVersion: number, note: string | null = null) => {
     const target = await sub(f.org, key);
-    return replyHandlingApp.moveRecordStage(f.replyHandlingDeps, f.actor, recordId, { categoryKey: target.category_key, subcategoryId: target.id, expectedContextVersion, note });
+    return replyHandlingApp.changeReplyType(f.replyHandlingDeps, f.actor, recordId, { groupKey: target.group_key, replyTypeId: target.id, expectedContextVersion, note });
   };
   const versionOf = async (recordId: string) => Number((await one("select context_version from records where id = $1", [recordId])).context_version);
 
@@ -185,11 +185,11 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await one("select status, error from drafts where organization_id = $1", [f.org])).toMatchObject({ status: "stale", error: "A person moved the reply to another category after this draft was written." });
       expect(await count("sequence_step_runs", f.org, `sequence_run_id = '${old.id}' and status in ('scheduled', 'drafting', 'awaiting_review')`)).toBe(0);
 
-      const runs = await rows("select id, sequence_id, status, subcategory_id, trigger_message_id from sequence_runs where organization_id = $1 and status = 'active'", [f.org]);
+      const runs = await rows("select id, sequence_id, status, reply_type_id, trigger_message_id from sequence_runs where organization_id = $1 and status = 'active'", [f.org]);
       expect(runs).toHaveLength(1);
       expect(runs[0].sequence_id).toBe(flowId);
       expect(runs[0].id).not.toBe(old.id);
-      expect(runs[0].subcategory_id).toBe((await sub(f.org, "meeting_done")).id);
+      expect(runs[0].reply_type_id).toBe((await sub(f.org, "meeting_done")).id);
       expect(await count("sequence_step_runs", f.org, `sequence_run_id = '${runs[0].id}'`)).toBe(2);
       expect(await one("select expected_context_version from sequence_step_runs where sequence_run_id = $1 limit 1", [runs[0].id])).toMatchObject({ expected_context_version: version + 1 });
 
@@ -207,7 +207,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
 
       const result = await move(f, recordId, "meeting_done", version, "Call went well");
       expect(result.contextVersion).toBe(version + 1);
-      expect(await one("select context_version, subcategory_id from records where id = $1", [recordId])).toMatchObject({ context_version: version + 1, subcategory_id: (await sub(f.org, "meeting_done")).id });
+      expect(await one("select context_version, reply_type_id from records where id = $1", [recordId])).toMatchObject({ context_version: version + 1, reply_type_id: (await sub(f.org, "meeting_done")).id });
       expect(await count("sequence_runs", f.org)).toBe(1);
       expect(await count("sequence_runs", f.org, "status = 'active'")).toBe(0);
       expect(await count("events", f.org, "event_type = 'sequence.started'")).toBe(1);
@@ -242,9 +242,9 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     it("a replay with the old version answers 409 and starts nothing twice", async () => {
       const { f, recordId, version } = await withRun();
       await move(f, recordId, "meeting_done", version);
-      const before = { runs: await count("sequence_runs", f.org), events: await count("events", f.org, "event_type = 'stage.moved'"), version: await versionOf(recordId) };
+      const before = { runs: await count("sequence_runs", f.org), events: await count("events", f.org, "event_type = 'reply_type.changed'"), version: await versionOf(recordId) };
       await expect(move(f, recordId, "meeting_done", version)).rejects.toBeInstanceOf(ConflictError);
-      expect({ runs: await count("sequence_runs", f.org), events: await count("events", f.org, "event_type = 'stage.moved'"), version: await versionOf(recordId) }).toEqual(before);
+      expect({ runs: await count("sequence_runs", f.org), events: await count("events", f.org, "event_type = 'reply_type.changed'"), version: await versionOf(recordId) }).toEqual(before);
     });
 
     it("rolls the move back when the run cannot start", async () => {
@@ -258,9 +258,9 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
         fault.createRun = null;
       }
       expect(await count("sequence_runs", f.org)).toBe(1);
-      const record = await one("select context_version, subcategory_id from records where id = $1", [recordId]);
+      const record = await one("select context_version, reply_type_id from records where id = $1", [recordId]);
       expect(Number(record.context_version)).toBe(version);
-      expect(record.subcategory_id).not.toBe(target.id);
+      expect(record.reply_type_id).not.toBe(target.id);
       expect(await count("sequence_runs", f.org, "status = 'active'")).toBe(1);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
@@ -272,27 +272,27 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await count("sequence_runs", b.f.org, "status = 'active'")).toBe(1);
       expect(await count("drafts", b.f.org, "status = 'awaiting_review'")).toBe(1);
       expect(await versionOf(b.recordId)).toBe(b.version);
-      await expect(replyHandlingApp.moveRecordStage(a.f.replyHandlingDeps, b.f.actor, a.recordId, { categoryKey: "interested", subcategoryId: null, expectedContextVersion: a.version + 1 })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(replyHandlingApp.changeReplyType(a.f.replyHandlingDeps, b.f.actor, a.recordId, { groupKey: "interested", replyTypeId: null, expectedContextVersion: a.version + 1 })).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 
-  describe("stageChange in the draft prompt", () => {
+  describe("replyTypeChange in the draft prompt", () => {
     it("passes the move's stage, time and note to the model and drops the classifier's reason", async () => {
       const { f, r, recordId, version } = await withRun({ flow: false });
       await move(f, recordId, "meeting_done", version, "Met on Tuesday, they want the contract");
       await mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId);
       const input = f.ai.lastDraftInput!;
-      expect(input.stageChange).toMatchObject({ stage: "Meeting done", note: "Met on Tuesday, they want the contract" });
-      expect(input.stageChange!.occurredAt).toBeInstanceOf(Date);
+      expect(input.replyTypeChange).toMatchObject({ stage: "Meeting done", note: "Met on Tuesday, they want the contract" });
+      expect(input.replyTypeChange!.occurredAt).toBeInstanceOf(Date);
       // The classifier read the old inbound message; that reading is stale after the move.
       expect(input.classification?.reason).toBeNull();
     });
 
-    it("leaves stageChange null with no move, and ignores a move that came before the last inbound message", async () => {
+    it("leaves replyTypeChange null with no move, and ignores a move that came before the last inbound message", async () => {
       const { f, r, input, recordId, version } = await withRun({ flow: false });
       // The drafts written before any move carry no stage change.
       expect(f.ai.lastDraftInput).not.toBeNull();
-      expect(f.ai.lastDraftInput?.stageChange).toBeNull();
+      expect(f.ai.lastDraftInput?.replyTypeChange).toBeNull();
 
       await move(f, recordId, "meeting_done", version, "Old note");
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -300,7 +300,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       const panel = await mgmt.getReplyPanel(f.replyDeps, f.actor, r.conversationId);
       expect(panel?.draft?.status).toBe("stale");
       await mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId);
-      expect(f.ai.lastDraftInput?.stageChange).toBeNull();
+      expect(f.ai.lastDraftInput?.replyTypeChange).toBeNull();
       expect(f.ai.lastDraftInput?.classification?.reason ?? "kept").not.toBeNull();
     });
 
@@ -310,7 +310,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
       await move(f, recordId, "trial_requested", version + 1, "second");
       await mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId);
-      expect(f.ai.lastDraftInput?.stageChange).toMatchObject({ note: "second" });
+      expect(f.ai.lastDraftInput?.replyTypeChange).toMatchObject({ note: "second" });
     });
   });
 
@@ -318,8 +318,8 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     it("answers 409 on a version mismatch and changes nothing", async () => {
       const { f, r, recordId, version } = await withRun();
       const before = { runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), drafts: await count("drafts", f.org, "status = 'awaiting_review'") };
-      await expect(mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "meeting_done", expectedContextVersion: version - 1 })).rejects.toBeInstanceOf(ConflictError);
-      await expect(mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "meeting_done", expectedContextVersion: version + 1 })).rejects.toBeInstanceOf(ConflictError);
+      await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version - 1 })).rejects.toBeInstanceOf(ConflictError);
+      await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version + 1 })).rejects.toBeInstanceOf(ConflictError);
       expect(await versionOf(recordId)).toBe(version);
       expect({ runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), drafts: await count("drafts", f.org, "status = 'awaiting_review'") }).toEqual(before);
     });
@@ -327,22 +327,22 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     it("bumps the version, retires the draft, swaps the run and writes a fresh draft for the corrected category", async () => {
       const { f, r, recordId, version, flowId } = await withRun();
       const stale = await one("select id from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
-      const result = await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "meeting_done", expectedContextVersion: version });
-      expect(result).toMatchObject({ subcategoryKey: "meeting_done", draftQueued: true });
+      const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version });
+      expect(result).toMatchObject({ replyTypeKey: "meeting_done", draftQueued: true });
       expect(await versionOf(recordId)).toBe(version + 1);
       expect(await one("select status, error from drafts where id = $1", [stale.id])).toMatchObject({ status: "stale", error: "A person corrected the category after this draft was written." });
       expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'classification_corrected'")).toBe(1);
       const active = await rows("select sequence_id from sequence_runs where organization_id = $1 and status = 'active'", [f.org]);
       expect(active.map((a) => a.sequence_id)).toEqual([flowId]);
       // The classification row moved to the new version, so the draft job accepts it.
-      expect(await one("select expected_context_version, status from classifications where organization_id = $1", [f.org])).toMatchObject({ expected_context_version: version + 1 });
+      expect(await one("select expected_context_version, status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ expected_context_version: version + 1 });
 
       await f.aiRun();
       const fresh = await rows("select id, status, expected_context_version from drafts where organization_id = $1 and status = 'awaiting_review' order by created_at", [f.org]);
       expect(fresh.length).toBeGreaterThanOrEqual(1);
       expect(fresh.every((d) => d.expected_context_version === version + 1)).toBe(true);
       expect(fresh.some((d) => d.id === stale.id)).toBe(false);
-      expect(f.ai.lastDraftInput?.classification?.subcategoryName).toBe("Meeting done");
+      expect(f.ai.lastDraftInput?.classification?.replyTypeName).toBe("Meeting done");
       // The panel shows the fresh draft, not the retired one.
       const panel = await mgmt.getReplyPanel(f.replyDeps, f.actor, r.conversationId);
       expect(panel?.draft?.status).toBe("awaiting_review");
@@ -351,17 +351,17 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
 
     it("replaying the same correction answers 409 and queues nothing more", async () => {
       const { f, r, version } = await withRun();
-      await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "meeting_done", expectedContextVersion: version });
+      await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version });
       const before = { runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), events: await count("events", f.org) };
-      await expect(mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "meeting_done", expectedContextVersion: version })).rejects.toBeInstanceOf(ConflictError);
+      await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version })).rejects.toBeInstanceOf(ConflictError);
       expect({ runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), events: await count("events", f.org) }).toEqual(before);
     });
 
     it("a second correction after the first queues its own draft job", async () => {
       const { f, r, version } = await withRun();
-      await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "meeting_done", expectedContextVersion: version });
+      await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version });
       await f.aiRun();
-      await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "demo_request", expectedContextVersion: version + 1 });
+      await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: version + 1 });
       expect(await count("ai_jobs", f.org, "kind = 'initial_draft' and status = 'queued'")).toBe(1);
       await f.aiRun();
       expect(await one("select expected_context_version from drafts where organization_id = $1 and status = 'awaiting_review' order by created_at desc limit 1", [f.org])).toMatchObject({ expected_context_version: version + 2 });
@@ -370,7 +370,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     it("another organization's person gets 404", async () => {
       const a = await withRun();
       const b = await withRun();
-      await expect(mgmt.setClassification(b.f.replyDeps, b.f.actor, a.r.conversationId, { subcategoryKey: "meeting_done", expectedContextVersion: a.version })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(mgmt.setReplyType(b.f.replyDeps, b.f.actor, a.r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: a.version })).rejects.toBeInstanceOf(NotFoundError);
       expect(await versionOf(a.recordId)).toBe(a.version);
     });
   });

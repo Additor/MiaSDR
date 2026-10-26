@@ -150,7 +150,7 @@ describeDb("personal campaigns", () => {
 
       await aiJobs.drizzleAiJobStore.enqueueMissing(new Date());
       expect(await count("ai_jobs", f.org)).toBe(0);
-      expect(await count("classifications", f.org)).toBe(0);
+      expect(await count("reply_type_picks", f.org)).toBe(0);
       expect(await count("drafts", f.org)).toBe(0);
       expect(await count("tasks", f.org)).toBe(0);
       // The safety stop writes its person-level event (no message text). Nothing else is recorded: no stage move, no classification.
@@ -369,8 +369,8 @@ describeDb("personal campaigns", () => {
       const other = await fixture();
       const foreign = await campaign(other, "personal");
       const ada = await lead(f, "Ada", []);
-      const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${f.org}, 'p', true) returning id`;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${f.org}, ${ada.person}, ${pipeline}) returning id`;
+      const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${f.org}, 'p', true) returning id`;
+      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${ada.person}, ${pipeline}) returning id`;
       await expect(
         sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${f.org}, ${record}, 'linkedin', 'x', ${foreign})`,
       ).rejects.toMatchObject({ constraint_name: "conversations_private_campaign_fk" });
@@ -545,7 +545,7 @@ describeDb("personal campaigns", () => {
       const [first] = await sql`select id from messages where conversation_id = ${shared.id}`;
       const record = await recordOf(ada.person);
       // Work the public thread produced: a proposed classification, an open draft and a queued classification job.
-      await sql`insert into classifications (organization_id, record_id, message_id, expected_context_version, status, confidence, proposed_category_key)
+      await sql`insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, status, confidence, proposed_group_key)
                 values (${f.org}, ${record.id}, ${first.id}, ${record.context_version}, 'proposed', 0.9, 'interested')`;
       await sql`insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, status, ai_body_text)
                 values (${f.org}, ${record.id}, ${shared.id}, ${record.context_version}, 'linkedin', 'awaiting_review', 'Private-to-be draft')`;
@@ -566,7 +566,7 @@ describeDb("personal campaigns", () => {
       expect(queue.total).toBe(0);
       expect((await workQueueApp.getWorkQueueCounts(queueDeps(), f.actor("owner"))).total).toBe(0);
       expect((await sql`select status from drafts where conversation_id = ${shared}`)[0].status).toBe("stale");
-      expect((await sql`select status from classifications where record_id = ${record.id}`)[0].status).toBe("stale");
+      expect((await sql`select status from reply_type_picks where record_id = ${record.id}`)[0].status).toBe("stale");
       // Nothing of the thread is left to open: the person has no public conversation, so no screen links to one.
       expect(await personHandling.activeConversationOfPerson(f.org, ada.person)).toBeNull();
     });
@@ -583,7 +583,7 @@ describeDb("personal campaigns", () => {
       await sql`update records set latest_inbound_message_id = ${privateMessage.id} where id = ${record.id}`;
       await sql`insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, status, ai_body_text)
                 values (${f.org}, ${record.id}, ${shared}, ${record.context_version + 1}, 'linkedin', 'awaiting_review', 'Late private draft')`;
-      await sql`insert into classifications (organization_id, record_id, message_id, expected_context_version, status, confidence, proposed_category_key)
+      await sql`insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, status, confidence, proposed_group_key)
                 values (${f.org}, ${record.id}, ${privateMessage.id}, ${record.context_version + 1}, 'proposed', 0.8, 'interested')`;
       await sql`insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, status, error)
                 values (${f.org}, ${record.id}, ${shared}, ${record.context_version + 1}, 'linkedin', 'failed', 'Private failure')`;

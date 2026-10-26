@@ -24,8 +24,8 @@ export interface QueueItemView {
   personName: string | null;
   personLifecycle: "lead" | "contact";
   conversationId: string | null;
-  categoryKey: string | null;
-  subcategoryName: string | null;
+  groupKey: string | null;
+  replyTypeName: string | null;
   channel: string | null;
   workflowState: string;
   assignee: { id: string; name: string | null } | null;
@@ -33,7 +33,7 @@ export interface QueueItemView {
   snippet: string | null;
   waitingSince: { at: string; basis: "inbound" | "failure" | "due" };
   draft: { draftId: string; status: string; subject: string | null; updatedAt: string; preview: string | null } | null;
-  classification: { classificationId: string; kind: "held" | "changed"; categoryKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
+  classification: { replyTypePickId: string; kind: "held" | "changed"; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
   problem: { kind: "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
 }
 
@@ -74,7 +74,7 @@ function describe(item: QueueItemView): { detail: ReactNode; action: string } {
     case "classification": {
       const c = item.classification;
       // "Other: Other" says the same word twice.
-      const label = c?.categoryKey ? (c.name && c.name !== categoryLabel(c.categoryKey) ? `${categoryLabel(c.categoryKey)}: ${c.name}` : categoryLabel(c.categoryKey)) : "a category";
+      const label = c?.groupKey ? (c.name && c.name !== categoryLabel(c.groupKey) ? `${categoryLabel(c.groupKey)}: ${c.name}` : categoryLabel(c.groupKey)) : "a category";
       return {
         detail: `${c?.kind === "held" ? "AI suggests " : "AI set "}${label}${c?.confidence != null ? `, ${Math.round(c.confidence * 100)}% confident` : ""}`,
         action: c?.kind === "held" ? "Accept or change" : "Looks right?",
@@ -163,9 +163,9 @@ export function QueueGroup({
     const result =
       c.kind === "held"
         ? item.conversationId
-          ? await callApi(`/api/inbox/${item.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: c.contextVersion })
+          ? await callApi(`/api/inbox/${item.conversationId}/classification`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
           : { ok: false, error: "Open the person to decide." }
-        : await callApi(`/api/classifications/${c.classificationId}/acknowledge`, "POST");
+        : await callApi(`/api/classifications/${c.replyTypePickId}/acknowledge`, "POST");
     if (!result.ok) {
       setRowErrors((current) => ({ ...current, [item.recordId]: result.error ?? "Could not save. Try again." }));
       return false;
@@ -255,7 +255,7 @@ export function QueueGroup({
           const thread = rowHref(item, query);
           const { detail, action } = describe(item);
           const wait = waitingLabel(item.waitingSince, now);
-          const meta = [categoryLabel(item.categoryKey), item.subcategoryName, item.channel ? channelLabel(item.channel) : null].filter(Boolean).join(" · ");
+          const meta = [categoryLabel(item.groupKey), item.replyTypeName, item.channel ? channelLabel(item.channel) : null].filter(Boolean).join(" · ");
           return (
             <li
               key={item.recordId}

@@ -38,14 +38,14 @@ export async function NextStep({
       personName={personName}
       firstName={person.name?.split(/\s+/)[0] || personName}
       category={{
-        label: record.categoryKey ? `${categoryLabel(record.categoryKey)}${record.subcategoryName ? `: ${record.subcategoryName}` : ""}` : null,
-        source: record.categorySource,
-        locked: record.categoryLocked,
-        subcategoryId: record.subcategoryId,
+        label: record.groupKey ? `${categoryLabel(record.groupKey)}${record.replyTypeName ? `: ${record.replyTypeName}` : ""}` : null,
+        source: record.replyTypeSource,
+        locked: record.replyTypeLocked,
+        replyTypeId: record.replyTypeId,
       }}
       contextVersion={record.contextVersion}
       stages={detail.stages}
-      aiReading={reading ? { name: `${categoryLabel(reading.proposed.categoryKey)}: ${reading.proposed.name}`, confidence: reading.confidence, reasoning: reading.reasoning } : null}
+      aiReading={reading ? { name: `${categoryLabel(reading.proposed.groupKey)}: ${reading.proposed.name}`, confidence: reading.confidence, reasoning: reading.reasoning } : null}
       closed={record.workflowState === "closed"}
       closedReason={record.closedReason}
       doNotContact={detail.policy?.doNotContact === true}

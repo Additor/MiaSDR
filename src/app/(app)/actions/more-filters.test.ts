@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hasAnyFilter, hasMoreFilters } from "./more-filters";
 
-const none = { subcategoryId: "", campaignId: "", dueAfter: "", dueBefore: "" };
+const none = { replyTypeId: "", campaignId: "", dueAfter: "", dueBefore: "" };
 const all = { ...none, category: "", channel: "", group: "", errorsOnly: false };
 
 describe("hasMoreFilters", () => {
@@ -9,7 +9,7 @@ describe("hasMoreFilters", () => {
     expect(hasMoreFilters(none)).toBe(false);
   });
 
-  it.each(["subcategoryId", "campaignId", "dueAfter", "dueBefore"] as const)("is true when %s is set", (key) => {
+  it.each(["replyTypeId", "campaignId", "dueAfter", "dueBefore"] as const)("is true when %s is set", (key) => {
     expect(hasMoreFilters({ ...none, [key]: "x" })).toBe(true);
   });
 });

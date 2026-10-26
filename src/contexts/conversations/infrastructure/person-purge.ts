@@ -41,7 +41,7 @@ export async function purgePersonHandling(tx: DbHandle, organizationId: string, 
       and not (j.status = 'running' and j.locked_at > now() - make_interval(secs => ${leaseSeconds}))
       and ((j.kind = 'classification' and j.entity_type = 'message' and j.entity_id in ${msgs})
         or (j.kind = 'initial_draft' and j.entity_type = 'classification'
-            and j.entity_id in (select k.id from classifications k where k.organization_id = ${org} and k.record_id in ${recs})))`);
+            and j.entity_id in (select k.id from reply_type_picks k where k.organization_id = ${org} and k.record_id in ${recs})))`);
   // Cascades to sequence_step_runs, which hold the drafts and sent messages of the runs.
   await tx.execute(sql`delete from sequence_runs where organization_id = ${org} and record_id in ${recs}`);
   await tx.execute(sql`
@@ -49,7 +49,7 @@ export async function purgePersonHandling(tx: DbHandle, organizationId: string, 
       and draft_id in (select d.id from drafts d where d.organization_id = ${org} and d.record_id in ${recs})`);
   // Cascades to draft_knowledge_citations.
   await tx.execute(sql`delete from drafts where organization_id = ${org} and record_id in ${recs}`);
-  await tx.execute(sql`delete from classifications where organization_id = ${org} and record_id in ${recs}`);
+  await tx.execute(sql`delete from reply_type_picks where organization_id = ${org} and record_id in ${recs}`);
   const events = await deleted(tx, sql`delete from events where organization_id = ${org} and (person_id = ${personId}::uuid or record_id in ${recs})`);
   // Cascades to the lead_ccs rows these messages sourced; other rows that named them as the latest inbound message or as
   // the reply target get null.

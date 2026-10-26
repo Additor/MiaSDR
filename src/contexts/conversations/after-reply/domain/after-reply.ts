@@ -1,4 +1,4 @@
-import { AFTER_REPLY_OFF, isTerminalSubcategory, startPosition, type InterruptReason, type RunStatus } from "./sequences";
+import { AFTER_REPLY_OFF, isTerminalReplyType, startPosition, type InterruptReason, type RunStatus } from "./sequences";
 
 export { AFTER_REPLY_OFF };
 
@@ -49,10 +49,10 @@ export const NEW_REPLY_MARGIN_MINUTES = 10;
 /** The facts that decide whether a run can start for a record, in the shape the use case loads them. */
 export interface StartBlockFacts {
   record: {
-    subcategoryId: string | null;
-    categoryKey: string | null;
-    subcategoryKey: string | null;
-    subcategoryName: string | null;
+    replyTypeId: string | null;
+    groupKey: string | null;
+    replyTypeKey: string | null;
+    replyTypeName: string | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     workflowState: string;
@@ -95,8 +95,8 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (f.doNotContact) return "This person is marked do not contact, so follow-ups do not apply.";
   if (f.suppressed) return "This address is on the suppression list, so follow-ups do not apply.";
   if (!record.hasEmail) return "This person has no email address, so follow-ups cannot start.";
-  if (!record.subcategoryId) return "The reply is not classified yet, so follow-ups cannot start.";
-  if (isTerminalSubcategory(record.categoryKey, record.subcategoryKey)) return `The reply is classified as ${record.subcategoryName ?? record.subcategoryKey ?? "a closing category"}, so follow-ups do not apply.`;
+  if (!record.replyTypeId) return "The reply is not classified yet, so follow-ups cannot start.";
+  if (isTerminalReplyType(record.groupKey, record.replyTypeKey)) return `The reply is classified as ${record.replyTypeName ?? record.replyTypeKey ?? "a closing category"}, so follow-ups do not apply.`;
   if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply }) === null) return "A person already answered, and the flow has no follow-up step after the reply.";
   return null;
 }
@@ -162,10 +162,10 @@ export function stopReasonLabel(reason: string | null | undefined): string {
 
 // What always stops follow-ups ---------------------------------------------------------------------------
 
-/** A category and subcategory key pair, the shape `isTerminalSubcategory` reads. */
-export interface SubcategoryFact {
-  categoryKey: string | null;
-  subcategoryKey: string | null;
+/** A category and subcategory key pair, the shape `isTerminalReplyType` reads. */
+export interface ReplyTypeFact {
+  groupKey: string | null;
+  replyTypeKey: string | null;
 }
 
 export interface AlwaysStopRule {
@@ -175,12 +175,12 @@ export interface AlwaysStopRule {
   /** The reason the engine stores when this fact ends a run. Null for a rule that only keeps a flow from starting. */
   reason: InterruptReason | null;
   /** Classifications that trigger the rule. Absent for rules about the lead or the record. */
-  subcategories?: readonly SubcategoryFact[];
+  subcategories?: readonly ReplyTypeFact[];
 }
 
 /**
  * Facts after which a follow-up would be wrong. The first five come from `interruptReason`; the rest are the
- * subcategories `isTerminalSubcategory` treats as terminal, plus Out of office, which keeps a flow from starting
+ * subcategories `isTerminalReplyType` treats as terminal, plus Out of office, which keeps a flow from starting
  * but does not end one that is running (the engine's no-start list holds it next to the terminal keys).
  */
 export const ALWAYS_STOPS_ON: readonly AlwaysStopRule[] = [
@@ -190,20 +190,20 @@ export const ALWAYS_STOPS_ON: readonly AlwaysStopRule[] = [
   { id: "bounce", label: "The address bounces", reason: "bounce" },
   { id: "record_closed", label: "Reply handling is closed", reason: "record_closed" },
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
-  { id: "not_interested", label: "The reply is classified Not interested", reason: "terminal_stage", subcategories: [{ categoryKey: "not_interested", subcategoryKey: null }] },
-  { id: "out_of_office", label: "The reply is classified Out of office", reason: null, subcategories: [{ categoryKey: null, subcategoryKey: "out_of_office" }] },
-  { id: "left_company", label: "The reply is classified Left company", reason: "terminal_stage", subcategories: [{ categoryKey: null, subcategoryKey: "left_company" }] },
+  { id: "not_interested", label: "The reply is classified Not interested", reason: "terminal_stage", subcategories: [{ groupKey: "not_interested", replyTypeKey: null }] },
+  { id: "out_of_office", label: "The reply is classified Out of office", reason: null, subcategories: [{ groupKey: null, replyTypeKey: "out_of_office" }] },
+  { id: "left_company", label: "The reply is classified Left company", reason: "terminal_stage", subcategories: [{ groupKey: null, replyTypeKey: "left_company" }] },
   {
     id: "wrong_contact",
     label: "The reply is classified Wrong or different contact",
     reason: "terminal_stage",
     subcategories: [
-      { categoryKey: null, subcategoryKey: "wrong_contact" },
-      { categoryKey: null, subcategoryKey: "connected_to_different_contact" },
+      { groupKey: null, replyTypeKey: "wrong_contact" },
+      { groupKey: null, replyTypeKey: "connected_to_different_contact" },
     ],
   },
-  { id: "customer", label: "The reply is classified Existing customer", reason: "terminal_stage", subcategories: [{ categoryKey: null, subcategoryKey: "customer" }] },
+  { id: "customer", label: "The reply is classified Existing customer", reason: "terminal_stage", subcategories: [{ groupKey: null, replyTypeKey: "customer" }] },
 ];
 
 /** Whether a classification ends a running flow, by the same rule the engine's interrupt sweep applies. */
-export const endsFlow = (fact: SubcategoryFact): boolean => isTerminalSubcategory(fact.categoryKey, fact.subcategoryKey);
+export const endsFlow = (fact: ReplyTypeFact): boolean => isTerminalReplyType(fact.groupKey, fact.replyTypeKey);

@@ -32,7 +32,7 @@ export interface QueueFacts {
   hasProblemDraft: boolean;
   hasFailedJob: boolean;
   hasDraftToReview: boolean;
-  hasClassificationToReview: boolean;
+  hasReplyTypePickToReview: boolean;
   hasOpenTask: boolean;
 }
 
@@ -40,7 +40,7 @@ export interface QueueFacts {
 export function queueGroupOf(facts: QueueFacts): QueueGroup {
   if (facts.workflowState === "error" || facts.hasProblemDraft || facts.hasFailedJob) return "problem";
   if (facts.hasDraftToReview) return "reply";
-  if (facts.hasClassificationToReview) return "classification";
+  if (facts.hasReplyTypePickToReview) return "classification";
   if (facts.workflowState === "waiting") return "follow_up";
   return "next_step";
 }
@@ -140,12 +140,12 @@ export type QueueProblemKind = "record_error" | "draft_failed" | "delivery_uncer
 
 export interface QueueFilter {
   /** A category key, or `unclassified`. */
-  categoryKey?: string;
+  groupKey?: string;
   channel?: string;
   group?: QueueGroup;
   /** Whose items to show. Without it the whole queue shows. */
   scope?: QueueScope;
-  subcategoryId?: string;
+  replyTypeId?: string;
   /** Records of people currently enrolled in this campaign (email or LinkedIn, any status but removed). It does not mean the campaign that owns the conversation. */
   campaignId?: string;
   dueBefore?: Date;
@@ -230,7 +230,7 @@ const text = (value: unknown) => (typeof value === "string" && value.trim() !== 
 export function parseQueueFilter(raw: Record<string, unknown>, timeZone = "UTC"): QueueFilter {
   const filter: QueueFilter = {};
   const category = text(raw.category);
-  if (category) filter.categoryKey = category;
+  if (category) filter.groupKey = category;
   const channel = text(raw.channel);
   if (channel) {
     if (channel !== "email" && channel !== "linkedin") throw new ValidationError("Channel must be email or linkedin.");
@@ -246,7 +246,7 @@ export function parseQueueFilter(raw: Record<string, unknown>, timeZone = "UTC")
     if (!isQueueScope(scope)) throw new ValidationError(`Scope must be one of ${QUEUE_SCOPES.join(", ")}.`);
     filter.scope = scope;
   }
-  for (const [key, label] of [["subcategoryId", "Subcategory"], ["campaignId", "Campaign"]] as const) {
+  for (const [key, label] of [["replyTypeId", "Subcategory"], ["campaignId", "Campaign"]] as const) {
     const id = text(raw[key]);
     if (id) {
       if (!UUID.test(id)) throw new ValidationError(`${label} is not a valid id.`);

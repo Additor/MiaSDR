@@ -128,7 +128,7 @@ describe("parseInboxParams and inboxHref", () => {
 
   it("drops unknown or malformed values", () => {
     const p = parseInboxParams({ view: "nope", page: "-3", campaign: ["x", ID], mailbox: "zzz", subcategory: ["Bad Key", "demo_request"], category: ["interested", "weird"], range: "forever" });
-    expect(p).toMatchObject({ view: "all", page: 1, campaignIds: [ID], mailboxIds: [], subcategoryKeys: ["demo_request"], categoryKeys: ["interested"], dateMode: "all" });
+    expect(p).toMatchObject({ view: "all", page: 1, campaignIds: [ID], mailboxIds: [], replyTypeKeys: ["demo_request"], groupKeys: ["interested"], dateMode: "all" });
   });
 
   it("reads lead ids and lead text from the same parameter", () => {

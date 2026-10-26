@@ -14,8 +14,8 @@ export function activeFilterChips(params: InboxParams, options: InboxFilterOptio
   if (params.leadQuery) chips.push({ key: "leadq", name: "Person", value: params.leadQuery, href: drop({ leadQuery: "" }) });
   for (const id of params.campaignIds) chips.push({ key: `c-${id}`, name: "Campaign", value: label(options.campaigns, id), href: drop({ campaignIds: params.campaignIds.filter((v) => v !== id) }) });
   for (const id of params.mailboxIds) chips.push({ key: `m-${id}`, name: "Mailbox", value: label(options.mailboxes, id), href: drop({ mailboxIds: params.mailboxIds.filter((v) => v !== id) }) });
-  for (const k of params.subcategoryKeys) chips.push({ key: `s-${k}`, name: "Reply subcategory", value: label(options.subcategories, k), href: drop({ subcategoryKeys: params.subcategoryKeys.filter((v) => v !== k) }) });
-  for (const k of params.categoryKeys) chips.push({ key: `k-${k}`, name: "Reply category", value: categoryLabel(k), href: drop({ categoryKeys: params.categoryKeys.filter((v) => v !== k) }) });
+  for (const k of params.replyTypeKeys) chips.push({ key: `s-${k}`, name: "Reply subcategory", value: label(options.subcategories, k), href: drop({ replyTypeKeys: params.replyTypeKeys.filter((v) => v !== k) }) });
+  for (const k of params.groupKeys) chips.push({ key: `k-${k}`, name: "Reply category", value: categoryLabel(k), href: drop({ groupKeys: params.groupKeys.filter((v) => v !== k) }) });
   if (params.dateMode !== "all") {
     const value = params.dateMode === "custom" ? `${params.dateFrom || "any"} to ${params.dateTo || "any"}` : params.dateMode;
     chips.push({ key: "date", name: "Dates", value, href: drop({ dateMode: "all", dateFrom: "", dateTo: "" }) });
@@ -25,7 +25,7 @@ export function activeFilterChips(params: InboxParams, options: InboxFilterOptio
 
 /** The Inbox without any filter, keeping search and view. */
 export const clearedInboxHref = (params: InboxParams) =>
-  inboxHref(params, { leadIds: [], leadQuery: "", campaignIds: [], mailboxIds: [], subcategoryKeys: [], categoryKeys: [], dateMode: "all", dateFrom: "", dateTo: "", page: 1 });
+  inboxHref(params, { leadIds: [], leadQuery: "", campaignIds: [], mailboxIds: [], replyTypeKeys: [], groupKeys: [], dateMode: "all", dateFrom: "", dateTo: "", page: 1 });
 
 /**
  * The Filters popover as its own GET form: Apply rebuilds the URL; `clearedInboxHref` drops every filter but keeps search
@@ -67,7 +67,7 @@ export function InboxFilters({ params, options, count }: { params: InboxParams; 
           </option>
         ))}
       </SelectField>
-      <SelectField label="Reply category" name="category" defaultValue={first(params.categoryKeys)}>
+      <SelectField label="Reply category" name="category" defaultValue={first(params.groupKeys)}>
         <option value="">Any reply category</option>
         {INBOX_CATEGORIES.map((k) => (
           <option key={k} value={k}>
@@ -75,7 +75,7 @@ export function InboxFilters({ params, options, count }: { params: InboxParams; 
           </option>
         ))}
       </SelectField>
-      <SelectField label="Reply subcategory" name="subcategory" defaultValue={first(params.subcategoryKeys)}>
+      <SelectField label="Reply subcategory" name="subcategory" defaultValue={first(params.replyTypeKeys)}>
         <option value="">Any reply subcategory</option>
         {options.subcategories.map((s) => (
           <option key={s.key} value={s.key}>

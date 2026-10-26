@@ -11,10 +11,10 @@ function facts(over: Partial<StartFacts> = {}): StartFacts {
     record: {
       id: "rec1",
       personId: "p1",
-      subcategoryId: "sub1",
-      categoryKey: "interested",
-      subcategoryKey: "demo_request",
-      subcategoryName: "Demo request",
+      replyTypeId: "sub1",
+      groupKey: "interested",
+      replyTypeKey: "demo_request",
+      replyTypeName: "Demo request",
       latestInboundMessageId: "m1",
       lastInboundAt: new Date("2026-10-15T08:00:00Z"),
       lastOutboundAt: null,
@@ -99,11 +99,11 @@ describe("startRun invariants", () => {
 
   it("starts nothing for terminal, no-reply and non-email cases or when there is no sequence", async () => {
     const terminal = facts();
-    terminal.record.categoryKey = "not_interested";
-    terminal.record.subcategoryKey = "not_required_right_now";
+    terminal.record.groupKey = "not_interested";
+    terminal.record.replyTypeKey = "not_required_right_now";
     const ooo = facts();
-    ooo.record.categoryKey = "other";
-    ooo.record.subcategoryKey = "out_of_office";
+    ooo.record.groupKey = "other";
+    ooo.record.replyTypeKey = "out_of_office";
     const cases = [terminal, ooo, facts({ conversation: { id: "c1", recordId: "rec1", channel: "linkedin" } }), facts({ selection: null })];
     for (const f of cases) {
       const s = store(f);
@@ -138,11 +138,11 @@ describe("restartSequenceRun", () => {
     ["AI drafts were never turned on", { flow: null, selection: null }, /AI drafts are off for the campaign Autumn/],
     ["the flow has no published steps", { flow: { status: "active", hasPublished: false }, selection: null }, /no published follow-up steps/],
     ["no campaign emailed the person", { owner: null, flow: null, selection: null }, /No campaign has emailed this person/],
-    ["the reply is a closing category", { record: { ...facts().record, categoryKey: "not_interested", subcategoryKey: "not_required_right_now", subcategoryName: "Not required right now" } }, /classified as Not required right now, so follow-ups do not apply/],
+    ["the reply is a closing category", { record: { ...facts().record, groupKey: "not_interested", replyTypeKey: "not_required_right_now", replyTypeName: "Not required right now" } }, /classified as Not required right now, so follow-ups do not apply/],
     ["the person is marked do not contact", { doNotContact: true }, /marked do not contact/],
     ["the address is suppressed", { suppressed: true }, /suppression list/],
     ["reply handling is closed", { record: { ...facts().record, workflowState: "closed" } }, /Reply handling is closed/],
-    ["the reply is not classified", { record: { ...facts().record, subcategoryId: null } }, /not classified yet/],
+    ["the reply is not classified", { record: { ...facts().record, replyTypeId: null } }, /not classified yet/],
     ["the conversation is not email", { conversation: { id: "c1", recordId: "rec1", channel: "linkedin" } }, /no email reply/],
     ["there is no reply at all", { record: { ...facts().record, latestInboundMessageId: null, lastInboundAt: null } }, /no email reply/],
   ];

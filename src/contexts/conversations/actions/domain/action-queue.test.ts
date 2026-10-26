@@ -28,7 +28,7 @@ const facts = (partial: Partial<QueueFacts> = {}): QueueFacts => ({
   hasProblemDraft: false,
   hasFailedJob: false,
   hasDraftToReview: false,
-  hasClassificationToReview: false,
+  hasReplyTypePickToReview: false,
   hasOpenTask: false,
   ...partial,
 });
@@ -37,12 +37,12 @@ describe("queue group and membership", () => {
   it("picks the first match of problem, reply, classification, follow_up, next_step", () => {
     expect(queueGroupOf(facts())).toBe("next_step");
     expect(queueGroupOf(facts({ workflowState: "waiting" }))).toBe("follow_up");
-    expect(queueGroupOf(facts({ hasClassificationToReview: true }))).toBe("classification");
-    expect(queueGroupOf(facts({ hasClassificationToReview: true, hasDraftToReview: true }))).toBe("reply");
+    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true, hasDraftToReview: true }))).toBe("reply");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasProblemDraft: true }))).toBe("problem");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasFailedJob: true }))).toBe("problem");
     expect(queueGroupOf(facts({ workflowState: "error", hasDraftToReview: true }))).toBe("problem");
-    expect(queueGroupOf(facts({ workflowState: "waiting", hasClassificationToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ workflowState: "waiting", hasReplyTypePickToReview: true }))).toBe("classification");
   });
 
   it("admits action_required and error records, and waiting records whose time has come", () => {
@@ -59,7 +59,7 @@ describe("queue group and membership", () => {
   it("leaves a next_step record out while it has an open task, and keeps every other group", () => {
     expect(isInQueue(facts({ hasOpenTask: true }), NOW)).toBe(false);
     expect(isInQueue(facts({ hasOpenTask: true, hasDraftToReview: true }), NOW)).toBe(true);
-    expect(isInQueue(facts({ hasOpenTask: true, hasClassificationToReview: true }), NOW)).toBe(true);
+    expect(isInQueue(facts({ hasOpenTask: true, hasReplyTypePickToReview: true }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, workflowState: "error" }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, workflowState: "waiting", nextActionAt: new Date("2026-10-19T09:00:00Z") }), NOW)).toBe(true);
   });
@@ -96,8 +96,8 @@ describe("action queue domain", () => {
 
   it("parses filters and reads a bare due-before date as the end of that day", () => {
     expect(parseQueueFilter({})).toEqual({});
-    const f = parseQueueFilter({ category: "interested", channel: "email", group: "reply", subcategoryId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
-    expect(f).toMatchObject({ categoryKey: "interested", channel: "email", group: "reply", subcategoryId: ID });
+    const f = parseQueueFilter({ category: "interested", channel: "email", group: "reply", replyTypeId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
+    expect(f).toMatchObject({ groupKey: "interested", channel: "email", group: "reply", replyTypeId: ID });
     expect(f.dueBefore?.toISOString()).toBe("2026-10-15T23:59:59.999Z");
     expect(f.dueAfter?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
     expect(parseQueueFilter({ errorsOnly: "1" }).errorsOnly).toBe(true);

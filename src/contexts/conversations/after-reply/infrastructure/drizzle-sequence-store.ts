@@ -229,8 +229,8 @@ export async function loadStartOn(
   const [r] = rowsOf<{
     id: string;
     person_id: string;
-    subcategory_id: string | null;
-    category_key: string | null;
+    reply_type_id: string | null;
+    group_key: string | null;
     sub_key: string | null;
     sub_name: string | null;
     latest_inbound_message_id: string | null;
@@ -247,7 +247,7 @@ export async function loadStartOn(
     conv_channel: string | null;
   }>(
     await exec.execute(sql`
-      select r.id, r.person_id, r.subcategory_id, r.category_key, s.key as sub_key, s.name as sub_name, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
+      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              p.lifecycle = 'contact' as contact,
@@ -255,7 +255,7 @@ export async function loadStartOn(
              exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)) as suppressed
       from records r
       join people p on p.id = r.person_id and p.organization_id = r.organization_id
-      left join subcategories s on s.id = r.subcategory_id
+      left join reply_types s on s.id = r.reply_type_id
       left join lateral (
         select c.id, c.record_id, c.channel from conversations c
         where c.organization_id = ${organizationId} and ${publicConversationSql("c")}
@@ -309,10 +309,10 @@ export async function loadStartOn(
     record: {
       id: r.id,
       personId: r.person_id,
-      subcategoryId: r.subcategory_id,
-      categoryKey: r.category_key,
-      subcategoryKey: r.sub_key,
-      subcategoryName: r.sub_name,
+      replyTypeId: r.reply_type_id,
+      groupKey: r.group_key,
+      replyTypeKey: r.sub_key,
+      replyTypeName: r.sub_name,
       latestInboundMessageId: r.latest_inbound_message_id,
       lastInboundAt: asDateOrNull(r.last_inbound_at),
       lastOutboundAt: asDateOrNull(r.last_outbound_at),
@@ -354,8 +354,8 @@ export async function createRunOn(tx: Tx, run: NewRun): Promise<{ runId: string;
   }
   const [created] = rowsOf<{ id: string }>(
     await tx.execute(sql`
-      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, subcategory_id, status, current_step_position, start_step_position, started_by, trigger_message_id, last_inbound_at_start)
-      values (${run.organizationId}, ${run.recordId}, ${run.conversationId}, ${run.sequenceId}, ${run.sequenceVersionId}, ${run.subcategoryId}, 'active', ${run.startPosition}, ${run.startPosition}, ${run.source}, ${run.triggerMessageId}, ${ts(run.lastInboundAtStart)})
+      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, current_step_position, start_step_position, started_by, trigger_message_id, last_inbound_at_start)
+      values (${run.organizationId}, ${run.recordId}, ${run.conversationId}, ${run.sequenceId}, ${run.sequenceVersionId}, ${run.replyTypeId}, 'active', ${run.startPosition}, ${run.startPosition}, ${run.source}, ${run.triggerMessageId}, ${ts(run.lastInboundAtStart)})
       returning id`),
   );
   for (const step of run.steps) {

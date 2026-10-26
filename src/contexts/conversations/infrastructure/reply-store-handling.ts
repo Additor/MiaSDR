@@ -3,25 +3,25 @@ import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppr
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
 import { restartRecordWorkTx } from "./restart-record-work";
-import { aiJobs, classifications, conversations, drafts, events, people, records, subcategories } from "@/platform/db/schema";
+import { aiJobs, replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
 import { afterManualCategory } from "../domain/workflow-state";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** What a person decides about a reply: a classification of their own, or suppressing the sender. */
-export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" | "suppressSender"> = {
-  async applyHumanClassification(input) {
+export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | "suppressSender"> = {
+  async applyHumanReplyTypePick(input) {
     return db.transaction(async (tx) => {
       const [head] = await tx
         .select({
           recordId: records.id,
           personId: records.personId,
-          pipelineId: records.pipelineId,
+          replyTypeSetId: records.replyTypeSetId,
           version: records.contextVersion,
           latest: records.latestInboundMessageId,
-          categoryKey: records.categoryKey,
-          subcategoryId: records.subcategoryId,
+          groupKey: records.groupKey,
+          replyTypeId: records.replyTypeId,
           state: records.workflowState,
         })
         .from(conversations)
@@ -34,60 +34,60 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
 
       const [existing] = await tx
         .select()
-        .from(classifications)
-        .where(and(eq(classifications.messageId, head.latest), eq(classifications.expectedContextVersion, head.version)));
+        .from(replyTypePicks)
+        .where(and(eq(replyTypePicks.messageId, head.latest), eq(replyTypePicks.expectedContextVersion, head.version)));
 
       let targetId: string | null;
-      if (input.subcategoryKey === null) {
-        if (!existing || existing.status !== "proposed" || !existing.proposedSubcategoryId) throw new ConflictError("There is no AI proposal to accept.");
-        targetId = existing.proposedSubcategoryId;
+      if (input.replyTypeKey === null) {
+        if (!existing || existing.status !== "proposed" || !existing.proposedReplyTypeId) throw new ConflictError("There is no AI proposal to accept.");
+        targetId = existing.proposedReplyTypeId;
       } else {
         const [found] = await tx
-          .select({ id: subcategories.id })
-          .from(subcategories)
-          .where(and(eq(subcategories.pipelineId, head.pipelineId), eq(subcategories.key, input.subcategoryKey), eq(subcategories.active, true)));
+          .select({ id: replyTypes.id })
+          .from(replyTypes)
+          .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.key, input.replyTypeKey), eq(replyTypes.active, true)));
         if (!found) throw new ValidationError("That subcategory is not active in your reply categories.");
         targetId = found.id;
       }
-      const [target] = await tx.select().from(subcategories).where(eq(subcategories.id, targetId));
-      const accepted = input.subcategoryKey === null;
+      const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
+      const accepted = input.replyTypeKey === null;
 
-      let classificationId: string;
+      let replyTypePickId: string;
       if (existing) {
         await tx
-          .update(classifications)
-          .set({ status: accepted ? "accepted" : "overridden", appliedCategoryKey: target.categoryKey, appliedSubcategoryId: target.id, acknowledgedAt: new Date() })
-          .where(eq(classifications.id, existing.id));
-        classificationId = existing.id;
+          .update(replyTypePicks)
+          .set({ status: accepted ? "accepted" : "overridden", appliedGroupKey: target.groupKey, appliedReplyTypeId: target.id, acknowledgedAt: new Date() })
+          .where(eq(replyTypePicks.id, existing.id));
+        replyTypePickId = existing.id;
       } else {
         const [row] = await tx
-          .insert(classifications)
+          .insert(replyTypePicks)
           .values({
             organizationId: input.organizationId,
             recordId: head.recordId,
             messageId: head.latest,
             expectedContextVersion: head.version,
-            previousCategoryKey: head.categoryKey,
-            previousSubcategoryId: head.subcategoryId,
-            proposedCategoryKey: target.categoryKey,
-            proposedSubcategoryId: target.id,
-            appliedCategoryKey: target.categoryKey,
-            appliedSubcategoryId: target.id,
+            previousGroupKey: head.groupKey,
+            previousReplyTypeId: head.replyTypeId,
+            proposedGroupKey: target.groupKey,
+            proposedReplyTypeId: target.id,
+            appliedGroupKey: target.groupKey,
+            appliedReplyTypeId: target.id,
             confidence: "1.0000",
             reasoning: "Set by a person.",
             status: "overridden",
             provider: "human",
             acknowledgedAt: new Date(),
           })
-          .returning({ id: classifications.id });
-        classificationId = row.id;
+          .returning({ id: replyTypePicks.id });
+        replyTypePickId = row.id;
       }
 
-      const wantsDraft = input.wantsDraft(target.categoryKey, target.key);
+      const wantsDraft = input.wantsDraft(target.groupKey, target.key);
       const nextState = afterManualCategory(head.state, wantsDraft);
       await tx
         .update(records)
-        .set({ categoryKey: target.categoryKey, subcategoryId: target.id, categorySource: "human", workflowState: nextState })
+        .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", workflowState: nextState })
         .where(eq(records.id, head.recordId));
       // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
       // sequence of the corrected subcategory starts. The classification row follows to the new version so the fresh draft job accepts it.
@@ -100,16 +100,16 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
         now,
         actorUserId: input.actorUserId,
       });
-      await tx.update(classifications).set({ expectedContextVersion: restart.contextVersion }).where(eq(classifications.id, classificationId));
+      await tx.update(replyTypePicks).set({ expectedContextVersion: restart.contextVersion }).where(eq(replyTypePicks.id, replyTypePickId));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,
         recordId: head.recordId,
-        eventType: accepted ? "classification.accepted" : "classification.overridden",
+        eventType: accepted ? "reply_type_pick.accepted" : "reply_type_pick.overridden",
         actorType: "human",
         actorUserId: input.actorUserId,
-        fromData: { categoryKey: head.categoryKey, subcategoryId: head.subcategoryId },
-        toData: { categoryKey: target.categoryKey, subcategoryId: target.id },
+        fromData: { groupKey: head.groupKey, replyTypeId: head.replyTypeId },
+        toData: { groupKey: target.groupKey, replyTypeId: target.id },
         meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted },
         contextVersion: restart.contextVersion,
       });
@@ -117,19 +117,19 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
       if (wantsDraft) {
         // One draft job exists per classification (unique on kind and entity). A job that already finished for an earlier
         // version goes back to the queue under a key for this version; a queued job stays and picks up the new version.
-        const key = `initial_draft:classification:${classificationId}:v${restart.contextVersion}`;
+        const key = `initial_draft:classification:${replyTypePickId}:v${restart.contextVersion}`;
         await tx
           .insert(aiJobs)
-          .values({ organizationId: input.organizationId, kind: "initial_draft", entityType: "classification", entityId: classificationId, idempotencyKey: key, runAfter: sql`now() - interval '1 minute'`, payload: { humanInitiated: true } })
+          .values({ organizationId: input.organizationId, kind: "initial_draft", entityType: "classification", entityId: replyTypePickId, idempotencyKey: key, runAfter: sql`now() - interval '1 minute'`, payload: { humanInitiated: true } })
           .onConflictDoUpdate({
             target: [aiJobs.kind, aiJobs.entityType, aiJobs.entityId],
             set: { status: "queued", attempts: 0, runAfter: sql`now() - interval '1 minute'`, idempotencyKey: key, payload: sql`${aiJobs.payload} || '{"humanInitiated":true}'::jsonb`, completedAt: null, failedAt: null, lastError: null, lockedAt: null, lockedBy: null },
             setWhere: sql`${aiJobs.status} in ('succeeded', 'failed', 'skipped')`,
           });
-        const [job] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, classificationId)));
+        const [job] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, replyTypePickId)));
         draftQueued = job?.status === "queued" || job?.status === "running";
       }
-      return { personId: head.personId, categoryKey: target.categoryKey, subcategoryKey: target.key, draftQueued };
+      return { personId: head.personId, groupKey: target.groupKey, replyTypeKey: target.key, draftQueued };
     });
   },
 

@@ -51,9 +51,9 @@ describeDb("contact delete", () => {
     const member = await user("member", "member");
     const other = await user("other", "member");
     const admin = await user("admin", "admin");
-    const pipeline = await one(sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
-    const pipeline2 = await one(sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p2', false) returning id`);
-    const sub = await one(sql`insert into subcategories (organization_id, pipeline_id, category_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
+    const pipeline = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
+    const pipeline2 = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p2', false) returning id`);
+    const sub = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
     const mailbox = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${`box-${tag}@x.test`}, 'connected') returning id`);
     const account = await one(sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id) values (${org}, ${`acc-${tag}`}, ${`li-${tag}`}) returning id`);
     const personal = await one(sql`insert into campaigns (organization_id, channel, name, type, created_by) values (${org}, 'linkedin', 'Mine', 'personal', ${other}) returning id`);
@@ -85,7 +85,7 @@ describeDb("contact delete", () => {
   async function full(o: Org, label: string, opts: { companyId?: string | null; privateThread?: boolean } = {}) {
     const t = `${o.tag}-${label}`;
     const { person, email } = await bare(o, label, opts);
-    const record = await one(sql`insert into records (organization_id, person_id, pipeline_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
+    const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
     const box = `me-${t}@x.test`;
     const conversation = await one(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${o.org}, ${record}, 'email', ${box}) returning id`);
     const inbound = await one(sql`
@@ -96,7 +96,7 @@ describeDb("contact delete", () => {
       values (${o.org}, ${conversation}, 'email', ${box}, 'outbound', ${`out-${t}`}, 'reply', now()) returning id`);
     await sql`update records set latest_inbound_message_id = ${inbound} where id = ${record}`;
     await one(sql`
-      insert into classifications (organization_id, record_id, message_id, expected_context_version, previous_subcategory_id, proposed_subcategory_id, applied_subcategory_id, confidence)
+      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
       values (${o.org}, ${record}, ${inbound}, 0, ${o.sub}, ${o.sub}, ${o.sub}, 0.9) returning id`);
     await sql`insert into ai_jobs (organization_id, kind, status, entity_type, entity_id, idempotency_key, completed_at) values (${o.org}, 'classification', 'succeeded', 'message', ${inbound}, ${`job-c-${t}`}, now())`;
     const draft = await one(sql`
@@ -112,12 +112,12 @@ describeDb("contact delete", () => {
       values (${o.org}, ${version}, 1, 'reply', 'Step 1', 0, 'Write a short note.') returning id`);
     await sql`update sequence_versions set status = 'published', published_at = now() where id = ${version}`;
     const run = await one(sql`
-      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, subcategory_id, status, started_by, trigger_message_id, last_inbound_at_start)
+      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
       values (${o.org}, ${record}, ${conversation}, ${sequence}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
     await sql`
       insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;
-    await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'stage.moved', 'system')`;
+    await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'reply_type.changed', 'system')`;
     await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${o.org}, ${person}, 'lifecycle.converted', 'system')`;
     await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${record}, 'on the record')`;
     await sql`insert into notes (organization_id, person_id, body) values (${o.org}, ${person}, 'on the person')`;
@@ -137,7 +137,7 @@ describeDb("contact delete", () => {
     const lost = await closedDeal(o, person, "lost", `${label} pilot`);
     let privateConversation: string | null = null;
     if (opts.privateThread) {
-      const privateRecord = await one(sql`insert into records (organization_id, person_id, pipeline_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
+      const privateRecord = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
       privateConversation = await one(sql`
         insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${o.org}, ${privateRecord}, 'linkedin', ${`li-${t}`}, ${o.personal}) returning id`);
       await sql`
@@ -168,7 +168,7 @@ describeDb("contact delete", () => {
         (select count(*) from records where person_id = ${person})::int as records,
         (select count(*) from conversations where id in ${convs})::int as conversations,
         (select count(*) from messages where conversation_id in ${convs})::int as messages,
-        (select count(*) from classifications where record_id in ${recs})::int as classifications,
+        (select count(*) from reply_type_picks where record_id in ${recs})::int as classifications,
         (select count(*) from drafts where record_id in ${recs})::int as drafts,
         (select count(*) from sequence_runs where record_id in ${recs})::int as sequence_runs,
         (select count(*) from events where person_id = ${person} or record_id in ${recs})::int as events,

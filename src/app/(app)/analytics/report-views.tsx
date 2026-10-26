@@ -398,7 +398,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
           </TableBody>
         </Table>
       </section>
-      {report.bySubcategory.length > 0 && (
+      {report.byReplyType.length > 0 && (
         <section className={REPORT_BLOCK}>
           <Table>
             <TableHeader>
@@ -409,7 +409,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
               </TableRow>
             </TableHeader>
             <TableBody>
-              {report.bySubcategory.map((s) => (
+              {report.byReplyType.map((s) => (
                 <TableRow key={`${s.bucket}-${s.name}`}>
                   <TableCell>{s.name}</TableCell>
                   <TableCell>{s.bucket.replace("_", " ")}</TableCell>

@@ -126,7 +126,7 @@ describeDb("After a reply flows", () => {
     return campaignId;
   }
 
-  const subcategoryId = async (org: string, key: string) => (await one("select id from subcategories where organization_id = $1 and key = $2 order by created_at limit 1", [org, key])).id as string;
+  const replyTypeId = async (org: string, key: string) => (await one("select id from reply_types where organization_id = $1 and key = $2 order by created_at limit 1", [org, key])).id as string;
 
   /** Org with a campaign that emailed the lead and drafts follow-ups, one classified reply, and one cycle run. */
   async function withRun(steps: unknown[] = STEPS) {
@@ -814,8 +814,8 @@ describeDb("After a reply flows", () => {
 
     it("a reply classified into a closing category", async () => {
       const r = await blocked(async ({ f, run }) => {
-        const sub = await one("select id, category_key from subcategories where organization_id = $1 and key = 'customer'", [f.org]);
-        await sql`update records set subcategory_id = ${sub.id}, category_key = ${sub.category_key} where id = ${run.record_id}`;
+        const sub = await one("select id, group_key from reply_types where organization_id = $1 and key = 'customer'", [f.org]);
+        await sql`update records set reply_type_id = ${sub.id}, group_key = ${sub.group_key} where id = ${run.record_id}`;
       });
       expect(r.message).toMatch(/^The reply is classified as .+, so follow-ups do not apply\.$/);
     });
@@ -1032,8 +1032,8 @@ describeDb("After a reply flows", () => {
 
     it("a stage change to a terminal subcategory", async () => {
       const { f, run } = await withRun();
-      const sub = await subcategoryId(f.org, "not_required_right_now");
-      await sql`update records set category_key = 'not_interested', subcategory_id = ${sub}, context_version = context_version where organization_id = ${f.org}`;
+      const sub = await replyTypeId(f.org, "not_required_right_now");
+      await sql`update records set group_key = 'not_interested', reply_type_id = ${sub}, context_version = context_version where organization_id = ${f.org}`;
       await f.seqRun();
       await expectStopped(f, run.id, "terminal_stage");
     });
@@ -1109,8 +1109,8 @@ describeDb("After a reply flows", () => {
         organizationId: f.org,
         actorUserId: f.user,
         recordId: record.id,
-        categoryKey: "not_interested",
-        subcategoryId: await subcategoryId(f.org, "not_required_right_now"),
+        groupKey: "not_interested",
+        replyTypeId: await replyTypeId(f.org, "not_required_right_now"),
         expectedContextVersion: record.context_version,
         confirmUnlock: false,
         note: null,
@@ -1123,7 +1123,7 @@ describeDb("After a reply flows", () => {
     it("a person's classification into a terminal subcategory", async () => {
       const { f, run } = await withRun();
       const conversation = await one("select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = $1", [f.org]);
-      await stores.replies.applyHumanClassification({ organizationId: f.org, conversationId: conversation.id, subcategoryKey: "not_required_right_now", expectedContextVersion: conversation.context_version, actorUserId: f.user, wantsDraft: () => false });
+      await stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conversation.id, replyTypeKey: "not_required_right_now", expectedContextVersion: conversation.context_version, actorUserId: f.user, wantsDraft: () => false });
       await expectStoppedNow(f, run.id, "classification_corrected");
     });
 
@@ -1132,15 +1132,15 @@ describeDb("After a reply flows", () => {
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
       const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
       // The run started on demo_request. Information requested is another non-terminal subcategory of the default pipeline.
-      const other = await one("select id, category_key from subcategories where organization_id = $1 and key = 'information_requested'", [f.org]);
+      const other = await one("select id, group_key from reply_types where organization_id = $1 and key = 'information_requested'", [f.org]);
       expect(other).toBeDefined();
-      expect(await one("select s.key from sequence_runs r join subcategories s on s.id = r.subcategory_id where r.id = $1", [run.id])).toMatchObject({ key: "demo_request" });
+      expect(await one("select s.key from sequence_runs r join reply_types s on s.id = r.reply_type_id where r.id = $1", [run.id])).toMatchObject({ key: "demo_request" });
       await drizzleReplyHandlingStore.moveStage({
         organizationId: f.org,
         actorUserId: f.user,
         recordId: record.id,
-        categoryKey: other.category_key,
-        subcategoryId: other.id,
+        groupKey: other.group_key,
+        replyTypeId: other.id,
         expectedContextVersion: record.context_version,
         confirmUnlock: false,
         note: null,
@@ -1407,8 +1407,8 @@ describeDb("After a reply flows", () => {
       expect(await count("people", f.org)).toBe(1);
       expect(await one("select lifecycle from people where id = $1", [personId])).toMatchObject({ lifecycle: "contact" });
       expect(await count("messages", f.org, "direction = 'inbound'")).toBe(1);
-      expect(await count("classifications", f.org, "status in ('auto_applied', 'proposed')")).toBe(1);
-      expect(await one("select workflow_state, category_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "action_required", category_key: "interested" });
+      expect(await count("reply_type_picks", f.org, "status in ('auto_applied', 'proposed')")).toBe(1);
+      expect(await one("select workflow_state, group_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "action_required", group_key: "interested" });
       // The Inbox reply draft still waits for approval.
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
       expect(await count("sequence_runs", f.org)).toBe(0);

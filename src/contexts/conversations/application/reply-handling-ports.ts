@@ -1,16 +1,16 @@
-import type { AiInstructionBlock, CategoryKey, PipelineSettingsPatch, SubcategoryInput, SubcategoryPatch } from "../domain/reply-handling";
+import type { AiInstructionBlock, ReplyTypeGroup, ReplyHandlingSettingsPatch, ReplyTypeInput, ReplyTypePatch } from "../domain/reply-handling";
 import type { NoteScope } from "../actions/application/tasks-ports";
 
 /** Read models and write ports for reply handling. Every method carries the organization and filters by it. */
 
-export interface PipelineRef {
+export interface ReplyTypeSetRef {
   id: string;
   name: string;
 }
 
 export interface TaxonomyRow {
   id: string;
-  categoryKey: CategoryKey;
+  groupKey: ReplyTypeGroup;
   key: string;
   name: string;
   description: string | null;
@@ -24,7 +24,7 @@ export interface TaxonomyRow {
   historyCount: number;
 }
 
-export interface PipelineSettingsRow {
+export interface ReplyHandlingSettingsRow {
   autoApplyConfidence: number;
   reviewOther: boolean;
   customerRequiresReview: boolean;
@@ -33,19 +33,19 @@ export interface PipelineSettingsRow {
 }
 
 export interface Taxonomy {
-  pipeline: PipelineRef;
+  pipeline: ReplyTypeSetRef;
   subcategories: TaxonomyRow[];
-  settings: PipelineSettingsRow;
+  settings: ReplyHandlingSettingsRow;
 }
 
-export interface ClassificationEntry {
+export interface ReplyTypePickEntry {
   id: string;
   status: string;
   messageId: string;
   conversationId: string;
-  previous: { categoryKey: string | null; name: string | null };
-  proposed: { categoryKey: string | null; name: string | null };
-  applied: { categoryKey: string | null; name: string | null };
+  previous: { groupKey: string | null; name: string | null };
+  proposed: { groupKey: string | null; name: string | null };
+  applied: { groupKey: string | null; name: string | null };
   confidence: number | null;
   reasoning: string | null;
   error: string | null;
@@ -102,12 +102,12 @@ export interface EnrollmentEntry {
 export interface RecordDetail {
   record: {
     id: string;
-    pipelineId: string;
-    categoryKey: string | null;
-    subcategoryId: string | null;
-    subcategoryName: string | null;
-    categorySource: string | null;
-    categoryLocked: boolean;
+    replyTypeSetId: string;
+    groupKey: string | null;
+    replyTypeId: string | null;
+    replyTypeName: string | null;
+    replyTypeSource: string | null;
+    replyTypeLocked: boolean;
     workflowState: string;
     activeChannel: string | null;
     contextVersion: number;
@@ -124,20 +124,20 @@ export interface RecordDetail {
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
   suppressed: boolean;
   conversations: Array<{ id: string; channel: string; accountRef: string; status: string }>;
-  classifications: ClassificationEntry[];
+  classifications: ReplyTypePickEntry[];
   drafts: DraftEntry[];
   events: EventEntry[];
   notes: NoteEntry[];
   enrollments: EnrollmentEntry[];
-  stages: Array<{ id: string; key: string; categoryKey: CategoryKey; name: string; stageRank: number | null }>;
+  stages: Array<{ id: string; key: string; groupKey: ReplyTypeGroup; name: string; stageRank: number | null }>;
 }
 
-export interface StageMoveInput {
+export interface ReplyTypeChangeInput {
   organizationId: string;
   actorUserId: string;
   recordId: string;
-  categoryKey: CategoryKey;
-  subcategoryId: string | null;
+  groupKey: ReplyTypeGroup;
+  replyTypeId: string | null;
   expectedContextVersion: number;
   confirmUnlock: boolean;
   note: string | null;
@@ -145,11 +145,11 @@ export interface StageMoveInput {
   now: Date;
 }
 
-export interface StageMoveResult {
+export interface ReplyTypeChangeResult {
   recordId: string;
   personId: string;
-  categoryKey: string;
-  subcategoryKey: string | null;
+  groupKey: string;
+  replyTypeKey: string | null;
   contextVersion: number;
   draftsRetired: number;
 }
@@ -191,9 +191,9 @@ export interface ReplyHandlingStore {
   recordDetail(organizationId: string, recordId: string): Promise<RecordDetail | null>;
   draftIdForAttempt(organizationId: string, attemptId: string): Promise<string | null>;
 
-  moveStage(input: StageMoveInput): Promise<StageMoveResult>;
-  undoClassification(input: { organizationId: string; actorUserId: string; classificationId: string; now: Date }): Promise<{ recordId: string; draftsRetired: number }>;
-  acknowledgeClassification(input: { organizationId: string; actorUserId: string; classificationId: string; now: Date }): Promise<void>;
+  moveStage(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
+  undoReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<{ recordId: string; draftsRetired: number }>;
+  acknowledgeReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<void>;
   /** Sets or clears the person's do-not-contact flag and stops everything that would contact them. */
   setDoNotContact(input: { organizationId: string; actorUserId: string; personId: string; enabled: boolean; reason: string; now: Date }): Promise<DncResult>;
   closeRecord(input: { organizationId: string; actorUserId: string; recordId: string; reason: string; now: Date }): Promise<void>;
@@ -203,10 +203,10 @@ export interface ReplyHandlingStore {
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;
 
   taxonomy(organizationId: string): Promise<Taxonomy>;
-  createSubcategory(organizationId: string, input: SubcategoryInput): Promise<{ id: string }>;
-  updateSubcategory(organizationId: string, id: string, patch: SubcategoryPatch): Promise<void>;
-  deleteSubcategory(organizationId: string, id: string): Promise<void>;
-  updateSettings(organizationId: string, patch: PipelineSettingsPatch & { draftInstructions?: AiInstructionBlock[]; classificationInstructions?: AiInstructionBlock[] }): Promise<void>;
+  createReplyType(organizationId: string, input: ReplyTypeInput): Promise<{ id: string }>;
+  updateReplyType(organizationId: string, id: string, patch: ReplyTypePatch): Promise<void>;
+  deleteReplyType(organizationId: string, id: string): Promise<void>;
+  updateSettings(organizationId: string, patch: ReplyHandlingSettingsPatch & { draftInstructions?: AiInstructionBlock[]; classificationInstructions?: AiInstructionBlock[] }): Promise<void>;
 
   listIdentityExceptions(organizationId: string, status: "open" | "resolved" | "ignored"): Promise<IdentityExceptionRow[]>;
   getIdentityException(organizationId: string, id: string): Promise<IdentityExceptionRow | null>;

@@ -7,7 +7,7 @@ import {
   aiJobs,
   campaignEnrollments,
   campaigns,
-  classifications,
+  replyTypePicks,
   companies,
   contactPolicies,
   conversations,
@@ -17,16 +17,16 @@ import {
   messages,
   notes,
   people,
-  pipelineSettings,
+  replyHandlingSettings,
   records,
   sendAttempts,
-  subcategories,
+  replyTypes,
   suppressionList,
   users,
 } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type {
-  ClassificationEntry,
+  ReplyTypePickEntry,
   ReplyHandlingStore,
   DncResult,
   DraftEntry,
@@ -35,22 +35,22 @@ import type {
   RecordDetail,
   Taxonomy,
 } from "../application/reply-handling-ports";
-import { REPLY_CATEGORIES, checkStageMove, type CategoryKey } from "../domain/reply-handling";
+import { REPLY_TYPE_GROUPS, checkReplyTypeChange, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen } from "../domain/workflow-state";
-import { defaultPipelineId, type Tx } from "./drizzle-conversation-store";
-import { onVisibleRecordSql, publicConversation, visibleClassificationSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
+import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
+import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { draftCanBecome } from "./reply-store-shared";
 import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
 import { rowsOf } from "@/platform/db/sql-values";
 
-const CATEGORY_ORDER = new Map<string, number>(REPLY_CATEGORIES.map((c, i) => [c.key, i]));
+const CATEGORY_ORDER = new Map<string, number>(REPLY_TYPE_GROUPS.map((c, i) => [c.key, i]));
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
 
-async function pipelineFor(organizationId: string) {
+async function replyTypeSetFor(organizationId: string) {
   return db.transaction(async (tx) => {
-    const id = await defaultPipelineId(tx, organizationId);
-    const settings = (await tx.select().from(pipelineSettings).where(eq(pipelineSettings.pipelineId, id)))[0];
-    if (!settings) await tx.insert(pipelineSettings).values({ pipelineId: id, organizationId }).onConflictDoNothing();
+    const id = await defaultReplyTypeSetId(tx, organizationId);
+    const settings = (await tx.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, id)))[0];
+    if (!settings) await tx.insert(replyHandlingSettings).values({ replyTypeSetId: id, organizationId }).onConflictDoNothing();
     return id;
   });
 }
@@ -98,7 +98,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     if (!head) return null;
     const { record, person } = head;
 
-    const subs = await db.select().from(subcategories).where(and(eq(subcategories.organizationId, organizationId), eq(subcategories.pipelineId, record.pipelineId)));
+    const subs = await db.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, record.replyTypeSetId)));
     const subName = (id: string | null) => subs.find((s) => s.id === id)?.name ?? null;
 
     const [convs, cls, draftRows, eventRows, noteRows, enrollmentRows, policy, suppressed] = await Promise.all([
@@ -108,11 +108,11 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .where(and(eq(conversations.recordId, recordId), eq(conversations.organizationId, organizationId), publicConversation))
         .orderBy(conversations.createdAt),
       db
-        .select({ c: classifications, conversationId: messages.conversationId })
-        .from(classifications)
-        .innerJoin(messages, eq(messages.id, classifications.messageId))
-        .where(and(eq(classifications.recordId, recordId), eq(classifications.organizationId, organizationId), visibleClassificationSql("classifications")))
-        .orderBy(desc(classifications.createdAt))
+        .select({ c: replyTypePicks, conversationId: messages.conversationId })
+        .from(replyTypePicks)
+        .innerJoin(messages, eq(messages.id, replyTypePicks.messageId))
+        .where(and(eq(replyTypePicks.recordId, recordId), eq(replyTypePicks.organizationId, organizationId), visibleReplyTypePickSql("reply_type_picks")))
+        .orderBy(desc(replyTypePicks.createdAt))
         .limit(30),
       db.select().from(drafts).where(and(eq(drafts.recordId, recordId), eq(drafts.organizationId, organizationId), visibleDraftSql("drafts"))).orderBy(desc(drafts.createdAt)).limit(30),
       db
@@ -156,17 +156,17 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       : [];
     const attemptOf = new Map(attempts.map((a) => [a.draftId, a.id]));
 
-    const classificationEntries = cls.map(({ c, conversationId }): ClassificationEntry => {
+    const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
       const latest = c.messageId === record.latestInboundMessageId;
-      const applied = ["auto_applied", "accepted", "overridden"].includes(c.status) && c.appliedCategoryKey !== null;
+      const applied = ["auto_applied", "accepted", "overridden"].includes(c.status) && c.appliedGroupKey !== null;
       return {
         id: c.id,
         status: c.status,
         messageId: c.messageId,
         conversationId,
-        previous: { categoryKey: c.previousCategoryKey, name: subName(c.previousSubcategoryId) },
-        proposed: { categoryKey: c.proposedCategoryKey, name: subName(c.proposedSubcategoryId) },
-        applied: { categoryKey: c.appliedCategoryKey, name: subName(c.appliedSubcategoryId) },
+        previous: { groupKey: c.previousGroupKey, name: subName(c.previousReplyTypeId) },
+        proposed: { groupKey: c.proposedGroupKey, name: subName(c.proposedReplyTypeId) },
+        applied: { groupKey: c.appliedGroupKey, name: subName(c.appliedReplyTypeId) },
         confidence: c.confidence === null ? null : Number(c.confidence),
         reasoning: c.reasoning,
         error: c.error,
@@ -182,12 +182,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return {
       record: {
         id: record.id,
-        pipelineId: record.pipelineId,
-        categoryKey: record.categoryKey,
-        subcategoryId: record.subcategoryId,
-        subcategoryName: subName(record.subcategoryId),
-        categorySource: record.categorySource,
-        categoryLocked: record.categoryLocked,
+        replyTypeSetId: record.replyTypeSetId,
+        groupKey: record.groupKey,
+        replyTypeId: record.replyTypeId,
+        replyTypeName: subName(record.replyTypeId),
+        replyTypeSource: record.replyTypeSource,
+        replyTypeLocked: record.replyTypeLocked,
         workflowState: record.workflowState,
         activeChannel: record.activeChannel,
         contextVersion: record.contextVersion,
@@ -211,7 +211,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       policy: policy[0] ? { doNotContact: policy[0].doNotContact, reason: policy[0].reason, source: policy[0].source, setAt: policy[0].setAt, clearedAt: policy[0].clearedAt } : null,
       suppressed: suppressed.length > 0,
       conversations: convs,
-      classifications: classificationEntries,
+      classifications: replyTypePickEntries,
       drafts: draftRows.map(
         (d): DraftEntry => ({
           id: d.id,
@@ -230,8 +230,8 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       enrollments: enrollmentRows,
       stages: subs
         .filter((s) => s.active)
-        .sort((a, b) => (CATEGORY_ORDER.get(a.categoryKey) ?? 9) - (CATEGORY_ORDER.get(b.categoryKey) ?? 9) || (a.stageRank ?? 1000) - (b.stageRank ?? 1000) || a.sortOrder - b.sortOrder)
-        .map((s) => ({ id: s.id, key: s.key, categoryKey: s.categoryKey as CategoryKey, name: s.name, stageRank: s.stageRank })),
+        .sort((a, b) => (CATEGORY_ORDER.get(a.groupKey) ?? 9) - (CATEGORY_ORDER.get(b.groupKey) ?? 9) || (a.stageRank ?? 1000) - (b.stageRank ?? 1000) || a.sortOrder - b.sortOrder)
+        .map((s) => ({ id: s.id, key: s.key, groupKey: s.groupKey as ReplyTypeGroup, name: s.name, stageRank: s.stageRank })),
     };
   },
 
@@ -243,25 +243,25 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
   async moveStage(input) {
     return db.transaction(async (tx) => {
       const before = await lockRecord(tx, input.organizationId, input.recordId);
-      let sub: typeof subcategories.$inferSelect | undefined;
-      if (input.subcategoryId) {
+      let sub: typeof replyTypes.$inferSelect | undefined;
+      if (input.replyTypeId) {
         [sub] = await tx
           .select()
-          .from(subcategories)
-          .where(and(eq(subcategories.id, input.subcategoryId), eq(subcategories.organizationId, input.organizationId), eq(subcategories.pipelineId, before.pipelineId)));
+          .from(replyTypes)
+          .where(and(eq(replyTypes.id, input.replyTypeId), eq(replyTypes.organizationId, input.organizationId), eq(replyTypes.replyTypeSetId, before.replyTypeSetId)));
         if (!sub) throw new NotFoundError("Subcategory not found");
-        if (sub.categoryKey !== input.categoryKey) throw new ValidationError("That subcategory belongs to another category.");
+        if (sub.groupKey !== input.groupKey) throw new ValidationError("That subcategory belongs to another category.");
         if (!sub.active) throw new ConflictError("An archived subcategory cannot be assigned.");
       }
-      const { categoryLocked } = checkStageMove({
-        before: { categoryKey: before.categoryKey, subcategoryId: before.subcategoryId, categoryLocked: before.categoryLocked, contextVersion: before.contextVersion, workflowState: before.workflowState },
-        target: { categoryKey: input.categoryKey, subcategoryId: input.subcategoryId },
+      const { replyTypeLocked } = checkReplyTypeChange({
+        before: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeLocked: before.replyTypeLocked, contextVersion: before.contextVersion, workflowState: before.workflowState },
+        target: { groupKey: input.groupKey, replyTypeId: input.replyTypeId },
         expectedContextVersion: input.expectedContextVersion,
         confirmUnlock: input.confirmUnlock,
       });
       await tx
         .update(records)
-        .set({ categoryKey: input.categoryKey, subcategoryId: input.subcategoryId, categorySource: "human", categoryLocked, workflowState: "action_required", nextActionAt: null })
+        .set({ groupKey: input.groupKey, replyTypeId: input.replyTypeId, replyTypeSource: "human", replyTypeLocked, workflowState: "action_required", nextActionAt: null })
         .where(eq(records.id, before.id));
       // The old stage's run and drafts end, the version goes up, and the new stage's sequence starts, all in this commit.
       const { contextVersion: version, draftsRetired } = await restartRecordWorkTx(tx, {
@@ -276,47 +276,47 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         organizationId: input.organizationId,
         personId: before.personId,
         recordId: before.id,
-        eventType: "stage.moved",
+        eventType: "reply_type.changed",
         actorType: "human",
         actorUserId: input.actorUserId,
-        fromData: { categoryKey: before.categoryKey, subcategoryId: before.subcategoryId, categorySource: before.categorySource, categoryLocked: before.categoryLocked },
-        toData: { categoryKey: input.categoryKey, subcategoryId: input.subcategoryId, categorySource: "human", categoryLocked },
-        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.categoryLocked && input.categoryKey !== "customer" },
+        fromData: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeSource: before.replyTypeSource, replyTypeLocked: before.replyTypeLocked },
+        toData: { groupKey: input.groupKey, replyTypeId: input.replyTypeId, replyTypeSource: "human", replyTypeLocked },
+        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && input.groupKey !== "customer" },
         contextVersion: version,
       });
-      return { recordId: before.id, personId: before.personId, categoryKey: input.categoryKey, subcategoryKey: sub?.key ?? null, contextVersion: version, draftsRetired };
+      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired };
     });
   },
 
-  async undoClassification(input) {
+  async undoReplyTypePick(input) {
     return db.transaction(async (tx) => {
       const [candidate] = await tx
-        .select({ recordId: classifications.recordId })
-        .from(classifications)
-        .where(and(eq(classifications.id, input.classificationId), eq(classifications.organizationId, input.organizationId)));
+        .select({ recordId: replyTypePicks.recordId })
+        .from(replyTypePicks)
+        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId)));
       if (!candidate) throw new NotFoundError("Classification not found");
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
-      const [cls] = await tx.select().from(classifications).where(eq(classifications.id, input.classificationId)).for("update");
+      const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
       if (cls.messageId !== record.latestInboundMessageId) throw new ConflictError("Only the classification of the latest inbound message can be undone.");
-      if (!cls.appliedCategoryKey || !["auto_applied", "accepted", "overridden"].includes(cls.status)) throw new ConflictError("This classification has no applied change to undo.");
-      if (record.categoryKey !== cls.appliedCategoryKey || record.subcategoryId !== cls.appliedSubcategoryId) {
+      if (!cls.appliedGroupKey || !["auto_applied", "accepted", "overridden"].includes(cls.status)) throw new ConflictError("This classification has no applied change to undo.");
+      if (record.groupKey !== cls.appliedGroupKey || record.replyTypeId !== cls.appliedReplyTypeId) {
         throw new ConflictError("A person moved the reply to another category after this classification. Change the category by hand.");
       }
       const version = record.contextVersion + 1;
-      const previous = cls.previousCategoryKey;
+      const previous = cls.previousGroupKey;
       await tx
         .update(records)
         .set({
-          categoryKey: previous,
-          subcategoryId: previous ? cls.previousSubcategoryId : null,
-          categorySource: previous ? "human" : null,
-          categoryLocked: previous === "customer",
+          groupKey: previous,
+          replyTypeId: previous ? cls.previousReplyTypeId : null,
+          replyTypeSource: previous ? "human" : null,
+          replyTypeLocked: previous === "customer",
           workflowState: afterPersonDecision(record.workflowState),
           nextActionAt: null,
           contextVersion: version,
         })
         .where(eq(records.id, record.id));
-      await tx.update(classifications).set({ status: "rejected", acknowledgedAt: input.now }).where(eq(classifications.id, cls.id));
+      await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
       // A draft job that has not run yet would write a reply for the classification a person just rejected.
       await tx
         .update(aiJobs)
@@ -329,38 +329,38 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         organizationId: input.organizationId,
         personId: record.personId,
         recordId: record.id,
-        eventType: "classification.undone",
+        eventType: "reply_type_pick.undone",
         actorType: "human",
         actorUserId: input.actorUserId,
-        fromData: { categoryKey: record.categoryKey, subcategoryId: record.subcategoryId },
-        toData: { categoryKey: previous, subcategoryId: previous ? cls.previousSubcategoryId : null },
-        meta: { classificationId: cls.id },
+        fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
+        toData: { groupKey: previous, replyTypeId: previous ? cls.previousReplyTypeId : null },
+        meta: { replyTypePickId: cls.id },
         contextVersion: version,
       });
       return { recordId: record.id, draftsRetired };
     });
   },
 
-  async acknowledgeClassification(input) {
+  async acknowledgeReplyTypePick(input) {
     await db.transaction(async (tx) => {
       const [candidate] = await tx
-        .select({ recordId: classifications.recordId })
-        .from(classifications)
-        .where(and(eq(classifications.id, input.classificationId), eq(classifications.organizationId, input.organizationId)));
+        .select({ recordId: replyTypePicks.recordId })
+        .from(replyTypePicks)
+        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId)));
       if (!candidate) throw new NotFoundError("Classification not found");
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
-      const [cls] = await tx.select().from(classifications).where(eq(classifications.id, input.classificationId)).for("update");
+      const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
       if (cls.acknowledgedAt) return;
       if (cls.status === "proposed") throw new ConflictError("Accept or change the AI's suggestion instead of acknowledging it.");
-      await tx.update(classifications).set({ acknowledgedAt: input.now }).where(eq(classifications.id, cls.id));
+      await tx.update(replyTypePicks).set({ acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: record.personId,
         recordId: record.id,
-        eventType: "classification.acknowledged",
+        eventType: "reply_type_pick.acknowledged",
         actorType: "human",
         actorUserId: input.actorUserId,
-        meta: { classificationId: cls.id },
+        meta: { replyTypePickId: cls.id },
         contextVersion: record.contextVersion,
       });
     });
@@ -522,25 +522,25 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
   },
 
   async taxonomy(organizationId): Promise<Taxonomy> {
-    const pipelineId = await pipelineFor(organizationId);
-    const [pipeline] = rowsOf<{ id: string; name: string }>(await db.execute(sql`select id, name from pipelines where id = ${pipelineId}`));
+    const replyTypeSetId = await replyTypeSetFor(organizationId);
+    const [pipeline] = rowsOf<{ id: string; name: string }>(await db.execute(sql`select id, name from reply_type_sets where id = ${replyTypeSetId}`));
     const rows = rowsOf<Record<string, unknown>>(
       await db.execute(sql`
         select s.*,
-          (select count(*)::int from records r where r.subcategory_id = s.id) as record_count,
-          (select count(*)::int from classifications k
-            where k.organization_id = s.organization_id and s.id in (k.previous_subcategory_id, k.proposed_subcategory_id, k.applied_subcategory_id)) as history_count
-        from subcategories s
-        where s.organization_id = ${organizationId} and s.pipeline_id = ${pipelineId}
+          (select count(*)::int from records r where r.reply_type_id = s.id) as record_count,
+          (select count(*)::int from reply_type_picks k
+            where k.organization_id = s.organization_id and s.id in (k.previous_reply_type_id, k.proposed_reply_type_id, k.applied_reply_type_id)) as history_count
+        from reply_types s
+        where s.organization_id = ${organizationId} and s.reply_type_set_id = ${replyTypeSetId}
         order by s.sort_order, s.name`),
     );
-    const [settings] = await db.select().from(pipelineSettings).where(eq(pipelineSettings.pipelineId, pipelineId));
+    const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, replyTypeSetId));
     return {
       pipeline,
       subcategories: rows
         .map((r) => ({
           id: r.id as string,
-          categoryKey: r.category_key as CategoryKey,
+          groupKey: r.group_key as ReplyTypeGroup,
           key: r.key as string,
           name: r.name as string,
           description: r.description as string | null,
@@ -552,7 +552,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           recordCount: Number(r.record_count),
           historyCount: Number(r.history_count),
         }))
-        .sort((a, b) => (CATEGORY_ORDER.get(a.categoryKey) ?? 9) - (CATEGORY_ORDER.get(b.categoryKey) ?? 9) || (a.stageRank ?? 1000) - (b.stageRank ?? 1000) || a.sortOrder - b.sortOrder),
+        .sort((a, b) => (CATEGORY_ORDER.get(a.groupKey) ?? 9) - (CATEGORY_ORDER.get(b.groupKey) ?? 9) || (a.stageRank ?? 1000) - (b.stageRank ?? 1000) || a.sortOrder - b.sortOrder),
       settings: {
         autoApplyConfidence: Number(settings.autoApplyConfidence),
         reviewOther: settings.reviewOther,
@@ -563,18 +563,18 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     };
   },
 
-  async createSubcategory(organizationId, input) {
-    const pipelineId = await pipelineFor(organizationId);
+  async createReplyType(organizationId, input) {
+    const replyTypeSetId = await replyTypeSetFor(organizationId);
     const [{ next }] = await db
-      .select({ next: sql<number>`coalesce(max(${subcategories.sortOrder}), -1) + 1` })
-      .from(subcategories)
-      .where(and(eq(subcategories.organizationId, organizationId), eq(subcategories.pipelineId, pipelineId)));
+      .select({ next: sql<number>`coalesce(max(${replyTypes.sortOrder}), -1) + 1` })
+      .from(replyTypes)
+      .where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, replyTypeSetId)));
     const [row] = await db
-      .insert(subcategories)
+      .insert(replyTypes)
       .values({
         organizationId,
-        pipelineId,
-        categoryKey: input.categoryKey,
+        replyTypeSetId,
+        groupKey: input.groupKey,
         key: input.key,
         name: input.name,
         description: input.description,
@@ -584,23 +584,23 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         sortOrder: Number(next),
       })
       .onConflictDoNothing()
-      .returning({ id: subcategories.id });
+      .returning({ id: replyTypes.id });
     if (!row) throw new ConflictError(`A subcategory with the key "${input.key}" already exists.`);
     return row;
   },
 
-  async updateSubcategory(organizationId, id, patch) {
+  async updateReplyType(organizationId, id, patch) {
     const updated = await db
-      .update(subcategories)
+      .update(replyTypes)
       .set(patch)
-      .where(and(eq(subcategories.id, id), eq(subcategories.organizationId, organizationId)))
-      .returning({ id: subcategories.id });
+      .where(and(eq(replyTypes.id, id), eq(replyTypes.organizationId, organizationId)))
+      .returning({ id: replyTypes.id });
     if (updated.length === 0) throw new NotFoundError("Subcategory not found");
   },
 
-  async deleteSubcategory(organizationId, id) {
+  async deleteReplyType(organizationId, id) {
     try {
-      const removed = await db.delete(subcategories).where(and(eq(subcategories.id, id), eq(subcategories.organizationId, organizationId))).returning({ id: subcategories.id });
+      const removed = await db.delete(replyTypes).where(and(eq(replyTypes.id, id), eq(replyTypes.organizationId, organizationId))).returning({ id: replyTypes.id });
       if (removed.length === 0) throw new NotFoundError("Subcategory not found");
     } catch (error) {
       // The composite foreign key on records stops a delete that raced with a new assignment.
@@ -610,12 +610,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
   },
 
   async updateSettings(organizationId, patch) {
-    const pipelineId = await pipelineFor(organizationId);
+    const replyTypeSetId = await replyTypeSetFor(organizationId);
     const { autoApplyConfidence, ...rest } = patch;
     await db
-      .update(pipelineSettings)
+      .update(replyHandlingSettings)
       .set({ ...rest, ...(autoApplyConfidence === undefined ? {} : { autoApplyConfidence: autoApplyConfidence.toFixed(3) }) })
-      .where(and(eq(pipelineSettings.pipelineId, pipelineId), eq(pipelineSettings.organizationId, organizationId)));
+      .where(and(eq(replyHandlingSettings.replyTypeSetId, replyTypeSetId), eq(replyHandlingSettings.organizationId, organizationId)));
   },
 
   async listIdentityExceptions(organizationId, status) {

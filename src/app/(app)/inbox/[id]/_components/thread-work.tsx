@@ -38,10 +38,10 @@ const DRAFT_STATUS: Record<string, string> = {
 
 function eventDetail(e: EventEntry): string | null {
   const meta = e.meta as { note?: unknown; reason?: unknown; title?: unknown };
-  const to = e.toData as { categoryKey?: string | null; lostReason?: unknown } | null;
+  const to = e.toData as { groupKey?: string | null; lostReason?: unknown } | null;
   // `reason` is a code token on most events; only the do-not-contact events carry a reason a person typed.
   const typed = [meta.note, e.eventType.startsWith("contact_policy.") ? meta.reason : null, to?.lostReason, e.eventType.startsWith("deal.") ? meta.title : null];
-  const parts = [to?.categoryKey ? categoryLabel(to.categoryKey) : null, ...typed.filter((v): v is string => typeof v === "string" && v.trim() !== "")].filter(Boolean);
+  const parts = [to?.groupKey ? categoryLabel(to.groupKey) : null, ...typed.filter((v): v is string => typeof v === "string" && v.trim() !== "")].filter(Boolean);
   return parts.length ? parts.join(". ") : null;
 }
 

@@ -47,7 +47,7 @@ export const INDEX_DEBT: Record<string, string> = Object.fromEntries(
     "linkedin_enrollment_details",
     "linkedin_search_results",
     "notes",
-    "pipeline_settings",
+    "reply_handling_settings",
     "send_attempts",
     "sequence_step_runs",
   ].map((table) => [table, INDEX_DEBT_REASON]),
@@ -62,8 +62,8 @@ export const SCOPED_BY_SIBLING_KEY: Record<string, string> = {
     "Points at a version of the document itself (document_id = id). knowledge_document_versions reaches the document through (document_id, organization_id).",
   "messages.messages_conversation_id_channel_account_ref_conversations_id_c":
     "Pins channel and account_ref to the conversation. messages_conversation_id_organization_id_conversations_id_organization_id_fk scopes the same conversation_id.",
-  "records.records_subcategory_id_pipeline_id_category_key_subcategories_i":
-    "The subcategory shares the record's pipeline_id. records and subcategories both reach pipelines through (pipeline_id, organization_id).",
+  "records.records_reply_type_id_reply_type_set_id_group_key_reply_types_i":
+    "The reply type shares the record's reply_type_set_id. records and reply_types both reach reply_type_sets through (reply_type_set_id, organization_id).",
 };
 
 interface TableFacts {

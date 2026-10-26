@@ -59,10 +59,10 @@ describeDb("master inbox", () => {
 
     const [person] = await sql`select * from people where organization_id = ${f.org}`;
     expect(person).toMatchObject({ email: "jane.doe@acme.test", source: "inbound", full_name: "Jane Doe", first_name: "Jane", last_name: "Doe", lifecycle: "lead", converted_at: null });
-    const [pipeline] = await sql`select * from pipelines where organization_id = ${f.org}`;
+    const [pipeline] = await sql`select * from reply_type_sets where organization_id = ${f.org}`;
     expect(pipeline.is_default).toBe(true);
-    expect(await count("pipeline_settings", f.org)).toBe(1);
-    expect(await count("subcategories", f.org)).toBeGreaterThan(10);
+    expect(await count("reply_handling_settings", f.org)).toBe(1);
+    expect(await count("reply_types", f.org)).toBeGreaterThan(10);
     const [record] = await sql`select * from records where organization_id = ${f.org}`;
     expect(record).toMatchObject({ workflow_state: "action_required", active_channel: "email", context_version: 1 });
     expect(record.latest_inbound_message_id).toBe(result.messageId);
@@ -90,7 +90,7 @@ describeDb("master inbox", () => {
     const f = await fixture();
     const sender = { email: "same@acme.test", name: null };
     await Promise.all([1, 2, 3, 4].map(() => composition.ingestInbound(mail(f, { from: sender }))));
-    expect(await count("pipelines", f.org)).toBe(1);
+    expect(await count("reply_type_sets", f.org)).toBe(1);
     expect(await count("people", f.org)).toBe(1);
     expect(await count("records", f.org)).toBe(1);
     expect(await count("messages", f.org)).toBe(4);

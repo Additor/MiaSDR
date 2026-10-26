@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { conversations, leadCcs, mailboxes, messages, people, pipelines, pipelineSettings, records, subcategories } from "@/platform/db/schema";
-import { DEFAULT_PIPELINE_NAME, DEFAULT_SUBCATEGORIES } from "../domain/default-pipeline";
+import { conversations, leadCcs, mailboxes, messages, people, replyTypeSets, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
+import { DEFAULT_PIPELINE_NAME, DEFAULT_REPLY_TYPES } from "../domain/default-reply-types";
 import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundConversationStore, InboundEmailInput } from "../application/ports";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
@@ -11,29 +11,29 @@ import { staleOpenDraftsTx } from "./stale-drafts-sql";
 export type Tx = DbTx;
 
 /** The organization's default pipeline, created with its settings and starter subcategories on first use. */
-export async function defaultPipelineId(tx: Tx, organizationId: string): Promise<string> {
+export async function defaultReplyTypeSetId(tx: Tx, organizationId: string): Promise<string> {
   const find = async () =>
-    (await tx.select({ id: pipelines.id }).from(pipelines).where(and(eq(pipelines.organizationId, organizationId), eq(pipelines.isDefault, true))))[0]?.id;
+    (await tx.select({ id: replyTypeSets.id }).from(replyTypeSets).where(and(eq(replyTypeSets.organizationId, organizationId), eq(replyTypeSets.isDefault, true))))[0]?.id;
   const existing = await find();
   if (existing) return existing;
 
   // A concurrent first message loses the insert race and reads the winner's row.
   const [created] = await tx
-    .insert(pipelines)
+    .insert(replyTypeSets)
     .values({ organizationId, name: DEFAULT_PIPELINE_NAME, isDefault: true })
     .onConflictDoNothing()
-    .returning({ id: pipelines.id });
+    .returning({ id: replyTypeSets.id });
   if (!created) {
     const winner = await find();
     if (winner) return winner;
     throw new Error(`Could not create the default pipeline: another pipeline is already named "${DEFAULT_PIPELINE_NAME}".`);
   }
-  await tx.insert(pipelineSettings).values({ pipelineId: created.id, organizationId });
-  await tx.insert(subcategories).values(
-    DEFAULT_SUBCATEGORIES.map((s, index) => ({
+  await tx.insert(replyHandlingSettings).values({ replyTypeSetId: created.id, organizationId });
+  await tx.insert(replyTypes).values(
+    DEFAULT_REPLY_TYPES.map((s, index) => ({
       organizationId,
-      pipelineId: created.id,
-      categoryKey: s.categoryKey,
+      replyTypeSetId: created.id,
+      groupKey: s.groupKey,
       key: s.key,
       name: s.name,
       description: s.description,
@@ -72,12 +72,12 @@ async function findOrCreatePerson(tx: Tx, organizationId: string, from: { email:
   return { id: (await find()) as string, created: false };
 }
 
-export async function findOrCreateRecord(tx: Tx, organizationId: string, personId: string, pipelineId: string): Promise<string> {
-  await tx.insert(records).values({ organizationId, personId, pipelineId }).onConflictDoNothing();
+export async function findOrCreateRecord(tx: Tx, organizationId: string, personId: string, replyTypeSetId: string): Promise<string> {
+  await tx.insert(records).values({ organizationId, personId, replyTypeSetId }).onConflictDoNothing();
   const [row] = await tx
     .select({ id: records.id })
     .from(records)
-    .where(and(eq(records.personId, personId), eq(records.pipelineId, pipelineId)));
+    .where(and(eq(records.personId, personId), eq(records.replyTypeSetId, replyTypeSetId)));
   return row.id;
 }
 
@@ -145,7 +145,7 @@ export const drizzleConversationStore: InboundConversationStore = {
         if (input.personId && !chosen) throw new Error(`Person ${input.personId} is not in organization ${input.organizationId}.`);
         const person = chosen ? { id: chosen.id, created: false } : await findOrCreatePerson(tx, input.organizationId, input.from);
         personCreated = person.created;
-        const recordId = await findOrCreateRecord(tx, input.organizationId, person.id, await defaultPipelineId(tx, input.organizationId));
+        const recordId = await findOrCreateRecord(tx, input.organizationId, person.id, await defaultReplyTypeSetId(tx, input.organizationId));
         await tx
           .insert(conversations)
           .values({ organizationId: input.organizationId, recordId, channel: "email", accountRef: input.accountRef, providerThreadId: input.providerThreadId })

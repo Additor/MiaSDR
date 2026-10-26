@@ -184,7 +184,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   const queueEmpty = queue !== null && groups.length === 0;
   const nowIso = new Date(now).toISOString();
   const oldestWaiting = counts.oldestWaiting[scope];
-  const filterValues = { category: raw.category, channel: raw.channel, group: raw.group, subcategoryId: raw.subcategoryId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
+  const filterValues = { category: raw.category, channel: raw.channel, group: raw.group, replyTypeId: raw.replyTypeId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
   const filtered = hasAnyFilter(filterValues);
   // "Nothing waits" holds only when tasks, unconfirmed sends, unmatched senders and dead letters are empty too.
   const clear = isWorkClear({
@@ -230,7 +230,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     { scope: "others", label: "Others" },
   ] as const;
   const unassignedCount = counts.work.unassigned;
-  const subcategories = taxonomy.subcategories.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, categoryKey: t.categoryKey }));
+  const subcategories = taxonomy.subcategories.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
   const queueChips = queueFilterChips(filterValues, scope, { subcategories, campaigns });
 
   return (

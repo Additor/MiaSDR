@@ -8,7 +8,7 @@ import { describeDb, testSql } from "../../../test-support/db";
 const INDEXES: Array<[string, string, string]> = [
   ["people_org_created_idx", "people", "(organization_id, created_at, id)"],
   ["people_org_name_idx", "people", "(organization_id, lower(full_name), id)"],
-  ["classifications_record_created_idx", "classifications", "(record_id, created_at)"],
+  ["reply_type_picks_record_created_idx", "reply_type_picks", "(record_id, created_at)"],
   ["events_person_created_idx", "events", "(person_id, created_at)"],
   ["identity_exceptions_org_status_created_idx", "identity_exceptions", "(organization_id, status, created_at)"],
   ["knowledge_documents_org_active_idx", "knowledge_documents", "(organization_id, active, kind)"],

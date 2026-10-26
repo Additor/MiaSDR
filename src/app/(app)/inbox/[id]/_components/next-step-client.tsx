@@ -34,7 +34,7 @@ export interface NextStepProps {
   personId: string;
   personName: string;
   firstName: string;
-  category: { label: string | null; source: string | null; locked: boolean; subcategoryId: string | null };
+  category: { label: string | null; source: string | null; locked: boolean; replyTypeId: string | null };
   contextVersion: number;
   stages: StageOption[];
   aiReading: AiReading | null;
@@ -123,8 +123,8 @@ export function NextStepClient(props: NextStepProps) {
             conversationId={props.conversationId}
             personName={personName}
             contextVersion={props.contextVersion}
-            currentSubcategoryId={category.subcategoryId}
-            categoryLocked={category.locked}
+            currentReplyTypeId={category.replyTypeId}
+            replyTypeLocked={category.locked}
             stages={props.stages}
             aiReading={props.aiReading}
           />

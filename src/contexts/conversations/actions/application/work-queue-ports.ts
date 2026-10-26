@@ -10,8 +10,8 @@ export interface QueueItem {
   personLifecycle: "lead" | "contact";
   /** The thread to open. Null when the record has no public conversation. */
   conversationId: string | null;
-  categoryKey: string | null;
-  subcategoryName: string | null;
+  groupKey: string | null;
+  replyTypeName: string | null;
   channel: string | null;
   workflowState: string;
   /** Who handles the replies, or null while nobody does. */
@@ -24,7 +24,7 @@ export interface QueueItem {
   /** `preview` is the start of the draft's current text on one line, read for the rows of a page only. */
   draft: { draftId: string; status: string; subject: string | null; updatedAt: Date; preview: string | null } | null;
   /** `contextVersion` is the record version the suggestion was written for: accepting a held one sends it back. */
-  classification: { classificationId: string; kind: "held" | "changed"; categoryKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
+  classification: { replyTypePickId: string; kind: "held" | "changed"; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
   problem: { kind: QueueProblemKind; message: string } | null;
 }
 

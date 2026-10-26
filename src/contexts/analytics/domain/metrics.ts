@@ -266,7 +266,7 @@ export interface RepliesReport {
   classifiedShare: number | null;
   byBucket: Array<{ bucket: CategoryBucket; label: string; replies: number; share: number | null }>;
   byChannel: Array<{ channel: Channel; total: number; byBucket: Record<CategoryBucket, number> }>;
-  bySubcategory: Array<{ bucket: CategoryBucket; name: string; replies: number }>;
+  byReplyType: Array<{ bucket: CategoryBucket; name: string; replies: number }>;
   /** Suppression rows created in the window. Null when a campaign filter is on: a suppression has no campaign. */
   suppressions: Record<SuppressionReason, number> | null;
 }
@@ -297,7 +297,7 @@ export function repliesReport(rows: readonly ReplyCountRow[], suppressions: Part
       const byBucket = perChannel.get(channel) as Record<CategoryBucket, number>;
       return { channel, total: CATEGORY_BUCKETS.reduce((sum, b) => sum + byBucket[b], 0), byBucket };
     }),
-    bySubcategory: [...subs.values()].sort((a, b) => b.replies - a.replies || a.name.localeCompare(b.name)),
+    byReplyType: [...subs.values()].sort((a, b) => b.replies - a.replies || a.name.localeCompare(b.name)),
     suppressions: suppressions === null ? null : Object.fromEntries(SUPPRESSION_REASONS.map((r) => [r, suppressions[r] ?? 0])) as Record<SuppressionReason, number>,
   };
 }

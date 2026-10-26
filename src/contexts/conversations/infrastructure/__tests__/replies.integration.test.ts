@@ -20,9 +20,9 @@ describeDb("AI classification, drafts and approval", () => {
       const f = await fixture();
       const r = await receive(f);
       const record = await one("select * from records where organization_id = $1", [f.org]);
-      expect(record).toMatchObject({ category_key: "interested", category_source: "ai", workflow_state: "action_required" });
-      const cls = await one("select * from classifications where organization_id = $1", [f.org]);
-      expect(cls).toMatchObject({ status: "auto_applied", applied_category_key: "interested", provider: "fake" });
+      expect(record).toMatchObject({ group_key: "interested", reply_type_source: "ai", workflow_state: "action_required" });
+      const cls = await one("select * from reply_type_picks where organization_id = $1", [f.org]);
+      expect(cls).toMatchObject({ status: "auto_applied", applied_group_key: "interested", provider: "fake" });
       expect(Number(cls.confidence)).toBeCloseTo(0.92);
       expect(cls.reasoning).toMatch(/demo/i);
       const [draft] = await sql`select * from drafts where organization_id = ${f.org}`;
@@ -37,17 +37,17 @@ describeDb("AI classification, drafts and approval", () => {
       f.ai!.classifyWith = () => ({ subcategoryKey: "demo_request", confidence: 0.6, reason: "Maybe a demo." });
       const r = await receive(f);
       const record = await one("select * from records where organization_id = $1", [f.org]);
-      expect(record.category_key).toBeNull();
-      expect(await one("select status from classifications where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
+      expect(record.group_key).toBeNull();
+      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
       expect(await count("drafts", f.org)).toBe(0);
       const p = await panel(f, r.conversationId);
       expect(p.classification).toMatchObject({ status: "proposed", holdReason: "low_confidence", current: true });
-      expect(p.classification?.proposed?.subcategoryKey).toBe("demo_request");
+      expect(p.classification?.proposed?.replyTypeKey).toBe("demo_request");
 
       // A person accepts: the category is applied as human and a draft is queued and written.
-      const accepted = await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: null, expectedContextVersion: await version(f) });
-      expect(accepted).toMatchObject({ subcategoryKey: "demo_request", draftQueued: true });
-      expect(await one("select category_source from records where organization_id = $1", [f.org])).toMatchObject({ category_source: "human" });
+      const accepted = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: null, expectedContextVersion: await version(f) });
+      expect(accepted).toMatchObject({ replyTypeKey: "demo_request", draftQueued: true });
+      expect(await one("select reply_type_source from records where organization_id = $1", [f.org])).toMatchObject({ reply_type_source: "human" });
       await f.run();
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
@@ -56,9 +56,9 @@ describeDb("AI classification, drafts and approval", () => {
       const f = await fixture();
       await composition.ingestInbound(mail(f, { bodyText: "pricing please" }));
       // The pipeline exists after the first ingest; raise the bar above the fake's 0.88 before the AI runs.
-      await sql`update pipeline_settings set auto_apply_confidence = 0.95 where organization_id = ${f.org}`;
+      await sql`update reply_handling_settings set auto_apply_confidence = 0.95 where organization_id = ${f.org}`;
       await f.run();
-      expect(await one("select status from classifications where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
+      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
     });
 
     it("discards a result when newer context arrived during the call", async () => {
@@ -76,15 +76,15 @@ describeDb("AI classification, drafts and approval", () => {
       };
       await f.run();
       const record = await one("select * from records where organization_id = $1", [f.org]);
-      expect(record.category_key).toBeNull();
+      expect(record.group_key).toBeNull();
       expect(record.context_version).toBe(2);
-      expect(await one("select status from classifications where organization_id = $1 order by created_at limit 1", [f.org])).toMatchObject({ status: "stale" });
+      expect(await one("select status from reply_type_picks where organization_id = $1 order by created_at limit 1", [f.org])).toMatchObject({ status: "stale" });
       expect(await count("drafts", f.org)).toBe(0);
       // The next tick classifies the newer message.
       f.ai!.classify = original;
       f.ai!.classifyWith = null;
       await f.run();
-      expect(await count("classifications", f.org, "status <> 'stale'")).toBe(1);
+      expect(await count("reply_type_picks", f.org, "status <> 'stale'")).toBe(1);
     });
 
     it("a prompt injection cannot reach a category outside the pipeline or trigger a send", async () => {
@@ -97,8 +97,8 @@ describeDb("AI classification, drafts and approval", () => {
       await stores.jobs.enqueueMissing(new Date());
       await sql`update ai_jobs set max_attempts = 1 where organization_id = ${f.org}`;
       await f.run();
-      expect(await one("select * from records where organization_id = $1", [f.org])).toMatchObject({ category_key: null, subcategory_id: null });
-      expect(await one("select status from classifications where organization_id = $1", [f.org])).toMatchObject({ status: "failed" });
+      expect(await one("select * from records where organization_id = $1", [f.org])).toMatchObject({ group_key: null, reply_type_id: null });
+      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "failed" });
       // The text reached the model only inside a fence, and the allowed keys never included the invented one.
       expect(f.ai!.lastClassifyInput?.taxonomy.map((t) => t.key)).not.toContain("system_admin");
       expect(await count("send_attempts", f.org)).toBe(0);
@@ -112,7 +112,7 @@ describeDb("AI classification, drafts and approval", () => {
       await composition.ingestInbound(mail(f));
       await f.run();
       await f.run();
-      expect(await count("classifications", f.org, "status in ('auto_applied', 'proposed')")).toBe(0);
+      expect(await count("reply_type_picks", f.org, "status in ('auto_applied', 'proposed')")).toBe(0);
     });
 
     it("does nothing and reports not_configured when the organization has no AI", async () => {
@@ -120,7 +120,7 @@ describeDb("AI classification, drafts and approval", () => {
       await composition.ingestInbound(mail(f));
       const detail = (await f.run()).detail;
       expect(detail?.not_configured).toBeGreaterThanOrEqual(1);
-      expect(await count("classifications", f.org)).toBe(0);
+      expect(await count("reply_type_picks", f.org)).toBe(0);
       expect(await count("drafts", f.org)).toBe(0);
       const job = await one("select status, attempts from ai_jobs where organization_id = $1", [f.org]);
       expect(job).toMatchObject({ status: "queued", attempts: 0 });
@@ -142,9 +142,9 @@ describeDb("AI classification, drafts and approval", () => {
     it("settles the record to idle when an applied classification asks for no reply", async () => {
       const f = await fixture();
       await composition.ingestInbound(mail(f, { bodyText: "I am out of office until Monday.", subject: "Out of office" }));
-      await sql`update pipeline_settings set review_other = false where organization_id = ${f.org}`;
+      await sql`update reply_handling_settings set review_other = false where organization_id = ${f.org}`;
       await f.run();
-      expect(await one("select workflow_state, category_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "idle", category_key: "other" });
+      expect(await one("select workflow_state, group_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "idle", group_key: "other" });
       expect(await count("drafts", f.org)).toBe(0);
     });
 
@@ -156,8 +156,8 @@ describeDb("AI classification, drafts and approval", () => {
       const f = await fixture();
       if (answer) f.ai!.classifyWith = () => answer;
       const r = await receive(f, reply);
-      expect(await one("select workflow_state, category_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "action_required", category_key: null });
-      expect(await one("select status, proposed_category_key from classifications where organization_id = $1", [f.org])).toMatchObject({ status: "proposed", proposed_category_key: category });
+      expect(await one("select workflow_state, group_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "action_required", group_key: null });
+      expect(await one("select status, proposed_group_key from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed", proposed_group_key: category });
       expect((await panel(f, r.conversationId)).classification?.holdReason).toBe("requires_review");
     });
   });
@@ -397,10 +397,10 @@ describeDb("AI classification, drafts and approval", () => {
     it("lets a person classify without AI, then the draft waits for a configured provider", async () => {
       const f = await fixture({ ai: null });
       const r = await composition.ingestInbound(mail(f));
-      const done = await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "demo_request", expectedContextVersion: await version(f) });
-      expect(done).toMatchObject({ categoryKey: "interested", draftQueued: true });
-      expect(await one("select category_source from records where organization_id = $1", [f.org])).toMatchObject({ category_source: "human" });
-      expect(await one("select status from classifications where organization_id = $1", [f.org])).toMatchObject({ status: "overridden" });
+      const done = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: await version(f) });
+      expect(done).toMatchObject({ groupKey: "interested", draftQueued: true });
+      expect(await one("select reply_type_source from records where organization_id = $1", [f.org])).toMatchObject({ reply_type_source: "human" });
+      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "overridden" });
     });
 
     it("marks the person do not contact when a person's reading lands in Do not contact, as a move off the thread does", async () => {
@@ -408,11 +408,11 @@ describeDb("AI classification, drafts and approval", () => {
       const r = await composition.ingestInbound(mail(f));
       const handling = await import("../../application/reply-handling");
       const handlingDeps = (await import("../reply-handling-composition")).replyHandlingDeps();
-      const other = await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "demo_request", expectedContextVersion: await version(f) });
+      const other = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: await version(f) });
       await handling.followDoNotContactCategory(handlingDeps, f.actor, other);
       expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
-      const stop = await mgmt.setClassification(f.replyDeps, f.actor, r.conversationId, { subcategoryKey: "do_not_contact", expectedContextVersion: await version(f) });
-      expect(stop).toMatchObject({ subcategoryKey: "do_not_contact", draftQueued: false });
+      const stop = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "do_not_contact", expectedContextVersion: await version(f) });
+      expect(stop).toMatchObject({ replyTypeKey: "do_not_contact", draftQueued: false });
       await handling.followDoNotContactCategory(handlingDeps, f.actor, stop);
       expect(await one("select do_not_contact, reason from contact_policies where organization_id = $1", [f.org])).toMatchObject({ do_not_contact: true, reason: "Moved to Do not contact by a person." });
     });
@@ -439,7 +439,7 @@ describeDb("AI classification, drafts and approval", () => {
       await expect(mgmt.discardDraft(other.replyDeps, other.actor, draft.id)).rejects.toBeInstanceOf(NotFoundError);
       await expect(mgmt.approveAndSendDraft(other.replyDeps, other.actor, draft.id, { revision: 1, idempotencyKey: sendKey() })).rejects.toBeInstanceOf(NotFoundError);
       await expect(mgmt.getReplyPanel(other.replyDeps, other.actor, r.conversationId)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(mgmt.setClassification(other.replyDeps, other.actor, r.conversationId, { subcategoryKey: "other", expectedContextVersion: 0 })).rejects.toBeInstanceOf(NotFoundError);
+      await expect(mgmt.setReplyType(other.replyDeps, other.actor, r.conversationId, { replyTypeKey: "other", expectedContextVersion: 0 })).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 });

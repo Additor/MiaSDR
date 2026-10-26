@@ -14,9 +14,9 @@ interface Entry {
   id: string;
   status: string;
   conversationId: string;
-  previous: { categoryKey: string | null; name: string | null };
-  proposed: { categoryKey: string | null; name: string | null };
-  applied: { categoryKey: string | null; name: string | null };
+  previous: { groupKey: string | null; name: string | null };
+  proposed: { groupKey: string | null; name: string | null };
+  applied: { groupKey: string | null; name: string | null };
   confidence: number | null;
   reasoning: string | null;
   error: string | null;
@@ -29,9 +29,9 @@ interface Entry {
 }
 
 /** "Interested: Demo request", or just "Other" when the subcategory repeats the category. */
-const label = (c: { categoryKey: string | null; name: string | null }) => {
-  if (!c.categoryKey) return "Unclassified";
-  const category = categoryLabel(c.categoryKey);
+const label = (c: { groupKey: string | null; name: string | null }) => {
+  if (!c.groupKey) return "Unclassified";
+  const category = categoryLabel(c.groupKey);
   return c.name && c.name.trim().toLowerCase() !== category.toLowerCase() ? `${category}: ${c.name}` : category;
 };
 

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
-import { dueAfter, isTerminalSubcategory } from "../domain/sequences";
+import { dueAfter, isTerminalReplyType } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 import { rowsOf } from "@/platform/db/sql-values";
 
@@ -47,8 +47,8 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
  */
 export async function interruptOnTerminalStageTx(
   tx: Tx,
-  input: { organizationId: string; recordId: string; categoryKey: string | null; subcategoryKey: string | null; subcategoryId: string | null; now: Date },
+  input: { organizationId: string; recordId: string; groupKey: string | null; replyTypeKey: string | null; replyTypeId: string | null; now: Date },
 ): Promise<number> {
-  if (!isTerminalSubcategory(input.categoryKey, input.subcategoryKey)) return 0;
-  return interruptRecordRunsTx(tx, input.organizationId, input.recordId, "terminal_stage", input.now, input.subcategoryId ?? undefined);
+  if (!isTerminalReplyType(input.groupKey, input.replyTypeKey)) return 0;
+  return interruptRecordRunsTx(tx, input.organizationId, input.recordId, "terminal_stage", input.now, input.replyTypeId ?? undefined);
 }

@@ -102,7 +102,7 @@ describe("reply buckets", () => {
     );
     expect(report.total).toBe(4);
     expect(report.classifiedShare).toBe(0.75);
-    expect(report.bySubcategory).toEqual([{ bucket: "interested", name: "Meeting requested", replies: 3 }]);
+    expect(report.byReplyType).toEqual([{ bucket: "interested", name: "Meeting requested", replies: 3 }]);
     expect(report.byChannel[1].total).toBe(1);
     expect(report.suppressions).toBeNull();
   });

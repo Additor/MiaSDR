@@ -81,7 +81,7 @@ export function stripComments(source: string): string {
   return out;
 }
 
-const GUARD = /\b(?:publicConversation(?:Sql|Text)?|visible(?:Record|Draft|Classification)(?:Sql|Text))\b/;
+const GUARD = /\b(?:publicConversation(?:Sql|Text)?|visible(?:Record|Draft|ReplyTypePick)(?:Sql|Text))\b/;
 
 /** Reads whose line has no guard within WINDOW lines on either side. Imports and the helper's own file do not count. */
 const WINDOW = 40;

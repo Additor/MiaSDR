@@ -16,7 +16,7 @@ export type DateMode = (typeof DATE_MODES)[number];
 export const OUT_OF_OFFICE_KEY = "out_of_office";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SUBCATEGORY_KEY = /^[a-z][a-z0-9_]*$/;
+const REPLY_TYPE_KEY = /^[a-z][a-z0-9_]*$/;
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MAX_VALUES = 20;
 const DAY_MS = 86_400_000;
@@ -118,8 +118,8 @@ export interface InboxParams {
   leadQuery: string;
   campaignIds: string[];
   mailboxIds: string[];
-  subcategoryKeys: string[];
-  categoryKeys: string[];
+  replyTypeKeys: string[];
+  groupKeys: string[];
   dateMode: DateMode;
   dateFrom: string;
   dateTo: string;
@@ -142,8 +142,8 @@ export function parseInboxParams(raw: Raw): InboxParams {
     leadQuery: (lead.find((v) => !UUID.test(v)) ?? "").slice(0, 200),
     campaignIds: all(raw.campaign).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
     mailboxIds: all(raw.mailbox).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
-    subcategoryKeys: all(raw.subcategory).filter((v) => SUBCATEGORY_KEY.test(v)).slice(0, MAX_VALUES),
-    categoryKeys: all(raw.category).filter((v): v is (typeof INBOX_CATEGORIES)[number] => (INBOX_CATEGORIES as readonly string[]).includes(v)),
+    replyTypeKeys: all(raw.subcategory).filter((v) => REPLY_TYPE_KEY.test(v)).slice(0, MAX_VALUES),
+    groupKeys: all(raw.category).filter((v): v is (typeof INBOX_CATEGORIES)[number] => (INBOX_CATEGORIES as readonly string[]).includes(v)),
     dateMode,
     dateFrom,
     dateTo,
@@ -160,8 +160,8 @@ export function inboxHref(params: Partial<InboxParams>, override: Partial<InboxP
   if (p.leadQuery) qs.append("lead", p.leadQuery);
   for (const id of p.campaignIds ?? []) qs.append("campaign", id);
   for (const id of p.mailboxIds ?? []) qs.append("mailbox", id);
-  for (const k of p.subcategoryKeys ?? []) qs.append("subcategory", k);
-  for (const k of p.categoryKeys ?? []) qs.append("category", k);
+  for (const k of p.replyTypeKeys ?? []) qs.append("subcategory", k);
+  for (const k of p.groupKeys ?? []) qs.append("category", k);
   if (p.dateMode && p.dateMode !== "all") {
     qs.set("range", p.dateMode);
     if (p.dateMode === "custom") {
@@ -180,8 +180,8 @@ export function activeFilterCount(p: InboxParams): number {
     Number(p.leadIds.length > 0 || p.leadQuery !== "") +
     Number(p.campaignIds.length > 0) +
     Number(p.mailboxIds.length > 0) +
-    Number(p.subcategoryKeys.length > 0) +
-    Number(p.categoryKeys.length > 0) +
+    Number(p.replyTypeKeys.length > 0) +
+    Number(p.groupKeys.length > 0) +
     Number(p.dateMode !== "all")
   );
 }

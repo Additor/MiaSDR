@@ -4,12 +4,12 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Act
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import {
   PROTECTED_SUBCATEGORY_KEY,
-  isCategoryKey,
+  isReplyTypeGroup,
   parseInstructionBlocks,
-  parsePipelineSettings,
-  parseSubcategoryInput,
-  parseSubcategoryPatch,
-  type CategoryKey,
+  parseReplyHandlingSettings,
+  parseReplyTypeInput,
+  parseReplyTypePatch,
+  type ReplyTypeGroup,
 } from "../domain/reply-handling";
 import type { ReplyHandlingStore, IdentityExceptionRow, RecordDetail } from "./reply-handling-ports";
 import type { InboundLinkedInInput } from "./linkedin-ports";
@@ -69,8 +69,8 @@ export async function getRecord(deps: ReplyHandlingDeps, actor: Actor, recordId:
 }
 
 export interface MoveStageInput {
-  categoryKey: string;
-  subcategoryId: string | null;
+  groupKey: string;
+  replyTypeId: string | null;
   expectedContextVersion: number;
   confirmUnlock?: boolean;
   note?: string | null;
@@ -80,13 +80,13 @@ export interface MoveStageInput {
 /**
  * A person moves a record to another stage because something happened off the thread (a meeting took
  * place, a trial started). The AI's reading of the latest reply stays as it was; the move is logged as
- * `stage.moved`. A move into Do not contact also sets the person's do-not-contact flag, because the
+ * `reply_type.changed`. A move into Do not contact also sets the person's do-not-contact flag, because the
  * person who made it has decided to stop contact.
  */
-export async function moveRecordStage(deps: ReplyHandlingDeps, actor: Actor, recordId: string, input: MoveStageInput) {
+export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, recordId: string, input: MoveStageInput) {
   assertId(recordId, "Reply handling");
-  if (!isCategoryKey(input.categoryKey)) throw new ValidationError("Choose one of the four categories.");
-  if (input.subcategoryId !== null) assertId(input.subcategoryId, "Subcategory");
+  if (!isReplyTypeGroup(input.groupKey)) throw new ValidationError("Choose one of the four categories.");
+  if (input.replyTypeId !== null) assertId(input.replyTypeId, "Subcategory");
   if (!Number.isInteger(input.expectedContextVersion) || input.expectedContextVersion < 0) throw new ValidationError("The reply handling version is missing. Reload and try again.");
   const note = input.note?.trim() || null;
   if (note && note.length > 4000) throw new ValidationError("The note is longer than 4000 characters.");
@@ -98,8 +98,8 @@ export async function moveRecordStage(deps: ReplyHandlingDeps, actor: Actor, rec
     organizationId: actor.organizationId,
     actorUserId: actor.userId,
     recordId,
-    categoryKey: input.categoryKey as CategoryKey,
-    subcategoryId: input.subcategoryId,
+    groupKey: input.groupKey as ReplyTypeGroup,
+    replyTypeId: input.replyTypeId,
     expectedContextVersion: input.expectedContextVersion,
     confirmUnlock: input.confirmUnlock === true,
     note,
@@ -114,21 +114,21 @@ export async function moveRecordStage(deps: ReplyHandlingDeps, actor: Actor, rec
  * A person put the record in Do not contact, by a move off the thread or by their own reading of the reply: they have decided
  * to stop contact, so the do-not-contact flag follows on every channel. Any other subcategory leaves the flag alone.
  */
-export async function followDoNotContactCategory(deps: ReplyHandlingDeps, actor: Actor, result: { personId: string; subcategoryKey: string | null }) {
-  if (result.subcategoryKey !== PROTECTED_SUBCATEGORY_KEY) return;
+export async function followDoNotContactCategory(deps: ReplyHandlingDeps, actor: Actor, result: { personId: string; replyTypeKey: string | null }) {
+  if (result.replyTypeKey !== PROTECTED_SUBCATEGORY_KEY) return;
   await deps.store.setDoNotContact({ organizationId: actor.organizationId, actorUserId: actor.userId, personId: result.personId, enabled: true, reason: "Moved to Do not contact by a person.", now: deps.now() });
 }
 
 /** Reverts the latest applied classification to what the record had before, as a person's decision. */
-export async function undoClassification(deps: ReplyHandlingDeps, actor: Actor, classificationId: string) {
-  assertId(classificationId, "Classification");
-  return deps.store.undoClassification({ organizationId: actor.organizationId, actorUserId: actor.userId, classificationId, now: deps.now() });
+export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string) {
+  assertId(replyTypePickId, "Classification");
+  return deps.store.undoReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
 }
 
 /** Marks an AI classification as seen. A held proposal is not acknowledged, it is accepted or overridden. */
-export async function acknowledgeClassification(deps: ReplyHandlingDeps, actor: Actor, classificationId: string): Promise<void> {
-  assertId(classificationId, "Classification");
-  await deps.store.acknowledgeClassification({ organizationId: actor.organizationId, actorUserId: actor.userId, classificationId, now: deps.now() });
+export async function acknowledgeReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<void> {
+  assertId(replyTypePickId, "Classification");
+  await deps.store.acknowledgeReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
 }
 
 /**
@@ -250,33 +250,33 @@ function requireAdmin(actor: Actor): void {
 
 export const getReplyTaxonomy = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.taxonomy(actor.organizationId);
 
-export async function createSubcategory(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
+export async function createReplyType(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
   requireAdmin(actor);
-  const input = parseSubcategoryInput(raw);
+  const input = parseReplyTypeInput(raw);
   const { subcategories } = await deps.store.taxonomy(actor.organizationId);
   if (subcategories.some((s) => s.key === input.key)) throw new ConflictError(`A subcategory with the key "${input.key}" already exists.`);
-  if (subcategories.some((s) => s.categoryKey === input.categoryKey && s.name.toLowerCase() === input.name.toLowerCase())) {
+  if (subcategories.some((s) => s.groupKey === input.groupKey && s.name.toLowerCase() === input.name.toLowerCase())) {
     throw new ConflictError(`"${input.name}" already exists in this category.`);
   }
-  return deps.store.createSubcategory(actor.organizationId, input);
+  return deps.store.createReplyType(actor.organizationId, input);
 }
 
-export async function updateSubcategory(deps: ReplyHandlingDeps, actor: Actor, id: string, raw: Record<string, unknown>): Promise<void> {
+export async function updateReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string, raw: Record<string, unknown>): Promise<void> {
   requireAdmin(actor);
   assertId(id, "Subcategory");
-  const patch = parseSubcategoryPatch(raw);
+  const patch = parseReplyTypePatch(raw);
   const { subcategories } = await deps.store.taxonomy(actor.organizationId);
   const current = subcategories.find((s) => s.id === id);
   if (!current) throw new NotFoundError("Subcategory not found");
   if (current.key === PROTECTED_SUBCATEGORY_KEY && patch.active === false) throw new ConflictError("Do not contact drives the stop-contact paths and cannot be archived.");
-  if (patch.name && subcategories.some((s) => s.id !== id && s.categoryKey === current.categoryKey && s.name.toLowerCase() === patch.name!.toLowerCase())) {
+  if (patch.name && subcategories.some((s) => s.id !== id && s.groupKey === current.groupKey && s.name.toLowerCase() === patch.name!.toLowerCase())) {
     throw new ConflictError(`"${patch.name}" already exists in this category.`);
   }
-  await deps.store.updateSubcategory(actor.organizationId, id, patch);
+  await deps.store.updateReplyType(actor.organizationId, id, patch);
 }
 
 /** Delete is blocked while records or classification history use the subcategory. Archive it instead. */
-export async function deleteSubcategory(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {
+export async function deleteReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {
   requireAdmin(actor);
   assertId(id, "Subcategory");
   const { subcategories } = await deps.store.taxonomy(actor.organizationId);
@@ -285,12 +285,12 @@ export async function deleteSubcategory(deps: ReplyHandlingDeps, actor: Actor, i
   if (current.key === PROTECTED_SUBCATEGORY_KEY) throw new ConflictError("Do not contact drives the stop-contact paths and cannot be deleted.");
   if (current.recordCount > 0) throw new ConflictError(`${current.recordCount} ${current.recordCount === 1 ? "person is" : "people are"} in this subcategory. Move them first, or archive it.`);
   if (current.historyCount > 0) throw new ConflictError("Classification history refers to this subcategory. Archive it instead of deleting it.");
-  await deps.store.deleteSubcategory(actor.organizationId, id);
+  await deps.store.deleteReplyType(actor.organizationId, id);
 }
 
 export async function updateReplySettings(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>): Promise<void> {
   requireAdmin(actor);
-  await deps.store.updateSettings(actor.organizationId, parsePipelineSettings(raw));
+  await deps.store.updateSettings(actor.organizationId, parseReplyHandlingSettings(raw));
 }
 
 export async function updateReplyAiInstructions(deps: ReplyHandlingDeps, actor: Actor, raw: { draftInstructions?: unknown; classificationInstructions?: unknown }): Promise<void> {

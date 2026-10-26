@@ -187,7 +187,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
                 </div>
                 {classification.reasoning && <p className="text-muted-foreground">{classification.reasoning}</p>}
                 <div>
-                  <Button size="sm" variant={classificationFirst ? "default" : "outline"} disabled={busy !== null} onClick={() => decide("accept", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: panel.contextVersion }), "Suggestion accepted.")}
+                  <Button size="sm" variant={classificationFirst ? "default" : "outline"} disabled={busy !== null} onClick={() => decide("accept", () => callApi(`/api/inbox/${panel.conversationId}/classification`, "POST", { replyTypeKey: null, expectedContextVersion: panel.contextVersion }), "Suggestion accepted.")}
                   >
                     Accept suggestion
                   </Button>

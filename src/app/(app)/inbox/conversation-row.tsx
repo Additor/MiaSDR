@@ -18,7 +18,7 @@ function RowState({ row }: { row: InboxRow }) {
       </span>
     );
   }
-  const label = row.autoReply ? "Auto-reply" : row.categoryKey ? (row.subcategoryName ?? categoryLabel(row.categoryKey)) : null;
+  const label = row.autoReply ? "Auto-reply" : row.groupKey ? (row.replyTypeName ?? categoryLabel(row.groupKey)) : null;
   return label ? <Badge variant="outline">{label}</Badge> : null;
 }
 

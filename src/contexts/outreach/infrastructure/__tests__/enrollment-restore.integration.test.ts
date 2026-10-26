@@ -146,8 +146,8 @@ describeDb("restore of removed enrollments", () => {
       const p = await f.person("Replied Person");
       const e = await f.enroll(c, p);
       // The reply arrived after the lead was removed: only the message shows it.
-      const [{ id: pipeline }] = await sql`select id from pipelines where organization_id = ${f.org} limit 1`.then((r) => (r.length ? r : sql`insert into pipelines (organization_id, name) values (${f.org}, 'P') returning id`));
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
+      const [{ id: pipeline }] = await sql`select id from reply_type_sets where organization_id = ${f.org} limit 1`.then((r) => (r.length ? r : sql`insert into reply_type_sets (organization_id, name) values (${f.org}, 'P') returning id`));
+      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
       const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${f.org}, ${record}, 'linkedin', 'acct') returning id`;
       await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at) values (${f.org}, ${conversation}, 'linkedin', 'acct', 'inbound', 'm1', 'Thanks, not now', now())`;
       await refuses(f, c, e, "replied");
@@ -158,8 +158,8 @@ describeDb("restore of removed enrollments", () => {
       const c = await f.campaign("Mail");
       const p = await f.person("Away Person");
       const e = await f.enroll(c, p);
-      const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name) values (${f.org}, 'P') returning id`;
-      const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
+      const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name) values (${f.org}, 'P') returning id`;
+      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`;
       const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${f.org}, ${record}, 'email', 'me@x.test') returning id`;
       await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, raw, sent_at) values (${f.org}, ${conversation}, 'email', 'me@x.test', 'inbound', 'm1', 'Out of office', ${sql.json({ autoReply: true } as never)}, now())`;
       expect(await restore(f, c, [e], "email")).toMatchObject({ restored: 1 });
@@ -376,8 +376,8 @@ describeDb("restore of removed enrollments", () => {
       const stopRan = new Promise<void>((resolve) => (stopped = resolve));
       // The reply transaction stores the message, stops the outreach and has not committed yet.
       const reply = db.transaction(async (tx) => {
-        const [{ id: pipeline }] = await tx.execute(drizzleSql`insert into pipelines (organization_id, name, is_default) values (${f.org}, 'p', true) returning id`) as unknown as Array<{ id: string }>;
-        const [{ id: record }] = (await tx.execute(drizzleSql`insert into records (organization_id, person_id, pipeline_id) values (${f.org}, ${p}, ${pipeline}) returning id`)) as unknown as Array<{ id: string }>;
+        const [{ id: pipeline }] = await tx.execute(drizzleSql`insert into reply_type_sets (organization_id, name, is_default) values (${f.org}, 'p', true) returning id`) as unknown as Array<{ id: string }>;
+        const [{ id: record }] = (await tx.execute(drizzleSql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${p}, ${pipeline}) returning id`)) as unknown as Array<{ id: string }>;
         const [{ id: conversation }] = (await tx.execute(drizzleSql`insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id) values (${f.org}, ${record}, 'linkedin', 'acct', 'chat') returning id`)) as unknown as Array<{ id: string }>;
         await tx.execute(drizzleSql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, from_address, to_address, body_text, sent_at)
                              values (${f.org}, ${conversation}, 'linkedin', 'acct', 'inbound', 'k-reply', 'p', 'me', 'Hello', now())`);

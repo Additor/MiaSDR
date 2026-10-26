@@ -44,12 +44,12 @@ export class FakeReplyAi implements ReplyAi {
     const first = input.person.name?.split(/\s+/)[0] ?? "there";
     const note = input.feedback ? `\n\n(Revised: ${input.feedback})` : "";
     if (input.channel === "linkedin") {
-      return { output: { subject: "", bodyText: `Hi ${first}, thanks for the reply. ${input.classification ? `We read this as: ${input.classification.subcategoryName}. ` : ""}What works best for you next?${note}` } };
+      return { output: { subject: "", bodyText: `Hi ${first}, thanks for the reply. ${input.classification ? `We read this as: ${input.classification.replyTypeName}. ` : ""}What works best for you next?${note}` } };
     }
     return {
       output: {
         subject: input.subject,
-        bodyText: `Hi ${first},\n\nThanks for getting back to us. ${input.classification ? `We read this as: ${input.classification.subcategoryName}. ` : ""}Happy to help, what works best for you next?${note}\n\nBest,\n${input.senderName ?? "The team"}`,
+        bodyText: `Hi ${first},\n\nThanks for getting back to us. ${input.classification ? `We read this as: ${input.classification.replyTypeName}. ` : ""}Happy to help, what works best for you next?${note}\n\nBest,\n${input.senderName ?? "The team"}`,
       },
     };
   }

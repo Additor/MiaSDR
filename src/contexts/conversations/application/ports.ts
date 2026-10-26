@@ -79,8 +79,8 @@ export interface InboxFilter {
   campaignIds?: string[];
   /** Conversations on any of these mailboxes. */
   mailboxIds?: string[];
-  subcategoryKeys?: string[];
-  categoryKeys?: string[];
+  replyTypeKeys?: string[];
+  groupKeys?: string[];
   /** Latest message at or after this instant. */
   from?: Date | null;
   /** Latest message before this instant. */
@@ -130,8 +130,8 @@ export interface InboxRow {
   hasImportant: boolean;
   /** The latest message is machine mail (header flags, no-reply or DMARC sender, delivery-failure subject). */
   automated: boolean;
-  categoryKey: string | null;
-  subcategoryName: string | null;
+  groupKey: string | null;
+  replyTypeName: string | null;
 }
 
 export interface ThreadMessage {

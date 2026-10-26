@@ -5,8 +5,8 @@ import { needsReply, replySubject } from "./reply-policy";
 import { detectsStopRequest, stripQuoted } from "./stop-request";
 
 const base: PolicyInput = {
-  proposal: { categoryKey: "interested", subcategoryKey: "demo_request", reviewRequired: false, stageRank: 1, confidence: 0.9 },
-  current: { categoryKey: null, stageRank: null, categoryLocked: false },
+  proposal: { groupKey: "interested", replyTypeKey: "demo_request", reviewRequired: false, stageRank: 1, confidence: 0.9 },
+  current: { groupKey: null, stageRank: null, replyTypeLocked: false },
   settings: { autoApplyConfidence: 0.85, reviewOther: true, customerRequiresReview: true },
 };
 const withProposal = (p: Partial<PolicyInput["proposal"]>, c: Partial<PolicyInput["current"]> = {}, s: Partial<PolicyInput["settings"]> = {}): PolicyInput => ({
@@ -22,22 +22,22 @@ describe("classification policy", () => {
   });
 
   it("holds customer, review-required subcategories and the other category", () => {
-    expect(decideApplication(withProposal({ categoryKey: "customer", subcategoryKey: "customer" }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ categoryKey: "customer", subcategoryKey: "customer" }, {}, { customerRequiresReview: false }))).toEqual({ action: "auto_apply" });
+    expect(decideApplication(withProposal({ groupKey: "customer", replyTypeKey: "customer" }))).toEqual({ action: "hold", reason: "requires_review" });
+    expect(decideApplication(withProposal({ groupKey: "customer", replyTypeKey: "customer" }, {}, { customerRequiresReview: false }))).toEqual({ action: "auto_apply" });
     expect(decideApplication(withProposal({ reviewRequired: true }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ categoryKey: "other", subcategoryKey: "other", stageRank: null }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ categoryKey: "other", subcategoryKey: "other", stageRank: null }, {}, { reviewOther: false }))).toEqual({ action: "auto_apply" });
+    expect(decideApplication(withProposal({ groupKey: "other", replyTypeKey: "other", stageRank: null }))).toEqual({ action: "hold", reason: "requires_review" });
+    expect(decideApplication(withProposal({ groupKey: "other", replyTypeKey: "other", stageRank: null }, {}, { reviewOther: false }))).toEqual({ action: "auto_apply" });
   });
 
   it("protects a locked customer and a higher funnel stage", () => {
-    expect(decideApplication(withProposal({}, { categoryKey: "customer", categoryLocked: true }))).toEqual({ action: "hold", reason: "protected_customer" });
-    expect(decideApplication(withProposal({ stageRank: 1 }, { categoryKey: "interested", stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
-    expect(decideApplication(withProposal({ categoryKey: "not_interested", subcategoryKey: "not_required_right_now", stageRank: null }, { stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
+    expect(decideApplication(withProposal({}, { groupKey: "customer", replyTypeLocked: true }))).toEqual({ action: "hold", reason: "protected_customer" });
+    expect(decideApplication(withProposal({ stageRank: 1 }, { groupKey: "interested", stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
+    expect(decideApplication(withProposal({ groupKey: "not_interested", replyTypeKey: "not_required_right_now", stageRank: null }, { stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
     expect(decideApplication(withProposal({ stageRank: 3 }, { stageRank: 3 }))).toEqual({ action: "auto_apply" });
   });
 
   it("lets do not contact through a stage", () => {
-    expect(decideApplication(withProposal({ categoryKey: "not_interested", subcategoryKey: "do_not_contact", stageRank: null, confidence: 0.99 }, { stageRank: 3 }))).toEqual({ action: "auto_apply" });
+    expect(decideApplication(withProposal({ groupKey: "not_interested", replyTypeKey: "do_not_contact", stageRank: null, confidence: 0.99 }, { stageRank: 3 }))).toEqual({ action: "auto_apply" });
   });
 });
 

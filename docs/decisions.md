@@ -492,7 +492,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 - `ai_jobs` (job `conversations.ai`) uses a lease and `SKIP LOCKED`. The tick sweeps records whose latest inbound message has no job. 3 attempts, retry delay `min(5 min, 2 s * 2^(attempts-1))`, a lease older than 5 minutes is taken over. With no AI provider configured the job releases the work without using an attempt.
 - **Untrusted text.** Email text, names, knowledge and operator instructions sit in tags with a per-request nonce. The output is closed: one active subcategory key, confidence 0 to 1, a reason up to 500 characters. Zod checks it in the adapter and the use case.
-- **Applying** (`classification-policy.ts`, deterministic). In order: hold a change away from a locked Existing customer; hold a move to a lower stage rank (`do_not_contact` exempt); hold `customer` when `customer_requires_review`, a `review_required` subcategory, or `other` when `review_other`; hold below `auto_apply_confidence` (default 0.85, `pipeline_settings`); else auto-apply. The write locks the record and compares `context_version` and `latest_inbound_message_id`; a mismatch stores a `stale` classification and changes nothing.
+- **Applying** (`classification-policy.ts`, deterministic). In order: hold a change away from a locked Existing customer; hold a move to a lower stage rank (`do_not_contact` exempt); hold `customer` when `customer_requires_review`, a `review_required` subcategory, or `other` when `review_other`; hold below `auto_apply_confidence` (default 0.85, `reply_handling_settings`); else auto-apply. The write locks the record and compares `context_version` and `latest_inbound_message_id`; a mismatch stores a `stale` classification and changes nothing.
 - **Stop requests.** A reply that asks to stop, or a `do_not_contact` classification, shows a banner with one button that suppresses the address. Nothing suppresses on its own.
 - **Unknown senders.** At most 50 AI replies a day for unknown senders (`channel_settings.general`, 0 blocks all). Over-cap jobs end `skipped` with reason `daily_cap`; an admin can requeue them.
 - **Failure kinds** (`payload.failureKind`): `transient` and `lease` failures are requeued by the sweep with backoff from 15 minutes (capped at 6 hours, ceiling 5); `shape` and `permanent` wait for an admin (`POST /api/jobs/ai/requeue`, `/api/jobs/ai/[id]/requeue`).
@@ -649,7 +649,7 @@ The enrollments a conversion cancels show the stop label "Became a contact" (`st
 | `moveDealStage` | Needs the current `version`; 409 `stale_version`. A lost stage needs a reason (422). |
 | `deleteDeal` | Open stages only (409 `deal_closed`). `DELETE /api/deals/[id]?expectedVersion=` checks the version when given. |
 
-Events: `deal.created`, `deal.stage_moved`, `deal.updated` and `deal.deleted`, each with `person_id` set and the deal id in `meta`. Activity reads `deal.stage_moved` as "Moved deal to {stage}", `stage.moved` as "Changed category" and `lifecycle.converted` as "Became a contact".
+Events: `deal.created`, `deal.stage_moved`, `deal.updated` and `deal.deleted`, each with `person_id` set and the deal id in `meta`. Activity reads `deal.stage_moved` as "Moved deal to {stage}", `reply_type.changed` as "Changed category" and `lifecycle.converted` as "Became a contact".
 
 #### Pipeline board and lists
 

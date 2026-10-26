@@ -9,7 +9,7 @@ import { inList } from "@/platform/db/sql-values";
 /**
  * Deals: the CRM side of the product. A lead becomes a contact when a person creates a deal from it (`people.lifecycle`).
  * One pipeline per organization: `deal_stages` is the ordered list of its steps. The reply taxonomy in
- * conversations (`pipelines`, `subcategories`) is a different thing and keeps its names.
+ * conversations (`reply_type_sets`, `reply_types`) is a different thing and keeps its names.
  */
 
 export const DEAL_STAGE_KINDS = ["open", "won", "lost"] as const;

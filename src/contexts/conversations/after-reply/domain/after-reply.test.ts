@@ -18,7 +18,7 @@ import {
   stopReasonLabel,
   type StopReason,
 } from "./after-reply";
-import { interruptReason, isTerminalSubcategory, NO_START_KEYS, type InterruptFacts, type InterruptReason, type RunStatus } from "./sequences";
+import { interruptReason, isTerminalReplyType, NO_START_KEYS, type InterruptFacts, type InterruptReason, type RunStatus } from "./sequences";
 
 const ALL_RUN_STATUSES: RunStatus[] = ["active", "paused", "interrupted", "completed", "cancelled"];
 const ALL_INTERRUPT_REASONS: InterruptReason[] = ["reply", "do_not_contact", "unsubscribed", "bounce", "suppressed", "terminal_stage", "record_closed", "converted", AFTER_REPLY_OFF];
@@ -104,8 +104,8 @@ describe("ALWAYS_STOPS_ON", () => {
 
   it("matches what interruptReason returns for each lead or record fact", () => {
     const base: InterruptFacts = {
-      run: { triggerMessageId: "m1", subcategoryId: "s1" },
-      record: { latestInboundMessageId: "m1", subcategoryId: "s1", categoryKey: "interested", subcategoryKey: "interested", workflowState: "open" },
+      run: { triggerMessageId: "m1", replyTypeId: "s1" },
+      record: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "interested", workflowState: "open" },
       doNotContact: false,
       suppression: null,
       contact: false,
@@ -123,14 +123,14 @@ describe("ALWAYS_STOPS_ON", () => {
 
   it("shares one no-start list with the engine", () => {
     for (const rule of ALWAYS_STOPS_ON) {
-      for (const fact of rule.subcategories ?? []) if (fact.subcategoryKey) expect(NO_START_KEYS).toContain(fact.subcategoryKey);
+      for (const fact of rule.subcategories ?? []) if (fact.replyTypeKey) expect(NO_START_KEYS).toContain(fact.replyTypeKey);
     }
   });
 
-  it("agrees with isTerminalSubcategory for every classification it names", () => {
+  it("agrees with isTerminalReplyType for every classification it names", () => {
     for (const rule of ALWAYS_STOPS_ON) {
       for (const fact of rule.subcategories ?? []) {
-        const terminal = isTerminalSubcategory(fact.categoryKey, fact.subcategoryKey);
+        const terminal = isTerminalReplyType(fact.groupKey, fact.replyTypeKey);
         expect(endsFlow(fact)).toBe(terminal);
         // A rule without a reason keeps a flow from starting but never ends one, so its classification is not terminal.
         expect(terminal).toBe(rule.reason === "terminal_stage");
@@ -140,16 +140,16 @@ describe("ALWAYS_STOPS_ON", () => {
 
   it("covers the subcategories that stop a running flow", () => {
     const named = ALWAYS_STOPS_ON.flatMap((r) => r.subcategories ?? []).filter((f) => endsFlow(f));
-    const keys = named.map((f) => f.subcategoryKey ?? `category:${f.categoryKey}`);
+    const keys = named.map((f) => f.replyTypeKey ?? `category:${f.groupKey}`);
     expect(keys).toEqual(expect.arrayContaining(["category:not_interested", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]));
     // do_not_contact lives in the not_interested category and in the lead fact above, so the category entry covers it.
-    expect(isTerminalSubcategory("not_interested", "do_not_contact")).toBe(true);
+    expect(isTerminalReplyType("not_interested", "do_not_contact")).toBe(true);
   });
 });
 
 describe("why a run cannot start", () => {
   const ok = (): StartBlockFacts => ({
-    record: { subcategoryId: "s1", categoryKey: "interested", subcategoryKey: "demo_request", subcategoryName: "Demo request", latestInboundMessageId: "m1", lastInboundAt: new Date("2026-10-15T08:00:00Z"), workflowState: "action_required", hasEmail: true },
+    record: { replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", replyTypeName: "Demo request", latestInboundMessageId: "m1", lastInboundAt: new Date("2026-10-15T08:00:00Z"), workflowState: "action_required", hasEmail: true },
     conversation: { channel: "email" },
     doNotContact: false,
     suppressed: false,
@@ -201,9 +201,9 @@ describe("why a run cannot start", () => {
 
   it("names the closing category the reply is classified into", () => {
     const f = ok();
-    f.record.categoryKey = "not_interested";
-    f.record.subcategoryKey = "not_required_right_now";
-    f.record.subcategoryName = "Not required right now";
+    f.record.groupKey = "not_interested";
+    f.record.replyTypeKey = "not_required_right_now";
+    f.record.replyTypeName = "Not required right now";
     expect(startBlockedReason(f)).toBe("The reply is classified as Not required right now, so follow-ups do not apply.");
   });
 

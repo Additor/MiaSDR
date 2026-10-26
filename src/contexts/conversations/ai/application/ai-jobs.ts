@@ -48,8 +48,8 @@ export async function produceDraft(
     thread: ctx.thread,
     subject: ctx.subject,
     // A stage move after the last reply outdates the classifier's reading of that reply.
-    classification: ctx.classification ? { subcategoryName: ctx.classification.subcategoryName, reason: ctx.stageChange ? null : ctx.classification.reason } : null,
-    stageChange: ctx.stageChange,
+    classification: ctx.classification ? { replyTypeName: ctx.classification.replyTypeName, reason: ctx.replyTypeChange ? null : ctx.classification.reason } : null,
+    replyTypeChange: ctx.replyTypeChange,
     operatorInstructions: ctx.operatorInstructions,
     knowledge: ctx.knowledge.map((k) => ({ title: k.title, content: k.content })),
     feedback: options.feedback ?? null,
@@ -79,7 +79,7 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
   const schema = classificationSchema(keys);
 
   const result = await provider.classify({
-    taxonomy: ctx.taxonomy.map(({ key, name, categoryKey, description, guidance }) => ({ key, name, categoryKey, description, guidance })),
+    taxonomy: ctx.taxonomy.map(({ key, name, groupKey, description, guidance }) => ({ key, name, groupKey, description, guidance })),
     person: ctx.person,
     thread: ctx.thread,
     operatorInstructions: ctx.operatorInstructions,
@@ -92,8 +92,8 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
   if (!proposal) throw new AiError("The AI answered outside the allowed categories.", "transient", "shape");
 
   const decision = decideApplication({
-    proposal: { categoryKey: proposal.categoryKey, subcategoryKey: proposal.key, reviewRequired: proposal.reviewRequired, stageRank: proposal.stageRank, confidence: parsed.data.confidence },
-    current: { categoryKey: ctx.categoryKey, stageRank: ctx.currentStageRank, categoryLocked: ctx.categoryLocked },
+    proposal: { groupKey: proposal.groupKey, replyTypeKey: proposal.key, reviewRequired: proposal.reviewRequired, stageRank: proposal.stageRank, confidence: parsed.data.confidence },
+    current: { groupKey: ctx.groupKey, stageRank: ctx.currentStageRank, replyTypeLocked: ctx.replyTypeLocked },
     settings: ctx.settings,
   });
   const stopRequested = detectsStopRequest(ctx.messageText) || proposal.key === DO_NOT_CONTACT_KEY;
@@ -102,12 +102,12 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
     job,
     messageId: job.entityId,
     expectedContextVersion: ctx.contextVersion,
-    proposedSubcategoryKey: proposal.key,
+    proposedReplyTypeKey: proposal.key,
     confidence: parsed.data.confidence,
     reason: parsed.data.reason,
     stopRequested,
     decision,
-    wantsDraft: needsReply(proposal.categoryKey, proposal.key) && !stopRequested,
+    wantsDraft: needsReply(proposal.groupKey, proposal.key) && !stopRequested,
     provider: provider.name,
     model: provider.model,
     request: { messageId: job.entityId, contextVersion: ctx.contextVersion, allowedKeys: keys },
@@ -132,7 +132,7 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
     bodyText: result.output.bodyText,
     provider: provider.name,
     model: provider.model,
-    request: { classificationId: job.entityId, contextVersion: ctx.contextVersion, knowledge: ctx.knowledge.map((k) => k.documentVersionId) },
+    request: { replyTypePickId: job.entityId, contextVersion: ctx.contextVersion, knowledge: ctx.knowledge.map((k) => k.documentVersionId) },
     response: { usage: result.usage ?? null },
     citations: draftCitations(ctx),
   });

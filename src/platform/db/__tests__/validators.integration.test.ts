@@ -7,8 +7,8 @@ import { seedWorld, uid, type World } from "../../../test-support/full-world";
  * shapes next to it, and a trigger name in the test title so dropping the trigger fails exactly that test. Also covers the
  * foreign key actions (ON DELETE SET NULL) and legacy rows, which the triggers must not trip on. Needs TEST_DATABASE_URL.
  */
-const MESSAGE = /classifications\.message_id must be an inbound message of the classification's record/;
-const SUBCATEGORY = /classifications\.(previous|proposed|applied)_subcategory_id must belong to the record's pipeline/;
+const MESSAGE = /reply_type_picks\.message_id must be an inbound message of the pick's record/;
+const REPLY_TYPE = /reply_type_picks\.(previous|proposed|applied)_reply_type_id must belong to the record's reply type set/;
 const CHANNEL = /drafts\.channel \(\w+\) must equal the channel of its conversation/;
 const REPLY = /drafts\.reply_for_message_id must be an inbound message/;
 const REPLY_RECORD = /drafts\.reply_for_message_id must be a message of the draft's record/;
@@ -39,7 +39,7 @@ describeDb("cross-row validators", () => {
       values (${w.org}, ${w.conversation}, 'email', ${"me@" + w.tag + ".test"}, 'outbound', ${"out-" + w.tag}, 'our reply', now()) returning id`;
     // A message of another record in the same organization.
     const [otherPerson] = await sql`insert into people (organization_id, email) values (${w.org}, ${"o-" + w.tag + "@lead.test"}) returning id`;
-    const [otherRecord] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${w.org}, ${otherPerson.id}, ${w.pipeline}) returning id`;
+    const [otherRecord] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${w.org}, ${otherPerson.id}, ${w.pipeline}) returning id`;
     const [otherConv] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${w.org}, ${otherRecord.id}, 'email', ${"me@" + w.tag + ".test"}) returning id`;
     const [otherMessage] = await sql`
       insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
@@ -48,80 +48,80 @@ describeDb("cross-row validators", () => {
   }
 
   const classify = (w: World, message: string, version: number, cols = "") =>
-    sql.unsafe(`insert into classifications (organization_id, record_id, message_id, expected_context_version, confidence ${cols ? ", " + cols.split("|")[0] : ""}) values ('${w.org}', '${w.record}', '${message}', ${version}, 0.9 ${cols ? ", " + cols.split("|")[1] : ""})`);
+    sql.unsafe(`insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, confidence ${cols ? ", " + cols.split("|")[0] : ""}) values ('${w.org}', '${w.record}', '${message}', ${version}, 0.9 ${cols ? ", " + cols.split("|")[1] : ""})`);
 
-  describe("classifications_message_ins_trg and classifications_message_upd_trg", () => {
-    it("classifications_message_ins_trg: refuses an outbound message and a message of another record", async () => {
+  describe("reply_type_picks_message_ins_trg and reply_type_picks_message_upd_trg", () => {
+    it("reply_type_picks_message_ins_trg: refuses an outbound message and a message of another record", async () => {
       const w = await world();
       const x = await extras(w);
       await expect(classify(w, x.outbound, 5)).rejects.toThrow(MESSAGE);
       await expect(classify(w, x.otherMessage, 6)).rejects.toThrow(MESSAGE);
     });
 
-    it("classifications_message_ins_trg: accepts an inbound message of the record, in any of its conversations", async () => {
+    it("reply_type_picks_message_ins_trg: accepts an inbound message of the record, in any of its conversations", async () => {
       const w = await world();
       const x = await extras(w);
       await classify(w, w.message, 7);
       await classify(w, x.linkedinInbound, 0);
     });
 
-    it("classifications_message_upd_trg: refuses moving a classification to an outbound message", async () => {
+    it("reply_type_picks_message_upd_trg: refuses moving a classification to an outbound message", async () => {
       const w = await world();
       const x = await extras(w);
-      await expect(sql`update classifications set message_id = ${x.outbound} where id = ${w.classification}`).rejects.toThrow(MESSAGE);
-      await sql`update classifications set status = 'accepted' where id = ${w.classification}`;
+      await expect(sql`update reply_type_picks set message_id = ${x.outbound} where id = ${w.classification}`).rejects.toThrow(MESSAGE);
+      await sql`update reply_type_picks set status = 'accepted' where id = ${w.classification}`;
     });
   });
 
-  describe("classifications_subcategories_ins_trg and classifications_subcategories_upd_trg", () => {
-    async function otherPipelineSub(w: World) {
-      const [p] = await sql`insert into pipelines (organization_id, name) values (${w.org}, 'second') returning id`;
-      const [s] = await sql`insert into subcategories (organization_id, pipeline_id, category_key, key, name) values (${w.org}, ${p.id}, 'interested', 'z', 'Z') returning id`;
+  describe("reply_type_picks_reply_types_ins_trg and reply_type_picks_reply_types_upd_trg", () => {
+    async function otherSetReplyType(w: World) {
+      const [p] = await sql`insert into reply_type_sets (organization_id, name) values (${w.org}, 'second') returning id`;
+      const [s] = await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${w.org}, ${p.id}, 'interested', 'z', 'Z') returning id`;
       return s.id as string;
     }
 
-    it("classifications_subcategories_ins_trg: refuses a subcategory of another pipeline in each of the three columns", async () => {
+    it("reply_type_picks_reply_types_ins_trg: refuses a subcategory of another pipeline in each of the three columns", async () => {
       const w = await world();
-      const foreign = await otherPipelineSub(w);
+      const foreign = await otherSetReplyType(w);
       for (const [i, col] of ["previous", "proposed", "applied"].entries()) {
-        await expect(classify(w, w.message, 10 + i, `${col}_subcategory_id|'${foreign}'`)).rejects.toThrow(SUBCATEGORY);
+        await expect(classify(w, w.message, 10 + i, `${col}_reply_type_id|'${foreign}'`)).rejects.toThrow(REPLY_TYPE);
       }
     });
 
-    it("classifications_subcategories_ins_trg: refuses a subcategory whose category differs from the stated key", async () => {
+    it("reply_type_picks_reply_types_ins_trg: refuses a subcategory whose category differs from the stated key", async () => {
       const w = await world();
-      await expect(classify(w, w.message, 20, `applied_subcategory_id, applied_category_key|'${w.subA}', 'customer'`)).rejects.toThrow(SUBCATEGORY);
-      await classify(w, w.message, 21, `applied_subcategory_id, applied_category_key|'${w.subA}', 'interested'`);
+      await expect(classify(w, w.message, 20, `applied_reply_type_id, applied_group_key|'${w.subA}', 'customer'`)).rejects.toThrow(REPLY_TYPE);
+      await classify(w, w.message, 21, `applied_reply_type_id, applied_group_key|'${w.subA}', 'interested'`);
     });
 
-    it("classifications_subcategories_ins_trg: tolerates a null category key (the fixtures leave them null)", async () => {
+    it("reply_type_picks_reply_types_ins_trg: tolerates a null category key (the fixtures leave them null)", async () => {
       const w = await world();
-      await classify(w, w.message, 22, `previous_subcategory_id, proposed_subcategory_id, applied_subcategory_id|'${w.subA}', '${w.subB}', '${w.subA}'`);
+      await classify(w, w.message, 22, `previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id|'${w.subA}', '${w.subB}', '${w.subA}'`);
     });
 
-    it("classifications_subcategories_upd_trg: refuses an update to a foreign subcategory or a mismatched key", async () => {
+    it("reply_type_picks_reply_types_upd_trg: refuses an update to a foreign subcategory or a mismatched key", async () => {
       const w = await world();
-      const foreign = await otherPipelineSub(w);
-      await expect(sql`update classifications set applied_subcategory_id = ${foreign} where id = ${w.classification}`).rejects.toThrow(SUBCATEGORY);
-      await expect(sql`update classifications set proposed_category_key = 'customer' where id = ${w.classification}`).rejects.toThrow(SUBCATEGORY);
-      await sql`update classifications set proposed_subcategory_id = ${w.subB}, proposed_category_key = 'interested' where id = ${w.classification}`;
+      const foreign = await otherSetReplyType(w);
+      await expect(sql`update reply_type_picks set applied_reply_type_id = ${foreign} where id = ${w.classification}`).rejects.toThrow(REPLY_TYPE);
+      await expect(sql`update reply_type_picks set proposed_group_key = 'customer' where id = ${w.classification}`).rejects.toThrow(REPLY_TYPE);
+      await sql`update reply_type_picks set proposed_reply_type_id = ${w.subB}, proposed_group_key = 'interested' where id = ${w.classification}`;
     });
 
     it("leaves the ON DELETE SET NULL action alone, even on a legacy row that breaks the rule", async () => {
       const w = await world();
-      const foreign = await otherPipelineSub(w);
+      const foreign = await otherSetReplyType(w);
       // A legacy row: the trigger is off while it is written, as if it predated the trigger.
       await sql.begin(async (tx) => {
-        await tx`alter table classifications disable trigger classifications_subcategories_ins_trg`;
-        await tx`insert into classifications (organization_id, record_id, message_id, expected_context_version, confidence, previous_subcategory_id, applied_subcategory_id)
+        await tx`alter table reply_type_picks disable trigger reply_type_picks_reply_types_ins_trg`;
+        await tx`insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, confidence, previous_reply_type_id, applied_reply_type_id)
                  values (${w.org}, ${w.record}, ${w.message}, 30, 0.9, ${foreign}, ${w.subB})`;
-        await tx`alter table classifications enable trigger classifications_subcategories_ins_trg`;
+        await tx`alter table reply_type_picks enable trigger reply_type_picks_reply_types_ins_trg`;
       });
-      await sql`delete from subcategories where id = ${w.subB}`;
-      const [row] = await sql`select previous_subcategory_id, applied_subcategory_id from classifications where organization_id = ${w.org} and expected_context_version = 30`;
-      expect(row).toMatchObject({ previous_subcategory_id: foreign, applied_subcategory_id: null });
+      await sql`delete from reply_types where id = ${w.subB}`;
+      const [row] = await sql`select previous_reply_type_id, applied_reply_type_id from reply_type_picks where organization_id = ${w.org} and expected_context_version = 30`;
+      expect(row).toMatchObject({ previous_reply_type_id: foreign, applied_reply_type_id: null });
       // An update that touches none of the checked columns also passes on the legacy row.
-      await sql`update classifications set status = 'rejected' where organization_id = ${w.org} and expected_context_version = 30`;
+      await sql`update reply_type_picks set status = 'rejected' where organization_id = ${w.org} and expected_context_version = 30`;
     });
   });
 
@@ -204,7 +204,7 @@ describeDb("cross-row validators", () => {
       });
       await sql.begin(async (tx) => {
         await tx`select set_config('miasdr.allow_purge', 'on', true)`;
-        await tx`update classifications set message_id = message_id where false`;
+        await tx`update reply_type_picks set message_id = message_id where false`;
         await tx`delete from messages where id = ${x.linkedinInbound}`;
       });
       const [row] = await sql`select reply_for_message_id from drafts where id = ${x.outbound}`;
@@ -247,7 +247,7 @@ describeDb("cross-row validators", () => {
   });
 
   it("registers the ten triggers", async () => {
-    const rows = await sql`select tgname from pg_trigger where not tgisinternal and tgname ~ '^(classifications_message|classifications_subcategories|drafts_channel|drafts_reply_target|send_attempts_account)_(ins|upd)_trg$' order by tgname`;
+    const rows = await sql`select tgname from pg_trigger where not tgisinternal and tgname ~ '^(reply_type_picks_message|reply_type_picks_reply_types|drafts_channel|drafts_reply_target|send_attempts_account)_(ins|upd)_trg$' order by tgname`;
     expect(rows.map((r) => r.tgname)).toHaveLength(10);
   });
 });

@@ -10,7 +10,7 @@ import { Combobox, ComboboxCollection, ComboboxContent, ComboboxEmpty, ComboboxG
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { PROTECTED_SUBCATEGORY_KEY, REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
+import { PROTECTED_SUBCATEGORY_KEY, REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
 import { needsReply } from "@/contexts/conversations/domain/reply-policy";
 import { callApi } from "@/app/_lib/api-client";
 import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
@@ -20,7 +20,7 @@ export interface StageOption {
   id: string;
   /** The taxonomy key, which a correction of the reply's reading names. */
   key: string;
-  categoryKey: string;
+  groupKey: string;
   name: string;
   stageRank: number | null;
 }
@@ -50,8 +50,8 @@ export function ChangeCategoryButton({
   conversationId,
   personName,
   contextVersion,
-  currentSubcategoryId,
-  categoryLocked,
+  currentReplyTypeId,
+  replyTypeLocked,
   stages,
   aiReading = null,
 }: {
@@ -60,8 +60,8 @@ export function ChangeCategoryButton({
   conversationId?: string;
   personName: string;
   contextVersion: number;
-  currentSubcategoryId: string | null;
-  categoryLocked: boolean;
+  currentReplyTypeId: string | null;
+  replyTypeLocked: boolean;
   stages: StageOption[];
   aiReading?: AiReading | null;
 }) {
@@ -76,14 +76,14 @@ export function ChangeCategoryButton({
   // A correction may name the category the record already has, to confirm the reading; a move goes somewhere else.
   const groups = useMemo(
     () =>
-      REPLY_CATEGORIES.map((c) => ({
+      REPLY_TYPE_GROUPS.map((c) => ({
         value: c.label,
-        items: stages.filter((s) => s.categoryKey === c.key && (correcting || s.id !== currentSubcategoryId)).map((s) => ({ value: s.id, label: s.name, stage: s })),
+        items: stages.filter((s) => s.groupKey === c.key && (correcting || s.id !== currentReplyTypeId)).map((s) => ({ value: s.id, label: s.name, stage: s })),
       })).filter((g) => g.items.length > 0),
-    [stages, correcting, currentSubcategoryId],
+    [stages, correcting, currentReplyTypeId],
   );
   const chosen = target && groups.some((g) => g.items.some((o) => o.value === target.value)) ? target.stage : undefined;
-  const leavesCustomer = !correcting && categoryLocked && chosen !== undefined && chosen.categoryKey !== "customer";
+  const leavesCustomer = !correcting && replyTypeLocked && chosen !== undefined && chosen.groupKey !== "customer";
 
   function reset(next: boolean) {
     setOpen(next);
@@ -99,16 +99,16 @@ export function ChangeCategoryButton({
     const unsaved = await saveDraftEdits();
     if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
     const result = correcting
-      ? await callApi(`/api/inbox/${conversationId}/classification`, "POST", { subcategoryKey: chosen.key, expectedContextVersion: contextVersion })
+      ? await callApi(`/api/inbox/${conversationId}/classification`, "POST", { replyTypeKey: chosen.key, expectedContextVersion: contextVersion })
       : await callApi(`/api/records/${recordId}/stage`, "POST", {
-          categoryKey: chosen.categoryKey,
-          subcategoryId: chosen.id,
+          groupKey: chosen.groupKey,
+          replyTypeId: chosen.id,
           expectedContextVersion: contextVersion,
           confirmUnlock: unlock,
           note: note.trim() || null,
         });
     if (!result.ok) throw new Error(result.error ?? "The category did not change. Try again.");
-    toast.success(`Changed the category of ${personName} to ${categoryLabel(chosen.categoryKey)}: ${chosen.name}.`);
+    toast.success(`Changed the category of ${personName} to ${categoryLabel(chosen.groupKey)}: ${chosen.name}.`);
     reset(false);
     router.refresh();
   }
@@ -158,7 +158,7 @@ export function ChangeCategoryButton({
           )}
           <Field>
             <FieldLabel htmlFor={`category-${recordId}`}>New category</FieldLabel>
-            <Combobox items={groups} value={target} onValueChange={(next) => setTarget((next as Option | null) ?? null)} itemToStringLabel={(o: Option) => `${categoryLabel(o.stage.categoryKey)}: ${o.label}`} autoHighlight>
+            <Combobox items={groups} value={target} onValueChange={(next) => setTarget((next as Option | null) ?? null)} itemToStringLabel={(o: Option) => `${categoryLabel(o.stage.groupKey)}: ${o.label}`} autoHighlight>
               <ComboboxInput id={`category-${recordId}`} placeholder="Search categories" className="w-full" />
               <ComboboxContent>
                 <ComboboxEmpty>No category matches.</ComboboxEmpty>
@@ -211,6 +211,6 @@ export function ChangeCategoryButton({
 function consequence(stage: StageOption, correcting: boolean, personName: string): string {
   const stop = stage.key === PROTECTED_SUBCATEGORY_KEY ? ` It also marks ${personName} do not contact on every channel.` : "";
   if (!correcting) return `Retires open drafts and restarts follow-ups for this category. No new draft is written.${stop}`;
-  if (needsReply(stage.categoryKey, stage.key)) return `Retires the open draft, writes a new one for this category and starts its follow-ups.${stop}`;
+  if (needsReply(stage.groupKey, stage.key)) return `Retires the open draft, writes a new one for this category and starts its follow-ups.${stop}`;
   return `Retires the open draft. This category needs no reply, so none is written.${stop}`;
 }

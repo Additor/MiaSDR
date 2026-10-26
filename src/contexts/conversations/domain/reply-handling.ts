@@ -6,18 +6,18 @@ import type { WorkflowState } from "./workflow-state";
  * the rules for a person's stage move. Nothing here reads or writes data.
  */
 
-export const REPLY_CATEGORIES = [
+export const REPLY_TYPE_GROUPS = [
   { key: "interested", label: "Interested" },
   { key: "customer", label: "Existing customer" },
   { key: "not_interested", label: "Not interested" },
   { key: "other", label: "Other" },
 ] as const;
 
-export type CategoryKey = (typeof REPLY_CATEGORIES)[number]["key"];
+export type ReplyTypeGroup = (typeof REPLY_TYPE_GROUPS)[number]["key"];
 
-export const isCategoryKey = (value: string): value is CategoryKey => REPLY_CATEGORIES.some((c) => c.key === value);
+export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPLY_TYPE_GROUPS.some((c) => c.key === value);
 
-export const categoryLabel = (key: string | null) => REPLY_CATEGORIES.find((c) => c.key === key)?.label ?? "Unclassified";
+export const categoryLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "Unclassified";
 
 /** This subcategory drives the do-not-contact paths, so it can be neither deleted nor archived. */
 export const PROTECTED_SUBCATEGORY_KEY = "do_not_contact";
@@ -60,8 +60,8 @@ export function parseInstructionBlocks(value: unknown, label: string): AiInstruc
   return blocks;
 }
 
-export interface SubcategoryInput {
-  categoryKey: CategoryKey;
+export interface ReplyTypeInput {
+  groupKey: ReplyTypeGroup;
   key: string;
   name: string;
   description: string | null;
@@ -71,7 +71,7 @@ export interface SubcategoryInput {
   stageRank: number | null;
 }
 
-export type SubcategoryPatch = Partial<Omit<SubcategoryInput, "categoryKey" | "key">> & { active?: boolean; sortOrder?: number };
+export type ReplyTypePatch = Partial<Omit<ReplyTypeInput, "groupKey" | "key">> & { active?: boolean; sortOrder?: number };
 
 const KEY = /^[a-z][a-z0-9_]*$/;
 
@@ -104,14 +104,14 @@ function parseRank(value: unknown): number | null {
   return value;
 }
 
-export function parseSubcategoryInput(raw: Record<string, unknown>): SubcategoryInput {
-  const categoryKey = typeof raw.categoryKey === "string" ? raw.categoryKey : "";
-  if (!isCategoryKey(categoryKey)) throw new ValidationError("Choose one of the four categories.");
+export function parseReplyTypeInput(raw: Record<string, unknown>): ReplyTypeInput {
+  const groupKey = typeof raw.groupKey === "string" ? raw.groupKey : "";
+  if (!isReplyTypeGroup(groupKey)) throw new ValidationError("Choose one of the four categories.");
   const name = parseName(raw.name);
   const key = typeof raw.key === "string" && raw.key.trim() !== "" ? raw.key.trim() : keyFromName(name);
   if (!KEY.test(key) || key.length > 60) throw new ValidationError("The key must start with a letter and use only lowercase letters, digits and underscores.");
   return {
-    categoryKey,
+    groupKey,
     key,
     name,
     description: optionalText(raw.description, "The description", 500) ?? null,
@@ -121,8 +121,8 @@ export function parseSubcategoryInput(raw: Record<string, unknown>): Subcategory
   };
 }
 
-export function parseSubcategoryPatch(raw: Record<string, unknown>): SubcategoryPatch {
-  const patch: SubcategoryPatch = {};
+export function parseReplyTypePatch(raw: Record<string, unknown>): ReplyTypePatch {
+  const patch: ReplyTypePatch = {};
   if (raw.name !== undefined) patch.name = parseName(raw.name);
   const description = optionalText(raw.description, "The description", 500);
   if (description !== undefined) patch.description = description;
@@ -145,14 +145,14 @@ export function parseSubcategoryPatch(raw: Record<string, unknown>): Subcategory
   return patch;
 }
 
-export interface PipelineSettingsPatch {
+export interface ReplyHandlingSettingsPatch {
   autoApplyConfidence?: number;
   reviewOther?: boolean;
   customerRequiresReview?: boolean;
 }
 
-export function parsePipelineSettings(raw: Record<string, unknown>): PipelineSettingsPatch {
-  const patch: PipelineSettingsPatch = {};
+export function parseReplyHandlingSettings(raw: Record<string, unknown>): ReplyHandlingSettingsPatch {
+  const patch: ReplyHandlingSettingsPatch = {};
   if (raw.autoApplyConfidence !== undefined) {
     const value = raw.autoApplyConfidence;
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError("The auto-apply threshold must be a number from 0 to 1.");
@@ -167,25 +167,25 @@ export function parsePipelineSettings(raw: Record<string, unknown>): PipelineSet
   return patch;
 }
 
-export interface StageMoveCheck {
-  before: { categoryKey: string | null; subcategoryId: string | null; categoryLocked: boolean; contextVersion: number; workflowState: string };
-  target: { categoryKey: string; subcategoryId: string | null };
+export interface ReplyTypeChangeCheck {
+  before: { groupKey: string | null; replyTypeId: string | null; replyTypeLocked: boolean; contextVersion: number; workflowState: string };
+  target: { groupKey: string; replyTypeId: string | null };
   expectedContextVersion: number;
   /** The person confirmed that a locked customer may leave the customer category. */
   confirmUnlock: boolean;
 }
 
 /** What a person's stage move needs to be true. Returns the lock flag the record gets afterwards. */
-export function checkStageMove({ before, target, expectedContextVersion, confirmUnlock }: StageMoveCheck): { categoryLocked: boolean } {
-  if (!isCategoryKey(target.categoryKey)) throw new ValidationError("Choose one of the four categories.");
+export function checkReplyTypeChange({ before, target, expectedContextVersion, confirmUnlock }: ReplyTypeChangeCheck): { replyTypeLocked: boolean } {
+  if (!isReplyTypeGroup(target.groupKey)) throw new ValidationError("Choose one of the four categories.");
   if (before.contextVersion !== expectedContextVersion) throw new ConflictError("Reply handling changed since you opened it. Reload and try again.");
   if (before.workflowState === "closed") throw new ConflictError("Reply handling is closed. Reopen it before you change the category.");
-  if (before.categoryKey === target.categoryKey && before.subcategoryId === target.subcategoryId) throw new ConflictError("The reply is already in this category.");
-  if (before.categoryLocked && before.categoryKey === "customer" && target.categoryKey !== "customer" && !confirmUnlock) {
+  if (before.groupKey === target.groupKey && before.replyTypeId === target.replyTypeId) throw new ConflictError("The reply is already in this category.");
+  if (before.replyTypeLocked && before.groupKey === "customer" && target.groupKey !== "customer" && !confirmUnlock) {
     throw new ConflictError("This person is locked as Existing customer. Confirm the change to take them out of it.");
   }
   // A customer stays locked so the AI cannot pull them back out; any other category unlocks.
-  return { categoryLocked: target.categoryKey === "customer" };
+  return { replyTypeLocked: target.groupKey === "customer" };
 }
 
 export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {

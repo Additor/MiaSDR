@@ -124,7 +124,7 @@ export const AFTER_REPLY_OFF = "after_reply_off";
 export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bounce" | "suppressed" | "terminal_stage" | "record_closed" | "converted" | typeof AFTER_REPLY_OFF;
 
 /** Subcategories after which a follow-up would be wrong: a refusal, a wrong or departed contact, a closed deal. */
-const TERMINAL_SUBCATEGORIES = new Set(["do_not_contact", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]);
+const TERMINAL_REPLY_TYPES = new Set(["do_not_contact", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]);
 
 /**
  * Subcategories a run never starts for: the reply policy's no-reply keys (Out of office) and the terminal ones.
@@ -132,14 +132,14 @@ const TERMINAL_SUBCATEGORIES = new Set(["do_not_contact", "left_company", "wrong
  */
 export const NO_START_KEYS: readonly string[] = ["do_not_contact", "out_of_office", "left_company", "wrong_contact", "connected_to_different_contact", "customer"];
 
-export function isTerminalSubcategory(categoryKey: string | null, subcategoryKey: string | null): boolean {
-  if (categoryKey === "not_interested") return true;
-  return subcategoryKey !== null && TERMINAL_SUBCATEGORIES.has(subcategoryKey);
+export function isTerminalReplyType(groupKey: string | null, replyTypeKey: string | null): boolean {
+  if (groupKey === "not_interested") return true;
+  return replyTypeKey !== null && TERMINAL_REPLY_TYPES.has(replyTypeKey);
 }
 
 export interface InterruptFacts {
-  run: { triggerMessageId: string; subcategoryId: string };
-  record: { latestInboundMessageId: string | null; subcategoryId: string | null; categoryKey: string | null; subcategoryKey: string | null; workflowState: string };
+  run: { triggerMessageId: string; replyTypeId: string };
+  record: { latestInboundMessageId: string | null; replyTypeId: string | null; groupKey: string | null; replyTypeKey: string | null; workflowState: string };
   doNotContact: boolean;
   /** Reason on the suppression list for the person's address, if any. */
   suppression: "unsubscribed" | "bounced" | "manual" | "complaint" | null;
@@ -161,7 +161,7 @@ export function interruptReason(facts: InterruptFacts): InterruptReason | null {
   if (facts.contact) return "converted";
   if (facts.record.latestInboundMessageId !== null && facts.record.latestInboundMessageId !== facts.run.triggerMessageId) return "reply";
   if (facts.record.workflowState === "closed") return "record_closed";
-  if (facts.record.subcategoryId !== facts.run.subcategoryId && isTerminalSubcategory(facts.record.categoryKey, facts.record.subcategoryKey)) return "terminal_stage";
+  if (facts.record.replyTypeId !== facts.run.replyTypeId && isTerminalReplyType(facts.record.groupKey, facts.record.replyTypeKey)) return "terminal_stage";
   if (!facts.flowActive) return AFTER_REPLY_OFF;
   return null;
 }

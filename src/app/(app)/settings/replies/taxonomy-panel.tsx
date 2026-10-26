@@ -11,14 +11,14 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
+import { REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface Sub {
   id: string;
-  categoryKey: string;
+  groupKey: string;
   key: string;
   name: string;
   description: string | null;
@@ -39,12 +39,12 @@ interface Draft {
   review: boolean;
 }
 
-const CATEGORY_ITEMS = REPLY_CATEGORIES.map((c) => ({ value: c.key, label: c.label }));
+const CATEGORY_ITEMS = REPLY_TYPE_GROUPS.map((c) => ({ value: c.key, label: c.label }));
 
 const archiveRecords = (count: number) => (count === 0 ? "Nobody is in it now." : `${count} ${count === 1 ? "person keeps" : "people keep"} this subcategory.`);
 
 const draftOf = (sub: Sub | null, category = "interested"): Draft => ({
-  category: sub?.categoryKey ?? category,
+  category: sub?.groupKey ?? category,
   name: sub?.name ?? "",
   description: sub?.description ?? "",
   guidance: sub?.classificationGuidance ?? "",
@@ -74,7 +74,7 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
       reviewRequired: draft.review,
       stageRank: draft.rank.trim() === "" ? null : Number(draft.rank),
     };
-    const result = editing ? await callApi(`/api/reply-categories/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/reply-categories/subcategories", "POST", { ...common, categoryKey: draft.category });
+    const result = editing ? await callApi(`/api/reply-categories/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/reply-categories/subcategories", "POST", { ...common, groupKey: draft.category });
     if (!result.ok) throw new Error(result.error ?? "Could not save the subcategory.");
     toast.success(editing ? `${draft.name} saved.` : `${draft.name} added.`);
     router.refresh();
@@ -116,8 +116,8 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
         }
       >
         <div className="stack-section">
-          {REPLY_CATEGORIES.map((c) => {
-            const subs = subcategories.filter((s) => s.categoryKey === c.key);
+          {REPLY_TYPE_GROUPS.map((c) => {
+            const subs = subcategories.filter((s) => s.groupKey === c.key);
             return (
               <div key={c.key} className="stack-group" data-testid={`category-${c.key}`}>
                 <h3 className="text-sm font-semibold">{c.label}</h3>

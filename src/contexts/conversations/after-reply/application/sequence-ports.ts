@@ -81,10 +81,10 @@ export interface StartFacts {
   record: {
     id: string;
     personId: string;
-    subcategoryId: string | null;
-    categoryKey: string | null;
-    subcategoryKey: string | null;
-    subcategoryName: string | null;
+    replyTypeId: string | null;
+    groupKey: string | null;
+    replyTypeKey: string | null;
+    replyTypeName: string | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     lastOutboundAt: Date | null;
@@ -119,7 +119,7 @@ export interface NewRun {
   conversationId: string;
   sequenceId: string;
   sequenceVersionId: string;
-  subcategoryId: string;
+  replyTypeId: string;
   source: RunSource;
   startPosition: number;
   triggerMessageId: string;

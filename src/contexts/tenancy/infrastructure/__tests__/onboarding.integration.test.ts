@@ -56,9 +56,9 @@ describeDb("onboarding store", () => {
     await sql`insert into people (organization_id, email) values (${a}, ${`p1-${tag}@onb.test`}), (${a}, ${`p2-${tag}@onb.test`}), (${b}, ${`p3-${tag}@onb.test`})`;
     await sql`insert into campaigns (organization_id, channel, name, status) values (${a}, 'email', 'One', 'active'), (${a}, 'email', 'Two', 'draft'), (${b}, 'email', 'Other', 'active')`;
 
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${a}, 'default', true) returning id`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${a}, 'default', true) returning id`;
     const [{ id: person }] = await sql`select id from people where organization_id = ${a} limit 1`;
-    const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${a}, ${person}, ${pipeline}) returning id`;
+    const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${a}, ${person}, ${pipeline}) returning id`;
     const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${a}, ${record}, 'email', 'a@sender.test') returning id`;
     await sql`
       insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject, status)

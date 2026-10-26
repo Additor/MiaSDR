@@ -304,21 +304,21 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
   async replies(f) {
     const rows = await run(sql`
       with rep as (${replyMessages(f)})
-      select rep.channel, cl.status, cl.applied_category_key, sc.name as subcategory, count(*)::int as replies
+      select rep.channel, cl.status, cl.applied_group_key, sc.name as subcategory, count(*)::int as replies
       from rep
       left join lateral (
-        select c.status, c.applied_category_key, c.applied_subcategory_id from classifications c
+        select c.status, c.applied_group_key, c.applied_reply_type_id from reply_type_picks c
         where c.message_id = rep.id and c.organization_id = ${org(f)} and c.status in ('auto_applied', 'accepted', 'overridden', 'proposed')
         order by (c.status = 'proposed'), c.created_at desc limit 1
       ) cl on true
-      left join subcategories sc on sc.id = cl.applied_subcategory_id and sc.organization_id = ${org(f)}
-      group by rep.channel, cl.status, cl.applied_category_key, sc.name`);
+      left join reply_types sc on sc.id = cl.applied_reply_type_id and sc.organization_id = ${org(f)}
+      group by rep.channel, cl.status, cl.applied_group_key, sc.name`);
     const suppressionRows = await run(sql`
       select reason, count(*)::int as n from suppression_list
       where organization_id = ${org(f)} and ${inWindow(sql`created_at`, f)} group by reason`);
     return {
       rows: rows.map((r): ReplyCountRow => {
-        const bucket = replyBucket((r.status as string | null) ?? null, (r.applied_category_key as string | null) ?? null);
+        const bucket = replyBucket((r.status as string | null) ?? null, (r.applied_group_key as string | null) ?? null);
         return { channel: r.channel as Channel, bucket, subcategory: bucket === "pending_review" || bucket === "unclassified" ? null : ((r.subcategory as string | null) ?? null), replies: num(r.replies) };
       }),
       suppressions: Object.fromEntries(suppressionRows.map((r) => [r.reason as SuppressionReason, num(r.n)])),

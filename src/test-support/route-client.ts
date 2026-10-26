@@ -277,7 +277,7 @@ export const SEED_OVERRIDES: Record<string, Record<string, unknown>> = {
   ai_jobs: { kind: "classification", entity_type: "message" },
   contact_policies: { do_not_contact: false, source: null, set_at: null, cleared_at: null },
   // The message must be inbound (cross-row validator); parentForce shapes the message the foreign key walk seeds.
-  classifications: { confidence: 0.5, parentForce: { messages: { direction: "inbound" } } },
+  reply_type_picks: { confidence: 0.5, parentForce: { messages: { direction: "inbound" } } },
   campaign_senders: { seedFrom: { mailbox_id: "mailboxes.id" } },
   notes: { seedFrom: { record_id: "records.id", person_id: "records.person_id" } },
   // enrollment_id and step_number became nullable (test sends), so the seeder no longer follows the foreign key by itself.
@@ -308,7 +308,7 @@ const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<st
       values.position = row.next;
     },
   },
-  classifications: {
+  reply_type_picks: {
     before: async (sql, values) => {
       const [row] = await sql`select c.record_id from messages m join conversations c on c.id = m.conversation_id where m.id = ${values.message_id as string}`;
       if (row) values.record_id = row.record_id;

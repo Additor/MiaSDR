@@ -64,13 +64,13 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
   }
 
   async function classification(f: Fx, l: { recordId: string }, status = "auto_applied") {
-    const [target] = await sql`select id, category_key from subcategories where organization_id = ${f.org} and key = 'demo_request'`;
+    const [target] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and key = 'demo_request'`;
     const r = await rec(l.recordId);
     const [c] = await sql`
-      insert into classifications (organization_id, record_id, message_id, expected_context_version, previous_category_key, previous_subcategory_id,
-        proposed_category_key, proposed_subcategory_id, applied_category_key, applied_subcategory_id, confidence, reasoning, status, provider)
+      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_group_key, previous_reply_type_id,
+        proposed_group_key, proposed_reply_type_id, applied_group_key, applied_reply_type_id, confidence, reasoning, status, provider)
       values (${f.org}, ${l.recordId}, ${r.latest_inbound_message_id}, ${r.context_version}, null, null,
-        ${target.category_key}, ${target.id}, ${status === "proposed" ? null : target.category_key}, ${status === "proposed" ? null : target.id}, 0.9, 'asked for a demo', ${status}, 'fake') returning id`;
+        ${target.group_key}, ${target.id}, ${status === "proposed" ? null : target.group_key}, ${status === "proposed" ? null : target.id}, 0.9, 'asked for a demo', ${status}, 'fake') returning id`;
     return c.id as string;
   }
 
@@ -136,10 +136,10 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
   it("shows a failed draft job, an unconfirmed reply and a failed classification job as problems", async () => {
     const f = await fixture();
     const failedDraftJob = await lead(f);
-    const classificationId = await classification(f, failedDraftJob);
+    const replyTypePickId = await classification(f, failedDraftJob);
     await sql`
       insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key, status, attempts, failed_at, last_error)
-      values (${f.org}, 'initial_draft', 'classification', ${classificationId}, ${"k-" + classificationId}, 'failed', 3, now(), 'Model refused the request')`;
+      values (${f.org}, 'initial_draft', 'classification', ${replyTypePickId}, ${"k-" + replyTypePickId}, 'failed', 3, now(), 'Model refused the request')`;
     const failedClassify = await lead(f);
     const r = await rec(failedClassify.recordId);
     await sql`
@@ -201,8 +201,8 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
   it("filters by category, channel, action type, due window, subcategory, sequence and errors only", async () => {
     const f = await fixture();
     const demo = await lead(f);
-    const [sub] = await sql`select id, category_key from subcategories where organization_id = ${f.org} and key = 'demo_request'`;
-    await sql`update records set category_key = ${sub.category_key}, subcategory_id = ${sub.id}, category_source = 'human' where id = ${demo.recordId}`;
+    const [sub] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and key = 'demo_request'`;
+    await sql`update records set group_key = ${sub.group_key}, reply_type_id = ${sub.id}, reply_type_source = 'human' where id = ${demo.recordId}`;
     await draft(f, demo);
     const plain = await lead(f);
     const linkedin = await lead(f);
@@ -220,7 +220,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect(all(await queue(f, { filter: { category: "interested" } }))).toEqual([demo.recordId]);
     expect(all(await queue(f, { filter: { category: "unclassified" } }))).toEqual([plain.recordId, linkedin.recordId, dueSoon.recordId, dueEarlier.recordId, broken.recordId].sort());
     expect(all(await queue(f, { filter: { channel: "linkedin" } }))).toEqual([linkedin.recordId]);
-    expect(all(await queue(f, { filter: { subcategoryId: sub.id } }))).toEqual([demo.recordId]);
+    expect(all(await queue(f, { filter: { replyTypeId: sub.id } }))).toEqual([demo.recordId]);
 
     const typed = await queue(f, { filter: { group: "follow_up" } });
     expect(ids(typed.groups.follow_up).sort()).toEqual([dueSoon.recordId, dueEarlier.recordId].sort());
@@ -277,7 +277,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     const f = await fixture();
     await expect(queue(f, { filter: { channel: "fax" } })).rejects.toThrow(ValidationError);
     await expect(queue(f, { filter: { group: "everything" } })).rejects.toThrow(ValidationError);
-    await expect(queue(f, { filter: { subcategoryId: "not-a-uuid" } })).rejects.toThrow(ValidationError);
+    await expect(queue(f, { filter: { replyTypeId: "not-a-uuid" } })).rejects.toThrow(ValidationError);
     await expect(queue(f, { filter: { dueBefore: "soon" } })).rejects.toThrow(ValidationError);
     await expect(queue(f, { filter: { group: "reply", errorsOnly: "1" } })).rejects.toThrow(ValidationError);
     await expect(queue(f, { filter: { group: "reply" }, cursor: "garbage" })).rejects.toThrow(ValidationError);
@@ -534,9 +534,9 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       { name: "draft to review and an open task", hasDraftToReview: true, hasOpenTask: true },
       { name: "failed draft", hasProblemDraft: true },
       { name: "failed draft and a draft to review", hasProblemDraft: true, hasDraftToReview: true },
-      { name: "held classification", hasClassificationToReview: true },
-      { name: "held classification and a draft to review", hasClassificationToReview: true, hasDraftToReview: true },
-      { name: "held classification and an open task", hasClassificationToReview: true, hasOpenTask: true },
+      { name: "held classification", hasReplyTypePickToReview: true },
+      { name: "held classification and a draft to review", hasReplyTypePickToReview: true, hasDraftToReview: true },
+      { name: "held classification and an open task", hasReplyTypePickToReview: true, hasOpenTask: true },
       { name: "failed job", hasFailedJob: true },
       { name: "failed job and a draft to review", hasFailedJob: true, hasDraftToReview: true },
       { name: "error", workflowState: "error" },
@@ -561,7 +561,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
         hasProblemDraft: false,
         hasFailedJob: false,
         hasDraftToReview: false,
-        hasClassificationToReview: false,
+        hasReplyTypePickToReview: false,
         hasOpenTask: false,
         ...partial,
       };
@@ -569,7 +569,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       await sql`update records set workflow_state = ${facts.workflowState}, next_action_at = ${facts.nextActionAt?.toISOString() ?? null} where id = ${l.recordId}`;
       if (facts.hasProblemDraft) await draft(f, l, "failed", "Body is empty");
       if (facts.hasDraftToReview) await draft(f, l);
-      if (facts.hasClassificationToReview) await classification(f, l, "proposed");
+      if (facts.hasReplyTypePickToReview) await classification(f, l, "proposed");
       if (facts.hasFailedJob) {
         const r = await rec(l.recordId);
         await sql`

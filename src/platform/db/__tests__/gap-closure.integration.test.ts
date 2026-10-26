@@ -28,10 +28,10 @@ describeDb("gap-closure schema", () => {
   });
 
   async function makeMessage(org: string, person: string, key: string): Promise<string> {
-    const [{ id: pipelineId }] = await sql`
-      insert into pipelines (organization_id, name) values (${org}, ${"p-" + key}) returning id`;
+    const [{ id: replyTypeSetId }] = await sql`
+      insert into reply_type_sets (organization_id, name) values (${org}, ${"p-" + key}) returning id`;
     const [{ id: recordId }] = await sql`
-      insert into records (organization_id, person_id, pipeline_id) values (${org}, ${person}, ${pipelineId}) returning id`;
+      insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${replyTypeSetId}) returning id`;
     const [{ id: convId }] = await sql`
       insert into conversations (organization_id, record_id, channel, account_ref)
       values (${org}, ${recordId}, 'email', ${"acc-" + key}) returning id`;
@@ -141,9 +141,9 @@ describeDb("gap-closure schema", () => {
 
   describe("drafts.cc", () => {
     it("defaults to an empty array and refuses CC on a LinkedIn draft", async () => {
-      const [{ id: pipelineId }] = await sql`insert into pipelines (organization_id, name) values (${orgA}, 'dp') returning id`;
+      const [{ id: replyTypeSetId }] = await sql`insert into reply_type_sets (organization_id, name) values (${orgA}, 'dp') returning id`;
       const [{ id: recordId }] = await sql`
-        insert into records (organization_id, person_id, pipeline_id) values (${orgA}, ${personA}, ${pipelineId}) returning id`;
+        insert into records (organization_id, person_id, reply_type_set_id) values (${orgA}, ${personA}, ${replyTypeSetId}) returning id`;
       const [{ id: convId }] = await sql`
         insert into conversations (organization_id, record_id, channel, account_ref) values (${orgA}, ${recordId}, 'linkedin', 'li-1') returning id`;
       const [d] = await sql`

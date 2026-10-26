@@ -12,7 +12,7 @@ import { leadStatus, type LeadEnrollmentFact, type LeadStatus, type ReadLeadStat
  * advance the enrollment, they write no message. Replied is an enrollment with status `replied` or an inbound message in a
  * public conversation (the `replied` filter in the people context uses the same definition). No query runs per lead.
  *
- * Index use: `enrollments_person_idx` for the enrollments; `records_person_pipeline_uq`, `conversations_record_idx` and
+ * Index use: `enrollments_person_idx` for the enrollments; `records_person_reply_type_set_uq`, `conversations_record_idx` and
  * `messages_conversation_sent_idx` for the last contact. Personal (private) campaigns and their threads stay out, like
  * the Inbox leaves them out. A person with no enrollment and no message has no entry, and an id from another
  * organization finds nothing, so the caller falls back to `NEW_LEAD_STATUS`.
