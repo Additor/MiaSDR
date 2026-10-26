@@ -61,9 +61,9 @@ describe("reply type input", () => {
 });
 
 describe("pipeline settings and instructions", () => {
-  it("bounds the auto-apply threshold", () => {
+  it("bounds the confidence floor", () => {
     expect(parseReplyHandlingSettings({ autoApplyConfidence: 0.9 })).toEqual({ autoApplyConfidence: 0.9 });
-    expect(() => parseReplyHandlingSettings({ autoApplyConfidence: 1.2 })).toThrow();
+    expect(() => parseReplyHandlingSettings({ autoApplyConfidence: 1.2 })).toThrow(/confidence floor/);
     expect(() => parseReplyHandlingSettings({ reviewOther: false })).toThrow(/Nothing/);
   });
 

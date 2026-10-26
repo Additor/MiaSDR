@@ -160,7 +160,7 @@ export function parseReplyHandlingSettings(raw: Record<string, unknown>): ReplyH
   const patch: ReplyHandlingSettingsPatch = {};
   if (raw.autoApplyConfidence !== undefined) {
     const value = raw.autoApplyConfidence;
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError("The auto-apply threshold must be a number from 0 to 1.");
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError("The confidence floor must be a number from 0 to 1.");
     patch.autoApplyConfidence = Math.round(value * 1000) / 1000;
   }
   if (Object.keys(patch).length === 0) throw new ValidationError("Nothing to change.");

@@ -5,7 +5,7 @@ import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () => withActor(async (actor) => (await getReplyTypeCatalog(replyHandlingDeps(), actor)).settings);
 
-/** Auto-apply threshold and the two review switches. */
+/** The confidence floor (`autoApplyConfidence`, 0 to 1). */
 export const PATCH = (request: Request) =>
   withAdmin("Only an owner or admin can change reply settings.", async (actor) => {
     await updateReplySettings(replyHandlingDeps(), actor, z.record(z.string(), z.unknown()).parse(await request.json()));
