@@ -79,10 +79,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Apply migrations (drizzle migrator on ./drizzle)
-        run: pnpm exec drizzle-kit migrate
+      - name: Apply migrations (the script the production image runs)
+        run: pnpm db:migrate
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          DATABASE_SSL: disable
       - run: pnpm test
 
   build:

@@ -73,7 +73,7 @@ pnpm test
 ```bash
 docker run -d --name miasdr-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=miasdr_test -p 127.0.0.1:55432:5432 postgres:17
 export TEST_DATABASE_URL=postgres://postgres:test@127.0.0.1:55432/miasdr_test
-DATABASE_URL=$TEST_DATABASE_URL pnpm exec drizzle-kit migrate
+DATABASE_URL=$TEST_DATABASE_URL DATABASE_SSL=disable pnpm db:migrate
 pnpm test
 ```
 

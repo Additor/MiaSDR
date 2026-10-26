@@ -30,7 +30,7 @@ export NEXT_TELEMETRY_DISABLED=1
 step "install";   pnpm install --frozen-lockfile
 step "typecheck"; pnpm typecheck
 step "lint";      pnpm lint
-step "migrate";   DATABASE_URL="$TEST_DATABASE_URL" pnpm exec drizzle-kit migrate
+step "migrate";   DATABASE_URL="$TEST_DATABASE_URL" DATABASE_SSL=disable pnpm db:migrate
 step "vitest";    pnpm test
 step "build";     pnpm build
 step "e2e";       pnpm e2e
