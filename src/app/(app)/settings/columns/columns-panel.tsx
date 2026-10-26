@@ -98,41 +98,14 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
     void run(callApi("/api/leads/columns", "PUT", { entity, ids }));
   }
 
-  function remove(column: Column) {
-    void run(callApi(`/api/leads/columns/${column.id}`, "DELETE"), `${column.name} deleted.`);
-  }
-
   return (
     <div>
-      {canManage && (
-        <SettingsSection title="Add a field" description="Imports turn extra file columns into fields too. Names are unique per type, ignoring case.">
-          <form onSubmit={add} className="flex flex-wrap items-end gap-2">
-            <Field className="w-auto">
-              <FieldLabel htmlFor={nameId}>New field name</FieldLabel>
-              <Input id={nameId} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required className="w-64 max-w-full" />
-            </Field>
-            <Button type="submit" disabled={pending}>
-              Add field
-            </Button>
-          </form>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-        </SettingsSection>
-      )}
       <SettingsSection title={TITLES[entity]} description={active.length > 0 ? `Order here is the order on ${SHOWN_ON[entity]}.` : undefined}>
-        {!canManage && error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
         {active.length === 0 ? (
           <EmptyState
             className="py-0"
             title={`No ${entity === "people" ? "person" : "company"} fields yet`}
-            description={canManage ? "Add one above, or import a file with extra columns and MiaSDR creates them for you." : "An owner or admin can add one, or an import can create them."}
+            description={canManage ? "Add one below, or import a file with extra columns and MiaSDR creates them for you." : "An owner or admin can add one, or an import can create them."}
             action={{ label: "Import leads", href: "/leads/import" }}
           />
         ) : (
@@ -185,12 +158,30 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
             ))}
           </ul>
         )}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
       </SettingsSection>
+      {canManage && (
+        <SettingsSection title="Add a field" description="Imports turn extra file columns into fields too. Names are unique per type, ignoring case.">
+          <form onSubmit={add} className="flex flex-wrap items-end gap-group">
+            <Field className="w-auto">
+              <FieldLabel htmlFor={nameId}>Name</FieldLabel>
+              <Input id={nameId} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required className="w-64 max-w-full" />
+            </Field>
+            <Button type="submit" disabled={pending || name.trim() === ""}>
+              Add field
+            </Button>
+          </form>
+        </SettingsSection>
+      )}
       {archived.length > 0 && (
         <SettingsSection title={`Archived (${archived.length})`} description="Archived fields keep their values. Delete one to remove the values from every row.">
           <ul className={RULED_LIST}>
             {archived.map((column) => (
-              <li key={column.id} className={cn(RULED_ROW, "flex min-h-11 flex-wrap items-center gap-2 opacity-80")}>
+              <li key={column.id} className={cn(RULED_ROW, "flex min-h-11 flex-wrap items-center gap-2")}>
                 <span className="font-medium">{column.name}</span>
                 <span className="text-sm text-muted-foreground">{column.usedBy} with a value</span>
                 {canManage && (
@@ -214,6 +205,7 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
         title={`Archive "${archiving?.name ?? "this field"}"?`}
         description={`It leaves ${SHOWN_ON[entity]}. Its values stay on ${archiving?.usedBy ?? 0} ${entity === "people" ? "people" : "companies"}, and you can restore it later.`}
         confirmLabel="Archive field"
+        pendingLabel="Archiving…"
         onConfirm={() => archiving && runOrThrow(callApi(`/api/leads/columns/${archiving.id}`, "PATCH", { archived: true }), `${archiving.name} archived.`)}
       />
       <ConfirmDialog
@@ -222,8 +214,10 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
         title={`Delete "${deleting?.name ?? "this field"}"?`}
         description={`Its value is removed from ${deleting?.usedBy ?? 0} ${entity === "people" ? "people" : "companies"}. This cannot be undone.`}
         confirmLabel="Delete field"
+        cancelLabel="Keep field"
+        pendingLabel="Deleting…"
         destructive
-        onConfirm={() => deleting && remove(deleting)}
+        onConfirm={() => deleting && runOrThrow(callApi(`/api/leads/columns/${deleting.id}`, "DELETE"), `${deleting.name} deleted.`)}
       />
     </div>
   );

@@ -126,7 +126,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                     failed <Time value={job.failedAt} /> after {job.attempts} attempt(s)
                     {job.manualRequeues > 0 ? `, requeued by hand ${job.manualRequeues} time(s)` : ""}
                   </span>
-                  <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => requeue(job.id, `/api/jobs/ai/${job.id}/requeue`)}>
+                  <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => requeue(job.id, `/api/jobs/ai/${job.id}/requeue`)}>
                     {busy === job.id ? "Requeueing…" : "Requeue"}
                   </Button>
                 </div>
@@ -155,7 +155,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                   <span className="font-medium">{KIND_LABEL[job.kind]}</span>
                   <span className="text-muted-foreground">skipped <Time value={job.skippedAt} />, reason {job.reason}</span>
                   {isRequeueableSkip({ status: "skipped", skipReason: job.reason }) && (
-                    <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => requeue(job.id, `/api/jobs/ai/${job.id}/requeue`)}>
+                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => requeue(job.id, `/api/jobs/ai/${job.id}/requeue`)}>
                       {busy === job.id ? "Requeueing…" : "Requeue"}
                     </Button>
                   )}

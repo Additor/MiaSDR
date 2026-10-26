@@ -383,7 +383,8 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
           title={`Delete workbook "${workbook.name}"?`}
           description="Its tables, rows and run history are deleted. This cannot be undone."
           confirmLabel="Delete workbook"
-          pendingLabel="Deleting..."
+          cancelLabel="Keep workbook"
+          pendingLabel="Deleting…"
           destructive
           onConfirm={async () => {
             const res = await gridRequest(`${gridUrl.workbooks}/${workbookId}`, "DELETE");
@@ -429,7 +430,8 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
           title={`Delete table "${action.name}"?`}
           description="Its columns, rows and run history are deleted. This cannot be undone."
           confirmLabel="Delete table"
-          pendingLabel="Deleting..."
+          cancelLabel="Keep table"
+          pendingLabel="Deleting…"
           destructive
           onConfirm={async () => {
             const res = await gridRequest(`${gridUrl.tables}/${action.id}`, "DELETE");

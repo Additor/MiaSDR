@@ -64,7 +64,7 @@ export function BulkDncDialog({ open, ids, onClose }: { open: boolean; ids: read
       title={bulkDncTitle(ids.length)}
       description={DESCRIPTION}
       confirmLabel="Mark do not contact"
-      cancelLabel={report ? "Close" : "Cancel"}
+      cancelLabel={report ? "Close" : "Keep contacting"}
       pendingLabel={progress.total > DNC_CHUNK ? `Marking… ${progress.done} of ${progress.total}` : "Marking…"}
       destructive
       confirmDisabled={report !== null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react";
+import { ChevronRightIcon, CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -221,8 +221,14 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               </div>
             )}
             {classification?.stopRequested && !panel.suppressed && (
-              <div className="grid gap-2 rounded-lg border border-destructive/40 p-3" data-testid="stop-banner">
-                <div>The sender appears to ask us to stop contacting them. Nothing stops until you confirm.</div>
+              // The AI's reading of a stop request is uncertain, not an error: the warning icon and lead words, no red frame.
+              <div className="grid gap-2" data-testid="stop-banner">
+                <div className="flex items-start gap-2">
+                  <CircleHelpIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <p>
+                    <strong className="font-medium text-warning">Possible stop request.</strong> The sender appears to ask us to stop contacting them. Nothing stops until you confirm.
+                  </p>
+                </div>
                 {/* The one stop flow is Next step's Stop contacting, which asks how far the stop reaches and confirms it. */}
                 {!panel.doNotContact && (
                   <div>
@@ -457,7 +463,8 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
           title={`Discard the draft reply to ${panel.recipient ?? "this person"}?`}
           description="The draft is deleted and nothing was sent. You can write or generate a new reply afterward."
           confirmLabel="Discard draft"
-          pendingLabel="Discarding..."
+          cancelLabel="Keep draft"
+          pendingLabel="Discarding…"
           destructive
           onConfirm={discard}
         />
@@ -471,8 +478,14 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
 function UncertainBox({ busy, onResolve }: { draftId: string; busy: boolean; onResolve: (outcome: "delivered" | "not_delivered", note: string) => void }) {
   const [text, setText] = useState("");
   return (
-    <div className="grid gap-2 rounded-lg border border-destructive/40 p-3 text-sm" data-testid="uncertain-box">
-      <p>The mail provider did not confirm this send. It may have gone out, so it will not be retried. Check the Sent folder of the mailbox, then mark what you found.</p>
+    // An unconfirmed send is uncertain: the warning hue on the icon and the lead words only, no frame.
+    <div className="grid gap-2 text-sm" data-testid="uncertain-box">
+      <div className="flex items-start gap-2">
+        <CircleHelpIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+        <p>
+          <strong className="font-medium text-warning">Not confirmed.</strong> The mail provider did not confirm this send. It may have gone out, so it will not be retried. Check the Sent folder of the mailbox, then mark what you found.
+        </p>
+      </div>
       <Label htmlFor="resolve-note">How did you check?</Label>
       <Input id="resolve-note" value={text} onChange={(e) => setText(e.target.value)} />
       <div className="flex gap-2">

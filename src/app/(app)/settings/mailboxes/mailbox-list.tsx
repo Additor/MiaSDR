@@ -192,7 +192,7 @@ export function MailboxList({
                 )}
                 {canManage && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => act("Connection checked", () => callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"))}>
+                    <Button variant="ghost" size="sm" onClick={() => act("Connection checked", () => callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"))}>
                       Recheck connection
                     </Button>
                     <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} onSaved={() => router.refresh()} />
@@ -273,7 +273,8 @@ function MailboxMenu({
           onOpenChange={onOpenChange}
           title={`Remove ${mailbox.emailAddress}?`}
           description={NO_WAITING_LEADS}
-          confirmLabel="Remove"
+          confirmLabel="Remove mailbox"
+          cancelLabel="Keep mailbox"
           pendingLabel="Removing…"
           destructive
           onConfirm={() => act("Removed", () => callApi(`/api/mailboxes/${mailbox.id}`, "DELETE"))}
@@ -318,7 +319,7 @@ function EditMailbox({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox: Ma
   return (
     <>
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
         onClick={() => {
           // Opening starts from what is saved, not from an abandoned edit.

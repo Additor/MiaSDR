@@ -119,7 +119,7 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
                   <ul className={RULED_LIST} aria-label={`${c.label} subcategories`}>
                     {subs.map((s) => (
                       <li key={s.id} className={cn(RULED_ROW, "flex flex-wrap items-start gap-x-3 gap-y-1 text-sm")}>
-                        <div className={cn("grid min-w-0 flex-1 gap-1", !s.active && "opacity-60")}>
+                        <div className="grid min-w-0 flex-1 gap-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{s.name}</span>
                             {s.rules.checkMode === "before" && <Badge variant="secondary">Always reviewed</Badge>}
@@ -218,6 +218,8 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
             : `${archiveRecords(confirming?.sub.recordCount ?? 0)} The AI stops choosing it for new replies. Restore it any time.`
         }
         confirmLabel={confirming?.action === "delete" ? "Delete subcategory" : "Archive subcategory"}
+        cancelLabel={confirming?.action === "delete" ? "Keep subcategory" : "Cancel"}
+        pendingLabel={confirming?.action === "delete" ? "Deleting…" : "Archiving…"}
         destructive={confirming?.action === "delete"}
         onConfirm={() => confirming && (confirming.action === "delete" ? remove(confirming.sub) : toggle(confirming.sub))}
       />

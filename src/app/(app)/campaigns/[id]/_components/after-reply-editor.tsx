@@ -6,8 +6,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AFTER_REPLY_MODE_LABELS, type AfterReplyMode } from "@/contexts/conversations/after-reply/domain/after-reply";
@@ -189,20 +191,26 @@ export function AfterReplyEditor({
     <div className="grid gap-4">
       <fieldset className="grid gap-3" disabled={pending}>
         <legend className="sr-only">After a reply</legend>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="radio" name={`after-reply-${campaignId}`} className="mt-1" checked={!aiOn} onChange={() => setMode("handoff")} />
-          <span className="grid gap-0.5">
-            <span className="font-medium">{AFTER_REPLY_MODE_LABELS.handoff}</span>
-            <span className="text-muted-foreground">The sequence stops for that lead and the reply waits in the Inbox.</span>
-          </span>
-        </label>
-        <label className={`flex items-start gap-2 text-sm ${supported ? "" : "opacity-60"}`}>
-          <input type="radio" name={`after-reply-${campaignId}`} className="mt-1" checked={aiOn} disabled={!supported} onChange={() => setMode("ai_drafts")} />
-          <span className="grid gap-0.5">
-            <span className="font-medium">{AFTER_REPLY_MODE_LABELS.ai_drafts}</span>
-            <span className="text-muted-foreground">The AI writes each draft. You approve every message before it sends.</span>
-          </span>
-        </label>
+        <RadioGroup name={`after-reply-${campaignId}`} value={mode} onValueChange={(next) => setMode(next as AfterReplyMode)} disabled={pending}>
+          <FieldLabel htmlFor={`after-reply-${campaignId}-handoff`}>
+            <Field orientation="horizontal">
+              <RadioGroupItem value="handoff" id={`after-reply-${campaignId}-handoff`} />
+              <FieldContent>
+                <FieldTitle>{AFTER_REPLY_MODE_LABELS.handoff}</FieldTitle>
+                <FieldDescription>The sequence stops for that lead and the reply waits in the Inbox.</FieldDescription>
+              </FieldContent>
+            </Field>
+          </FieldLabel>
+          <FieldLabel htmlFor={`after-reply-${campaignId}-ai`}>
+            <Field orientation="horizontal" data-disabled={!supported}>
+              <RadioGroupItem value="ai_drafts" id={`after-reply-${campaignId}-ai`} disabled={!supported} />
+              <FieldContent>
+                <FieldTitle>{AFTER_REPLY_MODE_LABELS.ai_drafts}</FieldTitle>
+                <FieldDescription>The AI writes each draft. You approve every message before it sends.</FieldDescription>
+              </FieldContent>
+            </Field>
+          </FieldLabel>
+        </RadioGroup>
         {note && <p className="text-sm text-muted-foreground">{note}</p>}
       </fieldset>
 

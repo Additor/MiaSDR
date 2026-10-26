@@ -29,7 +29,8 @@ export function SettingsSection({
       className="stack-group border-t py-section first-of-type:border-t-0 first-of-type:pt-0 last-of-type:pb-0"
     >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="stack-field min-w-0">
+        {/* The text takes the row and wraps, so an action stays on the heading row beside a long description. */}
+        <div className="stack-field min-w-0 flex-1 basis-64">
           <h2 id={id} className="text-base font-semibold">
             {title}
           </h2>

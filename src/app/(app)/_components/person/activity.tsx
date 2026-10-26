@@ -79,7 +79,6 @@ export async function PersonActivity({ actor, personId, first = "history" }: { a
     content: (
       <TasksPanel
         personId={personId}
-        heading={false}
         currentUserId={actor.userId}
         nowMs={deps.now().getTime()}
         members={members}
@@ -100,7 +99,7 @@ export async function PersonActivity({ actor, personId, first = "history" }: { a
     id: "notes",
     label: "Notes",
     count: notes.length,
-    content: <NotesPanel personId={personId} heading={false} notes={toJson(notes)} currentUserId={actor.userId} isAdmin={admin} />,
+    content: <NotesPanel personId={personId} notes={toJson(notes)} currentUserId={actor.userId} isAdmin={admin} />,
   };
 
   return (

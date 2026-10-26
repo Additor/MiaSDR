@@ -11,7 +11,7 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
@@ -83,25 +83,23 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
 
       {canManage && (
         <SettingsSection title="Add addresses" description="Paste up to 500 addresses, separated by commas, spaces or line breaks. Each one stops its unfinished email sequences.">
-          <form onSubmit={add} className="stack-group">
-            <div className="stack-field">
-              <Label htmlFor="suppress-emails">Email addresses</Label>
-              <Textarea id="suppress-emails" name="emails" rows={4} required placeholder={"ada@acme.com\nbo@globex.com"} className="font-mono text-sm" />
-            </div>
-            <div className="stack-field">
-              <Label htmlFor="suppress-note">Note (optional)</Label>
-              <Input id="suppress-note" name="note" maxLength={500} placeholder="Asked by phone not to be emailed" />
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <div>
-              <Button type="submit" disabled={pending}>
-                {pending ? "Adding…" : "Add to the list"}
-              </Button>
-            </div>
+          <form onSubmit={add}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="suppress-emails">Email addresses</FieldLabel>
+                <Textarea id="suppress-emails" name="emails" rows={4} required placeholder={"ada@acme.com\nbo@globex.com"} className="font-mono text-sm" />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="suppress-note">Note (optional)</FieldLabel>
+                <Input id="suppress-note" name="note" maxLength={500} placeholder="Asked by phone not to be emailed" />
+              </Field>
+              {error && <FieldError>{error}</FieldError>}
+              <div>
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Adding…" : "Add to the list"}
+                </Button>
+              </div>
+            </FieldGroup>
           </form>
         </SettingsSection>
       )}

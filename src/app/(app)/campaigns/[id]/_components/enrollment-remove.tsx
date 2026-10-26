@@ -49,6 +49,7 @@ function removeCopy(count: number, name?: string | null) {
     title: name ? `Remove ${name} from this campaign?` : `Remove ${leads} from this campaign?`,
     description: `Nothing more is sent to ${count === 1 ? "this lead" : "these leads"} from this campaign. The lead stays in Leads and the history stays here. You can restore a removed lead from the Removed filter unless the person has replied or is marked do not contact.`,
     confirmLabel: name ? "Remove lead" : `Remove ${leads}`,
+    cancelLabel: count === 1 ? "Keep lead" : "Keep leads",
   };
 }
 
@@ -99,7 +100,7 @@ export function EnrollmentSelectionProvider({ channel, campaignId, children }: {
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm" role="status">
           <span>{selected.size} selected.</span>
-          <Button size="sm" variant="destructive" onClick={() => setConfirming(true)}>
+          <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
             Remove from campaign
           </Button>
           <Button size="sm" variant="ghost" onClick={value.clear}>

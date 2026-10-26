@@ -59,7 +59,7 @@ test.describe("contacts list bulk actions", () => {
     const ids = await seed(page);
     await openList(page);
     await openFilters(page);
-    await expect(page.getByLabel("Deal owner", { exact: true })).toHaveValue("");
+    await expect(page.getByRole("combobox", { name: "Deal owner", exact: true })).toContainText("Any deal owner");
     await page.keyboard.press("Escape");
     const header = page.getByRole("columnheader", { name: /Deal owner/ });
     await expect(header).toContainText("Owner of the latest deal");

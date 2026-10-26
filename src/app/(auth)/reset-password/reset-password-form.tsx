@@ -20,7 +20,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Link expired</CardTitle>
+          <CardTitle as="h1">Link expired</CardTitle>
           <CardDescription>This reset link is invalid, expired or already used. Request a new one.</CardDescription>
         </CardHeader>
         <CardFooter>
@@ -36,7 +36,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Password updated</CardTitle>
+          <CardTitle as="h1">Password updated</CardTitle>
           <CardDescription>Every device was signed out. Sign in with your new password.</CardDescription>
         </CardHeader>
         <CardFooter>
@@ -69,7 +69,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     <Card>
       <form onSubmit={onSubmit}>
         <CardHeader>
-          <CardTitle>Choose a new password</CardTitle>
+          <CardTitle as="h1">Choose a new password</CardTitle>
           <CardDescription>At least {MIN_LENGTH} characters.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 py-4">

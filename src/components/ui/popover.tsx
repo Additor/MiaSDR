@@ -14,7 +14,8 @@ function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
 
 /**
  * The popup on the menu surface. `container` and `keepMounted` keep the popup inside a given node while it is closed,
- * so a form around that node still submits its fields.
+ * so a form around that node still submits its fields. `anchor` places it against an element other than the trigger,
+ * for a popover without one (the calendar under a grid cell's date editor).
  */
 function PopoverContent({
   align = "start",
@@ -23,6 +24,7 @@ function PopoverContent({
   sideOffset = 4,
   collisionPadding = 16,
   positionMethod,
+  anchor,
   positionerClassName,
   container,
   keepMounted,
@@ -31,7 +33,7 @@ function PopoverContent({
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset" | "collisionPadding" | "positionMethod"
+    "align" | "alignOffset" | "side" | "sideOffset" | "collisionPadding" | "positionMethod" | "anchor"
   > &
   Pick<PopoverPrimitive.Portal.Props, "container" | "keepMounted"> & {
     positionerClassName?: string
@@ -46,6 +48,7 @@ function PopoverContent({
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
         positionMethod={positionMethod}
+        anchor={anchor}
       >
         <PopoverPrimitive.Popup
           data-slot="popover-content"

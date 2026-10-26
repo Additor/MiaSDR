@@ -15,6 +15,12 @@ export interface QueueFilterValues {
   errorsOnly: boolean;
 }
 
+const CHANNELS = [
+  { value: "", label: "All channels" },
+  { value: "email", label: "Email" },
+  { value: "linkedin", label: "LinkedIn" },
+];
+
 /**
  * The Filters popover as its own GET form: the filters live in the URL, so a filtered queue can be linked. The chips
  * under the toolbar show what applies.
@@ -35,44 +41,16 @@ export function QueueFilters({
 }) {
   return (
     <FilterPopover count={count} form={{ action: "/actions", label: "Queue filters", hidden: <input type="hidden" name="scope" value={scope} /> }}>
-      <SelectField label="Group" name="group" defaultValue={values.group}>
-        <option value="">All groups</option>
-        {QUEUE_GROUPS.map((g) => (
-          <option key={g} value={g}>
-            {QUEUE_GROUP_LABELS[g].title}
-          </option>
-        ))}
-      </SelectField>
-      <SelectField label="Channel" name="channel" defaultValue={values.channel}>
-        <option value="">All channels</option>
-        <option value="email">Email</option>
-        <option value="linkedin">LinkedIn</option>
-      </SelectField>
-      <SelectField label="Campaign" name="campaignId" defaultValue={values.campaignId}>
-        <option value="">All campaigns</option>
-        {campaigns.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </SelectField>
-      <SelectField label="Reply category" name="category" defaultValue={values.category}>
-        <option value="">All reply categories</option>
-        {REPLY_TYPE_GROUPS.map((c) => (
-          <option key={c.key} value={c.key}>
-            {c.label}
-          </option>
-        ))}
-        <option value="unclassified">Unclassified</option>
-      </SelectField>
-      <SelectField label="Reply subcategory" name="replyTypeId" defaultValue={values.replyTypeId}>
-        <option value="">All reply subcategories</option>
-        {subcategories.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </SelectField>
+      <SelectField label="Group" name="group" defaultValue={values.group} options={[{ value: "", label: "All groups" }, ...QUEUE_GROUPS.map((g) => ({ value: g, label: QUEUE_GROUP_LABELS[g].title }))]} />
+      <SelectField label="Channel" name="channel" defaultValue={values.channel} options={CHANNELS} />
+      <SelectField label="Campaign" name="campaignId" defaultValue={values.campaignId} options={[{ value: "", label: "All campaigns" }, ...campaigns.map((c) => ({ value: c.id, label: c.name }))]} />
+      <SelectField
+        label="Reply category"
+        name="category"
+        defaultValue={values.category}
+        options={[{ value: "", label: "All reply categories" }, ...REPLY_TYPE_GROUPS.map((c) => ({ value: c.key, label: c.label })), { value: "unclassified", label: "Unclassified" }]}
+      />
+      <SelectField label="Reply subcategory" name="replyTypeId" defaultValue={values.replyTypeId} options={[{ value: "", label: "All reply subcategories" }, ...subcategories.map((s) => ({ value: s.id, label: s.name }))]} />
       <DateRangeField label="Due" from={{ name: "dueAfter", value: values.dueAfter }} to={{ name: "dueBefore", value: values.dueBefore }} />
       <CheckField label="Errors only" name="errorsOnly" defaultChecked={values.errorsOnly} />
     </FilterPopover>

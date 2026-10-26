@@ -26,7 +26,7 @@ Every email carries an unsubscribe link and the `List-Unsubscribe` and `List-Uns
 
 ## Working hours and time zones
 
-Each mailbox has working days, a start and end time, and a time zone, set in **Settings > Mailboxes**. New mailboxes default to Monday to Friday, 09:00 to 18:00 in the time zone the browser reported on the setup page (UTC when none was saved). A mailbox outside its hours holds its sends until the window opens. This is the usual reason a started campaign sends nothing in the evening or on a weekend. Check the time zone first if sends start at the wrong hour.
+Each mailbox has working days, a start and end time, and a time zone, set in **Settings > Mailboxes**. The times step by 30 minutes, the end time also offers 23:59, and a time saved off the step stays as it is. An end at or before the start runs past midnight. New mailboxes default to Monday to Friday, 09:00 to 18:00 in the time zone the browser reported on the setup page (UTC when none was saved). A mailbox outside its hours holds its sends until the window opens. This is the usual reason a started campaign sends nothing in the evening or on a weekend. Check the time zone first if sends start at the wrong hour.
 
 ## Pause all sending
 

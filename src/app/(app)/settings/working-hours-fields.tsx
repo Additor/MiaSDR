@@ -1,7 +1,7 @@
 "use client";
 
+import { TimeSelect } from "@/components/shell/time-select";
 import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TimeZoneSelect } from "./time-zone-select";
 
@@ -54,7 +54,11 @@ export function hoursSummary(draft: HoursDraft): string {
   return `${days}, ${draft.start} to ${draft.end}, ${draft.timeZone}`;
 }
 
-/** Time zone, sending days and one window. `id` prefixes the field ids, so two accounts on one page do not collide. */
+/**
+ * Time zone, sending days and one window. From and Until are `TimeSelect`s on the half hour, and Until also offers 23:59
+ * for a window that runs to the end of the day. An Until at or before From runs past midnight. `id` prefixes the field
+ * ids, so two accounts on one page do not collide.
+ */
 export function WorkingHoursFields({ id, value, onChange, zones, disabled }: { id: string; value: HoursDraft; onChange: (next: HoursDraft) => void; zones: string[]; disabled?: boolean }) {
   return (
     <>
@@ -75,11 +79,11 @@ export function WorkingHoursFields({ id, value, onChange, zones, disabled }: { i
       <div className="flex flex-wrap items-end gap-group">
         <Field className="w-auto">
           <FieldLabel htmlFor={`${id}-start`}>From</FieldLabel>
-          <Input id={`${id}-start`} type="time" value={value.start} onChange={(e) => onChange({ ...value, start: e.target.value })} required disabled={disabled} className="w-32" />
+          <TimeSelect id={`${id}-start`} value={value.start} onChange={(start) => onChange({ ...value, start })} disabled={disabled} />
         </Field>
         <Field className="w-auto">
           <FieldLabel htmlFor={`${id}-end`}>Until</FieldLabel>
-          <Input id={`${id}-end`} type="time" value={value.end} onChange={(e) => onChange({ ...value, end: e.target.value })} required disabled={disabled} className="w-32" />
+          <TimeSelect id={`${id}-end`} value={value.end} onChange={(end) => onChange({ ...value, end })} endOfDay disabled={disabled} />
         </Field>
       </div>
     </>

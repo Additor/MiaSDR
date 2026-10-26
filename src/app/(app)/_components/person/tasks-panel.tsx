@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { DatePicker, formatDay } from "@/components/shell/date-picker";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -50,13 +50,11 @@ export type TasksPanelProps = TaskTarget & {
   members: MemberOption[];
   currentUserId: string;
   nowMs: number;
-  /** False inside a page section that already names it, such as the Activity tabs. */
-  heading?: boolean;
   /** The form waits behind a New task button, for a side panel where the list matters more than the form. */
   compact?: boolean;
 };
 
-export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = true, compact = false, ...target }: TasksPanelProps) {
+export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = false, ...target }: TasksPanelProps) {
   const router = useRouter();
   const createUrl = target.recordId !== undefined ? `/api/records/${target.recordId}/tasks` : `/api/people/${target.personId}/tasks`;
   // Ids of the form fields: unique per panel, so two panels on one page keep their labels apart.
@@ -158,7 +156,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" disabled={pending || zone === null} className="max-sm:h-11">
+            <Button type="submit" size="sm" variant="outline" disabled={pending || zone === null} className="max-sm:h-11">
               {pending ? "Adding…" : "Add task"}
             </Button>
             {compact && (
@@ -195,7 +193,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     {/* A due date is a calendar day in the zone it was set in, which is the browser zone here. */}
                     {t.dueAt && zone && (
-                      <span className={overdue ? "font-medium text-destructive" : undefined}>
+                      <span className={overdue ? "font-medium text-foreground" : undefined}>
                         {overdue ? "Overdue, " : "Due "}
                         <Time value={t.dueAt} zone={zone} dateOnly />
                       </span>
@@ -239,23 +237,14 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
 
   return (
     <>
-      {heading ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Tasks</CardTitle>
-            <CardDescription>Follow-ups for this person. Open tasks also appear in Actions.</CardDescription>
-          </CardHeader>
-          <CardContent>{content}</CardContent>
-        </Card>
-      ) : (
-        content
-      )}
+      {content}
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title={`Delete the task "${deleting?.name ?? ""}"?`}
         description="The task is deleted for everyone in your organization and leaves Actions. This cannot be undone."
         confirmLabel="Delete task"
+        cancelLabel="Keep task"
         pendingLabel="Deleting…"
         destructive
         onConfirm={() => deleting && remove(deleting.id)}
@@ -268,7 +257,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, heading = tru
 export function dayFromToday(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return formatDay(d);
 }
 
 /** "Fri, Oct 23", in English whatever the browser's language. */
@@ -281,8 +270,8 @@ const QUICK_DAYS: Array<[label: string, days: number]> = [
 ];
 
 /**
- * The due date as three quick choices and Pick a date. The browser's own date field opens only when you pick, so an
- * empty form never shows a placeholder in the browser's language; the chosen day reads back in English.
+ * The due date as three quick choices and Pick a date. Pick a date shows a `DatePicker` with its calendar open; the
+ * chosen day reads back in English under the buttons.
  */
 export function DueField({ id, value, onChange }: { id: string; value: string; onChange: (day: string) => void }) {
   const [picking, setPicking] = useState(false);
@@ -300,7 +289,7 @@ export function DueField({ id, value, onChange }: { id: string; value: string; o
           Pick a date
         </Button>
       </div>
-      {picking && <Input id={id} type="date" aria-label="Due date" value={value} className="w-fit max-sm:h-11" onChange={(e) => onChange(e.target.value)} />}
+      {picking && <DatePicker id={id} aria-label="Due date" value={value} onChange={onChange} defaultOpen className="w-40" />}
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {value ? `Due ${dayText(value)}.` : "No due date."}
       </p>

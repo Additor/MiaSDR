@@ -252,7 +252,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
                   {jump.label} <span className="text-xs font-semibold text-sidebar-count tabular-nums">{jump.count}</span>
                 </a>
               ) : (
-                <span key={jump.href} className="inline-flex min-h-8 items-center gap-1 text-muted-foreground/60 max-sm:min-h-11">
+                <span key={jump.href} className="inline-flex min-h-8 items-center gap-1 text-muted-foreground max-sm:min-h-11">
                   {jump.label} <span className="text-xs tabular-nums">0</span>
                 </span>
               ),

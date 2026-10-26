@@ -1,11 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,38 +33,37 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<string[]>([]);
-  const [pending, setPending] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
   const [campaign, setCampaign] = useState(NO_CAMPAIGN);
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const items = [{ value: NO_CAMPAIGN, label: "No campaign (leads only)" }, ...campaigns.map((c) => ({ value: c.id, label: c.name }))];
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    form.set("campaignId", campaign === NO_CAMPAIGN ? "" : campaign);
-    if (accountIds.length > 0) form.set("accountIds", JSON.stringify(accountIds));
-    setPending(true);
+  async function upload(): Promise<boolean> {
+    // The confirm button sits outside the form, so it asks the form to check its own fields.
+    if (!form.current?.reportValidity()) return false;
+    const body = new FormData(form.current);
+    body.set("campaignId", campaign === NO_CAMPAIGN ? "" : campaign);
+    if (accountIds.length > 0) body.set("accountIds", JSON.stringify(accountIds));
     setError(null);
     setIssues([]);
-    const response = await fetch("/api/linkedin/search-batches", { method: "POST", body: form });
+    const response = await fetch("/api/linkedin/search-batches", { method: "POST", body });
     const data = await response.json().catch(() => ({}));
-    setPending(false);
     if (!response.ok) {
+      // The refusal and its reasons render in the body, and the dialog stays open.
       setError(data.error ?? "The upload failed. Check the file and try again.");
       setIssues(Array.isArray(data.issues) ? data.issues.map((i: { message: string }) => i.message) : []);
-      return;
+      return false;
     }
     const report = data as UploadReport;
-    setOpen(false);
     setCampaign(NO_CAMPAIGN);
     setAccountIds([]);
     const skipped = [report.rejectedCount && `${report.rejectedCount} refused`, report.duplicatesInFile && `${report.duplicatesInFile} repeated`, report.alreadyQueued && `${report.alreadyQueued} already queued`].filter(Boolean);
     toast.success(`${report.queued.toLocaleString("en-US")} ${report.queued === 1 ? "search" : "searches"} queued${skipped.length ? `, ${skipped.join(", ")}` : ""}.`);
     router.push(`/leads/searches/batches/${report.id}`);
+    return true;
   }
 
   function onOpenChange(next: boolean) {
-    if (pending) return;
     setOpen(next);
     if (!next) {
       setError(null);
@@ -73,34 +72,39 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger render={<Button variant={variant} className="max-sm:h-11 max-sm:px-4" />}>Upload sheet</DialogTrigger>
-      <DialogContent>
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Upload search batch</DialogTitle>
-            <DialogDescription>
-              A CSV or XLSX file of up to {config.maxRows.toLocaleString("en-US")} rows with a search_url column and an optional company_name column.{" "}
-              <a href="/api/linkedin/search-batches/template" download className="underline underline-offset-4">
-                Download the template
-              </a>
-              .
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
+    <>
+      <Button variant={variant} className="max-sm:h-11 max-sm:px-4" onClick={() => setOpen(true)}>
+        Upload sheet
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title="Upload search batch"
+        description={`A CSV or XLSX file of up to ${config.maxRows.toLocaleString("en-US")} rows with a search_url column and an optional company_name column.`}
+        confirmLabel="Queue searches"
+        pendingLabel="Uploading…"
+        onConfirm={upload}
+      >
+        <form ref={form} onSubmit={(e) => e.preventDefault()} className="stack-group">
+          <p className="text-sm">
+            <a href="/api/linkedin/search-batches/template" download className="underline underline-offset-4">
+              Download the template
+            </a>
+          </p>
+          <div className="stack-field">
             <Label htmlFor="batch-name">Name</Label>
             <Input id="batch-name" name="name" placeholder="Berlin fintech CTOs" required maxLength={120} autoFocus />
           </div>
-          <div className="grid gap-2">
+          <div className="stack-field">
             <Label htmlFor="batch-file">File</Label>
             <Input id="batch-file" name="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
           </div>
-          <div className="grid gap-2">
+          <div className="stack-field">
             <Label htmlFor="batch-max">Stop each search after</Label>
             <Input id="batch-max" name="maxResults" type="number" min={1} max={config.maxResultsLimit} defaultValue={config.defaultMaxResults} required />
             <p className="text-xs text-muted-foreground">People per search, up to {config.maxResultsLimit.toLocaleString("en-US")}.</p>
           </div>
-          <div className="grid gap-2">
+          <div className="stack-field">
             <Label htmlFor="batch-campaign">Add to campaign</Label>
             <Select items={items} value={campaign} onValueChange={(v) => v && setCampaign(v)}>
               <SelectTrigger id="batch-campaign" className="w-full">
@@ -139,16 +143,8 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
               )}
             </div>
           )}
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Uploading…" : "Queue searches"}
-            </Button>
-          </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ConfirmDialog>
+    </>
   );
 }

@@ -8,7 +8,7 @@ import { cn } from "cn";
  */
 const SCROLL_CUE = [
   "min-w-0",
-  "[&_[data-slot=table-container]]:[background-image:linear-gradient(to_right,var(--background),var(--background)),linear-gradient(to_left,var(--background),var(--background)),linear-gradient(to_right,rgb(0_0_0/0.14),transparent),linear-gradient(to_left,rgb(0_0_0/0.14),transparent)]",
+  "[&_[data-slot=table-container]]:[background-image:linear-gradient(to_right,var(--background),var(--background)),linear-gradient(to_left,var(--background),var(--background)),linear-gradient(to_right,color-mix(in_oklab,var(--foreground)_14%,transparent),transparent),linear-gradient(to_left,color-mix(in_oklab,var(--foreground)_14%,transparent),transparent)]",
   "[&_[data-slot=table-container]]:[background-position:left_center,right_center,left_center,right_center]",
   "[&_[data-slot=table-container]]:[background-size:24px_100%,24px_100%,12px_100%,12px_100%]",
   "[&_[data-slot=table-container]]:[background-repeat:no-repeat]",

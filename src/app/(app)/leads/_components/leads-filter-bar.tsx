@@ -30,6 +30,8 @@ export function LeadsFilterBar(props: {
   options: { campaigns: Array<{ id: string; name: string; channel: string }>; sources: string[]; categories: string[] };
 }) {
   const { filter, sort, size, options, panelCount, end } = props;
+  const campaigns = options.campaigns.map((c) => ({ value: c.id, label: `${c.name} (${c.channel})` }));
+  const sources = filter.source && !options.sources.includes(filter.source) ? [...options.sources, filter.source] : options.sources;
   return (
     <form action="/leads" aria-label="Filter leads">
       {(sort.key !== "created" || sort.dir !== "desc") && (
@@ -44,41 +46,17 @@ export function LeadsFilterBar(props: {
         filters={
           <FilterPopover count={panelCount}>
             <FilterSection title="Outreach">
-              <SelectField label="Lifecycle" name="lifecycle" defaultValue={lifecycleOf(filter) === "lead" ? "" : lifecycleOf(filter)}>
-                {LIFECYCLE.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField label="Campaign" name="campaign" defaultValue={filter.campaign ?? ""}>
-                <option value="">Any lead</option>
-                <option value="any">In a campaign</option>
-                <option value="none">Not in a campaign</option>
-                {options.campaigns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.channel})
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField label="Not in campaign" name="notCampaign" defaultValue={filter.notInCampaign ?? ""}>
-                <option value="">No exclusion</option>
-                {options.campaigns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.channel})
-                  </option>
-                ))}
-              </SelectField>
+              <SelectField label="Lifecycle" name="lifecycle" defaultValue={lifecycleOf(filter) === "lead" ? "" : lifecycleOf(filter)} options={LIFECYCLE} />
+              <SelectField
+                label="Campaign"
+                name="campaign"
+                defaultValue={filter.campaign ?? ""}
+                options={[{ value: "", label: "Any lead" }, { value: "any", label: "In a campaign" }, { value: "none", label: "Not in a campaign" }, ...campaigns]}
+              />
+              <SelectField label="Not in campaign" name="notCampaign" defaultValue={filter.notInCampaign ?? ""} options={[{ value: "", label: "No exclusion" }, ...campaigns]} />
               <TristateField label="Replied" name="replied" value={filter.replied} />
               <TristateField label="Has conversation" name="hasConversation" value={filter.hasConversation} />
-              <SelectField label="Reply category" name="category" defaultValue={filter.category ?? ""}>
-                <option value="">Any category</option>
-                {options.categories.map((c) => (
-                  <option key={c} value={c}>
-                    {humanizeToken(c)}
-                  </option>
-                ))}
-              </SelectField>
+              <SelectField label="Reply category" name="category" defaultValue={filter.category ?? ""} options={[{ value: "", label: "Any category" }, ...options.categories.map((c) => ({ value: c, label: humanizeToken(c) }))]} />
             </FilterSection>
             <FilterSection title="Reachability">
               <TristateField label="Has email" name="email" value={filter.hasEmail} />
@@ -86,15 +64,7 @@ export function LeadsFilterBar(props: {
               <TristateField label="Do not contact" name="dnc" value={filter.doNotContact} />
             </FilterSection>
             <FilterSection title="Source and dates (UTC)">
-              <SelectField label="Source" name="source" defaultValue={filter.source ?? ""}>
-                <option value="">Any source</option>
-                {options.sources.map((s) => (
-                  <option key={s} value={s}>
-                    {sourceLabel(s)}
-                  </option>
-                ))}
-                {filter.source && !options.sources.includes(filter.source) && <option value={filter.source}>{sourceLabel(filter.source)}</option>}
-              </SelectField>
+              <SelectField label="Source" name="source" defaultValue={filter.source ?? ""} options={[{ value: "", label: "Any source" }, ...sources.map((s) => ({ value: s, label: sourceLabel(s) }))]} />
               <DateRangeField label="Added" from={{ name: "from", value: filter.createdFrom ?? "" }} to={{ name: "to", value: filter.createdTo ?? "" }} />
               <DateRangeField label="Last contact" from={{ name: "lastFrom", value: filter.lastContactFrom ?? "" }} to={{ name: "lastTo", value: filter.lastContactTo ?? "" }} />
             </FilterSection>

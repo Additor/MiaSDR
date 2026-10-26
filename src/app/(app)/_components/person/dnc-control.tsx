@@ -151,7 +151,7 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
                 setError(null);
               }}
             >
-              Cancel
+              Keep contacting
             </Button>
           </div>
         </form>

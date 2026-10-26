@@ -97,6 +97,11 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
 
   return (
     <>
+      {!canManage && (
+        <div className="pb-section">
+          <AdminNotice action="change the stages" />
+        </div>
+      )}
       <SettingsSection
         title="Stages"
         description={
@@ -105,11 +110,10 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
             : "Deals move through these stages in this order. Won and Lost come last. A stage never stops outreach."
         }
       >
-        {!canManage && <AdminNotice action="change the stages" />}
         {canManage && settings.virtual && (
           <div>
             <Button size="sm" disabled={pending} onClick={() => void write("/api/deal-stages/defaults", "POST", undefined, "Default stages created.")}>
-              {pending ? "Creating..." : "Create default stages"}
+              {pending ? "Creating…" : "Create default stages"}
             </Button>
           </div>
         )}
@@ -168,7 +172,7 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
 
       {canManage && (
         <SettingsSection title="Add a stage" description="A new stage goes after the last stage of its kind.">
-          <form onSubmit={add} className="flex flex-wrap items-end gap-3">
+          <form onSubmit={add} className="flex flex-wrap items-end gap-group">
             <Field className="min-w-0 flex-1 basis-48">
               <FieldLabel htmlFor="new-stage-name">Name</FieldLabel>
               <Input id="new-stage-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="Negotiation" />
@@ -202,7 +206,7 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
         description="The stage leaves the pipeline. It has no deals, so nothing else changes."
         confirmLabel="Delete stage"
         cancelLabel="Keep stage"
-        pendingLabel="Deleting..."
+        pendingLabel="Deleting…"
         destructive
         onConfirm={remove}
       />

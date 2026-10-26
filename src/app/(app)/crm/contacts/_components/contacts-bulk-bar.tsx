@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon, MoreHorizontalIcon } from "lucide-react";
-import { useState } from "react";
-import { useSelection } from "@/components/shell/selection";
+import { useRef, useState } from "react";
+import { useBarScrollPadding, useSelection } from "@/components/shell/selection";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { callApi } from "@/app/_lib/api-client";
@@ -29,6 +29,8 @@ export function ContactsBulkBar({ total, pageIds, query }: { total: number; page
   const { selectedIds: ids, select, clear } = useSelection();
   const [busy, setBusy] = useState<"gathering" | "exporting" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  useBarScrollPadding(bar, ids.length > 0);
   // The ids the do not contact dialog works on, fixed when it opens.
   const [dncIds, setDncIds] = useState<string[] | null>(null);
   const model = contactsBarModel({ selectedCount: ids.length, total });
@@ -68,7 +70,7 @@ export function ContactsBulkBar({ total, pageIds, query }: { total: number; page
 
   return (
     <>
-      <div className="sticky bottom-0 z-20 min-h-14 pb-[env(safe-area-inset-bottom)]" data-testid="selection-bar">
+      <div ref={bar} className="sticky bottom-0 z-20 min-h-14 pb-[env(safe-area-inset-bottom)]" data-testid="selection-bar">
         <div className={cn("flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm", ids.length > 0 && "border bg-background shadow-md ring-1 ring-foreground/5")}>
           <div role="status" className="max-md:order-1 max-md:min-h-11 max-md:flex-1 max-md:content-center md:mr-1">
             {ids.length > 0 && (busy === "gathering" ? "Selecting all matching contacts…" : selectedText(ids.length, offPage))}

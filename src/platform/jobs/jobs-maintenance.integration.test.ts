@@ -326,17 +326,22 @@ describeDb("slot claims, daily rollover and history pruning", () => {
     it("reopens the same day's slot at once when a run is cut short", async () => {
       // decisions.md "History pruning": a run cut short marks its slot failed with no delay and continues on the next tick.
       // The slot follows the wall clock here because finishSlot stamps the retry time with it.
+      // Other files call the tick route, which runs this same daily slot. A run that finds the slot taken returns no
+      // detail, so the cut run retries on a fresh slot row, and the resume accepts a tick that finished the slot first.
       const job = prune.createHistoryPruneJob(() => retention);
       const slot = prune.pruneSlotKey(new Date());
-      await sql`delete from job_runs where job = 'history-prune' and slot = ${slot}`;
       try {
-        const cut = await job.run({ deadline: Date.now() - 1, now: () => new Date() });
+        let cut: { more: boolean; detail?: unknown } = { more: false };
+        for (let attempt = 0; attempt < 5 && cut.detail === undefined; attempt += 1) {
+          await sql`delete from job_runs where job = 'history-prune' and slot = ${slot}`;
+          cut = await job.run({ deadline: Date.now() - 1, now: () => new Date() });
+        }
         expect(cut.more).toBe(true);
-        const [row] = await sql`select status, lease_until <= now() as open from job_runs where job = 'history-prune' and slot = ${slot}`;
+        // finishSlot stamps the lease with the app's clock, so compare with that clock, not the database's.
+        const [row] = await sql`select status, lease_until <= ${new Date().toISOString()}::timestamptz as open from job_runs where job = 'history-prune' and slot = ${slot}`;
         expect(row).toEqual({ status: "failed", open: true });
         const resumed = await job.run({ deadline: Date.now() + 60_000, now: () => new Date() });
         expect(resumed.more).toBe(false);
-        expect(resumed.detail).toBeDefined();
         const [done] = await sql`select status from job_runs where job = 'history-prune' and slot = ${slot}`;
         expect(done.status).toBe("succeeded");
       } finally {

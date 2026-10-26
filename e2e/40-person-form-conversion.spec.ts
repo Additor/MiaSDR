@@ -60,7 +60,7 @@ test.describe("person company row", () => {
     // Move goes through, and the row sends no name for the existing company, so its name stays.
     await expect(company.getByTestId("company-join")).toBeVisible();
     await company.getByRole("button", { name: "Save", exact: true }).click();
-    await page.getByRole("dialog", { name: `Move ${name} to S40 Globex ${tag}?` }).getByRole("button", { name: "Move", exact: true }).click();
+    await page.getByRole("dialog", { name: `Move ${name} to S40 Globex ${tag}?` }).getByRole("button", { name: "Change company", exact: true }).click();
     await expect(page.getByText("Company saved.").first()).toBeVisible();
     await expect.poll(() => companyOf(personId)).toEqual({ domain: globex, name: `S40 Globex ${tag}` });
 
@@ -68,7 +68,7 @@ test.describe("person company row", () => {
     const third = await openEditForm(page);
     await third.getByRole("button", { name: "Remove company" }).click();
     const remove = page.getByRole("dialog", { name: `Remove ${name} from S40 Globex ${tag}?` });
-    await remove.getByRole("button", { name: "Remove", exact: true }).click();
+    await remove.getByRole("button", { name: "Remove from company", exact: true }).click();
     await expect.poll(() => companyOf(personId)).toEqual({ domain: null, name: null });
   });
 });

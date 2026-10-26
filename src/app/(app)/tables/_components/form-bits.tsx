@@ -35,6 +35,12 @@ export function ErrorText({ children }: { children: React.ReactNode }) {
 
 const NONE = "__none__";
 
+/** A table's Filter and Sort popovers sit at the bottom edge on a phone, where their controls are 44px tall. */
+export const PHONE_BUTTON = "max-sm:h-11 max-sm:px-3";
+export const PHONE_ICON_BUTTON = "max-sm:size-11";
+/** The Select trigger sets its height on `data-size`, so the phone height needs the same attribute to win. */
+export const PHONE_SELECT = "max-sm:data-[size=default]:h-11";
+
 export interface Item {
   value: string;
   label: string;

@@ -540,3 +540,31 @@ export async function openFilters(page: Page): Promise<void> {
   if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
 }
+
+/** Picks an option in the app's Select: opens the combobox, clicks the option by its name and waits for the list to close. */
+export async function pickOption(page: Page, trigger: Locator, option: string | RegExp): Promise<void> {
+  await trigger.click();
+  await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+}
+
+/**
+ * Picks a day (yyyy-MM-dd) in a `DatePicker`, as a keyboard user would: the trigger opens the calendar on the chosen day
+ * or today, Page Up and Page Down move by month (with Shift by year) to the day's month, and a click picks the day.
+ * `opened` skips the click for a calendar that opened by itself (Pick a date).
+ */
+export async function pickDate(page: Page, trigger: Locator, day: string, { opened = false } = {}): Promise<void> {
+  if (!opened) {
+    await waitForHydrated(trigger);
+    await trigger.click();
+  }
+  const focused = page.locator('[data-slot="calendar"] button[data-day]:focus');
+  await expect(focused).toBeVisible();
+  const start = (await focused.getAttribute("data-day")) ?? day;
+  const monthIndex = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1;
+  let months = monthIndex(day) - monthIndex(start);
+  for (; Math.abs(months) >= 12; months -= Math.sign(months) * 12) await page.keyboard.press(months > 0 ? "Shift+PageDown" : "Shift+PageUp");
+  for (; months !== 0; months -= Math.sign(months)) await page.keyboard.press(months > 0 ? "PageDown" : "PageUp");
+  await page.locator(`[data-slot="calendar"] button[data-day="${day}"]`).click();
+  await expect(trigger).toContainText(day);
+}

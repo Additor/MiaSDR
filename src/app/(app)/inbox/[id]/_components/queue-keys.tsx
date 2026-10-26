@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { isTypingTarget } from "@/components/shell/list-nav";
+import { popupOpen } from "@/components/shell/list-keys";
 
 /**
  * The key `]` opens the next item of the queue the thread was opened from. It leaves a letter typed into a field alone, and
@@ -15,7 +16,7 @@ export function QueueKeys({ href }: { href: string }) {
       if (event.defaultPrevented || event.key !== "]" || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (isTypingTarget(target)) return;
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+      if (popupOpen()) return;
       event.preventDefault();
       router.push(href);
     }

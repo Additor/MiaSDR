@@ -180,6 +180,7 @@ export function CampaignControls({
         title={`Mark ${name} as completed?`}
         description={`${inProgress > 0 ? `Nothing more is sent to the ${inProgress.toLocaleString("en-US")} ${inProgress === 1 ? "lead" : "leads"} still in progress. ` : ""}Leads, sends and replies stay. A completed campaign cannot be restarted.`}
         confirmLabel="Mark completed"
+        cancelLabel="Keep campaign open"
         pendingLabel="Completing…"
         destructive
         onConfirm={() => change("completed")}
@@ -201,6 +202,7 @@ export function CampaignControls({
         title={`Delete ${name}?`}
         description="The draft and the leads you added to it are removed. Your leads stay in the database. You cannot undo this."
         confirmLabel="Delete campaign"
+        cancelLabel="Keep campaign"
         pendingLabel="Deleting…"
         destructive
         onConfirm={remove}

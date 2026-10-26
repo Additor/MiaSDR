@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { columnCells } from "./support/table";
-import { e2eOrganizationId, expect, openFilters, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
+import { e2eOrganizationId, expect, openFilters, signInAdmin, sql, test, waitForHydrated, pickOption } from "./support/fixtures";
 
 /**
  * Seeds people, one contact and companies straight into the admin's organization. Import and campaign flows are
@@ -127,14 +127,17 @@ test.describe("lead list filters, sort and lifecycle", () => {
 
     // Leads and contacts: picked in the panel, written to the URL, shown as a chip, the contact marked.
     await openFilters(page);
-    await expect(page.getByLabel("Lifecycle", { exact: true })).toHaveValue("");
-    await page.getByLabel("Lifecycle", { exact: true }).selectOption("all");
+    const lifecycle = page.getByRole("combobox", { name: "Lifecycle", exact: true });
+    // The trigger also holds the chevron, so read the value part.
+    await expect(lifecycle.locator('[data-slot="select-value"]')).toHaveText("Leads");
+    await pickOption(page, lifecycle, "Leads and contacts");
     await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(/lifecycle=all/);
     await expect(page.getByText("6 people", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Remove filter Lifecycle: Leads and contacts" })).toBeVisible();
     await expect(page.getByTestId("filters-toggle")).toHaveText(/^Filters\s*1 in use$/);
-    await expect(page.getByLabel("Lifecycle", { exact: true })).toHaveValue("all");
+    // The closed panel keeps its fields in the form: the Select posts the value in force through its hidden input.
+    await expect(page.locator('input[type="hidden"][name="lifecycle"]')).toHaveValue("all");
     const fay = page.locator("tbody tr", { hasText: "S26 Fay Fisher" });
     await expect(fay.getByTestId("contact-chip")).toHaveText("Contact");
     await expect(fay.getByRole("link", { name: "S26 Fay Fisher" })).toHaveAttribute("href", /^\/crm\/contacts\/[0-9a-f-]{36}$/);
@@ -176,7 +179,7 @@ test.describe("lead list filters, sort and lifecycle", () => {
     // The panel starts closed; the chip says what applies.
     await expect(page.getByRole("link", { name: "Remove filter Lifecycle: Leads and contacts" })).toBeVisible();
     await openFilters(page);
-    await page.getByLabel("Lifecycle", { exact: true }).selectOption("");
+    await pickOption(page, lifecycle, "Leads");
     await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(/lifecycle=(&|$)/);
     await expect(page.getByText("5 leads", { exact: true })).toBeVisible();
@@ -184,7 +187,7 @@ test.describe("lead list filters, sort and lifecycle", () => {
 
     // The filter bar labels the reply taxonomy "Reply category".
     await openFilters(page);
-    await expect(page.getByLabel("Reply category")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Reply category" })).toBeVisible();
     await expect(page.getByText("CRM category")).toHaveCount(0);
   });
 });

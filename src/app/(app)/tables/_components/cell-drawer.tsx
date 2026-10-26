@@ -224,7 +224,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                           setAdding(null);
                         }}
                       >
-                        {adding === f.key ? "Adding..." : "Add as column"}
+                        {adding === f.key ? "Adding…" : "Add as column"}
                       </Button>
                     </li>
                   ))}

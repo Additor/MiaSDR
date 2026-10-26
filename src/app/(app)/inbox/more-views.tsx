@@ -59,7 +59,7 @@ export function HiddenAutomated({ count, href }: { count: number; href: string }
         render={
           <Link
             href={href}
-            aria-label={`Show ${count} hidden automated ${noun}`}
+            aria-label={`Show ${count} hidden automated ${noun}: auto-replies, no-reply senders, DMARC reports and bounce notices`}
             data-testid="automated-hidden"
             className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
           />

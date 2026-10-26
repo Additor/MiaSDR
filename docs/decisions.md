@@ -27,7 +27,7 @@ How MiaSDR works and why, by area. Each section states what the code does today.
 
 ### Stack
 
-Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), React 19, Drizzle ORM on postgres.js, PostgreSQL 17 or newer, Better Auth 1.7, Zod 4, shadcn/ui on Base UI with lucide icons, Vitest and Playwright. License: AGPL-3.0-or-later. XLSX parsing uses `read-excel-file` and `fflate`; `xlsx` (SheetJS on npm) stays out because of its advisories.
+Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), React 19, Drizzle ORM on postgres.js, PostgreSQL 17 or newer, Better Auth 1.7, Zod 4, shadcn/ui on Base UI with lucide icons and react-day-picker under the calendar, Vitest and Playwright. License: AGPL-3.0-or-later. XLSX parsing uses `read-excel-file` and `fflate`; `xlsx` (SheetJS on npm) stays out because of its advisories.
 
 ### Rendering and build
 

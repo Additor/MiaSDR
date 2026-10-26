@@ -4,7 +4,10 @@ import { CircleHelpIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { callApi } from "@/app/_lib/api-client";
@@ -72,7 +75,7 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
               <TableHead>Lead</TableHead>
               <TableHead className="text-right">Step</TableHead>
               <TableHead>Mailbox</TableHead>
-              <TableHead>Claimed (UTC)</TableHead>
+              <TableHead>Claimed</TableHead>
               <TableHead>Note</TableHead>
               {canResolve && <TableHead>Was it delivered?</TableHead>}
             </TableRow>
@@ -86,7 +89,9 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{row.stepNumber}</TableCell>
                 <TableCell>{row.mailboxEmail ?? ""}</TableCell>
-                <TableCell className="text-muted-foreground">{row.claimedAt.slice(0, 16).replace("T", " ")}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  <Time value={row.claimedAt} />
+                </TableCell>
                 <TableCell className="max-w-64 whitespace-normal text-xs text-muted-foreground">{row.note}</TableCell>
                 {canResolve && (
                   <TableCell>
@@ -108,11 +113,14 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
                         </Button>
                       </div>
                       {confirming === row.sendId && (
-                        <div className="grid gap-2 rounded-lg border border-destructive/40 p-2 text-xs">
+                        <div className="grid gap-2 text-xs">
                           <p>MiaSDR will send this step again. If the email is in the Sent folder, the lead gets a duplicate.</p>
-                          <label className="flex items-center gap-2">
-                            <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />I looked in the Sent folder
-                          </label>
+                          <div className="flex items-center gap-2">
+                            <Checkbox id={`sent-folder-${row.sendId}`} checked={checked} onCheckedChange={(c) => setChecked(c === true)} />
+                            <Label htmlFor={`sent-folder-${row.sendId}`} className="text-xs font-normal">
+                              I looked in the Sent folder
+                            </Label>
+                          </div>
                           <Button size="sm" variant="destructive" disabled={!checked || busy !== null} onClick={() => resolve(row.sendId, "not_delivered")}>
                             Send this step again
                           </Button>
