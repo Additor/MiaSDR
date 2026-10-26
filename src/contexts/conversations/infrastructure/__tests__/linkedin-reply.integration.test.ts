@@ -173,6 +173,27 @@ describeDb("LinkedIn conversation replies", () => {
     expect(f.fake.messages).toHaveLength(1);
   });
 
+  it("turns a send stuck in sending uncertain after 30 minutes, and never sends it", async () => {
+    const f = await fixture();
+    // The claim committed and the process died before LinkedIn answered.
+    const begun = await store.begin({ organizationId: f.org, conversationId: f.conversationId, text: "Stuck one", idempotencyKey: key(), actorUserId: f.user, now: new Date() });
+    expect(begun.kind).toBe("started");
+    const state = async () => ({
+      attempt: (await one("select status from send_attempts where organization_id = $1", [f.org])).status,
+      draft: (await one("select status from drafts where organization_id = $1", [f.org])).status,
+    });
+
+    await age(f, 11);
+    await app.reconcileLinkedInReplies(f.deps);
+    expect(await state()).toEqual({ attempt: "sending", draft: "sending" });
+
+    await age(f, 20);
+    await app.reconcileLinkedInReplies(f.deps);
+    expect(await state()).toEqual({ attempt: "delivery_uncertain", draft: "delivery_uncertain" });
+    expect(f.fake.messages).toHaveLength(0);
+    expect(await count("messages", f.org, "direction = 'outbound'")).toBe(0);
+  });
+
   it("settles an uncertain send a person confirms as delivered, as a LinkedIn message", async () => {
     const f = await fixture();
     f.fake.messageBehavior = () => "timeout-lost";
@@ -326,13 +347,16 @@ describeDb("LinkedIn conversation replies", () => {
       expect(await state(f)).toEqual({ attempt: "reconciled", draft: "sent" });
     });
 
-    it("lets delivery_uncertain stay or settle, but a late definite failure changes nothing", async () => {
+    it("lets delivery_uncertain stay or settle, but a late definite failure or a late success of the call changes nothing", async () => {
       const f = await fixture();
       const ctx = await claimed(f);
       await store.markUncertain(ctx, "timeout");
       await store.markFailed(ctx, "late failure");
       await store.markUncertain(ctx, "again");
+      // The worker's own success writes sent only from sending. Reconcile or a person settles an uncertain send.
+      await store.markSent(ctx, { providerMessageId: "late" }, new Date());
       expect(await state(f)).toEqual({ attempt: "delivery_uncertain", draft: "delivery_uncertain" });
+      expect(await count("messages", f.org, "direction = 'outbound'")).toBe(0);
     });
 
     it("keeps a failed attempt failed: a late markSent or markUncertain changes nothing", async () => {

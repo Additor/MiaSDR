@@ -106,6 +106,16 @@ describeDb("member management", () => {
     expect((await uc.listMembers(t.deps, t.owner.actor)).map((m) => m.id)).not.toContain(member.memberId);
   });
 
+  it("keeps admins from demoting or removing an owner when a second owner exists", async () => {
+    const t = await org();
+    const second = await t.join("o2", "owner");
+    const admin = await t.join("a", "admin");
+    await expect(uc.changeMemberRole(t.deps, admin.actor, t.owner.memberId, "member")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(uc.removeMember(t.deps, admin.actor, t.owner.memberId)).rejects.toBeInstanceOf(ForbiddenError);
+    const roles = Object.fromEntries((await uc.listMembers(t.deps, t.owner.actor)).map((m) => [m.id, m.role]));
+    expect(roles).toEqual({ [t.owner.memberId]: "owner", [second.memberId]: "owner", [admin.memberId]: "admin" });
+  });
+
   it("clears the removed member's active organization on their sessions", async () => {
     const t = await org();
     const member = await t.join("m", "member");

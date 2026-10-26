@@ -144,8 +144,35 @@ describeDb("analytics read model", () => {
     await sql`insert into linkedin_enrollment_details (enrollment_id, organization_id, connection_state, accepted_at) values (${enrollment}, ${org}, ${state}, ${acceptedAt})`;
   }
 
+  /**
+   * Gives `rival` one contacted email lead and one LinkedIn lead, each with a reply, plus an accepted invitation and a
+   * complaint suppression, all inside the window. A view that drops an organization filter counts these for `world`.
+   */
+  async function rivalActivity(w: World) {
+    const org = w.actor.organizationId;
+    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'default', true) returning id`;
+    const reply = async (personId: string, channel: "email" | "linkedin", at: string) => {
+      const ref = channel === "email" ? "a@sender.test" : w.account;
+      const [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${org}, ${personId}, ${pipeline}) returning id`;
+      const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, ${channel}, ${ref}) returning id`;
+      await sql`
+        insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+        values (${org}, ${conversation}, ${channel}, ${ref}, 'inbound', ${uniq()}, 'reply', ${at})`;
+    };
+    const [{ person_id: emailLead }] = await sql`select person_id from campaign_enrollments where organization_id = ${org}`;
+    await reply(emailLead, "email", "2026-03-12T15:00:00Z"); // 03-12
+    const liLead = await person(org);
+    const li = await enroll(org, w.linkedinCampaign, liLead, "linkedin", "replied", { account: w.account });
+    await send(org, li, 1, "linkedin", "sent", "2026-03-10T16:00:00Z", { account: w.account }); // 03-10
+    await send(org, li, 2, "linkedin", "sent", "2026-03-11T16:00:00Z", { account: w.account }); // 03-11
+    await details(org, li, "connected", "2026-03-11T11:00:00Z"); // 03-11
+    await reply(liLead, "linkedin", "2026-03-12T13:00:00Z"); // 03-12
+    await sql`insert into suppression_list (organization_id, email, reason, created_at) values (${org}, ${uniq() + "@c.test"}, 'complaint', '2026-03-11T12:00:00Z')`;
+  }
+
   let world: World;
   let other: World;
+  let rival: World;
 
   beforeAll(async () => {
     uc = await import("../../application/analytics-queries");
@@ -154,6 +181,8 @@ describeDb("analytics read model", () => {
     deps = { readModel: drizzleAnalyticsReadModel, now: () => new Date("2026-03-12T20:00:00Z") };
     world = await seed({ full: true });
     other = await seed({ full: false });
+    rival = await seed({ full: false });
+    await rivalActivity(rival);
   });
 
   afterAll(async () => {
@@ -294,6 +323,40 @@ describeDb("analytics read model", () => {
     expect(data.totals.sends).toEqual({ sent: 1, unknown: 0, failed: 0, inFlight: 0 });
     const own = await get("campaigns", { campaignId: other.emailCampaign });
     expect(own.data.rows).toEqual([]);
+  });
+
+  it("counts only the caller's organization in every view", async () => {
+    // `world` has more of everything in the window, so a missing organization filter inflates each count below.
+    // The tests above assert `world`'s own counts with `rival`'s rows present.
+    const none = { sent: 0, unknown: 0, failed: 0, inFlight: 0 };
+    const campaigns = (await get("campaigns", {}, rival.actor)).data;
+    expect(campaigns.rows.find((r) => r.campaignId === rival.emailCampaign)).toMatchObject({ enrolled: 1, contacted: 1, replied: 1, bounced: 0, sends: { ...none, sent: 1 } });
+    expect(campaigns.rows.find((r) => r.campaignId === rival.linkedinCampaign)).toMatchObject({ enrolled: 1, contacted: 1, replied: 1, bounced: 0, sends: { ...none, sent: 2 } });
+
+    const channels = (await get("channels", {}, rival.actor)).data;
+    expect(channels.channels.find((c) => c.channel === "email")).toMatchObject({ contacted: 1, replied: 1, bounced: 0, sends: { ...none, sent: 1 } });
+    expect(channels.channels.find((c) => c.channel === "linkedin")).toMatchObject({ contacted: 1, replied: 1, bounced: 0, sends: { ...none, sent: 2 } });
+    expect(channels.senders.map((s) => [s.senderId, s.contacted, s.sends.sent])).toEqual([
+      [rival.mailbox, 1, 1],
+      [rival.account, 1, 2],
+    ]);
+
+    const linkedin = (await get("linkedin", {}, rival.actor)).data;
+    expect(linkedin.funnel).toMatchObject({ invited: 1, accepted: 1, messaged: 1, replied: 1 });
+    expect(linkedin.events).toEqual({ invites: { ...none, sent: 1 }, messages: { ...none, sent: 1 }, accepted: 1, replies: 1 });
+    expect(linkedin.accounts).toHaveLength(1);
+    expect(linkedin.accounts[0]).toMatchObject({ accountId: rival.account, accepted: 1, invites: { ...none, sent: 1 }, messages: { ...none, sent: 1 } });
+
+    const replies = (await get("replies", {}, rival.actor)).data;
+    expect(replies.total).toBe(2);
+    expect(Object.fromEntries(replies.byBucket.map((b) => [b.bucket, b.replies]))).toEqual({ customer: 0, interested: 0, not_interested: 0, other: 0, pending_review: 0, unclassified: 2 });
+    expect(replies.suppressions).toEqual({ unsubscribed: 0, bounced: 0, manual: 0, complaint: 1 });
+
+    const series = (await get("timeseries", {}, rival.actor)).data;
+    const by = (day: string) => series.points.find((p) => p.day === day)!;
+    expect(by("2026-03-10")).toMatchObject({ email_sent: 0, linkedin_invites: 1, linkedin_messages: 0, linkedin_accepted: 0, replies_email: 0, replies_linkedin: 0 });
+    expect(by("2026-03-11")).toMatchObject({ email_sent: 1, linkedin_invites: 0, linkedin_messages: 1, linkedin_accepted: 1, replies_email: 0, replies_linkedin: 0 });
+    expect(by("2026-03-12")).toMatchObject({ email_sent: 0, linkedin_invites: 0, linkedin_messages: 0, linkedin_accepted: 0, replies_email: 1, replies_linkedin: 1 });
   });
 
   it("exports each view as CSV", async () => {

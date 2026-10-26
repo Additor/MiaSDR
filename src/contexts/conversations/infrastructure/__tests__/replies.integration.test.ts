@@ -258,6 +258,18 @@ describeDb("AI classification, drafts and approval", () => {
       expect(mailbox.delivered.length).toBe(before);
     });
 
+    it("blocks the send when the mailbox is not connected and returns the draft to review", async () => {
+      const f = await fixture();
+      const { draft } = await withDraft(f);
+      await sql`update mailboxes set status = 'disabled' where organization_id = ${f.org}`;
+      const before = mailbox.delivered.length;
+      const blocked = await mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: sendKey() });
+      expect(blocked).toMatchObject({ status: "blocked" });
+      expect(mailbox.delivered.length).toBe(before);
+      expect(await one("select status from send_attempts where draft_id = $1", [draft.id])).toMatchObject({ status: "failed" });
+      expect(await one("select status from drafts where id = $1", [draft.id])).toMatchObject({ status: "awaiting_review" });
+    });
+
     it("a definite refusal returns the draft to review and allows a new decision", async () => {
       const f = await fixture();
       const { draft } = await withDraft(f);
@@ -311,6 +323,27 @@ describeDb("AI classification, drafts and approval", () => {
       await mgmt.resolveUncertainSend(f.replyDeps, f.actor, draft.id, { outcome: "not_delivered", note: "Not in Sent folder" });
       expect(await one("select status from drafts where id = $1", [draft.id])).toMatchObject({ status: "failed" });
       expect(await one("select status, reconciliation_note from send_attempts where draft_id = $1", [draft.id])).toMatchObject({ status: "failed" });
+    });
+
+    it("turns a send stuck in sending uncertain after 30 minutes, and never sends it", async () => {
+      const f = await fixture();
+      const { draft } = await withDraft(f);
+      // The ledger row exists and the process died before the provider call returned.
+      const begun = await stores.replies.beginSend({ organizationId: f.org, draftId: draft.id, expectedRevision: draft.revision, idempotencyKey: sendKey(), actorUserId: f.user, messageIdToken: `tok-stuck-${f.tag}` });
+      expect(begun.kind).toBe("started");
+      const before = mailbox.delivered.length;
+
+      f.state.offsetMs = 11 * 60_000;
+      await mgmt.reconcileReplies(f.replyDeps);
+      expect(await one("select status from send_attempts where draft_id = $1", [draft.id])).toMatchObject({ status: "sending" });
+      expect(await one("select status from drafts where id = $1", [draft.id])).toMatchObject({ status: "sending" });
+
+      f.state.offsetMs = 31 * 60_000;
+      await mgmt.reconcileReplies(f.replyDeps);
+      expect(await one("select status from send_attempts where draft_id = $1", [draft.id])).toMatchObject({ status: "delivery_uncertain" });
+      expect(await one("select status from drafts where id = $1", [draft.id])).toMatchObject({ status: "delivery_uncertain" });
+      expect(mailbox.delivered.length).toBe(before);
+      expect(await count("messages", f.org, "direction = 'outbound'")).toBe(0);
     });
 
     it("a person can confirm an uncertain send as delivered", async () => {

@@ -1,6 +1,6 @@
 import { afterAll, expect, it } from "vitest";
 import { describeDb, testSql } from "../../../test-support/db";
-import { INDEX_DEBT, INDEX_DEBT_REASON, NO_SCOPE, NULLABLE_SCOPE, auditSchema, tableFacts } from "../schema-audit";
+import { INDEX_DEBT, INDEX_DEBT_REASON, NO_SCOPE, NULLABLE_SCOPE, SCOPED_BY_SIBLING_KEY, auditSchema, tableFacts } from "../schema-audit";
 
 /**
  * Every public table is tenant-scoped or named in an allow-list with a reason. Needs TEST_DATABASE_URL.
@@ -32,7 +32,12 @@ describeDb("schema audit (organization scope)", () => {
   it("lists the allow-lists, each entry with a reason", () => {
     expect(Object.keys(NO_SCOPE).sort()).toEqual(["accounts", "integration_credentials", "organizations", "sessions", "users", "verifications"]);
     expect(Object.keys(NULLABLE_SCOPE).sort()).toEqual(["inbound_events", "job_runs"]);
-    for (const list of [NO_SCOPE, NULLABLE_SCOPE, INDEX_DEBT]) {
+    expect(Object.keys(SCOPED_BY_SIBLING_KEY).sort()).toEqual([
+      "knowledge_documents.knowledge_documents_latest_version_fk",
+      "messages.messages_conversation_id_channel_account_ref_conversations_id_c",
+      "records.records_subcategory_id_pipeline_id_category_key_subcategories_i",
+    ]);
+    for (const list of [NO_SCOPE, NULLABLE_SCOPE, INDEX_DEBT, SCOPED_BY_SIBLING_KEY]) {
       for (const reason of Object.values(list)) expect(reason.length).toBeGreaterThan(10);
     }
   });
@@ -91,6 +96,33 @@ describeDb("schema audit (organization scope)", () => {
   it("rejects a missing index", async () => {
     const found = await withScratch(`create table ${scratch} (id uuid primary key, organization_id uuid not null references organizations(id))`);
     expect(found).toEqual([expect.stringMatching(/no index that contains organization_id/)]);
+  });
+
+  it("rejects a foreign key between two scoped tables that leaves out organization_id", async () => {
+    const found = await withScratch(
+      `create table ${scratch} (id uuid primary key, organization_id uuid not null references organizations(id), person_id uuid references people(id));
+       create index on ${scratch} (organization_id)`,
+    );
+    expect(found).toEqual([expect.stringMatching(/\(person_id\) references people without organization_id/)]);
+  });
+
+  it("accepts a composite (column, organization_id) foreign key", async () => {
+    const found = await withScratch(
+      `create table ${scratch} (id uuid primary key, organization_id uuid not null references organizations(id), person_id uuid,
+         foreign key (person_id, organization_id) references people(id, organization_id));
+       create index on ${scratch} (organization_id)`,
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("rejects a composite key that pairs organization_id with another column", async () => {
+    // records has a unique (id, organization_id). Pairing the child's organization_id with the parent's id proves nothing.
+    const found = await withScratch(
+      `create table ${scratch} (id uuid primary key, organization_id uuid not null references organizations(id), record_id uuid,
+         foreign key (organization_id, record_id) references records(id, organization_id));
+       create index on ${scratch} (organization_id)`,
+    );
+    expect(found).toEqual([expect.stringMatching(/references records without organization_id/)]);
   });
 
   it("accepts a table that meets every rule", async () => {

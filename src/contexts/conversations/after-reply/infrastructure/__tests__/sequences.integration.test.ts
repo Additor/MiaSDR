@@ -25,6 +25,7 @@ describeDb("After a reply flows", () => {
     runs: typeof import("../drizzle-sequence-store").drizzleRunStore;
     engine: typeof import("../drizzle-sequence-engine").drizzleSequenceEngine;
   };
+  let campaignIdOfSequence: typeof import("../drizzle-sequence-store").campaignIdOfSequence;
   let FakeAi: typeof import("../../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   let createReplyMailer: typeof import("../../../infrastructure/reply-mailer").createReplyMailer;
   let mailbox: FakeMailboxProvider;
@@ -157,6 +158,7 @@ describeDb("After a reply flows", () => {
       runs: seqStore.drizzleRunStore,
       engine: (await import("../drizzle-sequence-engine")).drizzleSequenceEngine,
     };
+    campaignIdOfSequence = seqStore.campaignIdOfSequence;
     FakeAi = (await import("../../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     createReplyMailer = (await import("../../../infrastructure/reply-mailer")).createReplyMailer;
     mailbox = (await import("@/contexts/outreach/infrastructure/composition")).mailboxProvider() as FakeMailboxProvider;
@@ -218,6 +220,18 @@ describeDb("After a reply flows", () => {
       const flows = await sql`select name, status from sequences where campaign_id = ${campaignId}`;
       expect(flows).toHaveLength(1);
       expect(flows[0]).toMatchObject({ name: "Autumn push (after a reply)", status: "active" });
+    });
+
+    it("finds the campaign of a flow only inside its own organization", async () => {
+      const f = await fixture();
+      await ingest(f);
+      const campaignId = await emailedBy(f);
+      const { id: sequenceId } = await one("select id from sequences where campaign_id = $1", [campaignId]);
+      expect(await campaignIdOfSequence(f.org, sequenceId)).toBe(campaignId);
+
+      const other = await fixture();
+      expect(await campaignIdOfSequence(other.org, sequenceId)).toBeNull();
+      expect(await campaignIdOfSequence(f.org, "00000000-0000-4000-8000-000000000000")).toBeNull();
     });
 
     it("switching off archives the flow, keeps its steps, and switching on again reuses the version", async () => {
@@ -898,6 +912,30 @@ describeDb("After a reply flows", () => {
       expect(Math.abs(steps[1].due_at.getTime() - (f.clock().getTime() + 2 * DAY))).toBeLessThan(60_000);
     });
 
+    it("drafts a step again when its draft goes stale with no stop reason, and fails it on the third stale draft", async () => {
+      const { f, run } = await withRun();
+      const first = await one("select id from drafts where organization_id = $1", [f.org]);
+      await approve(f, first.id);
+      await f.seqRun();
+      f.state.offsetMs += 3 * DAY;
+      await f.seqRun();
+      const step2 = async () =>
+        one("select sr.status, sr.draft_id, sr.attempt_count from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = 2", [run.id]);
+      const drafted: string[] = [];
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const step = await step2();
+        expect(step).toMatchObject({ status: "awaiting_review", attempt_count: attempt });
+        expect(drafted).not.toContain(step.draft_id);
+        drafted.push(step.draft_id);
+        // Superseded by a write that did not stop the run.
+        await sql`update drafts set status = 'stale' where id = ${step.draft_id}`;
+        await f.seqRun();
+      }
+      expect(await step2()).toMatchObject({ status: "failed", draft_id: drafted[2], attempt_count: 3 });
+      expect(await count("drafts", f.org, `request->>'stepPosition' = '2'`)).toBe(3);
+      expect(await one("select status from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "active" });
+    });
+
     it("schedules whole-day delays in the organization time zone", async () => {
       const f = await fixture();
       await sql`insert into channel_settings (organization_id, channel, "values") values (${f.org}, 'general', ${JSON.stringify({ timeZone: "America/New_York" })}::jsonb)`;
@@ -1093,8 +1131,10 @@ describeDb("After a reply flows", () => {
       const { f, run } = await withRun();
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
       const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
-      const other = await one("select id, category_key from subcategories where organization_id = $1 and key = 'pricing_question'", [f.org]).catch(() => null);
-      if (!other) return;
+      // The run started on demo_request. Information requested is another non-terminal subcategory of the default pipeline.
+      const other = await one("select id, category_key from subcategories where organization_id = $1 and key = 'information_requested'", [f.org]);
+      expect(other).toBeDefined();
+      expect(await one("select s.key from sequence_runs r join subcategories s on s.id = r.subcategory_id where r.id = $1", [run.id])).toMatchObject({ key: "demo_request" });
       await drizzleReplyHandlingStore.moveStage({
         organizationId: f.org,
         actorUserId: f.user,
@@ -1137,7 +1177,8 @@ describeDb("After a reply flows", () => {
       await approve(f, first.id);
       await f.seqRun();
       f.state.offsetMs += 3 * DAY;
-      const resolver = replyAiResolverOf(async () => f.ai);
+      // Only this organization has AI, so a due step another test left behind is released and this run's step is the one drafted.
+      const resolver = replyAiResolverOf(async (o: string) => (o === f.org ? f.ai : null));
       const tickWith = (beforeWrite: () => Promise<void>) =>
         (seqJobsApp.createSequenceJobs({
           engine: stores.engine,

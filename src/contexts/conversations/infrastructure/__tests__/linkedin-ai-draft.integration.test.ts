@@ -428,8 +428,10 @@ describeDb("AI drafts for LinkedIn threads", () => {
         autoReply: false,
       });
       const email = await one("select c.id, c.record_id from conversations c where c.organization_id = $1 and c.channel = 'email'", [f.org]);
-      // One person on two channels: the LinkedIn draft belongs to the same record as the email thread.
-      await sql`update drafts set record_id = ${email.record_id}, expected_context_version = (select context_version from records where id = ${email.record_id}) where organization_id = ${f.org} and channel = 'linkedin'`;
+      // One person on two channels: the LinkedIn draft belongs to the same record as the email thread and replies to its latest inbound message.
+      await sql`
+        update drafts set record_id = ${email.record_id}, expected_context_version = r.context_version, reply_for_message_id = r.latest_inbound_message_id
+        from records r where r.id = ${email.record_id} and drafts.organization_id = ${f.org} and drafts.channel = 'linkedin'`;
       expect(await count("drafts", f.org, "channel = 'linkedin' and status = 'awaiting_review'")).toBe(1);
       const first = await mgmt.createManualDraft(f.replyDeps, f.actor, email.id, { subject: "Re: hello", bodyText: "First by hand." });
       expect(await count("drafts", f.org, "channel = 'linkedin' and status = 'awaiting_review'")).toBe(1);

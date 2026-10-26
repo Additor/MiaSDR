@@ -174,10 +174,16 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     const neighbour = await contact(o, "neighbour");
     // A cc of the neighbour that the target's message carried goes with that message.
     await sql`insert into lead_ccs (organization_id, person_id, email, source_message_id) values (${o.org}, ${neighbour.person}, ${`cc-${o.tag}@lead.test`}, ${target.inbound})`;
-    // A neighbour draft that replies to the target's message keeps its row with a null target.
-    const crossDraft = await one(sql`
-      insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
-      values (${o.org}, ${neighbour.record}, ${neighbour.conversation}, ${target.inbound}, 0, 'email') returning id`);
+    // A neighbour draft that replies to the target's message keeps its row with a null target. drafts_reply_target_ins_trg
+    // refuses that target since migration 0001, but a draft written before it can still hold one.
+    const crossDraft = await sql.begin(async (tx) => {
+      await tx`alter table drafts disable trigger drafts_reply_target_ins_trg`;
+      const id = await one(tx`
+        insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
+        values (${o.org}, ${neighbour.record}, ${neighbour.conversation}, ${target.inbound}, 0, 'email') returning id`);
+      await tx`alter table drafts enable trigger drafts_reply_target_ins_trg`;
+      return id;
+    });
     const elsewhere = await organization();
     const stranger = await contact(elsewhere, "stranger");
     const neighbourBefore = await rowsOf(o, neighbour);
@@ -230,11 +236,15 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     expect(left).not.toContain(stale.id);
   });
 
-  it("blocks on a reply send in flight", async () => {
+  it.each(["prepared", "sending", "delivery_uncertain"])("blocks on a reply send in flight: an attempt in %s", async (status) => {
     const o = await organization();
     const target = await contact(o, "sending");
+    // The fixture draft already holds a sent attempt, and a draft takes one terminal attempt, so the attempt goes on a second draft.
+    const draft = await one(sql`
+      insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
+      values (${o.org}, ${target.record}, ${target.conversation}, ${target.inbound}, 0, 'email') returning id`);
     await sql`
-      insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${target.draft}, ${`sa2-${o.tag}`}, ${o.actors.member.userId}, 'prepared')`;
+      insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${draft}, ${`sa2-${o.tag}`}, ${o.actors.member.userId}, ${status})`;
     expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.actors.admin, target.person))).toEqual([{ reason: "send_in_flight" }]);
   });
 
