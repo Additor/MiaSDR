@@ -337,7 +337,8 @@ describeDb("slot claims, daily rollover and history pruning", () => {
           cut = await job.run({ deadline: Date.now() - 1, now: () => new Date() });
         }
         expect(cut.more).toBe(true);
-        const [row] = await sql`select status, lease_until <= now() as open from job_runs where job = 'history-prune' and slot = ${slot}`;
+        // finishSlot stamps the lease with the app's clock, so compare with that clock, not the database's.
+        const [row] = await sql`select status, lease_until <= ${new Date().toISOString()}::timestamptz as open from job_runs where job = 'history-prune' and slot = ${slot}`;
         expect(row).toEqual({ status: "failed", open: true });
         const resumed = await job.run({ deadline: Date.now() + 60_000, now: () => new Date() });
         expect(resumed.more).toBe(false);
