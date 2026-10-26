@@ -58,7 +58,7 @@ export function ClassificationHistory({ entries, currentConversationId }: { entr
   async function act(id: string, action: "undo" | "acknowledge") {
     setBusy(id);
     setError(null);
-    const result = await callApi(`/api/classifications/${id}/${action}`, "POST");
+    const result = await callApi(`/api/reply-type-picks/${id}/${action}`, "POST");
     setBusy(null);
     if (!result.ok) return setError(result.error);
     toast.success(action === "undo" ? "Classification undone." : "Classification marked as reviewed.");

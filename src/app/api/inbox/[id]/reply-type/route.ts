@@ -10,7 +10,7 @@ import { withActor } from "@/app/_lib/api";
  * saw; a mismatch answers 409. Either is recorded as a human decision, so landing in Do not contact also marks the person, as a
  * move off the thread does.
  */
-export async function POST(request: Request, ctx: RouteContext<"/api/inbox/[id]/classification">) {
+export async function POST(request: Request, ctx: RouteContext<"/api/inbox/[id]/reply-type">) {
   const { id } = await ctx.params;
   return withActor(async (actor) => {
     const body = z.object({ replyTypeKey: z.string().min(1).max(100).nullable(), expectedContextVersion: z.number().int().min(0) }).parse(await request.json());

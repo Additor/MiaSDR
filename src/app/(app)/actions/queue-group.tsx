@@ -163,9 +163,9 @@ export function QueueGroup({
     const result =
       c.kind === "held"
         ? item.conversationId
-          ? await callApi(`/api/inbox/${item.conversationId}/classification`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
+          ? await callApi(`/api/inbox/${item.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
           : { ok: false, error: "Open the person to decide." }
-        : await callApi(`/api/classifications/${c.replyTypePickId}/acknowledge`, "POST");
+        : await callApi(`/api/reply-type-picks/${c.replyTypePickId}/acknowledge`, "POST");
     if (!result.ok) {
       setRowErrors((current) => ({ ...current, [item.recordId]: result.error ?? "Could not save. Try again." }));
       return false;
