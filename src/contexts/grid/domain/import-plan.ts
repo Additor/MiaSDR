@@ -1,7 +1,7 @@
 import { ValidationError } from "@/shared/errors";
 import { MAX_CELL_CHARS, cleanJson, cleanString, coerceText, isBlankValue, parseNumericText } from "./cell-values";
 import { isStaticColumnType, type StaticColumnType } from "./column-types";
-import { restoreFormula } from "./csv";
+import { restoreFormula } from "@/shared/csv";
 import { MAX_NAME_LENGTH, toColumnKey, uniqueColumnKey, uniqueColumnName } from "./keys";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

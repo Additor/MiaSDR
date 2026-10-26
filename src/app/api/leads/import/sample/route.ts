@@ -1,5 +1,5 @@
 import { NextResponse, connection } from "next/server";
-import { UTF8_BOM } from "@/contexts/people/domain/csv-export";
+import { UTF8_BOM } from "@/shared/csv";
 import { sampleImportCsv } from "@/contexts/people/domain/import-summary";
 import { apiOrgContext } from "@/contexts/identity/infrastructure/session";
 

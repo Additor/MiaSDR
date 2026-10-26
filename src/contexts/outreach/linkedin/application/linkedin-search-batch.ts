@@ -1,4 +1,4 @@
-import { csvLine, UTF8_BOM } from "@/contexts/people/domain/csv-export";
+import { csvLine, UTF8_BOM } from "@/shared/csv";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { DEFAULT_MAX_RESULTS, MAX_SEARCH_RESULTS, clampMaxResults } from "../domain/linkedin-search";

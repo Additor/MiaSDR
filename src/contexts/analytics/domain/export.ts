@@ -1,5 +1,6 @@
 import type { CampaignsReport, ChannelsReport, LinkedInReport, RepliesReport, TimeSeriesReport } from "./metrics";
 import { DAILY_METRICS, DAILY_METRIC_LABELS } from "./metrics";
+import { csvLine } from "@/shared/csv";
 
 export type Cell = string | number | null;
 export interface Table {
@@ -7,16 +8,8 @@ export interface Table {
   rows: Cell[][];
 }
 
-/** A cell that starts with = + - @ or a control character runs as a formula in spreadsheets. A leading quote defuses it. */
-function cell(value: Cell): string {
-  if (value === null) return "";
-  let text = String(value);
-  if (typeof value === "string" && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
 export function toCsv(table: Table): string {
-  return [table.headers, ...table.rows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
+  return [table.headers, ...table.rows].map(csvLine).join("");
 }
 
 const pct = (v: number | null): Cell => (v === null ? null : Math.round(v * 10_000) / 100);

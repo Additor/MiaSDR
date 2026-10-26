@@ -1,5 +1,5 @@
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { csvLine, UTF8_BOM } from "../domain/csv";
+import { csvLine, UTF8_BOM } from "@/shared/csv";
 import { buildImportRecords, isInitialSeedColumn, normalizeMapping, planImportColumns, suggestMapping } from "../domain/import-plan";
 import type { GridQuery } from "../domain/view-query";
 import { refreshAfterSourceWrite } from "./formula-lookup-refresh";

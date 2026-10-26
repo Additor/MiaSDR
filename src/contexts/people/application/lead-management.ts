@@ -1,6 +1,6 @@
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { csvLine, UTF8_BOM } from "../domain/csv-export";
+import { csvLine, UTF8_BOM } from "@/shared/csv";
 import { canonicalProfileUrl } from "../domain/linkedin-url";
 import { isFilterActive } from "../domain/lead-filter";
 import { planLeadEdit, type LeadEditInput } from "../domain/lead-edit";
