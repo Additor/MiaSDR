@@ -137,7 +137,7 @@ test.describe("grid tables: export and import", () => {
     const { workbookId, tableId } = await newWorkbook(page.request, "S28 add rows");
     await page.goto(`/tables/${workbookId}`);
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Add rows..." }).click();
+    await page.getByRole("menuitem", { name: "Add rows…" }).click();
     const dialog = page.getByRole("dialog", { name: "Add rows" });
 
     // The field refuses what the server refuses, with a reason, and keeps the button off.

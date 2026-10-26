@@ -135,7 +135,7 @@ export function TableToolbar(props: Props) {
                 <PlusIcon /> Add row
               </DropdownMenuItem>
               <DropdownMenuItem onClick={props.onAddRows} disabled={props.busy}>
-                <Rows3Icon /> Add rows...
+                <Rows3Icon /> Add rows…
               </DropdownMenuItem>
               <DropdownMenuItem onClick={props.onImport}>
                 <UploadIcon /> Import file
@@ -173,7 +173,7 @@ export function TableToolbar(props: Props) {
                 <BotIcon /> Ask AI about each row
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => props.onEnrich()}>
-                <SparklesIcon /> All enrichments...
+                <SparklesIcon /> All enrichments…
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
