@@ -1,7 +1,16 @@
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { afterReplyLockedReason as lockedReasonOf, afterReplyModeOf, isAfterReplyMode, type AfterReplyMode } from "../domain/after-reply";
+import {
+  afterReplyLockedReason as lockedReasonOf,
+  afterReplyModeOf,
+  followUpsStopReason,
+  isAfterReplyMode,
+  stopsOnLines,
+  type AfterReplyMode,
+  type StopReplyType,
+} from "../domain/after-reply";
+import { REPLY_TYPE_GROUPS } from "../../domain/reply-handling";
 import { assertPublishable, parseSteps, type RunStatus, type StepInput, type StepType } from "../domain/sequences";
-import type { AfterReplyStore, FlowCampaign, FlowRunRow, FlowState } from "./sequence-ports";
+import type { AfterReplyStore, FlowCampaign, FlowRunRow, FlowState, StopReplyTypeRow } from "./sequence-ports";
 
 /**
  * The campaign setting After a reply. A campaign either hands a classified reply to the Inbox (`handoff`) or lets the
@@ -52,6 +61,10 @@ export interface AfterReplyView {
   inProgress: AfterReplyRunRow[];
   /** Runs in progress that started on a version older than the newest one. */
   earlierVersionCount: number;
+  /** The organization's reply types set to stop follow-ups, in group and list order. */
+  stopReplyTypes: StopReplyType[];
+  /** One line per thing that ends follow-ups: the fixed rules, then each stop type. */
+  stopsOn: Array<{ id: string; label: string }>;
 }
 
 export interface AfterReplyInput {
@@ -67,7 +80,26 @@ export interface SaveAfterReplyResult extends AfterReplyView {
 /** Why a campaign cannot draft follow-ups, or null when it can. */
 export const afterReplyLockedReason: (campaign: Pick<FlowCampaign, "channel" | "type">) => string | null = lockedReasonOf;
 
-function toView(state: FlowState): AfterReplyView {
+const groupRank = (groupKey: string) => {
+  const rank = REPLY_TYPE_GROUPS.findIndex((g) => g.key === groupKey);
+  return rank === -1 ? REPLY_TYPE_GROUPS.length : rank;
+};
+
+function toStopTypes(rows: readonly StopReplyTypeRow[]): StopReplyType[] {
+  return [...rows]
+    .sort((a, b) => groupRank(a.groupKey) - groupRank(b.groupKey) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+    .map((r) => ({ id: r.id, key: r.key, name: r.name, groupKey: r.groupKey, systemRole: r.systemRole, reason: followUpsStopReason(r.name) }));
+}
+
+/**
+ * The organization's reply types whose Follow-ups rule is Stop: a reply moved into one ends a running run, and no
+ * run starts on one. Active types of the default reply type set only, in group order, then list order.
+ */
+export async function getFollowUpStopTypes(deps: Pick<AfterReplyDeps, "flows">, actor: Actor): Promise<StopReplyType[]> {
+  return toStopTypes(await deps.flows.stopReplyTypes(actor.organizationId));
+}
+
+function toView(state: FlowState, stopReplyTypes: StopReplyType[]): AfterReplyView {
   const lockedReason = afterReplyLockedReason(state.campaign);
   return {
     campaignId: state.campaign.id,
@@ -86,7 +118,14 @@ function toView(state: FlowState): AfterReplyView {
     lockedReason,
     inProgress: state.inProgress.map((r: FlowRunRow) => ({ ...r })),
     earlierVersionCount: state.earlierVersionCount,
+    stopReplyTypes,
+    stopsOn: stopsOnLines(stopReplyTypes),
   };
+}
+
+async function loadView(deps: AfterReplyDeps, actor: Actor, campaignId: string): Promise<AfterReplyView> {
+  const [state, stopTypes] = await Promise.all([loadState(deps, actor, campaignId), getFollowUpStopTypes(deps, actor)]);
+  return toView(state, stopTypes);
 }
 
 async function loadState(deps: AfterReplyDeps, actor: Actor, campaignId: string): Promise<FlowState> {
@@ -96,7 +135,7 @@ async function loadState(deps: AfterReplyDeps, actor: Actor, campaignId: string)
 }
 
 export async function getCampaignAfterReply(deps: AfterReplyDeps, actor: Actor, campaignId: string): Promise<AfterReplyView> {
-  return toView(await loadState(deps, actor, campaignId));
+  return loadView(deps, actor, campaignId);
 }
 
 /**
@@ -134,5 +173,5 @@ export async function saveCampaignAfterReply(deps: AfterReplyDeps, actor: Actor,
     confirmStopRuns: input.confirmStopRuns === true,
     now: deps.now(),
   });
-  return { ...toView(await loadState(deps, actor, campaignId)), stoppedRuns };
+  return { ...(await loadView(deps, actor, campaignId)), stoppedRuns };
 }

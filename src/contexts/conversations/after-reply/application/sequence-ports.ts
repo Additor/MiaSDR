@@ -1,5 +1,5 @@
 import type { AfterReplyMode } from "../domain/after-reply";
-import type { FollowUpsRule } from "../../domain/reply-type";
+import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import type { InterruptFacts, InterruptReason, RunStatus, StepInput, StepRunStatus, StepType } from "../domain/sequences";
 
 /** Persistence for a campaign's After a reply flow. Every method carries the organization and filters by it. */
@@ -71,6 +71,21 @@ export interface AfterReplyStore {
    * progress make it throw a ConflictError with code `runs_in_progress`. Returns how many runs it ended.
    */
   save(input: FlowSave): Promise<{ stoppedRuns: number }>;
+  /**
+   * The active reply types of the organization's default reply type set whose Follow-ups rule is Stop, in no set
+   * order. The application sorts them.
+   */
+  stopReplyTypes(organizationId: string): Promise<StopReplyTypeRow[]>;
+}
+
+/** A reply type whose Follow-ups rule is Stop, as stored. */
+export interface StopReplyTypeRow {
+  id: string;
+  key: string;
+  name: string;
+  groupKey: string;
+  systemRole: SystemRole | null;
+  sortOrder: number;
 }
 
 // Runs ------------------------------------------------------------------------------------------------

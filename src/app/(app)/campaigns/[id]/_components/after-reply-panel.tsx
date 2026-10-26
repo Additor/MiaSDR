@@ -3,7 +3,7 @@ import { Time } from "@/components/shell/time";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { AfterReplyView } from "@/contexts/conversations/after-reply/application/after-reply";
-import { ALWAYS_STOPS_ON, runStatusLabel } from "@/contexts/conversations/after-reply/domain/after-reply";
+import { runStatusLabel } from "@/contexts/conversations/after-reply/domain/after-reply";
 import { AfterReplyEditor } from "./after-reply-editor";
 import { CampaignSection } from "./campaign-section";
 import { earlierVersionNote } from "../_lib/after-reply-form";
@@ -31,7 +31,7 @@ export function AfterReplyPanel({ view, personal = false }: { view: AfterReplyVi
           <div className="stack-group">
             <h3 className="text-sm font-medium">Always stops on</h3>
             <ul className="grid gap-0.5 text-sm text-muted-foreground">
-              {ALWAYS_STOPS_ON.map((rule) => (
+              {view.stopsOn.map((rule) => (
                 <li key={rule.id}>{rule.label}</li>
               ))}
             </ul>
