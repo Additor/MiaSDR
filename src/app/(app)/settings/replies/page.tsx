@@ -10,8 +10,8 @@ import { organizationDeps } from "@/contexts/tenancy/infrastructure/organization
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { AdminNotice } from "../admin-notice";
-import { TaxonomyPanel } from "./taxonomy-panel";
-import { ThresholdsForm } from "./thresholds-form";
+import { ConfidenceFloorForm } from "./confidence-floor-form";
+import { ReplyTypesPanel } from "./reply-types-panel";
 import { UnknownSenderLimitForm } from "./unknown-sender-limit-form";
 
 export const metadata: Metadata = { title: "Reply handling" };
@@ -39,9 +39,10 @@ async function Settings() {
           <AdminNotice action="change reply settings" />
         </div>
       )}
-      <ThresholdsForm settings={{ autoApplyConfidence: settings.autoApplyConfidence }} canManage={canManage} />
+      {/* The list of reply types leads the page; the two organization-wide limits follow it. */}
+      <ReplyTypesPanel replyTypes={replyTypes} canManage={canManage} />
+      <ConfidenceFloorForm confidenceFloor={settings.autoApplyConfidence} canManage={canManage} />
       <UnknownSenderLimitForm limit={org.unknownSenderAiDailyCap} timeZone={org.timeZone} canManage={canManage} />
-      <TaxonomyPanel subcategories={replyTypes} canManage={canManage} />
     </>
   );
 }

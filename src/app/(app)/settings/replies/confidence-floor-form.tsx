@@ -9,40 +9,37 @@ import { callApi } from "@/app/_lib/api-client";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { SettingsSection } from "../settings-section";
 
-interface Settings {
-  autoApplyConfidence: number;
-}
-
-export function ThresholdsForm({ settings, canManage }: { settings: Settings; canManage: boolean }) {
+/** The organization's confidence floor: an AI pick below it waits for a person, whatever its type's Check says. */
+export function ConfidenceFloorForm({ confidenceFloor, canManage }: { confidenceFloor: number; canManage: boolean }) {
   const router = useRouter();
-  const saved = { percent: String(Math.round(settings.autoApplyConfidence * 1000) / 10) };
-  const [values, setValues] = useState(saved);
+  const saved = String(Math.round(confidenceFloor * 1000) / 10);
+  const [percent, setPercent] = useState(saved);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const dirty = Number(values.percent) !== Number(saved.percent);
+  const dirty = Number(percent) !== Number(saved);
   useLeaveGuard(dirty);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError(null);
-    const result = await callApi("/api/settings/replies", "PATCH", { autoApplyConfidence: Number(values.percent) / 100 });
+    const result = await callApi("/api/settings/replies", "PATCH", { autoApplyConfidence: Number(percent) / 100 });
     setPending(false);
     if (!result.ok) return setError(result.error);
-    toast.success("Auto-apply rules saved.");
+    toast.success("Confidence floor saved.");
     router.refresh();
   }
 
   return (
-    <SettingsSection title="Auto-apply rules" description="The AI applies a classification alone only when none of these rules hold it back. A held suggestion waits for a person. Replies are never sent without approval.">
+    <SettingsSection title="Confidence floor">
       <form onSubmit={save}>
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="threshold">Auto-apply at or above (percent confidence)</FieldLabel>
-            <Input id="threshold" type="number" min={0} max={100} step={0.1} value={values.percent} onChange={(e) => setValues({ ...values, percent: e.target.value })} disabled={!canManage} className="w-32" required />
+            <FieldLabel htmlFor="confidence-floor">Percent confidence</FieldLabel>
+            <Input id="confidence-floor" type="number" min={0} max={100} step={0.1} value={percent} onChange={(e) => setPercent(e.target.value)} disabled={!canManage} className="w-32" required />
             <FieldDescription>Below this, the AI only suggests and a person decides.</FieldDescription>
           </Field>
-          {canManage && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValues(saved)} />}
+          {canManage && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setPercent(saved)} />}
         </FieldGroup>
       </form>
     </SettingsSection>
