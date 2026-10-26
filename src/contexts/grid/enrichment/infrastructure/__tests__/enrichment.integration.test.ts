@@ -58,6 +58,11 @@ describeDb("grid enrichment runs", () => {
 
   async function fixture(rows: Array<Record<string, unknown>> = [{ name: "Ada Lovelace", domain: "acme.com" }]) {
     const { organizationId: org, actor } = await gridOrg(sql, orgs, "owner", "Grid");
+    return { org, actor, ...(await addTable(org, rows)) };
+  }
+
+  /** A table with name, domain and about columns and one row per entry, in a workbook of its own. */
+  async function addTable(org: string, rows: Array<Record<string, unknown>>) {
     const [{ id: workbook }] = await sql`insert into grid_workbooks (organization_id, name) values (${org}, 'wb') returning id`;
     const [{ id: table }] = await sql`insert into grid_tables (organization_id, workbook_id, name, position) values (${org}, ${workbook}, 't', 1) returning id`;
     for (const [i, key] of ["name", "domain", "about"].entries()) {
@@ -68,7 +73,7 @@ describeDb("grid enrichment runs", () => {
       const [{ id }] = await sql`insert into grid_rows (organization_id, table_id, position, cells) values (${org}, ${table}, ${i + 1}, ${sql.json(cells as never)}) returning id`;
       ids.push(id);
     }
-    return { org, actor, table, rows: ids };
+    return { table, rows: ids };
   }
 
   async function addFake(d: ReturnType<typeof deps>, actor: Actor, key = "fake", over: Record<string, unknown> = {}) {
@@ -235,6 +240,24 @@ describeDb("grid enrichment runs", () => {
     expect(f.calls).toHaveLength(0);
   });
 
+  it("cancels the queued cells of one table and leaves another table's queue alone", async () => {
+    const { org, actor, table, rows } = await fixture([{ name: "A One", domain: "acme.com" }]);
+    const other = await addTable(org, [{ name: "B Two", domain: "acme.com" }]);
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor);
+    const [own] = await findColumn(d, actor, table);
+    const [kept] = await findColumn(d, actor, other.table);
+    await m.run.requestRun(d.runDeps, actor, table);
+    await m.run.requestRun(d.runDeps, actor, other.table);
+    expect((await m.run.cancelRun(d.runDeps, actor, table)).cancelled).toBe(1);
+    expect(await jobs(table)).toEqual({});
+    expect((await cells(rows[0])).cell_meta[own.key]).toBeUndefined();
+    expect(await jobs(other.table)).toEqual({ queued: 1 });
+    expect((await cells(other.rows[0])).cell_meta[kept.key]).toEqual({ status: "queued" });
+    expect((await sql`select count(*)::int as n from grid_cell_runs where table_id = ${other.table}`)[0].n).toBe(0);
+  });
+
   it("retries failed cells only and leaves finished ones alone", async () => {
     const { actor, table, rows } = await fixture([{ name: "Ok One", domain: "acme.com" }, { name: "Boom Two", domain: "acme.com" }, { name: "Nohit Three", domain: "acme.com" }]);
     const f = fake();
@@ -259,6 +282,23 @@ describeDb("grid enrichment runs", () => {
     expect(f.calls.at(-1)?.inputs.fullName).toBe("Fixed Two");
     expect(await jobs(table)).toEqual({ succeeded: 3 });
     expect((await cells(rows[1])).cells.findEmail).toBe("fixed.two@acme.com");
+  });
+
+  it("retries the failed cells of the column it names and leaves another column's failures alone", async () => {
+    const { actor, table, rows } = await fixture([{ name: "Boom One", domain: "acme.com" }]);
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor);
+    const [first] = await findColumn(d, actor, table);
+    const [second] = await findColumn(d, actor, table);
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+    const byColumn = async () => Object.fromEntries((await sql`select column_key, status from grid_jobs where table_id = ${table}`).map((r) => [r.column_key, r.status]));
+    expect(await byColumn()).toEqual({ [first.key]: "failed", [second.key]: "failed" });
+
+    expect((await m.run.retryFailedCells(d.runDeps, actor, table, first.key)).retried).toBe(1);
+    expect(await byColumn()).toEqual({ [first.key]: "queued", [second.key]: "failed" });
+    expect((await cells(rows[0])).cell_meta[second.key]).toMatchObject({ status: "error" });
   });
 
   it("a waterfall takes the first hit, asks later providers nothing, and records every attempt", async () => {
@@ -319,6 +359,62 @@ describeDb("grid enrichment runs", () => {
     expect(row.cell_meta[main]).toMatchObject({ outcome: "miss", provider: "fake-a", costCents: 3 });
     const ledger = await sql`select provider, outcome, cost_cents::float as cost from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
     expect(ledger.map((r) => [r.provider, r.outcome, r.cost])).toEqual([["fake-a", "miss", 0], ["fake-b", "miss", 3]]);
+  });
+
+  it("skips a waterfall step whose worst case would pass the column's cost cap, without calling it", async () => {
+    const { actor, table, rows } = await fixture();
+    const f = fake();
+    const d = deps(f);
+    await addFake(d, actor, "fake-a", { defaultCostCents: 2 });
+    await addFake(d, actor, "fake-b", { defaultCostCents: 3 });
+    await addFake(d, actor, "fake-c", { defaultCostCents: 1 });
+    f.handler = async (call) =>
+      call.provider.key === "fake-c"
+        ? { outcome: "hit", primary: "ada@acme.com", outputs: { email: "ada@acme.com", confidence: 90 } }
+        : { outcome: "miss", primary: null, outputs: { email: null, confidence: null } };
+    // fake-a spends 2 of the 4 cents. fake-b would bring the cell to 5, so it is skipped. fake-c fits at 3.
+    await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
+      inputs: { fullName: "name", companyDomain: "domain" },
+      steps: ["fake-a", "fake-b", "fake-c"].map((providerKey) => ({ providerKey, actionKey: "find-email" })),
+      selectedOutputs: ["email"],
+      maxCostCents: 4,
+    });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+
+    expect(f.calls.map((c) => c.provider.key)).toEqual(["fake-a", "fake-c"]);
+    const ledger = await sql`select provider, outcome, cost_cents::float as cost from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
+    expect(ledger.map((r) => [r.provider, r.outcome, r.cost])).toEqual([["fake-a", "miss", 2], ["fake-b", "skipped", 0], ["fake-c", "hit", 1]]);
+    expect((await cells(rows[0])).cells.email).toBe("ada@acme.com");
+  });
+
+  it("skips a waterfall step whose vendor credits would pass the column's credit cap, without calling it", async () => {
+    const { actor, table, rows } = await fixture([{ name: "Ada Lovelace", domain: "acme.com", about: "ada@acme.com" }]);
+    const called: string[] = [];
+    const vendorFetch = (async (url: URL) => {
+      called.push(url.hostname);
+      const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+      if (url.hostname === "api.hunter.io") return json(200, { data: { email: "ada@acme.com", status: "accept_all", score: 60 } });
+      return json(200, { email: "ada@acme.com", result: "ok", quality: "good", free: false, role: false, error: "" });
+    }) as unknown as typeof fetch;
+    const d = deps(fake(), { fetch: vendorFetch });
+    for (const adapter of ["hunter", "millionverifier"]) {
+      await m.providers.createProvider(d.providerDeps, actor, { adapter, credentials: { apiKey: `${adapter}-key-0123456789` }, defaultCostCents: 1 });
+    }
+    // Hunter uses half a credit of the 1 and answers catch-all. MillionVerifier's credit would bring the cell to 1.5.
+    await m.columns.createWaterfallColumns(d.columnDeps, actor, table, {
+      inputs: { email: "about" },
+      steps: ["hunter", "millionverifier"].map((providerKey) => ({ providerKey, actionKey: "verify-email" })),
+      selectedOutputs: ["status"],
+      maxCredits: 1,
+    });
+    await m.run.requestRun(d.runDeps, actor, table);
+    await tick(m.worker.createGridRunJob(d.worker("w1")));
+
+    expect(called).toEqual(["api.hunter.io"]);
+    const ledger = await sql`select provider, outcome, cost_cents::float as cost, credits::float as credits from grid_cell_runs where row_id = ${rows[0]} order by created_at, id`;
+    expect(ledger.map((r) => [r.provider, r.outcome, r.cost, r.credits])).toEqual([["hunter", "miss", 1, 0.5], ["millionverifier", "skipped", 0, null]]);
+    expect((await cells(rows[0])).cells.status).toBe("catch_all");
   });
 
   it("a verification waterfall across native vendors moves past unsettled verdicts, retries only the failed step, and keeps keys out of the ledger", async () => {

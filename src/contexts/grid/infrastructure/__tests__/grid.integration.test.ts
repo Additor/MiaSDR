@@ -499,6 +499,39 @@ describeDb("grid core", () => {
       await denied(structure.updateWorkbook(deps, a.actor, workbook.id, { folderId: (await structure.createFolder(deps, b.actor, { name: "B folder" })).folder.id }));
     });
 
+    describe("with rows in another table and another organization", () => {
+      async function strangers() {
+        const a = await org("a");
+        const b = await org("b");
+        const { table: own } = await table(a.actor, "Own");
+        const { table: sibling } = await table(a.actor, "Sibling");
+        const { table: foreign } = await table(b.actor, "Foreign");
+        const [siblingRow] = await rowsOf(a.actor, sibling.id);
+        const [foreignRow] = await rowsOf(b.actor, foreign.id);
+        await rowsUc.editCells(deps, a.actor, sibling.id, [{ rowId: siblingRow.id, columnKey: "name", value: "sibling" }]);
+        await rowsUc.editCells(deps, b.actor, foreign.id, [{ rowId: foreignRow.id, columnKey: "name", value: "foreign" }]);
+        const cellsOf = async (rowId: string) => (await sql`select cells from grid_rows where id = ${rowId}`)[0]?.cells;
+        return { a, own, siblingRow, foreignRow, cellsOf };
+      }
+
+      it("deletes no row of another table or organization through the table it names", async () => {
+        const { a, own, siblingRow, foreignRow, cellsOf } = await strangers();
+        expect(await rowsUc.deleteRows(deps, a.actor, own.id, [siblingRow.id, foreignRow.id])).toEqual({ deleted: 0 });
+        expect(await cellsOf(siblingRow.id)).toEqual({ name: "sibling" });
+        expect(await cellsOf(foreignRow.id)).toEqual({ name: "foreign" });
+        expect(await rowsOf(a.actor, own.id)).toHaveLength(1);
+      });
+
+      it("refuses a cell edit on a row of another table or organization and leaves it unchanged", async () => {
+        const { a, own, siblingRow, foreignRow, cellsOf } = await strangers();
+        for (const rowId of [siblingRow.id, foreignRow.id]) {
+          await expect(rowsUc.editCells(deps, a.actor, own.id, [{ rowId, columnKey: "name", value: "pwn" }])).rejects.toBeInstanceOf(NotFoundError);
+        }
+        expect(await cellsOf(siblingRow.id)).toEqual({ name: "sibling" });
+        expect(await cellsOf(foreignRow.id)).toEqual({ name: "foreign" });
+      });
+    });
+
     it("keeps lookups inside the organization", async () => {
       const a = await org("a");
       const b = await org("b");
@@ -659,6 +692,23 @@ describeDb("grid core", () => {
       await expect(
         deps.rows.importRecords(actor.organizationId, t.id, () => ({ newColumns: [], records: [{ a: 1 }, { a: 2 }] }), { maxRows: 2, maxColumns: 200 }),
       ).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it("imports more rows than one insert batch holds, in file order", async () => {
+      const { actor } = await org();
+      const { table: t } = await table(actor);
+      const count = 1201;
+      const sheet = { headers: ["Company", "Rank"], rows: Array.from({ length: count }, (_, i) => [`Company ${i + 1}`, String(i + 1)]) };
+      const done = await io.runImport(deps, actor, t.id, sheet, [
+        { headerIndex: 0, action: "create", name: "Company", type: "text" },
+        { headerIndex: 1, action: "create", name: "Rank", type: "text" },
+      ]);
+      expect(done.rowsInserted).toBe(count);
+      const stored = await sql`select cells from grid_rows where table_id = ${t.id} order by position, id`;
+      expect(stored).toHaveLength(count);
+      expect(stored[499].cells).toEqual({ company: "Company 500", rank: "500" });
+      expect(stored[500].cells).toEqual({ company: "Company 501", rank: "501" });
+      expect(stored[count - 1].cells).toEqual({ company: `Company ${count}`, rank: String(count) });
     });
 
     const canReuseSeed = async (organizationId: string, tableId: string) => {
@@ -876,6 +926,25 @@ describeDb("grid core", () => {
       expect(report.enrolled).toBe(1);
       expect(report.failures).toEqual([{ rowId: f.rows[0].id, reason: "Email is suppressed" }]);
       expect(await sql`select 1 from people where organization_id = ${f.id} and lower(email) = 'mixed@acme.io'`).toHaveLength(0);
+    });
+
+    it("skips a lead matched by LinkedIn profile whose stored email is suppressed", async () => {
+      const o = await org("late");
+      const { table: t } = await table(o.actor);
+      const [email, url] = await withColumns(o.actor, t.id, [["Email", "text"], ["LinkedIn", "text"]]);
+      const [row] = await rowsOf(o.actor, t.id);
+      // The row's own address is clean. The existing lead it matches by slug carries a suppressed one.
+      await rowsUc.editCells(deps, o.actor, t.id, [
+        { rowId: row.id, columnKey: email, value: "new@acme.io" },
+        { rowId: row.id, columnKey: url, value: "https://www.linkedin.com/in/jane-doe/" },
+      ]);
+      const [{ id: person }] = await sql`insert into people (organization_id, email, linkedin_slug, linkedin_url, first_name) values (${o.id}, 'old@acme.io', 'jane-doe', 'https://www.linkedin.com/in/jane-doe/', 'Jane') returning id`;
+      await sql`insert into suppression_list (organization_id, email, reason) values (${o.id}, 'old@acme.io', 'unsubscribed')`;
+      const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, channel, name, status) values (${o.id}, 'email', 'C', 'draft') returning id`;
+      const report = await handoffUc.pushToCampaign(deps, o.actor, t.id, { rowIds: [row.id], target: { campaignId }, fields: { email, linkedin: url } });
+      expect(report.enrolled).toBe(0);
+      expect(report.failures).toEqual([{ rowId: row.id, reason: "Email is suppressed" }]);
+      expect(await sql`select 1 from campaign_enrollments where campaign_id = ${campaignId} and person_id = ${person}`).toHaveLength(0);
     });
 
     it("fails a row whose lead is already a contact, on both channels, and still enrolls the others", async () => {
