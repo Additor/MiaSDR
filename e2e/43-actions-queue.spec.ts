@@ -94,7 +94,8 @@ test.describe("the Actions queue as a list to work through", () => {
     // The click settles the row where it stands: no thread opens, and the suggestion is not asked for again.
     await expect(page).toHaveURL(/\/actions/);
     await expect(page.getByTestId("queue-item").filter({ hasText: "Eli Moss" }).filter({ hasText: /AI picked/ })).toHaveCount(0);
-    await expect(page.getByRole("status").filter({ hasText: "AI pick accepted: Eli Moss." })).toHaveCount(1);
+    // The page's one live region says whose pick was accepted, after the refresh mounts the group again.
+    await expect(page.getByTestId("queue-notice")).toHaveText("AI pick accepted: Eli Moss.");
   });
 
   test("a stop request is its own row: Review stop request opens the thread with Stop contacting, and nothing is accepted", async ({ page }) => {

@@ -74,6 +74,31 @@ const doneFor = (done: string, name: string | null) => `${done.replace(/\.$/, ""
 
 const ACCEPTED = "AI pick accepted.";
 
+const NOTICE_EVENT = "miasdr:actions-notice";
+
+/** Says what a row step did through the page's one live region, `QueueNotice`. */
+function announce(text: string) {
+  window.dispatchEvent(new CustomEvent(NOTICE_EVENT, { detail: text }));
+}
+
+/**
+ * The page's live region for row steps (Accept, Looks right). It sits outside the groups: a step changes a group's total,
+ * the refresh mounts the group again, and a region inside it would lose the text before a screen reader read it.
+ */
+export function QueueNotice() {
+  const [text, setText] = useState("");
+  useEffect(() => {
+    const on = (event: Event) => setText((event as CustomEvent<string>).detail);
+    window.addEventListener(NOTICE_EVENT, on);
+    return () => window.removeEventListener(NOTICE_EVENT, on);
+  }, []);
+  return (
+    <div role="status" className="sr-only" data-testid="queue-notice">
+      {text}
+    </div>
+  );
+}
+
 /**
  * The mark of a problem row. A send that may or may not have gone out is uncertain, so it takes the amber icon and nothing else
  * (DESIGN.md: never a fill, never red). A draft, a job or a record that failed is an error a person has to fix, so its icon is red.
@@ -168,7 +193,6 @@ export function QueueGroup({
   const router = useRouter();
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState("");
   const list = useRef<HTMLUListElement>(null);
   // After Load more the button can vanish with the last page, so focus moves to the first new row instead of the body.
   const focusAfterLoad = useRef<string | null>(null);
@@ -220,7 +244,7 @@ export function QueueGroup({
     setRowBusy(null);
     if (ok) {
       removeRows([item.recordId]);
-      setNotice(doneFor(item.classification?.kind === "held" ? ACCEPTED : LOOKS_RIGHT_DONE, item.personName));
+      announce(doneFor(item.classification?.kind === "held" ? ACCEPTED : LOOKS_RIGHT_DONE, item.personName));
     }
     // Totals and the group the record moves to are the server's to say.
     router.refresh();
@@ -240,7 +264,7 @@ export function QueueGroup({
     setRowBusy(null);
     if (done.length > 0) {
       removeRows(done);
-      setNotice(`Marked ${done.length} ${done.length === 1 ? "AI pick" : "AI picks"} as looked at.`);
+      announce(`Marked ${done.length} ${done.length === 1 ? "AI pick" : "AI picks"} as looked at.`);
     }
     router.refresh();
   }
@@ -328,7 +352,8 @@ export function QueueGroup({
               </div>
               {item.snippet && <p className="truncate text-muted-foreground">{item.snippet}</p>}
               <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span className="min-w-0 truncate">
+                {/* A stop request wraps on a phone: cut short, it would lose the sentence that says nothing stops yet. */}
+                <span className={cn("min-w-0", stop ? "max-sm:text-pretty sm:truncate" : "truncate")}>
                   {detail}
                   {showAssignee && <span data-testid="queue-assignee">{` · ${item.assignee ? `Assigned to ${item.assignee.name ?? "a former member"}` : "Unassigned"}`}</span>}
                 </span>
@@ -372,7 +397,6 @@ export function QueueGroup({
       <div className={cn("flex items-center justify-between gap-2 text-xs text-muted-foreground", !cursor && "sr-only")}>
         <span role="status" aria-live="polite">
           Showing {items.length} of {total}
-          <span className="sr-only">{notice && ` ${notice}`}</span>
         </span>
         {cursor && (
           <Button variant="outline" size="sm" className="max-sm:h-11 max-sm:px-4" onClick={loadMore} disabled={busy}>

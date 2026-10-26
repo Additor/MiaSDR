@@ -39,7 +39,7 @@ import { personHref } from "@/app/(app)/_components/person/person-href";
 import { ACTIONS_FILTER_KEYS, actionsViewFrom, threadQueryFromActions } from "./actions-query";
 import { hasAnyFilter } from "./more-filters";
 import { queueFilterChips, QueueFilters } from "./queue-filters";
-import { QueueGroup, type QueueItemView } from "./queue-group";
+import { QueueGroup, QueueNotice, type QueueItemView } from "./queue-group";
 import { ambiguousTypeNames } from "./type-label";
 
 export const metadata: Metadata = { title: "Actions" };
@@ -238,6 +238,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   return (
     <>
       <ListKeys />
+      <QueueNotice />
       <ListToolbar
         end={groups.length > 0 || scopedTasks.length > 0 ? <KeyboardHint noun="rows" /> : undefined}
         filters={<QueueFilters values={filterValues} scope={scope} count={queueChips.length} replyTypes={replyTypes} campaigns={campaigns} />}
