@@ -11,6 +11,9 @@ const TERMS = ["Lead", "Contact", "Company", "Deal", "Stage", "Reply category"];
 /** Terms "Contacts and Companies CRUD" in docs/decisions.md adds to that list. */
 const CRUD_TERMS = ["Other domains", "Listed in Companies", "Make contact"];
 
+/** Terms the UI shows whose code names differ (`record`, `grid`, `waterfall`). */
+const CODE_NAME_TERMS = ["Conversation", "Tables", "Workbook", "Table", "Enrichment column", "Enrichment provider", "Subcategory"];
+
 /** The Terminology section of PRODUCT.md, up to the next level-2 heading. */
 function terminology(): string {
   const text = read("PRODUCT.md");
@@ -22,7 +25,7 @@ function terminology(): string {
 }
 
 describe("product vocabulary", () => {
-  it.each([...TERMS, ...CRUD_TERMS])("defines %s in the PRODUCT.md Terminology list", (term) => {
+  it.each([...TERMS, ...CRUD_TERMS, ...CODE_NAME_TERMS])("defines %s in the PRODUCT.md Terminology list", (term) => {
     // A list item that starts with the bold term followed by a colon: "- **Lead:** ..."
     expect(terminology()).toMatch(new RegExp(`^- \\*\\*${term}:\\*\\*`, "m"));
   });

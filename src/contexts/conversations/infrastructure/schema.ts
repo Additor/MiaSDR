@@ -30,7 +30,7 @@ import { inList } from "@/platform/db/sql-values";
  * Nothing is sent without human approval. That rule lives in the domain and
  * in `send_attempts`; there is no setting to turn it off.
  *
- * Deferred past the MVP: follow-up sequences (crm_sequences and friends).
+ * The After a reply flow keeps its tables in `after-reply/infrastructure/sequences-schema.ts`.
  */
 
 export const CATEGORY_KEYS = ["customer", "interested", "not_interested", "other"] as const;

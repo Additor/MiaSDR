@@ -342,7 +342,7 @@ Domain-wide delegation lets `verify()` succeed for any Workspace address. `MAILB
 
 ## LinkedIn outreach
 
-Code: `src/contexts/outreach`. `domain/linkedin.ts` holds step rules, limits, pacing and event keys. `application/send-next-linkedin.ts` runs one action, `linkedin-inbound.ts` handles webhooks, `infrastructure/unipile-gateway.ts` is the adapter behind the `LinkedInGateway` port. `LINKEDIN_PROVIDER=fake` swaps in `FakeLinkedInGateway` (one demo account, 45 made-up search results).
+Code: `src/contexts/outreach/linkedin`. `domain/linkedin.ts` holds step rules, limits, pacing and event keys. `application/send-next-linkedin.ts` runs one action, `application/linkedin-inbound.ts` handles webhooks, `infrastructure/unipile-gateway.ts` is the adapter behind the `LinkedInGateway` port. `LINKEDIN_PROVIDER=fake` swaps in `FakeLinkedInGateway` (one demo account, 45 made-up search results).
 
 ### Unipile gateway
 

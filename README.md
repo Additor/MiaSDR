@@ -38,7 +38,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 - **Leads**: import CSV or XLSX, or turn a LinkedIn search into a lead list.
 - **Campaigns**: email from your Google Workspace mailboxes, LinkedIn invitations and messages through [Unipile](docs/setup/linkedin-unipile.md), inside the working hours and daily limits you set.
 - **Inbox and Actions**: every conversation in one list, and one queue for replies to approve, follow-ups due and tasks.
-- **CRM**: a pipeline board of deals. A lead that becomes a deal leaves its campaigns.
+- **CRM**: a pipeline board of deals. A lead becomes a contact when you create a deal from it, and leaves its campaigns.
 - **Tables**: a spreadsheet with formulas, AI columns and a waterfall across nine enrichment vendors, one step from a campaign.
 - **Analytics**: sends, replies, bounces and the LinkedIn funnel per campaign.
 

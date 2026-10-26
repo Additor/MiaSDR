@@ -40,7 +40,7 @@ export const prospeo: VendorDefinition = {
     const person = asRecord(body.person);
     const found = asRecord(person.email);
     const verified = text(found.status)?.toUpperCase() === "VERIFIED";
-    // Prospeo sends the address only once it is revealed; an unrevealed one comes back masked ("eoghan.*****@intercom.com").
+    // Prospeo sends the address only once it is revealed; an unrevealed one comes back masked ("ada.*****@example.com").
     const address = text(found.email);
     const email = verified && found.revealed !== false && address && !address.includes("*") ? address : null;
     const outputs = { email, confidence: null, verificationStatus: email ? "valid" : null };

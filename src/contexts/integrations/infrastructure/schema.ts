@@ -4,16 +4,17 @@ import { createdAt, orgId, pk, updatedAt } from "@/platform/db/columns";
 
 /**
  * Connected third-party accounts, one row per connection per organization.
- * `kind` is `platform`, `enrichment` or `ai`.
+ * `kind` is `platform` (Unipile) or `ai`. The check still allows `enrichment`, but enrichment providers and their keys
+ * live in the grid context (`grid_providers`, `grid_provider_credentials`).
  */
 export const integrationAccounts = pgTable(
   "integration_accounts",
   {
     id: pk(),
     organizationId: orgId(),
-    /** enrichment | platform | ai */
+    /** platform | ai */
     kind: text("kind").notNull(),
-    /** apollo, hunter, unipile, google, r2, openrouter, ... */
+    /** unipile, anthropic, openrouter, vercel-ai-gateway */
     key: text("key").notNull(),
     name: text("name").notNull(),
     config: jsonb("config").$type<Record<string, unknown>>().default({}).notNull(),

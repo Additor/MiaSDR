@@ -48,13 +48,15 @@ A route handler calls `withActor`, `withAdmin` or `withUser`, then one use case.
 
 - ESLint (`eslint.config.mjs`) stops `domain/` from importing `application/`, `infrastructure/`, `src/platform`, Next.js, React or Drizzle. It stops `application/` from importing `infrastructure/` and runtime `src/platform` code: a use case takes the database and job slots through ports, and may import platform types and the driver-free `@/platform/db/errors`.
 - `src/architecture/context-dependencies.test.ts` keeps contexts in layers (identity, tenancy, integrations, ai, people, outreach, conversations, then deals, grid and analytics): a context imports only lower layers and never `src/composition`. When a lower context needs a higher one, declare a port in the lower context and wire it in `src/composition`.
-- `src/architecture/context-dependencies.test.ts` also keeps `src/shared` free of every tier above it, and lets `src/platform` import a context only where its shrink-only list allows.
+- `src/architecture/context-dependencies.test.ts` also keeps `src/shared` free of every tier above it, lets `src/platform` import a context only where its shrink-only list allows, and keeps tables, Drizzle and the driver out of `src/composition`: a query there belongs in the context that owns the table.
 - `src/architecture/context-dependencies.test.ts` also fixes what a context publishes to the contexts above it: `domain/`, `application/`, schema and composition files, plus the few infrastructure modules in `PUBLISHED_INFRASTRUCTURE`. Wiring that spans contexts lives in `src/composition` (`deals.ts`, `person-lifecycle.ts`, `inbox-filing.ts`).
-- `src/architecture/app-boundaries.test.ts` lets `src/app` import a context's `infrastructure/` only through its composition files (`composition.ts`, `*-composition.ts`) and identity's session and auth modules. Add a wired deps function to the composition file instead of importing a store.
-- `src/architecture/table-ownership.test.ts` lets only the context that declares a table write it, and lets a context read a higher layer's tables only through that context's read model. It scans `src/platform` too.
+- `src/architecture/app-boundaries.test.ts` lets `src/app`, `src/components`, `src/hooks` and `src/lib` import a context's `infrastructure/` only through its composition files (`composition.ts`, `*-composition.ts`) and identity's session and auth modules. Add a wired deps function to the composition file instead of importing a store.
+- `src/architecture/table-ownership.test.ts` lets only the context that declares a table write it, and lets a context read a higher layer's tables only through that context's read model. It reads imported tables and the table names after `from` and `join` in raw `sql` templates, and scans `src/platform` too.
 - `src/architecture/status-guards.test.ts` checks that every write of `drafts.status` and `campaign_enrollments.status` names the statuses it moves from, as the transition tables in `conversations/domain/draft-status.ts` and `outreach/domain/enrollment-status.ts` define.
 
 The boundary tests keep shrink-only lists of the places that broke a rule when it arrived. When you fix one, delete its entry; the test fails until you do.
+
+Client code that needs a server rule or limit imports it from the context's `domain/` (or `application/limits.ts` in grid) instead of copying the number. A new enrichment vendor follows the steps in [the grid README](src/contexts/grid/README.md#adding-an-enrichment-vendor).
 
 UI work follows [DESIGN.md](DESIGN.md) for tokens, components and layout, and [PRODUCT.md](PRODUCT.md) for the words the screens use. Background on why the code works the way it does: [docs/decisions.md](docs/decisions.md) and [docs/database.md](docs/database.md).
 
