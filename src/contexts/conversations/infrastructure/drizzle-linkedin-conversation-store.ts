@@ -6,7 +6,7 @@ import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/
 import { defaultPipelineId, findOrCreateRecord, type Tx } from "./drizzle-conversation-store";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
-import { staleOpenDraftsTx } from "../after-reply/infrastructure/sequence-run-tx";
+import { staleOpenDraftsTx } from "./stale-drafts-sql";
 import { detachPrivateThreadTx } from "./private-thread-detach";
 
 /**

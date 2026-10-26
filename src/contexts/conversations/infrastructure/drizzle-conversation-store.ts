@@ -6,7 +6,7 @@ import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundConversationStore, InboundEmailInput } from "../application/ports";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
-import { staleOpenDraftsTx } from "../after-reply/infrastructure/sequence-run-tx";
+import { staleOpenDraftsTx } from "./stale-drafts-sql";
 
 export type Tx = DbTx;
 

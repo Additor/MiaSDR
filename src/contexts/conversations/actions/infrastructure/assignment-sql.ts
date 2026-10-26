@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { events } from "@/platform/db/schema";
 import { ASSIGNED_EVENT, pickAssignee } from "../domain/assignment";
-import type { Tx } from "../../infrastructure/drizzle-conversation-store";
+import type { DbTx as Tx } from "@/platform/db/client";
 import { rowsOf } from "@/platform/db/sql-values";
 
 /**

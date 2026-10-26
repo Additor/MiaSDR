@@ -5,7 +5,9 @@ import type { AfterReplyStore, FlowRunRow, FlowState, NewRun, RecordSequenceStat
 import { afterReplyFlowName, afterReplyModeOf } from "../domain/after-reply";
 import { AFTER_REPLY_OFF, assertPublishable, assertRunTransition, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
 import { owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
-import { advanceRunTx, asDate, asDateOrNull, endRunTx, recordEvent, rowsOf, ts, zoneOfTx, type Tx } from "./sequence-run-tx";
+import { rowsOf } from "@/platform/db/sql-values";
+import { advanceRunTx, asDate, asDateOrNull, ts, zoneOfTx } from "./sequence-run-tx";
+import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
 import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";

@@ -9,7 +9,7 @@ import type { Actor } from "@/shared/errors";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
 import type { PersonChannel, PersonEventInput, PersonEventView, PersonReplyHandling, PersonRunStop } from "../application/person-ports";
 import { publicConversation, publicConversationSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
-import { rowsOf } from "../after-reply/infrastructure/sequence-run-tx";
+import { rowsOf } from "@/platform/db/sql-values";
 
 /**
  * Callee-owned functions for turning a lead into a contact. The people context runs the conversion and calls these in

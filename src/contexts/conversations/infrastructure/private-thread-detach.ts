@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { publicConversationText } from "@/platform/db/conversation-visibility";
-import { rowsOf, type Tx } from "../after-reply/infrastructure/sequence-run-tx";
+import type { DbTx as Tx } from "@/platform/db/client";
+import { rowsOf } from "@/platform/db/sql-values";
 import { RETIRABLE_DRAFT_STATUSES } from "../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 
