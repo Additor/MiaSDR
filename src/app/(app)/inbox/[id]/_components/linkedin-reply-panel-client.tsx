@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
@@ -97,7 +98,13 @@ export function LinkedInReplyPanelClient({ panel }: { panel: LinkedInReplyPanelV
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
           Reply on LinkedIn
           {draft?.source === "ai" && draft.status === "awaiting_review" && <Badge variant="outline">AI draft</Badge>}
-          {stale && <Badge variant="destructive">Out of date</Badge>}
+          {stale && (
+            // Out of date is uncertain, not an error: the warning hue on its icon, never a red fill.
+            <Badge variant="outline">
+              <TriangleAlertIcon aria-hidden className="text-warning" />
+              {draftStatusLabel("stale")}
+            </Badge>
+          )}
           {panel.doNotContact && <ReachFlag kind="do_not_contact" />}
           {draft && draft.status !== "awaiting_review" && !stale && (
             <Badge variant="outline" data-testid="draft-status">
@@ -116,7 +123,7 @@ export function LinkedInReplyPanelClient({ panel }: { panel: LinkedInReplyPanelV
           <p className="text-sm">A reply is being sent. Reload in a moment to see the result.</p>
         ) : (
           <div className="grid gap-1">
-            {stale && <p className="text-sm text-destructive">This draft may be out of date: a newer message arrived after it was written. Regenerate or discard it.</p>}
+            {stale && <p className="text-sm">This draft may be out of date: a newer message arrived after it was written. Regenerate or discard it.</p>}
             {!draft && !panel.canGenerate && panel.aiOff && !panel.doNotContact && <p className="text-sm text-muted-foreground">{panel.aiOff} Until then, write the message yourself below.</p>}
             {!draft && panel.canGenerate && !panel.doNotContact && (
               <div>
@@ -179,7 +186,8 @@ export function LinkedInReplyPanelClient({ panel }: { panel: LinkedInReplyPanelV
           title={`Discard the draft message to ${panel.recipient ?? "this person"}?`}
           description="The draft is deleted and nothing was sent. You can write or generate a new message afterward."
           confirmLabel="Discard draft"
-          pendingLabel="Discarding..."
+          cancelLabel="Keep draft"
+          pendingLabel="Discarding…"
           destructive
           onConfirm={discard}
         />
@@ -191,8 +199,14 @@ export function LinkedInReplyPanelClient({ panel }: { panel: LinkedInReplyPanelV
 function UncertainBox({ busy, onResolve }: { busy: boolean; onResolve: (outcome: "delivered" | "not_delivered", note: string) => void }) {
   const [note, setNote] = useState("");
   return (
-    <div className="grid gap-2 rounded-lg border border-destructive/40 p-3 text-sm" data-testid="uncertain-box">
-      <p>LinkedIn did not confirm this message. It may have gone out, so it will not be sent again. Open the chat on LinkedIn, then mark what you found.</p>
+    // An unconfirmed send is uncertain: the warning hue on the icon and the lead words only, no frame.
+    <div className="grid gap-2 text-sm" data-testid="uncertain-box">
+      <div className="flex items-start gap-2">
+        <CircleHelpIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+        <p>
+          <strong className="font-medium text-warning">Not confirmed.</strong> LinkedIn did not confirm this message. It may have gone out, so it will not be sent again. Open the chat on LinkedIn, then mark what you found.
+        </p>
+      </div>
       <Label htmlFor="li-resolve-note">How did you check?</Label>
       <Input id="li-resolve-note" value={note} onChange={(e) => setNote(e.target.value)} />
       <div className="flex gap-2">

@@ -1,116 +1,116 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { callApi } from "@/app/_lib/api-client";
 import { SenderPicker, type SenderOption } from "./sender-picker";
+
+type Channel = "email" | "linkedin";
+type CampaignType = "regular" | "personal";
+
+const CHANNELS = [
+  ["email", "Email", "Sent from your mailboxes"],
+  ["linkedin", "LinkedIn", "Connection request, then messages"],
+] as const;
+
+const TYPES = [
+  ["regular", "Regular", "Replies go to the Inbox and Actions"],
+  ["personal", "Personal", "Private: replies stay out of the Inbox, Actions and the AI. Only the creator, owners and admins can read them."],
+] as const;
+
+/** A choice of two with an explanation each, as selectable tiles. */
+function ChoiceTiles<T extends string>({ name, legend, options, value, onChange }: { name: string; legend: string; options: readonly (readonly [T, string, string])[]; value: T; onChange: (value: T) => void }) {
+  return (
+    <FieldSet>
+      <FieldLegend variant="label">{legend}</FieldLegend>
+      <RadioGroup value={value} onValueChange={(next) => onChange(next as T)} className="grid-cols-2">
+        {options.map(([option, label, hint]) => (
+          <FieldLabel key={option} htmlFor={`${name}-${option}`}>
+            <Field orientation="horizontal">
+              <RadioGroupItem value={option} id={`${name}-${option}`} />
+              <FieldContent>
+                <FieldTitle>{label}</FieldTitle>
+                <FieldDescription className="text-xs">{hint}</FieldDescription>
+              </FieldContent>
+            </Field>
+          </FieldLabel>
+        ))}
+      </RadioGroup>
+    </FieldSet>
+  );
+}
 
 export function NewCampaignButton({ senders }: { senders: { email: SenderOption[]; linkedin: SenderOption[] } }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const [channel, setChannel] = useState<"email" | "linkedin">("email");
+  const [name, setName] = useState("");
+  const [channel, setChannel] = useState<Channel>("email");
   const [senderIds, setSenderIds] = useState<string[]>([]);
-  const [type, setType] = useState<"regular" | "personal">("regular");
+  const [type, setType] = useState<CampaignType>("regular");
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError(null);
-    const name = String(new FormData(event.currentTarget).get("name"));
-    const result = await callApi<{ id: string }>(channel === "linkedin" ? "/api/linkedin/campaigns" : "/api/campaigns", "POST", channel === "linkedin" ? { name, senderIds, type } : { name, senderIds });
-    setPending(false);
-    if (!result.ok || !result.data) {
-      setError(result.error);
-      return;
-    }
-    setOpen(false);
+  function openDialog() {
+    setName("");
+    setChannel("email");
+    setSenderIds([]);
+    setType("regular");
+    setOpen(true);
+  }
+
+  async function create() {
+    const result = await callApi<{ id: string }>(
+      channel === "linkedin" ? "/api/linkedin/campaigns" : "/api/campaigns",
+      "POST",
+      channel === "linkedin" ? { name, senderIds, type } : { name, senderIds },
+    );
+    // ConfirmDialog keeps the panel open and shows the reason when this throws.
+    if (!result.ok || !result.data) throw new Error(result.error ?? "The campaign was not created. Try again.");
     router.push(`/campaigns/${result.data.id}`);
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>New campaign</DialogTrigger>
-      <DialogContent>
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>New campaign</DialogTitle>
-            <DialogDescription>
-              {channel === "linkedin"
-                ? "It starts as a draft with a connection request and two follow-up messages you can edit. Nothing goes out until you start it."
-                : "It starts as a draft with a two-step template you can edit. Nothing is sent until you start it."}
-            </DialogDescription>
-          </DialogHeader>
-          <fieldset className="grid gap-2">
-            <legend className="text-sm font-medium">Channel</legend>
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  ["email", "Email", "Sent from your mailboxes"],
-                  ["linkedin", "LinkedIn", "Connection request, then messages"],
-                ] as const
-              ).map(([value, label, hint]) => (
-                <label key={value} className={`flex cursor-pointer flex-col gap-0.5 rounded-lg border p-3 text-sm has-[:checked]:border-ring has-[:checked]:bg-muted/50`}>
-                  <span className="flex items-center gap-2 font-medium">
-                    <input type="radio" name="channel" value={value} checked={channel === value} onChange={() => {
-                      setChannel(value);
-                      setSenderIds([]);
-                      setType("regular");
-                    }}
-                  />
-                    {label}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{hint}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          {channel === "linkedin" && (
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-medium">Campaign type</legend>
-              <div className="grid grid-cols-2 gap-2">
-                {(
-                  [
-                    ["regular", "Regular", "Replies go to the Inbox and Actions"],
-                    ["personal", "Personal", "Private: replies stay out of the Inbox, Actions and the AI. Only the creator, owners and admins can read them."],
-                  ] as const
-                ).map(([value, label, hint]) => (
-                  <label key={value} className="flex cursor-pointer flex-col gap-0.5 rounded-lg border p-3 text-sm has-[:checked]:border-ring has-[:checked]:bg-muted/50">
-                    <span className="flex items-center gap-2 font-medium">
-                      <input type="radio" name="campaign-type" value={value} checked={type === value} onChange={() => setType(value)} />
-                      {label}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{hint}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          )}
-          <div className="grid gap-2">
-            <Label htmlFor="campaign-name">Name</Label>
-            <Input id="campaign-name" name="name" placeholder="Q4 outreach to CTOs" required maxLength={120} autoFocus />
-          </div>
-          <div className="grid gap-2">
-            <span className="text-sm font-medium">Send from</span>
-            <SenderPicker options={senders[channel]} value={senderIds} onChange={setSenderIds} noun={channel === "linkedin" ? "LinkedIn account" : "mailbox"} disabled={pending} />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Creating…" : "Create campaign"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Button onClick={openDialog}>New campaign</Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New campaign"
+        description={
+          channel === "linkedin"
+            ? "It starts as a draft with a connection request and two follow-up messages you can edit. Nothing goes out until you start it."
+            : "It starts as a draft with a two-step template you can edit. Nothing is sent until you start it."
+        }
+        confirmLabel="Create campaign"
+        pendingLabel="Creating…"
+        confirmDisabled={name.trim() === ""}
+        onConfirm={create}
+      >
+        <ChoiceTiles
+          name="campaign-channel"
+          legend="Channel"
+          options={CHANNELS}
+          value={channel}
+          onChange={(next) => {
+            setChannel(next);
+            setSenderIds([]);
+            setType("regular");
+          }}
+        />
+        {channel === "linkedin" && <ChoiceTiles name="campaign-type" legend="Campaign type" options={TYPES} value={type} onChange={setType} />}
+        <div className="stack-field">
+          <Label htmlFor="campaign-name">Name</Label>
+          <Input id="campaign-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Q4 outreach to CTOs" maxLength={120} autoFocus />
+        </div>
+        <div className="stack-field">
+          <span className="text-sm font-medium">Send from</span>
+          <SenderPicker options={senders[channel]} value={senderIds} onChange={setSenderIds} noun={channel === "linkedin" ? "LinkedIn account" : "mailbox"} />
+        </div>
+      </ConfirmDialog>
+    </>
   );
 }
