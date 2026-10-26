@@ -28,7 +28,7 @@ import { dealDialogData } from "../../_components/deal-dialog-data";
 import { DealsList } from "../../_components/deals-list";
 import { EventList } from "../../_components/person/activity";
 import { MetaLine, RecordBody, RecordHeader, RecordPage, RecordSection } from "../../_components/record/record-header";
-import { formatTotals } from "../../pipeline/deal-format";
+import { moneyTotalsText } from "../../_components/money-text";
 import { CompanyActions } from "./company-actions";
 import { CompanyCreateDeal } from "./company-create-deal";
 import { CompanyDetails } from "./company-form";
@@ -96,7 +96,7 @@ async function Company({ params }: { params: PageProps<"/crm/companies/[id]">["p
     .filter((f) => f.value !== "");
   const contactNames = new Map(contacts.map((c) => [c.id, c.name ?? c.email ?? "Contact"]));
   const { openDeals } = summary;
-  const openAmount = formatTotals(summary.openAmounts);
+  const openAmount = moneyTotalsText(summary.openAmounts);
   const addContact = (props: { label?: string; variant?: "default" | "outline" }) => (
     <AddContactButton {...props} members={dialog.members} currentUserId={dialog.currentUserId} stages={dialog.stages} initialDomain={company.domain} />
   );
