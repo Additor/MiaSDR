@@ -49,7 +49,7 @@ test.describe("invite and sign-up", () => {
     await page.goto("/settings/members");
     await expect(page.getByText(INVITEE.email).first()).toBeVisible();
     await expect(page.getByLabel(`Role of ${INVITEE.email}`)).toBeVisible();
-    await expect(page.getByText("No pending invitations.")).toBeVisible();
+    await expect(page.getByText("No pending invitations")).toBeVisible();
   });
 
   test("an uninvited address cannot sign up", async ({ page }) => {

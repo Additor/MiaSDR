@@ -111,7 +111,7 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
           <ul className={RULED_LIST}>
             {docs.map((doc) => (
               <li key={doc.id} data-testid="knowledge-doc" className={cn(RULED_ROW, "flex flex-wrap items-start gap-x-3 gap-y-2")}>
-                <div className={cn("stack-field min-w-0 flex-1", !doc.active && "opacity-60")}>
+                <div className="stack-field min-w-0 flex-1">
                   <h3 className="text-sm font-medium">{doc.title}</h3>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="secondary">{kindLabel(doc.kind)}</Badge>

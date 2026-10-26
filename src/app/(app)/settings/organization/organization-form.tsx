@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { callApi } from "@/app/_lib/api-client";
-import { AdminNotice } from "../admin-notice";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { SettingsSection } from "../settings-section";
 import { TimeZoneSelect } from "../time-zone-select";
@@ -69,7 +68,7 @@ export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: 
               Lead imports and lead edits read a number without a country code, such as 010-1234-5678, as a number from this country. With no default, such a number is ignored with a warning, unless your administrator set a default country in the server configuration.
             </FieldDescription>
           </Field>
-          {canEditZone ? <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValues(saved)} /> : <AdminNotice action="change these settings" />}
+          {canEditZone && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValues(saved)} />}
         </FieldGroup>
       </form>
     </SettingsSection>
