@@ -37,7 +37,7 @@ export function OrganizationForm() {
     <Card>
       <form onSubmit={onSubmit}>
         <CardHeader>
-          <CardTitle>New organization</CardTitle>
+          <CardTitle as="h1">New organization</CardTitle>
           <CardDescription>You become its owner and MiaSDR opens in it. Your other organizations stay available from the sidebar.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 py-4">

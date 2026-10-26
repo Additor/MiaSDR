@@ -34,7 +34,7 @@ export function ForgotPasswordForm() {
       {sentTo ? (
         <>
           <CardHeader>
-            <CardTitle>Check your email</CardTitle>
+            <CardTitle as="h1">Check your email</CardTitle>
             <CardDescription>If an account exists for {sentTo}, we sent a link to reset the password. The link works once and expires in one hour.</CardDescription>
           </CardHeader>
           <CardFooter>
@@ -46,7 +46,7 @@ export function ForgotPasswordForm() {
       ) : (
         <form onSubmit={onSubmit}>
           <CardHeader>
-            <CardTitle>Reset your password</CardTitle>
+            <CardTitle as="h1">Reset your password</CardTitle>
             <CardDescription>Enter your account email and we will send you a link to choose a new password.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 py-4">

@@ -39,7 +39,7 @@ export function PageHeader({
 }) {
   return (
     <header className="flex h-14 items-center gap-3 border-b px-gutter">
-      <SidebarTrigger className="shrink-0" />
+      <SidebarTrigger className="shrink-0 max-sm:size-11" />
       {back && (
         <>
           <Link

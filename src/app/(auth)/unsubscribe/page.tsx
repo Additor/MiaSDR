@@ -26,7 +26,7 @@ async function Unsubscribe({ searchParams }: { searchParams: PageProps<"/unsubsc
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Link not valid</CardTitle>
+          <CardTitle as="h1">Link not valid</CardTitle>
           <CardDescription>This unsubscribe link is invalid or has been altered. Reply to the email and ask to be removed.</CardDescription>
         </CardHeader>
       </Card>

@@ -52,7 +52,7 @@ export function SetupForm() {
     <Card>
       <form onSubmit={onSubmit}>
         <CardHeader>
-          <CardTitle>Set up MiaSDR</CardTitle>
+          <CardTitle as="h1">Set up MiaSDR</CardTitle>
           <CardDescription>Create the first admin account and your organization. No email confirmation is needed for this one.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 py-4">
