@@ -1,4 +1,5 @@
 // Pure LinkedIn rules: step validation, rendering, limits, pacing, webhook keys. No I/O.
+import { parseLinkedinRef } from "@/contexts/people/domain/linkedin-url";
 import { stopReasonDetail } from "../../domain/campaign-view";
 import { applyMergeFields, applySpin, applySpinLongest } from "../../domain/render";
 import { isWithinWorkingHours, type WorkingHours } from "../../domain/working-hours";
@@ -183,21 +184,13 @@ export function nextRunAfter(now: Date, minutes: number): Date {
   return new Date(now.getTime() + minutes * 60_000);
 }
 
-const SLUG_HOSTS = /(^|\.)linkedin\.com$/i;
-
-/** `https://www.linkedin.com/in/jane-doe-123/` or a bare slug becomes `jane-doe-123`. Sales Navigator URLs return null. */
+/**
+ * `https://www.linkedin.com/in/jane-doe-123/` or a bare slug becomes `jane-doe-123`, by the rule people use. Member ids
+ * and Sales Navigator URLs return null.
+ */
 export function linkedinSlug(input: string): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  if (!/[/.]/.test(trimmed)) return trimmed.toLowerCase();
-  try {
-    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
-    if (!SLUG_HOSTS.test(url.hostname)) return null;
-    const match = url.pathname.match(/^\/in\/([^/]+)/i);
-    return match ? decodeURIComponent(match[1]).toLowerCase() : null;
-  } catch {
-    return null;
-  }
+  const ref = parseLinkedinRef(input);
+  return ref?.kind === "profile" ? ref.slug : null;
 }
 
 export function profileUrlFor(slug: string): string {
