@@ -35,6 +35,7 @@ import type {
   Taxonomy,
 } from "../application/reply-handling-ports";
 import { REPLY_CATEGORIES, checkStageMove, type CategoryKey } from "../domain/reply-handling";
+import { afterPersonDecision, afterReopen } from "../domain/workflow-state";
 import { defaultPipelineId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleClassificationSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { draftCanBecome } from "./reply-store-shared";
@@ -319,7 +320,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           subcategoryId: previous ? cls.previousSubcategoryId : null,
           categorySource: previous ? "human" : null,
           categoryLocked: previous === "customer",
-          workflowState: record.workflowState === "closed" ? "closed" : "action_required",
+          workflowState: afterPersonDecision(record.workflowState),
           nextActionAt: null,
           contextVersion: version,
         })
@@ -413,7 +414,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         const version = record.contextVersion + 1;
         await tx
           .update(records)
-          .set({ workflowState: record.workflowState === "closed" ? "closed" : "action_required", nextActionAt: null, contextVersion: version })
+          .set({ workflowState: afterPersonDecision(record.workflowState), nextActionAt: null, contextVersion: version })
           .where(eq(records.id, record.id));
         await tx.insert(events).values({
           organizationId: input.organizationId,
@@ -475,7 +476,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     await db.transaction(async (tx) => {
       const record = await lockRecord(tx, input.organizationId, input.recordId);
       if (record.workflowState !== "closed") throw new ConflictError("Reply handling is already open.");
-      const next = record.latestInboundMessageId ? "action_required" : "idle";
+      const next = afterReopen(record.latestInboundMessageId !== null);
       const version = record.contextVersion + 1;
       await tx.update(records).set({ workflowState: next, closedReason: null, contextVersion: version }).where(eq(records.id, record.id));
       await tx.insert(events).values({

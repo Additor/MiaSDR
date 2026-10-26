@@ -1,4 +1,5 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
+import type { WorkflowState } from "./workflow-state";
 
 /**
  * Pure reply-handling rules: the fixed categories, validation of the taxonomy and AI-instruction settings, and
@@ -187,7 +188,7 @@ export function checkStageMove({ before, target, expectedContextVersion, confirm
   return { categoryLocked: target.categoryKey === "customer" };
 }
 
-export const WORKFLOW_LABELS: Record<string, string> = {
+export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
   unclassified: "Unclassified",
   classifying: "Classifying",
   action_required: "Needs action",
@@ -196,7 +197,7 @@ export const WORKFLOW_LABELS: Record<string, string> = {
   paused: "Paused",
   closed: "Closed",
   error: "Error",
-};
+} satisfies Record<WorkflowState, string>;
 
 export const workflowLabel = (state: string) => WORKFLOW_LABELS[state] ?? state.replace(/_/g, " ");
 

@@ -10,6 +10,7 @@ import { canonicalTimeZone } from "@/shared/time-zone";
 import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } from "../../infrastructure/thread-context";
 import { publicConversation, publicConversationText } from "@/platform/db/conversation-visibility";
 import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
+import { settlesAfterAiCategory } from "../../domain/workflow-state";
 
 interface JobRow {
   id: string;
@@ -442,7 +443,7 @@ export const drizzleAiJobStore: AiJobStore = {
       if (!row) return { status: "stale" as const };
 
       if (auto) {
-        const settle = !input.wantsDraft && !input.stopRequested && record.state === "action_required";
+        const settle = settlesAfterAiCategory(record.state, input);
         await tx
           .update(records)
           .set({
