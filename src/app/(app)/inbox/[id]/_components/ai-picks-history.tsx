@@ -7,8 +7,10 @@ import { toast } from "sonner";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { callApi } from "@/app/_lib/api-client";
 import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
+import { confidenceText, LOOKS_RIGHT_DONE, undoMessage } from "../_lib/type-line";
 
 interface Entry {
   id: string;
@@ -28,16 +30,16 @@ interface Entry {
   canAcknowledge: boolean;
 }
 
-/** "Interested: Demo request", or just "Other" when the subcategory repeats the category. */
+/** "Demo request · Interested", or just "Other" when the type repeats its group. */
 const label = (c: { groupKey: string | null; name: string | null }) => {
-  if (!c.groupKey) return "Unclassified";
-  const category = groupLabel(c.groupKey);
-  return c.name && c.name.trim().toLowerCase() !== category.toLowerCase() ? `${category}: ${c.name}` : category;
+  if (!c.groupKey) return "No type";
+  const group = groupLabel(c.groupKey);
+  return c.name && c.name.trim().toLowerCase() !== group.toLowerCase() ? `${c.name} · ${group}` : group;
 };
 
 const STATUS: Record<string, string> = {
-  proposed: "Held for review",
-  auto_applied: "Applied by AI",
+  proposed: "Held for a check",
+  auto_applied: "Applied by the AI",
   accepted: "Accepted",
   overridden: "Changed by a person",
   rejected: "Undone",
@@ -45,43 +47,58 @@ const STATUS: Record<string, string> = {
   failed: "Failed",
 };
 
+const UNDO_TIP = "Puts back the type from before the AI's pick. Open drafts retire and follow-ups end.";
+
 /**
- * What the AI decided about each reply, with Mark reviewed and Undo on the ones a person may still change. Only an entry
- * that waits for a person carries a badge; the rest of its facts read as one muted line. The caller frames it and leaves
- * it out when there are no entries.
+ * Each AI pick for this person's replies, with Looks right and Undo on the ones a person may still change. Only a pick that
+ * waits for a person carries a badge; the rest of its facts read as one muted line. Undo says in its toast what it retired.
+ * The caller frames it and leaves it out when there are no picks.
  */
-export function ClassificationHistory({ entries, currentConversationId }: { entries: Entry[]; currentConversationId?: string }) {
+export function AiPicksHistory({ entries, currentConversationId }: { entries: Entry[]; currentConversationId?: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function act(id: string, action: "undo" | "acknowledge") {
+  async function looksRight(id: string) {
     setBusy(id);
     setError(null);
-    const result = await callApi(`/api/reply-type-picks/${id}/${action}`, "POST");
+    const result = await callApi(`/api/reply-type-picks/${id}/acknowledge`, "POST");
     setBusy(null);
     if (!result.ok) return setError(result.error);
-    toast.success(action === "undo" ? "Classification undone." : "Classification marked as reviewed.");
+    toast.success(LOOKS_RIGHT_DONE);
+    router.refresh();
+  }
+
+  async function undo(id: string) {
+    setBusy(id);
+    setError(null);
+    const result = await callApi<{ draftsRetired: number; runEnded: boolean; draftJobCancelled: boolean }>(`/api/reply-type-picks/${id}/undo`, "POST");
+    setBusy(null);
+    if (!result.ok || !result.data) return setError(result.error);
+    toast.success(undoMessage(result.data));
     router.refresh();
   }
 
   return (
-    <div className="grid gap-2" data-testid="thread-classifications">
+    <div className="grid gap-2" data-testid="ai-picks">
+      <p id="undo-tip" className="sr-only">
+        {UNDO_TIP}
+      </p>
       <ul className="divide-y">
         {entries.map((e) => {
           const waiting = e.status === "proposed" || (!e.acknowledged && e.status === "auto_applied");
           const meta = [
-            waiting || e.status === "failed" ? null : STATUS[e.status] ?? e.status,
-            e.confidence !== null && e.status !== "failed" ? `${Math.round(e.confidence * 100)}% confident` : null,
+            waiting || e.status === "failed" ? null : (STATUS[e.status] ?? e.status),
+            e.confidence !== null && e.status !== "failed" && e.provider !== "human" ? confidenceText(e.confidence) : null,
             e.latest ? "latest reply" : null,
           ].filter(Boolean);
           return (
-            <li key={e.id} className="grid gap-1 py-group text-sm first:pt-0 last:pb-0" data-testid="classification-entry">
+            <li key={e.id} className="grid gap-1 py-group text-sm first:pt-0 last:pb-0" data-testid="ai-pick">
               <div className="flex flex-wrap items-center gap-2">
                 {e.status === "failed" && <Badge variant="destructive">Failed</Badge>}
-                {e.status === "proposed" && <Badge variant="outline">Held for review</Badge>}
-                {!e.acknowledged && e.status === "auto_applied" && <Badge variant="outline">Not reviewed</Badge>}
-                <span>{e.status === "proposed" ? `Suggests ${label(e.proposed)}` : e.status === "failed" ? "No category chosen." : `${label(e.previous)} to ${label(e.applied)}`}</span>
+                {e.status === "proposed" && <Badge variant="outline">Held for a check</Badge>}
+                {!e.acknowledged && e.status === "auto_applied" && <Badge variant="outline">Not checked</Badge>}
+                <span>{e.status === "proposed" ? `Picked ${label(e.proposed)}` : e.status === "failed" ? "No type picked." : `${label(e.previous)} to ${label(e.applied)}`}</span>
               </div>
               <p className="text-xs text-muted-foreground">
                 {meta.length > 0 && `${meta.join(" · ")} · `}
@@ -97,14 +114,17 @@ export function ClassificationHistory({ entries, currentConversationId }: { entr
                     </Link>
                   )}
                   {e.canAcknowledge && (
-                    <Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} onClick={() => act(e.id, "acknowledge")}>
-                      Mark reviewed
+                    <Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} onClick={() => looksRight(e.id)}>
+                      Looks right
                     </Button>
                   )}
                   {e.canUndo && (
-                    <Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} title="Restores the category from before the AI changed it" onClick={() => act(e.id, "undo")}>
-                      Undo
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger delay={150} render={<Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} aria-describedby="undo-tip" onClick={() => undo(e.id)} />}>
+                        Undo
+                      </TooltipTrigger>
+                      <TooltipContent className="block max-w-72 text-left leading-relaxed">{UNDO_TIP}</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
               )}

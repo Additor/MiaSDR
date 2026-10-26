@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRightIcon, CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
+import { CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -15,22 +15,32 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import type { ReplyPanel } from "@/contexts/conversations/application/reply-management";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
-import { replyTypeSourceLabel, draftStatusLabel } from "../../labels";
-import { openStopContacting } from "./next-step-client";
+import { draftStatusLabel } from "../../labels";
 import { registerDraftEdits } from "../_lib/draft-edits";
 import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
 
-const HOLD_TEXT: Record<string, string> = {
-  protected_customer: "The person is locked as Existing customer.",
-  protected_stage: "The proposal moves the person to a lower position.",
-  requires_review: "This category always needs a person to confirm.",
-  low_confidence: "Confidence is below the auto-apply threshold.",
-};
-
 type Panel = Omit<ReplyPanel, "draft" | "knownCcs"> & { knownCcs: Array<Omit<ReplyPanel["knownCcs"][number], "lastSeenAt"> & { lastSeenAt: string }>; draft: (Omit<NonNullable<ReplyPanel["draft"]>, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string }) | null };
 
-export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; next: NextInQueue | null; fromQueue: boolean }) {
+/**
+ * The reply card of an email thread. `noDraft` is the reason line when the reply type writes no draft, `drafting` says a draft
+ * job waits or runs, and `decisionWaiting` says the type line above asks for a decision, which then holds the one filled button.
+ */
+export function ReplyPanelClient({
+  panel,
+  next,
+  fromQueue,
+  noDraft,
+  drafting,
+  decisionWaiting,
+}: {
+  panel: Panel;
+  next: NextInQueue | null;
+  fromQueue: boolean;
+  noDraft: string | null;
+  drafting: boolean;
+  decisionWaiting: boolean;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -92,27 +102,6 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
     return result.data;
   }
 
-  /** A decision taken here: true once it is saved, whatever the response carries. */
-  async function decide(name: string, call: () => Promise<{ ok: boolean; data: unknown; error: string | null }>, done: string) {
-    setBusy(name);
-    setError(null);
-    const result = await call();
-    setBusy(null);
-    if (!result.ok) return setError(result.error);
-    setDecided(done);
-    router.refresh();
-  }
-
-  const classification = panel.classification;
-  const held = classification?.status === "proposed" && classification.current;
-  // An applied change nobody has looked at waits for "Looks right", as it does on the Actions row.
-  const unreviewed = classification?.status === "auto_applied" && !classification.acknowledged;
-  // A suggestion to accept, a change to look at or a stop request to confirm needs a decision, so the classification
-  // section opens by itself, and moves above the reply while no draft waits for approval.
-  const classificationNeedsYou = Boolean(held && classification.proposed) || Boolean(unreviewed) || Boolean(classification?.stopRequested && !panel.suppressed);
-  const classificationFirst = classificationNeedsYou && draft?.status !== "awaiting_review";
-  // After a decision taken here, the next item of the queue is one tap away, as after a send.
-  const [decided, setDecided] = useState<string | null>(null);
   // Hand-typing starts folded while the AI can write the draft; with no AI, or once asked for, it is open.
   const [composeOpen, setComposeOpen] = useState(false);
   const composerFolded = panel.aiConfigured && !panel.answered && !composeOpen;
@@ -151,103 +140,8 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
     router.refresh();
   }
 
-  const classificationCard = (
-    <>
-      {/* The AI's reading of the last reply. Changing the category lives in one place, Change category under Next step. */}
-      <Card>
-        <details open={classificationNeedsYou} data-testid="classification" className="group">
-          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-(--card-spacing) text-sm font-semibold outline-none select-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
-            Classification
-            {panel.category ? (
-              <Badge variant="secondary" data-testid="category-chip">
-                {panel.category.name} ({replyTypeSourceLabel(panel.category.source)})
-              </Badge>
-            ) : (
-              <Badge variant="outline">Not classified</Badge>
-            )}
-            {panel.suppressed && <ReachFlag kind="suppressed" />}
-            {panel.doNotContact && <ReachFlag kind="do_not_contact" />}
-          </summary>
-          <div className="grid gap-3 px-(--card-spacing) pt-3 text-sm">
-            {/* Confidence and reasoning belong to the reading they describe: the held suggestion when there is one. */}
-            {classification && !held && classification.status !== "failed" && (classification.reasoning || classification.confidence != null) && (
-              <p className="text-muted-foreground">
-                {classification.confidence != null && `${Math.round(classification.confidence * 100)}% confident. `}
-                {classification.reasoning}
-              </p>
-            )}
-            {classification?.status === "failed" && <p className="text-destructive">Classification failed: {classification.error}</p>}
-            {!classification && !panel.category && <p className="text-muted-foreground">{panel.aiConfigured ? "Waiting for the next AI run. Change category under Next step sets one yourself." : `${panel.aiOff} Change category under Next step sets one yourself.`}</p>}
-            {held && classification.proposed && (
-              <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="proposal">
-                <div>
-                  AI suggests <strong>{classification.proposed.name}</strong>
-                  {classification.confidence != null && ` (${Math.round(classification.confidence * 100)}% confident)`}. {classification.holdReason ? HOLD_TEXT[classification.holdReason] : ""}
-                </div>
-                {classification.reasoning && <p className="text-muted-foreground">{classification.reasoning}</p>}
-                <div>
-                  <Button size="sm" variant={classificationFirst ? "default" : "outline"} disabled={busy !== null} onClick={() => decide("accept", () => callApi(`/api/inbox/${panel.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: panel.contextVersion }), "Suggestion accepted.")}
-                  >
-                    Accept suggestion
-                  </Button>
-                </div>
-              </div>
-            )}
-            {unreviewed && classification && (
-              <div className="grid gap-2 rounded-lg bg-muted/40 p-3" data-testid="review-change">
-                <p>The AI set this category. If it is wrong, use Change category under Next step.</p>
-                <div>
-                  <Button
-                    size="sm"
-                    // Under a draft that waits for approval, Approve and send stays the one filled button.
-                    variant={classificationFirst ? "default" : "outline"}
-                    disabled={busy !== null}
-                    onClick={() => decide("ack", () => callApi(`/api/reply-type-picks/${classification.id}/acknowledge`, "POST"), "Marked as looked at.")}
-                  >
-                    Looks right
-                  </Button>
-                </div>
-              </div>
-            )}
-            {decided && (
-              <div role="status" className="flex flex-wrap items-center gap-2" data-testid="decided">
-                <span>{decided}</span>
-                {fromQueue && next && (
-                  <Link href={next.href} className={cn(buttonVariants({ size: "sm" }), "max-sm:h-11")} data-testid="decided-next" aria-keyshortcuts="]">
-                    Next: {next.name}
-                  </Link>
-                )}
-              </div>
-            )}
-            {classification?.stopRequested && !panel.suppressed && (
-              // The AI's reading of a stop request is uncertain, not an error: the warning icon and lead words, no red frame.
-              <div className="grid gap-2" data-testid="stop-banner">
-                <div className="flex items-start gap-2">
-                  <CircleHelpIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-                  <p>
-                    <strong className="font-medium text-warning">Possible stop request.</strong> The sender appears to ask us to stop contacting them. Nothing stops until you confirm.
-                  </p>
-                </div>
-                {/* The one stop flow is Next step's Stop contacting, which asks how far the stop reaches and confirms it. */}
-                {!panel.doNotContact && (
-                  <div>
-                    <Button size="sm" variant="outline" disabled={busy !== null} onClick={openStopContacting}>
-                      Stop contacting…
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </details>
-      </Card>
-    </>
-  );
-
   return (
     <div className="grid gap-4" data-testid="reply-panel">
-      {classificationFirst && classificationCard}
       {/* overflow-visible lets the action bar stick to the bottom of the screen while the card is taller than the view. */}
       <Card className="overflow-visible">
         <CardHeader>
@@ -293,14 +187,24 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             </div>
           )}
           {!draft && panel.aiConfigured && (
-            <div className="grid gap-2 text-sm">
-              <p>{panel.answered ? "This message has been answered." : "No draft yet."}</p>
-              {!panel.answered && (
-                <div>
-                  <Button size="sm" disabled={busy !== null || !panel.canGenerate} onClick={() => run("draft", () => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
-                    {busy === "draft" ? "Writing…" : "Write a draft"}
-                  </Button>
-                </div>
+            <div className="grid gap-2 text-sm" data-testid="no-draft">
+              {panel.answered ? (
+                <p>This message has been answered.</p>
+              ) : drafting ? (
+                <p className="flex items-center gap-2 text-muted-foreground">
+                  <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+                  Drafting…
+                </p>
+              ) : (
+                <>
+                  <p>{noDraft ?? "No draft yet."}</p>
+                  <div>
+                    {/* A decision on the type line above holds the filled button; a type that writes no draft makes this the rare step. */}
+                    <Button size="sm" variant={decisionWaiting || noDraft ? "outline" : "default"} disabled={busy !== null || !panel.canGenerate} onClick={() => run("draft", () => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
+                      {busy === "draft" ? "Writing…" : "Write a draft"}
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -317,7 +221,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
 
           {draft?.status === "stale" && (
             <div className="grid gap-3" data-testid="stale-draft">
-              <p className="text-sm">{draft.error ?? "The thread or the reply category changed after this draft was written."}</p>
+              <p className="text-sm">{draft.error ?? "The thread or the reply type changed after this draft was written."}</p>
               {editStale ? (
                 <ReplyComposer
                   conversationId={panel.conversationId}
@@ -432,8 +336,8 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
               </Button>
             )}
             <Button
-              // One filled button on the page: a decision above the reply keeps it, and Regenerate leads only when it is the next step.
-              variant={draft.status === "stale" && !classificationFirst ? "default" : "outline"}
+              // One filled button on the page: a decision on the type line keeps it, and Regenerate leads only when it is the next step.
+              variant={draft.status === "stale" && !decisionWaiting ? "default" : "outline"}
               disabled={busy !== null || !panel.aiConfigured}
               onClick={async () => {
                 if (!showRegenerate) return setShowRegenerate(true);
@@ -469,8 +373,6 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
           onConfirm={discard}
         />
       )}
-
-      {!classificationFirst && classificationCard}
     </div>
   );
 }

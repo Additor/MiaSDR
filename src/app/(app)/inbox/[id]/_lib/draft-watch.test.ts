@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DRAFT_POLL_INTERVAL_MS, DRAFT_WATCH_MS, initialWatch, isWatching, observe, type WatchSnapshot } from "./draft-watch";
 
-const base: WatchSnapshot = { contextVersion: 3, draftStatus: null, workflowState: "action_required" };
+const base: WatchSnapshot = { contextVersion: 3, draftStatus: null, workflowState: "action_required", drafting: false };
 
 describe("draft watch", () => {
   it("stays idle on a fresh page with no draft in flight", () => {
@@ -12,33 +12,41 @@ describe("draft watch", () => {
 
   it("starts when the context version rises after a reclassification", () => {
     const state = initialWatch(base, 0);
-    const bumped = { ...base, contextVersion: 4 };
+    const bumped = { ...base, contextVersion: 4, drafting: true };
     const next = observe(state, bumped, 10_000);
     expect(next).toEqual({ version: 4, startedAt: 10_000 });
     expect(isWatching(next, bumped, 10_000)).toBe(true);
   });
 
-  it("starts at mount when a draft is already generating", () => {
+  it("starts at mount when a draft is already generating or its job waits", () => {
     const generating = { ...base, draftStatus: "generating" };
     expect(isWatching(initialWatch(generating, 7), generating, 7)).toBe(true);
+    const queued = { ...base, drafting: true };
+    expect(isWatching(initialWatch(queued, 7), queued, 7)).toBe(true);
+  });
+
+  it("watches nothing after a change to a type that writes no draft", () => {
+    const bumped = { ...base, contextVersion: 4 };
+    const state = observe(initialWatch(base, 0), bumped, 1_000);
+    expect(isWatching(state, bumped, 1_000)).toBe(false);
   });
 
   it("stops as soon as a draft awaits review, fails or is sent", () => {
     const state = observe(initialWatch(base, 0), { ...base, contextVersion: 4 }, 0);
     for (const draftStatus of ["awaiting_review", "failed", "sending", "sent", "delivery_uncertain"]) {
-      expect(isWatching(state, { ...base, contextVersion: 4, draftStatus }, 3_000), draftStatus).toBe(false);
+      expect(isWatching(state, { ...base, contextVersion: 4, draftStatus, drafting: true }, 3_000), draftStatus).toBe(false);
     }
     expect(isWatching(state, { ...base, contextVersion: 4, draftStatus: "generating" }, 3_000)).toBe(true);
   });
 
   it("stops when the record closed or errored, since no draft will come", () => {
     const state = observe(initialWatch(base, 0), { ...base, contextVersion: 4 }, 0);
-    expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "closed" }, 3_000)).toBe(false);
-    expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "error" }, 3_000)).toBe(false);
+    expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "closed", drafting: true }, 3_000)).toBe(false);
+    expect(isWatching(state, { ...base, contextVersion: 4, workflowState: "error", drafting: true }, 3_000)).toBe(false);
   });
 
   it("polls every 3 s and gives up at 45 s", () => {
-    const bumped = { ...base, contextVersion: 4 };
+    const bumped = { ...base, contextVersion: 4, drafting: true };
     const state = observe(initialWatch(base, 0), bumped, 1_000);
     let polls = 0;
     for (let now = 1_000; isWatching(state, bumped, now); now += DRAFT_POLL_INTERVAL_MS) polls++;
@@ -51,7 +59,7 @@ describe("draft watch", () => {
     const first = observe(initialWatch(base, 0), { ...base, contextVersion: 4 }, 0);
     const second = observe(first, { ...base, contextVersion: 5 }, 30_000);
     expect(second.startedAt).toBe(30_000);
-    expect(isWatching(second, { ...base, contextVersion: 5 }, 60_000)).toBe(true);
+    expect(isWatching(second, { ...base, contextVersion: 5, drafting: true }, 60_000)).toBe(true);
   });
 
   it("ignores a lower or equal version and keeps a running watch", () => {

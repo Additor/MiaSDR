@@ -12,17 +12,13 @@ import { personHref } from "@/app/(app)/_components/person/person-href";
 import { RecordDisclosure } from "@/app/(app)/_components/record/record-header";
 import { toJson } from "@/app/(app)/_components/serialize";
 import { AfterReplyControls } from "./after-reply-controls";
-import { ClassificationHistory } from "./classification-history";
+import { AiPicksHistory } from "./ai-picks-history";
 import { recordAfterReply, recordDetail } from "./thread-data";
 
 /** Shown in place of the follow-up controls for a contact. */
 export const CONTACT_FOLLOW_UPS = "The person is a contact, so follow-ups do not apply.";
 
 const ACTIVITY_SHOWN = 12;
-
-/** An entry waits for a person: a suggestion on hold, or an AI change nobody reviewed. */
-const waitsForReview = (entries: ReadonlyArray<{ status: string; acknowledged: boolean }>) =>
-  entries.some((e) => e.status === "proposed" || (!e.acknowledged && e.status === "auto_applied"));
 
 /** Draft history wording. It differs from the reply panel's status badge, which names the draft in front of you. */
 const DRAFT_STATUS: Record<string, string> = {
@@ -67,26 +63,26 @@ export async function ThreadFollowUps({ actor, recordId, personId }: { actor: Ac
 }
 
 /**
- * What happened around this person, under the messages: the AI's classifications (open while one waits for review),
- * drafts, the conversation's notes and the activity, each folded behind its count. A history with nothing in it is
- * left out. Wrap it in Suspense.
+ * What happened around this person, under the messages: the AI picks, drafts, the conversation's notes and the activity,
+ * each folded behind its count and closed: a pick that waits for a person already asks on the type line. A history with
+ * nothing in it is left out. Wrap it in Suspense.
  */
 export async function ThreadHistory({ actor, conversationId, recordId, personId }: { actor: Actor; conversationId: string; recordId: string; personId: string }) {
   await connection();
   const [detail, people] = await Promise.all([recordDetail(actor, recordId), dealsDeps().people.summaries(actor.organizationId, [personId])]);
   const lifecycle = people.get(personId)?.lifecycle;
-  const classifications = toJson(detail.replyTypePicks);
+  const picks = toJson(detail.replyTypePicks);
   const events = detail.events.slice(0, ACTIVITY_SHOWN);
-  if (classifications.length + detail.drafts.length + detail.notes.length + events.length === 0) return null;
+  if (picks.length + detail.drafts.length + detail.notes.length + events.length === 0) return null;
 
   return (
     <section aria-labelledby="thread-history" className="grid" data-testid="thread-history">
       <h2 id="thread-history" className="pb-group text-sm font-semibold">
         History
       </h2>
-      {classifications.length > 0 && (
-        <RecordDisclosure title="Classification history" count={classifications.length} open={waitsForReview(classifications)}>
-          <ClassificationHistory entries={classifications} currentConversationId={conversationId} />
+      {picks.length > 0 && (
+        <RecordDisclosure title="AI picks" count={picks.length} testId="thread-ai-picks">
+          <AiPicksHistory entries={picks} currentConversationId={conversationId} />
         </RecordDisclosure>
       )}
 
