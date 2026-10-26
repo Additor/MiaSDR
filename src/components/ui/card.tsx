@@ -36,7 +36,7 @@ function CardTitle({
   className,
   as: Comp = "div",
   ...props
-}: React.ComponentProps<"div"> & { as?: "div" | "h2" | "h3" }) {
+}: React.ComponentProps<"div"> & { as?: "div" | "h1" | "h2" | "h3" }) {
   return (
     <Comp
       data-slot="card-title"

@@ -33,7 +33,7 @@ async function SignUp({ searchParams }: { searchParams: PageProps<"/sign-up">["s
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Invitation only</CardTitle>
+        <CardTitle as="h1">Invitation only</CardTitle>
         <CardDescription>
           This MiaSDR instance accepts new accounts by invitation. Ask an admin to invite your email address, then open the link in the invitation.
         </CardDescription>

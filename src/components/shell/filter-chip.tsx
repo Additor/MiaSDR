@@ -17,7 +17,7 @@ export interface AppliedFilter {
 }
 
 const CHIP =
-  "inline-flex min-h-6 items-center gap-1 rounded-full border bg-background py-0.5 pr-1.5 pl-2.5 text-xs outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-9";
+  "inline-flex min-h-6 items-center gap-1 rounded-full border bg-background py-0.5 pr-1.5 pl-2.5 text-xs outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11";
 
 export function FilterChip({ chip }: { chip: AppliedFilter }) {
   const said = chip.name ? `${chip.name}: ${chip.value}` : chip.value;

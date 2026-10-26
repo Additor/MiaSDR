@@ -39,7 +39,7 @@ export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Check your email</CardTitle>
+          <CardTitle as="h1">Check your email</CardTitle>
           <CardDescription>If {sentTo} can join, a confirmation link is on its way.</CardDescription>
         </CardHeader>
         <CardFooter>
@@ -53,7 +53,7 @@ export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }
     <Card>
       <form onSubmit={onSubmit}>
         <CardHeader>
-          <CardTitle>Create your account</CardTitle>
+          <CardTitle as="h1">Create your account</CardTitle>
           <CardDescription>You will get a link to confirm your email.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 py-4">
