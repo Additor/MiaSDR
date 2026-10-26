@@ -5,9 +5,9 @@ const HANDOFF_LEAD = { email: "hal@s7-hand.test", firstName: "Hal", lastName: "O
 const SWITCH_LEAD = { email: "ivo@s7-switch.test", firstName: "Ivo", lastName: "Berg", title: "Founder", company: "S7 Switch" };
 const CONTACT_LEAD = { email: "cass@s7-contact.test", firstName: "Cass", lastName: "Moreno", title: "Founder", company: "S7 Contact" };
 
-/** The thread's Next step, under the reply, and the reply category line inside it. */
+/** The thread's Next step, under the reply, and the type line under the latest message. */
 const nextStep = (page: import("@playwright/test").Page) => page.locator("#main-content").getByTestId("next-step");
-const replyCategory = (page: import("@playwright/test").Page) => nextStep(page).getByTestId("reply-category");
+const typeLine = (page: import("@playwright/test").Page) => page.locator("#main-content").getByTestId("type-line");
 
 test.describe("reply handling on the thread and After a reply", () => {
   test("turn on AI follow-ups, let a reply start the run, control it on the thread, change the category", async ({ page }) => {
@@ -41,7 +41,7 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(page).toHaveURL(/\/inbox\/[0-9a-f-]{36}$/);
 
     // A reply asking for a demo is classified and starts the run. The thread's side column holds what the record page had.
-    await expect(replyCategory(page)).toContainText("Demo request");
+    await expect(typeLine(page).getByTestId("type-name")).toContainText("Demo request");
     await expect(page.locator("#main-content").getByTestId("thread-person").getByRole("link", { name: "Open lead" })).toBeVisible();
     // Campaigns, like the other histories, folds behind its count.
     const campaigns = page.locator("#main-content").getByTestId("thread-campaigns");
@@ -96,22 +96,24 @@ test.describe("reply handling on the thread and After a reply", () => {
     await page.reload();
     await expect(card.getByRole("button", { name: "Restart follow-ups" })).toBeEnabled();
 
-    // Change the reply category on the thread. The Pipeline board holds deals now (e2e/35).
-    await replyCategory(page).getByRole("button", { name: "Change category" }).click();
-    const change = page.getByRole("dialog", { name: "Change the category of Rae Costa" });
+    // Change the reply type on the thread, for something that happened off it. The Pipeline board holds deals now (e2e/35).
+    await typeLine(page).getByRole("button", { name: "Change type" }).click();
+    const change = page.getByRole("dialog", { name: "Change the reply type of Rae Costa" });
     await change.getByRole("radio", { name: /Something happened off the thread/ }).check();
-    await change.getByRole("combobox", { name: "New category" }).fill("Meeting");
+    await change.getByRole("combobox", { name: "New type" }).fill("Meeting");
     await page.getByRole("option", { name: "Meeting requested" }).click();
-    await expect(change.getByTestId("category-consequence")).toHaveText("Retires open drafts and restarts follow-ups for this category. No new draft is written.");
+    // The off-thread path writes no draft, and the line says so.
+    await expect(change.getByTestId("type-outcome")).toContainText("Reply draft: none written now. Write a draft from the reply when you need one.");
+    await expect(change.getByTestId("type-outcome")).toContainText("Follow-ups: keep going.");
     await change.getByLabel("Note (optional)").fill("Booked for Thursday");
-    await change.getByRole("button", { name: "Change category", exact: true }).click();
+    await change.getByRole("button", { name: "Change type", exact: true }).click();
     await expect(change).toBeHidden();
-    await expect(replyCategory(page)).toContainText("Interested: Meeting requested");
-    await expect(replyCategory(page)).toContainText("Set by a person");
+    await expect(typeLine(page).getByTestId("type-name")).toContainText("Meeting requested · Interested");
+    await expect(typeLine(page).getByTestId("type-source")).toContainText("Set by a person");
     await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Changed category");
     await page.reload();
-    await expect(replyCategory(page)).toContainText("Meeting requested");
-    await expect(replyCategory(page)).not.toContainText("Demo request");
+    await expect(typeLine(page).getByTestId("type-name")).toContainText("Meeting requested");
+    await expect(typeLine(page).getByTestId("type-name")).not.toContainText("Demo request");
   });
 
   test("a lead who replies to a campaign that hands replies to the Inbox gets no follow-ups, and reply handling closes and reopens", async ({ page }) => {
@@ -143,14 +145,14 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(campaigns.getByRole("link", { name: "Turn on AI follow-ups" })).toHaveAttribute("href", /#after-reply$/);
     await expect(page.getByText("Started follow-ups")).toHaveCount(0);
 
-    // Finish without a reply, then reopen. Done sits under the reply in Next step: its reason starts as the category, a
-    // missing reason is said on confirm, and closed, Next step says so and offers Reopen in place of Change category.
+    // Finish without a reply, then reopen. Done sits under the reply in Next step: its reason starts as the reply type, a
+    // missing reason is said on confirm, and closed, Next step says so and the type line offers no Change type.
     const step = nextStep(page);
-    const category = replyCategory(page);
+    const line = typeLine(page);
     await expect(page.locator("#main-content").getByTestId("thread-reply-handling")).toHaveCount(0);
     await step.getByRole("button", { name: "Done, no reply needed" }).click();
     const done = step.getByTestId("done-form");
-    await expect(done.getByLabel("Reason")).toHaveValue(/^Interested: /);
+    await expect(done.getByLabel("Reason")).toHaveValue("Demo request");
     await expect(done.getByText("Retires unsent drafts and stops follow-ups on every channel.", { exact: false })).toBeVisible();
     await done.getByLabel("Reason").fill("");
     await done.getByRole("button", { name: "Mark done" }).click();
@@ -159,11 +161,11 @@ test.describe("reply handling on the thread and After a reply", () => {
     await done.getByRole("button", { name: "Mark done" }).click();
     await expect(step.getByTestId("next-step-status")).toContainText("Marked done for Hal Ortiz.");
     await expect(step.getByTestId("reply-handling")).toContainText("Done: Talking on the phone now.");
-    await expect(category.getByRole("button", { name: "Change category" })).toHaveCount(0);
+    await expect(line.getByRole("button", { name: "Change type" })).toHaveCount(0);
     await expect(step.getByRole("button", { name: "Done, no reply needed" })).toHaveCount(0);
     await step.getByRole("button", { name: "Reopen" }).click();
     await expect(page.getByText("Reopened.", { exact: true })).toBeVisible();
-    await expect(category.getByRole("button", { name: "Change category" })).toBeVisible();
+    await expect(line.getByRole("button", { name: "Change type" }).first()).toBeVisible();
   });
 
   test("a contact's thread keeps reply handling but turns follow-ups off and offers the deal", async ({ page }) => {
@@ -189,8 +191,8 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(person.getByRole("link", { name: "Open contact" })).toHaveAttribute("href", /^\/crm\/contacts\/[0-9a-f-]{36}$/);
     // A contact gets no follow-ups, and with no run to show the thread has no Follow-ups section.
     await expect(threadAfterReply(page)).toHaveCount(0);
-    // Reply handling itself stays: the category can still change, and the activity names the conversion.
-    await expect(replyCategory(page).getByRole("button", { name: "Change category" })).toBeVisible();
+    // Reply handling itself stays: the reply type can still change, and the activity names the conversion.
+    await expect(typeLine(page).getByRole("button", { name: "Change type" }).first()).toBeVisible();
     await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Became a contact");
   });
 

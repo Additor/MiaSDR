@@ -18,8 +18,8 @@ test.describe("inbox classification and draft approval", () => {
     await expect(page).toHaveURL(/\/inbox\/[0-9a-f-]{36}$/);
     await expect(page.getByRole("paragraph").filter({ hasText: "Could you send pricing and more info?" })).toBeVisible();
 
-    // The classifier files it under information requested.
-    await expect(page.getByText(/Information requested \(\w+\)/)).toBeVisible();
+    // The AI picks information requested, and the type line under the message says so.
+    await expect(page.getByTestId("type-line").getByTestId("type-name")).toHaveText("Information requested · Interested");
 
     // The draft waits for review.
     await expect(page.getByText("Awaiting review", { exact: true })).toBeVisible();
