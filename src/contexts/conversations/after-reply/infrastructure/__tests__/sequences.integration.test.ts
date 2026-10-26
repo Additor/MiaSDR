@@ -25,6 +25,7 @@ describeDb("After a reply flows", () => {
     runs: typeof import("../drizzle-sequence-store").drizzleRunStore;
     engine: typeof import("../drizzle-sequence-engine").drizzleSequenceEngine;
   };
+  let campaignIdOfSequence: typeof import("../drizzle-sequence-store").campaignIdOfSequence;
   let FakeAi: typeof import("../../../ai/infrastructure/fake-reply-ai").FakeReplyAi;
   let createReplyMailer: typeof import("../../../infrastructure/reply-mailer").createReplyMailer;
   let mailbox: FakeMailboxProvider;
@@ -157,6 +158,7 @@ describeDb("After a reply flows", () => {
       runs: seqStore.drizzleRunStore,
       engine: (await import("../drizzle-sequence-engine")).drizzleSequenceEngine,
     };
+    campaignIdOfSequence = seqStore.campaignIdOfSequence;
     FakeAi = (await import("../../../ai/infrastructure/fake-reply-ai")).FakeReplyAi;
     createReplyMailer = (await import("../../../infrastructure/reply-mailer")).createReplyMailer;
     mailbox = (await import("@/contexts/outreach/infrastructure/composition")).mailboxProvider() as FakeMailboxProvider;
@@ -218,6 +220,18 @@ describeDb("After a reply flows", () => {
       const flows = await sql`select name, status from sequences where campaign_id = ${campaignId}`;
       expect(flows).toHaveLength(1);
       expect(flows[0]).toMatchObject({ name: "Autumn push (after a reply)", status: "active" });
+    });
+
+    it("finds the campaign of a flow only inside its own organization", async () => {
+      const f = await fixture();
+      await ingest(f);
+      const campaignId = await emailedBy(f);
+      const { id: sequenceId } = await one("select id from sequences where campaign_id = $1", [campaignId]);
+      expect(await campaignIdOfSequence(f.org, sequenceId)).toBe(campaignId);
+
+      const other = await fixture();
+      expect(await campaignIdOfSequence(other.org, sequenceId)).toBeNull();
+      expect(await campaignIdOfSequence(f.org, "00000000-0000-4000-8000-000000000000")).toBeNull();
     });
 
     it("switching off archives the flow, keeps its steps, and switching on again reuses the version", async () => {
