@@ -169,6 +169,38 @@ describeDb("linkedin engine", () => {
     expect((await act(g2, weekly)).kind).toBe("sent");
   });
 
+  it("counts invitations still sending or with an unknown outcome toward the daily and weekly limits", async () => {
+    /** Two invitations in flight or unknown at `claimedAt`, and a third lead ready to invite. */
+    async function heldQuota(options: { dailyLimit: number; claimedAt: Date }) {
+      const f = await fixture({ people: 3, dailyLimit: options.dailyLimit });
+      for (const [i, status] of (["unknown", "sending"] as const).entries()) {
+        await sql`update campaign_enrollments set status = 'active', current_step = 1, linkedin_account_id = ${f.account} where id = ${f.enrollmentIds[i]}`;
+        await sql`
+          insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, attempt, claimed_at)
+          values (${f.org}, ${f.enrollmentIds[i]}, 1, 'linkedin', ${status}, ${f.account}, 1, ${options.claimedAt})`;
+      }
+      await sql`update campaign_enrollments set linkedin_account_id = ${f.account} where id = ${f.enrollmentIds[2]}`;
+      await sql`update linkedin_enrollment_details set provider_id = ${"ACo-" + f.slugs[2]} where enrollment_id = ${f.enrollmentIds[2]}`;
+      return f;
+    }
+    /** Fails the organization's open sends, so a later reconcile in this file does not count them. */
+    const settle = (org: string) => sql`update sends set status = 'failed', attempt = 3 where organization_id = ${org} and status in ('sending', 'unknown')`;
+
+    const daily = await heldQuota({ dailyLimit: 2, claimedAt: start });
+    const gateway = new FakeLinkedInGateway();
+    advance(30);
+    expect((await act(gateway, daily)).kind).toBe("idle");
+    expect(gateway.invitations).toHaveLength(0);
+    await settle(daily.org);
+
+    const weekly = await heldQuota({ dailyLimit: 50, claimedAt: new Date(start.getTime() - 2 * 86_400_000) });
+    await sql`insert into channel_settings (organization_id, channel, values) values (${weekly.org}, 'linkedin', ${sql.json({ invitesPerWeek: 2 })})`;
+    const g2 = new FakeLinkedInGateway();
+    expect((await act(g2, weekly)).kind).toBe("idle");
+    expect(g2.invitations).toHaveLength(0);
+    await settle(weekly.org);
+  });
+
   it("does nothing outside the account's working hours", async () => {
     const hours = { timeZone: "UTC", days: { "3": [{ start: "12:00", end: "18:00" }] } };
     const f = await fixture({ hours });
@@ -228,6 +260,32 @@ describeDb("linkedin engine", () => {
     current = new Date("2026-10-16T00:05:00Z");
     expect((await act(gateway, f)).kind).toBe("sent");
     expect(gateway.messages).toHaveLength(2);
+  });
+
+  it("blocks a message to a lead marked do not contact after the claim and before the provider", async () => {
+    const f = await fixture();
+    const gateway = new FakeLinkedInGateway();
+    await invite(gateway, f);
+    const accepted = await inbound.receiveLinkedInWebhook(inboundDeps(), { organizationId: f.org, payload: acceptedPayload(f, `ACo-${f.slugs[0]}`) });
+    expect(accepted.status).toBe("done");
+    current = new Date("2026-10-15T10:03:00Z");
+    // The flag lands between the claim and the provider call.
+    const racing: typeof store = {
+      ...store,
+      async claimNext(options) {
+        const claim = await store.claimNext(options);
+        if (claim) {
+          await sql`insert into contact_policies (person_id, organization_id, do_not_contact, source, set_at)
+            select person_id, organization_id, true, 'human', now() from campaign_enrollments where id = ${f.enrollmentIds[0]}`;
+        }
+        return claim;
+      },
+    };
+    expect(await engine.runNextLinkedInAction({ ...deps(gateway), store: racing }, f.account)).toEqual({ kind: "blocked", reason: "do_not_contact" });
+    expect(gateway.messages).toHaveLength(0);
+    expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "suppressed", stop_reason: "do_not_contact", next_send_at: null });
+    const rows = await sendRows(f.enrollmentIds[0]);
+    expect(rows.find((r) => r.step_number === 2)).toMatchObject({ status: "failed", attempt: 3, error: "do_not_contact" });
   });
 
   it("stops the sequence when the lead replies, and a redelivered reply changes nothing", async () => {
