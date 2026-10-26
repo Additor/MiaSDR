@@ -90,7 +90,7 @@ describeDb("conversion races", () => {
     await waitForLockWaiters(kit.sql, 2);
     await gate.release();
     const [ingested, converted] = await Promise.all([ingest, conversion]);
-    expect(sqlState(ingested.error)).toBeUndefined();
+    expect(sqlState(ingested.error)).toBeNull();
     expect(ingested.error).toBeNull();
     expect(converted.error).toBeNull();
     expect(lockRetryStats.retries).toBe(retries);
@@ -131,7 +131,7 @@ describeDb("conversion races", () => {
     await waitForLockWaiters(kit.sql, 1);
     resume();
     const [suppressed, converted] = await Promise.all([suppressing, converting]);
-    expect(sqlState(suppressed.error)).toBeUndefined();
+    expect(sqlState(suppressed.error)).toBeNull();
     expect(suppressed.error).toBeNull();
     expect(suppressed.value).toEqual({ stopped: 1, added: true });
     expect(converted.error).toBeNull();
@@ -165,7 +165,7 @@ describeDb("conversion races", () => {
     // The ingest goes on to end B's run and asks for B's record: a cycle that the conversion breaks by giving way.
     await gate.release();
     const [ingested, converted] = await Promise.all([ingest, conversion]);
-    expect(sqlState(ingested.error)).toBeUndefined();
+    expect(sqlState(ingested.error)).toBeNull();
     expect(ingested.error).toBeNull();
     expect(converted.error).toBeNull();
     expect(lockRetryStats.retries - retries).toBeLessThanOrEqual(1);

@@ -1,11 +1,11 @@
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { campaigns, channelSettings, linkedinAccounts, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
 import type { LinkedInSearchEngineStore, LinkedInSearchRecord, LinkedInSearchStore, SearchPageClaim } from "../application/linkedin-search-ports";
 import { linkedinRules } from "../domain/linkedin";
 import { SEARCH_LEASE_SECONDS, allowedFrom, searchDay, searchQuotaLeft, statusAfter, type SearchStatus } from "../domain/linkedin-search";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 const CLAIMABLE = ["queued", "running", "paused_limit"];
 const LIVE = ["running", "paused"];

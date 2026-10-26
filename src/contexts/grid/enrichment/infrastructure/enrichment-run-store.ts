@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { ConflictError, ValidationError } from "@/shared/errors";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { gridCellRuns, gridColumns, gridJobs, gridRows, gridTables } from "@/platform/db/schema";
 import { GRID_LIMITS } from "../../application/limits";
 import { cascadeTargets } from "../domain/enrichment-cascade";
@@ -8,7 +8,7 @@ import { DEFAULT_CASCADE_LIMITS, ORG_MAX_PENDING_CELLS, ORG_MAX_RUNNING_CELLS, p
 import { sanitizeOutput, sanitizeOutputString } from "../../domain/output-sanitize";
 import type { CellJob, ColumnRow, EnqueueTarget, GridRunStore, JobCounts, LedgerRun } from "../application/enrichment-ports";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 const CHUNK = 500;
 /** New work is due a minute in the past: the claim compares `run_after` with the worker's clock, not the database's. */

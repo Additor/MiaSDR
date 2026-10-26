@@ -2,8 +2,7 @@ import { sql } from "drizzle-orm";
 import { events } from "@/platform/db/schema";
 import { ASSIGNED_EVENT, pickAssignee } from "../domain/assignment";
 import type { Tx } from "../../infrastructure/drizzle-conversation-store";
-
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
+import { rowsOf } from "@/platform/db/sql-values";
 
 /**
  * Gives a record without an assignee to the creator of its person's newest regular-campaign enrollment that is not removed,

@@ -4,6 +4,7 @@ import { recordAudit } from "@/platform/db/audit";
 import { dealStages, deals } from "@/platform/db/schema";
 import { DEFAULT_DEAL_STAGES, type DealStageKind } from "../domain/stages";
 import type { DealRow, DealStage, DealStore, NewDeal, StoppedCounts } from "../application/deal-ports";
+import { rowsOf } from "@/platform/db/sql-values";
 
 /*
  * `deals` and `deal_stages` writes. Every statement filters by organization. Structure changes of the stage list take the
@@ -41,8 +42,6 @@ async function listStages(organizationId: string, handle: DbHandle = db): Promis
   const rows = await handle.select(stageColumns).from(dealStages).where(eq(dealStages.organizationId, organizationId)).orderBy(asc(dealStages.position), asc(dealStages.id));
   return rows.map(asStage);
 }
-
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
 
 export const drizzleDealStore: DealStore = {
   async ensureStages(tx, organizationId) {

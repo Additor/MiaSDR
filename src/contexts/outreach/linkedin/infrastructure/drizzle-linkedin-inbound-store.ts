@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, inboundEvents, linkedinAccounts, linkedinConnections, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
 import type { InboxFiling } from "../../application/inbound-ports";
 import type { InboundResult, LedgerEvent, LinkedInInboundStore } from "../application/linkedin-ports";
@@ -7,7 +7,7 @@ import { MAX_EVENT_ATTEMPTS, linkedinSlug, type LinkedInInboundEvent } from "../
 import { applyAcceptance } from "./drizzle-linkedin-store";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 const LEASE_SECONDS = 300;
 

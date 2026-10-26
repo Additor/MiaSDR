@@ -19,6 +19,7 @@ import type {
   DealViewRow,
   PersonDealRow,
 } from "../application/deal-ports";
+import { rowsOf } from "@/platform/db/sql-values";
 
 /*
  * crm-read: the explicit read model of the CRM screens ("Leads and CRM" in docs/decisions.md), like analytics.
@@ -39,7 +40,6 @@ import type {
  * writes `p.lifecycle = 'contact'` as a literal, so a generic plan can still use the partial index `people_org_contacts_idx`.
  */
 
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
 const toDate = (value: unknown): Date => (value instanceof Date ? value : new Date(String(value)));
 const toDateOrNull = (value: unknown): Date | null => (value === null || value === undefined ? null : toDate(value));
 const toNumberOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value));

@@ -1,13 +1,9 @@
+import { sqlState } from "@/platform/db/errors";
 import { asc, eq, like } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { members, organizations } from "@/platform/db/schema";
 import { SlugTakenError, type OrganizationCreationStore } from "../application/create-organization";
 import type { MembershipStore } from "../application/organization-switching";
-
-function isUniqueViolation(error: unknown): boolean {
-  const e = error as { code?: string; cause?: { code?: string } } | null;
-  return e?.code === "23505" || e?.cause?.code === "23505";
-}
 
 export const drizzleOrganizationCreationStore: OrganizationCreationStore = {
   async slugsStartingWith(prefix) {
@@ -27,7 +23,7 @@ export const drizzleOrganizationCreationStore: OrganizationCreationStore = {
         return organization;
       });
     } catch (error) {
-      if (isUniqueViolation(error)) throw new SlugTakenError();
+      if (sqlState(error) === "23505") throw new SlugTakenError();
       throw error;
     }
   },

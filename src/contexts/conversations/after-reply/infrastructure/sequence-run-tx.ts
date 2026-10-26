@@ -3,7 +3,7 @@ import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-
 import { dueAfter, isTerminalSubcategory } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
-import { sqlValues } from "@/platform/db/sql-values";
+import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 
 export { endRunTx, interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 
@@ -13,7 +13,7 @@ export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 export const asDate = (value: Date | string): Date => (value instanceof Date ? value : new Date(value));
 export const asDateOrNull = (value: Date | string | null): Date | null => (value === null ? null : asDate(value));
 
-export const rowsOf = <T>(result: unknown) => result as unknown as T[];
+export { rowsOf } from "@/platform/db/sql-values";
 
 /** The organization's zone, read inside the run's transaction. */
 export const zoneOfTx = (tx: Tx, organizationId: string): Promise<string> => organizationTimeZone(organizationId, tx);

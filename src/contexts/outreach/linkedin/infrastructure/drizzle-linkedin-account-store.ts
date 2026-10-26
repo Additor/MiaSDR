@@ -1,3 +1,4 @@
+import { sqlState } from "@/platform/db/errors";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { credentialCipher, envelopeVersion } from "@/contexts/integrations/infrastructure/credential-cipher";
@@ -188,7 +189,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
         });
       } catch (error) {
         // A concurrent sync took the same id between the check and the write. The next sync settles it.
-        if ((error as { code?: string }).code !== "23505" && (error as { cause?: { code?: string } }).cause?.code !== "23505") throw error;
+        if (sqlState(error) !== "23505") throw error;
         skip(`Account ${account.ref} conflicts with an existing account.`);
       }
     }

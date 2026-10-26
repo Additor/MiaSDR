@@ -1,12 +1,12 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import { gridColumns, gridFolders, gridRows, gridTables, gridUserViews, gridWorkbooks } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import { placeAfter } from "../domain/keys";
 import type { TableView } from "../domain/view-query";
 import type { FolderRecord, StructureStore, TableRecord, WorkbookRecord } from "../application/ports";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 const asTable = (row: typeof gridTables.$inferSelect): TableRecord => ({
   id: row.id,

@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { sqlState, TRY_AGAIN } from "@/platform/db/errors";
+import { TRY_AGAIN, violatedConstraint } from "@/platform/db/errors";
 import { companies, companyDomainAliases } from "@/platform/db/schema";
 import { ConflictError, ValidationError } from "@/shared/errors";
 import { checkCompanyDomain } from "../domain/company-domain";
@@ -14,17 +14,6 @@ import { checkCompanyDomain } from "../domain/company-domain";
 
 /** The guard triggers of migration 0027 raise 23505 with these names when a path skipped the domain lock. */
 export const DOMAIN_GUARD_CONSTRAINTS: ReadonlySet<string> = new Set(["company_domain_is_alias", "alias_is_company_domain"]);
-
-/** The constraint a 23505 names, also under a wrapping error's `cause`. */
-export function uniqueViolation(error: unknown): string | null {
-  if (sqlState(error) !== "23505") return null;
-  let current = error as { constraint_name?: unknown; cause?: unknown } | null | undefined;
-  for (let depth = 0; depth < 5 && current; depth += 1) {
-    if (typeof current.constraint_name === "string") return current.constraint_name;
-    current = current.cause as typeof current;
-  }
-  return null;
-}
 
 /** Holds the domain until commit, hashed as the other leads locks are. */
 export async function lockCompanyDomain(tx: DbHandle, organizationId: string, domain: string): Promise<void> {
@@ -78,7 +67,7 @@ export async function resolveCompanyDomain(tx: DbHandle, organizationId: string,
       .returning({ id: companies.id, name: companies.name, inserted: sql<boolean>`(xmax = 0)` });
     return { companyId: row.id, name: row.name, domain, viaAlias: false, created: row.inserted };
   } catch (error) {
-    const constraint = uniqueViolation(error);
+    const constraint = violatedConstraint(error, "23505");
     if (constraint && DOMAIN_GUARD_CONSTRAINTS.has(constraint)) throw new ConflictError(TRY_AGAIN, { code: "try_again" });
     throw error;
   }

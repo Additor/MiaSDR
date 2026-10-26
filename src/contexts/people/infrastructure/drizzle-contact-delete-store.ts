@@ -2,13 +2,12 @@ import { sql } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
 import { CONTACT_DELETE_STATEMENT_TIMEOUT, type ContactDeleteStore, type ContactForDelete } from "../application/contact-delete";
 import { stampCompaniesLeftByContacts } from "./company-domain-store";
+import { rowsOf } from "@/platform/db/sql-values";
 
 /*
  * The leads side of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md):
  * the people row. Every statement filters by organization.
  */
-
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
 
 interface PersonRow {
   id: string;

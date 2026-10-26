@@ -1,3 +1,4 @@
+import { violatedConstraint } from "@/platform/db/errors";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { interruptPersonRunsTx, interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
@@ -40,9 +41,9 @@ import { defaultPipelineId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleClassificationSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { draftCanBecome } from "./reply-store-shared";
 import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
+import { rowsOf } from "@/platform/db/sql-values";
 
 const CATEGORY_ORDER = new Map<string, number>(REPLY_CATEGORIES.map((c, i) => [c.key, i]));
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
 
 async function pipelineFor(organizationId: string) {
@@ -71,16 +72,6 @@ async function retireOpenDrafts(tx: Tx, recordIds: string[], reason: string) {
   return retired.length;
 }
 
-/** The constraint a driver error names, also under a wrapping error's `cause`. */
-function constraintOf(error: unknown): string | null {
-  let current = error as { code?: unknown; constraint_name?: unknown; cause?: unknown } | null | undefined;
-  for (let depth = 0; depth < 5 && current; depth += 1) {
-    if (current.code === "23503" && typeof current.constraint_name === "string") return current.constraint_name;
-    current = current.cause as typeof current;
-  }
-  return null;
-}
-
 /**
  * Do not contact reads the people row without a lock, so a contact delete can commit between that read and the
  * `contact_policies` upsert or an event insert. The person foreign key then refuses the write (23503), which means the
@@ -90,7 +81,7 @@ async function personGoneAsNotFound<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    const constraint = constraintOf(error);
+    const constraint = violatedConstraint(error, "23503");
     if (constraint?.startsWith("contact_policies_person_id") || constraint?.startsWith("events_person_id")) throw new NotFoundError("Person not found");
     throw error;
   }

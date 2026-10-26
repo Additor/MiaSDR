@@ -1,3 +1,4 @@
+import { sqlState } from "@/platform/db/errors";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from "drizzle-orm";
 import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
@@ -15,12 +16,6 @@ import { filteredScope, sentCount, tabCounts } from "./enrollment-list-sql";
 import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "./drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
-
-const pgCode = (error: unknown): string | undefined => {
-  // drizzle wraps driver errors; the Postgres error is on `cause` or on the error itself.
-  const e = error as { code?: string; cause?: { code?: string } };
-  return e?.cause?.code ?? e?.code;
-};
 
 /** SQL condition for an archive filter on `campaigns`. */
 export const archiveCondition = (filter: ArchiveFilter): SQL | undefined =>
@@ -435,7 +430,7 @@ export const drizzleMailboxStore: MailboxStore = {
         .returning({ id: mailboxes.id });
       return row.id;
     } catch (error) {
-      if (pgCode(error) === "23505") throw new ConflictError("This address is already connected to a mailbox.");
+      if (sqlState(error) === "23505") throw new ConflictError("This address is already connected to a mailbox.");
       throw error;
     }
   },
@@ -485,7 +480,7 @@ export const drizzleMailboxStore: MailboxStore = {
     try {
       await db.delete(mailboxes).where(and(eq(mailboxes.organizationId, organizationId), eq(mailboxes.id, id)));
     } catch (error) {
-      if (pgCode(error) === "23503") throw new ConflictError("This mailbox has sending history, so it cannot be deleted. Disable it instead.");
+      if (sqlState(error) === "23503") throw new ConflictError("This mailbox has sending history, so it cannot be deleted. Disable it instead.");
       throw error;
     }
   },

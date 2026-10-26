@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbTx } from "@/platform/db/client";
 import {
   campaignEnrollments,
   campaigns,
@@ -22,7 +22,7 @@ import { buildVariables } from "../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../domain/working-hours";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Tx = DbTx;
 
 /** Enrollment statuses a send may still change. Every later status was set on purpose and must survive a late send result. */
 const LIVE_STATUSES = [...LIVE_ENROLLMENT_STATUSES];

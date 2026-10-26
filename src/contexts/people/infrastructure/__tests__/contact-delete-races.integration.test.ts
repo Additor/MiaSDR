@@ -120,7 +120,7 @@ describeDb("contact delete races", () => {
     await waitForLockWaiters(kit.sql, 1);
     await holder.release();
     const deleted = await deleting;
-    expect(sqlState(deleted.error)).toBeUndefined();
+    expect(sqlState(deleted.error)).toBeNull();
     expect(deleted.error).toBeInstanceOf(ConflictError);
     expect((deleted.error as ConflictError).details).toEqual({
       code: "contact_blocked",
@@ -176,7 +176,7 @@ describeDb("contact delete races", () => {
     await waitForLockWaiters(kit.sql, 1);
     await holder.release();
     const deleted = await deleting;
-    expect(sqlState(deleted.error)).toBeUndefined();
+    expect(sqlState(deleted.error)).toBeNull();
     expect((deleted.error as ConflictError).details).toMatchObject({ code: "counts_changed", counts: { messages: 2 } });
     expect(await kit.count("messages", f.org, `conversation_id = '${lead.conversationId}'`)).toBe(2);
     expect(await people(lead.personId)).toBe(1);
@@ -250,7 +250,7 @@ describeDb("contact delete races", () => {
     await waitForLockWaiters(kit.sql, 1);
     gate.resume();
     const [suppressed, deleted] = await Promise.all([suppressing, deleting]);
-    expect(sqlState(suppressed.error)).toBeUndefined();
+    expect(sqlState(suppressed.error)).toBeNull();
     expect(suppressed.error).toBeNull();
     // Postgres decides which waiter meets the other first: either the delete commits and the suppression finds no run left, or
     // the delete gives way once and its retry runs after the suppression. Neither writer fails and nothing is lost.

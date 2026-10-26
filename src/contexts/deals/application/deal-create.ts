@@ -1,3 +1,4 @@
+import { violatedConstraint } from "@/platform/db/errors";
 import { parseCreationKey, type AddContactInput } from "@/contexts/people/application/add-contact";
 import { personalCampaignSkip } from "@/contexts/people/application/convert-to-contact";
 import type { DbHandle } from "@/platform/db/client";
@@ -5,7 +6,7 @@ import { retryOnce, TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { defaultDealTitle, initialStagePosition } from "../domain/deal";
 import type { AddContactWithDealDeps, DealPerson, DealsDeps, StoppedCounts } from "./deal-ports";
-import { MAX_BULK_CONVERT_IDS, BULK_TIME_BUDGET_MS, isUuid, violatedConstraint, PersonalCampaignError, isAlreadyConverted, type CreateDealInput, type DealFields, parseDealFields, pickStage, personOf } from "./deal-input";
+import { MAX_BULK_CONVERT_IDS, BULK_TIME_BUDGET_MS, isUuid, PersonalCampaignError, isAlreadyConverted, type CreateDealInput, type DealFields, parseDealFields, pickStage, personOf } from "./deal-input";
 
 export interface CreateDealResult {
   dealId: string;

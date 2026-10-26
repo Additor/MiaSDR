@@ -8,7 +8,7 @@
  * timeout and runs once more on a deadlock (40P01) or a lock timeout (55P03); a second failure answers 409 `try_again`.
  */
 
-export { BOARD_LIMIT, BULK_TIME_BUDGET_MS, CLOSED_WINDOW_DAYS, CRM_PAGE_SIZE, MAX_BOARD_LIMIT, MAX_BULK_CONVERT_IDS, MAX_IDEMPOTENCY_KEY, PersonalCampaignError, isUuid, violatedConstraint } from "./deal-input";
+export { BOARD_LIMIT, BULK_TIME_BUDGET_MS, CLOSED_WINDOW_DAYS, CRM_PAGE_SIZE, MAX_BOARD_LIMIT, MAX_BULK_CONVERT_IDS, MAX_IDEMPOTENCY_KEY, PersonalCampaignError, isUuid } from "./deal-input";
 export type { CreateDealInput } from "./deal-input";
 export { CONTACT_GONE, addContactWithDeal, createDealForContact, createDealFromLead, createDealsFromLeads } from "./deal-create";
 export type { AddContactWithDealInput, BulkCreateResult, BulkSkipReason, CreateDealResult } from "./deal-create";

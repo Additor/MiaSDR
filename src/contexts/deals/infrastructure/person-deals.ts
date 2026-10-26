@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
 import type { DealStageKind } from "../domain/stages";
 import type { DealTitleParts } from "../application/deal-ports";
+import { rowsOf } from "@/platform/db/sql-values";
 
 /*
  * The deals side of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md).
@@ -11,8 +12,6 @@ import type { DealTitleParts } from "../application/deal-ports";
 
 /** A won deal's title goes into the delete dialog when the person has this many won deals or fewer. */
 export const WON_TITLES_LIMIT = 3;
-
-const rowsOf = <T>(result: unknown) => result as unknown as T[];
 
 export interface PersonDealLock {
   id: string;
