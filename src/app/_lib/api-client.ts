@@ -4,6 +4,8 @@
  */
 export interface ApiResult<T> {
   ok: boolean;
+  /** The HTTP status, or 0 when the request never got an answer. */
+  status: number;
   data: T | null;
   /** A message a person can read. */
   error: string | null;
@@ -13,21 +15,30 @@ export interface ApiResult<T> {
   details: Record<string, unknown> | null;
 }
 
-/** Calls our JSON API and always returns a result: the UI decides what to show, nothing throws. */
-export async function callApi<T = unknown>(url: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown): Promise<ApiResult<T>> {
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/**
+ * Calls our JSON API and always returns a result: the UI decides what to show, nothing throws. A `FormData` body goes
+ * out as multipart, anything else as JSON. An aborted call answers "Cancelled." with status 0.
+ */
+export async function callApi<T = unknown>(url: string, method: Method, body?: unknown, init?: { signal?: AbortSignal }): Promise<ApiResult<T>> {
   try {
+    const form = body instanceof FormData;
     const response = await fetch(url, {
       method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined || form ? undefined : { "content-type": "application/json" },
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+      signal: init?.signal,
     });
-    const data = (await response.json().catch(() => null)) as (T & { error?: string; issues?: ApiResult<T>["issues"] }) | null;
+    const data = (await response.json().catch(() => null)) as (T & { error?: unknown; issues?: unknown }) | null;
     if (!response.ok) {
       const details = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
-      return { ok: false, data: null, error: data?.error ?? "Something went wrong. Try again.", issues: data?.issues ?? [], details };
+      const error = typeof data?.error === "string" ? data.error : response.status === 401 ? "Your session expired. Sign in again." : "Something went wrong. Try again.";
+      return { ok: false, status: response.status, data: null, error, issues: Array.isArray(data?.issues) ? (data.issues as ApiResult<T>["issues"]) : [], details };
     }
-    return { ok: true, data, error: null, issues: [], details: null };
-  } catch {
-    return { ok: false, data: null, error: "Could not reach the server.", issues: [], details: null };
+    return { ok: true, status: response.status, data, error: null, issues: [], details: null };
+  } catch (error) {
+    const cancelled = error instanceof DOMException && error.name === "AbortError";
+    return { ok: false, status: 0, data: null, error: cancelled ? "Cancelled." : "Could not reach the server.", issues: [], details: null };
   }
 }
