@@ -66,7 +66,7 @@ The flag lasts for that transaction. `TRUNCATE` is not guarded.
 Triggers freeze the rows that other rows point at by value or by version. Each rule is a trigger that raises SQLSTATE 23000:
 
 - `conversations`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status`, `private_campaign_id` and `updated_at` stay writable.
-- `subcategories`: `key`, `category_key` and `pipeline_id` cannot change. Name, description, guidance, `active` and the order fields stay writable.
+- `reply_types`: `key`, `group_key` and `reply_type_set_id` cannot change. Name, description, guidance, `active` and the order fields stay writable.
 - `knowledge_document_versions`: append-only. An edit inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
 - `sequence_versions` and `sequence_steps`: `organization_id`, `sequence_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a sequence, which cascades.
 
@@ -106,8 +106,8 @@ These columns and tables back add, merge and delete ("Contacts and Companies CRU
 
 Five triggers hold rules a foreign key cannot express. Each raises SQLSTATE 23000:
 
-- `classifications.message_id` is an inbound message of the classification's own record.
-- `classifications.previous_`, `proposed_` and `applied_subcategory_id` belong to the record's pipeline and to the matching `*_category_key`. A null key accepts any category.
+- `reply_type_picks.message_id` is an inbound message of the pick's own record.
+- `reply_type_picks.previous_`, `proposed_` and `applied_reply_type_id` belong to the record's reply type set and to the matching `*_group_key`. A null key accepts any category.
 - `drafts.channel` equals the channel of the draft's conversation.
 - `drafts.reply_for_message_id` is an inbound message of the draft's own record, in the same organization. It may live in another conversation of that record, because the reply target is the record's latest inbound message. The update trigger also checks when `record_id` changes.
 - `send_attempts.account_ref` equals the account of the draft's conversation, compared with `lower()` on both sides. A blank value goes to `send_attempts_refs_ck`.
@@ -139,7 +139,7 @@ Each context declares its tables in `src/contexts/<context>/infrastructure/schem
 - tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`
 - people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`
 - outreach: `mailboxes`, `suppression_list`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
-- conversations: `pipelines`, `subcategories`, `pipeline_settings`, `records`, `conversations`, `messages`, `contact_policies`, `identity_exceptions`, `lead_ccs`, `events`, `classifications`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `draft_knowledge_citations`, `ai_jobs`, `notes`, `tasks`
+- conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `records`, `conversations`, `messages`, `contact_policies`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `draft_knowledge_citations`, `ai_jobs`, `notes`, `tasks`
 - conversations, sequences (`sequences-schema.ts`): `sequences`, `sequence_versions`, `sequence_steps`, `sequence_runs`, `sequence_step_runs`
 - deals: `deal_stages`, `deals`
 - grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`, `grid_provider_credentials`

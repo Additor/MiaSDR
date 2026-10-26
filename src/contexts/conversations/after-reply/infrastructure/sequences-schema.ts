@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { check, foreignKey, index, integer, pgTable, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
-import { conversations, drafts, messages, records, subcategories } from "../../infrastructure/schema";
+import { conversations, drafts, messages, records, replyTypes } from "../../infrastructure/schema";
 import { inList } from "@/platform/db/sql-values";
 
 /**
@@ -112,7 +112,7 @@ export const sequenceRuns = pgTable(
     conversationId: uuid("conversation_id").notNull(),
     sequenceId: uuid("sequence_id").notNull(),
     sequenceVersionId: uuid("sequence_version_id").notNull(),
-    subcategoryId: uuid("subcategory_id").notNull(),
+    replyTypeId: uuid("reply_type_id").notNull(),
     status: text("status").notNull().default("active"),
     currentStepPosition: integer("current_step_position").notNull().default(1),
     startStepPosition: integer("start_step_position").notNull().default(1),
@@ -127,7 +127,7 @@ export const sequenceRuns = pgTable(
     foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.sequenceId, t.organizationId], foreignColumns: [sequences.id, sequences.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.sequenceVersionId, t.organizationId], foreignColumns: [sequenceVersions.id, sequenceVersions.organizationId] }).onDelete("restrict"),
-    foreignKey({ columns: [t.subcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("restrict"),
+    foreignKey({ columns: [t.replyTypeId, t.organizationId], foreignColumns: [replyTypes.id, replyTypes.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.triggerMessageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("restrict"),
     unique("sequence_runs_id_org_uq").on(t.id, t.organizationId),
     uniqueIndex("sequence_runs_one_active_uq").on(t.recordId).where(sql`${t.status} = 'active'`),
