@@ -20,9 +20,6 @@ export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPL
 
 export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "Unclassified";
 
-/** This subcategory drives the do-not-contact paths, so it can be neither deleted nor archived. */
-export const PROTECTED_SUBCATEGORY_KEY = "do_not_contact";
-
 export interface AiInstructionBlock {
   id: string;
   title: string;

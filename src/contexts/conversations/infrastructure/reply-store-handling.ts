@@ -1,9 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
-import { restartRecordWorkTx } from "./restart-record-work";
-import { aiJobs, replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
+import { personTypeDecisionTx, queuePickDraftTx, restartRecordWorkTx } from "./restart-record-work";
+import { replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
 import { afterTypeChange } from "../domain/workflow-state";
@@ -52,12 +52,20 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       }
       const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
       const accepted = input.replyTypeKey === null;
+      // Accepting a stop request would only change the type, while the person asked us to stop. The client opens Stop
+      // contacting on this code. Choosing the stop request type by name stays allowed and changes only the type.
+      if (accepted && target.systemRole === "stop_request") {
+        throw new ConflictError("This reply asks to stop. Review the stop request: choose Stop contacting, or change the type.", { code: "stop_review" });
+      }
+      const rules = typeRulesOf(target);
+      const decision = await personTypeDecisionTx(tx, input.organizationId, head.recordId, { groupKey: target.groupKey, rules });
+      if (!decision) throw new NotFoundError("Conversation not found");
 
       let replyTypePickId: string;
       if (existing) {
         await tx
           .update(replyTypePicks)
-          .set({ status: accepted ? "accepted" : "overridden", appliedGroupKey: target.groupKey, appliedReplyTypeId: target.id, rules: typeRulesOf(target), acknowledgedAt: new Date() })
+          .set({ status: accepted ? "accepted" : "overridden", appliedGroupKey: target.groupKey, appliedReplyTypeId: target.id, rules, acknowledgedAt: new Date() })
           .where(eq(replyTypePicks.id, existing.id));
         replyTypePickId = existing.id;
       } else {
@@ -74,7 +82,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             proposedReplyTypeId: target.id,
             appliedGroupKey: target.groupKey,
             appliedReplyTypeId: target.id,
-            rules: typeRulesOf(target),
+            rules,
             confidence: "1.0000",
             reasoning: "Set by a person.",
             status: "overridden",
@@ -85,8 +93,8 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         replyTypePickId = row.id;
       }
 
-      const wantsDraft = input.wantsDraft(target.groupKey, target.key);
-      const nextState = afterTypeChange(head.state, { wantsDraft });
+      const { wantsDraft } = decision;
+      const nextState = afterTypeChange(head.state, decision);
       await tx
         .update(records)
         .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", workflowState: nextState })
@@ -99,6 +107,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         recordId: head.recordId,
         reason: "classification_corrected",
         draftReason: "A person corrected the reply type after this draft was written.",
+        followUps: decision.followUps,
         now,
         actorUserId: input.actorUserId,
       });
@@ -112,25 +121,10 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         actorUserId: input.actorUserId,
         fromData: { groupKey: head.groupKey, replyTypeId: head.replyTypeId },
         toData: { groupKey: target.groupKey, replyTypeId: target.id },
-        meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted },
+        meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted, rules },
         contextVersion: restart.contextVersion,
       });
-      let draftQueued = false;
-      if (wantsDraft) {
-        // One draft job exists per classification (unique on kind and entity). A job that already finished for an earlier
-        // version goes back to the queue under a key for this version; a queued job stays and picks up the new version.
-        const key = `initial_draft:classification:${replyTypePickId}:v${restart.contextVersion}`;
-        await tx
-          .insert(aiJobs)
-          .values({ organizationId: input.organizationId, kind: "initial_draft", entityType: "classification", entityId: replyTypePickId, idempotencyKey: key, runAfter: sql`now() - interval '1 minute'`, payload: { humanInitiated: true } })
-          .onConflictDoUpdate({
-            target: [aiJobs.kind, aiJobs.entityType, aiJobs.entityId],
-            set: { status: "queued", attempts: 0, runAfter: sql`now() - interval '1 minute'`, idempotencyKey: key, payload: sql`${aiJobs.payload} || '{"humanInitiated":true}'::jsonb`, completedAt: null, failedAt: null, lastError: null, lockedAt: null, lockedBy: null },
-            setWhere: sql`${aiJobs.status} in ('succeeded', 'failed', 'skipped')`,
-          });
-        const [job] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, replyTypePickId)));
-        draftQueued = job?.status === "queued" || job?.status === "running";
-      }
+      const draftQueued = wantsDraft ? await queuePickDraftTx(tx, { organizationId: input.organizationId, replyTypePickId, contextVersion: restart.contextVersion }) : false;
       return { personId: head.personId, groupKey: target.groupKey, replyTypeKey: target.key, draftQueued };
     });
   },

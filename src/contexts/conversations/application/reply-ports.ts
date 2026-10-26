@@ -247,8 +247,12 @@ export interface ReplyStore {
   listUnsettled(olderThan: Date, limit: number): Promise<Array<{ send: SendContext; status: "sending" | "delivery_uncertain"; startedAt: Date }>>;
   resolveUncertain(input: { organizationId: string; draftId: string; outcome: "delivered" | "not_delivered"; note: string; actorUserId: string; now: Date }): Promise<void>;
 
-  /** Human classification. Returns what was applied and whether a draft job was queued. */
-  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string; wantsDraft: (groupKey: string, replyTypeKey: string) => boolean }): Promise<{ personId: string; groupKey: string; replyTypeKey: string; draftQueued: boolean }>;
+  /**
+   * A person's pick for the latest reply: `replyTypeKey: null` accepts the held AI pick, a key overrides it. The type's
+   * rules decide the draft and follow-ups (`decideReplyType`). Accepting a held stop request answers 409 `stop_review`.
+   * `wantsDraft` is ignored; it stays optional until the callers that still pass it are gone.
+   */
+  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string; wantsDraft?: (groupKey: string, replyTypeKey: string) => boolean }): Promise<{ personId: string; groupKey: string; replyTypeKey: string; draftQueued: boolean }>;
   suppressSender(input: { organizationId: string; conversationId: string; actorUserId: string }): Promise<{ email: string }>;
 }
 

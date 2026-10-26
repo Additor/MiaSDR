@@ -2,7 +2,7 @@ import { violatedConstraint } from "@/platform/db/errors";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { interruptPersonRunsTx, interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
-import { restartRecordWorkTx } from "./restart-record-work";
+import { personTypeDecisionTx, restartRecordWorkTx } from "./restart-record-work";
 import {
   aiJobs,
   campaignEnrollments,
@@ -37,7 +37,7 @@ import type {
   ReplyTypeOption,
 } from "../application/reply-handling-ports";
 import { REPLY_TYPE_GROUPS, checkReplyTypeChange, type ReplyTypeGroup } from "../domain/reply-handling";
-import { afterPersonDecision, afterReopen } from "../domain/workflow-state";
+import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
 import { typeRulesOf, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
@@ -269,16 +269,28 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         expectedContextVersion: input.expectedContextVersion,
         confirmUnlock: input.confirmUnlock,
       });
+      // The type's rules decide, as a person's pick: a type that writes a draft keeps the record in front of a person,
+      // and its follow-ups rule decides whether a run starts. A change to a group without a type has no rules: no run.
+      const rules = sub ? typeRulesOf(sub) : null;
+      const decision = sub && rules ? await personTypeDecisionTx(tx, input.organizationId, before.id, { groupKey: sub.groupKey, rules }) : null;
       await tx
         .update(records)
-        .set({ groupKey: input.groupKey, replyTypeId: input.replyTypeId, replyTypeSource: "human", replyTypeLocked, workflowState: "action_required", nextActionAt: null })
+        .set({
+          groupKey: input.groupKey,
+          replyTypeId: input.replyTypeId,
+          replyTypeSource: "human",
+          replyTypeLocked,
+          workflowState: afterTypeChange(before.workflowState as WorkflowState, { wantsDraft: decision?.wantsDraft ?? false }),
+          nextActionAt: null,
+        })
         .where(eq(records.id, before.id));
-      // The old stage's run and drafts end, the version goes up, and the new stage's sequence starts, all in this commit.
-      const { contextVersion: version, draftsRetired } = await restartRecordWorkTx(tx, {
+      // The old type's run and drafts end, the version goes up, and the new type's sequence starts, all in this commit.
+      const { contextVersion: version, draftsRetired, runStarted } = await restartRecordWorkTx(tx, {
         organizationId: input.organizationId,
         recordId: before.id,
         reason: "stage_moved",
         draftReason: "A person changed the reply type after this draft was written.",
+        followUps: decision?.followUps ?? "not_applicable",
         now: input.now,
         actorUserId: input.actorUserId,
       });
@@ -291,10 +303,10 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         actorUserId: input.actorUserId,
         fromData: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeSource: before.replyTypeSource, replyTypeLocked: before.replyTypeLocked },
         toData: { groupKey: input.groupKey, replyTypeId: input.replyTypeId, replyTypeSource: "human", replyTypeLocked },
-        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && input.groupKey !== "customer" },
+        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && input.groupKey !== "customer", rules },
         contextVersion: version,
       });
-      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired };
+      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted };
     });
   },
 
@@ -328,13 +340,14 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .where(eq(records.id, record.id));
       await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
       // A draft job that has not run yet would write a reply for the classification a person just rejected.
-      await tx
+      const cancelled = await tx
         .update(aiJobs)
         .set({ status: "failed", failedAt: input.now, lastError: "The classification was undone before the draft was written." })
-        .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "queued")));
+        .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "queued")))
+        .returning({ id: aiJobs.id });
       const draftsRetired = await retireOpenDrafts(tx, [record.id], "The classification was undone after this draft was written.");
       // The run started for the classification a person just rejected. It ends in this commit and keeps no follow-up drafting.
-      await interruptRecordRunsTx(tx, input.organizationId, record.id, "classification_undone", input.now);
+      const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, record.id, "classification_undone", input.now);
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: record.personId,
@@ -344,10 +357,10 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         actorUserId: input.actorUserId,
         fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
         toData: { groupKey: previous, replyTypeId: previous ? cls.previousReplyTypeId : null },
-        meta: { replyTypePickId: cls.id },
+        meta: { replyTypePickId: cls.id, draftsRetired, runsEnded },
         contextVersion: version,
       });
-      return { recordId: record.id, draftsRetired };
+      return { recordId: record.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length > 0 };
     });
   },
 

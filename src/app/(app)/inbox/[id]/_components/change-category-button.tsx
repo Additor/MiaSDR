@@ -10,7 +10,7 @@ import { Combobox, ComboboxCollection, ComboboxContent, ComboboxEmpty, ComboboxG
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { PROTECTED_SUBCATEGORY_KEY, REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
+import { REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
 import { needsReply } from "@/contexts/conversations/domain/reply-policy";
 import { callApi } from "@/app/_lib/api-client";
 import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
@@ -179,7 +179,7 @@ export function ChangeCategoryButton({
             </Combobox>
             {chosen && (
               <FieldDescription className="text-foreground" data-testid="category-consequence">
-                {consequence(chosen, correcting, personName)}
+                {consequence(chosen, correcting)}
               </FieldDescription>
             )}
           </Field>
@@ -207,9 +207,8 @@ export function ChangeCategoryButton({
 }
 
 /** What the change does to drafts, follow-ups and contact, in one or two sentences. */
-function consequence(stage: StageOption, correcting: boolean, personName: string): string {
-  const stop = stage.key === PROTECTED_SUBCATEGORY_KEY ? ` It also marks ${personName} do not contact on every channel.` : "";
-  if (!correcting) return `Retires open drafts and restarts follow-ups for this category. No new draft is written.${stop}`;
-  if (needsReply(stage.groupKey, stage.key)) return `Retires the open draft, writes a new one for this category and starts its follow-ups.${stop}`;
-  return `Retires the open draft. This category needs no reply, so none is written.${stop}`;
+function consequence(stage: StageOption, correcting: boolean): string {
+  if (!correcting) return `Retires open drafts and restarts follow-ups for this category. No new draft is written.`;
+  if (needsReply(stage.groupKey, stage.key)) return `Retires the open draft, writes a new one for this category and starts its follow-ups.`;
+  return `Retires the open draft. This category needs no reply, so none is written.`;
 }
