@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { memberItems } from "../member-select";
 
 export interface TaskItem {

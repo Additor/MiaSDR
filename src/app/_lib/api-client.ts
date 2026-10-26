@@ -1,3 +1,7 @@
+/**
+ * The browser side of our JSON API: `callApi` reads the error shape the route wrappers in `./api.ts` write (`error`,
+ * `issues`, the whole body as `details`). Client components import it; route handlers import `./api.ts`.
+ */
 export interface ApiResult<T> {
   ok: boolean;
   data: T | null;

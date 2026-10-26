@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 
 export interface Note {
   id: string;

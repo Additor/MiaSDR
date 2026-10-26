@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import type { InboxRow } from "@/contexts/conversations/application/ports";
 import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /** What a row says about the conversation itself: one state. What waits on a person is in Actions, not here. */
 function RowState({ row }: { row: InboxRow }) {

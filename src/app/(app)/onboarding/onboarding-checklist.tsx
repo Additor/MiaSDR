@@ -7,7 +7,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import type { OnboardingView } from "@/contexts/tenancy/application/onboarding";
 import type { StepStatus } from "@/contexts/tenancy/domain/onboarding";
 

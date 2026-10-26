@@ -15,8 +15,8 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLab
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { callApi } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { callApi } from "@/app/_lib/api-client";
+import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 import { hoursDraft, hoursSummary, sameHours, toStoredHours, WorkingHoursFields, type StoredHours } from "../working-hours-fields";

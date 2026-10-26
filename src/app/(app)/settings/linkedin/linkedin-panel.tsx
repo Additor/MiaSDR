@@ -13,13 +13,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { formatDateTime } from "@/shared/format-time";
 import { syncLine, type StoredSyncStatus } from "./sync-status";
 import { webhookBadge, type StoredWebhookStatus } from "./webhook-status";
 import { INVITE_LIMIT_RULE, MESSAGE_LIMIT_RULE, inviteLimitWarning, messageLimitWarning } from "@/contexts/outreach/linkedin/domain/linkedin-limits";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";

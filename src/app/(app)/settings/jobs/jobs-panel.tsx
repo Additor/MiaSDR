@@ -1,6 +1,6 @@
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Time } from "@/components/shell/time";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface Overview {

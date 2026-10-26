@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import {
   CREATE_CHUNK,
   PREVIEW_CHUNK,

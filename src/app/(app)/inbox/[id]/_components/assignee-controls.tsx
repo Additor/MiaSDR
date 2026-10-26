@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { memberItems, type MemberChoice } from "@/app/(app)/crm/_components/member-select";
 
 const NOBODY = "__nobody__";

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { deleteConfirmation, type DeleteQualification } from "@/contexts/people/application/lead-delete-check";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { AddLeadToCampaign } from "../add-to-campaign";
 import { MakeContactDialog } from "./make-contact-dialog";
 

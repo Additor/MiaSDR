@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { permanenceText, singleEffectsText, type ConvertPreview } from "../../crm/_components/deal-effects";
 
 /**

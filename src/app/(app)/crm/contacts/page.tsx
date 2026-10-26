@@ -19,7 +19,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { leadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { NO_REACH } from "@/contexts/outreach/domain/reachability";
 import { readReachability } from "@/contexts/outreach/infrastructure/composition";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { AddContactButton } from "../_components/add-contact-dialog";
 import { dealDialogData } from "../_components/deal-dialog-data";

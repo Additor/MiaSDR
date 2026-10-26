@@ -2,7 +2,7 @@ import { CircleCheckIcon, CircleDashedIcon, ClockIcon, OctagonXIcon, PauseIcon, 
 import { Time } from "@/components/shell/time";
 import { stopReasonLabel } from "@/contexts/outreach/domain/campaign-view";
 import { LEAD_STATE_LABELS, type LeadState, type LeadStatus } from "@/contexts/outreach/domain/lead-status";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { StateTip, TipLines } from "./state-tip";
 
 const ICONS: Record<LeadState, LucideIcon> = {

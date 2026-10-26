@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 
 interface Row {
   id: string;

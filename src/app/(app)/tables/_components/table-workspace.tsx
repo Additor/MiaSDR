@@ -16,7 +16,7 @@ import { withGridFocus } from "../_lib/edit/history-focus";
 import { layoutPins, pinPhoneNotice, withPin } from "../_lib/view/pin-layout";
 import { filtersNarrow, keepsTableOrder, setSort, toggleHidden, withRunFailures } from "../_lib/view/view";
 import { activeConditionCount } from "@/contexts/grid/domain/view-query";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/components/hooks/use-mobile";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import { pasteSummary, type BlockPasteRequest } from "../_lib/edit/paste";
 import type { GridColumn } from "../_lib/data/types";

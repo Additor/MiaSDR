@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { ResponsibleUseNote } from "@/components/shell/responsible-use-note";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { START_BLOCKERS_ID } from "./start-blockers";
 
 type Target = "active" | "paused" | "completed";

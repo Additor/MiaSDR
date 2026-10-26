@@ -12,9 +12,9 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { splitTagInput } from "@/contexts/conversations/ai/domain/knowledge";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 

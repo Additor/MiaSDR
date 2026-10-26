@@ -1,5 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /**
  * What a list shows while its rows stream in: rows of the height the real ones take, a name and a line under it, so the page

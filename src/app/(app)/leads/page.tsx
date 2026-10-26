@@ -14,7 +14,7 @@ import { isFilterActive, leadFilterParams, parseLeadFilter, parseLeadSort } from
 import { leadFilterOptions, listLeads } from "@/contexts/people/infrastructure/composition";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { leadActivityDeps } from "@/contexts/outreach/infrastructure/composition";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import type { Actor } from "@/shared/errors";
 import { dealDialogData } from "../crm/_components/deal-dialog-data";

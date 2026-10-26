@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /**
  * Controlled confirmation. Name the object in the title and the consequence in the description; the button repeats the action.

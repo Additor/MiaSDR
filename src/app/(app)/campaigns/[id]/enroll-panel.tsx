@@ -6,7 +6,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { ENROLL_BATCH_LIMIT, ENROLL_CONFIRM_FROM, enrollNeedsConfirmation } from "@/contexts/outreach/domain/campaign-view";
 import type { CrossCampaignNotices } from "@/contexts/outreach/application/cross-campaign-notices";
 import { CampaignSection } from "./campaign-section";

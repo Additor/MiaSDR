@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDownIcon } from "lucide-react";
 import { useRef, useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import type { AttentionMap } from "./settings-attention";
 import type { SettingsGroup } from "./settings-nav-config";
 

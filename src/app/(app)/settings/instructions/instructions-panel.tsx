@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
-import { callApi } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { callApi } from "@/app/_lib/api-client";
+import { cn } from "@/components/ui/utils";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 

@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 

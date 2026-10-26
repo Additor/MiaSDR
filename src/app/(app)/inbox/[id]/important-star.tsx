@@ -4,7 +4,7 @@ import { StarIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 
 /** Stars or unstars one stored message. The Important view of the inbox lists conversations with a starred message. */
 export function ImportantStar({ messageId, important }: { messageId: string; important: boolean }) {

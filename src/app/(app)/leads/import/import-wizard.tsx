@@ -9,9 +9,9 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CUSTOM_LABEL_MAX, describeCustomLabels } from "@/contexts/people/domain/custom-fields";
 import { confirmLabel, RESULT_EXAMPLES, summaryChangesAnything, type ImportSummary, type SkipGroup } from "@/contexts/people/domain/import-summary";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { TARGETS, TARGET_GROUPS, customLabelOf, describeCustom, mappingError, selectValue, type Mapping } from "./mapping";
-import { useMediaQuery } from "@/hooks/use-media-query";
+import { useMediaQuery } from "@/components/hooks/use-media-query";
 
 interface Preview {
   headers: string[];

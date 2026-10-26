@@ -2,7 +2,7 @@ import { BanIcon, MailIcon, MailXIcon } from "lucide-react";
 import { Time } from "@/components/shell/time";
 import type { LeadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { suppressionReasonLabel, type Reachability } from "@/contexts/outreach/domain/reachability";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { StateTip, TipLines } from "./state-tip";
 
 /** "Do not contact", the reason and since when, for a tooltip. */

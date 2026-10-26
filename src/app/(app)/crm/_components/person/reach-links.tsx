@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { LeadContactPoints } from "@/contexts/people/domain/lead-activity";
 import type { Reachability } from "@/contexts/outreach/domain/reachability";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { DoNotContactTip, SuppressedTip } from "./reach-icons";
 import { StateTip } from "./state-tip";
 

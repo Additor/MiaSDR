@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { readPersonalThread } from "@/contexts/outreach/linkedin/application/personal-thread";
 import { personalThreadDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { ForbiddenError, NotFoundError } from "@/shared/errors";
 

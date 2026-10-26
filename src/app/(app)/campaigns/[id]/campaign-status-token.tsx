@@ -1,6 +1,6 @@
 import { ArchiveIcon, CircleCheckIcon, PauseIcon, PencilLineIcon, PlayIcon, type LucideIcon } from "lucide-react";
 import { campaignStatusLabel } from "@/contexts/outreach/domain/campaign-view";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 const ICONS: Record<string, LucideIcon> = {
   draft: PencilLineIcon,

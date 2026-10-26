@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { canRemoveEnrollment } from "@/contexts/outreach/domain/enrollment-status";
 
 type Channel = "email" | "linkedin";

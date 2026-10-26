@@ -4,7 +4,7 @@ import { SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 export interface PaletteDestination {
   href: string;

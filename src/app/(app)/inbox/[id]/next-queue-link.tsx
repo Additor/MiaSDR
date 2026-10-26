@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import type { Actor } from "@/shared/errors";
 import { loadNextInQueue } from "./next-queue";
 import { QueueKeys } from "./queue-keys";

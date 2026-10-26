@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /**
  * Nothing to show yet. Name what is missing in the title and say what to do next in the description. `action` is a link

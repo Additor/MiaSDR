@@ -20,8 +20,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LEAD_STATE_LABELS } from "@/contexts/outreach/domain/lead-status";
 import type { LeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { isFilterActive, leadFilterParams, lifecycleOf, matchingSelection, selectionExport, type LeadFilter, type LeadSort, type LeadSortKey } from "@/contexts/people/domain/lead-filter";
-import { callApi } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import { callApi } from "@/app/_lib/api-client";
+import { cn } from "@/components/ui/utils";
 import { CreateDealsBulkDialog } from "../crm/_components/create-deal-dialog";
 import { LeadStatusToken } from "../crm/_components/person/lead-status-token";
 import { personHref } from "../crm/_components/person/person-href";

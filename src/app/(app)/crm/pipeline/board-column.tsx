@@ -1,12 +1,12 @@
 "use client";
 
 import { memo, useEffect, useMemo, useState, type DragEvent } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Board, BoardCard } from "@/contexts/deals/application/deals";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { MoveDealStageButton } from "../_components/move-deal-stage-dialog";
 import type { DealStageList } from "../_components/deal-form";
 import type { Json } from "../_components/serialize";

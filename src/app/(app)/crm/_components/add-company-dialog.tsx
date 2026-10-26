@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, companyName, useCompanyDomainLookup, type ResolvedCompany } from "./company-domain-field";
 
 /**

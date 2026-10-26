@@ -10,7 +10,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { StageSetting, StageSettings } from "@/contexts/deals/application/deal-stages";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { AdminNotice } from "../admin-notice";
 import { ReorderButtons } from "../settings-form";
 import { RULED_LIST, SettingsSection } from "../settings-section";

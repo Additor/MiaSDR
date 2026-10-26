@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 
 /** Marks the thread read when it opens. The button stays for the case where that call failed. */
 export function MarkRead({ id, unread }: { id: string; unread: number }) {

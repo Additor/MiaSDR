@@ -20,7 +20,7 @@ import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { ForbiddenError, ValidationError } from "@/shared/errors";
 import { elapsed } from "@/shared/format-time";

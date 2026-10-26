@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { SettingsSection } from "../settings-section";
 import { ModelCombobox } from "./model-combobox";
 

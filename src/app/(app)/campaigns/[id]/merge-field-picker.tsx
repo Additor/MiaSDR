@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { callApi } from "@/lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 
 export interface MergeFieldItem {
   token: string;

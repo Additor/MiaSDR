@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 /**
  * A block of the campaign page: an h2 with an optional count, description and action, then its content. Blocks are ruled
