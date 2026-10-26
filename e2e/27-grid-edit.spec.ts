@@ -267,8 +267,10 @@ test.describe("grid pinned columns", () => {
     await expect.poll(async () => (await headers()).slice(1, 3)).toEqual(["Score", "Site"]);
 
     // The pin reached storage as this member's own view.
-    const stored = await (await page.request.get(`/api/grid/tables/${seeded.tableId}`)).json();
-    expect(stored.view.pinnedColumns).toEqual([seeded.keys.Score, seeded.keys.Site]);
+    // The grid shows the pin before its save lands, so wait for storage.
+    await expect
+      .poll(async () => (await (await page.request.get(`/api/grid/tables/${seeded.tableId}`)).json()).view.pinnedColumns)
+      .toEqual([seeded.keys.Score, seeded.keys.Site]);
 
     const grid = page.getByRole("grid");
     const left = (name: string) => page.getByRole("columnheader", { name: new RegExp(`^${name}(?! x2)`) }).evaluate((el) => el.getBoundingClientRect().left);
