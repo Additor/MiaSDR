@@ -4,6 +4,7 @@ import { PencilIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useId, useState, useTransition, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { toast } from "sonner";
+import { DatePicker } from "@/components/shell/date-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,7 @@ export interface InlineInput {
   /** Shown above the input when the editor has more than one. A single input takes the row's label. */
   label?: string;
   value: string;
+  /** "date" edits a yyyy-MM-dd day in a `DatePicker` with its calendar open; any other type is the Input's. */
   type?: string;
   inputMode?: "email" | "tel" | "url" | "numeric" | "decimal";
   placeholder?: string;
@@ -152,19 +154,32 @@ function InlineEditor({ label, inputs, onSave, close, busy }: { label: string; i
             <Label htmlFor={id} className={single ? "sr-only" : undefined}>
               {single ? label : input.label}
             </Label>
-            <Input
-              id={id}
-              autoFocus={index === 0}
-              type={input.type ?? "text"}
-              inputMode={input.inputMode}
-              autoComplete="off"
-              placeholder={input.placeholder}
-              value={values[input.key] ?? ""}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={[error ? errorId : null, input.help ? `${id}-help` : null].filter(Boolean).join(" ") || undefined}
-              className="max-sm:h-11"
-              onChange={(e) => setValues({ ...values, [input.key]: e.target.value })}
-            />
+            {input.type === "date" ? (
+              <DatePicker
+                id={id}
+                defaultOpen={index === 0}
+                value={values[input.key] ?? ""}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={[error ? errorId : null, input.help ? `${id}-help` : null].filter(Boolean).join(" ") || undefined}
+                clearable
+                className="w-40"
+                onChange={(day) => setValues({ ...values, [input.key]: day })}
+              />
+            ) : (
+              <Input
+                id={id}
+                autoFocus={index === 0}
+                type={input.type ?? "text"}
+                inputMode={input.inputMode}
+                autoComplete="off"
+                placeholder={input.placeholder}
+                value={values[input.key] ?? ""}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={[error ? errorId : null, input.help ? `${id}-help` : null].filter(Boolean).join(" ") || undefined}
+                className="max-sm:h-11"
+                onChange={(e) => setValues({ ...values, [input.key]: e.target.value })}
+              />
+            )}
             {input.help && (
               <p id={`${id}-help`} className="text-xs text-muted-foreground">
                 {input.help}
@@ -205,7 +220,8 @@ export function InlineForm({
   children: ReactNode;
 }) {
   function onKeyDown(event: KeyboardEvent<HTMLFormElement>) {
-    if (event.key !== "Escape") return;
+    // A picker's popup sits in a portal, and React still bubbles its keys here: its Escape closes only the popup.
+    if (event.key !== "Escape" || !event.currentTarget.contains(event.target as Node)) return;
     event.preventDefault();
     event.stopPropagation();
     if (!busy) onCancel();

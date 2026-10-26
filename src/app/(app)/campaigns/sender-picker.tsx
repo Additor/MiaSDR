@@ -1,5 +1,6 @@
 "use client";
 
+import { TriangleAlertIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 export interface SenderOption {
@@ -25,7 +26,13 @@ export function SenderPicker({ options, value, onChange, noun, disabled }: { opt
               onCheckedChange={(next) => onChange(next === true ? [...value, option.id] : value.filter((id) => id !== option.id))}
             />
             <span>{option.label}</span>
-            {!option.connected && <span className="text-xs text-destructive">not connected</span>}
+            {!option.connected && (
+              // A sender that dropped off is a degraded state: the warning icon and a muted label, never red.
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-warning" />
+                not connected
+              </span>
+            )}
           </label>
         );
       })}

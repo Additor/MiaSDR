@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
+import { ListToolbar } from "@/components/shell/list-toolbar";
 import { PageHeader } from "@/components/shell/page-header";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
@@ -134,37 +135,39 @@ export function TablesBrowser() {
   const parent = path.at(-2);
   return (
     <>
-      <PageHeader title={current?.name ?? "Tables"} back={current ? { href: href(parent?.id ?? null), label: parent?.name ?? "Tables" } : undefined} />
-      <div className="page stack-group">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input aria-label="Search workbooks and folders" placeholder="Search workbooks and folders" className="w-72 pl-7" value={query} onChange={(e) => setQuery(e.target.value)} />
-          </div>
-          <span className="ml-auto flex flex-wrap gap-2">
+      <PageHeader
+        title={current?.name ?? "Tables"}
+        back={current ? { href: href(parent?.id ?? null), label: parent?.name ?? "Tables" } : undefined}
+        actions={
+          <>
             <Button variant="outline" onClick={() => setAction({ kind: "newFolder" })}>
               <FolderPlusIcon /> New folder
             </Button>
-            <input
-              ref={fromFileInput}
-              type="file"
-              accept=".csv,.xlsx,text/csv"
-              className="sr-only"
-              aria-label="Spreadsheet file to start from"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) void startFromFile(file);
-              }}
-            />
             <Button variant="outline" onClick={() => fromFileInput.current?.click()}>
               <UploadIcon /> New from file
             </Button>
             <Button onClick={() => setAction({ kind: "newWorkbook" })}>
               <PlusIcon /> New workbook
             </Button>
-          </span>
-        </div>
+          </>
+        }
+      />
+      <div className="page stack-group">
+        <input
+          ref={fromFileInput}
+          type="file"
+          accept=".csv,.xlsx,text/csv"
+          className="sr-only"
+          aria-label="Spreadsheet file to start from"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void startFromFile(file);
+          }}
+        />
+        <ListToolbar>
+          <LiveSearchField label="Search workbooks and folders" value={query} onChange={setQuery} />
+        </ListToolbar>
 
         {status === "loading" && <Skeleton className="h-64 w-full" />}
         {status === "error" && (
@@ -280,6 +283,7 @@ export function TablesBrowser() {
         {action?.kind === "newFolder" && (
           <NameDialog
             title="New folder"
+            description="A folder holds workbooks and other folders."
             submitLabel="Create folder"
             onSubmit={(name) => mutate(gridRequest(gridUrl.folders, "POST", { name: name || undefined, parentId: folderId ?? null }))}
             onClose={() => setAction(null)}
@@ -289,6 +293,7 @@ export function TablesBrowser() {
         {action?.kind === "rename" && (
           <NameDialog
             title={`Rename ${action.type}`}
+            description={`The new name shows in this list and on the ${action.type}'s page.`}
             initial={action.name}
             submitLabel="Rename"
             onSubmit={(name) => mutate(gridRequest(`${action.type === "folder" ? gridUrl.folders : gridUrl.workbooks}/${action.id}`, "PATCH", { name }))}
@@ -310,7 +315,8 @@ export function TablesBrowser() {
             title={`Delete ${action.type} "${action.name}"?`}
             description={action.type === "folder" ? "Subfolders are deleted. Workbooks inside move to the top level." : "Its tables, rows and run history are deleted. This cannot be undone."}
             confirmLabel={`Delete ${action.type}`}
-            pendingLabel="Deleting..."
+            cancelLabel={`Keep ${action.type}`}
+            pendingLabel="Deleting…"
             destructive
             onConfirm={async () => {
               const problem = await mutate(gridRequest(`${action.type === "folder" ? gridUrl.folders : gridUrl.workbooks}/${action.id}`, "DELETE"));
@@ -321,6 +327,16 @@ export function TablesBrowser() {
         )}
       </div>
     </>
+  );
+}
+
+/** `SearchField` for a list that filters on the client as you type: the same field, with no form to submit. */
+function LiveSearchField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="relative block max-w-md min-w-48 flex-1">
+      <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input type="search" aria-label={label} placeholder={label} value={value} onChange={(e) => onChange(e.target.value)} className="pl-8 max-sm:h-11" />
+    </label>
   );
 }
 

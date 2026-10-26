@@ -150,7 +150,7 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
                 {estimate.problem && <p className="text-xs text-destructive">{estimate.problem}</p>}
               </>
             ) : (
-              <p className={estimateError ? "text-destructive" : "text-muted-foreground"}>{draft === null ? "Fix the field above to see what this run costs." : (estimateError ?? "Counting what this run can cost...")}</p>
+              <p className={estimateError ? "text-destructive" : "text-muted-foreground"}>{draft === null ? "Fix the field above to see what this run costs." : (estimateError ?? "Counting what this run can cost…")}</p>
             )}
           </section>
           <ErrorText>{error}</ErrorText>
@@ -160,7 +160,7 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
             Cancel
           </Button>
           <Button type="button" onClick={start} disabled={busy || !!estimateError || estimate?.cells === 0 || !!estimate?.problem}>
-            <PlayIcon /> {busy ? "Queueing..." : estimate && estimate.cells > 0 ? `Run ${estimate.rows.toLocaleString("en-US")} ${estimate.rows === 1 ? "row" : "rows"}` : "Run"}
+            <PlayIcon /> {busy ? "Queueing…" : estimate && estimate.cells > 0 ? `Run ${estimate.rows.toLocaleString("en-US")} ${estimate.rows === 1 ? "row" : "rows"}` : "Run"}
           </Button>
         </DialogFooter>
       </DialogContent>

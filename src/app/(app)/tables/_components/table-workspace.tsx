@@ -485,7 +485,8 @@ export function TableWorkspace({ tableId }: Props) {
           title={deleteRowsTitle(dialog.count, grid.table.name)}
           description="The rows and their run history are removed from this table. This cannot be undone."
           confirmLabel={dialog.count === 1 ? "Delete row" : "Delete rows"}
-          pendingLabel="Deleting..."
+          cancelLabel={dialog.count === 1 ? "Keep row" : "Keep rows"}
+          pendingLabel="Deleting…"
           destructive
           onConfirm={deleteSelected}
         />

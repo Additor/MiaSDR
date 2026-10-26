@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { callApi } from "@/app/_lib/api-client";
 
 export interface MergeFieldItem {
@@ -81,36 +82,49 @@ export function useFieldInsert(opts: {
   return { track, insert };
 }
 
+/**
+ * Insert field: the app's Select with the fields grouped. A pick inserts the token at the caret of the last edited field
+ * once the list has closed, so the field takes focus back from the trigger. The Select keeps no value.
+ */
 export function MergeFieldPicker({ fields, disabled, onPick }: { fields: MergeFieldItem[]; disabled?: boolean; onPick: (token: string) => void }) {
+  const picked = useRef<string | null>(null);
   if (fields.length === 0) return null;
   return (
     <div className="flex min-w-0 items-center gap-2 text-sm">
       <label htmlFor="merge-field-picker" className="shrink-0 whitespace-nowrap text-muted-foreground">
         Insert field
       </label>
-      <select
-        id="merge-field-picker"
-        className="h-8 min-w-0 max-w-full flex-1 rounded-md border bg-background px-2 text-sm sm:max-w-xs"
+      <Select
+        value={null}
         disabled={disabled}
-        value=""
-        onChange={(event) => {
-          if (event.target.value) onPick(event.target.value);
+        onValueChange={(token) => {
+          picked.current = token;
+        }}
+        onOpenChangeComplete={(open) => {
+          const token = picked.current;
+          picked.current = null;
+          if (!open && token) onPick(token);
         }}
       >
-        <option value="">Choose a field</option>
-        {GROUPS.map(([group, label]) => {
-          const items = fields.filter((f) => f.group === group);
-          return items.length === 0 ? null : (
-            <optgroup key={group} label={label}>
-              {items.map((f) => (
-                <option key={f.token} value={f.token}>
-                  {f.label === f.token ? f.token : `${f.label} {{${f.token}}}`}
-                </option>
-              ))}
-            </optgroup>
-          );
-        })}
-      </select>
+        <SelectTrigger id="merge-field-picker" className="min-w-0 max-w-full flex-1 sm:max-w-xs max-sm:data-[size=default]:h-11">
+          <SelectValue placeholder="Choose a field" />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false} align="start">
+          {GROUPS.map(([group, label]) => {
+            const items = fields.filter((f) => f.group === group);
+            return items.length === 0 ? null : (
+              <SelectGroup key={group}>
+                <SelectLabel>{label}</SelectLabel>
+                {items.map((f) => (
+                  <SelectItem key={f.token} value={f.token}>
+                    {f.label === f.token ? f.token : `${f.label} {{${f.token}}}`}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            );
+          })}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

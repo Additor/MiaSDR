@@ -283,7 +283,7 @@ export function ImportWizard() {
                   setCountry(e.target.value.toUpperCase());
                 }}
                 maxLength={2}
-                placeholder="KR, US, ..."
+                placeholder="KR, US, …"
                 className={touch}
               />
             </div>

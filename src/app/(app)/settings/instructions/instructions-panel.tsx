@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/shell/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -90,7 +91,7 @@ function BlockList({
     return (
       <SettingsSection title={title} description={description}>
         {blocks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No instructions yet.</p>
+          <EmptyState className="py-0" title="No instructions yet" />
         ) : (
           <ul className={RULED_LIST} aria-label={title}>
             {blocks.map((b) => (
@@ -118,7 +119,7 @@ function BlockList({
       <form onSubmit={save}>
         <FieldGroup>
           {blocks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No instructions yet.</p>
+            <EmptyState className="py-0" title="No instructions yet" />
           ) : (
             <ul className={RULED_LIST} aria-label={title}>
               {blocks.map((b, index) => (

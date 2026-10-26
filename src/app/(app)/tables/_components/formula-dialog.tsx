@@ -125,7 +125,7 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
           <div aria-live="polite" className="rounded-lg border bg-muted/40 p-3 text-sm">
             <p className="text-xs font-medium text-muted-foreground">Preview{preview.state === "ok" ? ` (row ${preview.rowNumber})` : ""}</p>
             {(preview.state === "idle" || !expression.trim()) && <p className="text-muted-foreground">Type an expression to see its result.</p>}
-            {expression.trim() && preview.state === "loading" && <p className="text-muted-foreground">Evaluating...</p>}
+            {expression.trim() && preview.state === "loading" && <p className="text-muted-foreground">Evaluating…</p>}
             {expression.trim() && preview.state === "ok" && <p className="font-mono break-all">{preview.text}</p>}
             {expression.trim() && preview.state === "error" && <p className="text-destructive">{preview.message}</p>}
           </div>
@@ -135,7 +135,7 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
               <div className="flex gap-2">
                 <Input id="f-ai" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Full name from first and last name, in title case" maxLength={2000} onKeyDown={(e) => e.key === "Enter" && prompt.trim() && !aiBusy && (e.preventDefault(), void generate())} />
                 <Button type="button" variant="outline" disabled={!prompt.trim() || aiBusy} onClick={generate}>
-                  <SparklesIcon /> {aiBusy ? "Writing..." : "Generate"}
+                  <SparklesIcon /> {aiBusy ? "Writing…" : "Generate"}
                 </Button>
               </div>
             </Field>
@@ -154,7 +154,7 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
             Cancel
           </Button>
           <Button type="button" onClick={save} disabled={saving || !expression.trim() || (preview.state === "error" && !!expression.trim())}>
-            {saving ? "Saving..." : column ? "Save formula" : "Add column"}
+            {saving ? "Saving…" : column ? "Save formula" : "Add column"}
           </Button>
         </DialogFooter>
       </DialogContent>

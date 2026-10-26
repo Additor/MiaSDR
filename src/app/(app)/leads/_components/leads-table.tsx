@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon, MoreHorizontalIcon } from "lucide-react";
-import { Fragment, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { ListPager } from "@/components/shell/list-pager";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
-import { useSelection } from "@/components/shell/selection";
+import { useBarScrollPadding, useSelection } from "@/components/shell/selection";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
@@ -116,6 +116,8 @@ export function LeadsTableView(props: {
   // The ids the Create deals dialog works on, fixed when it opens: the dialog reloads its preview for a new array.
   const [dealIds, setDealIds] = useState<string[] | null>(null);
   const lifecycle = lifecycleOf(filter);
+  const bar = useRef<HTMLDivElement>(null);
+  useBarScrollPadding(bar, ids.length > 0);
 
   const filtered = isFilterActive(filter);
   const allOnPage = rows.length > 0 && rows.every((r) => isSelected(r.id));
@@ -315,7 +317,7 @@ export function LeadsTableView(props: {
         the first row never moves the rows above it, and its wrapper keeps the height of one row of controls whether or not
         anything is ticked. The status line is always mounted so a screen reader announces the count as it changes.
       */}
-      <div className="sticky bottom-0 z-20 min-h-14 pb-[env(safe-area-inset-bottom)]" data-testid="selection-bar">
+      <div ref={bar} className="sticky bottom-0 z-20 min-h-14 pb-[env(safe-area-inset-bottom)]" data-testid="selection-bar">
         <div className={cn("flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm", ids.length > 0 && "border bg-background shadow-md ring-1 ring-foreground/5")}>
           <div role="status" className="max-md:order-1 max-md:min-h-11 max-md:flex-1 max-md:content-center md:mr-1">
             {ids.length > 0 && (
@@ -383,7 +385,7 @@ export function LeadsTableView(props: {
         description={`${
           pending?.kind === "filter" ? `This deletes every lead that matches the current search and filters (${leadFilterParams({ ...filter, ids: undefined }).toString().replace(/&/g, ", ")}), on all pages. ` : ""
         }Leads that were already messaged, sit in a running or paused campaign or have history, such as replies, stay. Mark those do not contact instead. Deleting cannot be undone.`}
-        confirmLabel="Delete"
+        confirmLabel={deleteLabel(pending?.kind === "filter" ? total : pending?.kind === "selected" ? pending.ids.length : 0)}
         pendingLabel="Deleting…"
         destructive
         onConfirm={confirmDelete}
@@ -401,6 +403,9 @@ export function LeadsTableView(props: {
     </>
   );
 }
+
+/** The delete confirm names what it deletes: "Delete lead" or "Delete 12 leads". */
+const deleteLabel = (count: number) => (count === 1 ? "Delete lead" : `Delete ${count.toLocaleString("en-US")} leads`);
 
 /** The narrow-screen stand-in for the Reach, Status and Last contact columns: one line under the name. */
 function StatusLine({ lead, now }: { lead: LeadListRow; now: string }) {

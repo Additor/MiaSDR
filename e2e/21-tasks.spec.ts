@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect, importLeads, seedMember, seedReply, signInAdmin, signInAs, sql, test, waitForHydrated } from "./support/fixtures";
+import { expect, importLeads, seedMember, seedReply, signInAdmin, signInAs, sql, test, waitForHydrated, pickDate } from "./support/fixtures";
 
 const MEMBER = { name: "Bea Tasks", email: "bea21@e2e-corp.test", password: "bea21-password-1" };
 const LEAD = { email: "tess@s21-group.test", firstName: "Tess", lastName: "Aldrin", title: "COO", company: "S21 Group" };
@@ -30,9 +30,9 @@ test.describe("tasks, notes and the important flag", () => {
     const panel = page.locator('[data-slot="tasks-panel"]');
     await panel.getByRole("button", { name: "New task" }).click();
     await panel.getByLabel("Task", { exact: true }).fill("Send rollout plan");
-    // The due date offers Today, Tomorrow and Next week; Pick a date opens the browser's date field.
+    // The due date offers Today, Tomorrow and Next week; Pick a date opens a date picker with its calendar open.
     await panel.getByRole("button", { name: "Pick a date" }).click();
-    await panel.getByLabel("Due date").fill("2020-01-02");
+    await pickDate(page, panel.getByRole("combobox", { name: "Due date" }), "2020-01-02", { opened: true });
     await expect(panel.getByText("Due Thu, Jan 2.")).toBeVisible();
     await pick(page, panel.getByRole("combobox", { name: "Assign to" }), MEMBER.name);
     await panel.getByRole("button", { name: "Add task" }).click();

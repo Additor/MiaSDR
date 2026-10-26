@@ -100,7 +100,7 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
 
       <section className="stack-group p-4" data-testid="thread-tasks">
         <Suspense fallback={<Skeleton className="h-7 w-full" />}>
-          <TasksSection recordId={record.id} actor={actor} heading={false} compact />
+          <TasksSection recordId={record.id} actor={actor} compact />
         </Suspense>
       </section>
 

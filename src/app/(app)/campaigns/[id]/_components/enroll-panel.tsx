@@ -129,7 +129,7 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
       </div>
       <div className="stack-group">
         <form onSubmit={onSubmit} className="flex flex-wrap gap-2">
-          <Input name="query" placeholder={linkedin ? "Search name, title or company (optional)" : "Search name, email, title or company (optional)"} className="max-w-md" disabled={disabled || pending} />
+          <Input name="query" aria-label="Search leads to add" placeholder={linkedin ? "Search name, title or company (optional)" : "Search name, email, title or company (optional)"} className="max-w-md" disabled={disabled || pending} />
           <Button type="submit" disabled={disabled || pending}>
             {pending ? "Checking…" : "Add matching leads"}
           </Button>

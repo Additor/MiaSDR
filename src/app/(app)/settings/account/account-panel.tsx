@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { cn } from "@/components/ui/utils";
@@ -67,17 +67,19 @@ function ProfileSection({ name, email }: { name: string; email: string }) {
 
   return (
     <SettingsSection title="Profile" description="Your name shows on conversations you handle, on deals you own and in the history.">
-      <form onSubmit={save} className="stack-group">
-        <div className="stack-field">
-          <Label htmlFor="account-name">Name</Label>
-          <Input id="account-name" value={value} onChange={(e) => setValue(e.target.value)} maxLength={100} required autoComplete="name" className="max-w-sm" />
-        </div>
-        <div className="stack-field">
-          <span className="text-sm font-medium">Email</span>
-          <p className="text-sm">{email}</p>
-          <p className="text-sm text-muted-foreground">You sign in with this address. It cannot change here.</p>
-        </div>
-        <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValue(name)} />
+      <form onSubmit={save}>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="account-name">Name</FieldLabel>
+            <Input id="account-name" value={value} onChange={(e) => setValue(e.target.value)} maxLength={100} required autoComplete="name" className="max-w-sm" />
+          </Field>
+          <Field aria-labelledby="account-email">
+            <FieldTitle id="account-email">Email</FieldTitle>
+            <p className="text-sm">{email}</p>
+            <FieldDescription>You sign in with this address. It cannot change here.</FieldDescription>
+          </Field>
+          <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValue(name)} />
+        </FieldGroup>
       </form>
     </SettingsSection>
   );
@@ -152,36 +154,32 @@ function PasswordSection() {
       ) : !hasPassword ? (
         <p className="text-sm text-muted-foreground">You sign in with {providers.includes("google") ? "Google" : "another provider"}, so this account has no password here.</p>
       ) : (
-        <form onSubmit={change} className="stack-group">
-          <div className="stack-field">
-            <Label htmlFor="password-current">Current password</Label>
-            <Input id="password-current" name="current" type="password" autoComplete="current-password" required className="max-w-sm" />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="password-next">New password</Label>
-            <Input id="password-next" name="next" type="password" autoComplete="new-password" minLength={8} required aria-describedby="password-next-help" className="max-w-sm" />
-            <p id="password-next-help" className="text-sm text-muted-foreground">
-              At least 8 characters.
-            </p>
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="password-confirm">New password again</Label>
-            <Input id="password-confirm" name="confirm" type="password" autoComplete="new-password" minLength={8} required className="max-w-sm" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Checkbox id="password-sign-out" checked={signOutOthers} onCheckedChange={(c) => setSignOutOthers(c === true)} />
-            <Label htmlFor="password-sign-out">Sign out on my other devices</Label>
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <div>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Changing…" : "Change password"}
-            </Button>
-          </div>
+        <form onSubmit={change}>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="password-current">Current password</FieldLabel>
+              <Input id="password-current" name="current" type="password" autoComplete="current-password" required className="max-w-sm" />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="password-next">New password</FieldLabel>
+              <Input id="password-next" name="next" type="password" autoComplete="new-password" minLength={8} required aria-describedby="password-next-help" className="max-w-sm" />
+              <FieldDescription id="password-next-help">At least 8 characters.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="password-confirm">New password again</FieldLabel>
+              <Input id="password-confirm" name="confirm" type="password" autoComplete="new-password" minLength={8} required className="max-w-sm" />
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox id="password-sign-out" checked={signOutOthers} onCheckedChange={(c) => setSignOutOthers(c === true)} />
+              <FieldLabel htmlFor="password-sign-out">Sign out on my other devices</FieldLabel>
+            </Field>
+            {error && <FieldError>{error}</FieldError>}
+            <div>
+              <Button type="submit" disabled={pending}>
+                {pending ? "Changing…" : "Change password"}
+              </Button>
+            </div>
+          </FieldGroup>
         </form>
       )}
     </SettingsSection>

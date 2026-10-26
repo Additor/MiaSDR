@@ -21,7 +21,7 @@ export function UnsubscribeForm({ token, email }: { token: string; email: string
     return (
       <Card>
         <CardHeader>
-          <CardTitle>You are unsubscribed</CardTitle>
+          <CardTitle as="h1">You are unsubscribed</CardTitle>
           <CardDescription>{email} will not receive more emails from this sender.</CardDescription>
         </CardHeader>
       </Card>
@@ -30,7 +30,7 @@ export function UnsubscribeForm({ token, email }: { token: string; email: string
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Unsubscribe</CardTitle>
+        <CardTitle as="h1">Unsubscribe</CardTitle>
         <CardDescription>Stop all emails to {email} from this sender?</CardDescription>
       </CardHeader>
       <CardFooter className="flex-col items-stretch gap-2">

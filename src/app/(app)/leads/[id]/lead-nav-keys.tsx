@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { isTypingTarget } from "@/components/shell/list-nav";
+import { popupOpen } from "@/components/shell/list-keys";
 
 /**
  * `[` opens the previous lead of the list and `]` the next one, as `]` moves through a queue in the Inbox. It leaves a letter
@@ -18,7 +19,7 @@ export function LeadNavKeys({ prevHref, nextHref }: { prevHref: string | null; n
       if (!href) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (isTypingTarget(target)) return;
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+      if (popupOpen()) return;
       event.preventDefault();
       router.push(href);
     }

@@ -1,5 +1,5 @@
 /**
- * Pure rules for the "Drafting a reply..." watch on the thread page. A reclassification bumps the record's
+ * Pure rules for the "Drafting a reply…" watch on the thread page. A reclassification bumps the record's
  * context version and queues a fresh draft job; the draft arrives on a later tick, so the page refreshes every
  * 3 s for up to 45 s. The client component feeds these functions; nothing here touches the DOM or a timer.
  */

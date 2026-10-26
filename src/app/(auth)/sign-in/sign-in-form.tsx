@@ -69,7 +69,7 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
     <Card>
       <form onSubmit={onSubmit}>
         <CardHeader>
-          <CardTitle>Sign in</CardTitle>
+          <CardTitle as="h1">Sign in</CardTitle>
           <CardDescription>Use the email and password for your MiaSDR account.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 py-4">

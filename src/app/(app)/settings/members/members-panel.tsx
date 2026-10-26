@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/shell/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -224,7 +225,7 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
           description={!emailConfigured ? "No email service is configured (RESEND_API_KEY), so nothing was sent. Copy each link and share it yourself." : undefined}
         >
           {invitations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending invitations.</p>
+            <EmptyState className="py-0" title="No pending invitations" />
           ) : (
             <ul className={RULED_LIST}>
               {invitations.map((inv) => (
@@ -258,6 +259,8 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
         title={`Remove ${removing?.email ?? "this member"}?`}
         description="They lose access to this organization."
         confirmLabel="Remove member"
+        cancelLabel="Keep member"
+        pendingLabel="Removing…"
         destructive
         onConfirm={() => removing && perform("Member removed", () => callApi(`/api/members/${removing.id}`, "DELETE"))}
       />
@@ -267,7 +270,7 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
         title={changing ? `Change ${changing.member.name}'s role to ${ROLE_LABELS[changing.role] ?? changing.role}?` : "Change role?"}
         description={changing ? (ROLE_CONSEQUENCE[changing.role]?.(changing.member.name) ?? "") : ""}
         confirmLabel="Change role"
-        pendingLabel="Changing..."
+        pendingLabel="Changing…"
         onConfirm={() => changing && perform("Role changed", () => callApi(`/api/members/${changing.member.id}`, "PATCH", { role: changing.role }))}
       />
     </div>

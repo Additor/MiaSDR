@@ -106,7 +106,7 @@ function Footer({ onClose, busy, label, onSubmit, destructive, disabled }: { onC
         Cancel
       </Button>
       <Button type="button" variant={destructive ? "destructive" : "default"} onClick={onSubmit} disabled={busy || disabled}>
-        {busy ? "Working..." : label}
+        {busy ? "Working…" : label}
       </Button>
     </>
   );

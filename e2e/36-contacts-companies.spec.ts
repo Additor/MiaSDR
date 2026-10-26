@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { cellUnder } from "./support/table";
-import { chooseFromMoreMenu, e2eOrganizationId, expect, openFilters, seedContact, seedReply, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
+import { chooseFromMoreMenu, e2eOrganizationId, expect, openFilters, seedContact, seedReply, signInAdmin, sql, test, unique, waitForHydrated, pickOption } from "./support/fixtures";
 
 /**
  * Contacts and Companies ("Leads and CRM" in docs/decisions.md). Seeds its own people under a unique key:
@@ -102,7 +102,7 @@ test.describe("contacts and companies", () => {
     expect(moved.status(), "move Cora's deal to Meeting").toBe(200);
     await page.goto(`/crm/contacts?q=${SUFFIX}`);
     await openFilters(page);
-    await page.getByLabel("Deal stage", { exact: true }).selectOption({ label: "Meeting" });
+    await pickOption(page, page.getByRole("combobox", { name: "Deal stage", exact: true }), "Meeting");
     await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`stage=${meeting}`));
     await expect(page.getByText("1 contact", { exact: true })).toBeVisible();

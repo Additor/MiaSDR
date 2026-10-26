@@ -108,7 +108,7 @@ test.describe("lead list selection bar", () => {
     // Confirming Delete selected removes the two leads.
     await page.getByRole("button", { name: "More actions" }).click();
     await page.getByRole("menuitem", { name: "Delete selected" }).click();
-    await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+    await dialog.getByRole("button", { name: "Delete 2 leads", exact: true }).click();
     await expect(page.getByText("58 leads, page 1 of 2")).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: "selected" })).toHaveCount(0);
   });
@@ -163,7 +163,7 @@ test.describe("lead list selection bar", () => {
       const item = page.getByRole("menuitem", { name: "Delete selected" });
       expect(await contrastOf(item), `${scheme} menu item`).toBeGreaterThanOrEqual(4.5);
       await item.click();
-      const confirm = page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true });
+      const confirm = page.getByRole("dialog").getByRole("button", { name: /^Delete (lead|\d+ leads)$/ });
       expect(await contrastOf(confirm), `${scheme} confirm button`).toBeGreaterThanOrEqual(4.5);
       // A disabled destructive button stays readable (3:1) and no longer looks like a faded red fill.
       await confirm.evaluate((el) => ((el as HTMLButtonElement).disabled = true));

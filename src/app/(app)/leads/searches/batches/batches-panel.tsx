@@ -6,7 +6,6 @@ import { Time } from "@/components/shell/time";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { hasActiveSearch, searchStatusLabel, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
-import { UploadSheet, type UploadSheetConfig } from "../upload-sheet";
 import { useActiveRefresh } from "../use-active-refresh";
 
 interface Batch {
@@ -20,8 +19,9 @@ interface Batch {
   campaign: { id: string; name: string } | null;
 }
 
-interface State extends UploadSheetConfig {
+interface State {
   batches: Batch[];
+  maxRows: number;
 }
 
 export function statusSummary(statuses: Record<string, number>): string {
@@ -32,15 +32,11 @@ export function statusSummary(statuses: Record<string, number>): string {
     .join(", ");
 }
 
-export function BatchesPanel({ state, campaigns }: { state: State; campaigns: Array<{ id: string; name: string }> }) {
+export function BatchesPanel({ state }: { state: State }) {
   // Batches show "1 running" while pages arrive, so the list refreshes itself until nothing is active.
   useActiveRefresh(state.batches.some((b) => hasActiveSearch(b.statuses)));
   return (
     <>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <UploadSheet config={state} campaigns={campaigns} />
-      </div>
-
       {state.batches.length === 0 ? (
         <EmptyState
           title="No batches yet"

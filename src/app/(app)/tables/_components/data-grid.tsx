@@ -17,7 +17,7 @@ import { CellEditor, type CommitMove } from "./cell-editor";
 import { ColumnMenu, type ColumnAction } from "./column-menu";
 
 /** Divider after the last pinned column. */
-const PIN_EDGE = "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]";
+const PIN_EDGE = "shadow-[2px_0_4px_-2px_color-mix(in_oklab,var(--foreground)_20%,transparent)]";
 const ROW_H = 32;
 const HEADER_H = 36;
 const GUTTER_W = 72;
@@ -325,7 +325,26 @@ export function DataGrid(props: Props) {
     else if (plan.clipped) toast.message("Some pasted cells fell outside the loaded rows and were skipped.");
   };
 
-  // The newest rows and columns for the mouseup handler, which is registered once.
+  // A touch or pen drag keeps its pointer on the fill handle and fires no mouseenter, so it finds the row under the finger.
+  const trackFill = useCallback(() => {
+    const move = (ev: PointerEvent) => {
+      const drag = fill.current;
+      const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[role="gridcell"]');
+      if (!drag || !cell || !scroller.current?.contains(cell)) return;
+      const r = Number(/^cell-(\d+)-/.exec(cell.id)?.[1]);
+      if (Number.isInteger(r)) setFillTo(Math.max(r, drag.source.r1));
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }, []);
+
+  // The newest rows and columns for the pointerup handler, which is registered once.
   const latest = useRef({ rows, columns, onEdit, fillTo });
   useEffect(() => {
     latest.current = { rows, columns, onEdit, fillTo };
@@ -344,8 +363,9 @@ export function DataGrid(props: Props) {
       if (plan.skippedRunner > 0) toast.message(skippedCellsText(plan.skippedRunner, plan.skippedFormula));
       setRange({ anchor: { row: drag.source.r0, col: drag.source.c0 }, focus: { row: Math.min(reached, latest.current.rows.length - 1), col: drag.source.c1 } });
     };
-    window.addEventListener("mouseup", up);
-    return () => window.removeEventListener("mouseup", up);
+    // pointerup ends a mouse, touch or pen drag; the fill handle cancels the compatibility mouseup.
+    window.addEventListener("pointerup", up);
+    return () => window.removeEventListener("pointerup", up);
   }, []);
 
   const toggleOne = (index: number, shift: boolean) => onSelection(toggleRow(selection, rowIds, index, { range: shift }));
@@ -459,9 +479,10 @@ export function DataGrid(props: Props) {
                         }}
                         fillHandle={r === bounds.r1 && c === bounds.c1 && !isEditing && fillTo === null}
                         inFill={fillTo !== null && r > bounds.r1 && r <= fillTo && c >= bounds.c0 && c <= bounds.c1}
-                        onFillStart={() => {
+                        onFillStart={(pointerType) => {
                           fill.current = { source: bounds };
                           setFillTo(bounds.r1);
+                          if (pointerType !== "mouse") trackFill();
                         }}
                         onDoubleClick={() => startEdit({ row: r, col: c }, null)}
                         onCommit={(value, move) => commit({ row: r, col: c }, value, move)}
@@ -486,24 +507,43 @@ export function DataGrid(props: Props) {
   );
 }
 
+const MIN_COL_W = 60;
+const MAX_COL_W = 640;
+
+/** Drags a column's right edge, or with focus the arrow keys resize it by 10px (Shift for 50px). */
 function ResizeHandle({ label, width, onResize }: { label: string; width: number; onResize: (width: number) => void }) {
+  const clamp = (w: number) => Math.min(MAX_COL_W, Math.max(MIN_COL_W, w));
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
-      className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize hover:bg-primary/40"
+      aria-valuenow={width}
+      aria-valuemin={MIN_COL_W}
+      aria-valuemax={MAX_COL_W}
+      tabIndex={0}
+      className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none outline-none hover:bg-primary/40 focus-visible:bg-primary/40 focus-visible:ring-2 focus-visible:ring-ring"
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 50 : 10;
+        const next = e.key === "ArrowLeft" ? width - step : e.key === "ArrowRight" ? width + step : e.key === "Home" ? MIN_COL_W : e.key === "End" ? MAX_COL_W : null;
+        if (next === null) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onResize(clamp(next));
+      }}
       onPointerDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
         const startX = e.clientX;
-        const move = (ev: PointerEvent) => onResize(Math.min(640, Math.max(60, width + ev.clientX - startX)));
+        const move = (ev: PointerEvent) => onResize(clamp(width + ev.clientX - startX));
         const up = () => {
           window.removeEventListener("pointermove", move);
           window.removeEventListener("pointerup", up);
+          window.removeEventListener("pointercancel", up);
         };
         window.addEventListener("pointermove", move);
         window.addEventListener("pointerup", up);
+        window.addEventListener("pointercancel", up);
       }}
     />
   );
@@ -535,7 +575,8 @@ interface CellProps {
   fillHandle?: boolean;
   /** The cell is in the area a fill drag would write. */
   inFill?: boolean;
-  onFillStart?: () => void;
+  /** Starts a fill drag from the handle, with the pointer type that pressed it. */
+  onFillStart?: (pointerType: string) => void;
 }
 
 const GridCell = memo(function GridCell(p: CellProps) {
@@ -638,12 +679,14 @@ const GridCell = memo(function GridCell(p: CellProps) {
           role="presentation"
           data-fill-handle
           title="Drag down to copy"
-          className="absolute right-0 bottom-0 z-10 size-2.5 cursor-crosshair border border-background bg-primary"
-          onMouseDown={(e) => {
+          className="absolute right-0 bottom-0 z-10 size-2.5 cursor-crosshair touch-none border border-background bg-primary pointer-coarse:size-4"
+          onPointerDown={(e) => {
+            if (e.pointerType === "mouse" && e.button !== 0) return;
             e.stopPropagation();
             e.preventDefault();
-            p.onFillStart?.();
+            p.onFillStart?.(e.pointerType);
           }}
+          onMouseDown={(e) => e.stopPropagation()}
         />
       )}
     </div>

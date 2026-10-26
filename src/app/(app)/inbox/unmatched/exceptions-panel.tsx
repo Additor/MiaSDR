@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { callApi } from "@/app/_lib/api-client";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 
@@ -114,20 +115,23 @@ function PersonPicker({ row }: { row: Row }) {
       </form>
       {candidates && candidates.length === 0 && <p className="text-muted-foreground">Nobody matches &ldquo;{query.trim()}&rdquo;. Try an email address or a company.</p>}
       {candidates && candidates.length > 0 && (
-        <ul className="grid gap-1" aria-label="Matching people">
+        <RadioGroup
+          aria-label="Matching people"
+          className="gap-1"
+          value={chosen?.personId ?? null}
+          onValueChange={(personId) => setChosen(candidates.find((c) => c.personId === personId) ?? null)}
+        >
           {candidates.slice(0, 8).map((c) => (
-            <li key={c.personId}>
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border p-2 has-[:checked]:border-ring has-[:checked]:bg-muted/50">
-                <input type="radio" name={`person-${row.id}`} checked={chosen?.personId === c.personId} onChange={() => setChosen(c)} />
-                <span className="min-w-0 flex-1 truncate">
-                  {c.name ?? c.email}
-                  <span className="text-muted-foreground">{[c.name ? c.email : null, c.company].filter(Boolean).length ? `, ${[c.name ? c.email : null, c.company].filter(Boolean).join(", ")}` : ""}</span>
-                </span>
-                {c.lifecycle === "contact" && <Badge variant="outline">Contact</Badge>}
-              </label>
-            </li>
+            <label key={c.personId} htmlFor={`person-${row.id}-${c.personId}`} className="flex cursor-pointer items-center gap-2 rounded-lg border p-2 has-data-checked:border-ring has-data-checked:bg-muted/50">
+              <RadioGroupItem value={c.personId} id={`person-${row.id}-${c.personId}`} />
+              <span className="min-w-0 flex-1 truncate">
+                {c.name ?? c.email}
+                <span className="text-muted-foreground">{[c.name ? c.email : null, c.company].filter(Boolean).length ? `, ${[c.name ? c.email : null, c.company].filter(Boolean).join(", ")}` : ""}</span>
+              </span>
+              {c.lifecycle === "contact" && <Badge variant="outline">Contact</Badge>}
+            </label>
           ))}
-        </ul>
+        </RadioGroup>
       )}
       {error && (
         <p role="alert" className="text-destructive">

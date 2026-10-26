@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DatePicker } from "@/components/shell/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -131,7 +132,7 @@ export function DealFields({
           </div>
           <div className="grid gap-1">
             <Label htmlFor={id("close")}>Expected close (optional)</Label>
-            <Input id={id("close")} type="date" value={values.expectedCloseOn} onChange={(e) => set("expectedCloseOn", e.target.value)} className="w-fit" disabled={disabled} />
+            <DatePicker id={id("close")} value={values.expectedCloseOn} onChange={(day) => set("expectedCloseOn", day)} clearable className="w-40" disabled={disabled} />
           </div>
         </>
       )}

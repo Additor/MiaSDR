@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   MERGE_TIMEOUT,
   companyChangedText,
@@ -304,12 +305,18 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
       {picked && (
         <fieldset className="grid gap-1" data-testid="merge-keep">
           <legend className="mb-1 text-sm font-medium">Company to keep</legend>
-          {[current, picked].map((row) => (
-            <label key={row.companyId} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border p-2 text-sm has-[:checked]:border-ring has-[:checked]:bg-muted/50">
-              <input type="radio" name={`${id}-keep`} checked={keepId === row.companyId} onChange={() => setKeepId(row.companyId)} />
-              <span className="min-w-0 flex-1 break-words">{keepOptionLabel(row)}</span>
-            </label>
-          ))}
+          <RadioGroup value={keepId} onValueChange={(value) => setKeepId(value as string)} className="gap-1">
+            {[current, picked].map((row) => (
+              <Label
+                key={row.companyId}
+                htmlFor={`${id}-keep-${row.companyId}`}
+                className="min-h-11 cursor-pointer rounded-lg border p-2 leading-normal font-normal has-data-checked:border-ring has-data-checked:bg-muted/50"
+              >
+                <RadioGroupItem value={row.companyId} id={`${id}-keep-${row.companyId}`} />
+                <span className="min-w-0 flex-1 break-words">{keepOptionLabel(row)}</span>
+              </Label>
+            ))}
+          </RadioGroup>
         </fieldset>
       )}
     </ConfirmDialog>

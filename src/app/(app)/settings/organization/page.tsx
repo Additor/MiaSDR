@@ -9,6 +9,7 @@ import { isOwnerOrAdmin, parseRoles } from "@/contexts/tenancy/domain/roles";
 import { getSendPause } from "@/contexts/outreach/application/send-pause";
 import { emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";
+import { AdminNotice } from "../admin-notice";
 import { timeZoneOptions } from "../time-zone-options";
 import { OrganizationForm } from "./organization-form";
 import { SendPauseSection } from "./send-pause-section";
@@ -31,15 +32,21 @@ async function Organization() {
   const actor = toActor(ctx);
   const [org, pause] = await Promise.all([getOrganization(organizationDeps(), actor), getSendPause(emailRulesDeps(), actor)]);
   const zones = timeZoneOptions(Intl.supportedValuesOf("timeZone"), org.timeZone);
+  const canEditZone = isOwnerOrAdmin(ctx.role);
   return (
     <>
+      {!canEditZone && (
+        <div className="pb-section">
+          <AdminNotice action="change these settings" />
+        </div>
+      )}
       <OrganizationForm
         org={{ name: org.name, slug: org.slug, timeZone: org.timeZone, defaultPhoneCountry: org.defaultPhoneCountry }}
         zones={zones}
         canRename={parseRoles(ctx.role).includes("owner")}
-        canEditZone={isOwnerOrAdmin(ctx.role)}
+        canEditZone={canEditZone}
       />
-      <SendPauseSection pause={pause} canManage={isOwnerOrAdmin(ctx.role)} />
+      <SendPauseSection pause={pause} canManage={canEditZone} />
     </>
   );
 }

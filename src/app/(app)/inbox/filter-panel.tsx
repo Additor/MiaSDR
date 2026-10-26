@@ -5,6 +5,13 @@ import type { InboxFilterOptions } from "@/contexts/conversations/application/po
 import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 import { inboxHref, INBOX_CATEGORIES, type InboxParams } from "@/contexts/conversations/domain/inbox-filter";
 
+const DATE_MODES = [
+  { value: "all", label: "All time" },
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "custom", label: "Custom range" },
+];
+
 /** The filters in force as chips, each one a link that removes it. */
 export function activeFilterChips(params: InboxParams, options: InboxFilterOptions): AppliedFilter[] {
   const label = (list: Array<{ id?: string; key?: string; label: string }>, value: string) => list.find((o) => (o.id ?? o.key) === value)?.label ?? value;
@@ -51,44 +58,11 @@ export function InboxFilters({ params, options, count }: { params: InboxParams; 
       }}
     >
       <TextField label="Person name or email" name="lead" defaultValue={params.leadQuery} placeholder="Ada or ada@example.com" />
-      <SelectField label="Campaign" name="campaign" defaultValue={first(params.campaignIds)}>
-        <option value="">Any campaign</option>
-        {options.campaigns.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.label}
-          </option>
-        ))}
-      </SelectField>
-      <SelectField label="Mailbox" name="mailbox" defaultValue={first(params.mailboxIds)}>
-        <option value="">Any mailbox</option>
-        {options.mailboxes.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label}
-          </option>
-        ))}
-      </SelectField>
-      <SelectField label="Reply category" name="category" defaultValue={first(params.categoryKeys)}>
-        <option value="">Any reply category</option>
-        {INBOX_CATEGORIES.map((k) => (
-          <option key={k} value={k}>
-            {categoryLabel(k)}
-          </option>
-        ))}
-      </SelectField>
-      <SelectField label="Reply subcategory" name="subcategory" defaultValue={first(params.subcategoryKeys)}>
-        <option value="">Any reply subcategory</option>
-        {options.subcategories.map((s) => (
-          <option key={s.key} value={s.key}>
-            {s.label}
-          </option>
-        ))}
-      </SelectField>
-      <SelectField label="Last message" name="range" defaultValue={params.dateMode}>
-        <option value="all">All time</option>
-        <option value="today">Today</option>
-        <option value="yesterday">Yesterday</option>
-        <option value="custom">Custom range</option>
-      </SelectField>
+      <SelectField label="Campaign" name="campaign" defaultValue={first(params.campaignIds)} options={[{ value: "", label: "Any campaign" }, ...options.campaigns.map((c) => ({ value: c.id, label: c.label }))]} />
+      <SelectField label="Mailbox" name="mailbox" defaultValue={first(params.mailboxIds)} options={[{ value: "", label: "Any mailbox" }, ...options.mailboxes.map((m) => ({ value: m.id, label: m.label }))]} />
+      <SelectField label="Reply category" name="category" defaultValue={first(params.categoryKeys)} options={[{ value: "", label: "Any reply category" }, ...INBOX_CATEGORIES.map((k) => ({ value: k, label: categoryLabel(k) }))]} />
+      <SelectField label="Reply subcategory" name="subcategory" defaultValue={first(params.subcategoryKeys)} options={[{ value: "", label: "Any reply subcategory" }, ...options.subcategories.map((s) => ({ value: s.key, label: s.label }))]} />
+      <SelectField label="Last message" name="range" defaultValue={params.dateMode} options={DATE_MODES} />
       <DateRangeField label="Custom range" from={{ name: "from", value: params.dateFrom }} to={{ name: "to", value: params.dateTo }} />
     </FilterPopover>
   );

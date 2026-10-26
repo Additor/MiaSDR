@@ -90,8 +90,8 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
 
   async function remove(account: Account) {
     const result = await callApi(`/api/integrations/${account.id}`, "DELETE");
-    if (!result.ok) toast.error(result.error ?? "Removal failed.");
-    else toast.success("Integration removed.");
+    if (!result.ok) throw new Error(result.error ?? "Removal failed.");
+    toast.success("Integration removed.");
     router.refresh();
   }
 
@@ -161,7 +161,7 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
                 </span>
                 <div className="ml-auto">
                   {account.manageHref ? (
-                    <Button variant="outline" size="sm" nativeButton={false} render={<Link href={account.manageHref} />}>
+                    <Button variant="ghost" size="sm" nativeButton={false} render={<Link href={account.manageHref} />}>
                       Manage
                     </Button>
                   ) : (
@@ -182,8 +182,10 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
         title={`Remove ${removing?.name ?? "this key"}?`}
         description={(removing && removalEffect(removing)) ?? "Anything using this key stops working."}
         confirmLabel="Remove key"
+        cancelLabel="Keep key"
+        pendingLabel="Removing…"
         destructive
-        onConfirm={() => removing && void remove(removing)}
+        onConfirm={() => (removing ? remove(removing) : undefined)}
       />
     </div>
   );

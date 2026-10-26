@@ -8,10 +8,9 @@ import { TasksPanel, type TaskTarget } from "./tasks-panel";
 
 /**
  * Loads the tasks and the organization's members. With `recordId`, one reply record's tasks; with `personId`, every task of
- * the person, and new tasks get no record. `heading={false}` drops the panel's own title for a section that names it. Wrap
- * it in Suspense.
+ * the person, and new tasks get no record. Wrap it in Suspense.
  */
-export async function TasksSection({ actor, heading, compact, ...target }: TaskTarget & { actor: Actor; heading?: boolean; compact?: boolean }) {
+export async function TasksSection({ actor, compact, ...target }: TaskTarget & { actor: Actor; compact?: boolean }) {
   await connection();
   const deps = taskDeps();
   const scope = target.recordId !== undefined ? { recordId: target.recordId } : { personId: target.personId };
@@ -20,7 +19,6 @@ export async function TasksSection({ actor, heading, compact, ...target }: TaskT
   return (
     <TasksPanel
       {...target}
-      heading={heading}
       compact={compact}
       currentUserId={actor.userId}
       nowMs={deps.now().getTime()}

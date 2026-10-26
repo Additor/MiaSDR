@@ -14,7 +14,7 @@ function Notice({ title, description, children }: { title: string; description: 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle as="h1">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       {children && <CardFooter className="flex-col items-stretch gap-3">{children}</CardFooter>}
@@ -98,7 +98,7 @@ export function AcceptInvitation({ invitationId, view }: { invitationId: string;
       return (
         <Card>
           <CardHeader>
-            <CardTitle>Join {view.organizationName}</CardTitle>
+            <CardTitle as="h1">Join {view.organizationName}</CardTitle>
             <CardDescription>
               {view.inviterName} invited you to join {view.organizationName} as {ROLE_LABEL[view.role] ?? view.role}. You are signed in as {view.viewerEmail}. The invitation expires on{" "}
               {new Date(view.expiresAt).toLocaleDateString("en", { dateStyle: "long" })}.

@@ -10,7 +10,6 @@ import { StatusBadge } from "@/components/shell/status-badge";
 import { useOrgTimeZone } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
@@ -68,9 +67,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
   const [danger, setDanger] = useState<Danger | null>(null);
   const [runAsk, setRunAsk] = useState<{ ids: string[] | null } | null>(null);
   const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [pasted, setPasted] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
   const failed = batch.statuses.failed ?? 0;
   const due = (batch.statuses.queued ?? 0) + (batch.statuses.paused ?? 0);
   const capacityReturns = capacityReturnText(capacity.nextReturnAt, timeZone);
@@ -82,9 +79,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
   useActiveRefresh(hasActiveSearch(batch.items.map((i) => i.status)));
 
   function closeAdd() {
-    if (busy) return;
     setAdding(false);
-    setProblem(null);
     setPasted("");
   }
 
@@ -126,21 +121,15 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     else void act(item.id, action);
   }
 
+  /** Queues the pasted URLs. A failure throws, so ConfirmDialog keeps the dialog open and shows the message. */
   async function addSearches() {
-    setBusy(true);
-    setProblem(null);
     const result = await callApi<{ added: number; alreadyInBatch: number; alreadyQueued: number; duplicatesInList: number; rejectedCount: number }>(`/api/linkedin/search-batches/${batch.id}/queries`, "POST", { urls: pasted.split(/\r?\n/) });
-    setBusy(false);
-    if (!result.ok) {
-      setProblem([result.error, ...result.issues.slice(0, 5).map((i) => i.message)].filter(Boolean).join(" "));
-      return;
-    }
+    if (!result.ok) throw new Error([result.error, ...result.issues.slice(0, 5).map((i) => i.message)].filter(Boolean).join(" ") || "Could not queue the searches. Try again.");
     if (result.data) {
       const d = result.data;
       const skipped = [d.rejectedCount && `${d.rejectedCount} refused`, d.duplicatesInList && `${d.duplicatesInList} repeated`, d.alreadyInBatch && `${d.alreadyInBatch} already in the batch`, d.alreadyQueued && `${d.alreadyQueued} already queued`].filter(Boolean);
       toast.success(`${d.added.toLocaleString("en-US")} ${d.added === 1 ? "search" : "searches"} queued${skipped.length ? `, ${skipped.join(", ")}` : ""}.`);
     }
-    setAdding(false);
     setPasted("");
     setSelected(new Set());
     router.refresh();
@@ -351,31 +340,21 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
         </ul>
       </div>
 
-      <Dialog open={adding} onOpenChange={(open) => !open && closeAdd()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add searches to this batch</DialogTitle>
-            <DialogDescription>Paste one LinkedIn or Sales Navigator people search URL per line. They use this batch&apos;s result limit and campaign.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="batch-add-urls">Search URLs</Label>
-            <Textarea id="batch-add-urls" rows={6} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="https://www.linkedin.com/search/results/people/?keywords=cto" autoFocus />
-          </div>
-          {problem && (
-            <p role="alert" className="text-sm text-destructive">
-              {problem}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeAdd} disabled={busy}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={addSearches} disabled={busy || pasted.trim() === ""}>
-              {busy ? "Working…" : "Queue searches"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={adding}
+        onOpenChange={(open) => (open ? setAdding(true) : closeAdd())}
+        title="Add searches to this batch"
+        description="Paste one LinkedIn or Sales Navigator people search URL per line. They use this batch's result limit and campaign."
+        confirmLabel="Queue searches"
+        pendingLabel="Queuing searches…"
+        confirmDisabled={pasted.trim() === ""}
+        onConfirm={addSearches}
+      >
+        <div className="grid gap-2">
+          <Label htmlFor="batch-add-urls">Search URLs</Label>
+          <Textarea id="batch-add-urls" rows={6} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="https://www.linkedin.com/search/results/people/?keywords=cto" autoFocus />
+        </div>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={runAsk !== null}
@@ -393,7 +372,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
         title={dangerTitle(danger, batch.name)}
         description={dangerDescription(danger, batch.queries)}
         confirmLabel={danger?.kind === "batch" ? "Delete batch" : danger?.kind === "remove" ? "Remove searches" : danger?.kind === "cancel" ? "Stop search" : "Delete results"}
-        pendingLabel="Working…"
+        pendingLabel={danger?.kind === "batch" ? "Deleting batch…" : danger?.kind === "remove" ? "Removing searches…" : danger?.kind === "cancel" ? "Stopping search…" : "Deleting results…"}
         destructive
         onConfirm={confirmDanger}
       />
