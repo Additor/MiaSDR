@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { MAX_NAME } from "@/components/shell/editable-title";
 import { Input } from "@/components/ui/input";
-import { Field, pressConfirm } from "./form-bits";
+import { Field } from "./form-bits";
 
 interface Props {
   title: string;
@@ -35,11 +35,11 @@ export function NameDialog({ title, description, initial = "", label = "Name", s
         if (problem) throw new Error(problem);
       }}
     >
-      <form onSubmit={pressConfirm}>
+      <div>
         <Field label={label} htmlFor="name-dialog-input">
           <Input id="name-dialog-input" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={MAX_NAME} onFocus={(e) => e.currentTarget.select()} />
         </Field>
-      </form>
+      </div>
     </ConfirmDialog>
   );
 }

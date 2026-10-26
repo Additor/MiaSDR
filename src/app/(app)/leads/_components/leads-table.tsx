@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon, MoreHorizontalIcon } from "lucide-react";
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { ListPager } from "@/components/shell/list-pager";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
-import { useSelection } from "@/components/shell/selection";
+import { useBarScrollPadding, useSelection } from "@/components/shell/selection";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
@@ -406,29 +406,6 @@ export function LeadsTableView(props: {
 
 /** The delete confirm names what it deletes: "Delete lead" or "Delete 12 leads". */
 const deleteLabel = (count: number) => (count === 1 ? "Delete lead" : `Delete ${count.toLocaleString("en-US")} leads`);
-
-/**
- * While rows are ticked, the sticky bar covers the bottom of the viewport, and on a phone it wraps to two or three lines.
- * The page reserves the bar's height as scroll padding, so a row that takes focus scrolls clear of the bar (WCAG 2.4.11).
- * The document scrolls, so the padding goes on the root element, and it follows the bar as it wraps.
- */
-function useBarScrollPadding(bar: RefObject<HTMLDivElement | null>, active: boolean) {
-  useEffect(() => {
-    const element = bar.current;
-    if (!active || !element) return;
-    const root = document.documentElement;
-    const sync = () => {
-      root.style.scrollPaddingBottom = `${element.offsetHeight + 8}px`;
-    };
-    sync();
-    const observer = new ResizeObserver(sync);
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-      root.style.scrollPaddingBottom = "";
-    };
-  }, [bar, active]);
-}
 
 /** The narrow-screen stand-in for the Reach, Status and Last contact columns: one line under the name. */
 function StatusLine({ lead, now }: { lead: LeadListRow; now: string }) {

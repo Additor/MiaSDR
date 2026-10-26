@@ -24,15 +24,6 @@ export function Field({ label, htmlFor, hint, children, className }: { label: st
   );
 }
 
-/**
- * Enter in a form inside a `ConfirmDialog` presses its confirm button, the last button of the footer, so the dialog runs
- * its pending state and error line. A disabled button ignores the click.
- */
-export function pressConfirm(e: React.FormEvent<HTMLFormElement>) {
-  e.preventDefault();
-  e.currentTarget.closest('[data-slot="dialog-content"]')?.querySelector<HTMLButtonElement>('[data-slot="dialog-footer"] > button:last-of-type')?.click();
-}
-
 export function ErrorText({ children }: { children: React.ReactNode }) {
   if (!children) return null;
   return (

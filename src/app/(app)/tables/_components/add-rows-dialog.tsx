@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { parseRowCount, planSubmit } from "../_lib/edit/add-rows";
-import { ErrorText, Field, pressConfirm } from "./form-bits";
+import { ErrorText, Field } from "./form-bits";
 
 interface Props {
   /** Adds the rows and returns an error message, or null when it worked. */
@@ -47,12 +47,12 @@ export function AddRowsDialog({ onAdd, onClose }: Props) {
       confirmDisabled={!parsed.ok}
       onConfirm={submit}
     >
-      <form onSubmit={pressConfirm} className="grid gap-3">
+      <div className="grid gap-3">
         <Field label="Number of rows" htmlFor="add-rows-count">
           <Input id="add-rows-count" inputMode="numeric" value={text} onChange={(e) => setText(e.target.value)} autoFocus onFocus={(e) => e.currentTarget.select()} aria-invalid={!parsed.ok} />
         </Field>
         <ErrorText>{parsed.ok ? null : parsed.error}</ErrorText>
-      </form>
+      </div>
     </ConfirmDialog>
   );
 }
