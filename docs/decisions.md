@@ -488,12 +488,23 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 - Usage is recorded per job as input, output, cache read and cache write tokens, plus `costUsd` when the provider reports it (OpenRouter does).
 - `AI_PROVIDER=fake` gives each feature its own fake (`FakeReplyAi`, `FakeGridAi`) and calls no model. A provider SDK may be imported only inside `src/contexts/ai`; `context-dependencies.test.ts` checks it.
 
+### Reply types and type rules
+
+- A reply type (`reply_types`) belongs to one of four fixed groups: Interested, Customer, Not interested and Other. A group carries no behavior.
+- Each type holds three type rules, shown as "When the AI picks {type}": Check (`check_mode`: `before`, `after` or `skip`), Reply draft (`reply_draft`) and Follow-ups (`follow_ups`: `continue` or `stop`). A type a person adds starts at after, write one, keep going.
+- `decideReplyType` (`domain/reply-type.ts`) is the only reader of the rules. The AI apply path, a person's type change and the Change type outcome lines all call it. Fixed rules sit on top of the type's: an AI pick below the confidence floor waits for a person, a locked customer stays in its group until a person moves it, a stop request gets no draft, and follow-ups apply only to an email reply of a campaign in `ai_drafts` mode whose person is a lead.
+- Rules apply at decision time. An edit changes the picks made after it. Each pick stores the rules it used in `reply_type_picks.rules`.
+- `system_role` marks the two types that drive fixed paths, in place of their keys. `stop_request` (Asked to stop) is checked before it applies, never drafts, stops follow-ups and stays active; `reply_types_stop_request_ck` holds it. `customer` (Customer question) locks the person as a customer and stays in the customer group. A set has at most one type per role, and a type's role never changes.
+- A type change never marks the person do not contact. Contact stops only through Stop contacting.
+- Progress belongs to deal stages. A reply type has no rank, and no pick waits to protect a position. `reply_type.changed` is the event a deal can follow.
+- Out of office stops follow-ups. Pausing them until the person is back is a later decision.
+
 ### AI classification
 
 - `ai_jobs` (job `conversations.ai`) uses a lease and `SKIP LOCKED`. The tick sweeps records whose latest inbound message has no job. 3 attempts, retry delay `min(5 min, 2 s * 2^(attempts-1))`, a lease older than 5 minutes is taken over. With no AI provider configured the job releases the work without using an attempt.
 - **Untrusted text.** Email text, names, knowledge and operator instructions sit in tags with a per-request nonce. The output is closed: one active subcategory key, confidence 0 to 1, a reason up to 500 characters. Zod checks it in the adapter and the use case.
-- **Applying** (`classification-policy.ts`, deterministic). In order: hold a change away from a locked Existing customer; hold a move to a lower stage rank (`do_not_contact` exempt); hold `customer` when `customer_requires_review`, a `review_required` subcategory, or `other` when `review_other`; hold below `auto_apply_confidence` (default 0.85, `reply_handling_settings`); else auto-apply. The write locks the record and compares `context_version` and `latest_inbound_message_id`; a mismatch stores a `stale` classification and changes nothing.
-- **Stop requests.** A reply that asks to stop, or a `do_not_contact` classification, shows a banner with one button that suppresses the address. Nothing suppresses on its own.
+- **Applying** (`reply-type-pick-policy.ts` over `decideReplyType`, deterministic). In order: hold a pick that moves a locked customer out of its group; hold a type whose Check is before; hold below the confidence floor (`auto_apply_confidence`, default 0.85, `reply_handling_settings`); else auto-apply. The pick stores the hold reason and the rules it used. The write locks the record and compares `context_version` and `latest_inbound_message_id`; a mismatch stores a `stale` classification and changes nothing.
+- **Stop requests.** A reply that asks to stop, or a pick of the stop request type, shows a banner whose button opens Stop contacting, which asks how far the stop reaches. A held stop request pick reads "Review stop request". Nothing stops contact on its own.
 - **Unknown senders.** At most 50 AI replies a day for unknown senders (`channel_settings.general`, 0 blocks all). Over-cap jobs end `skipped` with reason `daily_cap`; an admin can requeue them.
 - **Failure kinds** (`payload.failureKind`): `transient` and `lease` failures are requeued by the sweep with backoff from 15 minutes (capped at 6 hours, ceiling 5); `shape` and `permanent` wait for an admin (`POST /api/jobs/ai/requeue`, `/api/jobs/ai/[id]/requeue`).
 - **Corrections.** A stage move or a person's classification takes `expectedContextVersion` (409 on mismatch), bumps the version, retires open drafts, ends runs and queues a fresh draft (`restartRecordWorkTx`). Undo reverts only the latest classification while the record still carries it.
@@ -614,7 +625,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 - Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
 - The people context imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
 - `src/composition/deals.ts` is the composition root of the conversion and the deal use cases.
-- "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-categories` and `/api/settings/replies`.
+- "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-types` and `/api/settings/replies`.
 
 #### Conversion and lock order
 
