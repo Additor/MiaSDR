@@ -17,6 +17,7 @@ import {
   type SuppressionReason,
 } from "../domain/metrics";
 import type { AnalyticsFilter, AnalyticsReadModel } from "../application/ports";
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 
 /**
  * Read-only queries over sends, enrollments, campaigns, LinkedIn details, inbound messages,
@@ -93,10 +94,7 @@ const sendCounts = (r: Row, prefix = ""): SendCounts => ({
 const stepKind = sql`((c.steps -> (s.step_number - 1)) ->> 'kind')`;
 
 export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
-  async timeZone(organizationId) {
-    const [row] = await run(sql`select values ->> 'timeZone' as zone from channel_settings where organization_id = ${organizationId}::uuid and channel = 'general'`);
-    return (row?.zone as string | null | undefined) ?? null;
-  },
+  timeZone: (organizationId) => organizationTimeZone(organizationId),
 
   async filterOptions(organizationId) {
     const campaigns = await run(sql`select id, name, channel, (archived_at is not null) as archived from campaigns where organization_id = ${organizationId}::uuid order by created_at desc`);

@@ -1,7 +1,8 @@
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { credentialCipher, envelopeVersion } from "@/contexts/integrations/infrastructure/credential-cipher";
 import { db } from "@/platform/db/client";
-import { channelSettings, drafts, integrationAccounts, integrationCredentials, linkedinAccounts, sendAttempts, sends } from "@/platform/db/schema";
+import { drafts, integrationAccounts, integrationCredentials, linkedinAccounts, sendAttempts, sends } from "@/platform/db/schema";
 import type { AccountStatusChange, LinkedInAccountStore, LinkedInCredentials, SyncStatus, WebhookStatus } from "../application/linkedin-management";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 
@@ -197,11 +198,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
   async list(organizationId, now) {
     const rows = await db.select().from(linkedinAccounts).where(eq(linkedinAccounts.organizationId, organizationId)).orderBy(asc(linkedinAccounts.createdAt));
     // An account without its own hours sends by the organization's time zone, so show and count by that too.
-    const [general] = await db
-      .select({ values: channelSettings.values })
-      .from(channelSettings)
-      .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, "general")));
-    const orgZone = typeof general?.values?.timeZone === "string" ? general.values.timeZone : "UTC";
+    const orgZone = await organizationTimeZone(organizationId);
     return Promise.all(
       rows.map(async (row) => {
         const hours = (row.workingHours as WorkingHours | null) ?? defaultWorkingHours(orgZone);

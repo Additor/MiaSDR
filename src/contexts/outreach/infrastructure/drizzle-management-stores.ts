@@ -1,8 +1,9 @@
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from "drizzle-orm";
 import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
 import { ConflictError } from "@/shared/errors";
-import { campaignEnrollments, campaigns, channelSettings, companies, entityColumns, mailboxes, people, sends } from "@/platform/db/schema";
+import { campaignEnrollments, campaigns, companies, entityColumns, mailboxes, people, sends } from "@/platform/db/schema";
 import { STEPS_EDITABLE, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type StepInput } from "../domain/campaign";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../domain/working-hours";
 import { buildVariables } from "../domain/variables";
@@ -399,11 +400,7 @@ export const drizzleMailboxStore: MailboxStore = {
       .groupBy(campaignEnrollments.mailboxId);
     const waitingBy = new Map(waiting.map((r) => [r.mailboxId, r.n]));
     // A mailbox without its own hours sends by the organization's time zone, so show and count by that too.
-    const [general] = await db
-      .select({ values: channelSettings.values })
-      .from(channelSettings)
-      .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, "general")));
-    const orgZone = typeof general?.values?.timeZone === "string" ? general.values.timeZone : "UTC";
+    const orgZone = await organizationTimeZone(organizationId);
     return Promise.all(
       rows.map(async (row): Promise<MailboxRecord> => {
         const hours = (row.workingHours as WorkingHours | null) ?? defaultWorkingHours(orgZone);

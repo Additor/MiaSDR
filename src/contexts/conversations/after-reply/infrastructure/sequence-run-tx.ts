@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { dueAfter, isTerminalSubcategory, isValidZone } from "../domain/sequences";
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
+import { dueAfter, isTerminalSubcategory } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
@@ -14,10 +15,8 @@ export const asDateOrNull = (value: Date | string | null): Date | null => (value
 
 export const rowsOf = <T>(result: unknown) => result as unknown as T[];
 
-export async function zoneOfTx(tx: Tx, organizationId: string): Promise<string> {
-  const [row] = rowsOf<{ zone: string | null }>(await tx.execute(sql`select "values"->>'timeZone' as zone from channel_settings where organization_id = ${organizationId} and channel = 'general'`));
-  return row?.zone && isValidZone(row.zone) ? row.zone : "UTC";
-}
+/** The organization's zone, read inside the run's transaction. */
+export const zoneOfTx = (tx: Tx, organizationId: string): Promise<string> => organizationTimeZone(organizationId, tx);
 
 /**
  * Drafts nobody has acted on turn `stale` with `reason`: a new inbound message, a stage move or a correction made the

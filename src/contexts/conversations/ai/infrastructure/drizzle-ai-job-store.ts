@@ -6,10 +6,10 @@ import type { AiJobStore, ClaimedJob, ClassifyContext, DraftContext, FailedAiJob
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING, AUTO_REQUEUE_MAX_SECONDS, nextAutoRequeueAt, REQUEUEABLE_SKIP_REASONS, SWEEP_KINDS, type FailureKind } from "../domain/ai-job-requeue";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "@/contexts/tenancy/domain/ai-cap";
 import { startOfLocalDay } from "@/contexts/outreach/domain/working-hours";
-import { canonicalTimeZone } from "@/shared/time-zone";
 import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } from "../../infrastructure/thread-context";
 import { publicConversation, publicConversationText } from "@/platform/db/conversation-visibility";
 import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { settlesAfterAiCategory } from "../../domain/workflow-state";
 
 interface JobRow {
@@ -254,7 +254,7 @@ export const drizzleAiJobStore: AiJobStore = {
     if ((own?.payload as { humanInitiated?: boolean } | null)?.humanInitiated) return false;
     const [general] = await db.execute(sql`select "values" as v from channel_settings where organization_id = ${job.organizationId} and channel = 'general'`) as unknown as Array<{ v: Record<string, unknown> }>;
     const cap = readUnknownSenderAiCap(general?.v?.[UNKNOWN_SENDER_AI_CAP_KEY]);
-    const zone = (typeof general?.v?.timeZone === "string" ? canonicalTimeZone(general.v.timeZone) : null) ?? "UTC";
+    const zone = await organizationTimeZone(job.organizationId);
     const dayStart = startOfLocalDay(now, zone);
     // The cap counts replies, not jobs: a message's classification and its draft use one place. Jobs rank by
     // (started_at, id), so a concurrent pair sees each other in a fixed order and no lock is needed. Skipped jobs

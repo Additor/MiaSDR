@@ -37,6 +37,7 @@ export const drizzleSetupStore: InstanceSetupStore = {
           name: instance.organizationName,
           slug: instance.organizationSlug,
           metadata: JSON.stringify({ initial: true }),
+          ...(instance.timeZone ? { timezone: instance.timeZone } : {}),
         })
         .returning({ id: organizations.id });
       await tx.insert(members).values({ organizationId: organization.id, userId: user.id, role: "owner" });
