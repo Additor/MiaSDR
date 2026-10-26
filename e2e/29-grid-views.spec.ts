@@ -4,7 +4,7 @@ import { seedGrid } from "./support/grid-seed";
 import type { Locator, Page } from "@playwright/test";
 
 /**
- * The filter and sort panel and the partial run controls (first N rows, one cell). GRID_PROVIDER=fake and
+ * The Filter and Sort popovers and the partial run controls (first N rows, one cell). GRID_PROVIDER=fake and
  * AI_PROVIDER=fake come from e2e/run.mjs.
  */
 
@@ -13,14 +13,15 @@ async function choose(page: Page, scope: Locator, label: string, option: string 
   await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
 }
 
-const openPanel = async (page: Page) => {
-  await page.getByRole("button", { name: /^Filter and sort/ }).click();
-  const panel = page.getByRole("dialog", { name: "Filter and sort" });
-  await expect(panel).toBeVisible();
-  return panel;
+/** Opens the table's Filter or Sort popover and returns it. */
+const openPopover = async (page: Page, name: "Filter" | "Sort" = "Filter") => {
+  await page.getByTestId(name === "Filter" ? "table-filter" : "table-sort").click();
+  const popover = page.getByRole("dialog", { name });
+  await expect(popover).toBeVisible();
+  return popover;
 };
 
-test.describe("filter and sort panel", () => {
+test.describe("Filter and Sort popovers", () => {
   test("filters with a condition, a muted condition and a nested group, and sorts by two columns", async ({ page }) => {
     await signInAdmin(page);
     const seeded = await seedGrid(page.request, { rows: 120, name: "S29 filter panel" });
@@ -36,28 +37,28 @@ test.describe("filter and sort panel", () => {
     await expect(page.getByText("120 rows", { exact: true })).toBeVisible();
 
     // One condition: Score greater than 100 leaves rows 101 to 120.
-    let panel = await openPanel(page);
+    let panel = await openPopover(page);
     await panel.getByRole("button", { name: "Add condition", exact: true }).click();
     await choose(page, panel, "Condition 1 column", "Score (Number)");
     await choose(page, panel, "Condition 1 operator", "greater than");
     await panel.getByLabel("Condition 1 value").fill("100");
-    await panel.getByRole("button", { name: "Apply" }).click();
+    await panel.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(panel).toBeHidden();
     await expect(page.getByText("20 rows of 120", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Filter and sort (1 filter)" })).toBeVisible();
+    await expect(page.getByTestId("table-filter")).toHaveText(/^Filter\s*1 in use$/);
 
     // Muting keeps the condition and stops it filtering. The toolbar no longer counts it.
-    panel = await openPanel(page);
+    panel = await openPopover(page);
     await panel.getByRole("button", { name: "Mute condition 1" }).click();
-    await panel.getByRole("button", { name: "Apply" }).click();
+    await panel.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page.getByText("120 rows", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Filter and sort", exact: true })).toBeVisible();
-    await expect(page.getByLabel("Active filters and sorts").getByText(/\(muted\)/)).toBeVisible();
+    await expect(page.getByTestId("table-filter")).toHaveText(/^Filter$/);
+    await expect(page.getByRole("group", { name: "Applied filters" }).getByText(/\(muted\)/)).toBeVisible();
     const stored = (await gridPage(page.request, seeded.tableId)).view as { filters?: { conditions: Array<{ disabled?: boolean }> } };
     expect(stored.filters?.conditions[0].disabled).toBe(true);
 
     // Unmute, then build: Score at most 2, or a group of (Score at least 100 and Name contains "Person 11").
-    panel = await openPanel(page);
+    panel = await openPopover(page);
     await panel.getByRole("button", { name: "Unmute condition 1" }).click();
     await choose(page, panel, "Condition 1 operator", "at most");
     await panel.getByLabel("Condition 1 value").fill("2");
@@ -71,67 +72,75 @@ test.describe("filter and sort panel", () => {
     await group.getByLabel("Condition 2.2 value").fill("Person 11");
     await group.getByRole("button", { name: "all", exact: true }).click();
     await panel.getByRole("group", { name: "Conditions", exact: true }).getByRole("button", { name: "any", exact: true }).first().click();
-    await panel.getByRole("button", { name: "Apply" }).click();
+    await panel.getByRole("button", { name: "Apply", exact: true }).click();
     // Rows 1 and 2, plus 110 to 119 (Score at least 100 and a name starting "Person 11").
     await expect(page.getByText("12 rows of 120", { exact: true })).toBeVisible();
 
-    panel = await openPanel(page);
-    await panel.getByRole("button", { name: "Clear all" }).click();
+    // Reset empties the draft; Apply saves the empty filter.
+    panel = await openPopover(page);
+    await panel.getByRole("button", { name: "Reset" }).click();
+    await panel.getByRole("button", { name: "Apply", exact: true }).click();
+    await expect(panel).toBeHidden();
+    await expect(page.getByText("120 rows", { exact: true })).toBeVisible();
+
+    panel = await openPopover(page, "Sort");
     await panel.getByRole("button", { name: "Add sort" }).click();
     await choose(page, panel, "Sort 1 column", "회사");
     await panel.getByRole("button", { name: "Add sort" }).click();
     await choose(page, panel, "Sort 2 column", "Score");
     await choose(page, panel, "Sort 2 direction", /Z to A/);
-    await panel.getByRole("button", { name: "Apply" }).click();
+    await panel.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page.getByText("120 rows", { exact: true })).toBeVisible();
     await expect(page.getByRole("gridcell", { name: "Name: Person 113", exact: true })).toBeVisible();
     const first = (await gridPage(page.request, seeded.tableId)).rows[0].cells;
     expect(first[seeded.keys.Name]).toBe("Person 113");
 
     // Move the Score sort to the top: the highest score overall comes first, which is another row than before.
-    panel = await openPanel(page);
+    panel = await openPopover(page, "Sort");
     await panel.getByRole("button", { name: "Move sort 2 up" }).click();
-    await panel.getByRole("button", { name: "Apply" }).click();
+    await panel.getByRole("button", { name: "Apply", exact: true }).click();
     await expect.poll(async () => ((await gridPage(page.request, seeded.tableId)).view as { sorts?: Array<{ columnKey: string }> }).sorts?.[0].columnKey).toBe(seeded.keys.Score);
     await expect.poll(async () => (await gridPage(page.request, seeded.tableId)).rows[0].cells[seeded.keys.Name]).toBe("Person 120");
     await expect(page.getByRole("gridcell", { name: "Name: Person 120", exact: true })).toBeVisible();
 
-    // The panel keeps its place after a reload: the member's own view is stored.
+    // The sorts stay after a reload: the member's own view is stored.
     await page.reload();
-    await expect(page.getByRole("button", { name: "Filter and sort (2 sorts)" })).toBeVisible();
+    await expect(page.getByTestId("table-sort")).toHaveText(/^Sort\s*2 in use$/);
+    await expect(page.getByRole("button", { name: "Remove filter Sort: Score Z to A" })).toBeVisible();
   });
 
-  test("a validation message keeps the panel open", async ({ page }) => {
+  test("a validation message keeps the popover open, and Escape throws the draft away", async ({ page }) => {
     await signInAdmin(page);
     const seeded = await seedGrid(page.request, { rows: 5, name: "S29 filter validation" });
     await page.goto(`/tables/${seeded.workbookId}`);
-    const panel = await openPanel(page);
+    const panel = await openPopover(page);
     await panel.getByRole("button", { name: "Add condition", exact: true }).click();
     await choose(page, panel, "Condition 1 column", "Score (Number)");
     await panel.getByLabel("Condition 1 value").fill("abc");
-    await panel.getByRole("button", { name: "Apply" }).click();
+    await panel.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(panel.getByRole("alert")).toContainText("is not a number");
     await expect(panel).toBeVisible();
-    await panel.getByRole("button", { name: "Cancel" }).click();
+    await page.keyboard.press("Escape");
     await expect(panel).toBeHidden();
+    await expect(page.getByRole("group", { name: "Applied filters" })).toHaveCount(0);
   });
 
   test.describe("at 390x844", () => {
     test.use(MOBILE_DARK);
 
-    test("the panel fits the phone and applies", async ({ page }) => {
+    test("the popover fits the phone and applies", async ({ page }) => {
       await signInAdmin(page);
       const seeded = await seedGrid(page.request, { rows: 30, name: "S29 filter phone" });
       await page.goto(`/tables/${seeded.workbookId}`);
       await expect(page.getByText("30 rows", { exact: true })).toBeVisible();
-      const panel = await openPanel(page);
+      const panel = await openPopover(page);
       await panel.getByRole("button", { name: "Add condition", exact: true }).click();
       await choose(page, panel, "Condition 1 column", "Score (Number)");
       await choose(page, panel, "Condition 1 operator", "greater than");
       await panel.getByLabel("Condition 1 value").fill("25");
       await expectNoHorizontalOverflow(page);
-      await panel.getByRole("button", { name: "Apply" }).scrollIntoViewIfNeeded();
-      await panel.getByRole("button", { name: "Apply" }).click();
+      await panel.getByRole("button", { name: "Apply", exact: true }).scrollIntoViewIfNeeded();
+      await panel.getByRole("button", { name: "Apply", exact: true }).click();
       await expect(page.getByText("5 rows of 30", { exact: true })).toBeVisible();
     });
   });

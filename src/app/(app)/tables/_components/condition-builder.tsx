@@ -1,32 +1,22 @@
 "use client";
 
-import { ArrowDownIcon, ArrowUpIcon, EyeOffIcon, EyeIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { EyeOffIcon, EyeIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
-import { isFilterGroup, MAX_SORTS, MAX_VIEW_CONDITIONS, MAX_VIEW_DEPTH, validateView, type FilterCondition, type FilterGroup, type SortSpec, type TableView } from "@/contexts/grid/domain/view-query";
+import { isFilterGroup, MAX_VIEW_CONDITIONS, MAX_VIEW_DEPTH, type FilterCondition, type FilterGroup } from "@/contexts/grid/domain/view-query";
 import {
   addCondition,
   addGroup,
-  addSort,
   canAddGroup,
   canAddCondition,
-  canAddSort,
   defaultOperatorFor,
-  emptyGroup,
-  moveSort,
-  nextSortColumn,
-  normalizeFilters,
   operatorAfterColumnChange,
   operatorsFor,
   RUN_FILLED_TYPES,
   removeNode,
-  removeSortAt,
   setGroupConjunction,
-  setSortColumn,
-  setSortDirection,
   toggleMuted,
   updateCondition,
   type NodePath,
@@ -34,140 +24,23 @@ import {
 import { typeLabel } from "../_lib/view/format";
 import type { GridColumn } from "../_lib/data/types";
 import { OPERATOR_LABELS, operatorNeedsValue } from "../_lib/view/view";
-import { Choice, ErrorText } from "./form-bits";
-
-interface Props {
-  columns: GridColumn[];
-  view: TableView;
-  /** Saves the whole view and resolves true when it was stored. */
-  saveView: (view: TableView) => Promise<boolean>;
-  onClose: () => void;
-}
+import { Choice } from "./form-bits";
 
 /**
- * The filter and sort panel. It edits a draft and saves once with Apply, so a half-typed value never reaches
- * the server and one Apply is one view write. A muted condition stays in the view and filters nothing.
+ * The conditions of a view as an editable tree: column, operator, value, mute and remove per condition, groups nested up
+ * to the view's depth, and Match all or any where a group holds more than one. It edits the draft it is given.
  */
-export function FilterPanel({ columns, view, saveView, onClose }: Props) {
-  const [filters, setFilters] = useState<FilterGroup>(() => view.filters ?? emptyGroup());
-  const [sorts, setSorts] = useState<SortSpec[]>(() => [...(view.sorts ?? [])]);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
+export function ConditionBuilder({ columns, filters, onChange }: { columns: GridColumn[]; filters: FilterGroup; onChange: (next: FilterGroup) => void }) {
   const types = useMemo(() => new Map(columns.map((c) => [c.key, effectiveColumnType(c)] as const)), [columns]);
-  const known = useMemo(() => new Set(columns.map((c) => c.key)), [columns]);
   const firstColumn = columns[0];
-
+  if (!firstColumn) return <p className="text-sm text-muted-foreground">This table has no columns yet.</p>;
   const newCondition = (): FilterCondition => ({ columnKey: firstColumn.key, operator: defaultOperatorFor(types.get(firstColumn.key) ?? "text"), value: "" });
-  const mutedCount = countMuted(filters);
-
-  async function apply() {
-    const next: TableView = { ...view, filters: normalizeFilters(filters), sorts };
-    const problem = validateView({ filters: next.filters, sorts }, known, types);
-    if (problem) return setError(problem);
-    setBusy(true);
-    setError(null);
-    const saved = await saveView(next);
-    setBusy(false);
-    if (saved) onClose();
-    else setError("Could not save the view. Try again.");
-  }
-
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Filter and sort</DialogTitle>
-          <DialogDescription>Rows must match the conditions below. Mute a condition to keep it without applying it. Changes take effect when you press Apply.</DialogDescription>
-        </DialogHeader>
-
-        <section aria-label="Filters" className="grid gap-2">
-          <h3 className="text-sm font-medium">Filters{mutedCount > 0 ? ` (${mutedCount} muted)` : ""}</h3>
-          {firstColumn ? (
-            <>
-              <GroupEditor group={filters} path={[]} columns={columns} types={types} root={filters} onChange={setFilters} newCondition={newCondition} />
-              {filters.conditions.length === 0 && <p className="text-xs text-muted-foreground">No conditions, so every row shows.</p>}
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">This table has no columns yet.</p>
-          )}
-        </section>
-
-        <section aria-label="Sorts" className="grid gap-2">
-          <h3 className="text-sm font-medium">Sorts</h3>
-          <p className="text-xs text-muted-foreground">The first sort comes first. Rows with an empty cell go last in both directions. Up to {MAX_SORTS} sorts.</p>
-          {sorts.map((s, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-1.5" role="group" aria-label={`Sort ${i + 1}`}>
-              <span className="w-12 text-xs text-muted-foreground">{i === 0 ? "Sort by" : "then by"}</span>
-              <div className="min-w-36 flex-1">
-                <Choice label={`Sort ${i + 1} column`} value={s.columnKey} items={columns.map((c) => ({ value: c.key, label: c.name }))} onChange={(key) => setSorts(setSortColumn(sorts, i, key))} />
-              </div>
-              <div className="w-36">
-                <Choice
-                  label={`Sort ${i + 1} direction`}
-                  value={s.direction}
-                  items={[
-                    { value: "asc", label: "A to Z, low to high" },
-                    { value: "desc", label: "Z to A, high to low" },
-                  ]}
-                  onChange={(d) => setSorts(setSortDirection(sorts, i, d === "desc" ? "desc" : "asc"))}
-                />
-              </div>
-              <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move sort ${i + 1} up`} disabled={i === 0} onClick={() => setSorts(moveSort(sorts, i, -1))}>
-                <ArrowUpIcon />
-              </Button>
-              <Button type="button" size="icon-sm" variant="ghost" aria-label={`Move sort ${i + 1} down`} disabled={i === sorts.length - 1} onClick={() => setSorts(moveSort(sorts, i, 1))}>
-                <ArrowDownIcon />
-              </Button>
-              <Button type="button" size="icon-sm" variant="ghost" aria-label={`Remove sort ${i + 1}`} onClick={() => setSorts(removeSortAt(sorts, i))}>
-                <Trash2Icon />
-              </Button>
-            </div>
-          ))}
-          <div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!canAddSort(sorts) || nextSortColumn(sorts, columns.map((c) => c.key)) === null}
-              title={!canAddSort(sorts) ? `Up to ${MAX_SORTS} sorts` : nextSortColumn(sorts, columns.map((c) => c.key)) === null ? "Every column is already sorted" : undefined}
-              onClick={() => {
-                const key = nextSortColumn(sorts, columns.map((c) => c.key));
-                if (key) setSorts(addSort(sorts, key));
-              }}
-            >
-              <PlusIcon /> Add sort
-            </Button>
-          </div>
-        </section>
-
-        <ErrorText>{error}</ErrorText>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setFilters(emptyGroup());
-              setSorts([]);
-              setError(null);
-            }}
-          >
-            Clear all
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={() => void apply()} disabled={busy}>
-            {busy ? "Applying..." : "Apply"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <GroupEditor group={filters} path={[]} columns={columns} types={types} root={filters} onChange={onChange} newCondition={newCondition} />
+      {filters.conditions.length === 0 && <p className="text-sm text-muted-foreground">No conditions, so every row shows.</p>}
+    </>
   );
-}
-
-function countMuted(group: FilterGroup): number {
-  return group.conditions.reduce((n, c) => n + (isFilterGroup(c) ? countMuted(c) : c.disabled ? 1 : 0), 0);
 }
 
 interface GroupProps {
