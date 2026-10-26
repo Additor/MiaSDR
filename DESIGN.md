@@ -165,7 +165,7 @@ Every Settings form builds from the same parts, so a person learns one way to ch
 - **Add and edit.** A list of things (subcategories, knowledge documents) leads the page. Add sits on the block's heading row as an outline button, and Add and Edit open the same `ConfirmDialog` with the form in its body and Save as the confirm. A list whose items are only a name (custom fields, pipeline stages) adds in place instead: a Name field and an Add button after the list, Add off while the name is empty, no Save row. A short single-value change (a field or stage name) edits in place: Enter saves, Escape cancels, Save stays off while the name is unchanged.
 - **Empty and archived.** An empty list inside a block is an `EmptyState` with its title only; an empty group under a category h3 keeps a muted line. An archived item keeps full-strength text and says its state with an Archived badge, never with opacity.
 - **Row actions.** Ghost `sm` buttons at the end of the row (Edit, Recheck, Requeue, Retry, Manage, Reconnect); the destructive step is the dialog's red confirm, never a red button in the row. Reordering uses `ReorderButtons` (arrow icons, "Move {name} up").
-- **Pickers.** A long list is a searchable `Combobox` (`TimeZoneSelect`, `CountrySelect`); a short fixed list is a `Select`. Sending days are a `ToggleGroup` of outline buttons (`WorkingHoursFields`, shared by mailboxes and LinkedIn accounts), and a choice between two modes with an explanation is a `RadioGroup` of horizontal fields.
+- **Pickers.** A long list is a searchable `Combobox` (`TimeZoneSelect`, `CountrySelect`); a short fixed list is a `Select`. `WorkingHoursFields`, shared by mailboxes and LinkedIn accounts, sets the sending days with a `ToggleGroup` of outline buttons and the window with two `TimeSelect`s, From and Until. A choice between two modes with an explanation is a `RadioGroup` of horizontal fields. See Pickers.
 
 ### Inbox thread
 
@@ -195,6 +195,7 @@ A workbook (`src/app/(app)/tables`) is a spreadsheet and the densest surface in 
 - **Names.** On the workbook page, the workbook name and each table tab rename in place. The title is an `EditableTitle` (`PageHeader`'s `rename`): hover or focus shows a muted ground and a pencil, a click, Enter or F2 opens the field, Enter or leaving it saves and Escape cancels. A tab opens the same field on a double-click, F2 or Rename in its menu, and a new table opens with its tab in rename under the default name. No dialog names a table or renames a workbook there. The tables browser is a list of many workbooks and folders, so its row menu renames one through a name dialog. The header's actions area holds one ghost More menu with Move to folder and Delete workbook.
 - **Tabs.** The strip is a `ScrollCue` without a hint line, with New table after it. The open tab shows its More menu; the others show it on hover or focus, and a touch screen offers it on the open tab only. On a phone the tabs, the menus and New table are 44px tall. The table stacks its toolbar, the filter and sort chips, the selection bar and the grid at `gap-2` inside `p-3`, tighter than the page roles, because the grid needs the room.
 
+- **Editors.** A cell edits in place. A select column opens the app's `Select` on the cell: a pick commits, and Escape, Tab or a click outside discards. A date column types yyyy-MM-dd in the cell with a `Calendar` under it; a click on a day commits it, and the keys stay those of a text cell.
 - **Grid.** `DataGrid` is one `role="grid"` scroll container with a hairline border and rounded-lg. Rows are 32px and the header 36px on a muted band. A 72px gutter holds the row checkbox and number. Cells are text-sm. The header names the column at text-xs medium, with the type and the fill rate in 10px muted text. Numbers and currency align right in tabular numerals. Formula columns and columns a run fills are read-only and sit on a `bg-muted/30` tint. Pinned columns stay on the left behind a shadow edge; at phone width the grid ignores pins. The grid renders the rows in view and loads more near the end.
 - **Toolbar.** Two groups. On the left, what you see: search, Filter, Sort, Columns and the row count. On the right, what you do, in the order the work goes and ending on the one filled button: Undo and Redo (ghost, left out on a phone, where the grid's keys do the work), Add (columns, then rows and Import file), Push to campaign paired with an Export CSV icon button (the two ways rows leave the table), Enrich, then Run. Enrich is a menu of the four outcomes, Ask AI about each row and All enrichments; it is filled until the table has a column that runs, and then Run takes the fill and stays last, so the filled button never moves inside the row. Push and Export, and Run with its options chevron, are `ButtonGroup`s; "Auto-run on" shows in Run's chevron while the table auto-runs. On a phone the left group takes the first line and the right group's secondary buttons show their icons; counts stay visible.
 - **Enrichment start.** A table with rows and no running column shows one hairline-ruled line of text-xs under the toolbar: "Enrich these rows:", the four outcomes and Ask AI about each row as underlined links into the same choices as the Enrich menu, and "Nothing runs or spends until you press Run". It has no box and no buttons, so the toolbar keeps the one filled button. It goes once a column runs.
@@ -259,6 +260,8 @@ The app layout and many pages share these parts from `src/components/shell`:
 | `EditableTitle`, `NameInput` | A name you rename where you read it: a page title through `PageHeader`'s `rename`, or a tab that swaps in `NameInput`. Enter or leaving the field saves, Escape cancels, an empty name on Enter says "Give it a name.", and a refused save keeps your text with the reason floating under the field. |
 | `ReachFlag` | A neutral badge for Do not contact or Email suppressed where a send is blocked. The sentence that explains why stays red. |
 | `ErrorWithLinks` | A stored error text that names the inbound events page; it turns that path into a link. |
+| `DatePicker` | One calendar day, as yyyy-MM-dd. See Pickers. |
+| `TimeSelect` | A time of day on the half hour. See Pickers. |
 | `Time` | Every timestamp: a `time` element in the organization's time zone with the UTC original in the tooltip, `dateOnly` for dates, and `relativeTo` with the server's `now` for "5 min ago". Outside JSX, use `formatDateTime` from `@/shared/format-time`. |
 
 ### List parts
@@ -270,7 +273,7 @@ Every list page builds from the same parts in `src/components/shell`:
 | `ListToolbar` | The one row between the header and the list: chips, search and the Filters button on the left, list options (Columns, Export, the keyboard mark, a side count) on the right. |
 | `ToolbarPopover` | The popover behind a toolbar button that edits a draft: Filters on a list with two or more filter fields (Leads, Contacts, Inbox, Actions, Analytics), Filter and Sort on a table. The trigger is an outline button with an icon, a label and a count; the popup holds a scrolling body and a footer with Reset and Apply. See Filters and sorts. |
 | `FilterPopover` | `ToolbarPopover` for a list's GET form. Its fields stay mounted inside the form while it is closed, so Enter in the search keeps the filters in force. |
-| `FilterSection`, `FilterRow`, `SelectField`, `TristateField`, `DateRangeField` | The fields of a Filters popover: a ruled section title, a row with the label on the left and the control on the right (stacked on a phone), a native select, an Any, Yes and No segment, and a from and to pair on one row. |
+| `FilterSection`, `FilterRow`, `SelectField`, `TristateField`, `DateRangeField` | The fields of a Filters popover: a ruled section title, a row with the label on the left and the control on the right (stacked on a phone), the app's `Select` posted under a `name`, an Any, Yes and No segment, and a from and to pair of `DatePicker`s on one row. |
 | `AppliedFilters`, `FilterChip` | The filters and sorts in force as removable chips under the toolbar, with the one Clear filters at the end. A chip is a link on a list and a button on a table; a muted table condition reads struck through. |
 | `InfoTip` | Help on demand: an info mark beside a heading whose name needs explaining, the text in a tooltip on hover and keyboard focus, in a popover on a tap on a touch screen, and in screen-reader text. Use it in place of a muted description line. |
 | `SearchField` | The search box: icon inside the field, Enter submits the GET form, a screen-reader Search button. No Apply button beside it. |
@@ -296,6 +299,28 @@ A table splits Filter and Sort into two popovers with the same anatomy: the trig
 The popup uses the menu surface (`bg-popover`, `shadow-md`, the foreground ring) and opens under its trigger at 30rem (`fields`) or 40rem (`builder`, a table's conditions and sorts). The body scrolls inside the available height and the footer stays in view. On a phone the same popup sits at the bottom edge at full width, and its controls are 44px tall. Opening focuses the first control; closing returns focus to the trigger. A failed Apply keeps the popover open with the reason above the footer.
 
 The words are Filters, Filter, Sort, Reset, Apply and Clear filters.
+
+### Pickers
+
+Every choice in the app goes through one of these parts. The app has no native `select`, date or time control: each browser draws those its own way, in its own language, and outside the tokens and the dark theme.
+
+| Part | Use it for |
+|---|---|
+| `Select` (`src/components/ui/select.tsx`) | One value from a short fixed list: a currency, a member, a stage, a column type. The trigger shows the label of the value. |
+| `Combobox` (`src/components/ui/combobox.tsx`) | One value from a long list you search by typing: `TimeZoneSelect`, `CountrySelect`, the AI model, Change category. |
+| `SelectField` | A `Select` in a Filters row. The first option is the one Reset picks, and an empty value (Any, All) posts an empty param. A value the options do not hold shows the first option. |
+| `DatePicker` (`src/components/shell/date-picker.tsx`) | One calendar day: a task's due date, a deal's expected close. The outline trigger has the Select trigger's height, radius, border and focus ring, shows the day or a muted placeholder, and puts a calendar icon where the Select has its chevron. shadcn's `Calendar` opens in a popover on the menu surface. `clearable` adds Clear under the calendar for an optional day. |
+| `DateRangeField` | A from and to pair on one row of a Filters popover: two clearable `DatePicker`s, "{label} from" and "{label} to". |
+| `TimeSelect` (`src/components/shell/time-select.tsx`) | A time of day as HH:mm: a `Select` every 30 minutes from 00:00 to 23:30. `endOfDay` adds 23:59 for the end of a window. A saved time off the step shows in its place, so a save sends it unchanged. |
+| `ToggleGroup` | Several on or off choices side by side: the Send on days of working hours. |
+| `RadioGroup` | One choice between modes that each need a sentence: Organization hours or Custom hours, After a reply, the rows a run takes. |
+
+- **Dates.** A day reads and writes as yyyy-MM-dd, the format of `formatDate` and `<Time dateOnly>`. The value is a calendar date with no time zone: "2026-03-08" stays March 8 in every browser. Weeks start on Monday, as the Send on days do.
+- **Keyboard.** Enter, Space or ArrowDown on a trigger opens the popup. In the calendar the arrows move by day, Page Up and Page Down by month and with Shift by year; Enter picks and closes, and Escape closes and returns focus to the trigger.
+- **Forms.** A part with a `name` posts a hidden input, so a GET filter form or a POST form sends the same params a native control did. In a Filters popover the pickers follow the draft: Reset sets them to the first option or no day, and a discard puts back the value in force.
+- **Phone.** Below `sm`, triggers, options and calendar days are 44px tall, and the calendar popover fits a 390px screen.
+- **Quick choices first.** Where a few days cover most picks, buttons come before the calendar. Due offers Today, Tomorrow and Next week, and Pick a date shows a `DatePicker` with its calendar open.
+- **Exception.** Add field on a person's Details suggests field names through an Input with a `datalist`. It takes a new field name as typed text, and the list only suggests.
 
 ### Dialogs
 
