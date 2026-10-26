@@ -16,8 +16,8 @@ import { cn } from "@/components/ui/utils";
 import { DNC_REASON_REQUIRED } from "@/app/(app)/_components/person/dnc-control";
 import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import { dayFromToday, DueField, useBrowserZone } from "@/app/(app)/_components/person/tasks-panel";
-import { saveDraftEdits } from "../draft-edits";
-import type { NextInQueue } from "../next-queue";
+import { saveDraftEdits } from "../_lib/draft-edits";
+import type { NextInQueue } from "../_lib/next-queue";
 import { ChangeCategoryButton, type AiReading, type StageOption } from "./change-category-button";
 
 const OPEN_STOP_EVENT = "miasdr:open-stop-contacting";

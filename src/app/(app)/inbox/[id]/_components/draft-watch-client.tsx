@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { DRAFT_POLL_INTERVAL_MS, initialWatch, isWatching, observe, type WatchSnapshot } from "./draft-watch";
+import { DRAFT_POLL_INTERVAL_MS, initialWatch, isWatching, observe, type WatchSnapshot } from "../_lib/draft-watch";
 
 /**
  * Shows "Drafting a reply..." and refreshes the server data every 3 s (up to 45 s) after a reclassification,

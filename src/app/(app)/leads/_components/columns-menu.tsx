@@ -4,7 +4,7 @@ import { Columns3Icon } from "lucide-react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { columnsCookie, COLUMN_LABELS, OPTIONAL_COLUMNS, toggleColumn, type OptionalColumn } from "./list-columns";
+import { columnsCookie, COLUMN_LABELS, OPTIONAL_COLUMNS, toggleColumn, type OptionalColumn } from "../_lib/list-columns";
 
 const ColumnsContext = createContext<{ columns: OptionalColumn[]; change: (next: OptionalColumn[]) => void } | null>(null);
 

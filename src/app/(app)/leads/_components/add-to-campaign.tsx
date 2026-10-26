@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
 import { callApi } from "@/app/_lib/api-client";
-import { addCounts, type EnrollCounts as Counts, skipReasons, ZERO_COUNTS } from "./enroll-counts";
+import { addCounts, type EnrollCounts as Counts, skipReasons, ZERO_COUNTS } from "../_lib/enroll-counts";
 
 interface CampaignOption {
   id: string;

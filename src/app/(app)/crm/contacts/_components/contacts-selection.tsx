@@ -4,7 +4,7 @@ import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 import { useSelection } from "@/components/shell/selection";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TableRow } from "@/components/ui/table";
-import { clearsSelectionOnKey } from "../../../leads/bulk-actions";
+import { clearsSelectionOnKey } from "@/app/(app)/leads/_lib/bulk-actions";
 
 /*
  * The selection pieces of the Contacts table. The page renders the table on the server and these read and write the

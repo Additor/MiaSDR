@@ -1,7 +1,7 @@
 import { getReplyPanel } from "@/contexts/conversations/application/reply-management";
 import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
 import type { Actor } from "@/shared/errors";
-import { loadNextInQueue } from "./next-queue";
+import { loadNextInQueue } from "../_lib/next-queue";
 import { ReplyPanelClient } from "./reply-panel-client";
 
 /**

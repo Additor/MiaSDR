@@ -5,7 +5,7 @@ import { listInbox } from "@/contexts/conversations/application/inbox";
 import { inboxHref, type InboxParams } from "@/contexts/conversations/domain/inbox-filter";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import type { Actor } from "@/shared/errors";
-import { pickNextUnread } from "./next-unread";
+import { pickNextUnread } from "../_lib/next-unread";
 import { QueueKeys } from "./queue-keys";
 
 /**

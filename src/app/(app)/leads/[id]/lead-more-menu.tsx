@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { deleteConfirmation, type DeleteQualification } from "@/contexts/people/application/lead-delete-check";
 import { callApi } from "@/app/_lib/api-client";
-import { AddLeadToCampaign } from "../add-to-campaign";
+import { AddLeadToCampaign } from "../_components/add-to-campaign";
 import { MakeContactDialog } from "./make-contact-dialog";
 
 /**

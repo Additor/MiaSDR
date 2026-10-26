@@ -4,7 +4,7 @@ import type { QueueItem } from "@/contexts/conversations/actions/application/wor
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { ValidationError, type Actor } from "@/shared/errors";
 import { personHref } from "@/app/(app)/_components/person/person-href";
-import { threadQueryFromActions } from "../../actions/actions-query";
+import { threadQueryFromActions } from "@/app/(app)/actions/actions-query";
 
 export interface NextInQueue {
   /** Where the next item opens, carrying the view so the step after it works the same way. */

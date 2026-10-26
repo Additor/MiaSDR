@@ -17,7 +17,7 @@ import { readLeadActivity } from "@/contexts/outreach/application/read-lead-acti
 import { leadActivityDeps, crossCampaignNotices } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
-import { AddLeadToCampaign } from "../add-to-campaign";
+import { AddLeadToCampaign } from "../_components/add-to-campaign";
 import { CampaignsTable } from "@/app/(app)/_components/person/campaigns-table";
 import { SendHistoryTable } from "@/app/(app)/_components/person/send-history-table";
 import { LeadNav } from "./lead-header";

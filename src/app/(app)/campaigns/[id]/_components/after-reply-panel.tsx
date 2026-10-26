@@ -6,7 +6,7 @@ import type { AfterReplyView } from "@/contexts/conversations/after-reply/applic
 import { ALWAYS_STOPS_ON, runStatusLabel } from "@/contexts/conversations/after-reply/domain/after-reply";
 import { AfterReplyEditor } from "./after-reply-editor";
 import { CampaignSection } from "./campaign-section";
-import { earlierVersionNote } from "./after-reply-form";
+import { earlierVersionNote } from "../_lib/after-reply-form";
 
 /**
  * Settings section of a campaign: what happens after a lead replies. The form is the client editor. The lists under it

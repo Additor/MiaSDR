@@ -19,13 +19,13 @@ import { toActor } from "@/app/_lib/api";
 import type { Actor } from "@/shared/errors";
 import { dealDialogData } from "../crm/_components/deal-dialog-data";
 import { StateTip } from "@/app/(app)/_components/person/state-tip";
-import { AddToCampaign } from "./add-to-campaign";
-import { ColumnsMenu, LeadColumnsProvider } from "./columns-menu";
-import { leadsHref } from "./list-url";
-import { activeFilterChips, panelFilterCount } from "./active-filters";
-import { columnsCookieName, parseColumns } from "./list-columns";
-import { LeadsFilterBar } from "./leads-filter-bar";
-import { LeadsTableView } from "./leads-table";
+import { AddToCampaign } from "./_components/add-to-campaign";
+import { ColumnsMenu, LeadColumnsProvider } from "./_components/columns-menu";
+import { leadsHref } from "./_lib/list-url";
+import { activeFilterChips, panelFilterCount } from "./_lib/active-filters";
+import { columnsCookieName, parseColumns } from "./_lib/list-columns";
+import { LeadsFilterBar } from "./_components/leads-filter-bar";
+import { LeadsTableView } from "./_components/leads-table";
 
 export const metadata: Metadata = { title: "Leads" };
 

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { LinkedInReplyPanelView } from "@/contexts/conversations/application/linkedin-reply";
 import { callApi } from "@/app/_lib/api-client";
-import { draftStatusLabel } from "../labels";
+import { draftStatusLabel } from "../../labels";
 
 type SendResult = { status: string; error?: string | null };
 

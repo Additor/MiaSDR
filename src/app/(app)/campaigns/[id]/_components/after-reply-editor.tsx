@@ -27,7 +27,7 @@ import {
   type EditorStep,
   type StepFromApi,
   type StepIssue,
-} from "./after-reply-form";
+} from "../_lib/after-reply-form";
 
 interface SaveResponse {
   stoppedRuns?: number;

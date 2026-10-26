@@ -15,10 +15,10 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import type { ReplyPanel } from "@/contexts/conversations/application/reply-management";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
-import { categorySourceLabel, draftStatusLabel } from "../labels";
-import { openStopContacting } from "./_components/next-step-client";
-import { registerDraftEdits } from "./draft-edits";
-import type { NextInQueue } from "./next-queue";
+import { categorySourceLabel, draftStatusLabel } from "../../labels";
+import { openStopContacting } from "./next-step-client";
+import { registerDraftEdits } from "../_lib/draft-edits";
+import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
 
 const HOLD_TEXT: Record<string, string> = {

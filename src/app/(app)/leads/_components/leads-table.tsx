@@ -22,16 +22,16 @@ import type { LeadActivity } from "@/contexts/outreach/application/read-lead-act
 import { isFilterActive, leadFilterParams, lifecycleOf, matchingSelection, selectionExport, type LeadFilter, type LeadSort, type LeadSortKey } from "@/contexts/people/domain/lead-filter";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
-import { CreateDealsBulkDialog } from "../crm/_components/create-deal-dialog";
+import { CreateDealsBulkDialog } from "@/app/(app)/crm/_components/create-deal-dialog";
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
 import { personHref } from "@/app/(app)/_components/person/person-href";
 import { ReachIcons } from "@/app/(app)/_components/person/reach-icons";
-import type { DealMemberOption, DealStageList } from "../crm/_components/deal-form";
-import { bulkActionModel, clearsSelectionOnKey, type BulkMenuItemId } from "./bulk-actions";
+import type { DealMemberOption, DealStageList } from "@/app/(app)/crm/_components/deal-form";
+import { bulkActionModel, clearsSelectionOnKey, type BulkMenuItemId } from "../_lib/bulk-actions";
 import { useLeadColumns } from "./columns-menu";
-import type { OptionalColumn } from "./list-columns";
-import { leadHref, listQueryOf } from "./[id]/list-context";
-import { leadsHref } from "./list-url";
+import type { OptionalColumn } from "../_lib/list-columns";
+import { leadHref, listQueryOf } from "../[id]/list-context";
+import { leadsHref } from "../_lib/list-url";
 
 export interface LeadListRow {
   id: string;
