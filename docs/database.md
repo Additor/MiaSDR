@@ -109,7 +109,7 @@ Five triggers hold rules a foreign key cannot express. Each raises SQLSTATE 2300
 - `classifications.message_id` is an inbound message of the classification's own record.
 - `classifications.previous_`, `proposed_` and `applied_subcategory_id` belong to the record's pipeline and to the matching `*_category_key`. A null key accepts any category.
 - `drafts.channel` equals the channel of the draft's conversation.
-- `drafts.reply_for_message_id` is an inbound message. It may live in another conversation of the same record, because the reply target is the record's latest inbound message.
+- `drafts.reply_for_message_id` is an inbound message of the draft's own record, in the same organization. It may live in another conversation of that record, because the reply target is the record's latest inbound message. The update trigger also checks when `record_id` changes.
 - `send_attempts.account_ref` equals the account of the draft's conversation, compared with `lower()` on both sides. A blank value goes to `send_attempts_refs_ck`.
 
 A reference to a row that does not exist is left to the foreign key, so its own constraint name appears in the error. The update triggers fire only when a checked column changes, so the `ON DELETE SET NULL` actions never trip them.
@@ -129,7 +129,7 @@ drop index concurrently "sends_org_status_idx";  -- then create it again with CR
 
 ## Tenant scope
 
-Every table that holds customer data carries `organization_id uuid not null` with a foreign key to `organizations`. `src/platform/db/__tests__/schema-audit.integration.test.ts` checks this against `information_schema` and fails CI when a new table breaks the rule. The allow-lists in `src/platform/db/schema-audit.ts` name the exceptions and give a reason for each.
+Every table that holds customer data carries `organization_id uuid not null` with a foreign key to `organizations`. `src/platform/db/__tests__/schema-audit.integration.test.ts` checks this against `information_schema` and fails CI when a new table breaks the rule. The allow-lists in `src/platform/db/schema-audit.ts` name the exceptions and give a reason for each. The audit also fails on a foreign key between two tables with `organization_id` that leaves that column out of the key; `SCOPED_BY_SIBLING_KEY` names the three keys that another composite key on the same row already scopes.
 
 ## Tables by context
 

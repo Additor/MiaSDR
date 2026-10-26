@@ -11,6 +11,7 @@ const MESSAGE = /classifications\.message_id must be an inbound message of the c
 const SUBCATEGORY = /classifications\.(previous|proposed|applied)_subcategory_id must belong to the record's pipeline/;
 const CHANNEL = /drafts\.channel \(\w+\) must equal the channel of its conversation/;
 const REPLY = /drafts\.reply_for_message_id must be an inbound message/;
+const REPLY_RECORD = /drafts\.reply_for_message_id must be a message of the draft's record/;
 const ACCOUNT = /send_attempts\.account_ref \(.*\) must equal the account of the draft's conversation/;
 
 describeDb("cross-row validators", () => {
@@ -160,6 +161,14 @@ describeDb("cross-row validators", () => {
       ).rejects.toThrow(REPLY);
     });
 
+    it("drafts_reply_target_ins_trg: refuses an inbound message of another record", async () => {
+      const w = await world();
+      const x = await extras(w);
+      await expect(
+        sql`insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel) values (${w.org}, ${w.record}, ${w.conversation}, ${x.otherMessage}, 0, 'email')`,
+      ).rejects.toThrow(REPLY_RECORD);
+    });
+
     it("drafts_reply_target_ins_trg: accepts an inbound message of another conversation of the record, and no target", async () => {
       const w = await world();
       const x = await extras(w);
@@ -172,8 +181,16 @@ describeDb("cross-row validators", () => {
       const w = await world();
       const x = await extras(w);
       await expect(sql`update drafts set reply_for_message_id = ${x.outbound} where id = ${w.draft}`).rejects.toThrow(REPLY);
+      await expect(sql`update drafts set reply_for_message_id = ${x.otherMessage} where id = ${w.draft}`).rejects.toThrow(REPLY_RECORD);
       await sql`update drafts set reply_for_message_id = ${x.linkedinInbound} where id = ${w.draft}`;
       await sql`update drafts set reply_for_message_id = null where id = ${w.draft}`;
+    });
+
+    it("drafts_reply_target_upd_trg: refuses moving the draft to another record while it keeps the target", async () => {
+      const w = await world();
+      const x = await extras(w);
+      const [other] = await sql`select cv.record_id from messages m join conversations cv on cv.id = m.conversation_id where m.id = ${x.otherMessage}`;
+      await expect(sql`update drafts set record_id = ${other.record_id} where id = ${w.draft}`).rejects.toThrow(REPLY_RECORD);
     });
 
     it("leaves the ON DELETE SET NULL action alone, even on a legacy draft with the wrong channel", async () => {
