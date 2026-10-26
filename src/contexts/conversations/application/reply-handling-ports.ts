@@ -1,5 +1,5 @@
 import type { AiInstructionBlock, ReplyTypeGroup, ReplyHandlingSettingsPatch, ReplyTypeInput, ReplyTypePatch } from "../domain/reply-handling";
-import type { ReplyTypeFacts, SystemRole, TypeRules } from "../domain/reply-type";
+import type { HoldReason, ReplyTypeFacts, SystemRole, TypeRules } from "../domain/reply-type";
 import type { NoteScope } from "../actions/application/tasks-ports";
 
 /** Read models and write ports for reply handling. Every method carries the organization and filters by it. */
@@ -71,9 +71,17 @@ export interface ReplyTypePickEntry {
   acknowledged: boolean;
   /** The type rules the pick was decided with. Null for a pick without a type. */
   rules: TypeRules | null;
+  /** System role of the proposed type, so the thread can tell a held stop request apart. */
+  proposedSystemRole: SystemRole | null;
+  /** Why the AI held the pick for a person, from the pick's response. Null when it applied. */
+  holdReason: HoldReason | null;
+  /** The reply asked to stop, as the AI read it. */
+  stopRequested: boolean;
   createdAt: Date;
   /** Belongs to the record's latest inbound message. */
   latest: boolean;
+  /** Decided on the record's current context version and not stale, so Accept and Looks right still apply to it. */
+  current: boolean;
   canUndo: boolean;
   canAcknowledge: boolean;
 }
@@ -128,6 +136,11 @@ export interface RecordDetail {
     replyTypeName: string | null;
     replyTypeSource: string | null;
     replyTypeLocked: boolean;
+    /** Rules of the record's type as they stand now, archived types included. Null without a type. */
+    replyTypeRules: TypeRules | null;
+    replyTypeSystemRole: SystemRole | null;
+    /** An initial draft job for one of the record's picks is queued or running. */
+    draftJobPending: boolean;
     workflowState: string;
     activeChannel: string | null;
     contextVersion: number;
