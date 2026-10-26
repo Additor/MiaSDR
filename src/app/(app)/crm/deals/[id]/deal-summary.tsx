@@ -66,7 +66,7 @@ export function DealSummaryFields({ deal, members, currentUserId }: { deal: Summ
       <EditableFact
         label="Expected close"
         saved="Expected close saved."
-        inputs={[{ key: "expectedCloseOn", value: deal.expectedCloseOn ?? "", type: "date", help: "Empty clears the date." }]}
+        inputs={[{ key: "expectedCloseOn", value: deal.expectedCloseOn ?? "", type: "date", help: "Clear in the calendar removes the date." }]}
         onSave={(v) => save({ expectedCloseOn: v.expectedCloseOn || null })}
       >
         {deal.expectedCloseOn ? (

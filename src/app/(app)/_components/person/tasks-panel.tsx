@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { DatePicker, formatDay } from "@/components/shell/date-picker";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -256,7 +257,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
 export function dayFromToday(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return formatDay(d);
 }
 
 /** "Fri, Oct 23", in English whatever the browser's language. */
@@ -269,8 +270,8 @@ const QUICK_DAYS: Array<[label: string, days: number]> = [
 ];
 
 /**
- * The due date as three quick choices and Pick a date. The browser's own date field opens only when you pick, so an
- * empty form never shows a placeholder in the browser's language; the chosen day reads back in English.
+ * The due date as three quick choices and Pick a date. Pick a date shows a `DatePicker` with its calendar open; the
+ * chosen day reads back in English under the buttons.
  */
 export function DueField({ id, value, onChange }: { id: string; value: string; onChange: (day: string) => void }) {
   const [picking, setPicking] = useState(false);
@@ -288,7 +289,7 @@ export function DueField({ id, value, onChange }: { id: string; value: string; o
           Pick a date
         </Button>
       </div>
-      {picking && <Input id={id} type="date" aria-label="Due date" value={value} className="w-fit max-sm:h-11" onChange={(e) => onChange(e.target.value)} />}
+      {picking && <DatePicker id={id} aria-label="Due date" value={value} onChange={onChange} defaultOpen className="w-40" />}
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {value ? `Due ${dayText(value)}.` : "No due date."}
       </p>

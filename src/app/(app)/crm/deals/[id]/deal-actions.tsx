@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { DatePicker } from "@/components/shell/date-picker";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -228,7 +229,7 @@ function EditDealDialog({
           </div>
           <div className="grid gap-1">
             <Label htmlFor="edit-deal-close">Expected close (optional)</Label>
-            <Input id="edit-deal-close" type="date" value={values.expectedCloseOn} onChange={(e) => set("expectedCloseOn", e.target.value)} className="w-fit" />
+            <DatePicker id="edit-deal-close" value={values.expectedCloseOn} onChange={(day) => set("expectedCloseOn", day)} clearable className="w-40" />
           </div>
         </div>
       </ConfirmDialog>
