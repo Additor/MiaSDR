@@ -21,9 +21,9 @@ import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/w
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
-import { ActiveFilterChips } from "@/components/shell/filter-panel";
+import { AppliedFilters } from "@/components/shell/filter-chip";
 import { ListToolbar } from "@/components/shell/list-toolbar";
-import { activeFilterChips, clearedInboxHref, InboxFilterForm } from "./filter-panel";
+import { activeFilterChips, clearedInboxHref, InboxFilters } from "./filter-panel";
 import { HiddenAutomated, MoreViews } from "./more-views";
 import { KeyboardHint } from "@/components/shell/info-tip";
 import { ConversationRow } from "./conversation-row";
@@ -167,7 +167,7 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
           { href: link({ view: "scheduled", page: 1 }), label: "Scheduled", active: scheduled },
         ]}
       />
-      <ListToolbar filters={options ? { count: activeFilterCount(params), panel: <InboxFilterForm params={params} options={options}/> } : undefined} end={<>{!scheduled && <KeyboardHint noun="conversations" />}{status}</>}>
+      <ListToolbar filters={options ? <InboxFilters params={params} options={options} count={activeFilterCount(params)} /> : undefined} end={<>{!scheduled && <KeyboardHint noun="conversations" />}{status}</>}>
         {!scheduled && (
           <div className="flex flex-wrap items-center gap-1.5">
             <FilterChips label="Conversation views" items={CHIP_VIEWS.map((v) => ({ href: link({ view: v.key, page: 1 }), label: v.label, active: v.key === view }))} />
@@ -177,7 +177,7 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
         )}
         {search}
       </ListToolbar>
-      {options && <ActiveFilterChips chips={activeFilterChips(params, options)} clearHref={clearedInboxHref(params)} />}
+      {options && <AppliedFilters chips={activeFilterChips(params, options)} clear={{ href: clearedInboxHref(params) }} />}
 
       {!loaded && (
         <div role="alert" className="grid justify-items-start gap-2 py-8 text-sm" data-testid="inbox-load-failed">

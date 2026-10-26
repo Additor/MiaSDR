@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Page } from "@playwright/test";
-import { MOBILE_DARK, expect, expectNoHorizontalOverflow, seedContact, signInAdmin, test, unique, waitForHydrated } from "./support/fixtures";
+import { MOBILE_DARK, expect, expectNoHorizontalOverflow, openFilters, seedContact, signInAdmin, test, unique, waitForHydrated } from "./support/fixtures";
 
 /**
  * The Contacts list ("Contacts and Companies CRUD" in docs/decisions.md): Export CSV in the toolbar, the selection bar with Export selected,
@@ -58,7 +58,9 @@ test.describe("contacts list bulk actions", () => {
     await signInAdmin(page);
     const ids = await seed(page);
     await openList(page);
-    await expect(page.getByRole("combobox", { name: "Deal owner" })).toContainText("Any deal owner");
+    await openFilters(page);
+    await expect(page.getByLabel("Deal owner", { exact: true })).toHaveValue("");
+    await page.keyboard.press("Escape");
     const header = page.getByRole("columnheader", { name: /Deal owner/ });
     await expect(header).toContainText("Owner of the latest deal");
     await header.locator("[tabindex=\"0\"]").hover();

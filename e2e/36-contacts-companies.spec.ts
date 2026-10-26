@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 import { cellUnder } from "./support/table";
-import { chooseFromMoreMenu, e2eOrganizationId, expect, seedContact, seedReply, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
+import { chooseFromMoreMenu, e2eOrganizationId, expect, openFilters, seedContact, seedReply, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
 
 /**
  * Contacts and Companies ("Leads and CRM" in docs/decisions.md). Seeds its own people under a unique key:
@@ -101,16 +101,15 @@ test.describe("contacts and companies", () => {
     const moved = await page.request.post(`/api/deals/${coraDeal.id}/stage`, { data: { stageId: meeting, expectedVersion: coraDeal.version } });
     expect(moved.status(), "move Cora's deal to Meeting").toBe(200);
     await page.goto(`/crm/contacts?q=${SUFFIX}`);
-    const stageFilter = page.getByRole("combobox", { name: "Deal stage" });
-    await waitForHydrated(stageFilter);
-    await stageFilter.click();
-    await page.getByRole("option", { name: "Meeting", exact: true }).click();
+    await openFilters(page);
+    await page.getByLabel("Deal stage", { exact: true }).selectOption({ label: "Meeting" });
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`stage=${meeting}`));
     await expect(page.getByText("1 contact", { exact: true })).toBeVisible();
     await expect(await cellUnder(table, table.getByRole("row").filter({ hasText: `Cora Cold ${SUFFIX}` }), "Latest deal")).toHaveText("Meeting");
     await expect(table.getByText(`Rhea Reply ${SUFFIX}`)).toHaveCount(0);
     await page.reload();
-    await expect(page.getByRole("combobox", { name: "Deal stage" })).toContainText("Meeting");
+    await expect(page.getByRole("link", { name: "Remove filter Deal stage: Meeting" })).toBeVisible();
     await expect(page.getByText("1 contact", { exact: true })).toBeVisible();
 
     await rowOpen(page, `/crm/contacts?q=${SUFFIX}`, `Rhea Reply ${SUFFIX}`);
