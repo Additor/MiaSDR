@@ -66,6 +66,10 @@ describeDb("email send engine", () => {
   }
 
   const enrollment = async (id: string) => (await sql`select * from campaign_enrollments where id = ${id}`)[0];
+  /** Fails the organization's open sends, so a later reconcile in this file does not count them. */
+  const settleOpenSends = async (org: string) => {
+    await sql`update sends set status = 'failed', attempt = 3 where organization_id = ${org} and status in ('sending', 'unknown')`;
+  };
   const sendRows = async (id: string) => await sql`select * from sends where enrollment_id = ${id} order by step_number, claimed_at`;
 
   beforeAll(async () => {
@@ -146,6 +150,55 @@ describeDb("email send engine", () => {
     advance(14 * 60); // 11:00 next day UTC
     expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
     expect(provider.delivered).toHaveLength(3);
+  });
+
+  it("counts sends with an unknown outcome toward the daily limit", async () => {
+    const f = await fixture({ people: 3, dailyLimit: 2 });
+    const provider = new FakeMailboxProvider();
+    provider.behavior = () => "timeout-lost";
+    for (let i = 0; i < 2; i++) {
+      expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("unknown");
+      advance(30);
+    }
+    provider.behavior = () => "ok";
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("idle");
+    expect(provider.delivered).toHaveLength(0);
+    await settleOpenSends(f.org);
+  });
+
+  it("counts a claim still sending toward the daily limit", async () => {
+    const f = await fixture({ people: 2, dailyLimit: 1 });
+    await sql`
+      insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id, attempt, claimed_at)
+      values (${f.org}, ${f.enrollmentIds[0]}, 1, 'email', 'sending', ${f.mailboxIds[0]}, 1, ${start})`;
+    const provider = new FakeMailboxProvider();
+    advance(5);
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("idle");
+    expect(provider.delivered).toHaveLength(0);
+    await settleOpenSends(f.org);
+  });
+
+  it("does not count test sends toward the daily limit", async () => {
+    const f = await fixture({ people: 1, dailyLimit: 2 });
+    for (let i = 0; i < 2; i++) {
+      await sql`
+        insert into sends (organization_id, kind, channel, status, mailbox_id, to_address, claimed_at)
+        values (${f.org}, 'test', 'email', 'sent', ${f.mailboxIds[0]}, ${`me${i}@corp.test`}, ${start})`;
+    }
+    const provider = new FakeMailboxProvider();
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
+  });
+
+  it("starts the daily limit day in the mailbox's working-hours zone", async () => {
+    const f = await fixture({ people: 2, dailyLimit: 1 });
+    await sql`update mailboxes set working_hours = ${sql.json({ timeZone: "Asia/Seoul", days: ALL_DAY })} where id = ${f.mailboxIds[0]}`;
+    const provider = new FakeMailboxProvider();
+    current = new Date("2026-10-14T23:30:00Z"); // 08:30 on Oct 15 in Seoul
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
+    advance(60); // a new UTC day, the same Seoul day
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("idle");
+    current = new Date("2026-10-15T15:00:00Z"); // midnight on Oct 16 in Seoul
+    expect((await send.sendNextEmail(deps(provider), f.mailboxIds[0])).kind).toBe("sent");
   });
 
   it("sends the follow-up in the same thread before starting new leads", async () => {
@@ -395,11 +448,20 @@ describeDb("email send engine", () => {
     const drizzleSuppressionStore = await (await import("@/test-support/suppression")).suppressionStore();
     const provider = new FakeMailboxProvider();
     await send.sendNextEmail(deps(provider), f.mailboxIds[0]); // lead 0 is now active
+    // Suppression blocks email only: lead 0's LinkedIn sequence keeps running.
+    const [{ id: person0 }] = await sql`update people set linkedin_slug = ${"lead0-" + f.org} where organization_id = ${f.org} and email = ${f.emails[0]} returning id`;
+    const [{ id: linkedinCampaign }] = await sql`
+      insert into campaigns (organization_id, channel, name, status, steps)
+      values (${f.org}, 'linkedin', 'li', 'active', ${sql.json([{ stepNumber: 1, kind: "invitation", body: "Hi", waitDays: 0 }] as never)}) returning id`;
+    const [{ id: linkedinEnrollment }] = await sql`
+      insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status, current_step)
+      values (${f.org}, ${linkedinCampaign}, ${person0}, 'linkedin', 'active', 1) returning id`;
 
     const first = await drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: ` ${f.emails[0].toUpperCase()} `, reason: "unsubscribed" });
     expect(first.stopped).toBe(1);
     expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "suppressed", next_send_at: null, stop_reason: "unsubscribed" });
     expect((await enrollment(f.enrollmentIds[1])).status).toBe("pending");
+    expect(await enrollment(linkedinEnrollment)).toMatchObject({ status: "active", stop_reason: null });
 
     const again = await drizzleSuppressionStore.suppressEmail({ organizationId: f.org, email: f.emails[0], reason: "unsubscribed" });
     expect(again.stopped).toBe(0); // idempotent
@@ -414,12 +476,18 @@ describeDb("email send engine", () => {
 
   it("does not suppress the same address in another organization", async () => {
     const a = await fixture({ people: 0 });
-    const b = await fixture({ people: 0 });
+    const b = await fixture({ people: 1 });
+    await sql`update people set email = 'shared@x.test' where organization_id = ${b.org}`;
     const drizzleSuppressionStore = await (await import("@/test-support/suppression")).suppressionStore();
     await drizzleSuppressionStore.suppressEmail({ organizationId: a.org, email: "shared@x.test", reason: "unsubscribed" });
     const rows = await sql`select organization_id from suppression_list where email = 'shared@x.test'`;
     expect(rows.map((r) => r.organization_id)).toEqual([a.org]);
     expect(b.org).not.toBe(a.org);
+    // Organization B still mails the address.
+    const provider = new FakeMailboxProvider();
+    expect((await send.sendNextEmail(deps(provider), b.mailboxIds[0])).kind).toBe("sent");
+    expect(provider.delivered.map((m) => m.to)).toEqual(["shared@x.test"]);
+    expect(await enrollment(b.enrollmentIds[0])).toMatchObject({ status: "active" });
   });
 
   it("does not send outside working hours", async () => {

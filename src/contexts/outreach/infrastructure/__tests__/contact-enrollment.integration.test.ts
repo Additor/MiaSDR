@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestOrg, describeDb, dropOrgs, TEST_DATABASE_URL, testSql, useTestEnv, waitForLockWaiters } from "@/test-support/db";
+import { createTestOrg, describeDb, dropOrgs, TEST_DATABASE_URL, testSql, useTestEnv } from "@/test-support/db";
 
 /**
  * Contacts cannot be enrolled ("Leads and CRM" in docs/decisions.md): every candidate select skips a contact, the
@@ -70,6 +70,18 @@ describeDb("contacts and campaign enrollment", () => {
   const enrolled = async (campaignId: string) => (await sql`select person_id from campaign_enrollments where campaign_id = ${campaignId} order by person_id`).map((r) => r.person_id as string);
   const rowOf = async (id: string) => (await sql`select status, stop_reason, next_send_at from campaign_enrollments where id = ${id}`)[0];
 
+  /** Waits until a session queues on a lock that `pid` holds. Another test file's lock waiter on the shared database does not count. */
+  async function waitForBlockedBy(pid: number, timeoutMs = 10_000) {
+    const until = Date.now() + timeoutMs;
+    for (;;) {
+      const [{ waiting }] = await sql<{ waiting: number }[]>`
+        select count(*)::int as waiting from pg_stat_activity where ${pid}::int = any(pg_blocking_pids(pid))`;
+      if (waiting >= 1) return;
+      if (Date.now() > until) throw new Error(`expected a session blocked by ${pid}, saw none`);
+      await sleep(20);
+    }
+  }
+
   /**
    * Holds a conversion of `personId` uncommitted on its own connection. `commitWhenBlocked` waits until an enrollment insert queues
    * behind it (the candidate read is long done by then), commits, and returns. It throws when no insert queues, and commits either way.
@@ -78,10 +90,11 @@ describeDb("contacts and campaign enrollment", () => {
     const writer = postgres(TEST_DATABASE_URL ?? "", { max: 1, onnotice: () => undefined });
     await writer`begin`;
     await writer`update people set lifecycle = 'contact', converted_at = now() where id = ${personId}`;
+    const [{ pid }] = await writer<{ pid: number }[]>`select pg_backend_pid() as pid`;
     return {
       async commitWhenBlocked() {
         try {
-          await waitForLockWaiters(sql, 1);
+          await waitForBlockedBy(pid);
         } finally {
           await writer`commit`;
           await writer.end();
