@@ -210,6 +210,27 @@ describeDb("lead management", () => {
       expect(await sql`select 1 from people where id in ${sql([sent, running])}`).toHaveLength(2);
     });
 
+    it("refuses leads with a send in flight or unconfirmed, a pending enrollment, or a paused campaign", async () => {
+      const { id: o, actor } = await org();
+      const sending = await person(o, "sending@acme.com");
+      const unknown = await person(o, "unknown@acme.com");
+      const pending = await person(o, "pending@acme.com");
+      const paused = await person(o, "paused@acme.com");
+      const done = await campaign(o, "completed");
+      for (const [p, status] of [[sending, "sending"], [unknown, "unknown"]] as const) {
+        const e = await enroll(o, done, p, "completed");
+        await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status) values (${o}, ${e}, 1, 'email', ${status})`;
+      }
+      await enroll(o, await campaign(o, "active"), pending, "pending");
+      await enroll(o, await campaign(o, "paused"), paused, "active");
+      const result = await uc.deleteLeads(deps, actor, { ids: [sending, unknown, pending, paused] });
+      expect(result.deleted).toBe(0);
+      expect(result.blocked.map((b) => [b.id, b.reason]).sort()).toEqual(
+        [[sending, "has_sends"], [unknown, "has_sends"], [pending, "in_active_campaign"], [paused, "in_active_campaign"]].sort(),
+      );
+      expect(await sql`select 1 from people where organization_id = ${o}`).toHaveLength(4);
+    });
+
     it("lets a lead with only failed sends go", async () => {
       const { id: o, actor } = await org();
       const p = await person(o, "f@acme.com");
@@ -226,6 +247,19 @@ describeDb("lead management", () => {
       const result = await uc.deleteLeads(deps, actor, { ids: [p] });
       expect(result.deleted).toBe(0);
       expect(result.blocked).toMatchObject([{ id: p, reason: "linked_records" }]);
+    });
+
+    it("refuses a lead with history events and no CRM record", async () => {
+      const { id: o, actor } = await org();
+      const p = await person(o, "hist@acme.com");
+      // Marking do not contact writes this event on a lead (`setPersonDoNotContact`).
+      await markDoNotContact(o, p, "Asked");
+      await sql`insert into events (organization_id, person_id, event_type, actor_type, actor_user_id) values (${o}, ${p}, 'contact_policy.dnc_set', 'human', ${actor.userId})`;
+      const result = await uc.deleteLeads(deps, actor, { ids: [p] });
+      expect(result).toEqual({ deleted: 0, blocked: [expect.objectContaining({ id: p, reason: "linked_records" })] });
+      expect(await sql`select 1 from people where id = ${p}`).toHaveLength(1);
+      // The delete falls back to the foreign key, but the check before it has only the rule to go on.
+      expect(await deps.leads.deleteBlock(o, p)).toBe("linked_records");
     });
 
     it("keeps a do-not-contact address on the suppression list after deleting the lead", async () => {
