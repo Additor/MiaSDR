@@ -1,7 +1,7 @@
-/** Subcategories that close the conversation or ask nothing of us, so no draft is made on their own. */
+/** Reply types that close the conversation or ask nothing of us, so no draft is made on their own. */
 const NO_REPLY_REPLY_TYPES = new Set(["do_not_contact", "out_of_office", "left_company"]);
 
-/** Whether an applied classification calls for a reply draft. A person can still ask for one on any thread. */
+/** @deprecated The type's Reply draft rule decides (`decideReplyType`); W2, W3 and W6 remove the last callers. */
 export function needsReply(groupKey: string, replyTypeKey: string): boolean {
   if (NO_REPLY_REPLY_TYPES.has(replyTypeKey)) return false;
   if (groupKey === "not_interested") return false;

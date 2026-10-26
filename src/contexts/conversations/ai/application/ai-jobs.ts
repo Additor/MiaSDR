@@ -1,10 +1,7 @@
 import type { Job } from "@/platform/jobs/types";
 import { classificationSchema, draftSchema, linkedinDraftSchema } from "../domain/ai-contract";
-import { decideApplication } from "../../domain/reply-type-pick-policy";
-import { needsReply } from "../../domain/reply-policy";
+import { decideAiPick, stopRequestedBy } from "../../domain/reply-type-pick-policy";
 import { normalizeSubject } from "../../domain/subject";
-import { detectsStopRequest } from "../../domain/stop-request";
-import { DO_NOT_CONTACT_KEY } from "../../domain/reply-type-pick-policy";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import type { ReplyAi, ReplyAiResolver } from "./ai-ports";
 import type { AiJobStore, ClaimedJob, DraftContext, ReplyStore } from "../../application/reply-ports";
@@ -91,13 +88,15 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
   const proposal = ctx.taxonomy.find((t) => t.key === parsed.data.subcategoryKey);
   if (!proposal) throw new AiError("The AI answered outside the allowed categories.", "transient", "shape");
 
-  const decision = decideApplication({
+  // The type's rules decide the hold and the draft. The store settles the record and stops follow-ups under its lock.
+  const stopRequested = stopRequestedBy(ctx.messageText, proposal);
+  const { application, wantsDraft } = decideAiPick({
     proposal,
     confidence: parsed.data.confidence,
     current: { groupKey: ctx.groupKey, replyTypeLocked: ctx.replyTypeLocked },
     floor: ctx.settings.autoApplyConfidence,
+    stopRequested,
   });
-  const stopRequested = detectsStopRequest(ctx.messageText) || proposal.key === DO_NOT_CONTACT_KEY;
 
   const outcome = await deps.jobs.finishClassification({
     job,
@@ -107,8 +106,8 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
     confidence: parsed.data.confidence,
     reason: parsed.data.reason,
     stopRequested,
-    decision,
-    wantsDraft: needsReply(proposal.groupKey, proposal.key) && !stopRequested,
+    decision: application,
+    wantsDraft,
     provider: provider.name,
     model: provider.model,
     request: { messageId: job.entityId, contextVersion: ctx.contextVersion, allowedKeys: keys },

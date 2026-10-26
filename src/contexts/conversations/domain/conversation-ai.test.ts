@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideApplication, type PolicyInput } from "./reply-type-pick-policy";
+import { decideAiPick, decideApplication, stopRequestedBy, type PolicyInput } from "./reply-type-pick-policy";
 import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES } from "./reply-type";
 import { normalizeSubject } from "./subject";
 import { needsReply, replySubject } from "./reply-policy";
@@ -32,6 +32,20 @@ describe("reply type pick policy", () => {
 
   it("no longer holds a move to a lower position: progress belongs to deal stages", () => {
     expect(decideApplication(pick({ proposal: { groupKey: "not_interested", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } }, current: { groupKey: "interested", replyTypeLocked: false } }))).toEqual({ action: "auto_apply" });
+  });
+
+  it("wants a draft when the type writes one and the reply asks nothing to stop", () => {
+    expect(decideAiPick(pick())).toEqual({ application: { action: "auto_apply" }, wantsDraft: true });
+    expect(decideAiPick(pick({ stopRequested: true }))).toEqual({ application: { action: "auto_apply" }, wantsDraft: false });
+    expect(decideAiPick(pick({ proposal: { groupKey: "interested", rules: { ...DEFAULT_TYPE_RULES, replyDraft: false } } })).wantsDraft).toBe(false);
+    expect(decideAiPick(pick({ confidence: 0.5 }))).toEqual({ application: { action: "hold", reason: "low_confidence" }, wantsDraft: true });
+  });
+
+  it("reads a stop request from the sender's words or from the stop request type, never from the key", () => {
+    expect(stopRequestedBy("Please unsubscribe me.", { systemRole: null })).toBe(true);
+    expect(stopRequestedBy("Sounds good.", { systemRole: "stop_request" })).toBe(true);
+    expect(stopRequestedBy("Sounds good.", { systemRole: null })).toBe(false);
+    expect(stopRequestedBy("Sounds good.", { systemRole: "customer" })).toBe(false);
   });
 });
 
