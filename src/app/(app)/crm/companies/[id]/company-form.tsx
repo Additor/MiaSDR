@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { Time } from "@/components/shell/time";
 import { callApi } from "@/app/_lib/api-client";
-import { AddField } from "../../_components/person/person-details";
-import { EditableFact, NotSet, type SaveResult } from "../../_components/record/inline-field";
-import { AsideSection } from "../../_components/record/record-header";
+import { AddField } from "@/app/(app)/_components/person/person-details";
+import { EditableFact, NotSet, type SaveResult } from "@/app/(app)/_components/record/inline-field";
+import { AsideSection } from "@/app/(app)/_components/record/record-header";
 
 interface CustomField {
   key: string;

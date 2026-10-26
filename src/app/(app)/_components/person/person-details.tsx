@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { callApi } from "@/app/_lib/api-client";
-import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "../company-domain-field";
+import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
 import { EditableFact, Fact, InlineForm, NotSet, type EditorProps, type SaveResult } from "../record/inline-field";
 import { AsideSection } from "../record/record-header";
 import type { CustomField, LeadFormValues } from "./person-fields";

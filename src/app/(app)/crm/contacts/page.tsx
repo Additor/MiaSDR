@@ -27,8 +27,8 @@ import { DealOwnerFilter, DealStageFilter, type DealFilterOption } from "../_com
 import { SearchField } from "@/components/shell/search-field";
 import { ListPager, pageCountOf, SortHeader } from "@/components/shell/list-pager";
 import { contactLabel } from "../_components/labels";
-import { ReachIcons } from "../_components/person/reach-icons";
-import { StateTip } from "../_components/person/state-tip";
+import { ReachIcons } from "@/app/(app)/_components/person/reach-icons";
+import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import { ownerText } from "../pipeline/deal-format";
 import { ContactsBulkBar } from "./_components/contacts-bulk-bar";
 import { phoneLineParts } from "./_components/contacts-bulk";

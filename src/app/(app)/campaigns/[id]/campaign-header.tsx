@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { SummaryLine, type SummaryItem } from "@/components/shell/summary-line";
 import { channelLabel, type OutreachChannelName } from "@/contexts/outreach/domain/campaign-view";
-import { MetaLine, RecordHeader } from "../../crm/_components/record/record-header";
+import { MetaLine, RecordHeader } from "@/app/(app)/_components/record/record-header";
 import { CampaignStatusToken } from "./campaign-status-token";
 
 /** Senders the meta line names before it counts the rest. */

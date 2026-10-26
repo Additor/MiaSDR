@@ -5,8 +5,8 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { callApi } from "@/app/_lib/api-client";
-import { DNC_CONSEQUENCE, DNC_REASON_REQUIRED } from "../../_components/person/dnc-control";
-import { chunks } from "../../_components/chunks";
+import { DNC_CONSEQUENCE, DNC_REASON_REQUIRED } from "@/app/(app)/_components/person/dnc-control";
+import { chunks } from "@/app/(app)/_components/chunks";
 import { bulkDncTitle, DNC_CHUNK, dncReportText, mergeDncReports, type DncReport } from "./contacts-bulk";
 
 const DESCRIPTION = DNC_CONSEQUENCE;

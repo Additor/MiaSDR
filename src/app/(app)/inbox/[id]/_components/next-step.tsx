@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import type { Actor } from "@/shared/errors";
-import { categoryLabel } from "@/app/(app)/crm/_components/labels";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 import { loadNextInQueue } from "../next-queue";
 import { NextStepClient } from "./next-step-client";
 import { recordDetail } from "./thread-data";

@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/shared/format-time";
 import { dealHref } from "../../_components/deal-href";
 import { contactLabel } from "../../_components/labels";
-import { openDncControl } from "../../_components/person/dnc-control";
+import { openDncControl } from "@/app/(app)/_components/person/dnc-control";
 import {
   CANNOT_DELETE,
   COUNTS_INTRO,

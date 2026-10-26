@@ -35,7 +35,7 @@ import { InfoTip, KeyboardHint } from "@/components/shell/info-tip";
 import { PageHeader } from "@/components/shell/page-header";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
-import { personHref } from "../crm/_components/person/person-href";
+import { personHref } from "@/app/(app)/_components/person/person-href";
 import { ACTIONS_FILTER_KEYS, actionsViewFrom, threadQueryFromActions } from "./actions-query";
 import { hasAnyFilter } from "./more-filters";
 import { queueFilterChips, QueueFilters } from "./queue-filters";

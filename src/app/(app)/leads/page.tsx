@@ -18,7 +18,7 @@ import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import type { Actor } from "@/shared/errors";
 import { dealDialogData } from "../crm/_components/deal-dialog-data";
-import { StateTip } from "../crm/_components/person/state-tip";
+import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import { AddToCampaign } from "./add-to-campaign";
 import { ColumnsMenu, LeadColumnsProvider } from "./columns-menu";
 import { leadsHref } from "./list-url";

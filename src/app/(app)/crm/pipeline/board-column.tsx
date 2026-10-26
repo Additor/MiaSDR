@@ -9,7 +9,7 @@ import type { Board, BoardCard } from "@/contexts/deals/application/deals";
 import { callApi } from "@/app/_lib/api-client";
 import { MoveDealStageButton } from "../_components/move-deal-stage-dialog";
 import type { DealStageList } from "../_components/deal-form";
-import type { Json } from "../_components/serialize";
+import type { Json } from "@/app/(app)/_components/serialize";
 import { dealHref } from "../_components/deal-href";
 import { boardHref } from "./board-url";
 import { useBoardActions, useBoardState } from "./board-moves";

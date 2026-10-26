@@ -28,7 +28,7 @@ import {
   type BulkReport,
   type ConvertPreview,
 } from "./deal-effects";
-import { chunks } from "./chunks";
+import { chunks } from "@/app/(app)/_components/chunks";
 import { DealFields, useDealStages } from "./deal-fields";
 import { dealHref } from "./deal-href";
 import { dealFieldsReady, dealRequestFields, firstOpenChoice, initialDealFields, type DealFieldValues, type DealMemberOption, type DealStageList } from "./deal-form";

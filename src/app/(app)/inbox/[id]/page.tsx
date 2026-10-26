@@ -29,7 +29,7 @@ import { ReplyPanel } from "./reply-panel";
 import { NextStep } from "./_components/next-step";
 import { ThreadSide, ThreadSideSkeleton } from "./_components/thread-side";
 import { ThreadFollowUps, ThreadHistory } from "./_components/thread-work";
-import { RecordBody } from "@/app/(app)/crm/_components/record/record-header";
+import { RecordBody } from "@/app/(app)/_components/record/record-header";
 
 export const metadata: Metadata = { title: "Conversation" };
 

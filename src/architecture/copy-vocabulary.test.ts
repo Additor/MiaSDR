@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { EVENT_LABELS, eventLabel } from "@/app/(app)/crm/_components/event-labels";
+import { EVENT_LABELS, eventLabel } from "@/app/(app)/_components/event-labels";
 import * as actionQueue from "@/contexts/conversations/actions/domain/action-queue";
 import * as afterReply from "@/contexts/conversations/after-reply/domain/after-reply";
 import { STOP_REASON_LABELS, stopReasonLabel as enrollmentStopLabel } from "@/contexts/outreach/domain/campaign-view";

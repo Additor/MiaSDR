@@ -3,7 +3,7 @@ import { getNextQueueItem } from "@/contexts/conversations/actions/application/w
 import type { QueueItem } from "@/contexts/conversations/actions/application/work-queue-ports";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { ValidationError, type Actor } from "@/shared/errors";
-import { personHref } from "../../crm/_components/person/person-href";
+import { personHref } from "@/app/(app)/_components/person/person-href";
 import { threadQueryFromActions } from "../../actions/actions-query";
 
 export interface NextInQueue {

@@ -17,8 +17,8 @@ import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/appl
 import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import { MAX_INVITE_ATTEMPTS, INVITE_NOTE_MAX, describeLinkedInProgress, validateLinkedInSteps } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { RecordPage } from "../../crm/_components/record/record-header";
-import { LeadStatusToken } from "../../crm/_components/person/lead-status-token";
+import { RecordPage } from "@/app/(app)/_components/record/record-header";
+import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { CampaignControls } from "./campaign-controls";
 import { CampaignHeader } from "./campaign-header";

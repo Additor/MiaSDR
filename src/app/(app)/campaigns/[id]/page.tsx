@@ -23,8 +23,8 @@ import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastruct
 import { campaignDeps, emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
-import { RecordPage } from "../../crm/_components/record/record-header";
-import { LeadStatusToken } from "../../crm/_components/person/lead-status-token";
+import { RecordPage } from "@/app/(app)/_components/record/record-header";
+import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
 import { CampaignControls } from "./campaign-controls";
 import { CampaignHeader } from "./campaign-header";
 import { CampaignSection } from "./campaign-section";

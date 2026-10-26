@@ -11,8 +11,8 @@ import { Time } from "@/components/shell/time";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
-import { categoryLabel } from "../crm/_components/labels";
-import { personHref } from "../crm/_components/person/person-href";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { personHref } from "@/app/(app)/_components/person/person-href";
 import { threadQueryFromActions } from "./actions-query";
 import { waitingLabel } from "./waiting-label";
 

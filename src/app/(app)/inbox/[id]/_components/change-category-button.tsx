@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PROTECTED_SUBCATEGORY_KEY, REPLY_CATEGORIES } from "@/contexts/conversations/domain/reply-handling";
 import { needsReply } from "@/contexts/conversations/domain/reply-policy";
 import { callApi } from "@/app/_lib/api-client";
-import { categoryLabel } from "@/app/(app)/crm/_components/labels";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 import { saveDraftEdits } from "../draft-edits";
 
 export interface StageOption {

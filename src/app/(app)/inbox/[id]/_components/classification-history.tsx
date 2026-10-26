@@ -8,7 +8,7 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { callApi } from "@/app/_lib/api-client";
-import { categoryLabel } from "@/app/(app)/crm/_components/labels";
+import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
 
 interface Entry {
   id: string;

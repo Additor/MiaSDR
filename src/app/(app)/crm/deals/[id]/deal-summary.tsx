@@ -9,7 +9,7 @@ import { CURRENCIES, formatMinor } from "@/contexts/deals/domain/money";
 import { cn } from "@/components/ui/utils";
 import { callApi } from "@/app/_lib/api-client";
 import { NO_OWNER, type DealMemberOption } from "../../_components/deal-form";
-import { EditableFact, InlineForm, NotSet, type EditorProps, type SaveResult } from "../../_components/record/inline-field";
+import { EditableFact, InlineForm, NotSet, type EditorProps, type SaveResult } from "@/app/(app)/_components/record/inline-field";
 
 const STALE = "Someone changed this deal since you opened it. The page now shows the latest version. Check the value, then save again.";
 const CURRENCY_ITEMS = CURRENCIES.map((c) => ({ value: c, label: c }));

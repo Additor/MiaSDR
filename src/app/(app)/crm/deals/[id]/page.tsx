@@ -22,17 +22,17 @@ import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { formatDate } from "@/shared/format-time";
 import { dealDialogData } from "../../_components/deal-dialog-data";
-import { DoNotContactCard } from "../../_components/person/do-not-contact-card";
-import { PersonActivity } from "../../_components/person/activity";
-import { ReachIcons } from "../../_components/person/reach-icons";
+import { DoNotContactCard } from "@/app/(app)/_components/person/do-not-contact-card";
+import { PersonActivity } from "@/app/(app)/_components/person/activity";
+import { ReachIcons } from "@/app/(app)/_components/person/reach-icons";
 import { stageVariant } from "../../_components/deals-list";
 import { moneyText } from "../../_components/money-text";
 import { isOverdue, ownerText } from "../../pipeline/deal-format";
-import { AsideSection, MetaLine, RecordBody, RecordHeader, RecordPage, RecordSection } from "../../_components/record/record-header";
+import { AsideSection, MetaLine, RecordBody, RecordHeader, RecordPage, RecordSection } from "@/app/(app)/_components/record/record-header";
 import { dealReturnPath } from "../../_components/return-path";
 import { DealActions } from "./deal-actions";
 import { DealSummaryFields } from "./deal-summary";
-import { Fact } from "../../_components/record/inline-field";
+import { Fact } from "@/app/(app)/_components/record/inline-field";
 
 export const metadata: Metadata = { title: "Deal" };
 
