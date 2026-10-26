@@ -89,24 +89,10 @@ async function AnalyticsBody({ searchParams }: { searchParams: PageProps<"/analy
               <DateRangeField label="Dates" from={{ name: "from", value: from ?? "" }} to={{ name: "to", value: to ?? "" }} />
             </FilterSection>
             <FilterSection title="Campaigns">
-              <SelectField label="Campaign" name="campaign" defaultValue={campaignId ?? ""}>
-                <option value="">All campaigns</option>
-                {options.campaigns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {campaignLabel(c)}
-                  </option>
-                ))}
-              </SelectField>
+              <SelectField label="Campaign" name="campaign" defaultValue={campaignId ?? ""} options={[{ value: "", label: "All campaigns" }, ...options.campaigns.map((c) => ({ value: c.id, label: campaignLabel(c) }))]} />
               <CheckField label="Hide archived campaigns" name="hideArchived" defaultChecked={excludeArchived} />
               {view === "linkedin" && (
-                <SelectField label="LinkedIn account" name="account" defaultValue={accountId ?? ""}>
-                  <option value="">All accounts</option>
-                  {options.linkedinAccounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </SelectField>
+                <SelectField label="LinkedIn account" name="account" defaultValue={accountId ?? ""} options={[{ value: "", label: "All accounts" }, ...options.linkedinAccounts.map((a) => ({ value: a.id, label: a.name }))]} />
               )}
             </FilterSection>
           </FilterPopover>

@@ -14,24 +14,8 @@ export interface DealFilterOption {
 export function DealFilterFields({ owner, stage, owners, stages }: { owner?: string; stage?: string; owners: DealFilterOption[]; stages: DealFilterOption[] }) {
   return (
     <>
-      <SelectField label="Deal owner" name="owner" defaultValue={owner ?? ""}>
-        <option value="">Any deal owner</option>
-        {owners.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </SelectField>
-      {stages.length > 0 && (
-        <SelectField label="Deal stage" name="stage" defaultValue={stage ?? ""}>
-          <option value="">Any stage</option>
-          {stages.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </SelectField>
-      )}
+      <SelectField label="Deal owner" name="owner" defaultValue={owner ?? ""} options={[{ value: "", label: "Any deal owner" }, ...owners]} />
+      {stages.length > 0 && <SelectField label="Deal stage" name="stage" defaultValue={stage ?? ""} options={[{ value: "", label: "Any stage" }, ...stages]} />}
     </>
   );
 }
