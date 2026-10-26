@@ -73,7 +73,7 @@ test.describe("old CRM URLs", () => {
     const card = page.getByTestId("unmatched-message").filter({ hasText: "stranger@s37.test" });
     await card.getByLabel("File it under").fill("Match37");
     await card.getByRole("button", { name: "Search" }).click();
-    await expect(card.getByRole("list", { name: "Matching people" })).toContainText("Uma Match37");
+    await expect(card.getByRole("radiogroup", { name: "Matching people" })).toContainText("Uma Match37");
     await card.getByRole("button", { name: "Ignore" }).click();
     await expect(page.getByText("Message ignored.", { exact: true })).toBeVisible();
     await expect(card).toHaveCount(0);

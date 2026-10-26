@@ -12,11 +12,11 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listCampaigns } from "@/contexts/outreach/application/campaign-management";
 import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { parseArchiveFilter } from "@/contexts/outreach/domain/campaign";
-import { campaignStatusLabel, CHANNEL_LABELS, emailProgressText, linkedinProgressText } from "@/contexts/outreach/domain/campaign-view";
+import { CHANNEL_LABELS, emailProgressText, linkedinProgressText } from "@/contexts/outreach/domain/campaign-view";
 import { campaignDeps, enrollmentAdminStore } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { toActor } from "@/app/_lib/api";
-import { StatusBadge } from "@/components/shell/status-badge";
+import { CampaignStatusToken } from "./[id]/_components/campaign-status-token";
 import { NewCampaignButton } from "./new-campaign-button";
 import { FilterChips } from "@/components/shell/filter-chips";
 import { ListPager } from "@/components/shell/list-pager";
@@ -158,12 +158,7 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
                 )}
               </TableCell>
               <TableCell>
-                <StatusBadge status={c.status} label={campaignStatusLabel(c.status)} />
-                {c.archived && (
-                  <Badge variant="outline" className="ml-2">
-                    Archived
-                  </Badge>
-                )}
+                <CampaignStatusToken status={c.status} archived={c.archived} compact />
               </TableCell>
               <TableCell className="text-right tabular-nums">{c.steps.toLocaleString("en-US")}</TableCell>
               <TableCell className="text-right tabular-nums">{c.enrolled.toLocaleString("en-US")}</TableCell>

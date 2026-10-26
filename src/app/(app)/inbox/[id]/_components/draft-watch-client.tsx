@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { DRAFT_POLL_INTERVAL_MS, initialWatch, isWatching, observe, type WatchSnapshot } from "../_lib/draft-watch";
 
 /**
- * Shows "Drafting a reply..." and refreshes the server data every 3 s (up to 45 s) after a reclassification,
+ * Shows "Drafting a reply…" and refreshes the server data every 3 s (up to 45 s) after a reclassification,
  * so the new draft appears without a reload. The reply panel refreshes the page once after a change; a version
  * bump in the fresh props starts the watch.
  */
@@ -40,7 +40,7 @@ export function DraftWatch(snapshot: WatchSnapshot) {
   return (
     <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground" data-slot="draft-watch">
       <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-      Drafting a reply...
+      Drafting a reply…
     </p>
   );
 }
