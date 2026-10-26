@@ -77,11 +77,11 @@ describe("Findymail", () => {
 
 describe("Prospeo", () => {
   // https://prospeo.io/api-docs/enrich-person, read 2026-10-20 (excerpt of the documented answer).
-  const docHit = { error: false, free_enrichment: false, person: { full_name: "Eva Kiegler", email: { status: "VERIFIED", revealed: true, email: "eva@intercom.com", verification_method: "BOUNCEBAN", email_mx_provider: "Google" } }, company: { name: "Intercom" } };
+  const docHit = { error: false, free_enrichment: false, person: { full_name: "Ada Lindqvist", email: { status: "VERIFIED", revealed: true, email: "ada@example.com", verification_method: "BOUNCEBAN", email_mx_provider: "Google" } }, company: { name: "Intercom" } };
   const find = (status: number, body: unknown, headers?: Record<string, string>) => ask("prospeo", status, body, "find-work-email", inputs, headers);
 
   it("reads a masked or unrevealed address as no email", async () => {
-    for (const email of [{ ...docHit.person.email, email: "eva.*****@intercom.com" }, { ...docHit.person.email, revealed: false }]) {
+    for (const email of [{ ...docHit.person.email, email: "ada.*****@example.com" }, { ...docHit.person.email, revealed: false }]) {
       const { result } = await find(200, { ...docHit, person: { ...docHit.person, email } });
       expect(result).toMatchObject({ outcome: "miss", primary: null, billable: false });
     }
@@ -100,8 +100,8 @@ describe("Prospeo", () => {
     expect(seen[0].url).toBe("https://api.prospeo.io/enrich-person");
     expect(JSON.parse(String(seen[0].init.body))).toEqual({ only_verified_email: true, data: { full_name: "John Doe", company_website: "website.com" } });
     expect((seen[0].init.headers as Record<string, string>)["X-KEY"]).toBe(VENDOR_KEY);
-    expect(result).toMatchObject({ outcome: "hit", primary: "eva@intercom.com", outputs: { verificationStatus: "valid" } });
-    expect(JSON.stringify(result.response)).not.toContain("Kiegler");
+    expect(result).toMatchObject({ outcome: "hit", primary: "ada@example.com", outputs: { verificationStatus: "valid" } });
+    expect(JSON.stringify(result.response)).not.toContain("Lindqvist");
     noKey([result.request, result.response]);
   });
 

@@ -1,3 +1,4 @@
+import { RUNNABLE_TYPES } from "@/contexts/grid/domain/column-types";
 import { isFilterGroup, MAX_SORTS, MAX_VIEW_CONDITIONS, MAX_VIEW_DEPTH, isNumericFilterType, type FilterCondition, type FilterGroup, type FilterOperator, type SortSpec } from "@/contexts/grid/domain/view-query";
 
 /*
@@ -21,7 +22,7 @@ export function operatorsFor(type: string, options: { runs?: boolean } = {}): Fi
 }
 
 /** Runner columns, the ones whose own cell records a failed run. Their output columns carry no run state. */
-export const RUN_FILLED_TYPES: ReadonlySet<string> = new Set(["enrichment", "waterfall", "ai"]);
+export const RUN_FILLED_TYPES = RUNNABLE_TYPES;
 
 export const defaultOperatorFor = (type: string): FilterOperator => operatorsFor(type)[0];
 

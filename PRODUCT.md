@@ -48,6 +48,13 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Mine, Unassigned, Others:** the three scopes of Actions. Mine is what is assigned to you, Unassigned has no assignee, Others is assigned to someone else. Unconfirmed sends, unmatched senders and dead letters are Shared and sit outside the scopes.
 - **Waiting since:** the time of the last message from the person. Actions lists the longest wait first.
 - **Inbox:** the conversations, read or not. Work that needs a person lives in Actions.
+- **Conversation:** what a person assigns, reads and closes: one person's reply handling across email and LinkedIn. The code calls it a `record` (`records` table); a `conversations` row is one channel's thread inside it.
+- **Tables:** the spreadsheet area: folders, workbooks, tables. The code calls it `grid` (`src/contexts/grid`, `/api/grid`).
+- **Workbook:** one file in Tables. It holds one or more tables, shown as tabs.
+- **Table:** one tab of a workbook, with typed columns and rows.
+- **Enrichment column:** a table column that asks a provider for each row, such as Find work emails or Verify emails. A column that tries several providers in order is a `waterfall` in the code; the UI says "tried in order". The code calls the lookup a provider offers an action (`actionKey`).
+- **Enrichment provider:** a data vendor an organization connects with its own key in Settings > Integrations. The AI provider is a separate connection on the same page.
+- **Subcategory:** a reply category's finer label (for example Interested > Meeting requested), which an organization edits in Settings > Reply handling. The AI picks one per reply from its description and guidance.
 - A lead becomes a contact when you create a deal from it or make it a contact.
 - "Sequence" never names the post-reply feature in user-facing text. Code and table names keep `sequence`.
 

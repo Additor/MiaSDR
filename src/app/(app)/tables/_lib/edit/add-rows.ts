@@ -1,7 +1,9 @@
+import { GRID_LIMITS } from "@/contexts/grid/application/limits";
+
 /** The "Add N rows" control: what the field accepts and how many pages the grid loads to reach the new rows. */
 
-/** Matches GRID_LIMITS.addRows on the server, which refuses more. */
-export const MAX_ADD_ROWS = 1_000;
+/** The server refuses more. */
+export const MAX_ADD_ROWS = GRID_LIMITS.addRows;
 
 export type RowCountResult = { ok: true; count: number } | { ok: false; error: string };
 

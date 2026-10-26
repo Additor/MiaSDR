@@ -15,6 +15,8 @@ export const GRID_LIMITS = {
   tablesPerWorkbook: 100,
   /** Blank rows one request may add. */
   addRows: 1_000,
+  /** New columns one paste may create. */
+  pasteNewColumns: 100,
   /** Cell edits in one request, and the rows they may touch. */
   cellUpdates: 5_000,
   cellUpdateRows: 1_000,

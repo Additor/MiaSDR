@@ -59,6 +59,8 @@ export function upwardImports(file: string, source: string): string[] {
 const TIER_FORBIDDEN: Record<string, { paths: string[]; packages: RegExp | null }> = {
   shared: { paths: ["contexts", "platform", "composition", "app", "components", "lib", "hooks"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
   platform: { paths: ["composition", "app", "components", "lib", "hooks"], packages: null },
+  // Composition wires contexts together. A query there is a rule no context owns, so tables and drivers stay out.
+  composition: { paths: ["app", "components", "lib", "hooks", "platform/db/schema"], packages: /^(drizzle-orm|postgres)(\/|$)/ },
 };
 
 /** Platform files that import a context, as the code stood when the rule arrived. Shrink only. */
@@ -97,6 +99,10 @@ describe("tier dependencies", () => {
 
   it("keeps src/platform free of composition, app and UI", () => {
     expect(tierViolations("platform")).toEqual([]);
+  });
+
+  it("keeps src/composition free of app, UI, tables and drivers", () => {
+    expect(tierViolations("composition")).toEqual([]);
   });
 
   it("lets src/platform import a context only where the shrink-only list allows it", () => {

@@ -12,7 +12,7 @@ import type { GridDeps, PasteWrite, RowRecord } from "./ports";
 type Deps = Pick<GridDeps, "structure" | "columns" | "rows" | "formulas">;
 
 /** Most new columns one paste may create. */
-export const MAX_PASTE_NEW_COLUMNS = 100;
+export const MAX_PASTE_NEW_COLUMNS = GRID_LIMITS.pasteNewColumns;
 
 export interface PasteInput {
   /** The row at the top left of the block. Rows after it in table order take the next lines. */

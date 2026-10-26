@@ -11,16 +11,16 @@ describe("People Data Labs", () => {
   const docPerson = {
     status: 200,
     likelihood: 10,
-    data: { work_email: "kimberly_patton@hall-rios-and-miller.com", job_title: "tax adviser", job_company_name: "hall, rios and miller", linkedin_url: "linkedin.com/in/kimberly_patton" },
+    data: { work_email: "jordan_reyes@hall-rios-and-miller.com", job_title: "tax adviser", job_company_name: "hall, rios and miller", linkedin_url: "linkedin.com/in/jordan_reyes" },
   };
   // https://docs.peopledatalabs.com/docs/errors
   const docNotFound = { status: 404, error: { type: "not_found", message: "No records were found matching your request" } };
-  const person = (status: number, body: unknown, inputs: Record<string, unknown> = { fullName: "Kimberly Patton", companyDomain: "hall-rios-and-miller.com" }, headers?: Record<string, string>) => ask("peopledatalabs", status, body, "enrich-person", inputs, headers);
+  const person = (status: number, body: unknown, inputs: Record<string, unknown> = { fullName: "Jordan Reyes", companyDomain: "hall-rios-and-miller.com" }, headers?: Record<string, string>) => ask("peopledatalabs", status, body, "enrich-person", inputs, headers);
 
   it("matches a name with a company name when the row has no domain", async () => {
-    const { seen } = await person(200, docPerson, { fullName: "Kimberly Patton", companyName: "Hall, Rios and Miller" });
+    const { seen } = await person(200, docPerson, { fullName: "Jordan Reyes", companyName: "Hall, Rios and Miller" });
     expect(new URL(seen[0].url).searchParams.get("company")).toBe("Hall, Rios and Miller");
-    const apollo = await ask("apollo", 200, { person: {} }, "enrich-person", { fullName: "Kimberly Patton", companyName: "Hall, Rios and Miller" });
+    const apollo = await ask("apollo", 200, { person: {} }, "enrich-person", { fullName: "Jordan Reyes", companyName: "Hall, Rios and Miller" });
     expect(new URL(apollo.seen[0].url).searchParams.get("organization_name")).toBe("Hall, Rios and Miller");
   });
 
@@ -41,31 +41,31 @@ describe("People Data Labs", () => {
     const { result, seen } = await person(200, docPerson);
     const url = new URL(seen[0].url);
     expect(`${url.origin}${url.pathname}`).toBe("https://api.peopledatalabs.com/v5/person/enrich");
-    expect(Object.fromEntries(url.searchParams)).toEqual({ name: "Kimberly Patton", company: "hall-rios-and-miller.com", min_likelihood: "6", data_include: "work_email,job_title,job_company_name,linkedin_url" });
+    expect(Object.fromEntries(url.searchParams)).toEqual({ name: "Jordan Reyes", company: "hall-rios-and-miller.com", min_likelihood: "6", data_include: "work_email,job_title,job_company_name,linkedin_url" });
     expect((seen[0].init.headers as Record<string, string>)["X-Api-Key"]).toBe(VENDOR_KEY);
     expect(result).toMatchObject({
       outcome: "hit",
-      primary: "kimberly_patton@hall-rios-and-miller.com",
-      outputs: { title: "tax adviser", company: "hall, rios and miller", linkedinUrl: "https://linkedin.com/in/kimberly_patton", likelihood: 10 },
+      primary: "jordan_reyes@hall-rios-and-miller.com",
+      outputs: { title: "tax adviser", company: "hall, rios and miller", linkedinUrl: "https://linkedin.com/in/jordan_reyes", likelihood: 10 },
     });
     noKey([result.request, result.response, seen[0].url.replace(VENDOR_KEY, "")]);
   });
 
   it("never stores personal emails or phones, even when PDL sends them", async () => {
-    const leaky = { ...docPerson, data: { ...docPerson.data, personal_emails: ["kimberly_patton@me.com"], mobile_phone: "+15814854381" } };
+    const leaky = { ...docPerson, data: { ...docPerson.data, personal_emails: ["jordan_reyes@me.com"], mobile_phone: "+15555550123" } };
     const { result } = await person(200, leaky);
     // The request never asks for them; this guards the answer side as well.
     const stored = JSON.stringify([result.outputs, result.response]);
     expect(stored).not.toContain("me.com");
-    expect(stored).not.toContain("+15814854381");
+    expect(stored).not.toContain("+15555550123");
   });
 
   it("matches by email or LinkedIn URL alone and refuses a name without a domain", async () => {
-    const byEmail = await person(200, docPerson, { email: "kimberly_patton@hall-rios-and-miller.com" });
-    expect(new URL(byEmail.seen[0].url).searchParams.get("email")).toBe("kimberly_patton@hall-rios-and-miller.com");
-    const byProfile = await person(200, docPerson, { linkedinUrl: "https://www.linkedin.com/in/kimberly_patton" });
-    expect(new URL(byProfile.seen[0].url).searchParams.get("profile")).toBe("https://www.linkedin.com/in/kimberly_patton");
-    const nameOnly = await person(200, docPerson, { fullName: "Kimberly Patton" });
+    const byEmail = await person(200, docPerson, { email: "jordan_reyes@hall-rios-and-miller.com" });
+    expect(new URL(byEmail.seen[0].url).searchParams.get("email")).toBe("jordan_reyes@hall-rios-and-miller.com");
+    const byProfile = await person(200, docPerson, { linkedinUrl: "https://www.linkedin.com/in/jordan_reyes" });
+    expect(new URL(byProfile.seen[0].url).searchParams.get("profile")).toBe("https://www.linkedin.com/in/jordan_reyes");
+    const nameOnly = await person(200, docPerson, { fullName: "Jordan Reyes" });
     expect(nameOnly.result).toMatchObject({ transient: false });
     expect(nameOnly.seen).toHaveLength(0);
   });

@@ -1,3 +1,4 @@
+import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { isStaticColumnType } from "@/contexts/grid/domain/column-types";
 import { neutralizeFormula, restoreFormula } from "@/contexts/grid/domain/csv";
 import { editorText } from "../view/format";
@@ -136,8 +137,8 @@ export type PasteRoute =
   | { kind: "block"; request: BlockPasteRequest }
   | { kind: "refuse"; message: string };
 
-/** Mirrors the server's limits (`GRID_LIMITS.addRows`, `cellUpdates`, `MAX_PASTE_NEW_COLUMNS`). */
-export const PASTE_LIMITS = { rows: 1_000, cells: 5_000, newColumns: 100 } as const;
+/** The server's paste limits. */
+export const PASTE_LIMITS = { rows: GRID_LIMITS.addRows, cells: GRID_LIMITS.cellUpdates, newColumns: GRID_LIMITS.pasteNewColumns } as const;
 
 export const GROWTH_NEEDS_TABLE_ORDER = "This view is filtered, sorted or searched, so a paste cannot add rows or columns. Clear the filter, sort and search, then paste again.";
 export const ROWS_NOT_LOADED = "That paste reaches rows that are not loaded, and this view is filtered, sorted or searched. Scroll down to load more rows, or clear the filter, sort and search.";

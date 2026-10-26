@@ -83,6 +83,9 @@ describe("validateSteps", () => {
   it("rejects a knowledge tag over 80 characters", () => {
     expect(validateSteps([{ ...blankReply(), aiInstructions: "Answer.", knowledgeTags: ["x".repeat(81)] }])).toHaveLength(1);
   });
+  it("rejects more than 50 knowledge tags", () => {
+    expect(validateSteps([{ ...blankReply(), aiInstructions: "Answer.", knowledgeTags: Array.from({ length: 51 }, (_, i) => `t${i}`) }])).toHaveLength(1);
+  });
 });
 
 describe("formChanged", () => {

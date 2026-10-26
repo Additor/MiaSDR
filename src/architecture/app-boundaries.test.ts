@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The public surface of a context for `src/app`. Pages and route handlers import a context's `domain/` and
+ * The public surface of a context for UI code: `src/app`, `src/components`, `src/hooks` and `src/lib`. Pages and route handlers import a context's `domain/` and
  * `application/` freely, but from `infrastructure/` only its composition files (`composition.ts`, `*-composition.ts`),
  * which hand out wired deps, plus the identity entry points below. Everything else in `infrastructure/` is private, so
  * a context can rename or split a store without touching a route.
@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 /** Identity's auth entry points: the session readers, the Better Auth handler and client, and the sign-up facts. */
 const PUBLIC_INFRASTRUCTURE = new Set(["identity/infrastructure/session", "identity/infrastructure/auth-client", "identity/infrastructure/auth", "identity/infrastructure/signup-facts"]);
 
-/** App files that still import a private infrastructure module, as the code stood when the rule arrived. Shrink only. */
+/** UI files that still import a private infrastructure module, as the code stood when the rule arrived. Shrink only. */
 const PRIVATE_IMPORTS: Record<string, string[]> = {
   "src/app/api/dev/inbound/route.ts": ["outreach/email/infrastructure/fake-mailbox-provider"],
   "src/app/api/grid/tables/[tableId]/import/route.ts": ["grid/infrastructure/parse-upload"],
@@ -33,7 +33,7 @@ function appFiles(dir: string, out: string[] = []): string[] {
 /** The private infrastructure modules `source` imports, as `<context>[/<subdomain>]/infrastructure/<module>`. */
 export function privateImports(source: string): string[] {
   const found = new Set<string>();
-  for (const m of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)["']@\/contexts\/([a-z]+(?:\/[a-z-]+)?\/infrastructure\/[a-z0-9-]+)["']/g)) {
+  for (const m of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)["']@\/contexts\/([a-z]+(?:\/[a-z-]+)?\/infrastructure\/[a-z0-9/-]+)["']/g)) {
     const imported = m[1];
     if (/(^|-)composition$/.test(imported.split("/").pop() ?? "") || PUBLIC_INFRASTRUCTURE.has(imported)) continue;
     found.add(imported);
@@ -44,7 +44,7 @@ export function privateImports(source: string): string[] {
 describe("app boundaries", () => {
   it("imports private infrastructure only where the shrink-only list allows it", () => {
     const found: Record<string, string[]> = {};
-    for (const file of appFiles(path.join(ROOT, "src/app"))) {
+    for (const file of ["src/app", "src/components", "src/hooks", "src/lib"].flatMap((dir) => appFiles(path.join(ROOT, dir)))) {
       const hits = privateImports(readFileSync(file, "utf8"));
       if (hits.length > 0) found[path.relative(ROOT, file).split(path.sep).join("/")] = hits;
     }
@@ -58,7 +58,8 @@ describe("app boundaries", () => {
       'import { requireOrgContext } from "@/contexts/identity/infrastructure/session";',
       'import { drizzleLeadStore } from "@/contexts/people/infrastructure/drizzle-lead-store";',
       'const q = await import("@/contexts/people/infrastructure/queries");',
+      'import { VENDORS } from "@/contexts/grid/enrichment/infrastructure/vendors/index";',
     ].join("\n");
-    expect(privateImports(source)).toEqual(["people/infrastructure/drizzle-lead-store", "people/infrastructure/queries"]);
+    expect(privateImports(source)).toEqual(["grid/enrichment/infrastructure/vendors/index", "people/infrastructure/drizzle-lead-store", "people/infrastructure/queries"]);
   });
 });

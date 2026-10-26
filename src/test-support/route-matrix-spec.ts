@@ -165,6 +165,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "grid/tables/[tableId]/columns/[columnId]/text-to-columns": { ids: { columnId: { table: "grid_columns", links: { tableId: "table_id" } } }, handlers: { POST: ok() } },
   "grid/tables/[tableId]/duplicate": { ids: { tableId: "grid_tables" }, handlers: { POST: ok() } },
   "grid/tables/[tableId]/enrichments": { ids: { tableId: "grid_tables" }, handlers: { POST: ok({ kind: "enrichment", providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] }), PATCH: { valid: { columnId: "00000000-0000-4000-8000-000000000001" }, mayNotFindOwnRow: true } } },
+  "grid/tables/[tableId]/enrichments/preview": { ids: { tableId: "grid_tables" }, handlers: { POST: ok({ steps: [{ providerKey: "fake", actionKey: "find-email" }], inputs: { fullName: "name", companyDomain: "domain" } }) } },
   "grid/tables/[tableId]/export": { ids: { tableId: "grid_tables" }, handlers: { POST: ok() } },
   "grid/tables/[tableId]/formula-generate": { ids: { tableId: "grid_tables" }, handlers: { POST: ok({ prompt: "add two columns" }) } },
   "grid/tables/[tableId]/formula-preview": { ids: { tableId: "grid_tables" }, handlers: { POST: ok() } },

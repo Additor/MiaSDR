@@ -1,6 +1,6 @@
 # Grid context
 
-Clay-style tables: folder, workbook, table, typed columns, rows. Cells live in `grid_rows.cells` (jsonb keyed by column key), per-cell run state in `cell_meta`. Every table carries `organization_id`; every query filters on it, and another tenant's id answers `NotFoundError`.
+Spreadsheet tables: folder, workbook, table, typed columns, rows. Cells live in `grid_rows.cells` (jsonb keyed by column key), per-cell run state in `cell_meta`. Every table carries `organization_id`; every query filters on it, and another tenant's id answers `NotFoundError`.
 
 Two modules share this context. The enrichment module owns providers, credentials, AI and enrichment columns, `grid_jobs`, `grid_cell_runs` writes and `/run`, and lives in `enrichment/` with its own `domain`, `application` and `infrastructure` folders. The core module (this section) owns everything else. They meet at the functions listed under "Seams".
 
@@ -124,6 +124,18 @@ Export writes UTF-8 with a BOM. Any text cell that starts with `=`, `+`, `-`, `@
 - `registerColumnTypeHook(type, { validate, dependsOn })`: the generic column endpoints refuse to create or retarget a runner column (any type except `formula`) that has no hook, so raw JSON cannot reach the worker unchecked. The enrichment module creates its columns through its own endpoints. Renaming, moving and the auto-run switch still work on every column.
 - Formula columns: the grid stores `config.expression` and `depends_on`. Running the column belongs to the runner, which calls `evaluateFormula`.
 - `deleteColumn` removes the column's rows of `grid_jobs`. It leaves `grid_cell_runs` to the cascade from the row.
+
+## Adding an enrichment vendor
+
+A vendor with a fixed host gets a native adapter. Paths below are under `enrichment/`.
+
+1. `domain/enrichment-catalog.ts`: add the key to `VendorAdapterKey`, list its actions (`contractAction("find-work-email")` for a shared action, so it can sit in a waterfall with other vendors; a `<VENDOR>_ACTIONS` list for its own), and add a `PROVIDER_CATALOG` entry with `status: "available"`, `adapter`, `fixedBaseUrl` and the vendor's rate limit.
+2. `infrastructure/vendors/<key>.ts`: a `VendorDefinition` with `execute` and a `checkKey` that spends no credits. Build requests with the helpers in `vendor-kit.ts`, keep the vendor's quirks in its own file, and name the API pages the file follows.
+3. `infrastructure/vendors/index.ts`: add it to `VENDORS`. `enrichment-adapters.test.ts` fails until every `available` entry has a definition.
+4. Tests: a case in `vendors-find`, `vendors-verify` or `vendors-enrich.test.ts` (with `vendor-test-kit.ts`) built from the response samples in the vendor's docs, with made-up people and `example.com` addresses, and one in `vendor-key-check.test.ts`.
+5. Docs: a row in the Vendors table of `docs/setup/enrichment.md`, and a line in `CHANGELOG.md`.
+
+The Custom HTTP API provider covers a vendor without an adapter, once the operator adds its host to `GRID_HTTP_ALLOWED_HOSTS`.
 
 ## Runs, AI columns and recalculation
 

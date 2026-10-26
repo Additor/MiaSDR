@@ -1,7 +1,9 @@
 // Pure rules of the After a reply form: delay units, the step list the person edits, its validation and the payload.
 // The API stores delays in minutes. The form shows days unless a stored delay only fits hours or minutes.
 
-export const MAX_FOLLOW_UP_STEPS = 30;
+import { MAX_STEPS, MAX_TAGS } from "@/contexts/conversations/after-reply/domain/sequences";
+
+export const MAX_FOLLOW_UP_STEPS = MAX_STEPS;
 const MAX_TAG_LENGTH = 80;
 
 export const DELAY_UNITS = [
@@ -113,6 +115,7 @@ export function validateSteps(steps: EditorStep[]): StepIssue[] {
     const step = index + 1;
     if (s.aiInstructions.trim() === "") issues.push({ step, message: `Step ${step} needs a goal.` });
     if (index > 0 && s.delayMinutes < 1) issues.push({ step, message: `Step ${step} must wait at least one minute.` });
+    if (s.knowledgeTags.length > MAX_TAGS) issues.push({ step, message: `Step ${step}: use at most ${MAX_TAGS} knowledge tags.` });
     if (s.knowledgeTags.some((t) => t.length > MAX_TAG_LENGTH)) issues.push({ step, message: `Step ${step}: a knowledge tag can have at most ${MAX_TAG_LENGTH} characters.` });
   });
   return issues;

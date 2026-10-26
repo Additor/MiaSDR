@@ -20,6 +20,7 @@ import { people } from "@/contexts/people/infrastructure/schema";
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES } from "../domain/draft-status";
+import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
 import { inList } from "@/platform/db/sql-values";
 
 /**
@@ -30,7 +31,7 @@ import { inList } from "@/platform/db/sql-values";
  * Nothing is sent without human approval. That rule lives in the domain and
  * in `send_attempts`; there is no setting to turn it off.
  *
- * Deferred past the MVP: follow-up sequences (crm_sequences and friends).
+ * The After a reply flow keeps its tables in `after-reply/infrastructure/sequences-schema.ts`.
  */
 
 export const CATEGORY_KEYS = ["customer", "interested", "not_interested", "other"] as const;
@@ -115,7 +116,6 @@ export const pipelineSettings = pgTable(
   ],
 );
 
-export const WORKFLOW_STATES = ["unclassified", "classifying", "action_required", "waiting", "idle", "paused", "closed", "error"] as const;
 export const CHANNELS = ["email", "linkedin", "whatsapp"] as const;
 
 /** One person's standing in one pipeline. `context_version` is the optimistic lock for AI work. */
@@ -128,7 +128,7 @@ export const records = pgTable(
     pipelineId: uuid("pipeline_id").notNull(),
     categoryKey: text("category_key"),
     subcategoryId: uuid("subcategory_id"),
-    workflowState: text("workflow_state").notNull().default("unclassified"),
+    workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("unclassified"),
     categorySource: text("category_source"),
     categoryLocked: boolean("category_locked").notNull().default(false),
     activeChannel: text("active_channel"),

@@ -1,8 +1,10 @@
+import { GRID_LIMITS } from "@/contexts/grid/application/limits";
+
 const count = (n: number) => n.toLocaleString("en-US");
 const rows = (n: number) => `${count(n)} ${n === 1 ? "row" : "rows"}`;
 
 /** Rows per DELETE request. */
-export const DELETE_BATCH = 5000;
+export const DELETE_BATCH = GRID_LIMITS.deleteRows;
 
 /** Dialog title that names the count and the table: `Delete 1 row from "Leads"?` */
 export function deleteRowsTitle(selected: number, tableName: string): string {

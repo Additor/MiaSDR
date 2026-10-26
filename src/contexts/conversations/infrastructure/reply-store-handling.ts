@@ -6,6 +6,7 @@ import { restartRecordWorkTx } from "./restart-record-work";
 import { aiJobs, classifications, conversations, drafts, events, people, records, subcategories } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
+import { afterManualCategory } from "../domain/workflow-state";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** What a person decides about a reply: a classification of their own, or suppressing the sender. */
@@ -83,7 +84,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
       }
 
       const wantsDraft = input.wantsDraft(target.categoryKey, target.key);
-      const nextState = wantsDraft ? (["idle", "error", "unclassified"].includes(head.state) ? "action_required" : head.state) : head.state === "action_required" ? "idle" : head.state;
+      const nextState = afterManualCategory(head.state, wantsDraft);
       await tx
         .update(records)
         .set({ categoryKey: target.categoryKey, subcategoryId: target.id, categorySource: "human", workflowState: nextState })
