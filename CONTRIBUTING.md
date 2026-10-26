@@ -112,7 +112,7 @@ Timing runs stay out of the suite and live in `scripts/bench`: the grid change f
 
 ## Reporting problems
 
-Open an issue for bugs and feature ideas. Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Open an issue for bugs and feature ideas. Report security problems privately, as described in [SECURITY.md](.github/SECURITY.md).
 
 ## License
 

@@ -43,4 +43,4 @@ We treat good-faith research that follows this policy as authorized. Stay within
 
 ## Operating an instance safely
 
-Instance owners protect their own deployment. The key points are in [Self-hosting](docs/deploy/self-host.md) and [Operations](docs/operations.md): generate every secret with `openssl rand -hex 32`, keep `.env` at mode `600`, back up `INTEGRATION_CREDENTIALS_KEY` off the server, serve the app over HTTPS, keep `AUTH_SIGNUP=invite-only`, and restrict mailbox domains with `MAILBOX_ALLOWED_DOMAINS`.
+Instance owners protect their own deployment. The key points are in [Self-hosting](../docs/deploy/self-host.md) and [Operations](../docs/operations.md): generate every secret with `openssl rand -hex 32`, keep `.env` at mode `600`, back up `INTEGRATION_CREDENTIALS_KEY` off the server, serve the app over HTTPS, keep `AUTH_SIGNUP=invite-only`, and restrict mailbox domains with `MAILBOX_ALLOWED_DOMAINS`.
