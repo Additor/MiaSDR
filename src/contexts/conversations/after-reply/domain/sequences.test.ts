@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   assertConversationBelongsToRecord,
   assertPublishable,
-  NO_START_KEYS,
   assertRunTransition,
   assertStepsBelongToVersion,
   assertStepTransition,
   dueAfter,
   interruptReason,
-  isTerminalReplyType,
+  followUpsContinue,
   parseSteps,
   planDueDates,
   renderTemplate,
@@ -98,25 +97,25 @@ describe("interruptReason", () => {
     expect(interruptReason(facts({ flowActive: false, record: { latestInboundMessageId: "m2" } }))).toBe("reply");
   });
   it("stops when the record closes", () => expect(interruptReason(facts({ record: { workflowState: "closed" } }))).toBe("record_closed"));
-  it("stops on a move to a terminal subcategory, not on a start there", () => {
-    const moved = facts({ record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now" } });
+  it("stops on a move to a type set to stop follow-ups, not on a start there", () => {
+    const moved = facts({ record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now", followUps: "stop" } });
     expect(interruptReason(moved)).toBe("terminal_stage");
-    const startedThere = facts({ run: { replyTypeId: "s2" }, record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now" } });
+    const startedThere = facts({ run: { replyTypeId: "s2" }, record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now", followUps: "stop" } });
     expect(interruptReason(startedThere)).toBeNull();
     expect(interruptReason(facts({ record: { replyTypeId: "s3", replyTypeKey: "meeting_requested" } }))).toBeNull();
   });
-  it("names terminal subcategories", () => {
-    expect(isTerminalReplyType("not_interested", "already_using_a_tool")).toBe(true);
-    expect(isTerminalReplyType("other", "left_company")).toBe(true);
-    expect(isTerminalReplyType("customer", "customer")).toBe(true);
-    expect(isTerminalReplyType("interested", "demo_request")).toBe(false);
+  it("reads the type's Follow-ups rule, not its group or key", () => {
+    expect(interruptReason(facts({ record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now", followUps: "continue" } }))).toBeNull();
+    expect(interruptReason(facts({ record: { replyTypeId: "s2", groupKey: "other", replyTypeKey: "out_of_office", followUps: "stop" } }))).toBe("terminal_stage");
+    expect(interruptReason(facts({ record: { replyTypeId: "s2", groupKey: "interested", replyTypeKey: "pricing_question", followUps: "stop" } }))).toBe("terminal_stage");
   });
 });
 
-describe("no-start keys", () => {
-  it("lists the terminal subcategories and Out of office", () => {
-    expect([...NO_START_KEYS].sort()).toEqual(["connected_to_different_contact", "customer", "do_not_contact", "left_company", "out_of_office", "wrong_contact"]);
-    for (const key of NO_START_KEYS) if (key !== "out_of_office") expect(isTerminalReplyType(null, key)).toBe(true);
+describe("followUpsContinue", () => {
+  it("lets follow-ups run only for a type set to continue", () => {
+    expect(followUpsContinue("continue")).toBe(true);
+    expect(followUpsContinue("stop")).toBe(false);
+    expect(followUpsContinue(null)).toBe(false);
   });
 });
 

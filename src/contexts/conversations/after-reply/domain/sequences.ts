@@ -124,18 +124,26 @@ export const AFTER_REPLY_OFF = "after_reply_off";
 
 export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bounce" | "suppressed" | "terminal_stage" | "record_closed" | "converted" | typeof AFTER_REPLY_OFF;
 
-/** Subcategories after which a follow-up would be wrong: a refusal, a wrong or departed contact, a closed deal. */
-const TERMINAL_REPLY_TYPES = new Set(["do_not_contact", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]);
+/**
+ * Whether the record's reply type lets follow-ups run. The type's Follow-ups rule (`reply_types.follow_ups`) decides;
+ * a record without a type, or a type the read could not find, starts nothing.
+ */
+export const followUpsContinue = (followUps: FollowUpsRule | null): boolean => followUps === "continue";
+
+const LEGACY_TERMINAL_KEYS = new Set(["do_not_contact", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]);
 
 /**
- * Subcategories a run never starts for: the reply policy's no-reply keys (Out of office) and the terminal ones.
- * `not_interested` is a category and the engine filters it by category key.
+ * @deprecated The old key list. Only `domain/reply-type.test.ts` reads it, to compare the seeded rules with the old
+ * key rules. P3 deletes it with that comparison. Nothing decides by it.
  */
-export const NO_START_KEYS: readonly string[] = ["do_not_contact", "out_of_office", "left_company", "wrong_contact", "connected_to_different_contact", "customer"];
+export const NO_START_KEYS: readonly string[] = [...LEGACY_TERMINAL_KEYS, "out_of_office"];
 
+/**
+ * @deprecated The old key and group rule. Only `domain/reply-type.test.ts` reads it, to compare the seeded rules with
+ * the old key rules. P3 deletes it with that comparison. Nothing decides by it.
+ */
 export function isTerminalReplyType(groupKey: string | null, replyTypeKey: string | null): boolean {
-  if (groupKey === "not_interested") return true;
-  return replyTypeKey !== null && TERMINAL_REPLY_TYPES.has(replyTypeKey);
+  return groupKey === "not_interested" || (replyTypeKey !== null && LEGACY_TERMINAL_KEYS.has(replyTypeKey));
 }
 
 export interface InterruptFacts {
@@ -159,8 +167,9 @@ export interface InterruptFacts {
 }
 
 /**
- * Why a run must stop now, or null. A move to a terminal subcategory stops it only when the run did not start
- * there, so a sequence deliberately assigned to such a subcategory is not cancelled by its own start.
+ * Why a run must stop now, or null. A move to a reply type whose Follow-ups rule is Stop ends the run. A run whose
+ * record still carries the type it started on is spared: rules apply at decision time, so an edit of that type's
+ * rule later does not reach back into a run already going.
  */
 export function interruptReason(facts: InterruptFacts): InterruptReason | null {
   if (facts.doNotContact) return "do_not_contact";
@@ -170,7 +179,7 @@ export function interruptReason(facts: InterruptFacts): InterruptReason | null {
   if (facts.contact) return "converted";
   if (facts.record.latestInboundMessageId !== null && facts.record.latestInboundMessageId !== facts.run.triggerMessageId) return "reply";
   if (facts.record.workflowState === "closed") return "record_closed";
-  if (facts.record.replyTypeId !== facts.run.replyTypeId && isTerminalReplyType(facts.record.groupKey, facts.record.replyTypeKey)) return "terminal_stage";
+  if (facts.record.replyTypeId !== facts.run.replyTypeId && facts.record.followUps === "stop") return "terminal_stage";
   if (!facts.flowActive) return AFTER_REPLY_OFF;
   return null;
 }

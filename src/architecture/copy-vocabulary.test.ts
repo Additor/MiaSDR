@@ -351,7 +351,7 @@ const blockedFacts: afterReply.StartBlockFacts[] = [
   { ...baseFacts, suppressed: true },
   { ...baseFacts, record: { ...baseFacts.record, hasEmail: false } },
   { ...baseFacts, record: { ...baseFacts.record, replyTypeId: null } },
-  { ...baseFacts, record: { ...baseFacts.record, groupKey: "not_interested", replyTypeKey: "not_interested", replyTypeName: "Not interested" } },
+  { ...baseFacts, record: { ...baseFacts.record, groupKey: "not_interested", replyTypeKey: "not_interested", replyTypeName: "Not interested", followUps: "stop" } },
   { ...baseFacts, stepCount: 1, answered: true },
 ];
 

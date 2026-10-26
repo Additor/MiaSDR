@@ -1,7 +1,6 @@
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 import { runStatusLabel, startBlockedReason, startedByLabel, stopReasonLabel } from "../domain/after-reply";
 import { assertConversationBelongsToRecord, assertStepsBelongToVersion, isAnswered, planDueDates, startPosition } from "../domain/sequences";
-import { needsReply } from "../../domain/reply-policy";
 import type { RecordSequenceState, RunSource, RunStore, StartFacts } from "./sequence-ports";
 
 /**
@@ -33,6 +32,7 @@ export interface StartRunInput {
 /** The first reason no run can start from these facts, or null. The same words reach the Restart button and the 409. */
 export function startBlocker(facts: StartFacts, input: { source: RunSource; skipReply?: boolean }): string | null {
   const { record } = facts;
+  // The reply type's Follow-ups rule decides for both sources: `startBlockedReason` reads `record.followUps`.
   const blocked = startBlockedReason({
     record,
     conversation: facts.conversation,
@@ -46,9 +46,6 @@ export function startBlocker(facts: StartFacts, input: { source: RunSource; skip
     skipReply: input.skipReply,
   });
   if (blocked) return blocked;
-  if (input.source === "ai_assignment" && (!record.groupKey || !record.replyTypeKey || !needsReply(record.groupKey, record.replyTypeKey))) {
-    return `The reply is classified as ${record.replyTypeName ?? "this category"}, which needs no answer, so follow-ups do not apply.`;
-  }
   // The owner passed every check but the store found no flow to run: a campaign or flow changed between the reads.
   return facts.selection ? null : "Follow-ups cannot start for this conversation right now.";
 }
@@ -57,7 +54,7 @@ export type StartOutcome = { started: { runId: string; created: boolean } } | { 
 
 /**
  * Starts a run pinned to the newest published version of the owning campaign's flow, or answers why none can start
- * (no flow, the campaign is paused or in handoff mode, no reply wanted, a terminal subcategory). Proves the two facts
+ * (no flow, the campaign is paused or in handoff mode, a reply type set to stop follow-ups). Proves the two facts
  * SQL cannot: the conversation belongs to the record, and every step belongs to the pinned version. A run already
  * started for the same message and version is returned as is.
  */
