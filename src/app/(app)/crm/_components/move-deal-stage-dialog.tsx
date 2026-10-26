@@ -112,7 +112,7 @@ export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenSta
       title={title}
       description={chosen?.kind === "lost" ? "A lost deal keeps its reason, so the team can see why later." : "Pick the stage the deal is in now."}
       confirmLabel={stale ? "Move again" : targetKind === "won" ? "Mark won" : targetKind === "lost" ? "Mark lost" : "Move"}
-      pendingLabel="Moving..."
+      pendingLabel="Moving…"
       confirmDisabled={!ready}
       onConfirm={move}
     >
@@ -130,7 +130,7 @@ export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenSta
         <Label htmlFor={`move-deal-${deal.id}`}>New stage</Label>
         <Select items={choices} value={chosenValue} onValueChange={(v) => v && setTarget(v)} disabled={choices.length === 0}>
           <SelectTrigger id={`move-deal-${deal.id}`} className="w-full">
-            <SelectValue placeholder={stages ? "Choose a stage" : "Loading stages..."} />
+            <SelectValue placeholder={stages ? "Choose a stage" : "Loading stages…"} />
           </SelectTrigger>
           <SelectContent>
             {choices.map((c) => (
@@ -157,12 +157,20 @@ export function MoveDealStageButton({
   variant = "outline",
   size = "sm",
   disabled = false,
+  className,
   ...props
-}: Omit<MoveDealStageDialogProps, "open" | "onOpenChange"> & { label?: string; variant?: "default" | "outline"; size?: "default" | "sm" | "xs"; /** Off while another move of this deal is on its way. */ disabled?: boolean }) {
+}: Omit<MoveDealStageDialogProps, "open" | "onOpenChange"> & {
+  label?: string;
+  variant?: "default" | "outline";
+  size?: "default" | "sm" | "xs";
+  /** Off while another move of this deal is on its way. */
+  disabled?: boolean;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant={variant} size={size} onClick={() => setOpen(true)} disabled={disabled}>
+      <Button variant={variant} size={size} className={className} onClick={() => setOpen(true)} disabled={disabled}>
         {label}
       </Button>
       <MoveDealStageDialog {...props} open={open} onOpenChange={setOpen} />

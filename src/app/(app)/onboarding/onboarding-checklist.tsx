@@ -44,27 +44,30 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
           </Button>
         )}
       </div>
-      {/* One ruled list. The next step carries weight in its title and the filled button; the others stay quiet. */}
+      {/* One ruled list. The next step carries weight in its title and an outline action, since Next above holds the one filled button; the others stay quiet. */}
       <ol className="divide-y rounded-lg border">
         {view.steps.map((step) => {
           const isNext = step.id === view.nextStepId;
           return (
-            <li key={step.id} aria-current={isNext ? "step" : undefined} className="flex flex-wrap items-start gap-3 p-4 sm:flex-nowrap">
+            <li key={step.id} aria-current={isNext ? "step" : undefined} className="flex items-start gap-3 p-4">
               <span className="mt-0.5 shrink-0">{ICON[step.status]}</span>
-              <div className="stack-field min-w-0 flex-1">
-                <h2 className={cn("flex flex-wrap items-center gap-2 text-sm", isNext ? "font-semibold" : "font-medium", step.status === "done" && "text-muted-foreground")}>
-                  {step.title}
-                  {step.optional && <Badge variant="outline">Optional</Badge>}
-                  <span className="text-xs font-normal text-muted-foreground">{STATUS_WORD[step.status]}</span>
-                </h2>
-                {step.status !== "done" && <p className="text-sm text-muted-foreground">{step.description}</p>}
-                {step.detail && <p className="text-sm">{step.detail}</p>}
+              {/* Below sm the action sits under the text, so the description keeps the row's width. */}
+              <div className="flex min-w-0 flex-1 flex-col items-start gap-3 sm:flex-row">
+                <div className="stack-field min-w-0 flex-1">
+                  <h2 className={cn("flex flex-wrap items-center gap-2 text-sm", isNext ? "font-semibold" : "font-medium", step.status === "done" && "text-muted-foreground")}>
+                    {step.title}
+                    {step.optional && <Badge variant="outline">Optional</Badge>}
+                    <span className="text-xs font-normal text-muted-foreground">{STATUS_WORD[step.status]}</span>
+                  </h2>
+                  {step.status !== "done" && <p className="text-sm text-muted-foreground">{step.description}</p>}
+                  {step.detail && <p className="text-sm">{step.detail}</p>}
+                </div>
+                {step.status !== "done" && (
+                  <Button variant={isNext ? "outline" : "ghost"} size="sm" nativeButton={false} render={<Link href={step.href} />} className="shrink-0 max-sm:h-11">
+                    {step.action}
+                  </Button>
+                )}
               </div>
-              {step.status !== "done" && (
-                <Button variant={isNext ? "default" : "ghost"} size="sm" nativeButton={false} render={<Link href={step.href} />} className="ml-8 sm:ml-0">
-                  {step.action}
-                </Button>
-              )}
             </li>
           );
         })}
@@ -83,7 +86,7 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
         title="Hide the setup guide for everyone in this organization?"
         description="The step count and highlight leave the sidebar for every owner and admin. The Setup guide link and this page stay. The app has no button to bring the highlight back."
         confirmLabel="Hide setup guide"
-        pendingLabel="Hiding..."
+        pendingLabel="Hiding…"
         onConfirm={hide}
       />
     </div>

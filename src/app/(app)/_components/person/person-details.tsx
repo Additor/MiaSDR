@@ -268,8 +268,9 @@ function CompanyEditor({ id, person, values, companyHref, dealCount, close }: Ed
         onOpenChange={(open) => !open && setAsking(null)}
         title={asked.kind === "move" ? `Move ${person} to ${asked.to}?` : `Remove ${person} from ${oldCompany}?`}
         description={`${person} leaves ${oldCompany}.${dealsLine}`}
-        confirmLabel={asked.kind === "move" ? "Move" : "Remove"}
+        confirmLabel={asked.kind === "move" ? "Change company" : "Remove from company"}
         cancelLabel={`Keep ${oldCompany}`}
+        pendingLabel={asked.kind === "move" ? "Changing…" : "Removing…"}
         onConfirm={() => save(asked.kind === "remove")}
       />
     </InlineForm>

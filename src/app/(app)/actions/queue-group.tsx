@@ -319,7 +319,7 @@ export function QueueGroup({
         </span>
         {cursor && (
           <Button variant="outline" size="sm" className="max-sm:h-11 max-sm:px-4" onClick={loadMore} disabled={busy}>
-            {busy ? "Loading" : "Load more"}
+            {busy ? "Loading…" : "Load more"}
           </Button>
         )}
       </div>
