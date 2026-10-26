@@ -321,7 +321,7 @@ export const sends = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.enrollmentId, t.organizationId], foreignColumns: [campaignEnrollments.id, campaignEnrollments.organizationId] }).onDelete("cascade"),
-    // History blocks removal of its mailbox or account (no action). Migration 0012.
+    // History blocks removal of its mailbox or account (no action).
     foreignKey({ name: "sends_mailbox_fk", columns: [t.mailboxId, t.organizationId], foreignColumns: [mailboxes.id, mailboxes.organizationId] }),
     foreignKey({ name: "sends_taken_over_mailbox_fk", columns: [t.takenOverFromMailboxId, t.organizationId], foreignColumns: [mailboxes.id, mailboxes.organizationId] }),
     foreignKey({ name: "sends_linkedin_account_fk", columns: [t.linkedinAccountId, t.organizationId], foreignColumns: [linkedinAccounts.id, linkedinAccounts.organizationId] }),
@@ -339,7 +339,7 @@ export const sends = pgTable(
     check("sends_status_ck", sql`${t.status} in ('sending', 'sent', 'failed', 'unknown')`),
     index("sends_mailbox_day_idx").on(t.mailboxId, t.claimedAt),
     index("sends_linkedin_day_idx").on(t.linkedinAccountId, t.claimedAt),
-    // Organization-wide reads: the analytics read model, the unconfirmed sends count, the lead delete guard. Migration 0019.
+    // Organization-wide reads: the analytics read model, the unconfirmed sends count, the lead delete guard.
     index("sends_org_status_idx").on(t.organizationId, t.status),
     uniqueIndex("sends_rfc_message_uq").on(t.rfcMessageId).where(sql`${t.rfcMessageId} is not null`),
     uniqueIndex("sends_provider_message_uq")
@@ -366,7 +366,7 @@ export const linkedinConnections = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.linkedinAccountId, t.organizationId], foreignColumns: [linkedinAccounts.id, linkedinAccounts.organizationId] }).onDelete("cascade"),
-    // Migration 0012 writes `ON DELETE SET NULL (enrollment_id)`.
+    // The migration writes `ON DELETE SET NULL (enrollment_id)`.
     foreignKey({ name: "linkedin_connections_enrollment_fk", columns: [t.enrollmentId, t.organizationId], foreignColumns: [campaignEnrollments.id, campaignEnrollments.organizationId] }).onDelete("set null"),
     unique("linkedin_connections_provider_account_uq").on(t.providerId, t.linkedinAccountId),
   ],
@@ -436,7 +436,7 @@ export const linkedinSearchQueries = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    // Migration 0012 writes `ON DELETE SET NULL (current_account_id)`.
+    // The migration writes `ON DELETE SET NULL (current_account_id)`.
     foreignKey({ name: "linkedin_search_queries_current_account_fk", columns: [t.currentAccountId, t.organizationId], foreignColumns: [linkedinAccounts.id, linkedinAccounts.organizationId] }).onDelete("set null"),
     check(
       "linkedin_search_queries_status_ck",

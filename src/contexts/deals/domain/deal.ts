@@ -4,7 +4,7 @@ import type { DealStageKind } from "./stages";
 /**
  * Deal rules. A person fills in title, stage, owner, amount with currency and expected close date. The system keeps
  * `closed_at` (set while the stage is Won or Lost), `lost_reason` (set only in a Lost stage), `stage_changed_at` (moves only
- * on a stage move) and `version` (optimistic lock). The CHECKs of migration 0025 hold the same rules on the row.
+ * on a stage move) and `version` (optimistic lock). The CHECKs on `deals` hold the same rules on the row.
  */
 
 export const MAX_DEAL_TITLE = 200;

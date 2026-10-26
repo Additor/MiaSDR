@@ -103,7 +103,7 @@ Timing runs stay out of the suite and live in `scripts/bench`: the grid change f
 ## Before you open a pull request
 
 - A bug fix comes with a test that fails without the fix.
-- A schema change needs a Drizzle migration (`pnpm exec drizzle-kit generate`) and a test over existing data. Released migrations never change.
+- A schema change needs a Drizzle migration (`pnpm exec drizzle-kit generate`). A migration that changes existing rows also needs a test over that data. "Adding a migration" in `docs/database.md` lists the steps. Released migrations never change.
 - A behavior change or design choice updates the matching section of `docs/decisions.md`. State what the code does today and check each claim against the code.
 - Do not commit secrets, `.env` or files under `secrets/`.
 

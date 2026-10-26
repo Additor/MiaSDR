@@ -58,7 +58,7 @@ describeDb("contact delete: purge size check", () => {
              c.id::text || '-' || g, 'Message ' || g || ' about the proposal and the next call.', now() - make_interval(mins => g)
       from conversations c cross join generate_series(1, ${size.perConversation}) g
       where c.organization_id = ${org} and c.record_id = ${record}`;
-    // The latest inbound message of the record, which the message delete sets to null through the 0027 index.
+    // The latest inbound message of the record, which the message delete sets to null through its foreign key.
     await sql`
       update records set latest_inbound_message_id = (
         select m.id from messages m join conversations c on c.id = m.conversation_id

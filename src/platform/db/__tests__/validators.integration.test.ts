@@ -3,7 +3,7 @@ import { describeDb, dropOrgs, testSql } from "../../../test-support/db";
 import { seedWorld, uid, type World } from "../../../test-support/full-world";
 
 /**
- * Migration 0020: five cross-row rules. Each rule has a violating insert, a violating update, the legal
+ * Five cross-row rules. Each rule has a violating insert, a violating update, the legal
  * shapes next to it, and a trigger name in the test title so dropping the trigger fails exactly that test. Also covers the
  * foreign key actions (ON DELETE SET NULL) and legacy rows, which the triggers must not trip on. Needs TEST_DATABASE_URL.
  */
@@ -13,7 +13,7 @@ const CHANNEL = /drafts\.channel \(\w+\) must equal the channel of its conversat
 const REPLY = /drafts\.reply_for_message_id must be an inbound message/;
 const ACCOUNT = /send_attempts\.account_ref \(.*\) must equal the account of the draft's conversation/;
 
-describeDb("cross-row validators (0020)", () => {
+describeDb("cross-row validators", () => {
   const sql = testSql();
   const worlds: World[] = [];
   const world = async () => {
@@ -93,7 +93,7 @@ describeDb("cross-row validators (0020)", () => {
       await classify(w, w.message, 21, `applied_subcategory_id, applied_category_key|'${w.subA}', 'interested'`);
     });
 
-    it("classifications_subcategories_ins_trg: tolerates a null category key (the fixtures and the 0012 backfill leave them null)", async () => {
+    it("classifications_subcategories_ins_trg: tolerates a null category key (the fixtures leave them null)", async () => {
       const w = await world();
       await classify(w, w.message, 22, `previous_subcategory_id, proposed_subcategory_id, applied_subcategory_id|'${w.subA}', '${w.subB}', '${w.subA}'`);
     });
@@ -109,7 +109,7 @@ describeDb("cross-row validators (0020)", () => {
     it("leaves the ON DELETE SET NULL action alone, even on a legacy row that breaks the rule", async () => {
       const w = await world();
       const foreign = await otherPipelineSub(w);
-      // A legacy row: the trigger is off while it is written, as if it predated 0020.
+      // A legacy row: the trigger is off while it is written, as if it predated the trigger.
       await sql.begin(async (tx) => {
         await tx`alter table classifications disable trigger classifications_subcategories_ins_trg`;
         await tx`insert into classifications (organization_id, record_id, message_id, expected_context_version, confidence, previous_subcategory_id, applied_subcategory_id)

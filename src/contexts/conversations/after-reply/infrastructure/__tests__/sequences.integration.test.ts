@@ -463,7 +463,7 @@ describeDb("After a reply flows", () => {
 
     it("a run of a legacy standalone sequence (no campaign) survives the sweep even though the sequence is archived", async () => {
       const { f, run, sequenceId } = await withRun();
-      // Turn the flow into what migration 0022 left behind: archived, owned by no campaign.
+      // Turn the flow into a legacy one: archived, owned by no campaign.
       await sql`update sequences set campaign_id = null, status = 'archived', name = ${"Legacy " + f.tag} where id = ${sequenceId}`;
       const tick = await f.seqRun();
       expect(tick.detail?.interrupted_after_reply_off ?? 0).toBe(0);

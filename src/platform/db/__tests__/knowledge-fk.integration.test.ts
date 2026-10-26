@@ -3,12 +3,12 @@ import { describeDb, dropOrgs, testSql } from "../../../test-support/db";
 import { seedWorld, type World } from "../../../test-support/full-world";
 
 /**
- * Migration 0017: knowledge_documents.latest_version must point at a row of knowledge_document_versions.
+ * knowledge_documents.latest_version must point at a row of knowledge_document_versions.
  * The key is DEFERRABLE INITIALLY DEFERRED, so a document and its first version can go in one transaction. Needs TEST_DATABASE_URL.
  */
 const FK = /knowledge_documents_latest_version_fk/;
 
-describeDb("knowledge_documents_latest_version_fk (0017)", () => {
+describeDb("knowledge_documents_latest_version_fk", () => {
   const sql = testSql();
   const worlds: World[] = [];
   const world = async () => {

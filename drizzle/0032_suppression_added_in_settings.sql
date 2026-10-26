@@ -1,1 +1,0 @@
-ALTER TABLE "suppression_list" ADD COLUMN "added_in_settings" boolean DEFAULT false NOT NULL;

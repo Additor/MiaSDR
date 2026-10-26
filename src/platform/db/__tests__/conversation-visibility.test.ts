@@ -18,7 +18,7 @@ const EXEMPT: Record<string, string> = {
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": "The campaign's own thread view. It selects only conversations marked with that campaign.",
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": "Restore refuses a person who replied. A private reply counts as a reply, so this safety check must see private conversations.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": "Checks whether a personal campaign holds private conversations (type change guard, thread marker on the lead list). It returns ids and flags, and only for that campaign.",
-  "src/test-support/route-client.ts": "Test seeder, not application code. It looks up the record of a message it just created so a seeded classification matches the 0020 validator.",
+  "src/test-support/route-client.ts": "Test seeder, not application code. It looks up the record of a message it just created so a seeded classification matches the cross-row validator.",
   "src/contexts/analytics/infrastructure/drizzle-analytics-read-model.ts": "Reply counts per campaign. They are aggregates, and the personal campaign's own replies belong in its numbers.",
   "src/contexts/conversations/infrastructure/person-handling.ts": "Contact delete: `lockPersonForDelete` locks every conversation of the person and `personHandlingBlockers` must find private threads and AI jobs on their messages to block the delete. Both return locks and booleans; the counts and the other reads apply the predicate.",
   "src/contexts/conversations/infrastructure/person-purge.ts": "Contact delete: `purgePersonHandling` deletes every conversation of the person, private ones included, and reads nothing back.",

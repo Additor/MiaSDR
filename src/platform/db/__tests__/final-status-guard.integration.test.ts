@@ -4,7 +4,7 @@ import { ATTEMPT_FINAL, ATTEMPT_FROM, type AttemptStatus } from "@/contexts/conv
 import { SEND_FINAL, SEND_FROM, type SendStatus } from "@/contexts/outreach/domain/send-status";
 
 /**
- * Migration 0008: a Postgres trigger refuses an UPDATE that moves `sends.status` or `send_attempts.status` out of a
+ * A Postgres trigger refuses an UPDATE that moves `sends.status` or `send_attempts.status` out of a
  * final state. The expectations come from the domain tables, so a new status or a changed final set fails here.
  * Needs TEST_DATABASE_URL, like the other integration tests.
  */
@@ -16,7 +16,7 @@ function allowedPairs<S extends string>(table: Record<S, readonly S[]>): [S, S][
   return (Object.keys(table) as S[]).flatMap((to) => table[to].map((from) => [from, to] as [S, S]));
 }
 
-describeDb("final status guard (0008)", () => {
+describeDb("final status guard", () => {
   const sql = testSql();
   let owner: TestOrg;
   let org = "";

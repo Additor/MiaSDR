@@ -107,7 +107,7 @@ export const pipelineSettings = pgTable(
   (t) => [
     foreignKey({ columns: [t.pipelineId, t.organizationId], foreignColumns: [pipelines.id, pipelines.organizationId] }).onDelete("cascade"),
     check("pipeline_settings_confidence_ck", sql`${t.autoApplyConfidence} between 0 and 1`),
-    // The API caps instructions at 20,000 characters of text; 100,000 leaves room for JSON escapes and titles. Migration 0013.
+    // The API caps instructions at 20,000 characters of text; 100,000 leaves room for JSON escapes and titles.
     check(
       "pipeline_settings_instructions_ck",
       sql`jsonb_typeof(${t.draftInstructions}) = 'array' and jsonb_typeof(${t.classificationInstructions}) = 'array'
@@ -149,7 +149,7 @@ export const records = pgTable(
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.pipelineId, t.organizationId], foreignColumns: [pipelines.id, pipelines.organizationId] }).onDelete("restrict"),
-    // A member who leaves the organization unassigns the record. Migration 0028 writes `ON DELETE SET NULL (assigned_to)`, so
+    // A member who leaves the organization unassigns the record. The migration writes `ON DELETE SET NULL (assigned_to)`, so
     // organization_id stays set; `assigned_source` keeps its old value and is read only while `assigned_to` is set.
     foreignKey({ name: "records_assigned_to_fk", columns: [t.organizationId, t.assignedTo], foreignColumns: [members.organizationId, members.userId] }).onDelete("set null"),
     foreignKey({
@@ -157,7 +157,7 @@ export const records = pgTable(
       foreignColumns: [subcategories.id, subcategories.pipelineId, subcategories.categoryKey],
     }),
     // `latest_inbound_message_id -> messages (id, organization_id) ON DELETE SET NULL (latest_inbound_message_id)` lives in
-    // migration 0012 only: `messages` is declared after this table through `conversations`, and a typed reference here
+    // the migration SQL only: `messages` is declared after this table through `conversations`, and a typed reference here
     // would make the three tables' types circular.
     unique("records_person_pipeline_uq").on(t.personId, t.pipelineId),
     unique("records_id_org_uq").on(t.id, t.organizationId),
@@ -172,7 +172,7 @@ export const records = pgTable(
     check("records_assigned_source_ck", sql`(${t.assignedSource} is null or ${t.assignedSource} in ('auto', 'human', 'cleared')) and (${t.assignedTo} is null or ${t.assignedSource} is not null)`),
     index("records_org_assigned_idx").on(t.organizationId, t.assignedTo, t.workflowState),
     index("records_org_state_idx").on(t.organizationId, t.workflowState, t.lastInteractionAt),
-    // A deleted message sets this column null through the 0012 key; the contact delete (migration 0027) deletes messages.
+    // A deleted message sets this column null through that key; the contact delete deletes messages.
     index("records_latest_inbound_message_idx").on(t.latestInboundMessageId).where(sql`${t.latestInboundMessageId} is not null`),
   ],
 );
@@ -277,7 +277,7 @@ export const contactPolicies = pgTable(
         or (not ${t.doNotContact} and ${t.source} is null and ${t.setAt} is null and ${t.clearedAt} is null)
       )`,
     ),
-    // Migration 0019 added it for the CRM overview count of do-not-contact people, which the Leads and CRM split removed. Few rows match, so the partial index stays small.
+    // Few rows match, so the partial index stays small.
     index("contact_policies_org_dnc_idx").on(t.organizationId).where(sql`${t.doNotContact}`),
   ],
 );
@@ -307,7 +307,7 @@ export const identityExceptions = pgTable(
       "identity_exceptions_keys_ck",
       sql`length(btrim(${t.accountRef})) > 0 and length(btrim(${t.sourceEventKey})) > 0 and length(btrim(${t.reason})) > 0`,
     ),
-    // A resolved row keeps its status when its person is deleted: `resolved_person_id` goes null through the FK (migration 0027).
+    // A resolved row keeps its status when its person is deleted: `resolved_person_id` goes null through the FK.
     check(
       "identity_exceptions_resolution_ck",
       sql`(${t.status} = 'open' and ${t.resolvedPersonId} is null and ${t.resolvedAt} is null)
@@ -342,7 +342,7 @@ export const leadCcs = pgTable(
     check("lead_ccs_email_ck", sql`${t.email} = lower(btrim(${t.email})) and position('@' in ${t.email}) > 1`),
     check("lead_ccs_seen_ck", sql`${t.lastSeenAt} >= ${t.firstSeenAt}`),
     index("lead_ccs_org_email_idx").on(t.organizationId, t.email),
-    // The CASCADE from a deleted message (migration 0027).
+    // The CASCADE from a deleted message.
     index("lead_ccs_source_message_idx").on(t.sourceMessageId).where(sql`${t.sourceMessageId} is not null`),
   ],
 );
@@ -407,7 +407,7 @@ export const classifications = pgTable(
     foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.messageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("restrict"),
     unique("classifications_id_org_uq").on(t.id, t.organizationId),
-    // Migration 0012 writes `ON DELETE SET NULL (<column>)` for these three; Drizzle cannot express the column list.
+    // The migration writes `ON DELETE SET NULL (<column>)` for these three; Drizzle cannot express the column list.
     foreignKey({ name: "classifications_previous_subcategory_fk", columns: [t.previousSubcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("set null"),
     foreignKey({ name: "classifications_proposed_subcategory_fk", columns: [t.proposedSubcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("set null"),
     foreignKey({ name: "classifications_applied_subcategory_fk", columns: [t.appliedSubcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("set null"),
@@ -460,7 +460,7 @@ export const drafts = pgTable(
   (t) => [
     foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
-    // Migration 0012 writes `ON DELETE SET NULL (reply_for_message_id)`.
+    // The migration writes `ON DELETE SET NULL (reply_for_message_id)`.
     foreignKey({ name: "drafts_reply_message_fk", columns: [t.replyForMessageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("set null"),
     unique("drafts_id_org_uq").on(t.id, t.organizationId),
     check("drafts_context_version_ck", sql`${t.expectedContextVersion} >= 0`),
@@ -470,7 +470,7 @@ export const drafts = pgTable(
     check("drafts_cc_email_only_ck", sql`${t.channel} = 'email' or cardinality(${t.cc}) = 0`),
     check("drafts_subject_ck", sql`${t.channel} = 'email' or ${t.subject} is null`),
     index("drafts_record_status_idx").on(t.recordId, t.status),
-    // The SET NULL from a deleted message and the RESTRICT check of a deleted conversation (migration 0027).
+    // The SET NULL from a deleted message and the RESTRICT check of a deleted conversation.
     index("drafts_reply_for_message_idx").on(t.replyForMessageId).where(sql`${t.replyForMessageId} is not null`),
     index("drafts_conversation_idx").on(t.conversationId),
   ],
@@ -625,7 +625,7 @@ export const aiJobs = pgTable(
     check("ai_jobs_failed_ck", sql`${t.status} <> 'failed' or (${t.failedAt} is not null and length(btrim(${t.lastError})) > 0)`),
     index("ai_jobs_claim_idx").on(t.status, t.runAfter, t.priority),
     index("ai_jobs_stale_lock_idx").on(t.status, t.lockedAt),
-    // The failed-jobs list of the ops page (listFailed) filters one organization and orders by failed_at. Migration 0019.
+    // The failed-jobs list of the ops page (listFailed) filters one organization and orders by failed_at.
     index("ai_jobs_org_failed_idx").on(t.organizationId, t.failedAt).where(sql`${t.status} = 'failed'`),
   ],
 );
@@ -645,7 +645,7 @@ export const notes = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("cascade"),
-    // Migration 0012 writes `ON DELETE SET NULL (record_id)`.
+    // The migration writes `ON DELETE SET NULL (record_id)`.
     foreignKey({ name: "notes_record_fk", columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("set null"),
     index("notes_person_idx").on(t.personId, t.createdAt),
   ],
@@ -672,7 +672,7 @@ export const tasks = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("cascade"),
-    // Migration 0012 writes `ON DELETE SET NULL (record_id)`.
+    // The migration writes `ON DELETE SET NULL (record_id)`.
     foreignKey({ name: "tasks_record_fk", columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("set null"),
     index("tasks_person_idx").on(t.personId, t.isCompleted),
     // Actions queue: open tasks by due date, overdue first.

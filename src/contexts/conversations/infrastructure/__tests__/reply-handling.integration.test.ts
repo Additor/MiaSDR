@@ -192,7 +192,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const classificationId = await appliedClassification(f, l, "demo_request");
       const r = await rec(l.recordId);
       const [{ id: seq }] = await sql`insert into sequences (organization_id, name) values (${f.org}, 'Demo follow-up') returning id`;
-      // Steps go in while the version is a draft: sequence_steps_frozen_trg (0016) refuses them under a published one.
+      // Steps go in while the version is a draft: sequence_steps_frozen_trg refuses them under a published one.
       const [{ id: ver }] = await sql`insert into sequence_versions (organization_id, sequence_id, version) values (${f.org}, ${seq}, 1) returning id`;
       const stepIds: string[] = [];
       for (const [position, type, delay] of [[1, "reply", 0], [2, "follow_up", 60]] as const) {

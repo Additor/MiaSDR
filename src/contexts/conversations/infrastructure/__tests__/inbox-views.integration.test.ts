@@ -363,7 +363,7 @@ describeDb("inbox filters, views and search", () => {
       const f = await fixture();
       const nurture = await campaignWith(f, "Nurture");
       const [seq] = await sql`insert into sequences (organization_id, name, campaign_id) values (${f.org}, 'Nurture (after a reply)', ${nurture}) returning id`;
-      // The step goes in while the version is a draft: sequence_steps_frozen_trg (0016) refuses it under a published one.
+      // The step goes in while the version is a draft: sequence_steps_frozen_trg refuses it under a published one.
       const [ver] = await sql`insert into sequence_versions (organization_id, sequence_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
       const [step] = await sql`
         insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, ai_instructions)
@@ -413,7 +413,7 @@ describeDb("inbox filters, views and search", () => {
 
     it("keeps the steps of a legacy standalone sequence (no campaign) listed while its run is active", async () => {
       const f = await fixture();
-      // Migration 0022 archived legacy sequences. Their runs in flight keep going, so their steps stay scheduled.
+      // A legacy sequence is archived. Its runs in flight keep going, so their steps stay scheduled.
       const [seq] = await sql`insert into sequences (organization_id, name, status) values (${f.org}, 'Legacy nurture', 'archived') returning id`;
       const [ver] = await sql`insert into sequence_versions (organization_id, sequence_id, version) values (${f.org}, ${seq.id}, 1) returning id`;
       const [step] = await sql`

@@ -7,6 +7,6 @@
 - [ ] `pnpm typecheck`, `pnpm lint` and `pnpm test` pass
 - [ ] Integration tests ran against a migrated Postgres 17 (`TEST_DATABASE_URL`), or the change touches no database code
 - [ ] A bug fix comes with a test that fails without the fix
-- [ ] A schema change has a new migration and a test over existing data
+- [ ] A schema change has a new migration, and a test over existing data when it changes rows
 - [ ] `docs/decisions.md` and the user docs describe the new behavior
 - [ ] Screens follow DESIGN.md (attach a screenshot for UI changes)

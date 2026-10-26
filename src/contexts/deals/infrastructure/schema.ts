@@ -7,8 +7,8 @@ import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { inList } from "@/platform/db/sql-values";
 
 /**
- * Deals: the CRM side of the product. A lead becomes a contact when a person creates a deal from it (`people.lifecycle`,
- * migration 0025). One pipeline per organization: `deal_stages` is the ordered list of its steps. The reply taxonomy in
+ * Deals: the CRM side of the product. A lead becomes a contact when a person creates a deal from it (`people.lifecycle`).
+ * One pipeline per organization: `deal_stages` is the ordered list of its steps. The reply taxonomy in
  * conversations (`pipelines`, `subcategories`) is a different thing and keeps its names.
  */
 
@@ -20,7 +20,7 @@ export const dealStages = pgTable(
     id: pk(),
     organizationId: orgId(),
     name: text("name").notNull(),
-    /** Immutable (trigger in migration 0025). Won and Lost close a deal; the use case keeps open before won before lost. */
+    /** Immutable (trigger `deal_stages_kind_trg`). Won and Lost close a deal; the use case keeps open before won before lost. */
     kind: text("kind").notNull(),
     position: integer("position").notNull(),
     createdAt: createdAt(),
@@ -30,7 +30,7 @@ export const dealStages = pgTable(
     unique("deal_stages_id_org_uq").on(t.id, t.organizationId),
     // Target of the composite key from deals, so a deal's stage_kind is always the kind of its stage.
     unique("deal_stages_id_org_kind_uq").on(t.id, t.organizationId, t.kind),
-    // Migration 0025 declares this one DEFERRABLE INITIALLY DEFERRED (a swap of two positions works inside a transaction).
+    // The migration declares this one DEFERRABLE INITIALLY DEFERRED (a swap of two positions works inside a transaction).
     // Drizzle cannot express that, so ON CONFLICT cannot use it: the case-insensitive name index below is the arbiter.
     unique("deal_stages_org_position_uq").on(t.organizationId, t.position),
     uniqueIndex("deal_stages_org_name_uq").on(t.organizationId, sql`lower(${t.name})`),
@@ -67,7 +67,7 @@ export const deals = pgTable(
   },
   (t) => [
     unique("deals_id_org_uq").on(t.id, t.organizationId),
-    // Migration 0025 adds a trigger: the person must be a contact on insert, and person_id and organization_id never change.
+    // A trigger in the migration holds the person must be a contact on insert, and person_id and organization_id never change.
     foreignKey({ name: "deals_person_fk", columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
     foreignKey({
       name: "deals_stage_fk",
@@ -76,7 +76,7 @@ export const deals = pgTable(
     })
       .onDelete("restrict")
       .onUpdate("restrict"),
-    // Migration 0025 writes `ON DELETE SET NULL (source_enrollment_id)`; Drizzle cannot express the column list.
+    // The migration writes `ON DELETE SET NULL (source_enrollment_id)`; Drizzle cannot express the column list.
     foreignKey({
       name: "deals_source_enrollment_fk",
       columns: [t.sourceEnrollmentId, t.organizationId],

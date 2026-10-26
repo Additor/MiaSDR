@@ -386,7 +386,7 @@ describeDb("AI classification, drafts and approval", () => {
 
     it("cites knowledge in the draft and gives the model the active documents only", async () => {
       const f = await fixture();
-      // latest_version is a deferred foreign key (0017): a document and its first version go in one transaction.
+      // latest_version is a deferred foreign key: a document and its first version go in one transaction.
       await sql.begin(async (tx) => {
         const [doc] = await tx`insert into knowledge_documents (organization_id, title, kind, always_include) values (${f.org}, 'Pricing', 'pricing', true) returning id`;
         await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${f.org}, ${doc.id}, 1, 'Plans start at 49 dollars.')`;

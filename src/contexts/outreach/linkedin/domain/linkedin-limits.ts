@@ -8,7 +8,7 @@ export interface LimitRule {
   label: string;
 }
 
-/** Hard bounds match the CHECK constraints on linkedin_accounts (migration 0007). */
+/** Hard bounds match the CHECK constraints on linkedin_accounts. */
 export const INVITE_LIMIT_RULE = { min: 1, max: 100, safeMax: 30, label: "Invitations per day" } as const satisfies LimitRule;
 export const MESSAGE_LIMIT_RULE = { min: 1, max: 200, safeMax: 100, label: "Messages per day" } as const satisfies LimitRule;
 /** A free account has a far smaller weekly invitation allowance. */

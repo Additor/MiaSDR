@@ -6,7 +6,7 @@ import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-po
 
 /**
  * The sequence job writes the draft with the channel of the conversation it drafts for. insertDraft
- * defaults to email, which breaks the draft channel trigger (0020) on a LinkedIn conversation.
+ * defaults to email, which breaks the draft channel trigger on a LinkedIn conversation.
  */
 function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; sweep?: boolean } = {}) {
   const interrupted: Array<{ runId: string; reason: string }> = [];

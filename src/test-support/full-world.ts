@@ -37,7 +37,7 @@ export interface World {
   contact: string;
   dealStage: string;
   deal: string;
-  /** A company and one of its other domains (company_domain_aliases, migration 0027). */
+  /** A company and one of its other domains (company_domain_aliases). */
   company: string;
   companyAlias: string;
   knowledgeDoc: string;
@@ -103,7 +103,7 @@ export async function seedWorld(sql: Sql): Promise<World> {
   const company = await one(sql`insert into companies (organization_id, domain, name) values (${org}, ${tag + ".t8.test"}, 'T8 Co') returning id`);
   const companyAlias = await one(sql`
     insert into company_domain_aliases (organization_id, company_id, domain, merged_name) values (${org}, ${company}, ${"was-" + tag + ".t8.test"}, 'Was') returning id`);
-  // latest_version is a deferred foreign key (0017): the document and its first version go in one transaction.
+  // latest_version is a deferred foreign key: the document and its first version go in one transaction.
   const knowledgeDoc = await sql.begin(async (tx) => {
     const id = await one(tx`insert into knowledge_documents (organization_id, title, kind) values (${org}, 'k', 'faq') returning id`);
     await tx`insert into knowledge_document_versions (organization_id, document_id, version, content) values (${org}, ${id}, 1, 'c')`;

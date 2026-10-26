@@ -1,12 +1,10 @@
 import postgres from "postgres";
-import { mkdtempSync, rmSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { expect, it } from "vitest";
 import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
-import { adminAndScratchUrls, folderUpTo, readJournal } from "@/test-support/migration-test-kit";
+import { adminAndScratchUrls } from "@/test-support/migration-test-kit";
 
 /**
  * Query plans of the read indexes on 100k rows per table. It seeds a scratch database, checks with EXPLAIN that each query
@@ -20,17 +18,15 @@ describeDb("read index query plans on 100k rows", () => {
     const name = `bench_plans_${Math.random().toString(36).slice(2, 8)}`;
     const urls = adminAndScratchUrls(TEST_DATABASE_URL ?? "", name);
     const admin = postgres(urls.admin, { max: 1, onnotice: () => undefined });
-    const tmp = mkdtempSync(path.join(os.tmpdir(), "bench-plans-"));
     await admin.unsafe(`create database ${name}`);
     const db = postgres(urls.scratch, { max: 1, onnotice: () => undefined });
     try {
-      await migrate(drizzle(db), { migrationsFolder: folderUpTo(tmp, Math.max(...readJournal().entries.map((e) => e.idx))) });
+      await migrate(drizzle(db), { migrationsFolder: path.join(process.cwd(), "drizzle") });
       await runPlans(db);
     } finally {
       await db.end();
       await admin.unsafe(`drop database if exists ${name} with (force)`);
       await admin.end();
-      rmSync(tmp, { recursive: true, force: true });
     }
   }, 300_000);
 });
@@ -40,7 +36,7 @@ async function runPlans(sql: postgres.Sql) {
   const [{ id: org }] = await sql`insert into organizations (name, slug) values ('Perf', ${"perf-" + tag}) returning id`;
   const [{ id: other }] = await sql`insert into organizations (name, slug) values ('Perf2', ${"perf2-" + tag}) returning id`;
   const [{ id: user }] = await sql`insert into users (name, email) values ('U', ${tag + "@perf.test"}) returning id`;
-  // The bulk seed skips triggers and foreign key checks (the 0020 validators reject classifications spread over records that
+  // The bulk seed skips triggers and foreign key checks (the cross-row validators reject classifications spread over records that
   // share one message). The plans below only need the row counts and the key distribution.
   await sql`set session_replication_role = replica`;
   await sql`insert into people (organization_id, email, full_name, created_at)
