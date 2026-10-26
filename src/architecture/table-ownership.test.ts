@@ -32,14 +32,16 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
   "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "events", "records", "sends", "suppressionList"],
+  "src/contexts/people/infrastructure/drizzle-contact-delete-store.ts": ["contactPolicies", "suppressionList"],
   "src/contexts/people/infrastructure/people-directory.ts": ["contactPolicies", "suppressionList"],
   "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "messages", "records"],
-  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["events"],
+  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["contactPolicies", "conversations", "events", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-lead-statuses.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["conversations"],
+  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["contactPolicies", "conversations"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store.ts": ["contactPolicies"],
   "src/contexts/outreach/infrastructure/drizzle-outreach-store.ts": ["contactPolicies"],
+  "src/contexts/outreach/infrastructure/drizzle-management-stores.ts": ["contactPolicies"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-reachability.ts": ["contactPolicies"],
   "src/contexts/outreach/email/infrastructure/drizzle-test-send-store.ts": ["contactPolicies"],
@@ -47,7 +49,7 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "drafts", "linkedinAccounts", "mailboxes", "people"],
   "src/platform/db/audit.ts": ["auditLog"],
   "src/platform/db/columns.ts": ["organizations"],
-  "src/platform/db/conversation-visibility.ts": ["conversations"],
+  "src/platform/db/conversation-visibility.ts": ["conversations", "records"],
   "src/platform/db/person-locks.ts": ["records"],
   "src/platform/jobs/rollover.ts": ["channelSettings", "organizations"],
 };
@@ -74,19 +76,21 @@ const ownerOf = (file: string) => {
   return tier === "contexts" ? context : tier;
 };
 
-/** Table owner by Drizzle binding (`people`) and by SQL name (`people`, `campaign_enrollments`). */
-function owners(): { byBinding: Map<string, string>; bySqlName: Map<string, string> } {
+/** Table owner by Drizzle binding (`people`) and by SQL name (`people`, `campaign_enrollments`), and the binding of each SQL name. */
+function owners(): { byBinding: Map<string, string>; bySqlName: Map<string, string>; bindingOf: Map<string, string> } {
   const byBinding = new Map<string, string>();
   const bySqlName = new Map<string, string>();
+  const bindingOf = new Map<string, string>();
   for (const [context, files] of Object.entries(SCHEMA_FILES)) {
     for (const file of files) {
       for (const m of readFileSync(path.join(SRC, file), "utf8").matchAll(/export const (\w+) = pgTable\(\s*"(\w+)"/g)) {
         byBinding.set(m[1], context);
         bySqlName.set(m[2], context);
+        bindingOf.set(m[2], m[1]);
       }
     }
   }
-  return { byBinding, bySqlName };
+  return { byBinding, bySqlName, bindingOf };
 }
 
 /** Tables of other contexts that `source` inserts into, updates or deletes from, by Drizzle call or raw SQL. */
@@ -103,10 +107,16 @@ export function foreignWrites(own: string, source: string, table: ReturnType<typ
   return [...found].sort();
 }
 
-/** Tables of higher layers that `source` imports from any schema module: the barrel, a relative `./schema`, or a context's schema. */
+/**
+ * Tables of higher layers that `source` reads: imported from any schema module (the barrel, a relative `./schema`, or a
+ * context's schema), or named after `from` or `join` in a raw `sql` template (a `delete from` is a write, not a read).
+ * Raw names count under their Drizzle binding.
+ */
 export function upwardReads(own: string, source: string, table: ReturnType<typeof owners>): string[] {
   const lists = [...source.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["'][^"']*schema["']/g)].map((m) => m[1]);
-  const names = lists.flatMap((list) => list.split(",")).map((n) => n.trim().replace(/^type\s+/, "").split(" as ")[0]).filter(Boolean);
+  const imported = lists.flatMap((list) => list.split(",")).map((n) => n.trim().replace(/^type\s+/, "").split(" as ")[0]).filter(Boolean);
+  const raw = [...source.matchAll(/sql`([^`]*)`/g)].flatMap((t) => [...t[1].matchAll(/(?<!delete\s+)\b(?:from|join)\s+"?(\w+)"?/gi)].map((m) => table.bindingOf.get(m[1]) ?? ""));
+  const names = [...imported, ...raw];
   return [...new Set(names.filter((n) => {
     const owner = table.byBinding.get(n);
     return owner !== undefined && owner !== own && owner !== "platform" && layerOf(owner) > layerOf(own);
@@ -145,9 +155,10 @@ describe("table ownership", () => {
       "import { records } from './schema';",
       "await tx.update(people).set({ name });",
       "await tx.execute(sql`delete from campaign_enrollments where id = ${id}`);",
+      "await tx.execute(sql`select 1 from drafts d join sequence_runs r on r.id = d.run_id`);",
     ].join("\n");
     expect(foreignWrites("people", source, table)).toEqual(["campaign_enrollments"]);
     expect(foreignWrites("outreach", source, table)).toEqual(["people"]);
-    expect(upwardReads("people", source, table)).toEqual(["conversations", "mailboxes", "records"]);
+    expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "mailboxes", "records", "sequenceRuns"]);
   });
 });
