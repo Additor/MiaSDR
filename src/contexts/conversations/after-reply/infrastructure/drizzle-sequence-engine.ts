@@ -3,6 +3,7 @@ import { db } from "@/platform/db/client";
 import type { ClaimedStep, InterruptCandidate, SequenceEngineStore } from "../application/sequence-ports";
 import { MAX_DRAFT_ATTEMPTS, NO_START_KEYS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
 import { NEW_REPLY_MARGIN_MINUTES } from "../domain/after-reply";
+import type { FollowUpsRule } from "../../domain/reply-type";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, ts, zoneOfTx } from "./sequence-run-tx";
@@ -23,6 +24,7 @@ interface FactsRow {
   reply_type_id: string | null;
   group_key: string | null;
   sub_key: string | null;
+  follow_ups: FollowUpsRule | null;
   workflow_state: string;
   dnc: boolean;
   suppression: InterruptFacts["suppression"];
@@ -36,7 +38,7 @@ const toCandidate = (r: FactsRow): InterruptCandidate => ({
   recordId: r.record_id,
   facts: {
     run: { triggerMessageId: r.trigger_message_id, replyTypeId: r.run_reply_type_id },
-    record: { latestInboundMessageId: r.latest_inbound_message_id, replyTypeId: r.reply_type_id, groupKey: r.group_key, replyTypeKey: r.sub_key, workflowState: r.workflow_state },
+    record: { latestInboundMessageId: r.latest_inbound_message_id, replyTypeId: r.reply_type_id, groupKey: r.group_key, replyTypeKey: r.sub_key, followUps: r.follow_ups, workflowState: r.workflow_state },
     doNotContact: r.dnc,
     suppression: r.suppression,
     contact: r.contact,
@@ -47,7 +49,7 @@ const toCandidate = (r: FactsRow): InterruptCandidate => ({
 /** The facts that decide whether a run must stop, for the runs matching `where`. Every join stays inside the run's organization. */
 const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
   select r.id as run_id, r.organization_id, r.record_id, r.trigger_message_id, r.reply_type_id as run_reply_type_id,
-         rec.latest_inbound_message_id, rec.reply_type_id, rec.group_key, s.key as sub_key, rec.workflow_state,
+         rec.latest_inbound_message_id, rec.reply_type_id, rec.group_key, s.key as sub_key, s.follow_ups, rec.workflow_state,
          coalesce((select cp.do_not_contact from contact_policies cp where cp.person_id = rec.person_id and cp.organization_id = r.organization_id), false) as dnc,
          (select sl.reason from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)
            order by case sl.reason when 'complaint' then 0 when 'unsubscribed' then 1 when 'bounced' then 2 else 3 end limit 1) as suppression,

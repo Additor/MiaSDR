@@ -22,6 +22,13 @@
       "when": 1793001514631,
       "tag": "0002_rename_reply_types",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793004009121,
+      "tag": "0003_reply_type_rules",
+      "breakpoints": true
     }
   ]
 }

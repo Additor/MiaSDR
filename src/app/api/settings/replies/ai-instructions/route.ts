@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { getReplyTaxonomy, updateReplyAiInstructions } from "@/contexts/conversations/application/reply-handling";
+import { getReplyTypeCatalog, updateReplyAiInstructions } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { withActor, withAdmin } from "@/app/_lib/api";
 
 export const GET = () =>
   withActor(async (actor) => {
-    const { settings } = await getReplyTaxonomy(replyHandlingDeps(), actor);
+    const { settings } = await getReplyTypeCatalog(replyHandlingDeps(), actor);
     return { draftInstructions: settings.draftInstructions, classificationInstructions: settings.classificationInstructions };
   });
 

@@ -7,7 +7,7 @@ import { dealsDeps } from "@/composition/deals";
 import type { Actor } from "@/shared/errors";
 import { humanizeToken } from "@/shared/humanize";
 import { eventLabel } from "@/app/(app)/_components/event-labels";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import { personHref } from "@/app/(app)/_components/person/person-href";
 import { RecordDisclosure } from "@/app/(app)/_components/record/record-header";
 import { toJson } from "@/app/(app)/_components/serialize";
@@ -41,7 +41,7 @@ function eventDetail(e: EventEntry): string | null {
   const to = e.toData as { groupKey?: string | null; lostReason?: unknown } | null;
   // `reason` is a code token on most events; only the do-not-contact events carry a reason a person typed.
   const typed = [meta.note, e.eventType.startsWith("contact_policy.") ? meta.reason : null, to?.lostReason, e.eventType.startsWith("deal.") ? meta.title : null];
-  const parts = [to?.groupKey ? categoryLabel(to.groupKey) : null, ...typed.filter((v): v is string => typeof v === "string" && v.trim() !== "")].filter(Boolean);
+  const parts = [to?.groupKey ? groupLabel(to.groupKey) : null, ...typed.filter((v): v is string => typeof v === "string" && v.trim() !== "")].filter(Boolean);
   return parts.length ? parts.join(". ") : null;
 }
 
@@ -75,7 +75,7 @@ export async function ThreadHistory({ actor, conversationId, recordId, personId 
   await connection();
   const [detail, people] = await Promise.all([recordDetail(actor, recordId), dealsDeps().people.summaries(actor.organizationId, [personId])]);
   const lifecycle = people.get(personId)?.lifecycle;
-  const classifications = toJson(detail.classifications);
+  const classifications = toJson(detail.replyTypePicks);
   const events = detail.events.slice(0, ACTIVITY_SHOWN);
   if (classifications.length + detail.drafts.length + detail.notes.length + events.length === 0) return null;
 

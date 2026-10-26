@@ -260,7 +260,7 @@ export const drizzleInboxStore: InboxStore = {
     return {
       mailboxes: boxes,
       campaigns: camps as unknown as InboxFilterOptions["campaigns"],
-      subcategories: subs as unknown as InboxFilterOptions["subcategories"],
+      replyTypes: subs as unknown as InboxFilterOptions["replyTypes"],
       leads: leads as unknown as InboxFilterOptions["leads"],
     };
   },

@@ -72,7 +72,7 @@ describe("state machines", () => {
 describe("interruptReason", () => {
   const facts = (over: { run?: Partial<InterruptFacts["run"]>; record?: Partial<InterruptFacts["record"]>; doNotContact?: boolean; contact?: boolean; suppression?: InterruptFacts["suppression"]; flowActive?: boolean } = {}): InterruptFacts => ({
     run: { triggerMessageId: "m1", replyTypeId: "s1", ...over.run },
-    record: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", workflowState: "waiting", ...over.record },
+    record: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", followUps: "continue", workflowState: "waiting", ...over.record },
     doNotContact: over.doNotContact ?? false,
     contact: over.contact ?? false,
     suppression: over.suppression ?? null,

@@ -14,7 +14,8 @@ import {
   type ReplyHandlingDeps,
   type IdentityPayload,
 } from "./reply-handling";
-import type { ReplyHandlingStore, IdentityExceptionRow, TaxonomyRow } from "./reply-handling-ports";
+import type { ReplyHandlingStore, IdentityExceptionRow, ReplyTypeRow } from "./reply-handling-ports";
+import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES } from "../domain/reply-type";
 import type { ReplyDeps } from "./reply-management";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -24,23 +25,23 @@ const admin: Actor = { ...actor, role: "admin" };
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const NOW = new Date("2026-01-01T00:00:00Z");
 
-const sub = (over: Partial<TaxonomyRow>): TaxonomyRow => ({
+const sub = (over: Partial<ReplyTypeRow>): ReplyTypeRow => ({
   id: id(1), groupKey: "interested", key: "demo_request", name: "Demo request", description: null, classificationGuidance: null,
-  active: true, reviewRequired: false, stageRank: 1, sortOrder: 0, recordCount: 0, historyCount: 0, ...over,
+  active: true, rules: { ...DEFAULT_TYPE_RULES }, systemRole: null, sortOrder: 0, recordCount: 0, historyCount: 0, ...over,
 });
 
 /** In-memory store: only what the use cases under test touch. Everything else throws so a stray call fails loudly. */
-function fakeStore(over: Partial<ReplyHandlingStore> & { subs?: TaxonomyRow[]; exceptions?: IdentityExceptionRow[] } = {}) {
+function fakeStore(over: Partial<ReplyHandlingStore> & { subs?: ReplyTypeRow[]; exceptions?: IdentityExceptionRow[] } = {}) {
   const subs = over.subs ?? [];
   const exceptions = over.exceptions ?? [];
   const calls: Record<string, unknown[]> = {};
   const record = (name: string, arg: unknown) => ((calls[name] ??= []).push(arg), arg);
   const store = {
-    taxonomy: async (org: string) => ({ pipeline: { id: id(90), name: "Default" }, subcategories: org === ORG ? subs : [], settings: { autoApplyConfidence: 0.85, reviewOther: true, customerRequiresReview: true, draftInstructions: [], classificationInstructions: [] } }),
+    replyTypeCatalog: async (org: string) => ({ replyTypeSet: { id: id(90), name: "Default" }, replyTypes: org === ORG ? subs : [], settings: { autoApplyConfidence: 0.85, draftInstructions: [], classificationInstructions: [] } }),
     createReplyType: async (_org: string, input: unknown) => (record("createReplyType", input), { id: id(50) }),
     updateReplyType: async (_org: string, sid: string, patch: unknown) => void record("updateReplyType", { sid, patch }),
     deleteReplyType: async (_org: string, sid: string) => void record("deleteReplyType", sid),
-    moveStage: async (input: { personId?: string }) => (record("moveStage", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1 }),
+    changeReplyType: async (input: { personId?: string }) => (record("changeReplyType", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1 }),
     setDoNotContact: async (input: unknown) => (record("setDoNotContact", input), { changed: true, doNotContact: true, recordsUpdated: 1, draftsRetired: 0, enrollmentsStopped: 2 }),
     closeRecord: async (input: unknown) => void record("closeRecord", input),
     getIdentityException: async (org: string, eid: string) => exceptions.find((e) => e.id === eid && org === ORG) ?? null,
@@ -73,12 +74,12 @@ describe("stage moves", () => {
     const { d } = deps(store);
     const result = await changeReplyType(d, actor, id(2), { groupKey: "not_interested", replyTypeId: id(5), expectedContextVersion: 3, note: "  asked to stop  " });
     expect(result.contextVersion).toBe(4);
-    expect(calls.moveStage[0]).toMatchObject({ organizationId: ORG, actorUserId: actor.userId, recordId: id(2), note: "asked to stop", confirmUnlock: false });
+    expect(calls.changeReplyType[0]).toMatchObject({ organizationId: ORG, actorUserId: actor.userId, recordId: id(2), note: "asked to stop", confirmUnlock: false });
     expect(calls.setDoNotContact[0]).toMatchObject({ organizationId: ORG, personId: id(3), enabled: true });
   });
 
   it("does not touch do not contact for other subcategories", async () => {
-    const { store, calls } = fakeStore({ moveStage: async () => ({ recordId: id(2), personId: id(3), groupKey: "interested", replyTypeKey: "meeting_done", contextVersion: 4, draftsRetired: 0 }) });
+    const { store, calls } = fakeStore({ changeReplyType: async () => ({ recordId: id(2), personId: id(3), groupKey: "interested", replyTypeKey: "meeting_done", contextVersion: 4, draftsRetired: 0 }) });
     await changeReplyType(deps(store).d, actor, id(2), { groupKey: "interested", replyTypeId: id(5), expectedContextVersion: 3 });
     expect(calls.setDoNotContact).toBeUndefined();
   });
@@ -90,7 +91,7 @@ describe("stage moves", () => {
     await expect(changeReplyType(d, actor, id(2), { groupKey: "won", replyTypeId: null, expectedContextVersion: 0 })).rejects.toThrow(ValidationError);
     await expect(changeReplyType(d, actor, id(2), { groupKey: "other", replyTypeId: null, expectedContextVersion: 0, occurredAt: new Date(NOW.getTime() + 3_600_000) })).rejects.toThrow(ConflictError);
     await expect(changeReplyType(d, actor, id(2), { groupKey: "other", replyTypeId: null, expectedContextVersion: 0, note: "x".repeat(4001) })).rejects.toThrow(ValidationError);
-    expect(calls.moveStage).toBeUndefined();
+    expect(calls.changeReplyType).toBeUndefined();
   });
 });
 
@@ -128,11 +129,22 @@ describe("taxonomy", () => {
   });
 
   it("never archives or deletes Do not contact", async () => {
-    const dnc = sub({ id: id(4), key: "do_not_contact", groupKey: "not_interested", name: "Do not contact", stageRank: null });
+    const dnc = sub({ id: id(4), key: "do_not_contact", groupKey: "not_interested", name: "Asked to stop", rules: { ...STOP_REQUEST_RULES }, systemRole: "stop_request" });
     const { d } = deps(fakeStore({ subs: [dnc] }).store);
     await expect(updateReplyType(d, admin, id(4), { active: false })).rejects.toThrow(/cannot be archived/);
     await expect(deleteReplyType(d, admin, id(4))).rejects.toThrow(/cannot be deleted/);
-    await expect(updateReplyType(d, admin, id(4), { reviewRequired: true })).resolves.toBeUndefined();
+    await expect(updateReplyType(d, admin, id(4), { name: "Stop" })).resolves.toBeUndefined();
+  });
+
+  it("merges the rules a change names with the stored ones and checks them against the system role", async () => {
+    const dnc = sub({ id: id(4), key: "do_not_contact", groupKey: "not_interested", name: "Asked to stop", rules: { ...STOP_REQUEST_RULES }, systemRole: "stop_request" });
+    const plain = sub({ id: id(5), key: "pricing", name: "Pricing" });
+    const { store, calls } = fakeStore({ subs: [dnc, plain] });
+    const { d } = deps(store);
+    await expect(updateReplyType(d, admin, id(4), { replyDraft: true })).rejects.toThrow(/never gets a reply draft/);
+    await expect(updateReplyType(d, admin, id(4), { checkMode: "skip" })).rejects.toThrow(/checked before/);
+    await updateReplyType(d, admin, id(5), { followUps: "stop" });
+    expect(calls.updateReplyType).toEqual([{ sid: id(5), patch: { rules: { checkMode: "after", replyDraft: true, followUps: "stop" } } }]);
   });
 
   it("blocks a delete while records or history use the subcategory", async () => {
@@ -141,7 +153,7 @@ describe("taxonomy", () => {
     const free = sub({ id: id(10), key: "free", name: "Free" });
     const { store, calls } = fakeStore({ subs: [used, past, free] });
     const { d } = deps(store);
-    await expect(deleteReplyType(d, admin, id(5))).rejects.toThrow(/2 people are in/);
+    await expect(deleteReplyType(d, admin, id(5))).rejects.toThrow(/2 people have/);
     await expect(deleteReplyType(d, admin, id(6))).rejects.toThrow(/Archive it/);
     await deleteReplyType(d, admin, id(10));
     expect(calls.deleteReplyType).toEqual([id(10)]);

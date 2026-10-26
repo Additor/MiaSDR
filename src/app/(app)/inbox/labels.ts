@@ -16,10 +16,10 @@ const DRAFT_STATUS_LABEL: Readonly<Record<string, string>> = {
 
 export const draftStatusLabel = (status: string) => DRAFT_STATUS_LABEL[status] ?? humanizeToken(status);
 
-const CATEGORY_SOURCE_LABEL: Record<string, string> = { ai: "AI", human: "set by a person", integration: "integration" };
+const REPLY_TYPE_SOURCE_LABEL: Record<string, string> = { ai: "AI", human: "set by a person", integration: "integration" };
 
 /** Who set a thread's category, for the chip next to the category name. */
-export const categorySourceLabel = (source: string) => CATEGORY_SOURCE_LABEL[source] ?? humanizeToken(source);
+export const replyTypeSourceLabel = (source: string) => REPLY_TYPE_SOURCE_LABEL[source] ?? humanizeToken(source);
 
 /** Who has to act next on a conversation, from the record's workflow state. */
 export function waitingOn(workflowState: string): string {

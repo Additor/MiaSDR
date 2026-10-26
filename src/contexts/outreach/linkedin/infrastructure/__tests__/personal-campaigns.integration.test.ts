@@ -591,8 +591,8 @@ describeDb("personal campaigns", () => {
 
       const detail = await replyHandlingApp.getRecord(crm(), f.actor("owner"), record.id);
       expect(detail.conversations.map((c) => c.id)).not.toContain(shared);
-      expect(detail.classifications.map((c) => c.messageId)).not.toContain(first);
-      expect(detail.classifications.map((c) => c.messageId)).not.toContain(privateMessage.id);
+      expect(detail.replyTypePicks.map((c) => c.messageId)).not.toContain(first);
+      expect(detail.replyTypePicks.map((c) => c.messageId)).not.toContain(privateMessage.id);
       expect(detail.drafts.map((d) => d.conversationId)).not.toContain(shared);
       const queue = await workQueueApp.getWorkQueue(queueDeps(), f.actor("owner"));
       const items = Object.values(queue.groups).flatMap((g) => g.items).filter((i) => i.recordId === record.id);

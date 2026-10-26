@@ -66,7 +66,7 @@ The flag lasts for that transaction. `TRUNCATE` is not guarded.
 Triggers freeze the rows that other rows point at by value or by version. Each rule is a trigger that raises SQLSTATE 23000:
 
 - `conversations`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status`, `private_campaign_id` and `updated_at` stay writable.
-- `reply_types`: `key`, `group_key` and `reply_type_set_id` cannot change. Name, description, guidance, `active` and the order fields stay writable.
+- `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. Name, description, guidance, the type rules (`check_mode`, `reply_draft`, `follow_ups`), `active` and `sort_order` stay writable.
 - `knowledge_document_versions`: append-only. An edit inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
 - `sequence_versions` and `sequence_steps`: `organization_id`, `sequence_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a sequence, which cascades.
 
@@ -77,6 +77,12 @@ To change a frozen value, insert a new row (a new knowledge version, a new seque
 The campaign setting After a reply lives in the sequence tables. `sequences.campaign_id` is nullable, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`), a partial unique index on `(organization_id, name) WHERE campaign_id IS NULL` and a partial unique index on `(campaign_id) WHERE campaign_id IS NOT NULL`. A campaign is in `ai_drafts` mode when it owns a sequence with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
 
 `sequences.after_reply_enabled_at` holds the moment the setting last turned on. Only the flow save writes it (a new flow, or a switch from archived to active). The engine starts runs only for replies that arrived no earlier than a margin before it, so other writes to the row (`updated_at`) do not move that cut-off.
+
+## Reply type rules
+
+`reply_types.check_mode`, `reply_draft` and `follow_ups` hold the type rules, and `system_role` marks the stop request and customer types. Checks hold the fixed parts. `reply_types_stop_request_ck` keeps the stop request type checked before, without a draft, with follow-ups stopped, and active. `reply_types_customer_ck` keeps the customer type in the customer group. `reply_types_set_system_role_uq` allows one type per role in a set.
+
+`reply_type_picks.rules` is a JSON object with the rules the pick used (`checkMode`, `replyDraft`, `followUps`), or null for a pick that names no type. Migration 0003 filled it for existing picks from the applied type, else the proposed one.
 
 ## Leads and the CRM
 

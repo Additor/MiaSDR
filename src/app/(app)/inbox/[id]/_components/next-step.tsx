@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import type { Actor } from "@/shared/errors";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import { loadNextInQueue } from "../_lib/next-queue";
 import { NextStepClient } from "./next-step-client";
 import { recordDetail } from "./thread-data";
@@ -27,7 +27,7 @@ export async function NextStep({
   const { record, person } = detail;
   const personName = person.name ?? person.email ?? "Unknown sender";
   // The AI's reading of the latest reply, not a person's correction of it, so Change category can show what it replaces.
-  const reading = detail.classifications.find((c) => c.latest && c.provider !== "human" && c.status !== "failed" && c.proposed.name);
+  const reading = detail.replyTypePicks.find((c) => c.latest && c.provider !== "human" && c.status !== "failed" && c.proposed.name);
 
   return (
     <NextStepClient
@@ -38,14 +38,14 @@ export async function NextStep({
       personName={personName}
       firstName={person.name?.split(/\s+/)[0] || personName}
       category={{
-        label: record.groupKey ? `${categoryLabel(record.groupKey)}${record.replyTypeName ? `: ${record.replyTypeName}` : ""}` : null,
+        label: record.groupKey ? `${groupLabel(record.groupKey)}${record.replyTypeName ? `: ${record.replyTypeName}` : ""}` : null,
         source: record.replyTypeSource,
         locked: record.replyTypeLocked,
         replyTypeId: record.replyTypeId,
       }}
       contextVersion={record.contextVersion}
-      stages={detail.stages}
-      aiReading={reading ? { name: `${categoryLabel(reading.proposed.groupKey)}: ${reading.proposed.name}`, confidence: reading.confidence, reasoning: reading.reasoning } : null}
+      stages={detail.replyTypes}
+      aiReading={reading ? { name: `${groupLabel(reading.proposed.groupKey)}: ${reading.proposed.name}`, confidence: reading.confidence, reasoning: reading.reasoning } : null}
       closed={record.workflowState === "closed"}
       closedReason={record.closedReason}
       doNotContact={detail.policy?.doNotContact === true}

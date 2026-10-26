@@ -1,3 +1,4 @@
+import type { FollowUpsRule } from "../../domain/reply-type";
 import { AFTER_REPLY_OFF, isTerminalReplyType, startPosition, type InterruptReason, type RunStatus } from "./sequences";
 
 export { AFTER_REPLY_OFF };
@@ -53,6 +54,8 @@ export interface StartBlockFacts {
     groupKey: string | null;
     replyTypeKey: string | null;
     replyTypeName: string | null;
+    /** The Follow-ups rule of the record's reply type, or null without a type. */
+    followUps: FollowUpsRule | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     workflowState: string;
@@ -175,12 +178,12 @@ export interface AlwaysStopRule {
   /** The reason the engine stores when this fact ends a run. Null for a rule that only keeps a flow from starting. */
   reason: InterruptReason | null;
   /** Classifications that trigger the rule. Absent for rules about the lead or the record. */
-  subcategories?: readonly ReplyTypeFact[];
+  replyTypes?: readonly ReplyTypeFact[];
 }
 
 /**
  * Facts after which a follow-up would be wrong. The first five come from `interruptReason`; the rest are the
- * subcategories `isTerminalReplyType` treats as terminal, plus Out of office, which keeps a flow from starting
+ * reply types `isTerminalReplyType` treats as terminal, plus Out of office, which keeps a flow from starting
  * but does not end one that is running (the engine's no-start list holds it next to the terminal keys).
  */
 export const ALWAYS_STOPS_ON: readonly AlwaysStopRule[] = [
@@ -190,19 +193,19 @@ export const ALWAYS_STOPS_ON: readonly AlwaysStopRule[] = [
   { id: "bounce", label: "The address bounces", reason: "bounce" },
   { id: "record_closed", label: "Reply handling is closed", reason: "record_closed" },
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
-  { id: "not_interested", label: "The reply is classified Not interested", reason: "terminal_stage", subcategories: [{ groupKey: "not_interested", replyTypeKey: null }] },
-  { id: "out_of_office", label: "The reply is classified Out of office", reason: null, subcategories: [{ groupKey: null, replyTypeKey: "out_of_office" }] },
-  { id: "left_company", label: "The reply is classified Left company", reason: "terminal_stage", subcategories: [{ groupKey: null, replyTypeKey: "left_company" }] },
+  { id: "not_interested", label: "The reply is classified Not interested", reason: "terminal_stage", replyTypes: [{ groupKey: "not_interested", replyTypeKey: null }] },
+  { id: "out_of_office", label: "The reply is classified Out of office", reason: null, replyTypes: [{ groupKey: null, replyTypeKey: "out_of_office" }] },
+  { id: "left_company", label: "The reply is classified Left company", reason: "terminal_stage", replyTypes: [{ groupKey: null, replyTypeKey: "left_company" }] },
   {
     id: "wrong_contact",
     label: "The reply is classified Wrong or different contact",
     reason: "terminal_stage",
-    subcategories: [
+    replyTypes: [
       { groupKey: null, replyTypeKey: "wrong_contact" },
       { groupKey: null, replyTypeKey: "connected_to_different_contact" },
     ],
   },
-  { id: "customer", label: "The reply is classified Existing customer", reason: "terminal_stage", subcategories: [{ groupKey: null, replyTypeKey: "customer" }] },
+  { id: "customer", label: "The reply is classified Existing customer", reason: "terminal_stage", replyTypes: [{ groupKey: null, replyTypeKey: "customer" }] },
 ];
 
 /** Whether a classification ends a running flow, by the same rule the engine's interrupt sweep applies. */

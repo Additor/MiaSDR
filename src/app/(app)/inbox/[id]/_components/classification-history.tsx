@@ -8,7 +8,7 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { callApi } from "@/app/_lib/api-client";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 
 interface Entry {
   id: string;
@@ -31,7 +31,7 @@ interface Entry {
 /** "Interested: Demo request", or just "Other" when the subcategory repeats the category. */
 const label = (c: { groupKey: string | null; name: string | null }) => {
   if (!c.groupKey) return "Unclassified";
-  const category = categoryLabel(c.groupKey);
+  const category = groupLabel(c.groupKey);
   return c.name && c.name.trim().toLowerCase() !== category.toLowerCase() ? `${category}: ${c.name}` : category;
 };
 

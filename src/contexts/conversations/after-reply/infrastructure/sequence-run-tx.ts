@@ -3,6 +3,7 @@ import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-
 import { dueAfter, isTerminalReplyType } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 import { rowsOf } from "@/platform/db/sql-values";
+import type { FollowUpsOutcome } from "../../domain/reply-type";
 
 export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 
@@ -42,13 +43,23 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
 }
 
 /**
- * A record moved to a terminal subcategory (a refusal, a wrong or departed contact, a customer): its runs end in the
- * caller's transaction. A run that started at that same subcategory is spared, as in the sweep's rule.
+ * A record moved to a reply type whose follow-ups stop: its runs end in the caller's transaction. A run that started at
+ * that same type is spared, as in the sweep's rule. A caller that passes `followUps` (the decision of `decideReplyType`)
+ * decides by it; without it the key and group rule `isTerminalReplyType` decides, until every caller passes it.
  */
 export async function interruptOnTerminalStageTx(
   tx: Tx,
-  input: { organizationId: string; recordId: string; groupKey: string | null; replyTypeKey: string | null; replyTypeId: string | null; now: Date },
+  input: {
+    organizationId: string;
+    recordId: string;
+    groupKey: string | null;
+    replyTypeKey: string | null;
+    replyTypeId: string | null;
+    followUps?: FollowUpsOutcome;
+    now: Date;
+  },
 ): Promise<number> {
-  if (!isTerminalReplyType(input.groupKey, input.replyTypeKey)) return 0;
+  const stops = input.followUps === undefined ? isTerminalReplyType(input.groupKey, input.replyTypeKey) : input.followUps === "stop";
+  if (!stops) return 0;
   return interruptRecordRunsTx(tx, input.organizationId, input.recordId, "terminal_stage", input.now, input.replyTypeId ?? undefined);
 }

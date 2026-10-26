@@ -11,7 +11,7 @@ import { Time } from "@/components/shell/time";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import { personHref } from "@/app/(app)/_components/person/person-href";
 import { threadQueryFromActions } from "./actions-query";
 import { waitingLabel } from "./waiting-label";
@@ -74,7 +74,7 @@ function describe(item: QueueItemView): { detail: ReactNode; action: string } {
     case "classification": {
       const c = item.classification;
       // "Other: Other" says the same word twice.
-      const label = c?.groupKey ? (c.name && c.name !== categoryLabel(c.groupKey) ? `${categoryLabel(c.groupKey)}: ${c.name}` : categoryLabel(c.groupKey)) : "a category";
+      const label = c?.groupKey ? (c.name && c.name !== groupLabel(c.groupKey) ? `${groupLabel(c.groupKey)}: ${c.name}` : groupLabel(c.groupKey)) : "a category";
       return {
         detail: `${c?.kind === "held" ? "AI suggests " : "AI set "}${label}${c?.confidence != null ? `, ${Math.round(c.confidence * 100)}% confident` : ""}`,
         action: c?.kind === "held" ? "Accept or change" : "Looks right?",
@@ -255,7 +255,7 @@ export function QueueGroup({
           const thread = rowHref(item, query);
           const { detail, action } = describe(item);
           const wait = waitingLabel(item.waitingSince, now);
-          const meta = [categoryLabel(item.groupKey), item.replyTypeName, item.channel ? channelLabel(item.channel) : null].filter(Boolean).join(" · ");
+          const meta = [groupLabel(item.groupKey), item.replyTypeName, item.channel ? channelLabel(item.channel) : null].filter(Boolean).join(" · ");
           return (
             <li
               key={item.recordId}

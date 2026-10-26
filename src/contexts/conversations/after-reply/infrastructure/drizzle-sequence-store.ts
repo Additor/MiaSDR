@@ -11,6 +11,7 @@ import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
 import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
+import type { FollowUpsRule } from "../../domain/reply-type";
 
 interface StepRow {
   id: string;
@@ -233,6 +234,7 @@ export async function loadStartOn(
     group_key: string | null;
     sub_key: string | null;
     sub_name: string | null;
+    follow_ups: FollowUpsRule | null;
     latest_inbound_message_id: string | null;
     last_inbound_at: Date | string | null;
     last_outbound_at: Date | string | null;
@@ -247,7 +249,7 @@ export async function loadStartOn(
     conv_channel: string | null;
   }>(
     await exec.execute(sql`
-      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
+      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              p.lifecycle = 'contact' as contact,
@@ -313,6 +315,7 @@ export async function loadStartOn(
       groupKey: r.group_key,
       replyTypeKey: r.sub_key,
       replyTypeName: r.sub_name,
+      followUps: r.follow_ups,
       latestInboundMessageId: r.latest_inbound_message_id,
       lastInboundAt: asDateOrNull(r.last_inbound_at),
       lastOutboundAt: asDateOrNull(r.last_outbound_at),

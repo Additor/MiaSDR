@@ -10,7 +10,7 @@ import { staleOpenDraftsTx } from "./stale-drafts-sql";
 
 export type Tx = DbTx;
 
-/** The organization's default pipeline, created with its settings and starter subcategories on first use. */
+/** The organization's default reply type set, created with its settings and starter reply types on first use. */
 export async function defaultReplyTypeSetId(tx: Tx, organizationId: string): Promise<string> {
   const find = async () =>
     (await tx.select({ id: replyTypeSets.id }).from(replyTypeSets).where(and(eq(replyTypeSets.organizationId, organizationId), eq(replyTypeSets.isDefault, true))))[0]?.id;
@@ -38,8 +38,10 @@ export async function defaultReplyTypeSetId(tx: Tx, organizationId: string): Pro
       name: s.name,
       description: s.description,
       classificationGuidance: s.classificationGuidance,
-      stageRank: s.stageRank,
-      reviewRequired: s.reviewRequired ?? false,
+      checkMode: s.rules.checkMode,
+      replyDraft: s.rules.replyDraft,
+      followUps: s.rules.followUps,
+      systemRole: s.systemRole ?? null,
       sortOrder: index,
     })),
   );

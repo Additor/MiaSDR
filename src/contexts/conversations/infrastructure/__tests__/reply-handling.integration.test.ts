@@ -55,8 +55,8 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   }
 
   const sub = async (f: Fx, key: string) => {
-    const taxonomy = await replies.getReplyTaxonomy(deps, f.actor);
-    const found = taxonomy.subcategories.find((s) => s.key === key);
+    const taxonomy = await replies.getReplyTypeCatalog(deps, f.actor);
+    const found = taxonomy.replyTypes.find((s) => s.key === key);
     if (!found) throw new Error(`no subcategory ${key}`);
     return found;
   };
@@ -158,6 +158,30 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     });
   });
 
+  describe("type change outcomes", () => {
+    it("reads what a change to each other active type would do, and never marks do not contact", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const demo = await sub(f, "demo_request");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      const outcomes = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId);
+      const of = async (key: string) => {
+        const id = (await sub(f, key)).id;
+        return outcomes.find((o) => o.replyTypeId === id)?.outcome;
+      };
+      expect(outcomes.some((o) => o.replyTypeId === demo.id)).toBe(false);
+      // No campaign emailed this lead, so no follow-ups apply.
+      expect(await of("not_required_right_now")).toEqual({
+        replyDraft: "Reply draft: none. Not now is set to not write one.",
+        followUps: "Follow-ups: none for this conversation.",
+        contact: "Contact: unchanged.",
+      });
+      expect((await of("meeting_requested"))?.replyDraft).toBe("Reply draft: the AI writes a new one.");
+      expect((await of("do_not_contact"))?.contact).toBe("Contact: unchanged until you choose Stop contacting.");
+      await expect(replies.getTypeChangeOutcomes(deps, (await fixture()).actor, l.recordId)).rejects.toThrow(NotFoundError);
+    });
+  });
+
   describe("classification undo and acknowledge", () => {
     it("restores the previous category and rejects the classification", async () => {
       const f = await fixture();
@@ -229,7 +253,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
       const meeting = await sub(f, "meeting_requested");
       await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(/another category after this classification/);
+      await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(/changed the reply type after this pick/);
 
       // A second reply makes the first message's classification history only.
       const g = await lead(f);
@@ -380,18 +404,31 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       f = await fixture();
     });
 
-    it("creates a subcategory and saves edits to it", async () => {
-      const created = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Pricing question", classificationGuidance: "Asks what it costs.", reviewRequired: true, stageRank: 2 });
-      expect(await sub(f, "pricing_question")).toMatchObject({ id: created.id, reviewRequired: true, stageRank: 2, classificationGuidance: "Asks what it costs.", recordCount: 0 });
-      await replies.updateReplyType(deps, f.admin, created.id, { name: "Pricing questions", reviewRequired: false, stageRank: null });
-      expect(await sub(f, "pricing_question")).toMatchObject({ name: "Pricing questions", reviewRequired: false, stageRank: null });
+    it("creates a reply type with its rules and saves edits to them", async () => {
+      const created = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Pricing question", classificationGuidance: "Asks what it costs.", checkMode: "before" });
+      expect(await sub(f, "pricing_question")).toMatchObject({
+        id: created.id,
+        rules: { checkMode: "before", replyDraft: true, followUps: "continue" },
+        systemRole: null,
+        classificationGuidance: "Asks what it costs.",
+        recordCount: 0,
+      });
+      await replies.updateReplyType(deps, f.admin, created.id, { name: "Pricing questions", checkMode: "skip", followUps: "stop" });
+      expect(await sub(f, "pricing_question")).toMatchObject({ name: "Pricing questions", rules: { checkMode: "skip", replyDraft: true, followUps: "stop" } });
+    });
+
+    it("keeps the stop request rules and roles of the starter types", async () => {
+      const stop = await sub(f, "do_not_contact");
+      expect(stop).toMatchObject({ name: "Asked to stop", systemRole: "stop_request", rules: { checkMode: "before", replyDraft: false, followUps: "stop" } });
+      expect(await sub(f, "customer")).toMatchObject({ name: "Customer question", systemRole: "customer" });
+      await expect(replies.updateReplyType(deps, f.admin, stop.id, { followUps: "continue" })).rejects.toThrow(/always stops follow-ups/);
     });
 
     it("refuses to delete a subcategory a record is in, and archives it instead", async () => {
       const created = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Contract review" });
       const l = await lead(f);
       await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: created.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      await expect(replies.deleteReplyType(deps, f.admin, created.id)).rejects.toThrow(/1 person is in/);
+      await expect(replies.deleteReplyType(deps, f.admin, created.id)).rejects.toThrow(/1 person has/);
       await replies.updateReplyType(deps, f.admin, created.id, { active: false });
       expect((await sub(f, "contract_review")).active).toBe(false);
     });
@@ -399,14 +436,14 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     it("deletes an unused subcategory", async () => {
       const spare = await replies.createReplyType(deps, f.admin, { groupKey: "other", name: "Spare" });
       await replies.deleteReplyType(deps, f.admin, spare.id);
-      expect((await replies.getReplyTaxonomy(deps, f.actor)).subcategories.some((s) => s.id === spare.id)).toBe(false);
+      expect((await replies.getReplyTypeCatalog(deps, f.actor)).replyTypes.some((s) => s.id === spare.id)).toBe(false);
     });
 
     it("saves the thresholds and draft instructions, and rejects a confidence above 1", async () => {
-      await replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 0.7, reviewOther: false });
+      await replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 0.7 });
       await replies.updateReplyAiInstructions(deps, f.admin, { draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }] });
-      const { settings } = await replies.getReplyTaxonomy(deps, f.actor);
-      expect(settings).toMatchObject({ autoApplyConfidence: 0.7, reviewOther: false, customerRequiresReview: true, draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }], classificationInstructions: [] });
+      const { settings } = await replies.getReplyTypeCatalog(deps, f.actor);
+      expect(settings).toEqual({ autoApplyConfidence: 0.7, draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }], classificationInstructions: [] });
       await expect(replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 2 })).rejects.toThrow(ValidationError);
     });
   });

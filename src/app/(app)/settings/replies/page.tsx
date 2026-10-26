@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
+import { getReplyTypeCatalog } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getOrganization } from "@/contexts/tenancy/application/organization-settings";
@@ -31,7 +31,7 @@ async function Settings() {
   const ctx = await requireOrgContext();
   const actor = toActor(ctx);
   const canManage = isOwnerOrAdmin(ctx.role);
-  const [{ subcategories, settings }, org] = await Promise.all([getReplyTaxonomy(replyHandlingDeps(), actor), getOrganization(organizationDeps(), actor)]);
+  const [{ replyTypes, settings }, org] = await Promise.all([getReplyTypeCatalog(replyHandlingDeps(), actor), getOrganization(organizationDeps(), actor)]);
   return (
     <>
       {!canManage && (
@@ -39,9 +39,9 @@ async function Settings() {
           <AdminNotice action="change reply settings" />
         </div>
       )}
-      <ThresholdsForm settings={{ autoApplyConfidence: settings.autoApplyConfidence, reviewOther: settings.reviewOther, customerRequiresReview: settings.customerRequiresReview }} canManage={canManage} />
+      <ThresholdsForm settings={{ autoApplyConfidence: settings.autoApplyConfidence }} canManage={canManage} />
       <UnknownSenderLimitForm limit={org.unknownSenderAiDailyCap} timeZone={org.timeZone} canManage={canManage} />
-      <TaxonomyPanel subcategories={subcategories} canManage={canManage} />
+      <TaxonomyPanel subcategories={replyTypes} canManage={canManage} />
     </>
   );
 }

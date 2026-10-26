@@ -15,7 +15,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import type { ReplyPanel } from "@/contexts/conversations/application/reply-management";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
-import { categorySourceLabel, draftStatusLabel } from "../../labels";
+import { replyTypeSourceLabel, draftStatusLabel } from "../../labels";
 import { openStopContacting } from "./next-step-client";
 import { registerDraftEdits } from "../_lib/draft-edits";
 import type { NextInQueue } from "../_lib/next-queue";
@@ -161,7 +161,7 @@ export function ReplyPanelClient({ panel, next, fromQueue }: { panel: Panel; nex
             Classification
             {panel.category ? (
               <Badge variant="secondary" data-testid="category-chip">
-                {panel.category.name} ({categorySourceLabel(panel.category.source)})
+                {panel.category.name} ({replyTypeSourceLabel(panel.category.source)})
               </Badge>
             ) : (
               <Badge variant="outline">Not classified</Badge>

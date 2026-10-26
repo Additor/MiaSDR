@@ -4,7 +4,7 @@ import { replyTypePicks, contactPolicies, conversations, draftKnowledgeCitations
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { PanelData, ReplyStore } from "../application/reply-ports";
 import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
-import type { HoldReason } from "../domain/classification-policy";
+import type { HoldReason } from "../domain/reply-type-pick-policy";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";

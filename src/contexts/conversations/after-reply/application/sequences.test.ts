@@ -15,6 +15,7 @@ function facts(over: Partial<StartFacts> = {}): StartFacts {
       groupKey: "interested",
       replyTypeKey: "demo_request",
       replyTypeName: "Demo request",
+      followUps: "continue",
       latestInboundMessageId: "m1",
       lastInboundAt: new Date("2026-10-15T08:00:00Z"),
       lastOutboundAt: null,

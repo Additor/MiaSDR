@@ -3,7 +3,7 @@ import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Badge } from "@/components/ui/badge";
 import type { InboxRow } from "@/contexts/conversations/application/ports";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { cn } from "@/components/ui/utils";
 
@@ -18,7 +18,7 @@ function RowState({ row }: { row: InboxRow }) {
       </span>
     );
   }
-  const label = row.autoReply ? "Auto-reply" : row.groupKey ? (row.replyTypeName ?? categoryLabel(row.groupKey)) : null;
+  const label = row.autoReply ? "Auto-reply" : row.groupKey ? (row.replyTypeName ?? groupLabel(row.groupKey)) : null;
   return label ? <Badge variant="outline">{label}</Badge> : null;
 }
 

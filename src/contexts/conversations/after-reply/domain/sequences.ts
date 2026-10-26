@@ -1,4 +1,5 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
+import type { FollowUpsRule } from "../../domain/reply-type";
 
 /**
  * Pure rules for a campaign's After a reply flow. The flow has versions; a published version is immutable and a
@@ -139,7 +140,15 @@ export function isTerminalReplyType(groupKey: string | null, replyTypeKey: strin
 
 export interface InterruptFacts {
   run: { triggerMessageId: string; replyTypeId: string };
-  record: { latestInboundMessageId: string | null; replyTypeId: string | null; groupKey: string | null; replyTypeKey: string | null; workflowState: string };
+  record: {
+    latestInboundMessageId: string | null;
+    replyTypeId: string | null;
+    groupKey: string | null;
+    replyTypeKey: string | null;
+    /** The Follow-ups rule of the record's reply type (`reply_types.follow_ups`), or null without a type. */
+    followUps: FollowUpsRule | null;
+    workflowState: string;
+  };
   doNotContact: boolean;
   /** Reason on the suppression list for the person's address, if any. */
   suppression: "unsubscribed" | "bounced" | "manual" | "complaint" | null;

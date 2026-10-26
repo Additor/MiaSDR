@@ -73,9 +73,10 @@ describeDb("immutable identity and versions", () => {
   });
 
   describe("reply_types_keys_trg", () => {
-    it("raises when key, group_key or reply_type_set_id change", async () => {
+    it("raises when key, group_key, reply_type_set_id or system_role change", async () => {
       const w = await world();
       await expect(sql`update reply_types set key = 'renamed' where id = ${w.subA}`).rejects.toThrow(KEYS);
+      await expect(sql`update reply_types set system_role = 'customer' where id = ${w.subA}`).rejects.toThrow(KEYS);
       await expect(sql`update reply_types set group_key = 'customer' where id = ${w.subA}`).rejects.toThrow(KEYS);
       const [other] = await sql`insert into reply_type_sets (organization_id, name) values (${w.org}, 'second') returning id`;
       await expect(sql`update reply_types set reply_type_set_id = ${other.id} where id = ${w.subA}`).rejects.toThrow(KEYS);
@@ -84,7 +85,7 @@ describeDb("immutable identity and versions", () => {
     it("allows every field ReplyTypePatch writes", async () => {
       const w = await world();
       await sql`
-        update reply_types set name = 'Renamed', description = 'd', classification_guidance = 'g', review_required = true, stage_rank = 2, sort_order = 5, active = false
+        update reply_types set name = 'Renamed', description = 'd', classification_guidance = 'g', check_mode = 'skip', reply_draft = false, follow_ups = 'stop', sort_order = 5, active = false
         where id = ${w.subA}`;
       await sql`update reply_types set key = key, group_key = group_key where id = ${w.subA}`;
     });

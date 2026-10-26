@@ -324,7 +324,7 @@ const EVENT_LABELS_FILE = "src/app/(app)/_components/event-labels.ts";
 const CAMPAIGN_VIEW_FILE = "src/contexts/outreach/domain/campaign-view.ts";
 
 const baseFacts: afterReply.StartBlockFacts = {
-  record: { replyTypeId: "s", groupKey: "interested", replyTypeKey: "interested", replyTypeName: "Interested", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
+  record: { replyTypeId: "s", groupKey: "interested", replyTypeKey: "interested", replyTypeName: "Interested", followUps: "continue", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
   conversation: { channel: "email" },
   doNotContact: false,
   suppressed: false,

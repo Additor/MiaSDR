@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PROTECTED_SUBCATEGORY_KEY, REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
 import { needsReply } from "@/contexts/conversations/domain/reply-policy";
 import { callApi } from "@/app/_lib/api-client";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import { saveDraftEdits } from "../_lib/draft-edits";
 
 export interface StageOption {
@@ -22,7 +22,6 @@ export interface StageOption {
   key: string;
   groupKey: string;
   name: string;
-  stageRank: number | null;
 }
 
 /** The AI's reading of the last reply, shown above the picker so you correct it with it in view. */
@@ -108,7 +107,7 @@ export function ChangeCategoryButton({
           note: note.trim() || null,
         });
     if (!result.ok) throw new Error(result.error ?? "The category did not change. Try again.");
-    toast.success(`Changed the category of ${personName} to ${categoryLabel(chosen.groupKey)}: ${chosen.name}.`);
+    toast.success(`Changed the category of ${personName} to ${groupLabel(chosen.groupKey)}: ${chosen.name}.`);
     reset(false);
     router.refresh();
   }
@@ -158,7 +157,7 @@ export function ChangeCategoryButton({
           )}
           <Field>
             <FieldLabel htmlFor={`category-${recordId}`}>New category</FieldLabel>
-            <Combobox items={groups} value={target} onValueChange={(next) => setTarget((next as Option | null) ?? null)} itemToStringLabel={(o: Option) => `${categoryLabel(o.stage.groupKey)}: ${o.label}`} autoHighlight>
+            <Combobox items={groups} value={target} onValueChange={(next) => setTarget((next as Option | null) ?? null)} itemToStringLabel={(o: Option) => `${groupLabel(o.stage.groupKey)}: ${o.label}`} autoHighlight>
               <ComboboxInput id={`category-${recordId}`} placeholder="Search categories" className="w-full" />
               <ComboboxContent>
                 <ComboboxEmpty>No category matches.</ComboboxEmpty>

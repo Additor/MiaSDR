@@ -38,7 +38,11 @@ describeDb("AI classification, drafts and approval", () => {
       const r = await receive(f);
       const record = await one("select * from records where organization_id = $1", [f.org]);
       expect(record.group_key).toBeNull();
-      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
+      // The pick stores the rules of the type it proposes, as they were when it was decided.
+      expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
+        status: "proposed",
+        rules: { checkMode: "after", replyDraft: true, followUps: "continue" },
+      });
       expect(await count("drafts", f.org)).toBe(0);
       const p = await panel(f, r.conversationId);
       expect(p.classification).toMatchObject({ status: "proposed", holdReason: "low_confidence", current: true });
@@ -50,6 +54,13 @@ describeDb("AI classification, drafts and approval", () => {
       expect(await one("select reply_type_source from records where organization_id = $1", [f.org])).toMatchObject({ reply_type_source: "human" });
       await f.run();
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
+
+      // A person's other type replaces the snapshot with that type's rules.
+      await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "not_required_right_now", expectedContextVersion: await version(f) });
+      expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
+        status: "overridden",
+        rules: { checkMode: "skip", replyDraft: false, followUps: "stop" },
+      });
     });
 
     it("honors a changed pipeline threshold", async () => {
@@ -139,10 +150,10 @@ describeDb("AI classification, drafts and approval", () => {
       expect((await panel(f, r.conversationId)).suppressed).toBe(true);
     });
 
-    it("settles the record to idle when an applied classification asks for no reply", async () => {
+    it("settles the record to idle when an applied pick of a type checked neither before nor after asks for no reply", async () => {
       const f = await fixture();
       await composition.ingestInbound(mail(f, { bodyText: "I am out of office until Monday.", subject: "Out of office" }));
-      await sql`update reply_handling_settings set review_other = false where organization_id = ${f.org}`;
+      await sql`update reply_types set check_mode = 'skip' where organization_id = ${f.org} and group_key = 'other' and not reply_draft`;
       await f.run();
       expect(await one("select workflow_state, group_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "idle", group_key: "other" });
       expect(await count("drafts", f.org)).toBe(0);

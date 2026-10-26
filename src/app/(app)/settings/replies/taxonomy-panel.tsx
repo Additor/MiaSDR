@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,8 +23,7 @@ interface Sub {
   description: string | null;
   classificationGuidance: string | null;
   active: boolean;
-  reviewRequired: boolean;
-  stageRank: number | null;
+  rules: { checkMode: string };
   recordCount: number;
   historyCount: number;
 }
@@ -35,8 +33,6 @@ interface Draft {
   name: string;
   description: string;
   guidance: string;
-  rank: string;
-  review: boolean;
 }
 
 const CATEGORY_ITEMS = REPLY_TYPE_GROUPS.map((c) => ({ value: c.key, label: c.label }));
@@ -48,8 +44,6 @@ const draftOf = (sub: Sub | null, category = "interested"): Draft => ({
   name: sub?.name ?? "",
   description: sub?.description ?? "",
   guidance: sub?.classificationGuidance ?? "",
-  rank: sub?.stageRank?.toString() ?? "",
-  review: sub?.reviewRequired ?? false,
 });
 
 export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub[]; canManage: boolean }) {
@@ -71,8 +65,6 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
       name: draft.name,
       description: draft.description.trim() || null,
       classificationGuidance: draft.guidance.trim() || null,
-      reviewRequired: draft.review,
-      stageRank: draft.rank.trim() === "" ? null : Number(draft.rank),
     };
     const result = editing ? await callApi(`/api/reply-categories/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/reply-categories/subcategories", "POST", { ...common, groupKey: draft.category });
     if (!result.ok) throw new Error(result.error ?? "Could not save the subcategory.");
@@ -106,7 +98,7 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
       {/* Two levels only: a category is a group with an h3, its subcategories are the rows of one ruled list. */}
       <SettingsSection
         title="Subcategories"
-        description="The four reply categories are fixed. Their subcategories are what the AI picks from, and the guidance tells it when to choose one. A position orders the subcategories from first reply to outcome, and the AI never moves a person to a lower position on its own."
+        description="The four reply categories are fixed. Their subcategories are what the AI picks from, and the guidance tells it when to choose one."
         action={
           canManage ? (
             <Button variant="outline" onClick={() => open(null)}>
@@ -130,8 +122,7 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
                         <div className={cn("grid min-w-0 flex-1 gap-1", !s.active && "opacity-60")}>
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{s.name}</span>
-                            {s.stageRank !== null && <Badge variant="secondary">Position {s.stageRank}</Badge>}
-                            {s.reviewRequired && <Badge variant="secondary">Always reviewed</Badge>}
+                            {s.rules.checkMode === "before" && <Badge variant="secondary">Always reviewed</Badge>}
                             {!s.active && <Badge variant="outline">Archived</Badge>}
                             <span className="text-xs text-muted-foreground">
                               {s.recordCount} {s.recordCount === 1 ? "person" : "people"}
@@ -200,10 +191,6 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
                 </SelectContent>
               </Select>
             </Field>
-            <Field className="w-auto">
-              <FieldLabel htmlFor="sub-rank">Position</FieldLabel>
-              <Input id="sub-rank" type="number" min={1} max={100} value={draft.rank} onChange={(e) => setDraft({ ...draft, rank: e.target.value })} placeholder="Outcome" className="w-28" />
-            </Field>
           </div>
           <Field>
             <FieldLabel htmlFor="sub-name">Name</FieldLabel>
@@ -217,10 +204,6 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
             <FieldLabel htmlFor="sub-guidance">Guidance for the AI (optional)</FieldLabel>
             <Textarea id="sub-guidance" value={draft.guidance} onChange={(e) => setDraft({ ...draft, guidance: e.target.value })} maxLength={2000} placeholder="Choose this when the sender asks for pricing or a quote." />
             <FieldDescription>When the AI should pick this subcategory over the others.</FieldDescription>
-          </Field>
-          <Field orientation="horizontal">
-            <Checkbox id="sub-review" checked={draft.review} onCheckedChange={(c) => setDraft({ ...draft, review: c === true })} />
-            <FieldLabel htmlFor="sub-review">A person confirms every AI choice of this subcategory</FieldLabel>
           </Field>
         </FieldGroup>
       </ConfirmDialog>

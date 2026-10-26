@@ -11,6 +11,7 @@ import {
   parseReplyTypePatch,
   type ReplyTypeGroup,
 } from "../domain/reply-handling";
+import { typeChangeOutcome, validateTypeRules, type TypeChangeOutcome } from "../domain/reply-type";
 import type { ReplyHandlingStore, IdentityExceptionRow, RecordDetail } from "./reply-handling-ports";
 import type { InboundLinkedInInput } from "./linkedin-ports";
 import type { InboundEmailInput, IngestResult, InboxStore, ThreadMessage } from "./ports";
@@ -68,6 +69,20 @@ export async function getRecord(deps: ReplyHandlingDeps, actor: Actor, recordId:
   return { ...detail, timeline };
 }
 
+/**
+ * What Change type would do for each active reply type of the record, as the three lines of `typeChangeOutcome`. The
+ * record's current type is left out: it is not a target.
+ */
+export async function getTypeChangeOutcomes(deps: ReplyHandlingDeps, actor: Actor, recordId: string): Promise<Array<{ replyTypeId: string; outcome: TypeChangeOutcome }>> {
+  assertId(recordId, "Reply handling");
+  const read = await deps.store.typeChangeFacts(actor.organizationId, recordId);
+  if (!read) throw new NotFoundError("Reply handling not found");
+  const facts = { ...read.facts, currentType: read.current };
+  return read.targets
+    .filter((t) => t.id !== read.current?.id)
+    .map((t) => ({ replyTypeId: t.id, outcome: typeChangeOutcome(read.current, t, facts) }));
+}
+
 export interface MoveStageInput {
   groupKey: string;
   replyTypeId: string | null;
@@ -85,8 +100,8 @@ export interface MoveStageInput {
  */
 export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, recordId: string, input: MoveStageInput) {
   assertId(recordId, "Reply handling");
-  if (!isReplyTypeGroup(input.groupKey)) throw new ValidationError("Choose one of the four categories.");
-  if (input.replyTypeId !== null) assertId(input.replyTypeId, "Subcategory");
+  if (!isReplyTypeGroup(input.groupKey)) throw new ValidationError("Choose one of the four groups.");
+  if (input.replyTypeId !== null) assertId(input.replyTypeId, "Reply type");
   if (!Number.isInteger(input.expectedContextVersion) || input.expectedContextVersion < 0) throw new ValidationError("The reply handling version is missing. Reload and try again.");
   const note = input.note?.trim() || null;
   if (note && note.length > 4000) throw new ValidationError("The note is longer than 4000 characters.");
@@ -94,7 +109,7 @@ export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, rec
   const occurredAt = input.occurredAt ?? now;
   if (occurredAt.getTime() > now.getTime() + 60_000) throw new ConflictError("A category change cannot be dated in the future.");
 
-  const result = await deps.store.moveStage({
+  const result = await deps.store.changeReplyType({
     organizationId: actor.organizationId,
     actorUserId: actor.userId,
     recordId,
@@ -121,13 +136,13 @@ export async function followDoNotContactCategory(deps: ReplyHandlingDeps, actor:
 
 /** Reverts the latest applied classification to what the record had before, as a person's decision. */
 export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string) {
-  assertId(replyTypePickId, "Classification");
+  assertId(replyTypePickId, "AI pick");
   return deps.store.undoReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
 }
 
 /** Marks an AI classification as seen. A held proposal is not acknowledged, it is accepted or overridden. */
 export async function acknowledgeReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<void> {
-  assertId(replyTypePickId, "Classification");
+  assertId(replyTypePickId, "AI pick");
   await deps.store.acknowledgeReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
 }
 
@@ -248,43 +263,45 @@ function requireAdmin(actor: Actor): void {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can change reply settings.");
 }
 
-export const getReplyTaxonomy = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.taxonomy(actor.organizationId);
+export const getReplyTypeCatalog = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.replyTypeCatalog(actor.organizationId);
 
 export async function createReplyType(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
   requireAdmin(actor);
   const input = parseReplyTypeInput(raw);
-  const { subcategories } = await deps.store.taxonomy(actor.organizationId);
-  if (subcategories.some((s) => s.key === input.key)) throw new ConflictError(`A subcategory with the key "${input.key}" already exists.`);
-  if (subcategories.some((s) => s.groupKey === input.groupKey && s.name.toLowerCase() === input.name.toLowerCase())) {
-    throw new ConflictError(`"${input.name}" already exists in this category.`);
+  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
+  if (replyTypes.some((s) => s.key === input.key)) throw new ConflictError(`A reply type with the key "${input.key}" already exists.`);
+  if (replyTypes.some((s) => s.groupKey === input.groupKey && s.name.toLowerCase() === input.name.toLowerCase())) {
+    throw new ConflictError(`"${input.name}" already exists in this group.`);
   }
   return deps.store.createReplyType(actor.organizationId, input);
 }
 
 export async function updateReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string, raw: Record<string, unknown>): Promise<void> {
   requireAdmin(actor);
-  assertId(id, "Subcategory");
+  assertId(id, "Reply type");
   const patch = parseReplyTypePatch(raw);
-  const { subcategories } = await deps.store.taxonomy(actor.organizationId);
-  const current = subcategories.find((s) => s.id === id);
-  if (!current) throw new NotFoundError("Subcategory not found");
+  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
+  const current = replyTypes.find((s) => s.id === id);
+  if (!current) throw new NotFoundError("Reply type not found");
   if (current.key === PROTECTED_SUBCATEGORY_KEY && patch.active === false) throw new ConflictError("Do not contact drives the stop-contact paths and cannot be archived.");
-  if (patch.name && subcategories.some((s) => s.id !== id && s.groupKey === current.groupKey && s.name.toLowerCase() === patch.name!.toLowerCase())) {
-    throw new ConflictError(`"${patch.name}" already exists in this category.`);
+  if (patch.name && replyTypes.some((s) => s.id !== id && s.groupKey === current.groupKey && s.name.toLowerCase() === patch.name!.toLowerCase())) {
+    throw new ConflictError(`"${patch.name}" already exists in this group.`);
   }
-  await deps.store.updateReplyType(actor.organizationId, id, patch);
+  // The rules the request names, on top of the stored ones, checked against the type's system role.
+  const rules = patch.rules ? validateTypeRules(current, { ...current.rules, ...patch.rules }) : undefined;
+  await deps.store.updateReplyType(actor.organizationId, id, { ...patch, ...(rules ? { rules } : {}) });
 }
 
-/** Delete is blocked while records or classification history use the subcategory. Archive it instead. */
+/** Delete is blocked while records or pick history use the reply type. Archive it instead. */
 export async function deleteReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {
   requireAdmin(actor);
-  assertId(id, "Subcategory");
-  const { subcategories } = await deps.store.taxonomy(actor.organizationId);
-  const current = subcategories.find((s) => s.id === id);
-  if (!current) throw new NotFoundError("Subcategory not found");
+  assertId(id, "Reply type");
+  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
+  const current = replyTypes.find((s) => s.id === id);
+  if (!current) throw new NotFoundError("Reply type not found");
   if (current.key === PROTECTED_SUBCATEGORY_KEY) throw new ConflictError("Do not contact drives the stop-contact paths and cannot be deleted.");
-  if (current.recordCount > 0) throw new ConflictError(`${current.recordCount} ${current.recordCount === 1 ? "person is" : "people are"} in this subcategory. Move them first, or archive it.`);
-  if (current.historyCount > 0) throw new ConflictError("Classification history refers to this subcategory. Archive it instead of deleting it.");
+  if (current.recordCount > 0) throw new ConflictError(`${current.recordCount} ${current.recordCount === 1 ? "person has" : "people have"} this reply type. Change their type first, or archive it.`);
+  if (current.historyCount > 0) throw new ConflictError("AI picks refer to this reply type. Archive it instead of deleting it.");
   await deps.store.deleteReplyType(actor.organizationId, id);
 }
 

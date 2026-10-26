@@ -1,3 +1,5 @@
+import type { ReplyTypeDecision } from "./reply-type";
+
 /**
  * Where a conversation's reply handling stands (`records.workflow_state`). Mirrors the `records_workflow_ck` check.
  *
@@ -16,21 +18,31 @@ export const WORKFLOW_STATES = ["unclassified", "classifying", "action_required"
 
 export type WorkflowState = (typeof WORKFLOW_STATES)[number];
 
-/** A person rejects a classification or marks the person do not contact: open work comes back to someone, a closed one stays closed. */
+/** A person rejects an AI pick or marks the person do not contact: open work comes back to someone, a closed one stays closed. */
 export const afterPersonDecision = (current: string): WorkflowState => (current === "closed" ? "closed" : "action_required");
 
 /** Reopen goes back to work when a reply waits, else rests. */
 export const afterReopen = (hasInbound: boolean): WorkflowState => (hasInbound ? "action_required" : "idle");
 
 /**
- * A person sets the category by hand. One that wants a draft brings resting or failed handling to `action_required`; one
- * that does not lets `action_required` rest at `idle`. Every other state stays.
+ * A person changes the reply type. A type whose decision wants a draft brings resting or failed handling to
+ * `action_required`; one that does not lets `action_required` rest at `idle`. Every other state stays.
  */
-export function afterManualCategory(current: WorkflowState, wantsDraft: boolean): WorkflowState {
-  if (wantsDraft) return current === "idle" || current === "error" || current === "unclassified" ? "action_required" : current;
+export function afterTypeChange(current: WorkflowState, decision: Pick<ReplyTypeDecision, "wantsDraft">): WorkflowState {
+  if (decision.wantsDraft) return current === "idle" || current === "error" || current === "unclassified" ? "action_required" : current;
   return current === "action_required" ? "idle" : current;
 }
 
-/** An applied AI category settles `action_required` to `idle` when it wants no draft and the reply asked nothing to stop. */
+/**
+ * An applied AI pick settles `action_required` to `idle` when nothing is left for a person: the pick did not wait, its
+ * type is checked neither before nor after (Check = skip), it wants no draft, and the reply asked nothing to stop.
+ */
+export const settlesAfterAiPick = (current: string, decision: ReplyTypeDecision, stopRequested: boolean): boolean =>
+  current === "action_required" && decision.hold === null && !decision.needsLooksRight && !decision.wantsDraft && !stopRequested;
+
+/**
+ * The settle rule before type rules, kept for the AI apply path until it reads `decideReplyType` (W1). For every default
+ * type it agrees with `settlesAfterAiPick`; `reply-type.test.ts` compares them.
+ */
 export const settlesAfterAiCategory = (current: string, input: { wantsDraft: boolean; stopRequested: boolean }): boolean =>
   !input.wantsDraft && !input.stopRequested && current === "action_required";

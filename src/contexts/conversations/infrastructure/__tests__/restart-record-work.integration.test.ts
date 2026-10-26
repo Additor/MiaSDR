@@ -182,7 +182,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await one("select status from sequence_runs where id = $1", [old.id])).toMatchObject({ status: "interrupted" });
       expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'stage_moved'")).toBe(1);
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
-      expect(await one("select status, error from drafts where organization_id = $1", [f.org])).toMatchObject({ status: "stale", error: "A person moved the reply to another category after this draft was written." });
+      expect(await one("select status, error from drafts where organization_id = $1", [f.org])).toMatchObject({ status: "stale", error: "A person changed the reply type after this draft was written." });
       expect(await count("sequence_step_runs", f.org, `sequence_run_id = '${old.id}' and status in ('scheduled', 'drafting', 'awaiting_review')`)).toBe(0);
 
       const runs = await rows("select id, sequence_id, status, reply_type_id, trigger_message_id from sequence_runs where organization_id = $1 and status = 'active'", [f.org]);
@@ -282,7 +282,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       await move(f, recordId, "meeting_done", version, "Met on Tuesday, they want the contract");
       await mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId);
       const input = f.ai.lastDraftInput!;
-      expect(input.replyTypeChange).toMatchObject({ stage: "Meeting done", note: "Met on Tuesday, they want the contract" });
+      expect(input.replyTypeChange).toMatchObject({ stage: "After a meeting", note: "Met on Tuesday, they want the contract" });
       expect(input.replyTypeChange!.occurredAt).toBeInstanceOf(Date);
       // The classifier read the old inbound message; that reading is stale after the move.
       expect(input.classification?.reason).toBeNull();
@@ -330,7 +330,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version });
       expect(result).toMatchObject({ replyTypeKey: "meeting_done", draftQueued: true });
       expect(await versionOf(recordId)).toBe(version + 1);
-      expect(await one("select status, error from drafts where id = $1", [stale.id])).toMatchObject({ status: "stale", error: "A person corrected the category after this draft was written." });
+      expect(await one("select status, error from drafts where id = $1", [stale.id])).toMatchObject({ status: "stale", error: "A person corrected the reply type after this draft was written." });
       expect(await count("events", f.org, "event_type = 'sequence.interrupted' and meta->>'reason' = 'classification_corrected'")).toBe(1);
       const active = await rows("select sequence_id from sequence_runs where organization_id = $1 and status = 'active'", [f.org]);
       expect(active.map((a) => a.sequence_id)).toEqual([flowId]);
@@ -342,7 +342,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(fresh.length).toBeGreaterThanOrEqual(1);
       expect(fresh.every((d) => d.expected_context_version === version + 1)).toBe(true);
       expect(fresh.some((d) => d.id === stale.id)).toBe(false);
-      expect(f.ai.lastDraftInput?.classification?.replyTypeName).toBe("Meeting done");
+      expect(f.ai.lastDraftInput?.classification?.replyTypeName).toBe("After a meeting");
       // The panel shows the fresh draft, not the retired one.
       const panel = await mgmt.getReplyPanel(f.replyDeps, f.actor, r.conversationId);
       expect(panel?.draft?.status).toBe("awaiting_review");

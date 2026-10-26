@@ -21,6 +21,7 @@ import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES } from "../domain/draft-status";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
+import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
 import { inList } from "@/platform/db/sql-values";
 
 /**
@@ -67,9 +68,13 @@ export const replyTypes = pgTable(
     description: text("description"),
     classificationGuidance: text("classification_guidance"),
     active: boolean("active").notNull().default(true),
-    reviewRequired: boolean("review_required").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
-    stageRank: integer("stage_rank"),
+    /** Type rules (`domain/reply-type.ts`): who checks the AI's pick, whether it drafts a reply, whether follow-ups go on. */
+    checkMode: text("check_mode").$type<CheckMode>().notNull().default("after"),
+    replyDraft: boolean("reply_draft").notNull().default(true),
+    followUps: text("follow_ups").$type<FollowUpsRule>().notNull().default("continue"),
+    /** A fixed path this type drives. At most one type per role in a set, and it never changes. */
+    systemRole: text("system_role").$type<SystemRole>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -81,7 +86,16 @@ export const replyTypes = pgTable(
     unique("reply_types_id_org_uq").on(t.id, t.organizationId),
     check("reply_types_group_ck", inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)),
     check("reply_types_key_ck", sql`${t.key} ~ '^[a-z][a-z0-9_]*$'`),
-    check("reply_types_sort_ck", sql`${t.sortOrder} >= 0 and (${t.stageRank} is null or ${t.stageRank} >= 1)`),
+    check("reply_types_sort_ck", sql`${t.sortOrder} >= 0`),
+    check("reply_types_rules_ck", sql`${inList(t.checkMode, CHECK_MODES)} and ${inList(t.followUps, FOLLOW_UPS_RULES)}`),
+    check("reply_types_system_role_ck", sql`${t.systemRole} is null or ${inList(t.systemRole, SYSTEM_ROLES)}`),
+    // The stop request type keeps STOP_REQUEST_RULES and stays active; the customer type stays in the customer group.
+    check(
+      "reply_types_stop_request_ck",
+      sql`${t.systemRole} is distinct from 'stop_request' or (${t.checkMode} = 'before' and not ${t.replyDraft} and ${t.followUps} = 'stop' and ${t.active})`,
+    ),
+    check("reply_types_customer_ck", sql`${t.systemRole} is distinct from 'customer' or ${t.groupKey} = 'customer'`),
+    uniqueIndex("reply_types_set_system_role_uq").on(t.replyTypeSetId, t.systemRole).where(sql`${t.systemRole} is not null`),
   ],
 );
 
@@ -96,10 +110,8 @@ export const replyHandlingSettings = pgTable(
   {
     replyTypeSetId: uuid("reply_type_set_id").primaryKey(),
     organizationId: orgId(),
-    /** Classifications at or above this confidence apply without review. */
+    /** The confidence floor: an AI pick below it waits for a person, whatever its type's Check rule says. */
     autoApplyConfidence: numeric("auto_apply_confidence", { precision: 4, scale: 3 }).notNull().default("0.850"),
-    reviewOther: boolean("review_other").notNull().default(true),
-    customerRequiresReview: boolean("customer_requires_review").notNull().default(true),
     draftInstructions: jsonb("draft_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     classificationInstructions: jsonb("classification_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     updatedAt: updatedAt(),
@@ -401,6 +413,8 @@ export const replyTypePicks = pgTable(
     model: text("model"),
     request: jsonb("request").$type<unknown>(),
     response: jsonb("response").$type<unknown>(),
+    /** The type rules the pick was decided with. Null for a pick that names no type (a stale or failed one). */
+    rules: jsonb("rules").$type<TypeRules>(),
     error: text("error"),
     acknowledgedAt: tstz("acknowledged_at"),
     createdAt: createdAt(),
@@ -421,6 +435,7 @@ export const replyTypePicks = pgTable(
     check("reply_type_picks_confidence_ck", sql`${t.status} = 'failed' or ${t.confidence} is not null`),
     check("reply_type_picks_confidence_range_ck", sql`${t.confidence} is null or ${t.confidence} between 0 and 1`),
     check("reply_type_picks_context_version_ck", sql`${t.expectedContextVersion} >= 0`),
+    check("reply_type_picks_rules_ck", sql`${t.rules} is null or jsonb_typeof(${t.rules}) = 'object'`),
     check(
       "reply_type_picks_group_keys_ck",
       sql`(${t.previousGroupKey} is null or ${inList(t.previousGroupKey, REPLY_TYPE_GROUP_KEYS)})

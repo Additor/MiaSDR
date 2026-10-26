@@ -1,4 +1,5 @@
 import type { AiInstructionBlock, ReplyTypeGroup, ReplyHandlingSettingsPatch, ReplyTypeInput, ReplyTypePatch } from "../domain/reply-handling";
+import type { ReplyTypeFacts, SystemRole, TypeRules } from "../domain/reply-type";
 import type { NoteScope } from "../actions/application/tasks-ports";
 
 /** Read models and write ports for reply handling. Every method carries the organization and filters by it. */
@@ -8,7 +9,7 @@ export interface ReplyTypeSetRef {
   name: string;
 }
 
-export interface TaxonomyRow {
+export interface ReplyTypeRow {
   id: string;
   groupKey: ReplyTypeGroup;
   key: string;
@@ -16,26 +17,43 @@ export interface TaxonomyRow {
   description: string | null;
   classificationGuidance: string | null;
   active: boolean;
-  reviewRequired: boolean;
-  stageRank: number | null;
+  /** The type's rules, as they apply to picks from now on. */
+  rules: TypeRules;
+  systemRole: SystemRole | null;
   sortOrder: number;
   recordCount: number;
-  /** Classification rows that name this subcategory, so deleting it would break history. */
+  /** Picks that name this reply type, so deleting it would break history. */
   historyCount: number;
 }
 
 export interface ReplyHandlingSettingsRow {
+  /** The confidence floor: an AI pick below it waits for a person. */
   autoApplyConfidence: number;
-  reviewOther: boolean;
-  customerRequiresReview: boolean;
   draftInstructions: AiInstructionBlock[];
   classificationInstructions: AiInstructionBlock[];
 }
 
-export interface Taxonomy {
-  pipeline: ReplyTypeSetRef;
-  subcategories: TaxonomyRow[];
+export interface ReplyTypeCatalog {
+  replyTypeSet: ReplyTypeSetRef;
+  replyTypes: ReplyTypeRow[];
   settings: ReplyHandlingSettingsRow;
+}
+
+/** A reply type as a person's type change reads it: what it is and the rules it would apply. */
+export interface ReplyTypeOption {
+  id: string;
+  key: string;
+  groupKey: ReplyTypeGroup;
+  name: string;
+  systemRole: SystemRole | null;
+  rules: TypeRules;
+}
+
+/** What `typeChangeOutcome` needs for one record: its current type, the active types it can move to, and the facts. */
+export interface TypeChangeFacts {
+  current: ReplyTypeOption | null;
+  targets: ReplyTypeOption[];
+  facts: Omit<ReplyTypeFacts, "confidence" | "currentType">;
 }
 
 export interface ReplyTypePickEntry {
@@ -51,6 +69,8 @@ export interface ReplyTypePickEntry {
   error: string | null;
   provider: string | null;
   acknowledged: boolean;
+  /** The type rules the pick was decided with. Null for a pick without a type. */
+  rules: TypeRules | null;
   createdAt: Date;
   /** Belongs to the record's latest inbound message. */
   latest: boolean;
@@ -124,12 +144,13 @@ export interface RecordDetail {
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
   suppressed: boolean;
   conversations: Array<{ id: string; channel: string; accountRef: string; status: string }>;
-  classifications: ReplyTypePickEntry[];
+  replyTypePicks: ReplyTypePickEntry[];
   drafts: DraftEntry[];
   events: EventEntry[];
   notes: NoteEntry[];
   enrollments: EnrollmentEntry[];
-  stages: Array<{ id: string; key: string; groupKey: ReplyTypeGroup; name: string; stageRank: number | null }>;
+  /** Active reply types in group order, the targets of Change type. */
+  replyTypes: ReplyTypeOption[];
 }
 
 export interface ReplyTypeChangeInput {
@@ -190,8 +211,10 @@ export interface ReplyHandlingStore {
   /** Everything but the conversation timelines, which the use case reads through the inbox store. */
   recordDetail(organizationId: string, recordId: string): Promise<RecordDetail | null>;
   draftIdForAttempt(organizationId: string, attemptId: string): Promise<string | null>;
+  /** Null when the record is not in the organization or has only private conversations. */
+  typeChangeFacts(organizationId: string, recordId: string): Promise<TypeChangeFacts | null>;
 
-  moveStage(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
+  changeReplyType(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
   undoReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<{ recordId: string; draftsRetired: number }>;
   acknowledgeReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<void>;
   /** Sets or clears the person's do-not-contact flag and stops everything that would contact them. */
@@ -202,7 +225,7 @@ export interface ReplyHandlingStore {
   addNote(input: { organizationId: string; actorUserId: string; scope: NoteScope; title: string | null; body: string }): Promise<{ id: string }>;
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;
 
-  taxonomy(organizationId: string): Promise<Taxonomy>;
+  replyTypeCatalog(organizationId: string): Promise<ReplyTypeCatalog>;
   createReplyType(organizationId: string, input: ReplyTypeInput): Promise<{ id: string }>;
   updateReplyType(organizationId: string, id: string, patch: ReplyTypePatch): Promise<void>;
   deleteReplyType(organizationId: string, id: string): Promise<void>;

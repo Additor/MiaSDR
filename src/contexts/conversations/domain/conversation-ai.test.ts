@@ -1,43 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { decideApplication, type PolicyInput } from "./classification-policy";
+import { decideApplication, type PolicyInput } from "./reply-type-pick-policy";
+import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES } from "./reply-type";
 import { normalizeSubject } from "./subject";
 import { needsReply, replySubject } from "./reply-policy";
 import { detectsStopRequest, stripQuoted } from "./stop-request";
 
 const base: PolicyInput = {
-  proposal: { groupKey: "interested", replyTypeKey: "demo_request", reviewRequired: false, stageRank: 1, confidence: 0.9 },
-  current: { groupKey: null, stageRank: null, replyTypeLocked: false },
-  settings: { autoApplyConfidence: 0.85, reviewOther: true, customerRequiresReview: true },
+  proposal: { groupKey: "interested", rules: { ...DEFAULT_TYPE_RULES } },
+  confidence: 0.9,
+  current: { groupKey: null, replyTypeLocked: false },
+  floor: 0.85,
 };
-const withProposal = (p: Partial<PolicyInput["proposal"]>, c: Partial<PolicyInput["current"]> = {}, s: Partial<PolicyInput["settings"]> = {}): PolicyInput => ({
-  proposal: { ...base.proposal, ...p },
-  current: { ...base.current, ...c },
-  settings: { ...base.settings, ...s },
-});
+const pick = (over: Partial<PolicyInput> = {}): PolicyInput => ({ ...base, ...over });
 
-describe("classification policy", () => {
-  it("applies at or above the threshold and holds below it", () => {
-    expect(decideApplication(withProposal({ confidence: 0.85 }))).toEqual({ action: "auto_apply" });
-    expect(decideApplication(withProposal({ confidence: 0.84 }))).toEqual({ action: "hold", reason: "low_confidence" });
+describe("reply type pick policy", () => {
+  it("applies at or above the confidence floor and holds below it", () => {
+    expect(decideApplication(pick({ confidence: 0.85 }))).toEqual({ action: "auto_apply" });
+    expect(decideApplication(pick({ confidence: 0.84 }))).toEqual({ action: "hold", reason: "low_confidence" });
   });
 
-  it("holds customer, review-required subcategories and the other category", () => {
-    expect(decideApplication(withProposal({ groupKey: "customer", replyTypeKey: "customer" }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ groupKey: "customer", replyTypeKey: "customer" }, {}, { customerRequiresReview: false }))).toEqual({ action: "auto_apply" });
-    expect(decideApplication(withProposal({ reviewRequired: true }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ groupKey: "other", replyTypeKey: "other", stageRank: null }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ groupKey: "other", replyTypeKey: "other", stageRank: null }, {}, { reviewOther: false }))).toEqual({ action: "auto_apply" });
+  it("holds a type checked before it applies, whatever the confidence", () => {
+    expect(decideApplication(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES, checkMode: "before" } }, confidence: 1 }))).toEqual({ action: "hold", reason: "requires_review" });
+    expect(decideApplication(pick({ proposal: { groupKey: "not_interested", rules: { ...STOP_REQUEST_RULES } }, confidence: 1 }))).toEqual({ action: "hold", reason: "requires_review" });
+    expect(decideApplication(pick({ proposal: { groupKey: "other", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } } }))).toEqual({ action: "auto_apply" });
   });
 
-  it("protects a locked customer and a higher funnel stage", () => {
-    expect(decideApplication(withProposal({}, { groupKey: "customer", replyTypeLocked: true }))).toEqual({ action: "hold", reason: "protected_customer" });
-    expect(decideApplication(withProposal({ stageRank: 1 }, { groupKey: "interested", stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
-    expect(decideApplication(withProposal({ groupKey: "not_interested", replyTypeKey: "not_required_right_now", stageRank: null }, { stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
-    expect(decideApplication(withProposal({ stageRank: 3 }, { stageRank: 3 }))).toEqual({ action: "auto_apply" });
+  it("protects a locked customer", () => {
+    expect(decideApplication(pick({ current: { groupKey: "customer", replyTypeLocked: true } }))).toEqual({ action: "hold", reason: "protected_customer" });
+    expect(decideApplication(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES } }, current: { groupKey: "customer", replyTypeLocked: true } }))).toEqual({ action: "auto_apply" });
   });
 
-  it("lets do not contact through a stage", () => {
-    expect(decideApplication(withProposal({ groupKey: "not_interested", replyTypeKey: "do_not_contact", stageRank: null, confidence: 0.99 }, { stageRank: 3 }))).toEqual({ action: "auto_apply" });
+  it("no longer holds a move to a lower position: progress belongs to deal stages", () => {
+    expect(decideApplication(pick({ proposal: { groupKey: "not_interested", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } }, current: { groupKey: "interested", replyTypeLocked: false } }))).toEqual({ action: "auto_apply" });
   });
 });
 

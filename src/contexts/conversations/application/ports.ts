@@ -106,7 +106,7 @@ export interface ScheduledRow {
 export interface InboxFilterOptions {
   mailboxes: Array<{ id: string; label: string }>;
   campaigns: Array<{ id: string; label: string }>;
-  subcategories: Array<{ key: string; label: string }>;
+  replyTypes: Array<{ key: string; label: string }>;
   leads: Array<{ id: string; label: string }>;
 }
 

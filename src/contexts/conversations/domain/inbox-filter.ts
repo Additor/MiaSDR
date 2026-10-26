@@ -9,7 +9,7 @@ import { calendarDayInZone, shiftDay, startOfDayInZone } from "@/shared/time-zon
 export const INBOX_VIEWS = ["all", "unread", "important", "sent", "replied", "ooo", "automated", "scheduled"] as const;
 export type InboxView = (typeof INBOX_VIEWS)[number];
 
-export const INBOX_CATEGORIES = ["customer", "interested", "not_interested", "other"] as const;
+export const INBOX_GROUPS = ["customer", "interested", "not_interested", "other"] as const;
 export const DATE_MODES = ["all", "today", "yesterday", "custom"] as const;
 export type DateMode = (typeof DATE_MODES)[number];
 
@@ -143,7 +143,7 @@ export function parseInboxParams(raw: Raw): InboxParams {
     campaignIds: all(raw.campaign).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
     mailboxIds: all(raw.mailbox).filter((v) => UUID.test(v)).slice(0, MAX_VALUES),
     replyTypeKeys: all(raw.subcategory).filter((v) => REPLY_TYPE_KEY.test(v)).slice(0, MAX_VALUES),
-    groupKeys: all(raw.category).filter((v): v is (typeof INBOX_CATEGORIES)[number] => (INBOX_CATEGORIES as readonly string[]).includes(v)),
+    groupKeys: all(raw.category).filter((v): v is (typeof INBOX_GROUPS)[number] => (INBOX_GROUPS as readonly string[]).includes(v)),
     dateMode,
     dateFrom,
     dateTo,

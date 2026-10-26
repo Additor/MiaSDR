@@ -1,4 +1,5 @@
 import type { AfterReplyMode } from "../domain/after-reply";
+import type { FollowUpsRule } from "../../domain/reply-type";
 import type { InterruptFacts, InterruptReason, RunStatus, StepInput, StepRunStatus, StepType } from "../domain/sequences";
 
 /** Persistence for a campaign's After a reply flow. Every method carries the organization and filters by it. */
@@ -85,6 +86,8 @@ export interface StartFacts {
     groupKey: string | null;
     replyTypeKey: string | null;
     replyTypeName: string | null;
+    /** The Follow-ups rule of the record's reply type (`reply_types.follow_ups`), or null without a type. */
+    followUps: FollowUpsRule | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     lastOutboundAt: Date | null;

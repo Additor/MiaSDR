@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { categorySourceLabel, draftStatusLabel, waitingOn, workflowLabel } from "./labels";
+import { replyTypeSourceLabel, draftStatusLabel, waitingOn, workflowLabel } from "./labels";
 
 describe("inbox labels", () => {
   it("names every draft status without underscores", () => {
@@ -12,7 +12,7 @@ describe("inbox labels", () => {
 
   it("falls back to a readable label for an unknown value", () => {
     expect(draftStatusLabel("on_hold")).toBe("On hold");
-    expect(categorySourceLabel("human")).toBe("set by a person");
+    expect(replyTypeSourceLabel("human")).toBe("set by a person");
   });
 
   it("labels workflow states and says who acts next", () => {

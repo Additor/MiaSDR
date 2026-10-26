@@ -1105,7 +1105,7 @@ describeDb("After a reply flows", () => {
       const { f, run } = await withRun();
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
       const { drizzleReplyHandlingStore } = await import("../../../infrastructure/drizzle-reply-handling-store");
-      await drizzleReplyHandlingStore.moveStage({
+      await drizzleReplyHandlingStore.changeReplyType({
         organizationId: f.org,
         actorUserId: f.user,
         recordId: record.id,
@@ -1135,7 +1135,7 @@ describeDb("After a reply flows", () => {
       const other = await one("select id, group_key from reply_types where organization_id = $1 and key = 'information_requested'", [f.org]);
       expect(other).toBeDefined();
       expect(await one("select s.key from sequence_runs r join reply_types s on s.id = r.reply_type_id where r.id = $1", [run.id])).toMatchObject({ key: "demo_request" });
-      await drizzleReplyHandlingStore.moveStage({
+      await drizzleReplyHandlingStore.changeReplyType({
         organizationId: f.org,
         actorUserId: f.user,
         recordId: record.id,

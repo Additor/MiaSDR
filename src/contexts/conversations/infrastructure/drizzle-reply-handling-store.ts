@@ -33,17 +33,22 @@ import type {
   EventEntry,
   NoteEntry,
   RecordDetail,
-  Taxonomy,
+  ReplyTypeCatalog,
+  ReplyTypeOption,
 } from "../application/reply-handling-ports";
 import { REPLY_TYPE_GROUPS, checkReplyTypeChange, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen } from "../domain/workflow-state";
+import { typeRulesOf, type TypeRules } from "../domain/reply-type";
+import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { draftCanBecome } from "./reply-store-shared";
 import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
 import { rowsOf } from "@/platform/db/sql-values";
 
-const CATEGORY_ORDER = new Map<string, number>(REPLY_TYPE_GROUPS.map((c, i) => [c.key, i]));
+const GROUP_ORDER = new Map<string, number>(REPLY_TYPE_GROUPS.map((c, i) => [c.key, i]));
+const byGroupThenOrder = (a: { groupKey: string; sortOrder: number }, b: { groupKey: string; sortOrder: number }) =>
+  (GROUP_ORDER.get(a.groupKey) ?? 9) - (GROUP_ORDER.get(b.groupKey) ?? 9) || a.sortOrder - b.sortOrder;
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
 
 async function replyTypeSetFor(organizationId: string) {
@@ -172,6 +177,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         error: c.error,
         provider: c.provider,
         acknowledged: c.acknowledgedAt !== null,
+        rules: (c.rules as TypeRules | null) ?? null,
         createdAt: c.createdAt,
         latest,
         canUndo: latest && applied,
@@ -211,7 +217,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       policy: policy[0] ? { doNotContact: policy[0].doNotContact, reason: policy[0].reason, source: policy[0].source, setAt: policy[0].setAt, clearedAt: policy[0].clearedAt } : null,
       suppressed: suppressed.length > 0,
       conversations: convs,
-      classifications: replyTypePickEntries,
+      replyTypePicks: replyTypePickEntries,
       drafts: draftRows.map(
         (d): DraftEntry => ({
           id: d.id,
@@ -228,10 +234,10 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       events: eventRows.map(({ e, actorName }): EventEntry => ({ id: e.id, eventType: e.eventType, actorType: e.actorType, actorName, createdAt: e.createdAt, fromData: e.fromData, toData: e.toData, meta: e.meta })),
       notes: noteRows.map(({ n, authorName }): NoteEntry => ({ id: n.id, title: n.title, body: n.body, createdAt: n.createdAt, authorName, createdBy: n.createdBy })),
       enrollments: enrollmentRows,
-      stages: subs
+      replyTypes: subs
         .filter((s) => s.active)
-        .sort((a, b) => (CATEGORY_ORDER.get(a.groupKey) ?? 9) - (CATEGORY_ORDER.get(b.groupKey) ?? 9) || (a.stageRank ?? 1000) - (b.stageRank ?? 1000) || a.sortOrder - b.sortOrder)
-        .map((s) => ({ id: s.id, key: s.key, groupKey: s.groupKey as ReplyTypeGroup, name: s.name, stageRank: s.stageRank })),
+        .sort(byGroupThenOrder)
+        .map(replyTypeOption),
     };
   },
 
@@ -240,7 +246,11 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return row?.draftId ?? null;
   },
 
-  async moveStage(input) {
+  async typeChangeFacts(organizationId, recordId) {
+    return typeChangeFactsOf(organizationId, recordId);
+  },
+
+  async changeReplyType(input) {
     return db.transaction(async (tx) => {
       const before = await lockRecord(tx, input.organizationId, input.recordId);
       let sub: typeof replyTypes.$inferSelect | undefined;
@@ -249,9 +259,9 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           .select()
           .from(replyTypes)
           .where(and(eq(replyTypes.id, input.replyTypeId), eq(replyTypes.organizationId, input.organizationId), eq(replyTypes.replyTypeSetId, before.replyTypeSetId)));
-        if (!sub) throw new NotFoundError("Subcategory not found");
-        if (sub.groupKey !== input.groupKey) throw new ValidationError("That subcategory belongs to another category.");
-        if (!sub.active) throw new ConflictError("An archived subcategory cannot be assigned.");
+        if (!sub) throw new NotFoundError("Reply type not found");
+        if (sub.groupKey !== input.groupKey) throw new ValidationError("That reply type belongs to another group.");
+        if (!sub.active) throw new ConflictError("An archived reply type cannot be assigned.");
       }
       const { replyTypeLocked } = checkReplyTypeChange({
         before: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeLocked: before.replyTypeLocked, contextVersion: before.contextVersion, workflowState: before.workflowState },
@@ -268,7 +278,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         organizationId: input.organizationId,
         recordId: before.id,
         reason: "stage_moved",
-        draftReason: "A person moved the reply to another category after this draft was written.",
+        draftReason: "A person changed the reply type after this draft was written.",
         now: input.now,
         actorUserId: input.actorUserId,
       });
@@ -294,13 +304,13 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .select({ recordId: replyTypePicks.recordId })
         .from(replyTypePicks)
         .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId)));
-      if (!candidate) throw new NotFoundError("Classification not found");
+      if (!candidate) throw new NotFoundError("AI pick not found");
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
-      if (cls.messageId !== record.latestInboundMessageId) throw new ConflictError("Only the classification of the latest inbound message can be undone.");
+      if (cls.messageId !== record.latestInboundMessageId) throw new ConflictError("Only the pick of the latest inbound message can be undone.");
       if (!cls.appliedGroupKey || !["auto_applied", "accepted", "overridden"].includes(cls.status)) throw new ConflictError("This classification has no applied change to undo.");
       if (record.groupKey !== cls.appliedGroupKey || record.replyTypeId !== cls.appliedReplyTypeId) {
-        throw new ConflictError("A person moved the reply to another category after this classification. Change the category by hand.");
+        throw new ConflictError("A person changed the reply type after this pick. Change the type by hand.");
       }
       const version = record.contextVersion + 1;
       const previous = cls.previousGroupKey;
@@ -347,7 +357,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .select({ recordId: replyTypePicks.recordId })
         .from(replyTypePicks)
         .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId)));
-      if (!candidate) throw new NotFoundError("Classification not found");
+      if (!candidate) throw new NotFoundError("AI pick not found");
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
       if (cls.acknowledgedAt) return;
@@ -521,9 +531,9 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return removed.length > 0;
   },
 
-  async taxonomy(organizationId): Promise<Taxonomy> {
+  async replyTypeCatalog(organizationId): Promise<ReplyTypeCatalog> {
     const replyTypeSetId = await replyTypeSetFor(organizationId);
-    const [pipeline] = rowsOf<{ id: string; name: string }>(await db.execute(sql`select id, name from reply_type_sets where id = ${replyTypeSetId}`));
+    const [replyTypeSet] = rowsOf<{ id: string; name: string }>(await db.execute(sql`select id, name from reply_type_sets where id = ${replyTypeSetId}`));
     const rows = rowsOf<Record<string, unknown>>(
       await db.execute(sql`
         select s.*,
@@ -536,8 +546,8 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     );
     const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, replyTypeSetId));
     return {
-      pipeline,
-      subcategories: rows
+      replyTypeSet,
+      replyTypes: rows
         .map((r) => ({
           id: r.id as string,
           groupKey: r.group_key as ReplyTypeGroup,
@@ -546,17 +556,15 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           description: r.description as string | null,
           classificationGuidance: r.classification_guidance as string | null,
           active: r.active as boolean,
-          reviewRequired: r.review_required as boolean,
-          stageRank: r.stage_rank as number | null,
+          rules: typeRulesOf({ checkMode: r.check_mode as string, replyDraft: r.reply_draft as boolean, followUps: r.follow_ups as string }),
+          systemRole: (r.system_role as ReplyTypeOption["systemRole"]) ?? null,
           sortOrder: Number(r.sort_order),
           recordCount: Number(r.record_count),
           historyCount: Number(r.history_count),
         }))
-        .sort((a, b) => (CATEGORY_ORDER.get(a.groupKey) ?? 9) - (CATEGORY_ORDER.get(b.groupKey) ?? 9) || (a.stageRank ?? 1000) - (b.stageRank ?? 1000) || a.sortOrder - b.sortOrder),
+        .sort(byGroupThenOrder),
       settings: {
         autoApplyConfidence: Number(settings.autoApplyConfidence),
-        reviewOther: settings.reviewOther,
-        customerRequiresReview: settings.customerRequiresReview,
         draftInstructions: settings.draftInstructions,
         classificationInstructions: settings.classificationInstructions,
       },
@@ -579,33 +587,34 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         name: input.name,
         description: input.description,
         classificationGuidance: input.classificationGuidance,
-        reviewRequired: input.reviewRequired,
-        stageRank: input.stageRank,
+        checkMode: input.rules.checkMode,
+        replyDraft: input.rules.replyDraft,
+        followUps: input.rules.followUps,
         sortOrder: Number(next),
       })
       .onConflictDoNothing()
       .returning({ id: replyTypes.id });
-    if (!row) throw new ConflictError(`A subcategory with the key "${input.key}" already exists.`);
+    if (!row) throw new ConflictError(`A reply type with the key "${input.key}" already exists.`);
     return row;
   },
 
-  async updateReplyType(organizationId, id, patch) {
+  async updateReplyType(organizationId, id, { rules, ...fields }) {
     const updated = await db
       .update(replyTypes)
-      .set(patch)
+      .set({ ...fields, ...rules })
       .where(and(eq(replyTypes.id, id), eq(replyTypes.organizationId, organizationId)))
       .returning({ id: replyTypes.id });
-    if (updated.length === 0) throw new NotFoundError("Subcategory not found");
+    if (updated.length === 0) throw new NotFoundError("Reply type not found");
   },
 
   async deleteReplyType(organizationId, id) {
     try {
       const removed = await db.delete(replyTypes).where(and(eq(replyTypes.id, id), eq(replyTypes.organizationId, organizationId))).returning({ id: replyTypes.id });
-      if (removed.length === 0) throw new NotFoundError("Subcategory not found");
+      if (removed.length === 0) throw new NotFoundError("Reply type not found");
     } catch (error) {
       // The composite foreign key on records stops a delete that raced with a new assignment.
       if (error instanceof NotFoundError) throw error;
-      throw new ConflictError("People are in this subcategory. Move them first, or archive it.");
+      throw new ConflictError("People have this reply type. Change their type first, or archive it.");
     }
   },
 

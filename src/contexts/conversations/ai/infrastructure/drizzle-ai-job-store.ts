@@ -11,6 +11,7 @@ import { publicConversation, publicConversationText } from "@/platform/db/conver
 import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { settlesAfterAiCategory } from "../../domain/workflow-state";
+import { typeRulesOf } from "../../domain/reply-type";
 
 interface JobRow {
   id: string;
@@ -344,7 +345,10 @@ export const drizzleAiJobStore: AiJobStore = {
     const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, row.replyTypeSetId));
     const thread = await threadEntries(organizationId, row.conversationId);
     if (!thread) return null;
-    const currentRank = row.replyTypeId ? (taxonomyRows.find((t) => t.id === row.replyTypeId)?.stageRank ?? null) : null;
+    // The current type may be archived, so it is read on its own rather than from the active list.
+    const [current] = row.replyTypeId
+      ? await db.select({ id: replyTypes.id, groupKey: replyTypes.groupKey, systemRole: replyTypes.systemRole }).from(replyTypes).where(eq(replyTypes.id, row.replyTypeId))
+      : [];
     const knowledge = await knowledgeFor(organizationId, { alwaysOnly: true });
 
     const ctx: ClassifyContext = {
@@ -353,12 +357,8 @@ export const drizzleAiJobStore: AiJobStore = {
       latestInboundMessageId: row.latest,
       groupKey: row.groupKey,
       replyTypeLocked: row.locked,
-      currentStageRank: currentRank,
-      settings: {
-        autoApplyConfidence: Number(settings?.autoApplyConfidence ?? 0.85),
-        reviewOther: settings?.reviewOther ?? true,
-        customerRequiresReview: settings?.customerRequiresReview ?? true,
-      },
+      currentType: current ?? null,
+      settings: { autoApplyConfidence: Number(settings?.autoApplyConfidence ?? 0.85) },
       operatorInstructions: renderInstructions(settings?.classificationInstructions),
       businessContext: knowledge.map((k) => `${k.title}\n${k.content}`).join("\n\n"),
       taxonomy: taxonomyRows.map((t) => ({
@@ -368,8 +368,8 @@ export const drizzleAiJobStore: AiJobStore = {
         groupKey: t.groupKey,
         description: t.description,
         guidance: t.classificationGuidance,
-        reviewRequired: t.reviewRequired,
-        stageRank: t.stageRank,
+        systemRole: t.systemRole,
+        rules: typeRulesOf(t),
       })),
       person: thread.person,
       thread: thread.entries,
@@ -403,6 +403,7 @@ export const drizzleAiJobStore: AiJobStore = {
         .where(and(eq(replyTypes.replyTypeSetId, record.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey)));
 
       const base = {
+        rules: proposed ? typeRulesOf(proposed) : null,
         organizationId: input.job.organizationId,
         recordId: record.id,
         messageId: input.messageId,

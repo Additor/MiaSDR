@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
-import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
+import { getReplyTypeCatalog } from "@/contexts/conversations/application/reply-handling";
 import { getWorkQueue, getWorkQueueCounts, getWorkQueueExtras } from "@/contexts/conversations/actions/application/work-queue";
 import { listTasks } from "@/contexts/conversations/actions/application/tasks";
 import type { QueueItem } from "@/contexts/conversations/actions/application/work-queue-ports";
@@ -127,7 +127,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   );
   const { queue, filterError } = result;
   const [taxonomy, emailCampaigns, linkedinCampaigns, extras, counts] = await Promise.all([
-    getReplyTaxonomy(replyHandlingDeps(), actor),
+    getReplyTypeCatalog(replyHandlingDeps(), actor),
     listCampaigns(campaignDeps(), actor),
     listLinkedInCampaigns(linkedinCampaignDeps(), actor),
     getWorkQueueExtras(workQueueDeps(), actor),
@@ -230,7 +230,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     { scope: "others", label: "Others" },
   ] as const;
   const unassignedCount = counts.work.unassigned;
-  const subcategories = taxonomy.subcategories.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
+  const subcategories = taxonomy.replyTypes.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
   const queueChips = queueFilterChips(filterValues, scope, { subcategories, campaigns });
 
   return (

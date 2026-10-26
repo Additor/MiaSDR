@@ -6,7 +6,8 @@ import { restartRecordWorkTx } from "./restart-record-work";
 import { aiJobs, replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
-import { afterManualCategory } from "../domain/workflow-state";
+import { afterTypeChange } from "../domain/workflow-state";
+import { typeRulesOf } from "../domain/reply-type";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** What a person decides about a reply: a classification of their own, or suppressing the sender. */
@@ -46,7 +47,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           .select({ id: replyTypes.id })
           .from(replyTypes)
           .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.key, input.replyTypeKey), eq(replyTypes.active, true)));
-        if (!found) throw new ValidationError("That subcategory is not active in your reply categories.");
+        if (!found) throw new ValidationError("That reply type is not active.");
         targetId = found.id;
       }
       const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
@@ -56,7 +57,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       if (existing) {
         await tx
           .update(replyTypePicks)
-          .set({ status: accepted ? "accepted" : "overridden", appliedGroupKey: target.groupKey, appliedReplyTypeId: target.id, acknowledgedAt: new Date() })
+          .set({ status: accepted ? "accepted" : "overridden", appliedGroupKey: target.groupKey, appliedReplyTypeId: target.id, rules: typeRulesOf(target), acknowledgedAt: new Date() })
           .where(eq(replyTypePicks.id, existing.id));
         replyTypePickId = existing.id;
       } else {
@@ -73,6 +74,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             proposedReplyTypeId: target.id,
             appliedGroupKey: target.groupKey,
             appliedReplyTypeId: target.id,
+            rules: typeRulesOf(target),
             confidence: "1.0000",
             reasoning: "Set by a person.",
             status: "overridden",
@@ -84,7 +86,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       }
 
       const wantsDraft = input.wantsDraft(target.groupKey, target.key);
-      const nextState = afterManualCategory(head.state, wantsDraft);
+      const nextState = afterTypeChange(head.state, { wantsDraft });
       await tx
         .update(records)
         .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", workflowState: nextState })
@@ -96,7 +98,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         organizationId: input.organizationId,
         recordId: head.recordId,
         reason: "classification_corrected",
-        draftReason: "A person corrected the category after this draft was written.",
+        draftReason: "A person corrected the reply type after this draft was written.",
         now,
         actorUserId: input.actorUserId,
       });

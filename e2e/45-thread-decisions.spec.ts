@@ -81,8 +81,8 @@ test.describe("the conversation page", () => {
     const open = page.getByTestId("next-step").getByRole("button", { name: "Change category" });
     await open.click();
     const dialog = page.getByRole("dialog", { name: "Change the category of Ida Holm" });
-    await dialog.getByRole("combobox", { name: "New category" }).fill("Not required");
-    await page.getByRole("option", { name: "Not required right now" }).click();
+    await dialog.getByRole("combobox", { name: "New category" }).fill("Not now");
+    await page.getByRole("option", { name: "Not now" }).click();
     await expect(dialog.getByTestId("category-consequence")).toHaveText("Retires the open draft. This category needs no reply, so none is written.");
     await dialog.getByRole("button", { name: "Change category", exact: true }).click();
     await expect(dialog).toBeHidden();

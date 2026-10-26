@@ -1,9 +1,10 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 import type { WorkflowState } from "./workflow-state";
+import { DEFAULT_TYPE_RULES, isCheckMode, isFollowUpsRule, validateTypeRules, type TypeRules } from "./reply-type";
 
 /**
- * Pure reply-handling rules: the fixed categories, validation of the taxonomy and AI-instruction settings, and
- * the rules for a person's stage move. Nothing here reads or writes data.
+ * Pure reply-handling rules: the fixed groups, validation of reply types and AI-instruction settings, and the rules
+ * for a person's type change. Nothing here reads or writes data.
  */
 
 export const REPLY_TYPE_GROUPS = [
@@ -17,7 +18,7 @@ export type ReplyTypeGroup = (typeof REPLY_TYPE_GROUPS)[number]["key"];
 
 export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPLY_TYPE_GROUPS.some((c) => c.key === value);
 
-export const categoryLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "Unclassified";
+export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "Unclassified";
 
 /** This subcategory drives the do-not-contact paths, so it can be neither deleted nor archived. */
 export const PROTECTED_SUBCATEGORY_KEY = "do_not_contact";
@@ -66,12 +67,11 @@ export interface ReplyTypeInput {
   name: string;
   description: string | null;
   classificationGuidance: string | null;
-  reviewRequired: boolean;
-  /** Position in the reply categories. Null marks an unranked outcome. */
-  stageRank: number | null;
+  rules: TypeRules;
 }
 
-export type ReplyTypePatch = Partial<Omit<ReplyTypeInput, "groupKey" | "key">> & { active?: boolean; sortOrder?: number };
+/** A change to a reply type. `rules` holds only the rules the request names; the use case merges and validates them. */
+export type ReplyTypePatch = Partial<Omit<ReplyTypeInput, "groupKey" | "key" | "rules">> & { active?: boolean; sortOrder?: number; rules?: Partial<TypeRules> };
 
 const KEY = /^[a-z][a-z0-9_]*$/;
 
@@ -98,15 +98,27 @@ function parseName(value: unknown): string {
   return value.trim();
 }
 
-function parseRank(value: unknown): number | null {
-  if (value === null) return null;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 100) throw new ValidationError("The position must be a whole number from 1 to 100, or empty.");
-  return value;
+/** The type rules a request names, as `checkMode`, `replyDraft` and `followUps` fields. Absent fields stay absent. */
+function parseRules(raw: Record<string, unknown>): Partial<TypeRules> {
+  const rules: Partial<TypeRules> = {};
+  if (raw.checkMode !== undefined) {
+    if (!isCheckMode(raw.checkMode)) throw new ValidationError("Check must be before, after or skip.");
+    rules.checkMode = raw.checkMode;
+  }
+  if (raw.replyDraft !== undefined) {
+    if (typeof raw.replyDraft !== "boolean") throw new ValidationError("Reply draft must be true or false.");
+    rules.replyDraft = raw.replyDraft;
+  }
+  if (raw.followUps !== undefined) {
+    if (!isFollowUpsRule(raw.followUps)) throw new ValidationError("Follow-ups must be continue or stop.");
+    rules.followUps = raw.followUps;
+  }
+  return rules;
 }
 
 export function parseReplyTypeInput(raw: Record<string, unknown>): ReplyTypeInput {
   const groupKey = typeof raw.groupKey === "string" ? raw.groupKey : "";
-  if (!isReplyTypeGroup(groupKey)) throw new ValidationError("Choose one of the four categories.");
+  if (!isReplyTypeGroup(groupKey)) throw new ValidationError("Choose one of the four groups.");
   const name = parseName(raw.name);
   const key = typeof raw.key === "string" && raw.key.trim() !== "" ? raw.key.trim() : keyFromName(name);
   if (!KEY.test(key) || key.length > 60) throw new ValidationError("The key must start with a letter and use only lowercase letters, digits and underscores.");
@@ -116,8 +128,8 @@ export function parseReplyTypeInput(raw: Record<string, unknown>): ReplyTypeInpu
     name,
     description: optionalText(raw.description, "The description", 500) ?? null,
     classificationGuidance: optionalText(raw.classificationGuidance, "The guidance", 2000) ?? null,
-    reviewRequired: raw.reviewRequired === true,
-    stageRank: raw.stageRank === undefined ? null : parseRank(raw.stageRank),
+    // A type a person adds has no system role, so any rules are valid for it.
+    rules: validateTypeRules({ systemRole: null }, { ...DEFAULT_TYPE_RULES, ...parseRules(raw) }),
   };
 }
 
@@ -128,11 +140,8 @@ export function parseReplyTypePatch(raw: Record<string, unknown>): ReplyTypePatc
   if (description !== undefined) patch.description = description;
   const guidance = optionalText(raw.classificationGuidance, "The guidance", 2000);
   if (guidance !== undefined) patch.classificationGuidance = guidance;
-  if (raw.reviewRequired !== undefined) {
-    if (typeof raw.reviewRequired !== "boolean") throw new ValidationError("Review required must be true or false.");
-    patch.reviewRequired = raw.reviewRequired;
-  }
-  if (raw.stageRank !== undefined) patch.stageRank = parseRank(raw.stageRank);
+  const rules = parseRules(raw);
+  if (Object.keys(rules).length > 0) patch.rules = rules;
   if (raw.active !== undefined) {
     if (typeof raw.active !== "boolean") throw new ValidationError("Active must be true or false.");
     patch.active = raw.active;
@@ -146,9 +155,8 @@ export function parseReplyTypePatch(raw: Record<string, unknown>): ReplyTypePatc
 }
 
 export interface ReplyHandlingSettingsPatch {
+  /** The confidence floor. */
   autoApplyConfidence?: number;
-  reviewOther?: boolean;
-  customerRequiresReview?: boolean;
 }
 
 export function parseReplyHandlingSettings(raw: Record<string, unknown>): ReplyHandlingSettingsPatch {
@@ -157,11 +165,6 @@ export function parseReplyHandlingSettings(raw: Record<string, unknown>): ReplyH
     const value = raw.autoApplyConfidence;
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError("The auto-apply threshold must be a number from 0 to 1.");
     patch.autoApplyConfidence = Math.round(value * 1000) / 1000;
-  }
-  for (const flag of ["reviewOther", "customerRequiresReview"] as const) {
-    if (raw[flag] === undefined) continue;
-    if (typeof raw[flag] !== "boolean") throw new ValidationError(`${flag} must be true or false.`);
-    patch[flag] = raw[flag];
   }
   if (Object.keys(patch).length === 0) throw new ValidationError("Nothing to change.");
   return patch;
@@ -177,7 +180,7 @@ export interface ReplyTypeChangeCheck {
 
 /** What a person's stage move needs to be true. Returns the lock flag the record gets afterwards. */
 export function checkReplyTypeChange({ before, target, expectedContextVersion, confirmUnlock }: ReplyTypeChangeCheck): { replyTypeLocked: boolean } {
-  if (!isReplyTypeGroup(target.groupKey)) throw new ValidationError("Choose one of the four categories.");
+  if (!isReplyTypeGroup(target.groupKey)) throw new ValidationError("Choose one of the four groups.");
   if (before.contextVersion !== expectedContextVersion) throw new ConflictError("Reply handling changed since you opened it. Reload and try again.");
   if (before.workflowState === "closed") throw new ConflictError("Reply handling is closed. Reopen it before you change the category.");
   if (before.groupKey === target.groupKey && before.replyTypeId === target.replyTypeId) throw new ConflictError("The reply is already in this category.");

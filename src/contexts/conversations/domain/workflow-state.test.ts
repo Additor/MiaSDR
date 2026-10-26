@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterManualCategory, afterPersonDecision, afterReopen, settlesAfterAiCategory, WORKFLOW_STATES } from "./workflow-state";
+import { afterPersonDecision, afterReopen, afterTypeChange, settlesAfterAiCategory, settlesAfterAiPick, WORKFLOW_STATES } from "./workflow-state";
 
 describe("workflow state", () => {
   it("keeps a closed conversation closed when a person decides, and brings any other back to someone", () => {
@@ -12,17 +12,27 @@ describe("workflow state", () => {
     expect(afterReopen(false)).toBe("idle");
   });
 
-  it("moves resting handling to work for a category that wants a draft, and lets work rest for one that does not", () => {
-    expect(afterManualCategory("idle", true)).toBe("action_required");
-    expect(afterManualCategory("error", true)).toBe("action_required");
-    expect(afterManualCategory("unclassified", true)).toBe("action_required");
-    expect(afterManualCategory("waiting", true)).toBe("waiting");
-    expect(afterManualCategory("action_required", false)).toBe("idle");
-    expect(afterManualCategory("waiting", false)).toBe("waiting");
-    expect(afterManualCategory("closed", false)).toBe("closed");
+  it("moves resting handling to work for a type change that wants a draft, and lets work rest for one that does not", () => {
+    expect(afterTypeChange("idle", { wantsDraft: true })).toBe("action_required");
+    expect(afterTypeChange("error", { wantsDraft: true })).toBe("action_required");
+    expect(afterTypeChange("unclassified", { wantsDraft: true })).toBe("action_required");
+    expect(afterTypeChange("waiting", { wantsDraft: true })).toBe("waiting");
+    expect(afterTypeChange("action_required", { wantsDraft: false })).toBe("idle");
+    expect(afterTypeChange("waiting", { wantsDraft: false })).toBe("waiting");
+    expect(afterTypeChange("closed", { wantsDraft: false })).toBe("closed");
   });
 
-  it("settles an AI category only when nothing is left to do", () => {
+  it("settles an AI pick only when it applied, needs no check after, wants no draft and asked nothing to stop", () => {
+    const applied = { hold: null, needsLooksRight: false, wantsDraft: false, followUps: "stop" } as const;
+    expect(settlesAfterAiPick("action_required", applied, false)).toBe(true);
+    expect(settlesAfterAiPick("action_required", { ...applied, wantsDraft: true }, false)).toBe(false);
+    expect(settlesAfterAiPick("action_required", { ...applied, needsLooksRight: true }, false)).toBe(false);
+    expect(settlesAfterAiPick("action_required", { ...applied, hold: "requires_review" }, false)).toBe(false);
+    expect(settlesAfterAiPick("action_required", applied, true)).toBe(false);
+    expect(settlesAfterAiPick("waiting", applied, false)).toBe(false);
+  });
+
+  it("settles an AI category only when nothing is left to do (the rule before type rules)", () => {
     expect(settlesAfterAiCategory("action_required", { wantsDraft: false, stopRequested: false })).toBe(true);
     expect(settlesAfterAiCategory("action_required", { wantsDraft: true, stopRequested: false })).toBe(false);
     expect(settlesAfterAiCategory("action_required", { wantsDraft: false, stopRequested: true })).toBe(false);

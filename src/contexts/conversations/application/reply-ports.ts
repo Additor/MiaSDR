@@ -1,6 +1,7 @@
 import type { AiPersonContext, DraftChannel, ReplyTypeChange, ReplyType, ThreadEntry } from "../ai/domain/ai-contract";
 import type { FailureKind } from "../ai/domain/ai-job-requeue";
-import type { HoldReason } from "../domain/classification-policy";
+import type { HoldReason } from "../domain/reply-type-pick-policy";
+import type { SystemRole, TypeRules } from "../domain/reply-type";
 import type { DraftStatus } from "../domain/draft-status";
 
 export type JobKind = "classification" | "initial_draft";
@@ -46,11 +47,14 @@ export interface ClassifyContext {
   latestInboundMessageId: string | null;
   groupKey: string | null;
   replyTypeLocked: boolean;
-  currentStageRank: number | null;
-  settings: { autoApplyConfidence: number; reviewOther: boolean; customerRequiresReview: boolean };
+  /** The record's reply type before this pick, or null. */
+  currentType: { id: string; groupKey: string; systemRole: SystemRole | null } | null;
+  /** `autoApplyConfidence` is the confidence floor. */
+  settings: { autoApplyConfidence: number };
   operatorInstructions: string;
   businessContext: string;
-  taxonomy: Array<ReplyType & { id: string; reviewRequired: boolean; stageRank: number | null }>;
+  /** Active reply types with their rules. The prompt reads key, name, group, description and guidance only. */
+  taxonomy: Array<ReplyType & { id: string; systemRole: SystemRole | null; rules: TypeRules }>;
   person: AiPersonContext;
   thread: ThreadEntry[];
   messageText: string;
