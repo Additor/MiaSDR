@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
@@ -10,8 +10,6 @@ import { StatusBadge } from "@/components/shell/status-badge";
 import { useOrgTimeZone } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,7 +20,6 @@ import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { capacityReturnText } from "./capacity-return";
 import { SearchCapacityCard, type CapacityCardData } from "./search-capacity-card";
-import { UploadSheet, type UploadSheetConfig } from "./upload-sheet";
 import { useActiveRefresh } from "./use-active-refresh";
 
 interface Search {
@@ -45,13 +42,11 @@ interface State {
   searches: Search[];
   batches: Array<{ id: string; name: string; searches: number }>;
   connectedAccounts: number;
-  defaultMaxResults: number;
-  maxResultsLimit: number;
 }
 
 const NO_CAMPAIGN = "none";
 
-export function SearchesPanel({ state, capacity, campaigns, upload }: { state: State; capacity: CapacityCardData; campaigns: Array<{ id: string; name: string }>; upload: UploadSheetConfig }) {
+export function SearchesPanel({ state, capacity }: { state: State; capacity: CapacityCardData }) {
   const router = useRouter();
   const timeZone = useOrgTimeZone();
   const [cancelling, setCancelling] = useState<Search | null>(null);
@@ -80,22 +75,14 @@ export function SearchesPanel({ state, capacity, campaigns, upload }: { state: S
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex flex-wrap gap-2">
-          <UploadSheet config={upload} campaigns={campaigns} variant="outline" />
-          <NewSearch campaigns={campaigns} defaultMax={state.defaultMaxResults} maxLimit={state.maxResultsLimit} />
-        </div>
-      </div>
-
       {state.connectedAccounts === 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>No LinkedIn account connected</CardTitle>
-            <CardDescription>
-              Searches wait until an account is connected. <Link href="/settings/linkedin" className="underline underline-offset-4">Connect a LinkedIn account</Link>.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <p className="text-sm">
+          No LinkedIn account connected. Searches wait until an account is connected.{" "}
+          <Link href="/settings/linkedin" className="underline underline-offset-4">
+            Connect a LinkedIn account
+          </Link>
+          .
+        </p>
       )}
 
       <SearchCapacityCard capacity={capacity} />
@@ -213,59 +200,61 @@ function SearchActions({ search: s, onAct, className }: { search: Search; onAct:
   );
 }
 
-function NewSearch({ campaigns, defaultMax, maxLimit }: { campaigns: Array<{ id: string; name: string }>; defaultMax: number; maxLimit: number }) {
+/** New search: its button and dialog, in the page header beside Upload sheet. */
+export function NewSearch({ campaigns, defaultMax, maxLimit }: { campaigns: Array<{ id: string; name: string }>; defaultMax: number; maxLimit: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
   const [campaign, setCampaign] = useState(NO_CAMPAIGN);
+  const form = useRef<HTMLFormElement>(null);
   const items = [{ value: NO_CAMPAIGN, label: "No campaign (leads only)" }, ...campaigns.map((c) => ({ value: c.id, label: c.name }))];
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setPending(true);
-    setError(null);
+  async function create(): Promise<boolean> {
+    // The confirm button sits outside the form, so it asks the form to check its own fields.
+    if (!form.current?.reportValidity()) return false;
+    const data = new FormData(form.current);
     const result = await callApi<{ id: string }>("/api/linkedin/searches", "POST", {
-      name: String(form.get("name")),
-      url: String(form.get("url")),
-      maxResults: Number(form.get("maxResults")),
+      name: String(data.get("name")),
+      url: String(data.get("url")),
+      maxResults: Number(data.get("maxResults")),
       campaignId: campaign === NO_CAMPAIGN ? null : campaign,
     });
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setOpen(false);
+    // ConfirmDialog shows the thrown message and keeps the dialog open.
+    if (!result.ok) throw new Error(result.error ?? "Could not create the search. Try again.");
     setCampaign(NO_CAMPAIGN);
     toast.success("Search queued.");
     router.refresh();
+    return true;
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="max-sm:h-11 max-sm:px-4" />}>New search</DialogTrigger>
-      <DialogContent>
-        <form onSubmit={onSubmit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>New LinkedIn search</DialogTitle>
-            <DialogDescription>Search for people on LinkedIn or Sales Navigator, then copy the URL from your browser address bar.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
+    <>
+      <Button className="max-sm:h-11 max-sm:px-4" onClick={() => setOpen(true)}>
+        New search
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New LinkedIn search"
+        description="Search for people on LinkedIn or Sales Navigator, then copy the URL from your browser address bar."
+        confirmLabel="Create search"
+        pendingLabel="Creating…"
+        onConfirm={create}
+      >
+        <form ref={form} onSubmit={(e) => e.preventDefault()} className="stack-group">
+          <div className="stack-field">
             <Label htmlFor="search-name">Name</Label>
             <Input id="search-name" name="name" placeholder="CTOs at Berlin fintechs" required maxLength={120} autoFocus />
           </div>
-          <div className="grid gap-2">
+          <div className="stack-field">
             <Label htmlFor="search-url">Search URL</Label>
             <Input id="search-url" name="url" type="url" placeholder="https://www.linkedin.com/search/results/people/?keywords=cto" required />
           </div>
-          <div className="grid gap-2">
+          <div className="stack-field">
             <Label htmlFor="search-max">Stop after</Label>
             <Input id="search-max" name="maxResults" type="number" min={1} max={maxLimit} defaultValue={defaultMax} required />
             <p className="text-xs text-muted-foreground">People, up to {maxLimit.toLocaleString("en-US")}. Each account reads a limited number per day, so large searches take days.</p>
           </div>
-          <div className="grid gap-2">
+          <div className="stack-field">
             <Label htmlFor="search-campaign">Add to campaign</Label>
             <Select items={items} value={campaign} onValueChange={(v) => v && setCampaign(v)}>
               <SelectTrigger id="search-campaign" className="w-full">
@@ -280,21 +269,8 @@ function NewSearch({ campaigns, defaultMax, maxLimit }: { campaigns: Array<{ id:
               </SelectContent>
             </Select>
           </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={pending} onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Creating…" : "Create search"}
-            </Button>
-          </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ConfirmDialog>
+    </>
   );
 }

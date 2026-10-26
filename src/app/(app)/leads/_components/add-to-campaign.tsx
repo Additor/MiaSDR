@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useSelection } from "@/components/shell/selection";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
 import { callApi } from "@/app/_lib/api-client";
 import { addCounts, type EnrollCounts as Counts, skipReasons, ZERO_COUNTS } from "../_lib/enroll-counts";
@@ -57,7 +58,6 @@ function CampaignAdder({
   const setOpen = onOpenChange ?? setOwn;
   const [campaigns, setCampaigns] = useState<CampaignOption[] | null>(null);
   const [target, setTarget] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [progress, setProgress] = useState(0);
@@ -91,10 +91,11 @@ function CampaignAdder({
   }, [open, campaigns]);
 
   const chosen = campaigns?.find((c) => `${c.channel}:${c.id}` === target);
+  const items = (campaigns ?? []).map((c) => ({ value: `${c.channel}:${c.id}`, label: `${c.name} (${c.channel === "linkedin" ? "LinkedIn" : "Email"}, ${c.status})` }));
 
-  async function submit() {
-    if (!chosen) return;
-    setBusy(true);
+  /** Enrolls in chunks, then stays open on the report, so the person reads what was added and skipped. */
+  async function submit(): Promise<boolean> {
+    if (!chosen) return false;
     setError(null);
     setProgress(0);
     let total = { ...ZERO_COUNTS };
@@ -103,22 +104,22 @@ function CampaignAdder({
       if (!response.ok || !response.data) {
         setError(response.error);
         setCounts(total);
-        setBusy(false);
-        return;
+        return false;
       }
       total = addCounts(total, response.data);
       setProgress(Math.min(i + CHUNK, personIds.length));
     }
     setCounts(total);
-    setBusy(false);
+    return false;
   }
 
-  function done() {
-    setOpen(false);
-    if (counts && counts.added > 0) onAdded();
+  function change(next: boolean) {
+    setOpen(next);
+    if (!next && counts && counts.added > 0) onAdded();
   }
 
   const count = personIds.length.toLocaleString("en-US");
+  const noun = personIds.length === 1 ? "lead" : "leads";
 
   const skipped = counts ? counts.requested - counts.added : 0;
 
@@ -129,84 +130,70 @@ function CampaignAdder({
           {label}
         </Button>
       )}
-      <Dialog open={open} onOpenChange={(next) => !busy && setOpen(next)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add to campaign</DialogTitle>
-            <DialogDescription>
-              {counts
-                ? "Done. Nothing is sent now: the campaign keeps its status."
-                : `${count} ${personIds.length === 1 ? "lead" : "leads"} selected. Leads without the channel address, unsubscribed and do not contact leads, already added leads and contacts are skipped.`}
-            </DialogDescription>
-          </DialogHeader>
-          {counts ? (
-            <div className="grid gap-2 text-sm" role="status">
-              <p>
-                Added <strong>{counts.added.toLocaleString("en-US")}</strong> of {counts.requested.toLocaleString("en-US")}.
-              </p>
-              {skipped > 0 && (
-                <ul className="list-disc pl-5 text-muted-foreground">
-                  {skipReasons(counts, chosen?.channel).map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              )}
-              {error && (
-                <p role="alert" className="text-destructive">
-                  {error}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              <Label htmlFor="add-campaign-target">Campaign</Label>
-              <select
-                id="add-campaign-target"
-                value={target}
-                onChange={(event) => setTarget(event.target.value)}
-                disabled={campaigns === null || busy}
-                className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-              >
-                <option value="">{campaigns === null ? "Loading…" : campaigns.length === 0 ? "No open campaign" : "Choose a campaign"}</option>
-                {(campaigns ?? []).map((c) => (
-                  <option key={`${c.channel}:${c.id}`} value={`${c.channel}:${c.id}`}>
-                    {c.name} ({c.channel === "linkedin" ? "LinkedIn" : "Email"}, {c.status})
-                  </option>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={change}
+        title="Add to campaign"
+        description={
+          counts
+            ? "Done. Nothing is sent now: the campaign keeps its status."
+            : `${count} ${noun} selected. Leads without the channel address, unsubscribed and do not contact leads, already added leads and contacts are skipped.`
+        }
+        confirmLabel={`Add ${count} ${noun}`}
+        pendingLabel={`Adding… ${progress.toLocaleString("en-US")} of ${count}`}
+        cancelLabel={counts ? "Done" : "Cancel"}
+        confirmDisabled={counts !== null || !chosen || personIds.length === 0}
+        onConfirm={submit}
+      >
+        {counts ? (
+          <div className="grid gap-2 text-sm" role="status">
+            <p>
+              Added <strong>{counts.added.toLocaleString("en-US")}</strong> of {counts.requested.toLocaleString("en-US")}.
+            </p>
+            {skipped > 0 && (
+              <ul className="list-disc pl-5">
+                {skipReasons(counts, chosen?.channel).map((line) => (
+                  <li key={line}>{line}</li>
                 ))}
-              </select>
-              {chosen?.status === "active" && <p className="text-xs text-muted-foreground">This campaign is live. New leads start receiving steps right away.</p>}
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            {counts ? (
-              <>
-                {chosen && (
-                  <Link href={`/campaigns/${chosen.id}`} className={buttonVariants({ variant: "outline" })}>
-                    Open campaign
-                  </Link>
-                )}
-                <Button type="button" onClick={done}>
-                  Done
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
-                  Cancel
-                </Button>
-                <Button type="button" onClick={submit} disabled={!chosen || busy || personIds.length === 0}>
-                  {busy ? `Adding… ${progress.toLocaleString("en-US")} of ${count}` : `Add ${count} ${personIds.length === 1 ? "lead" : "leads"}`}
-                </Button>
-              </>
+              </ul>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            {error && (
+              <p role="alert" className="text-destructive">
+                {error}
+              </p>
+            )}
+            {chosen && (
+              <p>
+                <Link href={`/campaigns/${chosen.id}`} className="underline underline-offset-4">
+                  Open campaign
+                </Link>
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="stack-field">
+            <Label htmlFor="add-campaign-target">Campaign</Label>
+            <Select items={items} value={target || null} onValueChange={(v) => v && setTarget(v)} disabled={campaigns === null || campaigns.length === 0}>
+              <SelectTrigger id="add-campaign-target" className="w-full max-sm:h-11">
+                <SelectValue placeholder={campaigns === null ? "Loading…" : campaigns.length === 0 ? "No open campaign" : "Choose a campaign"} />
+              </SelectTrigger>
+              <SelectContent>
+                {items.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {chosen?.status === "active" && <p className="text-xs text-muted-foreground">This campaign is live. New leads start receiving steps right away.</p>}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+          </div>
+        )}
+      </ConfirmDialog>
     </>
   );
 }
