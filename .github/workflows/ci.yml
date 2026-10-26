@@ -137,7 +137,7 @@ jobs:
         with:
           name: test-results
           path: |
-            test-results/
+            e2e/.run/test-results/
             e2e/.run/*.log
           if-no-files-found: ignore
           retention-days: 7

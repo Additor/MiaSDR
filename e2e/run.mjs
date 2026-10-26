@@ -3,9 +3,9 @@
  * `pnpm e2e`: builds the app, starts it on a free port with its own database and fake providers, runs the
  * Playwright scenarios and tears everything down by PID.
  *
- * Two builds:
- *   .next-e2e        built with E2E_BUILD=1, so the test-only routes exist. Served on port A.
- *   .next-e2e-prod   built exactly like the Dockerfile builds it (no E2E_BUILD). Served on port B with every
+ * Two builds, both under e2e/.run/ with the logs and Playwright's output:
+ *   next             built with E2E_BUILD=1, so the test-only routes exist. Served on port A.
+ *   next-prod        built exactly like the Dockerfile builds it (no E2E_BUILD). Served on port B with every
  *                    runtime helper variable set, to prove the routes stay 404 in the production image.
  *
  * Environment:
@@ -28,6 +28,8 @@ const runDir = path.join(root, "e2e", ".run");
 const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
 const adminUrl = process.env.E2E_PG_URL ?? "postgres://postgres:test@localhost:55437/postgres";
 const distSuffix = process.env.E2E_DIST_SUFFIX ?? "";
+/** A build directory under e2e/.run, relative to the root as Next.js reads `distDir`. */
+const distDirOf = (name) => `e2e/.run/${name}${distSuffix}`;
 const runId = `${Date.now().toString(36)}${randomBytes(2).toString("hex")}`;
 const children = new Set();
 let dbNames = [];
@@ -209,12 +211,12 @@ async function main() {
   const skip = process.env.E2E_SKIP_BUILD;
   if (skip !== "1") {
     log("building the test build (E2E_BUILD=1)");
-    await runCommand(process.execPath, [nextBin, "build"], { ...build, NODE_ENV: "production", NEXT_DIST_DIR: `.next-e2e${distSuffix}`, E2E_BUILD: "1" }, "next build (e2e)").finally(restoreTsconfig);
+    await runCommand(process.execPath, [nextBin, "build"], { ...build, NODE_ENV: "production", NEXT_DIST_DIR: distDirOf("next"), E2E_BUILD: "1" }, "next build (e2e)").finally(restoreTsconfig);
   }
   if (skip !== "1" && skip !== "prod") {
     log("building the production-image build (Dockerfile build flags, no E2E_BUILD)");
     // Build stage of the Dockerfile: its ENV/ARG lines and nothing else.
-    await runCommand(process.execPath, [nextBin, "build"], { ...build, ...(flags.build ?? {}), NEXT_DIST_DIR: `.next-e2e-prod${distSuffix}` }, "next build (prod)").finally(restoreTsconfig);
+    await runCommand(process.execPath, [nextBin, "build"], { ...build, ...(flags.build ?? {}), NEXT_DIST_DIR: distDirOf("next-prod") }, "next build (prod)").finally(restoreTsconfig);
   }
 
   const [portA, portB] = [await freePort(), await freePort()];
@@ -223,12 +225,12 @@ async function main() {
   await createDatabase(dbA);
   await createDatabase(dbB);
 
-  const envA = appEnv({ port: portA, database: dbA, distDir: `.next-e2e${distSuffix}`, secrets: runId, helpers: true });
+  const envA = appEnv({ port: portA, database: dbA, distDir: distDirOf("next"), secrets: runId, helpers: true });
   const serverLog = path.join(runDir, "server.log");
   await startServer({ name: "e2e", env: envA, logFile: serverLog });
 
   // The runner stage of the Dockerfile supplies NODE_ENV and friends; every helper variable is set to "on".
-  const envB = { ...appEnv({ port: portB, database: dbB, distDir: `.next-e2e-prod${distSuffix}`, secrets: `p${runId}`, helpers: true }), ...(flags.runner ?? {}), PORT: String(portB) };
+  const envB = { ...appEnv({ port: portB, database: dbB, distDir: distDirOf("next-prod"), secrets: `p${runId}`, helpers: true }), ...(flags.runner ?? {}), PORT: String(portB) };
   await startServer({ name: "prod-flags", env: envB, logFile: path.join(runDir, "server-prod.log") });
 
   const pwEnv = {

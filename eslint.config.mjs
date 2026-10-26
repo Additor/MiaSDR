@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     ".next/**",
     ".next-*/**",
+    // The e2e runner's builds, logs and Playwright output.
+    "e2e/.run/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
