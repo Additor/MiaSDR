@@ -123,36 +123,53 @@ describeDb("grid row store fixes", () => {
   });
 
   describe("changes feed", () => {
-    /** Follows hasMore until the feed settles, returning every row id delivered and the final cursor. */
+    /** Follows hasMore until the feed settles, returning every row delivered, their ids and the final cursor. */
     async function drain(org: string, tableId: string, from: string, limit: number) {
-      const seen: string[] = [];
+      const delivered: Array<{ id: string; cells: Record<string, unknown> }> = [];
       let cursor = from;
       for (let i = 0; i < 200; i += 1) {
         const page = await store.changesSince(org, tableId, cursor, limit);
-        seen.push(...page.rows.map((r) => r.id));
+        delivered.push(...page.rows);
         cursor = page.cursor;
-        if (!page.hasMore) return { seen, cursor };
+        if (!page.hasMore) return { delivered, seen: delivered.map((r) => r.id), cursor };
       }
       throw new Error("feed did not settle");
     }
 
+    const idsIn = async (tableId: string) => (await sql`select id from grid_rows where table_id = ${tableId}`).map((r) => r.id as string);
+
+    /**
+     * Every expected row arrived, and anything else is a repeat of an older row of the table. The feed re-reads rows
+     * written shortly before the cursor (README "Versioned cell edits"), and an open transaction elsewhere on the server
+     * widens that window, so an exact set fails under parallel runs.
+     */
+    function expectDelivered(seen: string[], expected: string[], older: string[]) {
+      expect(seen).toEqual(expect.arrayContaining(expected));
+      const allowed = new Set([...expected, ...older]);
+      expect(seen.filter((id) => !allowed.has(id))).toEqual([]);
+    }
+
     it("pages by version without skipping and settles when drained", async () => {
       const { org, tableId } = await setup([["A", "text"]]);
+      const seed = await idsIn(tableId);
       const start = await store.currentCursor(org, tableId);
       const rows = await store.addBlank(org, tableId, 23, 100);
       const first = await store.changesSince(org, tableId, start, 5);
       expect(first.hasMore).toBe(true);
       expect(first.rows).toHaveLength(5);
       const { seen, cursor } = await drain(org, tableId, start, 5);
-      expect(new Set(seen)).toEqual(new Set(rows.map((r) => r.id)));
-      const quiet = await store.changesSince(org, tableId, cursor, 5);
-      expect(quiet.hasMore).toBe(false);
+      expectDelivered(seen, rows.map((r) => r.id), seed);
+      // Drained, the feed brings nothing new: at most repeats of rows it already sent.
+      const quiet = await drain(org, tableId, cursor, 5);
+      expectDelivered(quiet.seen, [], [...seed, ...rows.map((r) => r.id)]);
     });
 
     it("delivers a row from a transaction that commits late, after many newer rows were paged past", async () => {
       const { org, tableId, keys } = await setup([["A", "text"]]);
       const rows = await store.addBlank(org, tableId, 40, 100);
       const start = await store.currentCursor(org, tableId);
+      // Rows the fast writers do not touch can only come back as repeats of their committed state.
+      const untouched = (await idsIn(tableId)).filter((id) => !rows.slice(1, 31).some((r) => r.id === id));
 
       // The slow writer takes the lowest version and stays uncommitted.
       let release: () => void = () => undefined;
@@ -170,8 +187,9 @@ describeDb("grid row store fixes", () => {
       for (const row of rows.slice(1, 31)) await sql`update grid_rows set cells = ${sql.json({ [keys[0]]: "fast" } as never)} where id = ${row.id}`;
 
       const during = await drain(org, tableId, start, 4);
-      expect(during.seen).not.toContain(rows[0].id);
-      expect(new Set(during.seen)).toEqual(new Set(rows.slice(1, 31).map((r) => r.id)));
+      // The slow writer's value is not visible yet. Its row may come back as a repeat of the committed state.
+      expect(during.delivered.filter((r) => r.id === rows[0].id).map((r) => r.cells[keys[0]])).not.toContain("late");
+      expectDelivered(during.seen, rows.slice(1, 31).map((r) => r.id), untouched);
 
       // More commits push the settled cursor further while the slow transaction is still open.
       for (const row of rows.slice(31)) await sql`update grid_rows set cells = ${sql.json({ [keys[0]]: "fast" } as never)} where id = ${row.id}`;
@@ -180,7 +198,7 @@ describeDb("grid row store fixes", () => {
       release();
       await slow;
       const after = await drain(org, tableId, mid.cursor, 4);
-      expect(after.seen).toContain(rows[0].id);
+      expect(after.delivered.filter((r) => r.id === rows[0].id).map((r) => r.cells[keys[0]])).toContain("late");
     });
 
     it("accepts a bare version from an older client", async () => {
