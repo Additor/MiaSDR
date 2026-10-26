@@ -12,8 +12,8 @@ const schema = z.object({
   occurredAt: z.string().datetime().nullable().optional(),
 });
 
-/** A person moves the record to another stage. Needs the context version the person saw. */
-export async function POST(request: Request, ctx: RouteContext<"/api/records/[id]/stage">) {
+/** A person changes the reply type of the record. Needs the context version the person saw. */
+export async function POST(request: Request, ctx: RouteContext<"/api/records/[id]/reply-type">) {
   const { id } = await ctx.params;
   return withActor(async (actor) => {
     const { occurredAt, ...body } = schema.parse(await request.json());

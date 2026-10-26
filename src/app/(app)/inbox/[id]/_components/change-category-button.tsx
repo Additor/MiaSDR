@@ -99,7 +99,7 @@ export function ChangeCategoryButton({
     if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
     const result = correcting
       ? await callApi(`/api/inbox/${conversationId}/reply-type`, "POST", { replyTypeKey: chosen.key, expectedContextVersion: contextVersion })
-      : await callApi(`/api/records/${recordId}/stage`, "POST", {
+      : await callApi(`/api/records/${recordId}/reply-type`, "POST", {
           groupKey: chosen.groupKey,
           replyTypeId: chosen.id,
           expectedContextVersion: contextVersion,

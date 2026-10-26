@@ -66,7 +66,7 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
       description: draft.description.trim() || null,
       classificationGuidance: draft.guidance.trim() || null,
     };
-    const result = editing ? await callApi(`/api/reply-categories/subcategories/${editing.id}`, "PATCH", common) : await callApi("/api/reply-categories/subcategories", "POST", { ...common, groupKey: draft.category });
+    const result = editing ? await callApi(`/api/reply-types/${editing.id}`, "PATCH", common) : await callApi("/api/reply-types", "POST", { ...common, groupKey: draft.category });
     if (!result.ok) throw new Error(result.error ?? "Could not save the subcategory.");
     toast.success(editing ? `${draft.name} saved.` : `${draft.name} added.`);
     router.refresh();
@@ -74,14 +74,14 @@ export function TaxonomyPanel({ subcategories, canManage }: { subcategories: Sub
 
   /** Archive and restore. A failure throws so the confirmation dialog can show it; Restore has no dialog and reports below the list. */
   async function toggle(sub: Sub) {
-    const result = await callApi(`/api/reply-categories/subcategories/${sub.id}`, "PATCH", { active: !sub.active });
+    const result = await callApi(`/api/reply-types/${sub.id}`, "PATCH", { active: !sub.active });
     if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
     toast.success(sub.active ? `${sub.name} archived.` : `${sub.name} restored.`);
     router.refresh();
   }
 
   async function remove(sub: Sub) {
-    const result = await callApi(`/api/reply-categories/subcategories/${sub.id}`, "DELETE");
+    const result = await callApi(`/api/reply-types/${sub.id}`, "DELETE");
     if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
     toast.success(`${sub.name} deleted.`);
     router.refresh();
