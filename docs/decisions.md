@@ -63,7 +63,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 
 ### Route matrix
 
-`src/test-support/route-matrix.integration.test.ts` calls every exported handler of every `route.ts` in process, against Postgres and real Better Auth sessions, and runs `proxy()` for every path.
+`src/architecture/route-matrix/route-matrix.integration.test.ts` calls every exported handler of every `route.ts` in process, against Postgres and real Better Auth sessions, and runs `proxy()` for every path.
 
 - Every route must appear in `ROUTES` or `PUBLIC_ROUTES` (`route-matrix-spec.ts`) with every method and path param described, or the test fails.
 - A protected handler answers 401 without a session and 403 to a member where it is admin-only, also with a malformed body. It leaves another organization's rows unchanged and unlisted. A handler whose id is a credential (`invitations/[id]` GET) carries `idIsCapability`.

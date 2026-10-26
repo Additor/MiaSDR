@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { sourceFiles } from "@/test-support/context-layers";
+import { sourceFiles } from "./context-layers";
 
 /**
  * Status columns with a transition table in a domain module. Every statement that sets one of them names the source

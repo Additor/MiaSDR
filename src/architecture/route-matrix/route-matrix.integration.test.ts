@@ -16,8 +16,8 @@ import {
   type World,
 } from "@/test-support/route-client";
 import { describeDb, dropOrgs, TEST_DATABASE_URL, uniqueKey } from "@/test-support/db";
-import { PERMISSION_AFTER_VALIDATION } from "@/test-support/route-matrix-allowlist";
-import { PUBLIC_ROUTES, ROUTES, type HandlerSpec, type IdSpec } from "@/test-support/route-matrix-spec";
+import { PERMISSION_AFTER_VALIDATION } from "./route-matrix-allowlist";
+import { PUBLIC_ROUTES, ROUTES, type HandlerSpec, type IdSpec } from "./route-matrix-spec";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", async () => (await import("@/test-support/route-client")).nextHeadersStandIn());

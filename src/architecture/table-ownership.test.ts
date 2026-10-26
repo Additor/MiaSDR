@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { layerOf, sourceFiles } from "@/test-support/context-layers";
+import { layerOf, sourceFiles } from "./context-layers";
 
 /**
  * Table ownership. Each table belongs to the context whose `infrastructure/schema.ts` declares it, and only that

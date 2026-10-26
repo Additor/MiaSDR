@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { layerOf, sourceFiles } from "@/test-support/context-layers";
+import { layerOf, sourceFiles } from "./context-layers";
 
 /**
  * Context boundaries. Contexts form layers, and a context imports only contexts in lower layers, so the graph has no

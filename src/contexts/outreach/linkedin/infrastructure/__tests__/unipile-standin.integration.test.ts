@@ -4,12 +4,12 @@ import { ValidationError } from "@/shared/errors";
 import { NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../../domain/send-policy";
 import type { LinkedInEngineDeps, LinkedInGatewayProvider, LinkedInInboundDeps } from "../../application/linkedin-ports";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
-import { startUnipileStandin, type UnipileStandin } from "@/test-support/unipile-standin";
+import { startUnipileStandin, type UnipileStandin } from "./unipile-standin";
 import { UnipileGateway } from "../unipile-gateway";
 
 /*
  * LOCAL STAND-IN TESTS. The real UnipileGateway, engine, stores and webhook route handler run against a local HTTP
- * server (src/test-support/unipile-standin.ts) that follows the Unipile reference. This is NOT a verification against
+ * server (`unipile-standin.ts` in this folder) that follows the Unipile reference. This is NOT a verification against
  * the real Unipile service: real rate limits, payload quirks, webhook timing and account connection are not covered.
  *
  * Needs TEST_DATABASE_URL pointing at a migrated Postgres.

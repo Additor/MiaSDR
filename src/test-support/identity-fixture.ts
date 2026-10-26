@@ -27,9 +27,9 @@ export async function signedInUser(
   sql: ReturnType<typeof postgres>,
   name: string,
   memberships: Array<{ organizationId: string; role: string }> = [],
+  email = `${name}@identity-fixture.test`,
 ): Promise<Identity> {
   const { auth } = await import("@/contexts/identity/infrastructure/auth");
-  const email = `${name}@identity-fixture.test`;
   const hash = await (await auth().$context).password.hash(PASSWORD);
   const [{ id }] = await sql<{ id: string }[]>`insert into users (name, email, email_verified) values (${name}, ${email}, true) returning id`;
   await sql`insert into accounts (user_id, provider_id, account_id, password) values (${id}, 'credential', ${id}, ${hash})`;

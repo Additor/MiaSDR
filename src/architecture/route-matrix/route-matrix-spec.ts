@@ -1,4 +1,4 @@
-import type { HttpMethod } from "./route-client";
+import type { HttpMethod } from "@/test-support/route-client";
 
 /*
  * What the route matrix needs to know about each route that the source cannot tell it.
