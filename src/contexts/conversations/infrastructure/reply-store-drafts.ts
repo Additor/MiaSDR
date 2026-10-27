@@ -1,10 +1,9 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { replyTypePicks, contactPolicies, conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes, suppressionList } from "@/platform/db/schema";
+import { contactPolicies, conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes, suppressionList } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { PanelData, ReplyStore } from "../application/reply-ports";
 import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
-import type { HoldReason } from "../domain/reply-type-pick-policy";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
@@ -23,10 +22,6 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         replyTypeSetId: records.replyTypeSetId,
         state: records.workflowState,
         version: records.contextVersion,
-        latest: records.latestInboundMessageId,
-        groupKey: records.groupKey,
-        replyTypeId: records.replyTypeId,
-        replyTypeSource: records.replyTypeSource,
         lastIn: records.lastInboundAt,
         lastOut: records.lastOutboundAt,
         personId: people.id,
@@ -43,34 +38,6 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       .from(replyTypes)
       .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.active, true)))
       .orderBy(replyTypes.sortOrder);
-    const nameOf = (id: string | null) => taxonomyRows.find((t) => t.id === id);
-    const current = nameOf(head.replyTypeId);
-
-    let classification: PanelData["classification"] = null;
-    if (head.latest) {
-      const [c] = await db
-        .select()
-        .from(replyTypePicks)
-        .where(and(eq(replyTypePicks.recordId, head.recordId), eq(replyTypePicks.messageId, head.latest)))
-        .orderBy(sql`(${replyTypePicks.status} = 'stale')`, desc(replyTypePicks.createdAt))
-        .limit(1);
-      if (c) {
-        const proposed = nameOf(c.proposedReplyTypeId);
-        const response = (c.response ?? {}) as { holdReason?: HoldReason | null; stopRequested?: boolean };
-        classification = {
-          id: c.id,
-          status: c.status,
-          proposed: proposed ? { replyTypeKey: proposed.key, name: proposed.name, groupKey: proposed.groupKey } : null,
-          confidence: c.confidence === null ? null : Number(c.confidence),
-          reasoning: c.reasoning,
-          holdReason: response.holdReason ?? null,
-          stopRequested: response.stopRequested === true,
-          error: c.error,
-          current: c.expectedContextVersion === head.version && c.status !== "stale",
-          acknowledged: c.acknowledgedAt !== null,
-        };
-      }
-    }
 
     const [draftRow] = await db
       .select()
@@ -107,8 +74,6 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       contextVersion: head.version,
       recipient: head.email,
       lastSubject: newest?.subject ?? null,
-      category: head.groupKey && head.replyTypeSource ? { groupKey: head.groupKey, replyTypeKey: current?.key ?? null, name: current?.name ?? head.groupKey, source: head.replyTypeSource } : null,
-      classification,
       draft,
       taxonomy: taxonomyRows.map(({ key, name, groupKey }) => ({ key, name, groupKey })),
       suppressed: Boolean(suppressed),

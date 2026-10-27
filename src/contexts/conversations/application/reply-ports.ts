@@ -189,20 +189,6 @@ export interface PanelData {
   recipient: string | null;
   /** Subject of the newest message in the thread, the base for a typed reply's subject. */
   lastSubject: string | null;
-  category: { groupKey: string; replyTypeKey: string | null; name: string; source: string } | null;
-  classification: {
-    id: string;
-    status: string;
-    proposed: { replyTypeKey: string; name: string; groupKey: string } | null;
-    confidence: number | null;
-    reasoning: string | null;
-    holdReason: HoldReason | null;
-    stopRequested: boolean;
-    error: string | null;
-    current: boolean;
-    /** A person looked at an applied classification (Mark reviewed, Looks right). */
-    acknowledged: boolean;
-  } | null;
   draft: (DraftRow & { attempt: AttemptRow | null }) | null;
   taxonomy: Array<{ key: string; name: string; groupKey: string }>;
   suppressed: boolean;
