@@ -5,7 +5,7 @@ import { withActor } from "@/app/_lib/api";
 
 type Ctx = RouteContext<"/api/campaigns/[id]/after-reply">;
 
-/** The campaign's "After a reply" setting: the mode, the follow-up steps and the runs in progress. Any member may read it. */
+/** The campaign's "Follow-ups after a reply" setting: the mode, the follow-up steps and the runs in progress. Any member may read it. */
 export async function GET(_request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   return withActor((actor) => getCampaignAfterReply(afterReplyDeps(), actor, id));

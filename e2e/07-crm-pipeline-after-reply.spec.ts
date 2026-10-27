@@ -9,8 +9,8 @@ const CONTACT_LEAD = { email: "cass@s7-contact.test", firstName: "Cass", lastNam
 const nextStep = (page: import("@playwright/test").Page) => page.locator("#main-content").getByTestId("next-step");
 const typeLine = (page: import("@playwright/test").Page) => page.locator("#main-content").getByTestId("type-line");
 
-test.describe("reply handling on the thread and After a reply", () => {
-  test("turn on AI follow-ups, let a reply start the run, control it on the thread, change the category", async ({ page }) => {
+test.describe("reply handling on the thread and Follow-ups after a reply", () => {
+  test("turn on AI follow-ups, let a reply start the run, control it on the thread, change the type", async ({ page }) => {
     await signInAdmin(page);
 
     // The campaign emails Rae first. Before her reply arrives, its Follow-ups after a reply setting goes to "AI drafts, you approve".
@@ -54,7 +54,7 @@ test.describe("reply handling on the thread and After a reply", () => {
     await campaigns.locator("summary").click();
     await expect(campaigns.getByRole("link", { name: "S7 campaign" })).toBeVisible();
 
-    // The After a reply card names the campaign and the run is going. Pause, resume, skip, stop and restart.
+    // The Follow-ups card names the campaign and the run is going. Pause, resume, skip, stop and restart.
     const card = threadAfterReply(page);
     await expect(card.getByRole("link", { name: "S7 campaign" })).toBeVisible();
     await expect(card.locator('[data-slot="badge"]').getByText("Running", { exact: true })).toBeVisible();

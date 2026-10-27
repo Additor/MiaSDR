@@ -15,7 +15,7 @@ type Ctx = RouteContext<"/api/records/[id]/after-reply">;
 
 const ACTIONS = ["pause", "resume", "skip", "cancel", "restart"] as const;
 
-/** The record's follow-up run under its campaign's "After a reply" setting. */
+/** The record's follow-up run under its campaign's "Follow-ups after a reply" setting. */
 export async function GET(_request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   return withActor((actor) => getRecordSequence(sequenceDeps(), actor, id));

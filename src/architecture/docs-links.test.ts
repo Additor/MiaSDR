@@ -18,7 +18,7 @@ function markdownFiles(dir: string, out: string[] = []): string[] {
 }
 
 const files = [
-  ...["README.md", ".github/SECURITY.md", ".github/CODE_OF_CONDUCT.md", "CONTRIBUTING.md"].filter((f) => existsSync(join(root, f))).map((f) => join(root, f)),
+  ...["README.md", "PRODUCT.md", "DESIGN.md", "CHANGELOG.md", ".github/SECURITY.md", ".github/CODE_OF_CONDUCT.md", "CONTRIBUTING.md"].filter((f) => existsSync(join(root, f))).map((f) => join(root, f)),
   ...markdownFiles(join(root, "docs")),
 ];
 
@@ -44,7 +44,7 @@ function links(path: string): string[] {
 describe("documentation links", () => {
   it("covers the files this test is meant to guard", () => {
     const names = files.map((f) => relative(root, f));
-    for (const expected of ["README.md", ".github/SECURITY.md", ".github/CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "docs/responsible-use.md", "docs/guides/quick-start.md", "docs/guides/how-it-works.md"]) expect(names).toContain(expected);
+    for (const expected of ["README.md", "PRODUCT.md", "DESIGN.md", "CHANGELOG.md", ".github/SECURITY.md", ".github/CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "docs/responsible-use.md", "docs/guides/quick-start.md", "docs/guides/how-it-works.md"]) expect(names).toContain(expected);
   });
 
   it("resolves every relative link to a file and every anchor to a heading", () => {
