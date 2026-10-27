@@ -319,6 +319,34 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     });
   });
 
+  describe("a stop request in the reply text", () => {
+    it("a person's pick before the AI's writes no draft and starts no run, and the outcomes say so", async () => {
+      const f = await fixture();
+      const r = await composition.ingestInbound(mail(f, { bodyText: "Please unsubscribe me and stop emailing me." }));
+      const personId = (await one("select id from people where organization_id = $1", [f.org])).id as string;
+      const campaignId = await createCampaign(sql, { organizationId: f.org, name: "Autumn" });
+      await recordSentEmail(sql, { organizationId: f.org, campaignId, personId, sentAt: new Date(f.clock().getTime() - 3_600_000) });
+      await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "ai_drafts", steps: STEPS("Flow") });
+      const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
+      const demo = await sub(f.org, "demo_request");
+
+      const outcomes = await replyHandlingApp.getTypeChangeOutcomes(f.replyHandlingDeps, f.actor, record.id, "correct");
+      expect(outcomes.find((o) => o.replyTypeId === demo.id)?.outcome).toMatchObject({
+        replyDraft: "Reply draft: none, because they asked to stop.",
+        followUps: "Follow-ups: stop, because they asked to stop.",
+      });
+
+      const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: Number(record.context_version) });
+      expect(result.draftQueued).toBe(false);
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      expect(await one("select response from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ response: { stopRequested: true } });
+      // The sweep reads the flag the person's pick stored, and starts nothing either.
+      await f.cycle();
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      expect(await count("drafts", f.org)).toBe(0);
+    });
+  });
+
   describe("replyTypeChange in the draft prompt", () => {
     it("passes the move's stage, time and note to the model and drops the classifier's reason", async () => {
       const { f, r, recordId, version } = await withRun({ flow: false });

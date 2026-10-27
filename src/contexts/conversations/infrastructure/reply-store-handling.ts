@@ -78,9 +78,11 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             appliedReplyTypeId: target.id,
             rules,
             acknowledgedAt: new Date(),
-            // The lock before the first pick of this row stays: undo goes back to it.
-            response: sql`case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
-              else coalesce(${replyTypePicks.response}, '{}'::jsonb) || jsonb_build_object('previousLocked', ${head.locked}::boolean) end`,
+            // The lock before the first pick of this row stays: undo goes back to it. A stop request read from the text
+            // is kept on the row, so the start sweep sees it (`stopRequestedSql`).
+            response: sql`(case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
+              else coalesce(${replyTypePicks.response}, '{}'::jsonb) || jsonb_build_object('previousLocked', ${head.locked}::boolean) end)
+              || ${decision.stopRequested ? sql`'{"stopRequested":true}'::jsonb` : sql`'{}'::jsonb`}`,
           })
           .where(eq(replyTypePicks.id, existing.id));
         replyTypePickId = existing.id;
@@ -99,7 +101,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             appliedGroupKey: target.groupKey,
             appliedReplyTypeId: target.id,
             rules,
-            response: { previousLocked: head.locked },
+            response: { previousLocked: head.locked, ...(decision.stopRequested ? { stopRequested: true } : {}) },
             confidence: "1.0000",
             reasoning: "Set by a person.",
             status: "overridden",

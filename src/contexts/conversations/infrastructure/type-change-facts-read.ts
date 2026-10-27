@@ -1,8 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { records, replyHandlingSettings, replyTypes } from "@/platform/db/schema";
-import { rowsOf } from "@/platform/db/sql-values";
-import { stopRequestedSql } from "./stop-requested-sql";
+import { replyAskedToStop } from "./stop-requested-sql";
 import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { followUpModeFactsTx } from "./follow-up-mode-facts";
 import { byGroupThenOrder, type ReplyTypeGroup } from "../domain/reply-handling";
@@ -21,7 +20,7 @@ export const replyTypeOption = (t: typeof replyTypes.$inferSelect): ReplyTypeOpt
 
 /**
  * The facts `typeChangeOutcome` reads for one record: its current type, the active types of its set, whether the latest
- * reply asked to stop (`stopRequestedSql`), whether the person is a contact, and the After a reply mode
+ * reply asked to stop (`replyAskedToStop`), whether the person is a contact, and the After a reply mode
  * and channel that decide whether follow-ups apply. Null for a record outside the organization or with only private
  * conversations. The Change type outcomes read it; a write decides through `personTypeDecisionTx`.
  */
@@ -33,12 +32,10 @@ export async function typeChangeFactsOf(organizationId: string, recordId: string
   if (!head) return null;
   const { record } = head;
 
-  const [types, [settings], [stop], mode] = await Promise.all([
+  const [types, [settings], stopRequested, mode] = await Promise.all([
     exec.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, record.replyTypeSetId))),
     exec.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
-    record.latestInboundMessageId
-      ? exec.execute(sql`select ${stopRequestedSql(sql`${record.latestInboundMessageId}::uuid`)} as asked`).then((r) => rowsOf<{ asked: boolean }>(r))
-      : Promise.resolve([]),
+    replyAskedToStop(exec, record.latestInboundMessageId),
     followUpModeFactsTx(exec, organizationId, recordId),
   ]);
   const current = types.find((t) => t.id === record.replyTypeId);
@@ -50,7 +47,7 @@ export async function typeChangeFactsOf(organizationId: string, recordId: string
       .sort(byGroupThenOrder)
       .map(replyTypeOption),
     facts: {
-      stopRequested: stop?.asked === true,
+      stopRequested,
       isContact: mode?.isContact ?? false,
       campaignMode: mode?.campaignMode ?? null,
       channel: mode?.channel ?? record.activeChannel,

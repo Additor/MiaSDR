@@ -14,6 +14,7 @@ import { sqlValues } from "@/platform/db/sql-values";
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import { DEFAULT_REPLY_TYPES } from "../../domain/default-reply-types";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
+import { detectsStopRequest } from "../../domain/stop-request";
 
 interface StepRow {
   id: string;
@@ -263,6 +264,7 @@ export async function loadStartOn(
     workflow_state: string;
     has_email: boolean;
     stop_requested: boolean;
+    latest_body: string | null;
     dnc: boolean;
     suppressed: boolean;
     contact: boolean;
@@ -275,6 +277,7 @@ export async function loadStartOn(
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              ${stopRequestedSql(sql`r.latest_inbound_message_id`)} as stop_requested,
+             (select m.body_text from messages m where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id) as latest_body,
              p.lifecycle = 'contact' as contact,
              exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact) as dnc,
              exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)) as suppressed
@@ -346,7 +349,8 @@ export async function loadStartOn(
       contextVersion: r.context_version,
       workflowState: r.workflow_state,
       hasEmail: r.has_email,
-      stopRequested: r.stop_requested,
+      // A pick's flag, or the reply's own words for a reply no AI pick read (`replyAskedToStop` reads the same two facts).
+      stopRequested: r.stop_requested || detectsStopRequest(r.latest_body ?? ""),
     },
     doNotContact: r.dnc,
     suppressed: r.suppressed,

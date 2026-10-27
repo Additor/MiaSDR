@@ -8,7 +8,7 @@ import { interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-st
 import { decideReplyType, type ReplyTypeDecision, type ReplyType, type FollowUpsOutcome } from "../domain/reply-type";
 import { staleOpenDraftsTx } from "./stale-drafts-sql";
 import { followUpModeFactsTx } from "./follow-up-mode-facts";
-import { stopRequestedSql } from "./stop-requested-sql";
+import { replyAskedToStop } from "./stop-requested-sql";
 
 /**
  * A person changed what the record is: a type change off the thread, or their own pick for the latest reply. Work that
@@ -66,14 +66,12 @@ export async function restartRecordWorkTx(
 export async function personTypeDecisionTx(
   tx: Tx,
   input: { organizationId: string; record: { id: string; latestInboundMessageId: string | null; replyTypeLocked: boolean }; target: Pick<ReplyType, "groupKey" | "rules"> },
-): Promise<ReplyTypeDecision> {
+): Promise<ReplyTypeDecision & { stopRequested: boolean }> {
   const { organizationId, record, target } = input;
-  const [stop] = record.latestInboundMessageId
-    ? rowsOf<{ asked: boolean }>(await tx.execute(sql`select ${stopRequestedSql(sql`${record.latestInboundMessageId}::uuid`)} as asked`))
-    : [];
+  const stopRequested = await replyAskedToStop(tx, record.latestInboundMessageId);
   const mode = await followUpModeFactsTx(tx, organizationId, record.id);
-  return decideReplyType(target, {
-    stopRequested: stop?.asked === true,
+  const decision = decideReplyType(target, {
+    stopRequested,
     isContact: mode?.isContact ?? false,
     campaignMode: mode?.campaignMode ?? null,
     channel: mode?.channel ?? null,
@@ -82,6 +80,7 @@ export async function personTypeDecisionTx(
     locked: record.replyTypeLocked,
     currentType: null,
   });
+  return { ...decision, stopRequested };
 }
 
 /**
