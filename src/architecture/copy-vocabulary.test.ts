@@ -145,7 +145,7 @@ const PROMPT_FILES = [/^src\/contexts\/[^/]+\/ai\/domain\//, /^src\/contexts\/ai
  * `REPLY_TYPE_TERMS` below lists the words that took their place.
  */
 const RETIRED_REPLY_WORDS =
-  /\breply (sub)?categor(y|ies)\b|\bsub-?categor(y|ies)\b|\bchange category\b|\bclassifications?\b|\bmark reviewed\b|\bfollow up later\b|\balways stops on\b|\bAI suggests\b|\bunclassified\b/i;
+  /\breply (sub)?categor(y|ies)\b|\bsub-?categor(y|ies)\b|\bchange category\b|\bclassifications?\b|\bmark reviewed\b|\bfollow up later\b|\balways stops on\b|\bAI (\w+ )?suggests?\b|\bunclassified\b/i;
 
 /** A lowercase token such as `classification` or `unclassified`: an identifier or a stored value, never a sentence. */
 const CODE_TOKEN = /^[a-z0-9_.:-]+$/;
@@ -170,6 +170,8 @@ const RULES: readonly Rule[] = [
     applies: (file) => REPLY_FILES.some((re) => re.test(file)) || /^src\/contexts\/conversations\//.test(file),
   },
   { name: "retired reply type wording", pattern: RETIRED_REPLY_WORDS, applies: (file) => !PROMPT_FILES.some((re) => re.test(file)), skipsCodeTokens: true },
+  // The setting is "Follow-ups after a reply". Case matters: the lowercase phrase inside that name is fine.
+  { name: "After a reply as a setting name", pattern: /\bAfter a reply\b/, applies: (file) => !PROMPT_FILES.some((re) => re.test(file)) },
 ];
 
 /** The rules one string breaks in the context of a file. */
@@ -233,7 +235,6 @@ const REPLY_TYPE_TERMS = [
   "Picked by the AI",
   "No type yet",
   "Group",
-  "Action",
   "Confidence floor",
   "Check before",
   "Check after",
@@ -246,6 +247,17 @@ const REPLY_TYPE_TERMS = [
   "Follow-ups after a reply",
   "Stops for these reply types",
 ];
+
+/**
+ * A one-word term counts only as the whole string (a "Stop" label, not "Stop contacting"). A longer term counts as the
+ * whole string or as words inside it ("AI picked {}{}"), never as part of a longer word.
+ */
+function usesTerm(text: string, term: string): boolean {
+  if (text === term) return true;
+  if (!term.includes(" ")) return false;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\w'])${escaped}($|[^\\w'])`).test(text);
+}
 
 const isAllowed = (found: { file: string; text: string }) => ALLOWED.some((entry) => entry.file === found.file && entry.text === found.text);
 
@@ -269,8 +281,21 @@ describe("copy vocabulary in source", () => {
 
   it("uses the reply type words the screens show", () => {
     const texts = strings.filter((found) => !PROMPT_FILES.some((re) => re.test(found.file))).map((found) => found.text);
-    const missing = REPLY_TYPE_TERMS.filter((term) => !texts.some((text) => text.includes(term)));
+    const missing = REPLY_TYPE_TERMS.filter((term) => !texts.some((text) => usesTerm(text, term)));
     expect(missing).toEqual([]);
+  });
+
+  it("catches the retired words and matches terms as words on a sample", () => {
+    const file = "src/app/(app)/inbox/sample.tsx";
+    expect(broken(file, "After a reply")).toEqual(["After a reply as a setting name"]);
+    expect(broken(file, "Follow-ups after a reply")).toEqual([]);
+    expect(broken(file, "The AI only suggests and a person decides.")).toEqual(["retired reply type wording"]);
+    expect(broken(file, "AI now suggests a type")).toEqual(["retired reply type wording"]);
+    expect(usesTerm("Stop", "Stop")).toBe(true);
+    expect(usesTerm("Stop contacting", "Stop")).toBe(false);
+    expect(usesTerm("Groups", "Group")).toBe(false);
+    expect(usesTerm("AI picked {}{}", "AI picked")).toBe(true);
+    expect(usesTerm("AI pickedx", "AI picked")).toBe(false);
   });
 
   it("keeps every allowlist entry in use", () => {
