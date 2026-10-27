@@ -200,6 +200,20 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(f.ai.lastDraftInput?.operatorInstructions).toContain("Flow: answer.");
     });
 
+    it("retires an AI pick held for a check, so nothing reads it as waiting after the move", async () => {
+      const f = await fixture();
+      await composition.ingestInbound(mail(f));
+      // The organization's reply types exist from the first reply on.
+      await sql`update reply_types set check_mode = 'before' where organization_id = ${f.org} and key = 'demo_request'`;
+      await f.aiRun();
+      const held = await one("select id, status from reply_type_picks where organization_id = $1", [f.org]);
+      expect(held.status).toBe("proposed");
+      const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
+
+      await move(f, record.id as string, "meeting_done", Number(record.context_version));
+      expect(await one("select status from reply_type_picks where id = $1", [held.id])).toMatchObject({ status: "stale" });
+    });
+
     it("a record with only private conversations answers 404 and keeps its run", async () => {
       const { f, recordId, version } = await withRun();
       const personal = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
