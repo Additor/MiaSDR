@@ -459,7 +459,19 @@ export const drizzleAiJobStore: AiJobStore = {
         return { status: "stale" as const };
       }
 
-      const auto = input.decision.action === "auto_apply";
+      // The one decision for this pick, under the record lock and with the facts as they are now: a floor raised or a
+      // lock set after the job read its context holds the pick here.
+      const decision = decideReplyType(
+        { groupKey: proposed.groupKey, rules: typeRulesOf(proposed) },
+        {
+          ...(await followUpFactsTx(tx, input.job.organizationId, record)),
+          stopRequested: input.stopRequested,
+          confidence: input.confidence,
+          locked: record.locked,
+          currentType: { id: record.replyTypeId, groupKey: record.groupKey, systemRole: null },
+        },
+      );
+      const auto = decision.hold === null;
       const [row] = await tx
         .insert(replyTypePicks)
         .values({
@@ -467,7 +479,7 @@ export const drizzleAiJobStore: AiJobStore = {
           status: auto ? "auto_applied" : "proposed",
           appliedGroupKey: auto ? proposed.groupKey : null,
           appliedReplyTypeId: auto ? proposed.id : null,
-          response: { ...(input.response as object), holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested, previousLocked: record.locked },
+          response: { ...(input.response as object), holdReason: decision.hold, stopRequested: input.stopRequested, previousLocked: record.locked },
         })
         .onConflictDoNothing()
         .returning({ id: replyTypePicks.id });
@@ -475,18 +487,6 @@ export const drizzleAiJobStore: AiJobStore = {
       if (!row) return { status: "stale" as const };
 
       if (auto) {
-        // The decision again, under the record lock and with the facts that decide the follow-ups. A hold here that the
-        // job did not see (a newer floor or lock) only keeps the record from settling.
-        const decision = decideReplyType(
-          { groupKey: proposed.groupKey, rules: typeRulesOf(proposed) },
-          {
-            ...(await followUpFactsTx(tx, input.job.organizationId, record)),
-            stopRequested: input.stopRequested,
-            confidence: input.confidence,
-            locked: record.locked,
-            currentType: { id: record.replyTypeId, groupKey: record.groupKey, systemRole: null },
-          },
-        );
         const settle = settlesAfterAiPick(record.state, decision, input.stopRequested);
         await tx
           .update(records)
@@ -504,7 +504,7 @@ export const drizzleAiJobStore: AiJobStore = {
           followUps: decision.followUps,
           now: new Date(),
         });
-        if (input.wantsDraft) {
+        if (decision.wantsDraft) {
           await tx
             .insert(aiJobs)
             .values({ organizationId: input.job.organizationId, kind: "initial_draft", entityType: "classification", entityId: row.id, idempotencyKey: `initial_draft:classification:${row.id}`, runAfter: sql`now() - interval '1 minute'` })
@@ -519,7 +519,7 @@ export const drizzleAiJobStore: AiJobStore = {
         actorType: "ai",
         fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
         toData: { groupKey: proposed.groupKey, replyTypeId: proposed.id },
-        meta: { confidence: input.confidence, holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested },
+        meta: { confidence: input.confidence, holdReason: decision.hold, stopRequested: input.stopRequested },
         contextVersion: input.expectedContextVersion,
       });
       return { status: auto ? ("auto_applied" as const) : ("proposed" as const) };

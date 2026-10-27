@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { describeDb } from "@/test-support/db";
 import { useReplyKit, type ReplyFixture } from "../../../infrastructure/__tests__/replies-test-kit";
 
@@ -128,6 +128,33 @@ describeDb("AI pick apply path: type rules decide hold, draft and settle", () =>
       expect(pick.response).toMatchObject({ holdReason: "protected_customer" });
       expect(await recordRow(f)).toMatchObject({ group_key: "customer", reply_type_id: customer.id });
       expect(await count("drafts", f.org)).toBe(0);
+    });
+  });
+
+  describe("one decision under the record lock", () => {
+    it("a floor raised after the job read its context holds the pick, with no draft and no settle", async () => {
+      const f = await fixture();
+      answer(f, "demo_request", 0.9);
+      const jobs = modules.stores.jobs;
+      const load = jobs.loadClassifyContext.bind(jobs);
+      const spy = vi.spyOn(jobs, "loadClassifyContext").mockImplementation(async (org, messageId) => {
+        const ctx = await load(org, messageId);
+        await sql`insert into reply_handling_settings (reply_type_set_id, organization_id, auto_apply_confidence)
+                  select id, organization_id, 0.95 from reply_type_sets where organization_id = ${f.org}
+                  on conflict (reply_type_set_id) do update set auto_apply_confidence = 0.95`;
+        return ctx;
+      });
+      try {
+        await pickOn(f);
+      } finally {
+        spy.mockRestore();
+      }
+      const pick = await pickRow(f);
+      expect(pick).toMatchObject({ status: "proposed", applied_reply_type_id: null });
+      expect(pick.response).toMatchObject({ holdReason: "low_confidence" });
+      expect(await recordRow(f)).toMatchObject({ workflow_state: "action_required", group_key: null });
+      expect(await count("drafts", f.org)).toBe(0);
+      expect(await one("select event_type from events where organization_id = $1 and event_type like 'reply_type_pick.%'", [f.org])).toMatchObject({ event_type: "reply_type_pick.proposed" });
     });
   });
 
