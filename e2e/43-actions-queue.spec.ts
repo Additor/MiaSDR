@@ -1,4 +1,4 @@
-import { MOBILE_DARK, expect, expectNoHorizontalOverflow, seedReply, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
+import { MOBILE_DARK, e2eOrganizationId, expect, expectNoHorizontalOverflow, seedReply, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
 
 const DINA = { email: "dina@s43-group.test", firstName: "Dina", lastName: "Park", title: "COO", company: "S43 Group" };
 const ELI = { email: "eli@s43-group.test", firstName: "Eli", lastName: "Moss", title: "CTO", company: "S43 Group" };
@@ -141,16 +141,24 @@ test.describe("the Actions queue as a list to work through", () => {
     await signInAdmin(page);
     // Two replies the AI files on its own at 90%, so the file runs alone as well as after the other specs. A decline needs
     // no reply and settles its record; putting the record back in the queue leaves the unreviewed pick to look at. Not now
-    // is seeded with Check skip, so the picks' rules snapshot reads Check after, as if an admin had set it before they came.
-    for (const [key, name, text] of [
-      ["S43C", "Ola", "No thanks, not interested."],
-      ["S43D", "Max", "Not now, thanks."],
-    ] as const) {
-      const email = `${name.toLowerCase()}@s43-sure.test`;
-      const [seeded] = await sql()`select 1 from people where email = ${email}`;
-      if (!seeded) await seedReply(page.request, { key, mailbox: `sdr${key.toLowerCase()}@e2e-corp.test`, lead: { email, firstName: name, lastName: "Sure", company: "S43 Sure" }, reply: { bodyText: text } });
-      await sql()`update records set workflow_state = 'action_required' where person_id = (select id from people where email = ${email})`;
-      await sql()`update reply_type_picks set rules = jsonb_set(rules, '{checkMode}', '"after"') where rules is not null and record_id in (select r.id from records r join people p on p.id = r.person_id where p.email = ${email})`;
+    // is seeded with Check skip, so an admin sets it to Check after through the API before the replies come, and the
+    // finally block puts the seeded rule back for the specs after this one.
+    const [notNow] = await sql()`select rt.id, rt.check_mode from reply_types rt join reply_type_sets s on s.id = rt.reply_type_set_id
+      where s.organization_id = ${await e2eOrganizationId()} and s.is_default and rt.key = 'not_required_right_now'`;
+    const setCheck = async (checkMode: string) => expect((await page.request.patch(`/api/reply-types/${notNow.id}`, { data: { checkMode } })).status()).toBe(200);
+    await setCheck("after");
+    try {
+      for (const [key, name, text] of [
+        ["S43C", "Ola", "No thanks, not interested."],
+        ["S43D", "Max", "Not now, thanks."],
+      ] as const) {
+        const email = `${name.toLowerCase()}@s43-sure.test`;
+        const [seeded] = await sql()`select 1 from people where email = ${email}`;
+        if (!seeded) await seedReply(page.request, { key, mailbox: `sdr${key.toLowerCase()}@e2e-corp.test`, lead: { email, firstName: name, lastName: "Sure", company: "S43 Sure" }, reply: { bodyText: text } });
+        await sql()`update records set workflow_state = 'action_required' where person_id = (select id from people where email = ${email})`;
+      }
+    } finally {
+      await setCheck(notNow.check_mode);
     }
     await page.goto("/actions");
     // The row names the type alone; the channel is a mark.
