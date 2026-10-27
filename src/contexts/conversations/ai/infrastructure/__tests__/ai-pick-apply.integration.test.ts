@@ -180,6 +180,47 @@ describeDb("AI pick apply path: type rules decide hold, draft and settle", () =>
     });
   });
 
+  describe("archived types", () => {
+    it("a type archived after the job read its context is stored stale and changes nothing", async () => {
+      const f = await fixture();
+      answer(f, "demo_request", 0.95);
+      const jobs = modules.stores.jobs;
+      const load = jobs.loadClassifyContext.bind(jobs);
+      const spy = vi.spyOn(jobs, "loadClassifyContext").mockImplementation(async (org, messageId) => {
+        const ctx = await load(org, messageId);
+        await sql`update reply_types set active = false where organization_id = ${f.org} and key = 'demo_request'`;
+        return ctx;
+      });
+      try {
+        await pickOn(f);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await pickRow(f)).toMatchObject({ status: "stale", applied_reply_type_id: null });
+      expect(await recordRow(f)).toMatchObject({ group_key: null, reply_type_id: null });
+      expect(await count("drafts", f.org)).toBe(0);
+    });
+
+    it("a held pick of a type archived since cannot be accepted and leaves the Actions queue", async () => {
+      const f = await fixture();
+      answer(f, "demo_request", 0.5);
+      await pickOn(f);
+      expect(await pickRow(f)).toMatchObject({ status: "proposed" });
+      const workQueue = await import("../../../actions/application/work-queue");
+      const queueDeps = (await import("../../../actions/infrastructure/work-queue-composition")).workQueueDeps();
+      const held = async () => Object.values((await workQueue.getWorkQueue(queueDeps, f.actor)).groups).flatMap((g) => g.items).find((i) => i.classification?.kind === "held");
+      expect(await held()).toBeDefined();
+      await sql`update reply_types set active = false where organization_id = ${f.org} and key = 'demo_request'`;
+      const [conv] = await sql`select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = ${f.org}`;
+      const { ConflictError } = await import("@/shared/errors");
+      await expect(
+        modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: null, expectedContextVersion: conv.context_version, actorUserId: f.user }),
+      ).rejects.toBeInstanceOf(ConflictError);
+      expect(await recordRow(f)).toMatchObject({ group_key: null, reply_type_id: null });
+      expect(await held()).toBeUndefined();
+    });
+  });
+
   describe("the customer lock on a person's pick, undo and detach", () => {
     /** The record locked on `typeId` of the customer group, as a person's type change leaves it. */
     const lockOn = (f: ReplyFixture, typeId: string) =>

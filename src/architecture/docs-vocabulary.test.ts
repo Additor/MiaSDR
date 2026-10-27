@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -52,5 +52,53 @@ describe("product vocabulary", () => {
 
   it.each(RETIRED_TERMS)("no longer defines %s", (term) => {
     expect(terminology()).not.toMatch(new RegExp(`^- \\*\\*${term}:\\*\\*`, "m"));
+  });
+});
+
+/** Docs that describe the screens. PRODUCT.md is guarded by its Terminology list above. */
+const SCREEN_DOCS = ["docs/decisions.md", "docs/operations.md", "DESIGN.md", "README.md", ...readdirSync(join(root, "docs/guides")).filter((f) => f.endsWith(".md")).map((f) => `docs/guides/${f}`)];
+
+/**
+ * Screen names the UI retired, as a doc would use them. Code names in backticks stay (`subcategoryKey`,
+ * `after-reply`), and so does "Follow-ups after a reply", whose lowercase words the case-sensitive rules leave alone.
+ */
+const RETIRED_DOC_WORDS: ReadonlyArray<{ name: string; pattern: RegExp }> = [
+  { name: "Reply category", pattern: /\breply categor(y|ies)\b/i },
+  { name: "Subcategory", pattern: /\bsub-?categor(y|ies)\b/i },
+  { name: "Classification card", pattern: /\bclassification card\b/i },
+  { name: "Classification as a screen name", pattern: /\bClassifications?\b/ },
+  { name: "After a reply as a setting name", pattern: /\bAfter a reply\b/ },
+  { name: "Position as a reply type field", pattern: /\bPosition\b/ },
+  { name: "Waiting on as the thread line", pattern: /\bWaiting on\b/ },
+];
+
+/** A doc's prose: fenced blocks and inline code left out, so code names in backticks pass. */
+const prose = (text: string) => text.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+
+function retiredWords(file: string, text: string): string[] {
+  return prose(text)
+    .split("\n")
+    .flatMap((line, i) => RETIRED_DOC_WORDS.filter((w) => w.pattern.test(line)).map((w) => `${file}:${i + 1} [${w.name}] ${line.trim().slice(0, 120)}`));
+}
+
+describe("retired screen names in the docs", () => {
+  it("reads the docs that describe the screens", () => {
+    expect(SCREEN_DOCS).toContain("docs/guides/how-it-works.md");
+    expect(SCREEN_DOCS).toContain("DESIGN.md");
+  });
+
+  it.each(SCREEN_DOCS)("%s uses no retired screen name", (file) => {
+    expect(retiredWords(file, read(file))).toEqual([]);
+  });
+
+  it("catches each word on a sample and lets code names pass", () => {
+    const hits = (text: string) => retiredWords("sample.md", text).length;
+    expect(hits("Open the Reply category menu.")).toBe(1);
+    expect(hits("Pick a subcategory.")).toBe(1);
+    expect(hits("The classification card shows it.")).toBe(1);
+    expect(hits("Turn on After a reply.")).toBe(1);
+    expect(hits("Set the Position of the type.")).toBe(1);
+    expect(hits("Waiting on them since Monday.")).toBe(1);
+    expect(hits("Follow-ups after a reply, `after-reply`, `subcategoryKey`, the job kind `classification`.")).toBe(0);
   });
 });

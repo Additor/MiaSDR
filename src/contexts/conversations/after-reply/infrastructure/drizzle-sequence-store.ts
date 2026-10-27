@@ -4,7 +4,7 @@ import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { AfterReplyStore, FlowRunRow, FlowState, NewRun, RecordSequenceState, RunStore, StartFacts, StepView } from "../application/sequence-ports";
 import { afterReplyFlowName, afterReplyModeOf } from "../domain/after-reply";
 import { AFTER_REPLY_OFF, assertPublishable, assertRunTransition, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
-import { owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
+import { owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, asDateOrNull, ts, zoneOfTx } from "./sequence-run-tx";
 import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
@@ -14,6 +14,7 @@ import { sqlValues } from "@/platform/db/sql-values";
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import { DEFAULT_REPLY_TYPES } from "../../domain/default-reply-types";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
+import { detectsStopRequest } from "../../domain/stop-request";
 
 interface StepRow {
   id: string;
@@ -263,6 +264,7 @@ export async function loadStartOn(
     workflow_state: string;
     has_email: boolean;
     stop_requested: boolean;
+    latest_body: string | null;
     dnc: boolean;
     suppressed: boolean;
     contact: boolean;
@@ -271,10 +273,12 @@ export async function loadStartOn(
     conv_channel: string | null;
   }>(
     await exec.execute(sql`
-      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, s.reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
+      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, ${startFollowUpsSql("r", "s")} as follow_ups, ${startReplyDraftSql("r", "s")} as reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              ${stopRequestedSql(sql`r.latest_inbound_message_id`)} as stop_requested,
+             (select m.body_text from messages m join conversations mc on mc.id = m.conversation_id
+               where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id and ${publicConversationSql("mc")}) as latest_body,
              p.lifecycle = 'contact' as contact,
              exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact) as dnc,
              exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)) as suppressed
@@ -346,7 +350,8 @@ export async function loadStartOn(
       contextVersion: r.context_version,
       workflowState: r.workflow_state,
       hasEmail: r.has_email,
-      stopRequested: r.stop_requested,
+      // A pick's flag, or the reply's own words for a reply no AI pick read (`replyAskedToStop` reads the same two facts).
+      stopRequested: r.stop_requested || detectsStopRequest(r.latest_body ?? ""),
     },
     doNotContact: r.dnc,
     suppressed: r.suppressed,
@@ -365,7 +370,7 @@ export async function createRunOn(tx: Tx, run: NewRun): Promise<{ runId: string;
   // The flow row is the lock `save` takes for update. Taking it shared first makes a switch-off wait for this run and
   // count it, and a run that starts after the switch-off stops here instead of starting on an archived flow.
   const [flow] = rowsOf<{ status: string }>(await tx.execute(sql`select status from sequences where id = ${run.sequenceId} and organization_id = ${run.organizationId} for share`));
-  if (!flow || flow.status !== "active") throw new ConflictError("After a reply was switched off for this campaign.", { code: "flow_off" });
+  if (!flow || flow.status !== "active") throw new ConflictError("Follow-ups after a reply were switched off for this campaign.", { code: "flow_off" });
   const record = await recordLock(tx, run.organizationId, run.recordId);
   // A conversion holds this record's lock until it commits, so this read sees the committed lifecycle. The facts the
   // caller loaded earlier may predate it.

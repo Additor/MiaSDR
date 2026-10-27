@@ -56,14 +56,8 @@ test.describe("the conversation page", () => {
     // AI picks folds closed under History.
     await expect(main.getByTestId("thread-ai-picks")).not.toHaveAttribute("open", "");
 
-    // The line sits right under the latest message.
-    const gap = await page.evaluate(() => {
-      const message = document.querySelector('[data-testid="type-line"]')?.previousElementSibling?.getBoundingClientRect();
-      const typeLine = document.querySelector('[data-testid="type-line"]')?.getBoundingClientRect();
-      return message && typeLine ? typeLine.top - message.bottom : -1;
-    });
-    expect(gap, "px between the message and the type line").toBeGreaterThanOrEqual(0);
-    expect(gap, "px between the message and the type line").toBeLessThan(16);
+    // The line sits right under the latest message: the element before it is that message.
+    await expect(line.locator("xpath=preceding-sibling::*[1]")).toContainText("Let's book a call next week.");
 
     // Why opens the AI's reasoning in place.
     const why = line.getByRole("button", { name: "Why" });
@@ -102,7 +96,7 @@ test.describe("the conversation page", () => {
     await waitForHydrated(panel.getByRole("button", { name: "Approve and send" }));
     // Under a draft that waits for approval, the type line's buttons are outline and Approve and send stays the filled one.
     const looksRight = page.getByTestId("type-decision").getByRole("button", { name: "Looks right" });
-    await expect(looksRight).toHaveClass(/border-border/);
+    await expect(looksRight).toHaveAttribute("data-variant", "outline");
     await panel.getByLabel("Message").fill("Thursday at ten works. Typed by hand.");
 
     await page.getByTestId("type-line").getByRole("button", { name: "Change type" }).click();
@@ -194,7 +188,7 @@ test.describe("the conversation page", () => {
     });
     expect(order, "type decision before the reply").toBeGreaterThan(0);
     await expect(panel.getByTestId("reply-composer")).toHaveCount(0);
-    await expect(panel.getByRole("button", { name: "Write a draft" })).toHaveClass(/border-border/);
+    await expect(panel.getByRole("button", { name: "Write a draft" })).toHaveAttribute("data-variant", "outline");
 
     const accept = decision.getByRole("button", { name: "Accept" });
     await waitForHydrated(accept);

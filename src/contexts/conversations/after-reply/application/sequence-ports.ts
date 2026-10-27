@@ -102,9 +102,9 @@ export interface StartFacts {
     groupKey: string | null;
     replyTypeKey: string | null;
     replyTypeName: string | null;
-    /** The Follow-ups rule of the record's reply type (`reply_types.follow_ups`), or null without a type. */
+    /** The Follow-ups rule the applied pick stored, else the type's (`startFollowUpsSql`), or null without a type. */
     followUps: FollowUpsRule | null;
-    /** The Reply draft rule of the record's reply type (`reply_types.reply_draft`), or null without a type. False skips step 1. */
+    /** The Reply draft rule the applied pick stored, else the type's (`startReplyDraftSql`), or null without a type. False skips step 1. */
     replyDraft: boolean | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;

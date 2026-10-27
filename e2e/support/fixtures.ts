@@ -175,7 +175,7 @@ export type CampaignTab = "leads" | "sequence" | "settings";
 
 /**
  * Switches the campaign page to one of its tabs through the tab links (`?tab=leads|sequence|settings`, Leads is the bare URL).
- * Steps and "Save steps" are on Sequence. Senders, "Save senders" and the After a reply card are on Settings.
+ * Steps and "Save steps" are on Sequence. Senders, "Save senders" and the Follow-ups after a reply card are on Settings.
  */
 export async function openCampaignTab(page: Page, tab: CampaignTab): Promise<void> {
   const link = page.getByTestId(`campaign-tab-${tab}`);
@@ -326,7 +326,7 @@ export async function seedReply(
     mailbox: string;
     lead: SeedLead;
     reply: { subject?: string; bodyText: string; cc?: string[] };
-    /** Runs once the campaign has emailed the lead and before the reply arrives, for example to set the campaign's After a reply mode. */
+    /** Runs once the campaign has emailed the lead and before the reply arrives, for example to set the campaign's Follow-ups after a reply mode. */
     beforeReply?: (campaignId: string) => Promise<void>;
   },
 ): Promise<{ campaignId: string; sent: Delivered }> {

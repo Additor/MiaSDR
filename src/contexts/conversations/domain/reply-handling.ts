@@ -19,6 +19,9 @@ export type ReplyTypeGroup = (typeof REPLY_TYPE_GROUPS)[number]["key"];
 /** The one group with a fixed rule: a person's move into Existing customer locks the person there (`lockAfterPersonMove`). */
 export const CUSTOMER_GROUP: ReplyTypeGroup = "customer";
 
+/** The key of the catch-all type. The classify prompt tells the AI to pick it when nothing else fits and it is listed. */
+export const CATCH_ALL_TYPE_KEY = "other";
+
 export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPLY_TYPE_GROUPS.some((c) => c.key === value);
 
 export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "No type yet";

@@ -50,45 +50,51 @@ test.describe("reply handling settings", () => {
     const main = page.locator("#main-content");
     const name = unique("Pricing ask");
 
-    const add = main.getByRole("button", { name: "Add reply type" });
-    await waitForHydrated(add);
-    await add.click();
-    let dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Name").fill(name);
-    const rules = dialog.getByRole("group", { name: `When the AI picks ${name}` });
-    await expect(rules).toContainText("Applies to replies picked from now on.");
-    await expect(rules.getByRole("radio", { name: "After it applies" })).toBeChecked();
-    await expect(rules.getByRole("radio", { name: "Write one" })).toBeChecked();
-    await expect(rules.getByRole("radio", { name: "Keep going" })).toBeChecked();
-    await dialog.getByRole("button", { name: "Add reply type" }).click();
-    await expect(dialog).toBeHidden();
+    try {
+      const add = main.getByRole("button", { name: "Add reply type" });
+      await waitForHydrated(add);
+      await add.click();
+      let dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Name").fill(name);
+      const rules = dialog.getByRole("group", { name: `When the AI picks ${name}` });
+      await expect(rules).toContainText("Applies to replies picked from now on.");
+      await expect(rules.getByRole("radio", { name: "After it applies" })).toBeChecked();
+      await expect(rules.getByRole("radio", { name: "Write one" })).toBeChecked();
+      await expect(rules.getByRole("radio", { name: "Keep going" })).toBeChecked();
+      await dialog.getByRole("button", { name: "Add reply type" }).click();
+      await expect(dialog).toBeHidden();
 
-    const row = typeRow(main, name);
-    await expect(row.getByTestId("reply-type-rules")).toHaveText("Check after · Draft · Follow-ups keep going");
+      const row = typeRow(main, name);
+      await expect(row.getByTestId("reply-type-rules")).toHaveText("Check after · Draft · Follow-ups keep going");
 
-    await row.getByRole("button", { name: `Edit ${name}` }).click();
-    dialog = page.getByRole("dialog");
-    await dialog.getByRole("radio", { name: "Before it applies" }).click();
-    await dialog.getByRole("radio", { name: "Don't write" }).click();
-    await dialog.getByRole("radio", { name: "Stop", exact: true }).click();
-    await dialog.getByRole("button", { name: "Save" }).click();
-    await expect(dialog).toBeHidden();
-    await expect(row.getByTestId("reply-type-rules")).toHaveText("Check before · No draft · Follow-ups stop");
-    const [stored] = await sql()`select check_mode, reply_draft, follow_ups from reply_types where name = ${name}`;
-    expect(stored).toMatchObject({ check_mode: "before", reply_draft: false, follow_ups: "stop" });
+      await row.getByRole("button", { name: `Edit ${name}` }).click();
+      dialog = page.getByRole("dialog");
+      await dialog.getByRole("radio", { name: "Before it applies" }).click();
+      await dialog.getByRole("radio", { name: "Don't write" }).click();
+      await dialog.getByRole("radio", { name: "Stop", exact: true }).click();
+      await dialog.getByRole("button", { name: "Save" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(row.getByTestId("reply-type-rules")).toHaveText("Check before · No draft · Follow-ups stop");
+      const [stored] = await sql()`select check_mode, reply_draft, follow_ups from reply_types where name = ${name}`;
+      expect(stored).toMatchObject({ check_mode: "before", reply_draft: false, follow_ups: "stop" });
 
-    // Archive says where the replies that would fit go.
-    await row.getByRole("button", { name: "Archive" }).click();
-    dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("The AI stops picking");
-    await expect(dialog).toContainText("goes to the closest other type, often Unclear");
-    await dialog.getByRole("button", { name: "Archive reply type" }).click();
-    await expect(row).toContainText("Archived");
+      // Archive says where the replies that would fit go.
+      await row.getByRole("button", { name: "Archive" }).click();
+      dialog = page.getByRole("dialog");
+      await expect(dialog).toContainText("The AI stops picking");
+      await expect(dialog).toContainText("goes to the closest other type, often Unclear");
+      await dialog.getByRole("button", { name: "Archive reply type" }).click();
+      await expect(row).toContainText("Archived");
 
-    await row.getByRole("button", { name: "Delete" }).click();
-    dialog = page.getByRole("dialog");
-    await dialog.getByRole("button", { name: "Delete reply type" }).click();
-    await expect(row).toHaveCount(0);
+      await row.getByRole("button", { name: "Delete" }).click();
+      dialog = page.getByRole("dialog");
+      await dialog.getByRole("button", { name: "Delete reply type" }).click();
+      await expect(row).toHaveCount(0);
+    } finally {
+      // A failed step leaves the type behind: delete it so the next specs see the seeded list.
+      const left = await sql()`select rt.id from reply_types rt join reply_type_sets s on s.id = rt.reply_type_set_id where s.organization_id = ${await e2eOrganizationId()} and rt.name = ${name}`;
+      for (const row of left) await page.request.delete(`/api/reply-types/${row.id}`);
+    }
   });
 
   test("saves the confidence floor", async ({ page }) => {
@@ -97,18 +103,23 @@ test.describe("reply handling settings", () => {
     const field = page.getByLabel("Percent confidence");
     await waitForHydrated(field);
     const before = await field.inputValue();
-    const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "Confidence floor" }) });
-    await expect(section).toContainText("Below this, the AI only suggests and a person decides.");
+    try {
+      const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "Confidence floor" }) });
+      await expect(section).toContainText("Below this, an AI pick waits for a person.");
 
-    await field.fill("81");
-    await section.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText("Confidence floor saved.")).toBeVisible();
-    const [stored] = await sql()`select auto_apply_confidence from reply_handling_settings s join reply_type_sets t on t.id = s.reply_type_set_id where t.organization_id = ${await e2eOrganizationId()} and t.is_default`;
-    expect(Number(stored.auto_apply_confidence)).toBe(0.81);
+      await field.fill("81");
+      await section.getByRole("button", { name: "Save" }).click();
+      await expect(page.getByText("Confidence floor saved.")).toBeVisible();
+      const [stored] = await sql()`select auto_apply_confidence from reply_handling_settings s join reply_type_sets t on t.id = s.reply_type_set_id where t.organization_id = ${await e2eOrganizationId()} and t.is_default`;
+      expect(Number(stored.auto_apply_confidence)).toBe(0.81);
 
-    // Put the floor back for the specs that classify replies after this one.
-    await field.fill(before);
-    await section.getByRole("button", { name: "Save" }).click();
-    await expect(section.getByRole("button", { name: "Save" })).toBeDisabled();
+      // Saving the old value through the form leaves Save off.
+      await field.fill(before);
+      await section.getByRole("button", { name: "Save" }).click();
+      await expect(section.getByRole("button", { name: "Save" })).toBeDisabled();
+    } finally {
+      // Put the floor back for the specs that classify replies after this one, also when a step above failed.
+      expect((await page.request.patch("/api/settings/replies", { data: { autoApplyConfidence: Number(before) / 100 } })).status()).toBe(200);
+    }
   });
 });

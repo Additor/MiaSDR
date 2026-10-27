@@ -308,7 +308,8 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
           const page = queue.groups[g];
           return (
             <QueueGroup
-              key={`${g}:${query}:${page.total}:${page.items[0]?.recordId ?? ""}`}
+              // Filters mount a fresh group; a refresh keeps it mounted, so focus stays on the row after a settled one.
+              key={`${g}:${query}`}
               group={g}
               title={QUEUE_GROUP_LABELS[g].title}
               description={g === "classification" || g === "problem" ? QUEUE_GROUP_LABELS[g].description : undefined}

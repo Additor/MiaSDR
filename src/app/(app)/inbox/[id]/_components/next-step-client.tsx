@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { dayFromToday, DueField, useBrowserZone } from "@/app/(app)/_components/person/tasks-panel";
-import { saveDraftEdits } from "../_lib/draft-edits";
+import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 import type { NextInQueue } from "../_lib/next-queue";
 import { onOpenStopContacting, StopContactingDialog } from "./stop-contacting";
 
@@ -219,7 +219,7 @@ function DoneForm({ recordId, personName, typeName, onCancel, onDone }: { record
     const unsaved = await saveDraftEdits();
     if (unsaved) {
       setPending(false);
-      return setError(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
+      return setError(unsavedEditsError(unsaved));
     }
     const result = await callApi(`/api/records/${recordId}/close`, "POST", { reason: reason.trim() });
     setPending(false);

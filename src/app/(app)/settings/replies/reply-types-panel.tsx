@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
+import { CATCH_ALL_TYPE_KEY, REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
 import { DEFAULT_TYPE_RULES, SYSTEM_ROLE_REASONS, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "@/contexts/conversations/domain/reply-type";
 import { rulesSummary } from "@/app/(app)/inbox/[id]/_lib/type-line";
 import { callApi } from "@/app/_lib/api-client";
@@ -70,7 +70,7 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
   const [confirming, setConfirming] = useState<{ type: ReplyTypeItem; action: "archive" | "delete" } | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   // Where the AI sends a reply that would have fit an archived type: the catch-all of the Other group, when it is active.
-  const fallback = replyTypes.find((t) => t.key === "other" && t.active)?.name ?? null;
+  const fallback = replyTypes.find((t) => t.key === CATCH_ALL_TYPE_KEY && t.active)?.name ?? null;
 
   function open(type: ReplyTypeItem | null) {
     setDraft(draftOf(type));

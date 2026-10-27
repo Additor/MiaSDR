@@ -200,16 +200,13 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(f.ai.lastDraftInput?.operatorInstructions).toContain("Flow: answer.");
     });
 
-    it("a record with only private conversations still moves by the type's rules", async () => {
+    it("a record with only private conversations answers 404 and keeps its run", async () => {
       const { f, recordId, version } = await withRun();
       const personal = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
       await sql`update conversations set private_campaign_id = ${personal} where record_id = ${recordId}`;
-      const result = await move(f, recordId, "meeting_done", version);
-      // Meeting done writes a draft: the record stays in front of a person, as on a public record.
-      expect(await one("select workflow_state from records where id = $1", [recordId])).toMatchObject({ workflow_state: "action_required" });
-      // The old run ends. The new run start reads only public conversations, so a private-only record starts none.
-      expect(result.runStarted).toBe(false);
-      expect(await count("sequence_runs", f.org, "status = 'active'")).toBe(0);
+      await expect(move(f, recordId, "meeting_done", version)).rejects.toBeInstanceOf(NotFoundError);
+      expect(await versionOf(recordId)).toBe(version);
+      expect(await count("sequence_runs", f.org, "status = 'active'")).toBe(1);
     });
 
     it("starts no run for a contact, and still moves the category", async () => {
@@ -288,6 +285,85 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     });
   });
 
+  describe("a run start reads the rules the pick stored", () => {
+    /** A reply the AI picks and applies, from a lead the campaign emailed an hour earlier. The sequence tick has not run. */
+    async function picked(body: string) {
+      const f = await fixture();
+      const r = await composition.ingestInbound(mail(f, { bodyText: body }));
+      const personId = (await one("select id from people where organization_id = $1", [f.org])).id as string;
+      const campaignId = await createCampaign(sql, { organizationId: f.org, name: "Autumn" });
+      await recordSentEmail(sql, { organizationId: f.org, campaignId, personId, sentAt: new Date(f.clock().getTime() - 3_600_000) });
+      await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "ai_drafts", steps: STEPS("Flow") });
+      await f.aiRun();
+      const recordId = (await one("select id from records where organization_id = $1", [f.org])).id as string;
+      return { f, r, recordId };
+    }
+
+    it("starts no run when a type set to stop follow-ups is edited to keep going after the pick", async () => {
+      const { f, recordId } = await picked("Not now, thanks.");
+      expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "auto_applied", rules: { followUps: "stop" } });
+      await sql`update reply_types set follow_ups = 'continue' where organization_id = ${f.org} and key = 'not_required_right_now'`;
+      await f.cycle();
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      const seq = await import("../../after-reply/application/sequences");
+      expect((await seq.getRecordSequence(f.seqDeps, f.actor, recordId)).restartBlockedReason).toBe("Not now is set to stop follow-ups.");
+    });
+
+    it("starts at the step the pick's Reply draft rule chose, after the type's rule changed", async () => {
+      const { f } = await picked("Could we book a demo next week?");
+      await sql`update reply_types set reply_draft = false where organization_id = ${f.org} and key = 'demo_request'`;
+      await f.cycle();
+      const run = await one("select id from sequence_runs where organization_id = $1 and status = 'active'", [f.org]);
+      // The pick wrote a reply draft, so the run starts at step 1 and adopts it.
+      expect(await count("sequence_step_runs", f.org, `sequence_run_id = '${run.id}'`)).toBe(2);
+    });
+  });
+
+  describe("outcomes for a campaign that starts no runs", () => {
+    it("names the campaign state on the follow-ups line, as the start rule reads it", async () => {
+      const { f, recordId, campaignId } = await withRun();
+      const meetingDone = (await sub(f.org, "meeting_done")).id;
+      const followUpsOf = async () => (await replyHandlingApp.getTypeChangeOutcomes(f.replyHandlingDeps, f.actor, recordId, "correct")).find((o) => o.replyTypeId === meetingDone)?.outcome.followUps;
+      expect(await followUpsOf()).toBe("Follow-ups: keep going.");
+      await sql`update campaigns set status = 'paused' where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: none while the campaign is paused.");
+      await sql`update campaigns set status = 'draft' where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: none until the campaign starts.");
+      await sql`update campaigns set status = 'active', archived_at = now() where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: none, because the campaign is archived.");
+      await sql`update campaigns set status = 'completed', archived_at = null where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: keep going.");
+    });
+  });
+
+  describe("a stop request in the reply text", () => {
+    it("a person's pick before the AI's writes no draft and starts no run, and the outcomes say so", async () => {
+      const f = await fixture();
+      const r = await composition.ingestInbound(mail(f, { bodyText: "Please unsubscribe me and stop emailing me." }));
+      const personId = (await one("select id from people where organization_id = $1", [f.org])).id as string;
+      const campaignId = await createCampaign(sql, { organizationId: f.org, name: "Autumn" });
+      await recordSentEmail(sql, { organizationId: f.org, campaignId, personId, sentAt: new Date(f.clock().getTime() - 3_600_000) });
+      await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "ai_drafts", steps: STEPS("Flow") });
+      const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
+      const demo = await sub(f.org, "demo_request");
+
+      const outcomes = await replyHandlingApp.getTypeChangeOutcomes(f.replyHandlingDeps, f.actor, record.id, "correct");
+      expect(outcomes.find((o) => o.replyTypeId === demo.id)?.outcome).toMatchObject({
+        replyDraft: "Reply draft: none, because they asked to stop.",
+        followUps: "Follow-ups: stop, because they asked to stop.",
+      });
+
+      const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: Number(record.context_version) });
+      expect(result.draftQueued).toBe(false);
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      expect(await one("select response from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ response: { stopRequested: true } });
+      // The sweep reads the flag the person's pick stored, and starts nothing either.
+      await f.cycle();
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      expect(await count("drafts", f.org)).toBe(0);
+    });
+  });
+
   describe("replyTypeChange in the draft prompt", () => {
     it("passes the move's stage, time and note to the model and drops the classifier's reason", async () => {
       const { f, r, recordId, version } = await withRun({ flow: false });
@@ -330,7 +406,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     it("answers 409 on a version mismatch and changes nothing", async () => {
       const { f, r, recordId, version } = await withRun();
       const before = { runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), drafts: await count("drafts", f.org, "status = 'awaiting_review'") };
-      await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version - 1 })).rejects.toBeInstanceOf(ConflictError);
+      await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version - 1 })).rejects.toThrow("Reply handling changed after you opened it. Reload and choose the type again.");
       await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version + 1 })).rejects.toBeInstanceOf(ConflictError);
       expect(await versionOf(recordId)).toBe(version);
       expect({ runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), drafts: await count("drafts", f.org, "status = 'awaiting_review'") }).toEqual(before);
@@ -379,11 +455,76 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await one("select expected_context_version from drafts where organization_id = $1 and status = 'awaiting_review' order by created_at desc limit 1", [f.org])).toMatchObject({ expected_context_version: version + 2 });
     });
 
+    it("a pick after a failed AI pick stores a fresh pick that Undo can take back", async () => {
+      const f = await fixture();
+      const r = await composition.ingestInbound(mail(f));
+      const recordId = (await one("select id from records where organization_id = $1", [f.org])).id as string;
+      await move(f, recordId, "meeting_done", await versionOf(recordId));
+      const record = await one("select context_version, latest_inbound_message_id from records where id = $1", [recordId]);
+      // What `fail` writes when the classification job gives up.
+      await sql`insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, status, error)
+                values (${f.org}, ${recordId}, ${record.latest_inbound_message_id}, ${record.context_version}, 'failed', 'the model was down')`;
+
+      await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: Number(record.context_version) });
+      const picks = await rows("select id, status, provider, previous_reply_type_id from reply_type_picks where organization_id = $1 order by created_at", [f.org]);
+      expect(picks.map((p) => p.status)).toEqual(["failed", "overridden"]);
+      expect(picks[1]).toMatchObject({ provider: "human", previous_reply_type_id: (await sub(f.org, "meeting_done")).id });
+
+      await replyHandlingApp.undoReplyTypePick(f.replyHandlingDeps, f.actor, picks[1].id as string);
+      expect(await one("select reply_type_id from records where id = $1", [recordId])).toMatchObject({ reply_type_id: (await sub(f.org, "meeting_done")).id });
+    });
+
+    it("a correction while the pick's draft job runs drafts again once that job ends", async () => {
+      const { f, r, version } = await withRun({ flow: false });
+      // The pick's draft job is running in another worker, which read the old version.
+      const job = await one("select id, entity_id from ai_jobs where organization_id = $1 and kind = 'initial_draft'", [f.org]);
+      await sql`update ai_jobs set status = 'running', attempts = 1, locked_at = now(), locked_by = 'other', completed_at = null where id = ${job.id}`;
+
+      const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_requested", expectedContextVersion: version });
+      expect(result.draftQueued).toBe(true);
+      // The other worker finishes: its draft is stale, and the job goes back to the queue for the new version.
+      await stores.jobs.complete({ id: job.id, organizationId: f.org, kind: "initial_draft", entityId: job.entity_id, attempts: 1, maxAttempts: 3 }, f.clock());
+      expect(await one("select status from ai_jobs where id = $1", [job.id])).toMatchObject({ status: "queued" });
+      await f.aiRun();
+      expect(await one("select expected_context_version from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org])).toMatchObject({ expected_context_version: version + 1 });
+      expect(await one("select status from ai_jobs where id = $1", [job.id])).toMatchObject({ status: "succeeded" });
+    });
+
     it("another organization's person gets 404", async () => {
       const a = await withRun();
       const b = await withRun();
       await expect(mgmt.setReplyType(b.f.replyDeps, b.f.actor, a.r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: a.version })).rejects.toBeInstanceOf(NotFoundError);
       expect(await versionOf(a.recordId)).toBe(a.version);
+    });
+  });
+
+  describe("a person's draft request while the thread changes", () => {
+    /** Reply deps whose context reads are followed by a version bump, as when a new reply lands while the AI writes. */
+    const racing = (f: Fx, recordId: string) => {
+      const bump = () => sql`update records set context_version = context_version + 1 where id = ${recordId}`;
+      const store = {
+        ...stores.replies,
+        draftContext: async (o: string, c: string) => {
+          const ctx = await stores.replies.draftContext(o, c);
+          await bump();
+          return ctx;
+        },
+        draftContextForDraft: async (o: string, d: string) => {
+          const ctx = await stores.replies.draftContextForDraft(o, d);
+          await bump();
+          return ctx;
+        },
+      };
+      return { ...f.replyDeps, store };
+    };
+
+    it("Write draft and Regenerate answer 409 and leave no draft to send", async () => {
+      const { f, r, recordId } = await withRun({ flow: false });
+      const draft = await one("select id from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
+      await expect(mgmt.regenerateDraft(racing(f, recordId), f.actor, draft.id, {})).rejects.toThrow("The thread changed while the draft was written.");
+      await sql`update drafts set status = 'discarded' where organization_id = ${f.org}`;
+      await expect(mgmt.requestDraft(racing(f, recordId), f.actor, r.conversationId)).rejects.toBeInstanceOf(ConflictError);
+      expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
     });
   });
 

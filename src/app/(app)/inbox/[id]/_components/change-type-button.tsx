@@ -11,10 +11,11 @@ import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLeg
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
-import { REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
+import { CUSTOMER_GROUP, REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
 import { callApi } from "@/app/_lib/api-client";
-import { saveDraftEdits } from "../_lib/draft-edits";
+import { submitSteps } from "../_lib/change-type";
+import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 import { confidenceText } from "../_lib/type-line";
 import { useStopScope, type StopTarget } from "./stop-contacting";
 
@@ -79,8 +80,8 @@ export function ChangeTypeButton({
   aiReading?: AiReading | null;
   /** What Stop contacting needs, and whether the person is already marked. */
   stop: StopTarget & { doNotContact: boolean };
-  /** A link at the end of the type line, or an outline button beside Accept or Looks right. */
-  variant?: "link" | "outline";
+  /** A link at the end of the type line, an outline button beside Accept or Looks right, or the lead button when the AI's pick names an archived type. */
+  variant?: "link" | "outline" | "default";
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -92,6 +93,8 @@ export function ChangeTypeButton({
   const [pending, setPending] = useState<"change" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
+  // The type this dialog already changed to. A retry after a failed stop only stops.
+  const changedTo = useRef<string | null>(null);
   const stopScope = useStopScope(stop);
 
   const correcting = why === "reply" && conversationId !== undefined;
@@ -104,7 +107,7 @@ export function ChangeTypeButton({
     [types, currentReplyTypeId],
   );
   const chosen = target?.type;
-  const leavesCustomer = replyTypeLocked && chosen !== undefined && chosen.groupKey !== "customer";
+  const leavesCustomer = replyTypeLocked && chosen !== undefined && chosen.groupKey !== CUSTOMER_GROUP;
   const asksStop = chosen?.systemRole === "stop_request" && !stop.doNotContact;
   const path: Path = correcting ? "correct" : "off_thread";
   // Lines loaded for the other path wait for this path's own.
@@ -135,6 +138,7 @@ export function ChangeTypeButton({
     setWhy(conversationId ? "reply" : "offThread");
     setOutcomes(null);
     setError(null);
+    changedTo.current = null;
     stopScope.reset();
   }
 
@@ -157,14 +161,16 @@ export function ChangeTypeButton({
     running.current = true;
     setPending(mode);
     setError(null);
-    let changed = false;
+    const steps = submitSteps(changedTo.current, chosen.id, mode);
     try {
-      const unsaved = await saveDraftEdits();
-      if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
-      await changeType(chosen);
-      changed = true;
+      if (steps.change) {
+        const unsaved = await saveDraftEdits();
+        if (unsaved) throw new Error(unsavedEditsError(unsaved));
+        await changeType(chosen);
+        changedTo.current = chosen.id;
+      }
       const changedText = `Changed the reply type of ${personName} to ${chosen.name}.`;
-      if (mode === "stop") {
+      if (steps.stop) {
         const stopped = await stopScope.stop().catch((e: unknown) => {
           throw new Error(`The reply type changed, but contact did not stop. ${e instanceof Error ? e.message : ""} Use Stop contacting under Next step.`.trim());
         });
@@ -180,7 +186,7 @@ export function ChangeTypeButton({
       running.current = false;
       setPending(null);
       setError(e instanceof Error ? e.message : "Something went wrong.");
-      if (changed) router.refresh();
+      if (changedTo.current) router.refresh();
     }
   }
 

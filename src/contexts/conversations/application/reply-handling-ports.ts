@@ -74,6 +74,8 @@ export interface ReplyTypePickEntry {
   rules: TypeRules | null;
   /** System role of the proposed type, so the thread can tell a held stop request apart. */
   proposedSystemRole: SystemRole | null;
+  /** The proposed type is still active. False once an admin archived it, or when the pick proposed no type. Accept refuses an archived type. */
+  proposedActive: boolean;
   /** Why the AI held the pick for a person, from the pick's response. Null when it applied. */
   holdReason: HoldReason | null;
   /** The reply asked to stop, as the AI read it. */
@@ -255,6 +257,8 @@ export interface ReplyHandlingStore {
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;
 
   replyTypeCatalog(organizationId: string): Promise<ReplyTypeCatalog>;
+  /** The confidence floor and the AI instructions, without the types and their counts. */
+  replySettings(organizationId: string): Promise<ReplyHandlingSettingsRow>;
   createReplyType(organizationId: string, input: ReplyTypeInput): Promise<{ id: string }>;
   updateReplyType(organizationId: string, id: string, patch: ReplyTypePatch): Promise<void>;
   deleteReplyType(organizationId: string, id: string): Promise<void>;

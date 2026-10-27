@@ -45,7 +45,7 @@ export function ThreadSideSkeleton() {
 /**
  * The thread's side column: who the person is and what is on file about them. Open: the person, Assigned to and tasks, then
  * the person's campaigns and other conversations folded behind their counts, and Do not contact with Clear once they are
- * marked. What happens next (the category, Done, Stop contacting) sits under the reply in Next step (`next-step.tsx`), and
+ * marked. What happens next (Remind me, Done, Stop contacting) sits under the reply in Next step (`next-step.tsx`), and
  * Follow-ups and the histories live in the work column (`thread-work.tsx`). Wrap it in Suspense.
  */
 export async function ThreadSide({ actor, conversationId, recordId, personId }: { actor: Actor; conversationId: string; recordId: string; personId: string }) {

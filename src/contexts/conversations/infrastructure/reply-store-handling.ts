@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
@@ -33,12 +33,20 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         .for("update", { of: records });
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.latest) throw new ConflictError("There is no inbound message to classify.");
-      if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the category again.");
+      if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the type again.");
 
+      // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the record
+      // of what went wrong, and the person's pick goes in as a row of its own.
       const [existing] = await tx
         .select()
         .from(replyTypePicks)
-        .where(and(eq(replyTypePicks.messageId, head.latest), eq(replyTypePicks.expectedContextVersion, head.version)));
+        .where(
+          and(
+            eq(replyTypePicks.messageId, head.latest),
+            eq(replyTypePicks.expectedContextVersion, head.version),
+            inArray(replyTypePicks.status, ["proposed", "auto_applied", "accepted", "overridden"]),
+          ),
+        );
 
       let targetId: string | null;
       if (input.replyTypeKey === null) {
@@ -54,6 +62,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       }
       const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
       const accepted = input.replyTypeKey === null;
+      if (accepted && !target.active) throw new ConflictError("The AI picked a reply type that was archived since. Choose another type.");
       // Accepting a stop request would only change the type, while the person asked us to stop. The client opens Stop
       // contacting on this code. Choosing the stop request type by name stays allowed and changes only the type.
       if (accepted && target.systemRole === "stop_request") {
@@ -68,7 +77,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
       const locked = lockAfterPersonMove(target);
 
-      let replyTypePickId: string;
+      let replyTypePickId: string | null = null;
       if (existing) {
         await tx
           .update(replyTypePicks)
@@ -78,36 +87,14 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             appliedReplyTypeId: target.id,
             rules,
             acknowledgedAt: new Date(),
-            // The lock before the first pick of this row stays: undo goes back to it.
-            response: sql`case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
-              else coalesce(${replyTypePicks.response}, '{}'::jsonb) || jsonb_build_object('previousLocked', ${head.locked}::boolean) end`,
+            // The lock before the first pick of this row stays: undo goes back to it. A stop request read from the text
+            // is kept on the row, so the start sweep sees it (`stopRequestedSql`).
+            response: sql`(case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
+              else coalesce(${replyTypePicks.response}, '{}'::jsonb) || jsonb_build_object('previousLocked', ${head.locked}::boolean) end)
+              || ${decision.stopRequested ? sql`'{"stopRequested":true}'::jsonb` : sql`'{}'::jsonb`}`,
           })
           .where(eq(replyTypePicks.id, existing.id));
         replyTypePickId = existing.id;
-      } else {
-        const [row] = await tx
-          .insert(replyTypePicks)
-          .values({
-            organizationId: input.organizationId,
-            recordId: head.recordId,
-            messageId: head.latest,
-            expectedContextVersion: head.version,
-            previousGroupKey: head.groupKey,
-            previousReplyTypeId: head.replyTypeId,
-            proposedGroupKey: target.groupKey,
-            proposedReplyTypeId: target.id,
-            appliedGroupKey: target.groupKey,
-            appliedReplyTypeId: target.id,
-            rules,
-            response: { previousLocked: head.locked },
-            confidence: "1.0000",
-            reasoning: "Set by a person.",
-            status: "overridden",
-            provider: "human",
-            acknowledgedAt: new Date(),
-          })
-          .returning({ id: replyTypePicks.id });
-        replyTypePickId = row.id;
       }
 
       const { wantsDraft } = decision;
@@ -117,7 +104,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", replyTypeLocked: locked, workflowState: nextState })
         .where(eq(records.id, head.recordId));
       // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
-      // sequence of the corrected subcategory starts. The classification row follows to the new version so the fresh draft job accepts it.
+      // sequence of the corrected subcategory starts. The pick follows to the new version so the fresh draft job accepts it.
       const now = new Date();
       const restart = await restartRecordWorkTx(tx, {
         organizationId: input.organizationId,
@@ -128,7 +115,34 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         now,
         actorUserId: input.actorUserId,
       });
-      await tx.update(replyTypePicks).set({ expectedContextVersion: restart.contextVersion }).where(eq(replyTypePicks.id, replyTypePickId));
+      if (replyTypePickId) {
+        await tx.update(replyTypePicks).set({ expectedContextVersion: restart.contextVersion }).where(eq(replyTypePicks.id, replyTypePickId));
+      } else {
+        // A new row takes the new version at once: the old version's slot may hold a failed or stale pick.
+        const [row] = await tx
+          .insert(replyTypePicks)
+          .values({
+            organizationId: input.organizationId,
+            recordId: head.recordId,
+            messageId: head.latest,
+            expectedContextVersion: restart.contextVersion,
+            previousGroupKey: head.groupKey,
+            previousReplyTypeId: head.replyTypeId,
+            proposedGroupKey: target.groupKey,
+            proposedReplyTypeId: target.id,
+            appliedGroupKey: target.groupKey,
+            appliedReplyTypeId: target.id,
+            rules,
+            response: { previousLocked: head.locked, ...(decision.stopRequested ? { stopRequested: true } : {}) },
+            confidence: "1.0000",
+            reasoning: "Set by a person.",
+            status: "overridden",
+            provider: "human",
+            acknowledgedAt: new Date(),
+          })
+          .returning({ id: replyTypePicks.id });
+        replyTypePickId = row.id;
+      }
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,

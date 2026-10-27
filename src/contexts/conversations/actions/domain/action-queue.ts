@@ -59,7 +59,7 @@ export interface PickReviewFacts {
   status: string;
   /** The pick was written for the record's current version and is not stale. */
   current: boolean;
-  /** The held pick names a type that still exists. */
+  /** The held pick names a type that still exists and is active. An archived type cannot be accepted. */
   hasProposedType: boolean;
   proposedSystemRole: SystemRole | null;
   /** The AI read the reply as a request to stop (`response.stopRequested`). */

@@ -106,7 +106,8 @@ const queueRowsSql = (organizationId: string) => sql`
                      and exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email))) as stopped
         from reply_type_picks k
         left join reply_types ks on ks.id = coalesce(k.applied_reply_type_id, k.proposed_reply_type_id)
-        left join reply_types kp on kp.id = k.proposed_reply_type_id
+        -- An archived proposed type cannot be accepted, so its held pick waits for nothing here.
+        left join reply_types kp on kp.id = k.proposed_reply_type_id and kp.active
         where k.record_id = r.id and k.message_id = r.latest_inbound_message_id and ${visibleReplyTypePickSql("k")}
         order by (k.status = 'stale'), k.created_at desc limit 1
       ) lp
