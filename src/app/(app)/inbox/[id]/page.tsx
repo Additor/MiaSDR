@@ -18,8 +18,6 @@ import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { actionsHref, actionsViewFrom } from "../../actions/actions-query";
-import { waitingOn, workflowLabel } from "../labels";
-import { DraftWatch } from "./_components/draft-watch-client";
 import { ImportantStar } from "./_components/important-star";
 import { MarkRead } from "./_components/mark-read";
 import { NextQueueLink } from "./_components/next-queue-link";
@@ -29,6 +27,7 @@ import { ReplyPanel } from "./_components/reply-panel";
 import { NextStep } from "./_components/next-step";
 import { ThreadSide, ThreadSideSkeleton } from "./_components/thread-side";
 import { ThreadFollowUps, ThreadHistory } from "./_components/thread-work";
+import { TypeLine } from "./_components/type-line";
 import { RecordBody } from "@/app/(app)/_components/record/record-header";
 
 export const metadata: Metadata = { title: "Conversation" };
@@ -86,37 +85,45 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
           </>
         }
       />
-      {/* The record frame's body: the work column (the message, the reply, the next step, follow-ups, earlier messages and the
-          histories), then one bordered side panel about the person. On a phone the panel follows the work column. */}
+      {/* The record frame's body: the work column (the message and its reply type, the reply, the next step, follow-ups,
+          earlier messages and the histories), then one bordered side panel about the person. On a phone the panel follows the
+          work column. */}
       <div className="page">
         <RecordBody
           asideLabel="Person"
           main={
             <div className="stack-section min-w-0">
-              {/* The sender and the mailbox are on the message card and the side panel; this line says whose move it is. */}
-              <SummaryLine
-                items={[
-                  { label: "Waiting on", value: waitingOn(thread.workflowState), hint: `${workflowLabel(thread.workflowState)}. Who has to act next on this conversation` },
-                  ...(thread.channel === "email" ? [] : [{ label: "Channel", value: channelLabel(thread.channel) }]),
-                ]}
-              />
-              <DraftWatch contextVersion={thread.contextVersion} draftStatus={thread.latestDraftStatus} workflowState={thread.workflowState} />
+              {/* Email is the default channel, so only another channel is named. */}
+              {thread.channel !== "email" && <SummaryLine items={[{ label: "Channel", value: channelLabel(thread.channel) }]} />}
 
-              {latest && <MessageCard message={latest} channel={thread.channel} person={person} />}
+              {/* The latest message and, fixed under it, its reply type: the type line opens in place when the AI's pick waits for you. */}
+              <div className="grid gap-2">
+                {latest && <MessageCard message={latest} channel={thread.channel} person={person} />}
+                <Suspense fallback={<Skeleton className="h-6 w-2/3" />}>
+                  <TypeLine actor={actor} conversationId={thread.conversationId} channel={thread.channel} recordId={thread.recordId} queue={fromActions ? { view: actionsView } : undefined} />
+                </Suspense>
+              </div>
 
               <div data-slot="reply-draft">
                 <Suspense fallback={<Skeleton className="h-48 w-full" />}>
                   {thread.channel === "linkedin" ? (
-                    <LinkedInReplyPanel conversationId={thread.conversationId} actor={actor} />
+                    <LinkedInReplyPanel conversationId={thread.conversationId} recordId={thread.recordId} actor={actor} />
                   ) : (
                     <ReplyPanel conversationId={thread.conversationId} actor={actor} queue={fromActions ? { recordId: thread.recordId, view: actionsView } : undefined} />
                   )}
                 </Suspense>
               </div>
 
-              {/* What happens to the person after this reply: the category, and finishing without a reply. */}
+              {/* What happens to the person after this reply: finishing without a reply. `?stop=1` opens Stop contacting. */}
               <Suspense fallback={<Skeleton className="h-20 w-full" />}>
-                <NextStep actor={actor} conversationId={thread.conversationId} channel={thread.channel} recordId={thread.recordId} queue={fromActions ? { view: actionsView } : undefined} />
+                <NextStep
+                  actor={actor}
+                  conversationId={thread.conversationId}
+                  channel={thread.channel}
+                  recordId={thread.recordId}
+                  queue={fromActions ? { view: actionsView } : undefined}
+                  stopOnLoad={query.stop === "1"}
+                />
               </Suspense>
 
               <Suspense fallback={null}>

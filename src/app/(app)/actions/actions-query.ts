@@ -1,5 +1,5 @@
 /** The query keys the Actions page reads besides `scope`. Everything else in a URL is ignored. */
-export const ACTIONS_FILTER_KEYS = ["category", "channel", "group", "subcategoryId", "campaignId", "dueAfter", "dueBefore", "errorsOnly"] as const;
+export const ACTIONS_FILTER_KEYS = ["category", "channel", "group", "replyTypeId", "campaignId", "dueAfter", "dueBefore", "errorsOnly"] as const;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
 

@@ -1,4 +1,5 @@
 import type { AfterReplyMode } from "../domain/after-reply";
+import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import type { InterruptFacts, InterruptReason, RunStatus, StepInput, StepRunStatus, StepType } from "../domain/sequences";
 
 /** Persistence for a campaign's After a reply flow. Every method carries the organization and filters by it. */
@@ -70,6 +71,21 @@ export interface AfterReplyStore {
    * progress make it throw a ConflictError with code `runs_in_progress`. Returns how many runs it ended.
    */
   save(input: FlowSave): Promise<{ stoppedRuns: number }>;
+  /**
+   * The active reply types of the organization's default reply type set whose Follow-ups rule is Stop, in no set
+   * order. The application sorts them.
+   */
+  stopReplyTypes(organizationId: string): Promise<StopReplyTypeRow[]>;
+}
+
+/** A reply type whose Follow-ups rule is Stop, as stored. */
+export interface StopReplyTypeRow {
+  id: string;
+  key: string;
+  name: string;
+  groupKey: string;
+  systemRole: SystemRole | null;
+  sortOrder: number;
 }
 
 // Runs ------------------------------------------------------------------------------------------------
@@ -81,10 +97,14 @@ export interface StartFacts {
   record: {
     id: string;
     personId: string;
-    subcategoryId: string | null;
-    categoryKey: string | null;
-    subcategoryKey: string | null;
-    subcategoryName: string | null;
+    replyTypeId: string | null;
+    groupKey: string | null;
+    replyTypeKey: string | null;
+    replyTypeName: string | null;
+    /** The Follow-ups rule of the record's reply type (`reply_types.follow_ups`), or null without a type. */
+    followUps: FollowUpsRule | null;
+    /** The Reply draft rule of the record's reply type (`reply_types.reply_draft`), or null without a type. False skips step 1. */
+    replyDraft: boolean | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     lastOutboundAt: Date | null;
@@ -92,6 +112,8 @@ export interface StartFacts {
     workflowState: string;
     /** The person has an email address. */
     hasEmail: boolean;
+    /** The latest reply asked to stop (`stopRequestedSql`), which starts no follow-ups. */
+    stopRequested: boolean;
   };
   doNotContact: boolean;
   /** The person's address is on the suppression list. */
@@ -119,7 +141,7 @@ export interface NewRun {
   conversationId: string;
   sequenceId: string;
   sequenceVersionId: string;
-  subcategoryId: string;
+  replyTypeId: string;
   source: RunSource;
   startPosition: number;
   triggerMessageId: string;

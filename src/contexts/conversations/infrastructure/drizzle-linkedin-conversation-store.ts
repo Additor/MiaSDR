@@ -3,7 +3,7 @@ import { canonicalProfileUrl } from "@/contexts/people/domain/linkedin-url";
 import { db } from "@/platform/db/client";
 import { conversations, messages, people, records } from "@/platform/db/schema";
 import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/linkedin-ports";
-import { defaultPipelineId, findOrCreateRecord, type Tx } from "./drizzle-conversation-store";
+import { defaultReplyTypeSetId, findOrCreateRecord, type Tx } from "./drizzle-conversation-store";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
 import { staleOpenDraftsTx } from "./stale-drafts-sql";
@@ -86,7 +86,7 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
           };
         }
         personCreated = person.created;
-        const recordId = await findOrCreateRecord(tx, input.organizationId, person.id, await defaultPipelineId(tx, input.organizationId));
+        const recordId = await findOrCreateRecord(tx, input.organizationId, person.id, await defaultReplyTypeSetId(tx, input.organizationId));
         await tx
           .insert(conversations)
           .values({

@@ -16,7 +16,7 @@ describeDb("lead delete qualification", () => {
     const tag = Math.random().toString(36).slice(2, 8);
     const [{ id }] = await sql`insert into organizations (name, slug) values ('D', ${"ld-" + tag}) returning id`;
     orgs.push(id);
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${id}, 'default', true) returning id`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${id}, 'default', true) returning id`;
     return { id: id as string, pipeline: pipeline as string, tag };
   }
   type Org = Awaited<ReturnType<typeof org>>;
@@ -96,7 +96,7 @@ describeDb("lead delete qualification", () => {
   it("says a lead with a CRM record cannot be deleted", async () => {
     const o = await org();
     const id = await person(o);
-    await sql`insert into records (organization_id, person_id, pipeline_id) values (${o.id}, ${id}, ${o.pipeline})`;
+    await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.id}, ${id}, ${o.pipeline})`;
     const { said, outcome } = await both(o, id);
     expect(said).toMatchObject({ canDelete: false, detail: management.BLOCK_MESSAGES.linked_records });
     expect(outcome.deleted).toBe(0);
@@ -106,7 +106,7 @@ describeDb("lead delete qualification", () => {
     const a = await org();
     const b = await org();
     const id = await person(b);
-    await sql`insert into records (organization_id, person_id, pipeline_id) values (${b.id}, ${id}, ${b.pipeline})`;
+    await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${b.id}, ${id}, ${b.pipeline})`;
     expect((await check.checkLeadDelete(deps, actor(a), id)).canDelete).toBe(true);
   });
 

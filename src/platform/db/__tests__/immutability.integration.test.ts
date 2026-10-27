@@ -8,7 +8,7 @@ import { seedWorld, uid, type World } from "../../../test-support/full-world";
  * Every trigger also gets a pass case for the update paths the application uses. Needs TEST_DATABASE_URL.
  */
 const IDENTITY = /conversations identity is immutable/;
-const KEYS = /subcategories keys are immutable/;
+const KEYS = /reply_types keys are immutable/;
 const KNOWLEDGE = /knowledge_document_versions is append-only/;
 const KNOWLEDGE_DELETE = /knowledge_document_versions is append-only: rows cannot be deleted directly/;
 const VERSION_IDENTITY = /sequence_versions identity is immutable/;
@@ -19,7 +19,7 @@ const STEPS_FROZEN = /sequence_steps of a published sequence version are frozen/
 /** Columns each trigger guards. The foreign key scan below fails if an ON DELETE/UPDATE SET NULL action could write one. */
 const GUARDED: Record<string, string[]> = {
   conversations: ["channel", "account_ref", "provider_thread_id", "provider_contact_id"],
-  subcategories: ["key", "category_key", "pipeline_id"],
+  reply_types: ["key", "group_key", "reply_type_set_id"],
   sequence_versions: ["organization_id", "sequence_id", "version", "status", "published_at"],
   people: ["lifecycle", "converted_at"],
   deal_stages: ["kind"],
@@ -72,21 +72,22 @@ describeDb("immutable identity and versions", () => {
     });
   });
 
-  describe("subcategories_keys_trg", () => {
-    it("raises when key, category_key or pipeline_id change", async () => {
+  describe("reply_types_keys_trg", () => {
+    it("raises when key, group_key, reply_type_set_id or system_role change", async () => {
       const w = await world();
-      await expect(sql`update subcategories set key = 'renamed' where id = ${w.subA}`).rejects.toThrow(KEYS);
-      await expect(sql`update subcategories set category_key = 'customer' where id = ${w.subA}`).rejects.toThrow(KEYS);
-      const [other] = await sql`insert into pipelines (organization_id, name) values (${w.org}, 'second') returning id`;
-      await expect(sql`update subcategories set pipeline_id = ${other.id} where id = ${w.subA}`).rejects.toThrow(KEYS);
+      await expect(sql`update reply_types set key = 'renamed' where id = ${w.subA}`).rejects.toThrow(KEYS);
+      await expect(sql`update reply_types set system_role = 'customer' where id = ${w.subA}`).rejects.toThrow(KEYS);
+      await expect(sql`update reply_types set group_key = 'customer' where id = ${w.subA}`).rejects.toThrow(KEYS);
+      const [other] = await sql`insert into reply_type_sets (organization_id, name) values (${w.org}, 'second') returning id`;
+      await expect(sql`update reply_types set reply_type_set_id = ${other.id} where id = ${w.subA}`).rejects.toThrow(KEYS);
     });
 
-    it("allows every field SubcategoryPatch writes", async () => {
+    it("allows every field ReplyTypePatch writes", async () => {
       const w = await world();
       await sql`
-        update subcategories set name = 'Renamed', description = 'd', classification_guidance = 'g', review_required = true, stage_rank = 2, sort_order = 5, active = false
+        update reply_types set name = 'Renamed', description = 'd', classification_guidance = 'g', check_mode = 'skip', reply_draft = false, follow_ups = 'stop', sort_order = 5, active = false
         where id = ${w.subA}`;
-      await sql`update subcategories set key = key, category_key = category_key where id = ${w.subA}`;
+      await sql`update reply_types set key = key, group_key = group_key where id = ${w.subA}`;
     });
   });
 
@@ -211,7 +212,7 @@ describeDb("immutable identity and versions", () => {
     const w = await world();
     await sequenceWithPublished(w);
     await sql`delete from organizations where id = ${w.org}`;
-    for (const table of ["conversations", "subcategories", "knowledge_document_versions", "sequence_versions", "sequence_steps"]) {
+    for (const table of ["conversations", "reply_types", "knowledge_document_versions", "sequence_versions", "sequence_steps"]) {
       expect((await sql.unsafe(`select 1 from ${table} where organization_id = $1`, [w.org])).length, table).toBe(0);
     }
   });

@@ -32,8 +32,8 @@ describeDb("final status guard", () => {
     ({ organizationId: org, userId: user } = owner);
     [{ id: mailbox }] = await sql`insert into mailboxes (organization_id, email_address) values (${org}, ${"mb-" + tag + "@fs.test"}) returning id`;
     const [{ id: person }] = await sql`insert into people (organization_id, email) values (${org}, ${tag + "@lead.test"}) returning id`;
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p', true) returning id`;
-    [{ id: record }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${org}, ${person}, ${pipeline}) returning id`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`;
+    [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
     [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, 'email', 'me@fs.test') returning id`;
   });
 

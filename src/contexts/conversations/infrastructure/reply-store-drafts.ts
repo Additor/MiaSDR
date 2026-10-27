@@ -1,10 +1,9 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { classifications, contactPolicies, conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, subcategories, suppressionList } from "@/platform/db/schema";
+import { contactPolicies, conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes, suppressionList } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { PanelData, ReplyStore } from "../application/reply-ports";
 import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
-import type { HoldReason } from "../domain/classification-policy";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
@@ -20,13 +19,9 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         accountRef: conversations.accountRef,
         status: conversations.status,
         recordId: records.id,
-        pipelineId: records.pipelineId,
+        replyTypeSetId: records.replyTypeSetId,
         state: records.workflowState,
         version: records.contextVersion,
-        latest: records.latestInboundMessageId,
-        categoryKey: records.categoryKey,
-        subcategoryId: records.subcategoryId,
-        categorySource: records.categorySource,
         lastIn: records.lastInboundAt,
         lastOut: records.lastOutboundAt,
         personId: people.id,
@@ -39,38 +34,10 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
     if (!head) return null;
 
     const taxonomyRows = await db
-      .select({ id: subcategories.id, key: subcategories.key, name: subcategories.name, categoryKey: subcategories.categoryKey })
-      .from(subcategories)
-      .where(and(eq(subcategories.pipelineId, head.pipelineId), eq(subcategories.active, true)))
-      .orderBy(subcategories.sortOrder);
-    const nameOf = (id: string | null) => taxonomyRows.find((t) => t.id === id);
-    const current = nameOf(head.subcategoryId);
-
-    let classification: PanelData["classification"] = null;
-    if (head.latest) {
-      const [c] = await db
-        .select()
-        .from(classifications)
-        .where(and(eq(classifications.recordId, head.recordId), eq(classifications.messageId, head.latest)))
-        .orderBy(sql`(${classifications.status} = 'stale')`, desc(classifications.createdAt))
-        .limit(1);
-      if (c) {
-        const proposed = nameOf(c.proposedSubcategoryId);
-        const response = (c.response ?? {}) as { holdReason?: HoldReason | null; stopRequested?: boolean };
-        classification = {
-          id: c.id,
-          status: c.status,
-          proposed: proposed ? { subcategoryKey: proposed.key, name: proposed.name, categoryKey: proposed.categoryKey } : null,
-          confidence: c.confidence === null ? null : Number(c.confidence),
-          reasoning: c.reasoning,
-          holdReason: response.holdReason ?? null,
-          stopRequested: response.stopRequested === true,
-          error: c.error,
-          current: c.expectedContextVersion === head.version && c.status !== "stale",
-          acknowledged: c.acknowledgedAt !== null,
-        };
-      }
-    }
+      .select({ id: replyTypes.id, key: replyTypes.key, name: replyTypes.name, groupKey: replyTypes.groupKey })
+      .from(replyTypes)
+      .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.active, true)))
+      .orderBy(replyTypes.sortOrder);
 
     const [draftRow] = await db
       .select()
@@ -107,10 +74,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       contextVersion: head.version,
       recipient: head.email,
       lastSubject: newest?.subject ?? null,
-      category: head.categoryKey && head.categorySource ? { categoryKey: head.categoryKey, subcategoryKey: current?.key ?? null, name: current?.name ?? head.categoryKey, source: head.categorySource } : null,
-      classification,
       draft,
-      taxonomy: taxonomyRows.map(({ key, name, categoryKey }) => ({ key, name, categoryKey })),
+      taxonomy: taxonomyRows.map(({ key, name, groupKey }) => ({ key, name, groupKey })),
       suppressed: Boolean(suppressed),
       doNotContact: dnc?.d === true,
       mailboxIssue: !mailbox ? "No mailbox is connected for this thread." : mailbox.status !== "connected" ? `The mailbox ${mailbox.emailAddress} is ${mailbox.status}.` : head.status !== "active" ? "This conversation is closed." : null,

@@ -42,7 +42,7 @@ interface TickFailure {
   lastSeenAt: string;
 }
 
-const KIND_LABEL = { classification: "Classification", initial_draft: "Draft" } as const;
+const KIND_LABEL = { classification: "Reply type pick", initial_draft: "Draft" } as const;
 const WINDOWS = [
   { label: "the last hour", ms: 3_600_000 },
   { label: "the last 24 hours", ms: 86_400_000 },
@@ -53,7 +53,7 @@ const WINDOWS = [
 const WINDOW_ITEMS = WINDOWS.map((w, i) => ({ value: String(i), label: w.label }));
 
 function nextStep(job: FailedAiJob, timeZone: string): string {
-  if (job.failureKind === "permanent") return "Needs a fix first (key, reply categories or content). Not retried automatically.";
+  if (job.failureKind === "permanent") return "Needs a fix first (key, reply types or content). Not retried automatically.";
   if (job.failureKind === "shape") return "The AI answered in the wrong form. Not retried automatically.";
   if (!job.nextAutoRequeueAt) return `Automatic retries used up (${job.autoRequeues} of ${job.requeueCeiling}).`;
   return `Automatic retry after ${formatDateTime(job.nextAutoRequeueAt, timeZone)} (${job.autoRequeues} of ${job.requeueCeiling} used).`;
@@ -82,7 +82,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
         title="Failed AI jobs"
         description={
           failed.total === 0
-            ? "No failed classification or draft jobs."
+            ? "No failed reply type or draft jobs."
             : `${failed.total} failed. Provider outages and timeouts retry automatically with growing waits. Requeueing by hand gives a job fresh attempts and is recorded with your name.`
         }
       >
@@ -110,7 +110,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
               open={confirmingBulk}
               onOpenChange={setConfirmingBulk}
               title={`Requeue jobs that failed in ${WINDOWS[windowIndex].label}?`}
-              description="Each classification and draft job that failed in that time gets fresh attempts and runs again on the next ticks, which calls the AI provider again. The requeue is recorded with your name."
+              description="Each reply type and draft job that failed in that time gets fresh attempts and runs again on the next ticks, which calls the AI provider again. The requeue is recorded with your name."
               confirmLabel="Requeue failed jobs"
               onConfirm={() => void requeue("since", "/api/jobs/ai/requeue", { since: new Date(Date.now() - WINDOWS[windowIndex].ms).toISOString() })}
             />

@@ -66,17 +66,23 @@ The flag lasts for that transaction. `TRUNCATE` is not guarded.
 Triggers freeze the rows that other rows point at by value or by version. Each rule is a trigger that raises SQLSTATE 23000:
 
 - `conversations`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status`, `private_campaign_id` and `updated_at` stay writable.
-- `subcategories`: `key`, `category_key` and `pipeline_id` cannot change. Name, description, guidance, `active` and the order fields stay writable.
+- `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. Name, description, guidance, the type rules (`check_mode`, `reply_draft`, `follow_ups`), `active` and `sort_order` stay writable.
 - `knowledge_document_versions`: append-only. An edit inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
 - `sequence_versions` and `sequence_steps`: `organization_id`, `sequence_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a sequence, which cascades.
 
-To change a frozen value, insert a new row (a new knowledge version, a new sequence draft). Deleting a row and recreating it works for a subcategory only while nothing references it. It does not work for a conversation: its messages are append-only and block the delete, so a wrong `channel` or thread id stays on that conversation and new mail goes to a new one. A one-off repair needs a migration that drops and re-adds the trigger. No setting bypasses the update triggers.
+To change a frozen value, insert a new row (a new knowledge version, a new sequence draft). Deleting a row and recreating it works for a reply type only while nothing references it. It does not work for a conversation: its messages are append-only and block the delete, so a wrong `channel` or thread id stays on that conversation and new mail goes to a new one. A one-off repair needs a migration that drops and re-adds the trigger. No setting bypasses the update triggers.
 
 ## After a reply storage
 
-The campaign setting After a reply lives in the sequence tables. `sequences.campaign_id` is nullable, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`), a partial unique index on `(organization_id, name) WHERE campaign_id IS NULL` and a partial unique index on `(campaign_id) WHERE campaign_id IS NOT NULL`. A campaign is in `ai_drafts` mode when it owns a sequence with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
+The campaign setting Follow-ups after a reply (After a reply in code) lives in the sequence tables. `sequences.campaign_id` is nullable, with a composite foreign key to `campaigns` (`ON DELETE CASCADE`), a partial unique index on `(organization_id, name) WHERE campaign_id IS NULL` and a partial unique index on `(campaign_id) WHERE campaign_id IS NOT NULL`. A campaign is in `ai_drafts` mode when it owns a sequence with status `active` and a published version. It is in `handoff` mode with no row, or with status `archived`. The triggers under Immutable identity and versions keep published versions frozen.
 
 `sequences.after_reply_enabled_at` holds the moment the setting last turned on. Only the flow save writes it (a new flow, or a switch from archived to active). The engine starts runs only for replies that arrived no earlier than a margin before it, so other writes to the row (`updated_at`) do not move that cut-off.
+
+## Reply type rules
+
+`reply_types.check_mode` (`before`, `after` or `skip`, default `after`), `reply_draft` (boolean, default true) and `follow_ups` (`continue` or `stop`, default `continue`) hold the type rules, and `system_role` (`stop_request`, `customer` or null) marks the stop request and customer types. `reply_types_rules_ck` and `reply_types_system_role_ck` hold the allowed values, and `reply_types_keys_trg` makes `system_role` immutable. Checks hold the fixed parts. `reply_types_stop_request_ck` keeps the stop request type checked before, without a draft, with follow-ups stopped, and active. `reply_types_customer_ck` keeps the customer type in the customer group. `reply_types_set_system_role_uq` allows one type per role in a set.
+
+`reply_type_picks.rules` is a JSON object with the rules the pick used (`checkMode`, `replyDraft`, `followUps`), or null for a pick that names no type. Migration 0003 filled it for existing picks from the applied type, else the proposed one.
 
 ## Leads and the CRM
 
@@ -106,8 +112,8 @@ These columns and tables back add, merge and delete ("Contacts and Companies CRU
 
 Five triggers hold rules a foreign key cannot express. Each raises SQLSTATE 23000:
 
-- `classifications.message_id` is an inbound message of the classification's own record.
-- `classifications.previous_`, `proposed_` and `applied_subcategory_id` belong to the record's pipeline and to the matching `*_category_key`. A null key accepts any category.
+- `reply_type_picks.message_id` is an inbound message of the pick's own record.
+- `reply_type_picks.previous_`, `proposed_` and `applied_reply_type_id` belong to the record's reply type set and to the matching `*_group_key`. A null key accepts any group.
 - `drafts.channel` equals the channel of the draft's conversation.
 - `drafts.reply_for_message_id` is an inbound message of the draft's own record, in the same organization. It may live in another conversation of that record, because the reply target is the record's latest inbound message. The update trigger also checks when `record_id` changes.
 - `send_attempts.account_ref` equals the account of the draft's conversation, compared with `lower()` on both sides. A blank value goes to `send_attempts_refs_ck`.
@@ -139,7 +145,7 @@ Each context declares its tables in `src/contexts/<context>/infrastructure/schem
 - tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`
 - people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`
 - outreach: `mailboxes`, `suppression_list`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
-- conversations: `pipelines`, `subcategories`, `pipeline_settings`, `records`, `conversations`, `messages`, `contact_policies`, `identity_exceptions`, `lead_ccs`, `events`, `classifications`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `draft_knowledge_citations`, `ai_jobs`, `notes`, `tasks`
+- conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `records`, `conversations`, `messages`, `contact_policies`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `draft_knowledge_citations`, `ai_jobs`, `notes`, `tasks`
 - conversations, sequences (`sequences-schema.ts`): `sequences`, `sequence_versions`, `sequence_steps`, `sequence_runs`, `sequence_step_runs`
 - deals: `deal_stages`, `deals`
 - grid: `grid_folders`, `grid_workbooks`, `grid_tables`, `grid_user_views`, `grid_columns`, `grid_rows`, `grid_cell_runs`, `grid_jobs`, `grid_providers`, `grid_provider_credentials`

@@ -40,8 +40,8 @@ export const visibleDraftText = (alias: string): string =>
 
 export const visibleDraftSql = (alias: string): SQL => sql.raw(visibleDraftText(alias));
 
-/** A classification of a message in a private conversation is not shown. `alias` is the alias of `classifications`. */
-export const visibleClassificationText = (alias: string): string =>
+/** A classification of a message in a private conversation is not shown. `alias` is the alias of `reply_type_picks`. */
+export const visibleReplyTypePickText = (alias: string): string =>
   `exists (select 1 from messages km join conversations kc on kc.id = km.conversation_id where km.id = ${alias}.message_id and ${publicConversationText("kc")})`;
 
-export const visibleClassificationSql = (alias: string): SQL => sql.raw(visibleClassificationText(alias));
+export const visibleReplyTypePickSql = (alias: string): SQL => sql.raw(visibleReplyTypePickText(alias));

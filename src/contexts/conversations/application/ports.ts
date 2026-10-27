@@ -79,8 +79,8 @@ export interface InboxFilter {
   campaignIds?: string[];
   /** Conversations on any of these mailboxes. */
   mailboxIds?: string[];
-  subcategoryKeys?: string[];
-  categoryKeys?: string[];
+  replyTypeKeys?: string[];
+  groupKeys?: string[];
   /** Latest message at or after this instant. */
   from?: Date | null;
   /** Latest message before this instant. */
@@ -106,7 +106,7 @@ export interface ScheduledRow {
 export interface InboxFilterOptions {
   mailboxes: Array<{ id: string; label: string }>;
   campaigns: Array<{ id: string; label: string }>;
-  subcategories: Array<{ key: string; label: string }>;
+  replyTypes: Array<{ key: string; label: string }>;
   leads: Array<{ id: string; label: string }>;
 }
 
@@ -130,8 +130,8 @@ export interface InboxRow {
   hasImportant: boolean;
   /** The latest message is machine mail (header flags, no-reply or DMARC sender, delivery-failure subject). */
   automated: boolean;
-  categoryKey: string | null;
-  subcategoryName: string | null;
+  groupKey: string | null;
+  replyTypeName: string | null;
 }
 
 export interface ThreadMessage {
@@ -162,10 +162,6 @@ export interface ThreadDetail {
   /** What to show for the receiving account: the mailbox address, or the LinkedIn account's name. */
   accountLabel: string;
   workflowState: string;
-  /** The record's version. A reclassification bumps it, which the thread page watches to refresh the draft. */
-  contextVersion: number;
-  /** Status of the newest draft that is neither discarded nor stale, or null. */
-  latestDraftStatus: string | null;
   person: { id: string; name: string | null; email: string | null; linkedinUrl: string | null; title: string | null; company: string | null };
   messages: ThreadMessage[];
   unreadCount: number;

@@ -1,13 +1,15 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import type { ClaimedStep, InterruptCandidate, SequenceEngineStore } from "../application/sequence-ports";
-import { MAX_DRAFT_ATTEMPTS, NO_START_KEYS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
+import { MAX_DRAFT_ATTEMPTS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
 import { NEW_REPLY_MARGIN_MINUTES } from "../domain/after-reply";
+import type { FollowUpsRule } from "../../domain/reply-type";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, ts, zoneOfTx } from "./sequence-run-tx";
 import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
 import { knowledgeFor } from "../../infrastructure/thread-context";
+import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 
@@ -18,11 +20,12 @@ interface FactsRow {
   organization_id: string;
   record_id: string;
   trigger_message_id: string;
-  run_subcategory_id: string;
+  run_reply_type_id: string;
   latest_inbound_message_id: string | null;
-  subcategory_id: string | null;
-  category_key: string | null;
+  reply_type_id: string | null;
+  group_key: string | null;
   sub_key: string | null;
+  follow_ups: FollowUpsRule | null;
   workflow_state: string;
   dnc: boolean;
   suppression: InterruptFacts["suppression"];
@@ -35,8 +38,8 @@ const toCandidate = (r: FactsRow): InterruptCandidate => ({
   organizationId: r.organization_id,
   recordId: r.record_id,
   facts: {
-    run: { triggerMessageId: r.trigger_message_id, subcategoryId: r.run_subcategory_id },
-    record: { latestInboundMessageId: r.latest_inbound_message_id, subcategoryId: r.subcategory_id, categoryKey: r.category_key, subcategoryKey: r.sub_key, workflowState: r.workflow_state },
+    run: { triggerMessageId: r.trigger_message_id, replyTypeId: r.run_reply_type_id },
+    record: { latestInboundMessageId: r.latest_inbound_message_id, replyTypeId: r.reply_type_id, groupKey: r.group_key, replyTypeKey: r.sub_key, followUps: r.follow_ups, workflowState: r.workflow_state },
     doNotContact: r.dnc,
     suppression: r.suppression,
     contact: r.contact,
@@ -46,8 +49,8 @@ const toCandidate = (r: FactsRow): InterruptCandidate => ({
 
 /** The facts that decide whether a run must stop, for the runs matching `where`. Every join stays inside the run's organization. */
 const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
-  select r.id as run_id, r.organization_id, r.record_id, r.trigger_message_id, r.subcategory_id as run_subcategory_id,
-         rec.latest_inbound_message_id, rec.subcategory_id, rec.category_key, s.key as sub_key, rec.workflow_state,
+  select r.id as run_id, r.organization_id, r.record_id, r.trigger_message_id, r.reply_type_id as run_reply_type_id,
+         rec.latest_inbound_message_id, rec.reply_type_id, rec.group_key, s.key as sub_key, s.follow_ups, rec.workflow_state,
          coalesce((select cp.do_not_contact from contact_policies cp where cp.person_id = rec.person_id and cp.organization_id = r.organization_id), false) as dnc,
          (select sl.reason from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)
            order by case sl.reason when 'complaint' then 0 when 'unsubscribed' then 1 when 'bounced' then 2 else 3 end limit 1) as suppression,
@@ -57,17 +60,20 @@ const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
   join sequences fl on fl.id = r.sequence_id and fl.organization_id = r.organization_id
   join records rec on rec.id = r.record_id and rec.organization_id = r.organization_id
   join people p on p.id = rec.person_id and p.organization_id = r.organization_id
-  left join subcategories s on s.id = rec.subcategory_id
+  left join reply_types s on s.id = rec.reply_type_id
   where ${where} ${tail}`;
 
 export const drizzleSequenceEngine: SequenceEngineStore = {
-  // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned on.
+  // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned
+  // on, the record's reply type keeps follow-ups going (`reply_types.follow_ups`, the rule `startBlockedReason` reads),
+  // and the reply did not ask to stop.
+  // A run that skips step 1 (a person answered, or the type is set to Don't write a reply draft) needs a step 2.
   async startCandidates(limit) {
     return rowsOf<{ organization_id: string; id: string }>(
       await db.execute(sql`
         select r.organization_id, r.id
         from records r
-        join subcategories s on s.id = r.subcategory_id
+        join reply_types s on s.id = r.reply_type_id
         join people p on p.id = r.person_id
         join messages lm on lm.id = r.latest_inbound_message_id
         join conversations c on c.id = lm.conversation_id and c.channel = 'email'
@@ -82,15 +88,15 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and ${startableCampaignSql({ channel: sql`own.channel`, type: sql`own.type`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}
           and lm.sent_at >= pick.enabled_at - make_interval(mins => ${NEW_REPLY_MARGIN_MINUTES})
           and r.workflow_state not in ('closed', 'paused')
-          and s.category_key <> 'not_interested'
-          and s.key not in ${NO_START_KEYS}
+          and s.follow_ups = 'continue'
+          and not ${stopRequestedSql(sql`r.latest_inbound_message_id`)}
           and p.email is not null
           and p.lifecycle <> 'contact'
-          and exists (select 1 from classifications cl where cl.message_id = r.latest_inbound_message_id and cl.expected_context_version = r.context_version and cl.status in ('auto_applied', 'accepted', 'overridden'))
+          and exists (select 1 from reply_type_picks cl where cl.message_id = r.latest_inbound_message_id and cl.expected_context_version = r.context_version and cl.status in ('auto_applied', 'accepted', 'overridden'))
           and not exists (select 1 from sequence_runs sr where sr.record_id = r.id and (sr.trigger_message_id = r.latest_inbound_message_id or sr.status in ('active', 'paused')))
           and not exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.do_not_contact)
           and not exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email))
-          and (not (r.last_outbound_at is not null and r.last_inbound_at is not null and r.last_outbound_at >= r.last_inbound_at)
+          and (not ((r.last_outbound_at is not null and r.last_inbound_at is not null and r.last_outbound_at >= r.last_inbound_at) or not s.reply_draft)
                or (select count(*) from sequence_steps st where st.sequence_version_id = pick.version_id) >= 2)
         order by r.last_inbound_at desc nulls last
         limit ${limit}`),

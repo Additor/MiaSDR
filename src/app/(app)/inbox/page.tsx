@@ -137,10 +137,10 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
       {params.mailboxIds.map((id) => (
         <input key={id} type="hidden" name="mailbox" value={id} />
       ))}
-      {params.subcategoryKeys.map((k) => (
+      {params.replyTypeKeys.map((k) => (
         <input key={k} type="hidden" name="subcategory" value={k} />
       ))}
-      {params.categoryKeys.map((k) => (
+      {params.groupKeys.map((k) => (
         <input key={k} type="hidden" name="category" value={k} />
       ))}
       {params.dateMode !== "all" && <input type="hidden" name="range" value={params.dateMode} />}

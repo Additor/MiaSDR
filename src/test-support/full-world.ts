@@ -57,17 +57,17 @@ export async function seedWorld(sql: Sql): Promise<World> {
   const org = await one(sql`insert into organizations (name, slug) values ('T8', ${"t8-" + tag}) returning id`);
   const user = await one(sql`insert into users (name, email) values ('U', ${tag + "@t8.test"}) returning id`);
   const person = await one(sql`insert into people (organization_id, email, full_name) values (${org}, ${tag + "@lead.test"}, 'Lead') returning id`);
-  const pipeline = await one(sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
-  const subA = await one(sql`insert into subcategories (organization_id, pipeline_id, category_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
-  const subB = await one(sql`insert into subcategories (organization_id, pipeline_id, category_key, key, name) values (${org}, ${pipeline}, 'interested', 'b', 'B') returning id`);
-  const record = await one(sql`insert into records (organization_id, person_id, pipeline_id) values (${org}, ${person}, ${pipeline}) returning id`);
+  const pipeline = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
+  const subA = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
+  const subB = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'b', 'B') returning id`);
+  const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
   const conversation = await one(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${org}, ${record}, 'email', ${"me@" + tag + ".test"}) returning id`);
   const message = await one(sql`
     insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
     values (${org}, ${conversation}, 'email', ${"me@" + tag + ".test"}, 'inbound', ${"m-" + tag}, 'hello', now()) returning id`);
   await sql`update records set latest_inbound_message_id = ${message} where id = ${record}`;
   const classification = await one(sql`
-    insert into classifications (organization_id, record_id, message_id, expected_context_version, previous_subcategory_id, proposed_subcategory_id, applied_subcategory_id, confidence)
+    insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
     values (${org}, ${record}, ${message}, 0, ${subA}, ${subA}, ${subA}, 0.9) returning id`);
   const draft = await one(sql`
     insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)

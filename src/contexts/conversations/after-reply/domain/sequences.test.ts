@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   assertConversationBelongsToRecord,
   assertPublishable,
-  NO_START_KEYS,
   assertRunTransition,
   assertStepsBelongToVersion,
   assertStepTransition,
   dueAfter,
   interruptReason,
-  isTerminalSubcategory,
+  followUpsContinue,
   parseSteps,
   planDueDates,
   renderTemplate,
@@ -71,8 +70,8 @@ describe("state machines", () => {
 
 describe("interruptReason", () => {
   const facts = (over: { run?: Partial<InterruptFacts["run"]>; record?: Partial<InterruptFacts["record"]>; doNotContact?: boolean; contact?: boolean; suppression?: InterruptFacts["suppression"]; flowActive?: boolean } = {}): InterruptFacts => ({
-    run: { triggerMessageId: "m1", subcategoryId: "s1", ...over.run },
-    record: { latestInboundMessageId: "m1", subcategoryId: "s1", categoryKey: "interested", subcategoryKey: "demo_request", workflowState: "waiting", ...over.record },
+    run: { triggerMessageId: "m1", replyTypeId: "s1", ...over.run },
+    record: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", followUps: "continue", workflowState: "waiting", ...over.record },
     doNotContact: over.doNotContact ?? false,
     contact: over.contact ?? false,
     suppression: over.suppression ?? null,
@@ -98,25 +97,25 @@ describe("interruptReason", () => {
     expect(interruptReason(facts({ flowActive: false, record: { latestInboundMessageId: "m2" } }))).toBe("reply");
   });
   it("stops when the record closes", () => expect(interruptReason(facts({ record: { workflowState: "closed" } }))).toBe("record_closed"));
-  it("stops on a move to a terminal subcategory, not on a start there", () => {
-    const moved = facts({ record: { subcategoryId: "s2", categoryKey: "not_interested", subcategoryKey: "not_required_right_now" } });
+  it("stops on a move to a type set to stop follow-ups, not on a start there", () => {
+    const moved = facts({ record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now", followUps: "stop" } });
     expect(interruptReason(moved)).toBe("terminal_stage");
-    const startedThere = facts({ run: { subcategoryId: "s2" }, record: { subcategoryId: "s2", categoryKey: "not_interested", subcategoryKey: "not_required_right_now" } });
+    const startedThere = facts({ run: { replyTypeId: "s2" }, record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now", followUps: "stop" } });
     expect(interruptReason(startedThere)).toBeNull();
-    expect(interruptReason(facts({ record: { subcategoryId: "s3", subcategoryKey: "meeting_requested" } }))).toBeNull();
+    expect(interruptReason(facts({ record: { replyTypeId: "s3", replyTypeKey: "meeting_requested" } }))).toBeNull();
   });
-  it("names terminal subcategories", () => {
-    expect(isTerminalSubcategory("not_interested", "already_using_a_tool")).toBe(true);
-    expect(isTerminalSubcategory("other", "left_company")).toBe(true);
-    expect(isTerminalSubcategory("customer", "customer")).toBe(true);
-    expect(isTerminalSubcategory("interested", "demo_request")).toBe(false);
+  it("reads the type's Follow-ups rule, not its group or key", () => {
+    expect(interruptReason(facts({ record: { replyTypeId: "s2", groupKey: "not_interested", replyTypeKey: "not_required_right_now", followUps: "continue" } }))).toBeNull();
+    expect(interruptReason(facts({ record: { replyTypeId: "s2", groupKey: "other", replyTypeKey: "out_of_office", followUps: "stop" } }))).toBe("terminal_stage");
+    expect(interruptReason(facts({ record: { replyTypeId: "s2", groupKey: "interested", replyTypeKey: "pricing_question", followUps: "stop" } }))).toBe("terminal_stage");
   });
 });
 
-describe("no-start keys", () => {
-  it("lists the terminal subcategories and Out of office", () => {
-    expect([...NO_START_KEYS].sort()).toEqual(["connected_to_different_contact", "customer", "do_not_contact", "left_company", "out_of_office", "wrong_contact"]);
-    for (const key of NO_START_KEYS) if (key !== "out_of_office") expect(isTerminalSubcategory(null, key)).toBe(true);
+describe("followUpsContinue", () => {
+  it("lets follow-ups run only for a type set to continue", () => {
+    expect(followUpsContinue("continue")).toBe(true);
+    expect(followUpsContinue("stop")).toBe(false);
+    expect(followUpsContinue(null)).toBe(false);
   });
 });
 
@@ -127,6 +126,11 @@ describe("start position", () => {
     expect(startPosition({ stepCount: 1, answered: true })).toBeNull();
     expect(startPosition({ stepCount: 0, answered: false })).toBeNull();
     expect(startPosition({ stepCount: 2, answered: false, skipReply: true })).toBe(2);
+    // A reply type set to Don't write a reply draft skips step 1 ("Reply to their answer"); later steps still run.
+    expect(startPosition({ stepCount: 3, answered: false, replyDraft: false })).toBe(2);
+    expect(startPosition({ stepCount: 1, answered: false, replyDraft: false })).toBeNull();
+    expect(startPosition({ stepCount: 3, answered: false, replyDraft: true })).toBe(1);
+    expect(startPosition({ stepCount: 3, answered: false, replyDraft: null })).toBe(1);
   });
 });
 

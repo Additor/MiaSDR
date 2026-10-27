@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundEmailInput } from "../../../application/ports";
-import { DEFAULT_SUBCATEGORIES } from "../../../domain/default-pipeline";
+import { DEFAULT_REPLY_TYPES } from "../../../domain/default-reply-types";
 import { ValidationError } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
@@ -166,9 +166,9 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
     it("seeds a description and guidance on all 17 subcategories of a new organization", async () => {
       const f = await fixture();
       await receive(f);
-      const rows = await sql`select key, description, classification_guidance from subcategories where organization_id = ${f.org}`;
-      expect(rows).toHaveLength(DEFAULT_SUBCATEGORIES.length);
-      for (const s of DEFAULT_SUBCATEGORIES) {
+      const rows = await sql`select key, description, classification_guidance from reply_types where organization_id = ${f.org}`;
+      expect(rows).toHaveLength(DEFAULT_REPLY_TYPES.length);
+      for (const s of DEFAULT_REPLY_TYPES) {
         const row = rows.find((r) => r.key === s.key);
         expect(row, s.key).toMatchObject({ description: s.description, classification_guidance: s.classificationGuidance });
       }
@@ -248,13 +248,13 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
       const statusOf = async (kind: string, from: string) =>
         (await sql`
           select j.status, j.payload from ai_jobs j
-          join messages m on m.id = case when j.kind = 'classification' then j.entity_id else (select message_id from classifications where id = j.entity_id) end
+          join messages m on m.id = case when j.kind = 'classification' then j.entity_id else (select message_id from reply_type_picks where id = j.entity_id) end
           where j.organization_id = ${f.org} and j.kind = ${kind} and m.from_address = ${from}`)[0];
       expect(await statusOf("classification", c)).toMatchObject({ status: "skipped", payload: { skipReason: "daily_cap" } });
       // A person corrects B's category: the new draft job carries the flag and runs although the cap is used up.
       const [conv] = await sql`select c.id, r.context_version from conversations c join records r on r.id = c.record_id join messages m on m.conversation_id = c.id where c.organization_id = ${f.org} and m.from_address = ${b}`;
       const replies = (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore;
-      const corrected = await replies.applyHumanClassification({ organizationId: f.org, conversationId: conv.id, subcategoryKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: userId, wantsDraft: () => true });
+      const corrected = await replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: userId });
       expect(corrected.draftQueued).toBe(true);
       expect((await statusOf("initial_draft", b)).payload).toMatchObject({ humanInitiated: true });
       const draftsBefore = ai.draftCalls;

@@ -121,7 +121,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 - Roles: `owner`, `admin`, `member` (`tenancy/domain/member-rules.ts`). Owners grant any role, admins grant admin and member, and members manage nobody. An owner alone changes or removes an owner, an organization keeps at least one owner, and nobody removes themself.
 - Role changes and removals run in one transaction that locks the organization's member rows `FOR UPDATE`, so two requests cannot both pass the last-owner check. A removal clears `active_organization_id` on the removed user's sessions for that organization.
 - Any member can list members. Listing, sending and revoking invitations needs an owner or admin.
-- Every organization setting is an owner or admin write: reply handling, reply subcategories, AI instructions, knowledge documents, pipeline stages, custom fields, sending rules, mailboxes, LinkedIn and integrations. The service refuses a member, and the route checks the role before it reads the body, so a member gets 403 and never a 400. Members read the same Settings pages without the controls.
+- Every organization setting is an owner or admin write: reply handling, reply types, AI instructions, knowledge documents, pipeline stages, custom fields, sending rules, mailboxes, LinkedIn and integrations. The service refuses a member, and the route checks the role before it reads the body, so a member gets 403 and never a 400. Members read the same Settings pages without the controls.
 
 ### Settings structure
 
@@ -229,7 +229,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 | `lastFrom`, `lastTo` | inclusive UTC dates on the last contact |
 | `from`, `to` | inclusive UTC created dates |
 | `source` | the exact value or the part before the first colon |
-| `category` | reply category of any of the person's reply records |
+| `category` | reply type group of any of the person's reply records (Reply group) |
 
 - Sort keys: name, company, title, email (lower-cased, nulls last) and created; the default is created descending, and the id breaks ties so pages never skip or repeat a row. Page sizes 25, 50 (default), 100 and 200 (`?size=`).
 - "Select all matching" reads up to 5,000 ids. Bulk delete takes up to 5,000 ids, or a filter plus the count the person confirmed: an empty filter answers 422 and a changed count 409.
@@ -316,7 +316,7 @@ The From name and body are attacker controlled, so classification alone never su
 1. This mailbox sent to the failed recipient: a `sends` row of the mailbox, status `sending`, `sent` or `unknown`, claimed within 90 days.
 2. The notice ties to that send (`X-MiaSDR-Send-Id`, or `In-Reply-To`/`References` equal to the send's ids), or the sender is an authenticated delivery system. That means local part `mailer-daemon` or `postmaster` on a Google domain, our mailbox's domain or the recipient's domain, and the first `Authentication-Results` header (authserv-id on google.com) shows `dmarc=pass`, aligned `dkim=pass` or aligned `spf=pass`. Any non-pass DMARC rejects.
 
-A failed check stores the message as an auto-reply, sets `possibleBounce: true` in `raw` when we mailed that address, and counts `unverified_bounce` in the job detail. A verified bounce adds the address to `suppression_list` (reason `bounced`), sets the person's pending and active email enrollments to `bounced`, and ends their After a reply runs.
+A failed check stores the message as an auto-reply, sets `possibleBounce: true` in `raw` when we mailed that address, and counts `unverified_bounce` in the job detail. A verified bounce adds the address to `suppression_list` (reason `bounced`), sets the person's pending and active email enrollments to `bounced`, and ends their follow-up runs.
 
 ### Unsubscribe and suppression
 
@@ -445,22 +445,23 @@ Code: `outreach/application/campaign-management.ts` (email), `linkedin-campaigns
 
 The campaign's Sequence is its outbound steps in `campaigns.steps`. Merge fields come from `buildVariables`: company raw, person raw, standard fields and aliases, custom columns, then per-enrollment `merge_fields`. An empty merge field takes one adjacent space with it. Preview and send read the same variable columns (`enrollment-variables.ts`) and report unresolved tokens (`empty` or `unknown`).
 
-### After a reply
+### Follow-ups after a reply
 
-A campaign setting with two modes, stored as state on a campaign-owned row in `sequences` (`campaign_id`, one per campaign):
+A campaign setting with two modes, stored as state on a campaign-owned row in `sequences` (`campaign_id`, one per campaign). The code calls it After a reply (`after-reply`).
 
 | Mode | Stored as |
 |---|---|
-| Stop and hand the conversation to the Inbox (default) | no row, or status `archived` |
-| AI drafts follow-ups for my approval (`ai_drafts`) | status `active` with a published version |
+| Off, hand to the Inbox (`handoff`, default) | no row, or status `archived` |
+| AI drafts, you approve (`ai_drafts`) | status `active` with a published version |
 
-- **Flow.** Step 1, "Reply to their answer", has delay 0 and adopts the reply draft the classification already queued. Later steps have a delay in days, a Goal, optional starting text and knowledge tags. The job (`conversations.sequences`) only writes drafts; `approveAndSendDraft` sends each one after a person approves it.
+- **Flow.** Step 1, "Reply to their answer", has delay 0 and adopts the reply draft the AI pick already queued. Later steps have a delay in days, a Goal, optional starting text and knowledge tags. The job (`conversations.sequences`) only writes drafts; `approveAndSendDraft` sends each one after a person approves it.
 - **Save publishes.** Published versions are frozen by trigger. A run keeps the version it started on. Switching to handoff asks first and ends runs in progress with reason `after_reply_off`; the steps stay.
 - **LinkedIn and personal** campaigns are locked to handoff.
-- **Start rule.** A run starts for a reply whose owning campaign is the one that most recently emailed the person: a `sends` row of `kind = 'campaign'`, channel `email`, status `sent`, latest `sent_at` no later than the reply. That campaign must be email, regular, not archived, `active` or `completed`, and in `ai_drafts` mode. Its mode decides, even when an older campaign has a flow. The reply must be classified (auto-applied, accepted or overridden at the current context version) into a subcategory outside `NO_START_KEYS` and outside the not-interested category. It must arrive no earlier than 10 minutes (`NEW_REPLY_MARGIN_MINUTES`) before `sequences.after_reply_enabled_at`, the moment the flow last switched from off to on. Contacts, do not contact and suppressed people start nothing. A person's Restart skips the recency rule.
+- **Start rule.** A run starts for a reply whose owning campaign is the one that most recently emailed the person: a `sends` row of `kind = 'campaign'`, channel `email`, status `sent`, latest `sent_at` no later than the reply. That campaign must be email, regular, not archived, `active` or `completed`, and in `ai_drafts` mode. Its mode decides, even when an older campaign has a flow. The reply must carry an applied pick (auto-applied, accepted or overridden at the current context version) of a reply type whose Follow-ups rule is Keep going (`reply_types.follow_ups = 'continue'`). The group and the key play no part: `startBlockedReason` and the engine's start query read the same column, and a blocked Restart names the type ("Not now is set to stop follow-ups."). It must arrive no earlier than 10 minutes (`NEW_REPLY_MARGIN_MINUTES`) before `sequences.after_reply_enabled_at`, the moment the flow last switched from off to on. Contacts, do not contact and suppressed people start nothing. A person's Restart skips the recency rule.
+- **Reply draft rule and step 1.** A type set to Don't write a reply draft (`reply_draft = false`) with Follow-ups Keep going starts the run at step 2: step 1 writes no draft, and the later steps keep their delays. A flow with only step 1 starts no run for such a type. `startPosition` (`after-reply/domain/sequences.ts`) decides, as it does for a reply a person already answered by hand.
 - **Paused campaign.** It starts no runs and holds draft creation for runs in progress. Completed and archived campaigns let runs continue.
 - **Delays.** Whole days move by calendar days in the organization's zone and keep the wall-clock time across DST. The next step is due its delay after the previous message was sent, skipped or discarded.
-- **Stop rules.** A reply, do not contact, unsubscribe, bounce, manual suppression, a closed record, conversion to contact, and a move into a terminal subcategory (not-interested category, `do_not_contact`, `left_company`, `wrong_contact`, `connected_to_different_contact`, `customer`) end the run as `interrupted` and retire its unsent drafts. Each writer does this in its own transaction through `conversations/after-reply/infrastructure/sequence-stop.ts` (`endRunTx`, `interruptPersonRunsTx`, `interruptEmailRunsTx`). Outreach's suppression reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which `src/composition/inbox-filing.ts` wires; a sweep at the start of each tick is the safety net.
+- **Stop rules.** A reply, do not contact, unsubscribe, bounce, manual suppression, a closed record, conversion to contact, and a move into a reply type whose Follow-ups rule is Stop end the run as `interrupted` and retire its unsent drafts. Each writer does this in its own transaction through `conversations/after-reply/infrastructure/sequence-stop.ts` (`endRunTx`, `interruptPersonRunsTx`, `interruptEmailRunsTx`). Outreach's suppression reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which `src/composition/inbox-filing.ts` wires; a sweep at the start of each tick is the safety net. A run whose record still carries the type it started on is spared, so an edit of that type's rule does not reach back into a run already going. Out of office is seeded with Stop, so an out-of-office reply ends a running run. The campaign lists the stop types under "Stops for these reply types" (`getFollowUpStopTypes`), which creates the organization's default reply type set when it does not exist yet, as Settings > Reply handling does.
 - **Draft fate.** Sent: the step is `sent` and the next scheduled. Discarded: `skipped`. Stale without a stop reason: drafted again up to 3 times, then `failed`. A failed step waits for a person to retry or skip it.
 - **Races.** `claimDue` takes one step with `FOR UPDATE SKIP LOCKED`. `linkDraft` locks the run before the step, the same order as `endRunTx`, and returns false for an ended run, so the job retires the draft it wrote. `endRunTx` also retires drafts whose `request.sequenceRunId` names the run.
 - **Per-record controls** on the Inbox thread: `POST /api/records/[id]/after-reply` with `pause`, `resume`, `skip`, `cancel` or `restart`. Restart answers 409 with the reason the server computed when it cannot run.
@@ -488,15 +489,29 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 - Usage is recorded per job as input, output, cache read and cache write tokens, plus `costUsd` when the provider reports it (OpenRouter does).
 - `AI_PROVIDER=fake` gives each feature its own fake (`FakeReplyAi`, `FakeGridAi`) and calls no model. A provider SDK may be imported only inside `src/contexts/ai`; `context-dependencies.test.ts` checks it.
 
+### Reply types and type rules
+
+- A reply type (`reply_types`) belongs to one of four fixed groups: Interested, Customer, Not interested and Other. A group carries no behavior.
+- Each type holds three type rules, shown as "When the AI picks {type}": Check (`check_mode`: `before`, `after` or `skip`), Reply draft (`reply_draft`) and Follow-ups (`follow_ups`: `continue` or `stop`). A type a person adds starts at after, write one, keep going.
+- `decideReplyType` (`domain/reply-type.ts`) is the only reader of the rules. The AI apply path, a person's type change and the Change type outcome lines all call it. Fixed rules sit on top of the type's: an AI pick below the confidence floor waits for a person, a locked customer stays in its group until a person moves it, a reply that asked to stop gets no draft and stops follow-ups, and follow-ups apply only to an email reply of a campaign in `ai_drafts` mode whose person is a lead.
+- Rules apply at decision time. An edit changes the picks made after it. Each pick stores the rules it used in `reply_type_picks.rules`.
+- `system_role` marks the two types that drive fixed paths, in place of their keys. `stop_request` (Asked to stop) is checked before it applies, never drafts, stops follow-ups and stays active; `reply_types_stop_request_ck` holds it. `customer` (Customer question) locks the person as a customer and stays in the customer group. A set has at most one type per role, and a type's role never changes.
+- The customer lock follows one rule for every move a person makes (`lockAfterPersonMove`): Change type, their own pick and Accept. The customer role type locks, a move inside the customer group keeps the lock, and a move out of the group unlocks. Change type off the thread asks the person to confirm the move out; a pick or an Accept on the thread is that confirmation. Undo and a thread that turns private give back the lock the record had before the pick, which the pick keeps in `response.previousLocked`.
+- A type change never marks the person do not contact: a move off the thread, a person's own pick, accepting or overriding an AI pick, and undo all leave contact alone, the stop request type included. Contact stops only through Stop contacting.
+- Accepting a held stop request pick answers 409 with `code: "stop_review"`, and the client opens Stop contacting. Choosing the stop request type through Change type or an override is allowed and changes only the type.
+- A person's type change and pick run `decideReplyType` with no confidence: `afterTypeChange` sets the workflow state from its draft decision, and a new follow-up run starts only when its follow-ups decision is `continue`. Archiving or deleting a type with a system role answers 409 `code: "system_role"` with the role's reason.
+- Progress belongs to deal stages. A reply type has no rank, and no pick waits to protect a position. `reply_type.changed` is the event a deal can follow.
+- Out of office stops follow-ups. Pausing them until the person is back is a later decision.
+
 ### AI classification
 
 - `ai_jobs` (job `conversations.ai`) uses a lease and `SKIP LOCKED`. The tick sweeps records whose latest inbound message has no job. 3 attempts, retry delay `min(5 min, 2 s * 2^(attempts-1))`, a lease older than 5 minutes is taken over. With no AI provider configured the job releases the work without using an attempt.
-- **Untrusted text.** Email text, names, knowledge and operator instructions sit in tags with a per-request nonce. The output is closed: one active subcategory key, confidence 0 to 1, a reason up to 500 characters. Zod checks it in the adapter and the use case.
-- **Applying** (`classification-policy.ts`, deterministic). In order: hold a change away from a locked Existing customer; hold a move to a lower stage rank (`do_not_contact` exempt); hold `customer` when `customer_requires_review`, a `review_required` subcategory, or `other` when `review_other`; hold below `auto_apply_confidence` (default 0.85, `pipeline_settings`); else auto-apply. The write locks the record and compares `context_version` and `latest_inbound_message_id`; a mismatch stores a `stale` classification and changes nothing.
-- **Stop requests.** A reply that asks to stop, or a `do_not_contact` classification, shows a banner with one button that suppresses the address. Nothing suppresses on its own.
+- **Untrusted text.** Email text, names, knowledge and operator instructions sit in tags with a per-request nonce. The output is closed: one active reply type key (the model field keeps the name `subcategoryKey`), confidence 0 to 1, a reason up to 500 characters. Zod checks it in the adapter and the use case.
+- **Applying** (`reply-type-pick-policy.ts` over `decideReplyType`, deterministic). In order: hold a pick that moves a locked customer out of its group; hold a type whose Check is before; hold below the confidence floor (`auto_apply_confidence`, default 0.85, `reply_handling_settings`); else auto-apply. The pick stores the hold reason and the rules it used. The write locks the record and compares `context_version` and `latest_inbound_message_id`; a mismatch stores a `stale` pick and changes nothing. Under that lock the store decides once, with the floor and lock as they are then, and takes the status, hold reason, draft, settle and follow-ups from that one decision.
+- **Stop requests.** A reply that asks to stop, or a pick of the stop request type, opens the type line in place with "Possible stop request." and Review stop request, which opens Stop contacting and asks how far the stop reaches. Actions shows the same row kind (`stop_review`) and opens the thread with `?stop=1`. Nothing stops contact on its own. Follow-ups do stop: the AI's pick of that reply keeps `response.stopRequested`, its run ends, and no new run starts for that reply, whatever type the AI or a person picks for it (`stopRequestedSql`, `startBlockedReason`).
 - **Unknown senders.** At most 50 AI replies a day for unknown senders (`channel_settings.general`, 0 blocks all). Over-cap jobs end `skipped` with reason `daily_cap`; an admin can requeue them.
 - **Failure kinds** (`payload.failureKind`): `transient` and `lease` failures are requeued by the sweep with backoff from 15 minutes (capped at 6 hours, ceiling 5); `shape` and `permanent` wait for an admin (`POST /api/jobs/ai/requeue`, `/api/jobs/ai/[id]/requeue`).
-- **Corrections.** A stage move or a person's classification takes `expectedContextVersion` (409 on mismatch), bumps the version, retires open drafts, ends runs and queues a fresh draft (`restartRecordWorkTx`). Undo reverts only the latest classification while the record still carries it.
+- **Corrections.** A type change off the thread or a person's pick takes `expectedContextVersion` (409 on mismatch), bumps the version, retires open drafts and ends runs (`restartRecordWorkTx`). A person's pick for the latest reply also queues a fresh draft when its type writes one; a change off the thread writes none. Each person's pick stores the rules of its type, and `reply_type.changed` carries them in `meta.rules`. Undo reverts only the latest pick while the record still carries it, and answers with what it retired: `draftsRetired`, `runEnded` and `draftJobCancelled`.
 
 ### Drafts and approval
 
@@ -584,8 +599,8 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 - `people.converted_at` is set for a contact and null for a lead (CHECK `people_converted_at_ck`). The trigger `people_lifecycle_trg` rejects contact to lead and any change of `converted_at` once set. Conversion goes one way: deleting the last deal leaves the person a contact.
 - `leadFilterCondition` applies `lifecycle ?? 'lead'`, so every lead list, export, id selection, delete-matching and neighbor query returns leads unless the filter says `contact` or `all`. The Contacts list uses the partial index `people_org_contacts_idx`.
 - Unknown inbound senders arrive as `lifecycle = 'lead'`.
-- A contact's replies still land in the Inbox and Actions and may queue an approval-gated reply draft. No After a reply run starts for a contact: the sequence store and engine filter `p.lifecycle <> 'contact'`, and `createRunOn` re-checks after the record lock.
-- The reply category `customer` ("Existing customer") and a Won deal stay independent. Deal stages carry no stop rule; terminal subcategories, the do-not-contact subcategory and the customer lock belong to reply categories only.
+- A contact's replies still land in the Inbox and Actions and may queue an approval-gated reply draft. No follow-up run starts for a contact: the sequence store and engine filter `p.lifecycle <> 'contact'`, and `createRunOn` re-checks after the record lock.
+- The Existing customer group (reply type Customer question, key `customer`) and a Won deal stay independent. Deal stages carry no stop rule; the Follow-ups rule, the stop request type and the customer lock belong to reply types only.
 - A do-not-contact or suppressed person can still get a deal. The screens show the flags.
 
 | Invariant | Enforced by |
@@ -614,7 +629,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 - Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
 - The people context imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
 - `src/composition/deals.ts` is the composition root of the conversion and the deal use cases.
-- "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-categories` and `/api/settings/replies`.
+- "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-types` and `/api/settings/replies`.
 
 #### Conversion and lock order
 
@@ -649,7 +664,7 @@ The enrollments a conversion cancels show the stop label "Became a contact" (`st
 | `moveDealStage` | Needs the current `version`; 409 `stale_version`. A lost stage needs a reason (422). |
 | `deleteDeal` | Open stages only (409 `deal_closed`). `DELETE /api/deals/[id]?expectedVersion=` checks the version when given. |
 
-Events: `deal.created`, `deal.stage_moved`, `deal.updated` and `deal.deleted`, each with `person_id` set and the deal id in `meta`. Activity reads `deal.stage_moved` as "Moved deal to {stage}", `stage.moved` as "Changed category" and `lifecycle.converted` as "Became a contact".
+Events: `deal.created`, `deal.stage_moved`, `deal.updated` and `deal.deleted`, each with `person_id` set and the deal id in `meta`. Activity reads `deal.stage_moved` as "Moved deal to {stage}", `reply_type.changed` as "Changed the reply type" and `lifecycle.converted` as "Became a contact".
 
 #### Pipeline board and lists
 

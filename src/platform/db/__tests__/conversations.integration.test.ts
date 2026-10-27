@@ -9,7 +9,7 @@ describeDb("conversation invariants", () => {
   let user = "";
   let person = "";
   let pipeline = "";
-  let otherPipeline = "";
+  let otherReplyTypeSet = "";
   let sub = "";
   let record = "";
   let conversation = "";
@@ -20,13 +20,13 @@ describeDb("conversation invariants", () => {
     owner = await createTestOrg(sql, "C");
     ({ organizationId: org, userId: user } = owner);
     [{ id: person }] = await sql`insert into people (organization_id, email) values (${org}, ${s + "@lead.test"}) returning id`;
-    [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p1', true) returning id`;
-    [{ id: otherPipeline }] = await sql`insert into pipelines (organization_id, name) values (${org}, 'p2') returning id`;
+    [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p1', true) returning id`;
+    [{ id: otherReplyTypeSet }] = await sql`insert into reply_type_sets (organization_id, name) values (${org}, 'p2') returning id`;
     [{ id: sub }] = await sql`
-      insert into subcategories (organization_id, pipeline_id, category_key, key, name)
+      insert into reply_types (organization_id, reply_type_set_id, group_key, key, name)
       values (${org}, ${pipeline}, 'interested', 'wants_demo', 'Wants demo') returning id`;
     [{ id: record }] = await sql`
-      insert into records (organization_id, person_id, pipeline_id) values (${org}, ${person}, ${pipeline}) returning id`;
+      insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`;
     [{ id: conversation }] = await sql`
       insert into conversations (organization_id, record_id, channel, account_ref)
       values (${org}, ${record}, 'email', 'me@corp.test') returning id`;
@@ -42,22 +42,22 @@ describeDb("conversation invariants", () => {
 
   it("rejects a subcategory from a different pipeline than the record's", async () => {
     const [{ id: other }] = await sql`
-      insert into records (organization_id, person_id, pipeline_id)
-      select ${org}, id, ${otherPipeline} from people where id = ${person} returning id`;
+      insert into records (organization_id, person_id, reply_type_set_id)
+      select ${org}, id, ${otherReplyTypeSet} from people where id = ${person} returning id`;
     await expect(
-      sql`update records set subcategory_id = ${sub}, category_key = 'interested', category_source = 'ai' where id = ${other}`,
+      sql`update records set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${other}`,
     ).rejects.toThrow(/foreign key|violates/i);
     await sql`delete from records where id = ${other}`;
   });
 
   it("accepts the same subcategory on a record in its own pipeline", async () => {
-    await sql`update records set subcategory_id = ${sub}, category_key = 'interested', category_source = 'ai' where id = ${record}`;
+    await sql`update records set reply_type_id = ${sub}, group_key = 'interested', reply_type_source = 'ai' where id = ${record}`;
   });
 
   it("requires category and source to be set together", async () => {
     await expect(
-      sql`insert into records (organization_id, person_id, pipeline_id, category_key)
-          values (${org}, ${person}, ${otherPipeline}, 'other')`,
+      sql`insert into records (organization_id, person_id, reply_type_set_id, group_key)
+          values (${org}, ${person}, ${otherReplyTypeSet}, 'other')`,
     ).rejects.toThrow(/check/i);
   });
 

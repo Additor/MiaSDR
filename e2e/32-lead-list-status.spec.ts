@@ -13,8 +13,8 @@ async function seed() {
   const [existing] = await db`select id from people where organization_id = ${orgId} and full_name = 'S30 Rita Replied'`;
   if (existing) return;
   const [campaign] = await db`insert into campaigns (organization_id, channel, name, status) values (${orgId}, 'email', 'S30 Autumn push', 'active') returning id`;
-  const [pipeline] = await db`select id from pipelines where organization_id = ${orgId} order by is_default desc limit 1`;
-  const pipelineId = pipeline?.id ?? (await db`insert into pipelines (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`)[0].id;
+  const [pipeline] = await db`select id from reply_type_sets where organization_id = ${orgId} order by is_default desc limit 1`;
+  const replyTypeSetId = pipeline?.id ?? (await db`insert into reply_type_sets (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`)[0].id;
   const person = async (name: string, email: string | null, slug: string | null, createdAt: string) => {
     const [row] = await db`
       insert into people (organization_id, email, linkedin_slug, full_name, title, source, created_at, updated_at)
@@ -26,7 +26,7 @@ async function seed() {
   await person("S30 Nora Nocampaign", null, "s30-nora", "2024-02-03T10:00:00Z");
   await db`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${orgId}, ${campaign.id}, ${replied}, 'email', 'replied')`;
   await db`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${orgId}, ${campaign.id}, ${waiting}, 'email', 'active')`;
-  const [record] = await db`insert into records (organization_id, person_id, pipeline_id) values (${orgId}, ${replied}, ${pipelineId}) returning id`;
+  const [record] = await db`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${replied}, ${replyTypeSetId}) returning id`;
   const [conversation] = await db`insert into conversations (organization_id, record_id, channel, account_ref) values (${orgId}, ${record.id}, 'email', 's30@e2e-corp.test') returning id`;
   await db`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
     values (${orgId}, ${conversation.id}, 'email', 's30@e2e-corp.test', 'outbound', 's30-msg-1', 'Hello', now() - interval '3 days')`;

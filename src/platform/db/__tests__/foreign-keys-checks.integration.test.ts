@@ -9,9 +9,9 @@ import { seedWorld, uid, type World } from "../../../test-support/full-world";
 
 /** [table, constraint, column(s) the delete action nulls, CASCADE, or null for NO ACTION]. */
 const FOREIGN_KEYS: Array<[string, string, string | null]> = [
-  ["classifications", "classifications_previous_subcategory_fk", "previous_subcategory_id"],
-  ["classifications", "classifications_proposed_subcategory_fk", "proposed_subcategory_id"],
-  ["classifications", "classifications_applied_subcategory_fk", "applied_subcategory_id"],
+  ["reply_type_picks", "reply_type_picks_previous_reply_type_fk", "previous_reply_type_id"],
+  ["reply_type_picks", "reply_type_picks_proposed_reply_type_fk", "proposed_reply_type_id"],
+  ["reply_type_picks", "reply_type_picks_applied_reply_type_fk", "applied_reply_type_id"],
   ["drafts", "drafts_reply_message_fk", "reply_for_message_id"],
   ["records", "records_latest_inbound_message_fk", "latest_inbound_message_id"],
   ["sends", "sends_mailbox_fk", null],
@@ -35,16 +35,16 @@ const FOREIGN_KEYS: Array<[string, string, string | null]> = [
 const CHECKS = [
   ["ai_jobs", "ai_jobs_attempts_range_ck"],
   ["ai_jobs", "ai_jobs_completion_ck"],
-  ["classifications", "classifications_confidence_range_ck"],
-  ["classifications", "classifications_context_version_ck"],
-  ["classifications", "classifications_category_keys_ck"],
+  ["reply_type_picks", "reply_type_picks_confidence_range_ck"],
+  ["reply_type_picks", "reply_type_picks_context_version_ck"],
+  ["reply_type_picks", "reply_type_picks_group_keys_ck"],
   ["conversations", "conversations_account_ref_ck"],
   ["drafts", "drafts_context_version_ck"],
   ["events", "events_type_ck"],
   ["identity_exceptions", "identity_exceptions_channel_ck"],
   ["identity_exceptions", "identity_exceptions_keys_ck"],
   ["messages", "messages_keys_ck"],
-  ["pipeline_settings", "pipeline_settings_instructions_ck"],
+  ["reply_handling_settings", "reply_handling_settings_instructions_ck"],
   ["records", "records_active_channel_ck"],
   ["send_attempts", "send_attempts_refs_ck"],
 ] as const;
@@ -88,9 +88,9 @@ describeDb("foreign keys and checks", () => {
 
   describe("a row that points nowhere is refused", () => {
     const BAD: Array<[string, string, (w: World, id: string) => PromiseLike<unknown>]> = [
-      ["classifications_previous_subcategory_fk", "classification", (w, id) => sql`update classifications set previous_subcategory_id = ${id} where id = ${w.classification}`],
-      ["classifications_proposed_subcategory_fk", "classification", (w, id) => sql`update classifications set proposed_subcategory_id = ${id} where id = ${w.classification}`],
-      ["classifications_applied_subcategory_fk", "classification", (w, id) => sql`update classifications set applied_subcategory_id = ${id} where id = ${w.classification}`],
+      ["reply_type_picks_previous_reply_type_fk", "classification", (w, id) => sql`update reply_type_picks set previous_reply_type_id = ${id} where id = ${w.classification}`],
+      ["reply_type_picks_proposed_reply_type_fk", "classification", (w, id) => sql`update reply_type_picks set proposed_reply_type_id = ${id} where id = ${w.classification}`],
+      ["reply_type_picks_applied_reply_type_fk", "classification", (w, id) => sql`update reply_type_picks set applied_reply_type_id = ${id} where id = ${w.classification}`],
       ["drafts_reply_message_fk", "draft", (w, id) => sql`update drafts set reply_for_message_id = ${id} where id = ${w.draft}`],
       ["records_latest_inbound_message_fk", "record", (w, id) => sql`update records set latest_inbound_message_id = ${id} where id = ${w.record}`],
       ["sends_mailbox_fk", "send", (w, id) => sql`update sends set mailbox_id = ${id} where id = ${w.sendEmail}`],
@@ -115,7 +115,7 @@ describeDb("foreign keys and checks", () => {
       const b = await world();
       await expect(sql`update sends set mailbox_id = ${b.mailbox} where id = ${a.sendEmail}`).rejects.toThrow(/sends_mailbox_fk/);
       await expect(sql`update notes set record_id = ${b.record} where id = ${a.note}`).rejects.toThrow(/notes_record_fk/);
-      await expect(sql`update classifications set applied_subcategory_id = ${b.subA} where id = ${a.classification}`).rejects.toThrow(/classifications_applied_subcategory_fk/);
+      await expect(sql`update reply_type_picks set applied_reply_type_id = ${b.subA} where id = ${a.classification}`).rejects.toThrow(/reply_type_picks_applied_reply_type_fk/);
       await expect(sql`update deals set source_enrollment_id = ${b.enrollment} where id = ${a.deal}`).rejects.toThrow(/deals_source_enrollment_fk/);
       await expect(sql`update company_domain_aliases set company_id = ${b.company} where id = ${a.companyAlias}`).rejects.toThrow(/company_domain_aliases_company_fk/);
     });
@@ -145,8 +145,8 @@ describeDb("foreign keys and checks", () => {
   describe("delete behavior", () => {
     it("deleting a subcategory nulls the classification pointers and keeps the row", async () => {
       const w = await world();
-      await sql`delete from subcategories where id = ${w.subA}`;
-      const [c] = await sql`select organization_id, previous_subcategory_id as p, proposed_subcategory_id as q, applied_subcategory_id as a from classifications where id = ${w.classification}`;
+      await sql`delete from reply_types where id = ${w.subA}`;
+      const [c] = await sql`select organization_id, previous_reply_type_id as p, proposed_reply_type_id as q, applied_reply_type_id as a from reply_type_picks where id = ${w.classification}`;
       expect(c).toMatchObject({ organization_id: w.org, p: null, q: null, a: null });
     });
 
@@ -203,7 +203,7 @@ describeDb("foreign keys and checks", () => {
     it("deleting a record nulls the note and task pointers", async () => {
       const w = await world();
       const person2 = (await sql`insert into people (organization_id, email) values (${w.org}, ${"p2-" + w.tag + "@lead.test"}) returning id`)[0].id;
-      const record2 = (await sql`insert into records (organization_id, person_id, pipeline_id) values (${w.org}, ${person2}, ${w.pipeline}) returning id`)[0].id;
+      const record2 = (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${w.org}, ${person2}, ${w.pipeline}) returning id`)[0].id;
       const note = (await sql`insert into notes (organization_id, person_id, record_id, body) values (${w.org}, ${person2}, ${record2}, 'n') returning id`)[0].id;
       const task = (await sql`insert into tasks (organization_id, person_id, record_id, name) values (${w.org}, ${person2}, ${record2}, 't') returning id`)[0].id;
       await sql`delete from records where id = ${record2}`;
@@ -246,7 +246,7 @@ describeDb("foreign keys and checks", () => {
     it("deleting the organization removes rows in all 13 child tables", async () => {
       const w = await seedWorld(sql);
       await sql`delete from organizations where id = ${w.org}`;
-      for (const t of ["classifications", "drafts", "records", "sends", "linkedin_connections", "linkedin_search_queries", "notes", "tasks", "import_runs", "messages", "events", "audit_log"]) {
+      for (const t of ["reply_type_picks", "drafts", "records", "sends", "linkedin_connections", "linkedin_search_queries", "notes", "tasks", "import_runs", "messages", "events", "audit_log"]) {
         const [{ n }] = await sql.unsafe(`select count(*)::int as n from ${t} where organization_id = '${w.org}'`);
         expect(n, t).toBe(0);
       }
@@ -259,13 +259,13 @@ describeDb("foreign keys and checks", () => {
 
     it("classification confidence outside 0 to 1, context version below 0, unknown category key", async () => {
       const w = await world();
-      await expect(sql`update classifications set confidence = 1.5 where id = ${w.classification}`).rejects.toThrow(fails("classifications_confidence_range_ck"));
-      await expect(sql`update classifications set confidence = -0.1 where id = ${w.classification}`).rejects.toThrow(fails("classifications_confidence_range_ck"));
-      await expect(sql`update classifications set expected_context_version = -1 where id = ${w.classification}`).rejects.toThrow(fails("classifications_context_version_ck"));
+      await expect(sql`update reply_type_picks set confidence = 1.5 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));
+      await expect(sql`update reply_type_picks set confidence = -0.1 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_confidence_range_ck"));
+      await expect(sql`update reply_type_picks set expected_context_version = -1 where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_context_version_ck"));
       // Detaching the subcategory first keeps the cross-row validator out of the way; the CHECK is under test here.
-      await expect(sql`update classifications set applied_subcategory_id = null, applied_category_key = 'maybe' where id = ${w.classification}`).rejects.toThrow(fails("classifications_category_keys_ck"));
-      // The subcategory of the fixture is in 'interested': a different key would trip classifications_subcategories_upd_trg.
-      await sql`update classifications set confidence = 1, applied_category_key = 'interested' where id = ${w.classification}`;
+      await expect(sql`update reply_type_picks set applied_reply_type_id = null, applied_group_key = 'maybe' where id = ${w.classification}`).rejects.toThrow(fails("reply_type_picks_group_keys_ck"));
+      // The subcategory of the fixture is in 'interested': a different key would trip reply_type_picks_reply_types_upd_trg.
+      await sql`update reply_type_picks set confidence = 1, applied_group_key = 'interested' where id = ${w.classification}`;
     });
 
     it("draft context version below 0", async () => {
@@ -312,11 +312,11 @@ describeDb("foreign keys and checks", () => {
       await expect(sql`update records set active_channel = 'sms' where id = ${w.record}`).rejects.toThrow(fails("records_active_channel_ck"));
       await sql`update records set active_channel = 'linkedin' where id = ${w.record}`;
       const settings = (draft: unknown, cls: unknown = []) =>
-        sql`insert into pipeline_settings (pipeline_id, organization_id, draft_instructions, classification_instructions)
+        sql`insert into reply_handling_settings (reply_type_set_id, organization_id, draft_instructions, classification_instructions)
             values (${w.pipeline}, ${w.org}, ${sql.json(draft as never)}, ${sql.json(cls as never)})`;
-      await expect(settings({ a: 1 })).rejects.toThrow(fails("pipeline_settings_instructions_ck"));
-      await expect(settings([], "text")).rejects.toThrow(fails("pipeline_settings_instructions_ck"));
-      await expect(settings([{ title: "t", content: "x".repeat(100_001) }])).rejects.toThrow(fails("pipeline_settings_instructions_ck"));
+      await expect(settings({ a: 1 })).rejects.toThrow(fails("reply_handling_settings_instructions_ck"));
+      await expect(settings([], "text")).rejects.toThrow(fails("reply_handling_settings_instructions_ck"));
+      await expect(settings([{ title: "t", content: "x".repeat(100_001) }])).rejects.toThrow(fails("reply_handling_settings_instructions_ck"));
       await settings([{ title: "t", content: "x".repeat(8000) }]);
     });
   });

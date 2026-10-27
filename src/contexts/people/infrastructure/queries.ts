@@ -138,7 +138,7 @@ export function leadFilterCondition(filter: LeadFilter): SQL | undefined {
   if (filter.createdTo) conditions.push(sql`${people.createdAt} < (${filter.createdTo}::date + 1)::timestamp at time zone 'UTC'`);
   if (filter.category) {
     conditions.push(
-      sql`exists (select 1 from ${records} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${records.categoryKey} = ${filter.category})`,
+      sql`exists (select 1 from ${records} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${records.groupKey} = ${filter.category})`,
     );
   }
   if (filter.ids && filter.ids.length > 0) conditions.push(inArray(people.id, filter.ids));
@@ -231,9 +231,9 @@ export async function leadFilterOptions(organizationId: string): Promise<{
       .from(people)
       .where(and(eq(people.organizationId, organizationId), isNotNull(people.source))),
     db
-      .selectDistinct({ category: records.categoryKey })
+      .selectDistinct({ category: records.groupKey })
       .from(records)
-      .where(and(eq(records.organizationId, organizationId), isNotNull(records.categoryKey))),
+      .where(and(eq(records.organizationId, organizationId), isNotNull(records.groupKey))),
   ]);
   return {
     campaigns: campaignRows,

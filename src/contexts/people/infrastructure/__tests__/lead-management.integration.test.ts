@@ -242,8 +242,8 @@ describeDb("lead management", () => {
     it("refuses a lead with a CRM record", async () => {
       const { id: o, actor } = await org();
       const p = await person(o, "crm@acme.com");
-      const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name) values (${o}, 'P') returning id`;
-      await sql`insert into records (organization_id, person_id, pipeline_id) values (${o}, ${p}, ${pipeline})`;
+      const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name) values (${o}, 'P') returning id`;
+      await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o}, ${p}, ${pipeline})`;
       const result = await uc.deleteLeads(deps, actor, { ids: [p] });
       expect(result.deleted).toBe(0);
       expect(result.blocked).toMatchObject([{ id: p, reason: "linked_records" }]);

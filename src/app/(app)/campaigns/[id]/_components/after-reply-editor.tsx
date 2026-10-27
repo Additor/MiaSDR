@@ -18,6 +18,7 @@ import {
   DELAY_UNITS,
   delayToMinutes,
   formChanged,
+  handoffOption,
   lockedNote,
   MAX_FOLLOW_UP_STEPS,
   parseTags,
@@ -72,7 +73,7 @@ async function putAfterReply(campaignId: string, body: unknown): Promise<SaveRes
 }
 
 /**
- * The After a reply form of a campaign: the mode and, for AI drafts, the reply step and the follow-ups. Save stores and
+ * The Follow-ups after a reply form of a campaign: the mode and, for AI drafts, the reply step and the follow-ups. Save stores and
  * publishes in one step. The AI writes each draft and a person approves every message, so nothing here sends.
  */
 export function AfterReplyEditor({
@@ -110,6 +111,7 @@ export function AfterReplyEditor({
   const dirty = formChanged({ mode, steps, saved });
   const note = lockedNote(lockedReason, personal);
   const aiOn = mode === "ai_drafts";
+  const off = handoffOption(personal);
 
   function update(index: number, patch: Partial<EditorStep>) {
     setSteps((all) => all.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -190,14 +192,14 @@ export function AfterReplyEditor({
   return (
     <div className="grid gap-4">
       <fieldset className="grid gap-3" disabled={pending}>
-        <legend className="sr-only">After a reply</legend>
+        <legend className="sr-only">Follow-ups after a reply</legend>
         <RadioGroup name={`after-reply-${campaignId}`} value={mode} onValueChange={(next) => setMode(next as AfterReplyMode)} disabled={pending}>
           <FieldLabel htmlFor={`after-reply-${campaignId}-handoff`}>
             <Field orientation="horizontal">
               <RadioGroupItem value="handoff" id={`after-reply-${campaignId}-handoff`} />
               <FieldContent>
-                <FieldTitle>{AFTER_REPLY_MODE_LABELS.handoff}</FieldTitle>
-                <FieldDescription>The sequence stops for that lead and the reply waits in the Inbox.</FieldDescription>
+                <FieldTitle>{off.title}</FieldTitle>
+                <FieldDescription>{off.description}</FieldDescription>
               </FieldContent>
             </Field>
           </FieldLabel>

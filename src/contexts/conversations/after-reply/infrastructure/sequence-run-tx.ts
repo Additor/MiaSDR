@@ -1,8 +1,9 @@
 import { sql } from "drizzle-orm";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
-import { dueAfter, isTerminalSubcategory } from "../domain/sequences";
+import { dueAfter } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
 import { rowsOf } from "@/platform/db/sql-values";
+import type { FollowUpsOutcome, FollowUpsRule } from "../../domain/reply-type";
 
 export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 
@@ -42,13 +43,32 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
 }
 
 /**
- * A record moved to a terminal subcategory (a refusal, a wrong or departed contact, a customer): its runs end in the
- * caller's transaction. A run that started at that same subcategory is spared, as in the sweep's rule.
+ * A record moved to a reply type whose follow-ups stop: its runs end in the caller's transaction. A run that started at
+ * that same type is spared, as in the sweep's rule. The caller's `followUps` (the decision of `decideReplyType`) is
+ * the rule. A caller that passes none gets the Follow-ups rule of the record's current reply type, read here, so the
+ * caller writes the record first. No key or group decides.
  */
 export async function interruptOnTerminalStageTx(
   tx: Tx,
-  input: { organizationId: string; recordId: string; categoryKey: string | null; subcategoryKey: string | null; subcategoryId: string | null; now: Date },
+  input: {
+    organizationId: string;
+    recordId: string;
+    replyTypeId: string | null;
+    followUps?: FollowUpsOutcome;
+    now: Date;
+  },
 ): Promise<number> {
-  if (!isTerminalSubcategory(input.categoryKey, input.subcategoryKey)) return 0;
-  return interruptRecordRunsTx(tx, input.organizationId, input.recordId, "terminal_stage", input.now, input.subcategoryId ?? undefined);
+  const followUps = input.followUps ?? (await currentFollowUpsTx(tx, input.organizationId, input.recordId));
+  if (followUps !== "stop") return 0;
+  return interruptRecordRunsTx(tx, input.organizationId, input.recordId, "terminal_stage", input.now, input.replyTypeId ?? undefined);
+}
+
+/** The Follow-ups rule of the record's current reply type, or null when the record has none. */
+async function currentFollowUpsTx(tx: Tx, organizationId: string, recordId: string): Promise<FollowUpsRule | null> {
+  const [row] = rowsOf<{ follow_ups: FollowUpsRule }>(
+    await tx.execute(sql`
+      select rt.follow_ups from records r join reply_types rt on rt.id = r.reply_type_id and rt.organization_id = r.organization_id
+      where r.id = ${recordId} and r.organization_id = ${organizationId}`),
+  );
+  return row?.follow_ups ?? null;
 }

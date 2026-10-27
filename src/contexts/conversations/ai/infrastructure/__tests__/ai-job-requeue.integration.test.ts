@@ -101,7 +101,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       const j = await job(f.org);
       expect(j).toMatchObject({ status: "failed", attempts: 3 });
       expect(j.payload).toMatchObject({ failureKind: "transient", requeueCeiling: AUTO_REQUEUE_CEILING });
-      expect(await sql`select status from classifications where organization_id = ${f.org}`).toMatchObject([{ status: "failed" }]);
+      expect(await sql`select status from reply_type_picks where organization_id = ${f.org}`).toMatchObject([{ status: "failed" }]);
     });
 
     it("marks a rejected key permanent and an answer in the wrong form as shape", async () => {
@@ -130,8 +130,8 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       await store.release(stale, new Date());
       await store.complete(stale, new Date());
       expect(await job(f.org)).toMatchObject({ status: "running", attempts: 2, locked_by: "worker-b" });
-      expect(await sql`select 1 from classifications where organization_id = ${f.org}`).toHaveLength(0);
-      expect(await sql`select 1 from events where organization_id = ${f.org} and event_type = 'classification.failed'`).toHaveLength(0);
+      expect(await sql`select 1 from reply_type_picks where organization_id = ${f.org}`).toHaveLength(0);
+      expect(await sql`select 1 from events where organization_id = ${f.org} and event_type = 'reply_type_pick.failed'`).toHaveLength(0);
     });
 
     it("leaves a running job with a live lease alone and takes over one whose lease is older than 5 minutes", async () => {
@@ -203,7 +203,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect(await ops.requeueAiJob(f.opsDeps, f.admin, failed.id)).toEqual({ requeued: 1, more: false });
       expect(await job(f.org)).toMatchObject({ status: "queued", attempts: 0, failed_at: null, locked_by: null });
       expect((await job(f.org)).payload).toMatchObject({ manualRequeues: 1, autoRequeues: 0 });
-      expect(await sql`select id from classifications where organization_id = ${f.org}`).toHaveLength(0);
+      expect(await sql`select id from reply_type_picks where organization_id = ${f.org}`).toHaveLength(0);
       const rows = await auditRows(f.org, "ai_jobs.requeued");
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ actor_user_id: f.admin.userId, entity_id: failed.id });
@@ -217,7 +217,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       f.ai.failWith = null;
       await f.run();
       expect(await job(f.org)).toMatchObject({ status: "succeeded" });
-      expect(await sql`select status from classifications where organization_id = ${f.org}`).toMatchObject([{ status: "auto_applied" }]);
+      expect(await sql`select status from reply_type_picks where organization_id = ${f.org}`).toMatchObject([{ status: "auto_applied" }]);
     });
 
     it("requeues a failed draft job without touching classifications", async () => {
@@ -235,7 +235,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect(draftJob.status).toBe("failed");
       expect(await ops.requeueAiJob(f.opsDeps, f.admin, draftJob.id)).toMatchObject({ requeued: 1 });
       expect(await job(f.org, "initial_draft")).toMatchObject({ status: "queued", attempts: 0 });
-      expect(await sql`select status from classifications where organization_id = ${f.org}`).toMatchObject([{ status: "auto_applied" }]);
+      expect(await sql`select status from reply_type_picks where organization_id = ${f.org}`).toMatchObject([{ status: "auto_applied" }]);
     });
 
     it("requeues everything that failed since a time and leaves older failures and other organizations alone", async () => {

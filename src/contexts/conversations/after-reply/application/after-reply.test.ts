@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { getCampaignAfterReply, saveCampaignAfterReply, type AfterReplyDeps } from "./after-reply";
-import type { AfterReplyStore, FlowRunRow, FlowSave, FlowState, StepView } from "./sequence-ports";
+import { getCampaignAfterReply, getFollowUpStopTypes, saveCampaignAfterReply, type AfterReplyDeps } from "./after-reply";
+import type { AfterReplyStore, FlowRunRow, FlowSave, FlowState, StepView, StopReplyTypeRow } from "./sequence-ports";
 
 const NOW = new Date("2026-10-16T09:00:00Z");
 const actor: Actor = { userId: "u1", organizationId: "org", role: "member" };
@@ -24,10 +24,20 @@ const raw = (position: number) => ({ name: position === 1 ? "Reply" : "Nudge", d
 
 const run = (over: Partial<FlowRunRow> = {}): FlowRunRow => ({ runId: "r1", recordId: "rec1", conversationId: "conv1", personName: "Sam", status: "active", currentStep: 2, totalSteps: 3, nextDueAt: NOW, versionNumber: 1, ...over });
 
-function fake(state: FlowState | null) {
+const stopType = (over: Partial<StopReplyTypeRow> & Pick<StopReplyTypeRow, "id" | "name" | "groupKey">): StopReplyTypeRow => ({ key: over.id, systemRole: null, sortOrder: 0, ...over });
+
+const STOP_TYPES: StopReplyTypeRow[] = [
+  stopType({ id: "ooo", name: "Out of office", groupKey: "other", sortOrder: 2 }),
+  stopType({ id: "dnc", key: "do_not_contact", name: "Asked to stop", groupKey: "not_interested", systemRole: "stop_request", sortOrder: 1 }),
+  stopType({ id: "cust", name: "Customer question", groupKey: "customer", sortOrder: 0 }),
+  stopType({ id: "now", name: "Not now", groupKey: "not_interested", sortOrder: 2 }),
+];
+
+function fake(state: FlowState | null, stopTypes: StopReplyTypeRow[] = STOP_TYPES) {
   const saved: FlowSave[] = [];
   const flows: AfterReplyStore = {
     state: async () => state,
+    stopReplyTypes: async () => stopTypes,
     save: async (input) => {
       saved.push(input);
       return { stoppedRuns: 0 };
@@ -76,6 +86,38 @@ describe("getCampaignAfterReply", () => {
 
   it("answers 404 for a campaign the organization does not have", async () => {
     await expect(getCampaignAfterReply(fake(null).deps, actor, "c9")).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe("stop types", () => {
+  it("lists the types set to stop follow-ups in group order, then list order, with the reason", async () => {
+    const types = await getFollowUpStopTypes(fake(emailState()).deps, actor);
+    expect(types.map((t) => t.name)).toEqual(["Customer question", "Asked to stop", "Not now", "Out of office"]);
+    expect(types[1]).toEqual({ id: "dnc", key: "do_not_contact", name: "Asked to stop", groupKey: "not_interested", systemRole: "stop_request", reason: "Asked to stop is set to stop follow-ups." });
+  });
+
+  it("puts the fixed rules and then each stop type on the campaign view", async () => {
+    const view = await getCampaignAfterReply(fake(emailState()).deps, actor, "c1");
+    expect(view.stopReplyTypes.map((t) => t.id)).toEqual(["cust", "dnc", "now", "ooo"]);
+    expect(view.stopsOn.map((l) => l.label)).toEqual([
+      "The person replies again",
+      "The person is marked do not contact",
+      "The person unsubscribes",
+      "The address bounces",
+      "The address is on the suppression list",
+      "Reply handling is closed",
+      "The person becomes a contact",
+      "The reply type is Customer question",
+      "The reply type is Asked to stop",
+      "The reply type is Not now",
+      "The reply type is Out of office",
+    ]);
+  });
+
+  it("shows only the fixed rules when no type stops follow-ups", async () => {
+    const view = await getCampaignAfterReply(fake(emailState(), []).deps, actor, "c1");
+    expect(view.stopReplyTypes).toEqual([]);
+    expect(view.stopsOn).toHaveLength(7);
   });
 });
 

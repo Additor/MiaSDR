@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
-import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
+import { getReplyTypeCatalog } from "@/contexts/conversations/application/reply-handling";
 import { getWorkQueue, getWorkQueueCounts, getWorkQueueExtras } from "@/contexts/conversations/actions/application/work-queue";
 import { listTasks } from "@/contexts/conversations/actions/application/tasks";
 import type { QueueItem } from "@/contexts/conversations/actions/application/work-queue-ports";
@@ -39,7 +39,8 @@ import { personHref } from "@/app/(app)/_components/person/person-href";
 import { ACTIONS_FILTER_KEYS, actionsViewFrom, threadQueryFromActions } from "./actions-query";
 import { hasAnyFilter } from "./more-filters";
 import { queueFilterChips, QueueFilters } from "./queue-filters";
-import { QueueGroup, type QueueItemView } from "./queue-group";
+import { QueueGroup, QueueNotice, type QueueItemView } from "./queue-group";
+import { ambiguousTypeNames } from "./type-label";
 
 export const metadata: Metadata = { title: "Actions" };
 
@@ -127,7 +128,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   );
   const { queue, filterError } = result;
   const [taxonomy, emailCampaigns, linkedinCampaigns, extras, counts] = await Promise.all([
-    getReplyTaxonomy(replyHandlingDeps(), actor),
+    getReplyTypeCatalog(replyHandlingDeps(), actor),
     listCampaigns(campaignDeps(), actor),
     listLinkedInCampaigns(linkedinCampaignDeps(), actor),
     getWorkQueueExtras(workQueueDeps(), actor),
@@ -184,7 +185,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
   const queueEmpty = queue !== null && groups.length === 0;
   const nowIso = new Date(now).toISOString();
   const oldestWaiting = counts.oldestWaiting[scope];
-  const filterValues = { category: raw.category, channel: raw.channel, group: raw.group, subcategoryId: raw.subcategoryId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
+  const filterValues = { category: raw.category, channel: raw.channel, group: raw.group, replyTypeId: raw.replyTypeId, campaignId: raw.campaignId, dueAfter: raw.dueAfter, dueBefore: raw.dueBefore, errorsOnly: raw.errorsOnly !== "" };
   const filtered = hasAnyFilter(filterValues);
   // "Nothing waits" holds only when tasks, unconfirmed sends, unmatched senders and dead letters are empty too.
   const clear = isWorkClear({
@@ -209,7 +210,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
           href: oldestCandidate.conversationId ? `/inbox/${oldestCandidate.conversationId}?${threadQueryFromActions(view)}` : personHref(oldestCandidate.personId, oldestCandidate.personLifecycle),
         }
       : null;
-  const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", classification: "Classifications", next_step: "Next steps" };
+  const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", classification: "AI picks", next_step: "Next steps" };
   // Every group in view with its count, the empty ones muted, so the strip says what waits and what does not in one line.
   const jumps = [
     ...visibleGroups.map((g) => ({ href: `#group-${g}`, label: SHORT[g], count: queue?.groups[g].total ?? 0 })),
@@ -230,15 +231,17 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     { scope: "others", label: "Others" },
   ] as const;
   const unassignedCount = counts.work.unassigned;
-  const subcategories = taxonomy.subcategories.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, categoryKey: t.categoryKey }));
-  const queueChips = queueFilterChips(filterValues, scope, { subcategories, campaigns });
+  const replyTypes = taxonomy.replyTypes.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
+  const ambiguousTypes = [...ambiguousTypeNames(replyTypes)];
+  const queueChips = queueFilterChips(filterValues, scope, { replyTypes, campaigns });
 
   return (
     <>
       <ListKeys />
+      <QueueNotice />
       <ListToolbar
         end={groups.length > 0 || scopedTasks.length > 0 ? <KeyboardHint noun="rows" /> : undefined}
-        filters={<QueueFilters values={filterValues} scope={scope} count={queueChips.length} subcategories={subcategories} campaigns={campaigns} />}
+        filters={<QueueFilters values={filterValues} scope={scope} count={queueChips.length} replyTypes={replyTypes} campaigns={campaigns} />}
       >
         <FilterChips label="Whose work" items={scopeChips.map((c) => ({ href: scopeHref(c.scope), active: scope === c.scope, testId: `scope-${c.scope}`, label: c.label, count: counts.work[c.scope] }))} />
       </ListToolbar>
@@ -288,7 +291,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
                 ? `${unassignedCount} ${unassignedCount === 1 ? "item has" : "items have"} no one assigned yet.`
                 : scope !== "mine"
                   ? "Work that someone handles shows here. Yours is under Mine."
-                  : "A conversation lands here when a reply needs approval, an AI classification needs review or a follow-up comes due."
+                  : "A conversation lands here when a reply needs approval, an AI pick waits for you or a follow-up comes due."
           }
           action={
             hasAnyFilter(filterValues)
@@ -315,6 +318,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
               query={query}
               showAssignee={scope === "others"}
               now={nowIso}
+              ambiguousTypes={ambiguousTypes}
             />
           );
         })}

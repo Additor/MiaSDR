@@ -376,8 +376,8 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   /** A person whose only conversation belongs to a personal campaign. */
   async function personalOnly(f: Fx) {
     const personId = await person(f);
-    const pipeline = await one("select id from pipelines where organization_id = $1 limit 1", [f.org]);
-    const record = await one("insert into records (organization_id, person_id, pipeline_id, active_channel) values ($1, $2, $3, 'linkedin') returning id", [f.org, personId, pipeline.id]);
+    const pipeline = await one("select id from reply_type_sets where organization_id = $1 limit 1", [f.org]);
+    const record = await one("insert into records (organization_id, person_id, reply_type_set_id, active_channel) values ($1, $2, $3, 'linkedin') returning id", [f.org, personId, pipeline.id]);
     const campaignId = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
     const conversation = await one(
       "insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values ($1, $2, 'linkedin', $3, $4) returning id",
@@ -456,8 +456,8 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(await handling.activeConversationOfRecord(f.org, recordId)).toEqual({ conversationId: linkedin, channel: "linkedin" });
 
       const bare = await person(f);
-      const [{ id: pipeline }] = await sql`select pipeline_id as id from records where id = ${recordId}`;
-      const [{ id: empty }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${f.org}, ${bare}, ${pipeline}) returning id`;
+      const [{ id: pipeline }] = await sql`select reply_type_set_id as id from records where id = ${recordId}`;
+      const [{ id: empty }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${bare}, ${pipeline}) returning id`;
       expect(await handling.activeConversationOfRecord(f.org, empty)).toBeNull();
 
       const priv = await personalOnly(f);

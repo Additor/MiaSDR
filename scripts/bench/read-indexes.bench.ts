@@ -46,8 +46,8 @@ async function runPlans(sql: postgres.Sql) {
   // 200 contacts spread over the 100k, as a real organization converts a few leads out of many.
   await sql`update people set lifecycle = 'contact', converted_at = now() - ((abs(hashtext(id::text)) % 100000) || ' seconds')::interval
     where id in (select id from people where organization_id = ${org} order by md5(id::text) limit 200)`;
-  const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p', true) returning id`;
-  await sql`insert into records (organization_id, person_id, pipeline_id)
+  const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`;
+  await sql`insert into records (organization_id, person_id, reply_type_set_id)
     select ${org}, id, ${pipeline} from (select id from people where organization_id = ${org} order by created_at limit 500) s`;
   const [{ id: record }] = await sql`select id from records where organization_id = ${org} limit 1`;
   await sql`insert into deal_stages (organization_id, name, kind, position) values (${org}, 'New', 'open', 1), (${org}, 'Meeting', 'open', 2), (${org}, 'Won', 'won', 3)`;
@@ -63,7 +63,7 @@ async function runPlans(sql: postgres.Sql) {
   const [{ id: message }] = await sql`
     insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
     values (${org}, ${conversation}, 'email', 'me@perf.test', 'inbound', ${"m-" + tag}, 'x', now()) returning id`;
-  await sql`insert into classifications (organization_id, record_id, message_id, expected_context_version, confidence, created_at)
+  await sql`insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, confidence, created_at)
     select ${org}, r.id, ${message}, g, 0.5, now() - (g || ' seconds')::interval
     from generate_series(0, 99999) g join lateral (select id from records where organization_id = ${org} order by id offset (g % 500) limit 1) r on true`;
   const [{ id: person }] = await sql`select person_id as id from records where id = ${record}`;
@@ -83,7 +83,7 @@ async function runPlans(sql: postgres.Sql) {
     from generate_series(1, 100000) g`;
   await sql`update identity_exceptions set status = 'open', resolved_at = null where organization_id = ${org} and created_at > now() - interval '3 hours'`;
   await sql`reset session_replication_role`;
-  for (const t of ["people", "records", "classifications", "events", "drafts", "send_attempts", "identity_exceptions", "deal_stages", "deals"]) await sql.unsafe(`analyze ${t}`);
+  for (const t of ["people", "records", "reply_type_picks", "events", "drafts", "send_attempts", "identity_exceptions", "deal_stages", "deals"]) await sql.unsafe(`analyze ${t}`);
 
   const explain = async (query: string, params: unknown[]) => {
     const rows = await sql.unsafe(`explain (format json) ${query}`, params as never);
@@ -93,7 +93,7 @@ async function runPlans(sql: postgres.Sql) {
   const queries: Array<[string, string, string, unknown[]]> = [
     ["people_org_created_idx", "lead list, newest first", "select id from people where organization_id = $1 order by created_at desc, id desc limit 50", [org]],
     ["people_org_name_idx", "lead list, name ascending", "select id from people where organization_id = $1 order by lower(full_name) asc nulls last, id asc limit 50", [org]],
-    ["classifications_record_created_idx", "classifications of a record", "select id from classifications where record_id = $1 order by created_at desc limit 20", [record]],
+    ["reply_type_picks_record_created_idx", "classifications of a record", "select id from reply_type_picks where record_id = $1 order by created_at desc limit 20", [record]],
     ["events_person_created_idx", "events of a person", "select id from events where person_id = $1 order by created_at desc limit 50", [person]],
     ["send_attempts_draft_created_idx", "attempts of a draft", "select id from send_attempts where draft_id = $1 order by created_at desc limit 5", [draft]],
     ["identity_exceptions_org_status_created_idx", "exception queue", "select id from identity_exceptions where organization_id = $1 and status = 'open' order by created_at desc limit 200", [org]],

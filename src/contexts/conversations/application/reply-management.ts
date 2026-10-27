@@ -2,7 +2,6 @@ import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/sha
 import { checkManualReply, MANUAL_BODY_MAX, MANUAL_SUBJECT_MAX } from "../domain/manual-reply";
 import { normalizeSubject } from "../domain/subject";
 import { validateReplyCc, MAX_REPLY_CC, type ReplyCcError } from "../domain/lead-cc";
-import { needsReply } from "../domain/reply-policy";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import { aiIsOn, aiOffMessage } from "@/contexts/integrations/domain/ai-status";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
@@ -363,25 +362,26 @@ export async function reconcileReplies(deps: ReplyDeps, limit = 25): Promise<Rec
 }
 
 /**
- * Accept the AI's held proposal (subcategoryKey null) or choose another category. Recorded as a human decision. The
- * person sends the context version they looked at; a mismatch is a 409. A correction retires open drafts, ends the
- * sequence run, and starts the new category's sequence and a fresh draft.
+ * Accept the AI's held pick (replyTypeKey null) or choose another reply type. Recorded as a person's pick, with the
+ * rules of the type it applied. The person sends the context version they looked at; a mismatch is a 409. A correction
+ * retires open drafts and ends the sequence run; the type's rules decide whether a fresh draft is queued and a new run
+ * starts. Accepting a held stop request is refused with 409 `code: "stop_review"`: the person reviews it through Stop
+ * contacting. No pick marks the person do not contact.
  */
-export async function setClassification(
+export async function setReplyType(
   deps: ReplyDeps,
   actor: Actor,
   conversationId: string,
-  input: { subcategoryKey: string | null; expectedContextVersion: number },
+  input: { replyTypeKey: string | null; expectedContextVersion: number },
 ) {
   assertId(conversationId, "Conversation");
   if (!Number.isInteger(input.expectedContextVersion) || input.expectedContextVersion < 0) throw new ValidationError("The reply handling version is missing. Reload and try again.");
-  return deps.store.applyHumanClassification({
+  return deps.store.applyHumanReplyTypePick({
     organizationId: actor.organizationId,
     conversationId,
-    subcategoryKey: input.subcategoryKey,
+    replyTypeKey: input.replyTypeKey,
     expectedContextVersion: input.expectedContextVersion,
     actorUserId: actor.userId,
-    wantsDraft: needsReply,
   });
 }
 

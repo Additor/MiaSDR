@@ -12,9 +12,11 @@ import {
   groupsAfter,
   parseQueueFilter,
   pickNextQueueItem,
+  pickReviewOf,
   queueGroupOf,
   scopeOf,
   waitingSince,
+  type PickReviewFacts,
   type QueueFacts,
   type WaitingFacts,
 } from "./action-queue";
@@ -28,7 +30,7 @@ const facts = (partial: Partial<QueueFacts> = {}): QueueFacts => ({
   hasProblemDraft: false,
   hasFailedJob: false,
   hasDraftToReview: false,
-  hasClassificationToReview: false,
+  hasReplyTypePickToReview: false,
   hasOpenTask: false,
   ...partial,
 });
@@ -37,12 +39,12 @@ describe("queue group and membership", () => {
   it("picks the first match of problem, reply, classification, follow_up, next_step", () => {
     expect(queueGroupOf(facts())).toBe("next_step");
     expect(queueGroupOf(facts({ workflowState: "waiting" }))).toBe("follow_up");
-    expect(queueGroupOf(facts({ hasClassificationToReview: true }))).toBe("classification");
-    expect(queueGroupOf(facts({ hasClassificationToReview: true, hasDraftToReview: true }))).toBe("reply");
+    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ hasReplyTypePickToReview: true, hasDraftToReview: true }))).toBe("reply");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasProblemDraft: true }))).toBe("problem");
     expect(queueGroupOf(facts({ hasDraftToReview: true, hasFailedJob: true }))).toBe("problem");
     expect(queueGroupOf(facts({ workflowState: "error", hasDraftToReview: true }))).toBe("problem");
-    expect(queueGroupOf(facts({ workflowState: "waiting", hasClassificationToReview: true }))).toBe("classification");
+    expect(queueGroupOf(facts({ workflowState: "waiting", hasReplyTypePickToReview: true }))).toBe("classification");
   });
 
   it("admits action_required and error records, and waiting records whose time has come", () => {
@@ -59,7 +61,7 @@ describe("queue group and membership", () => {
   it("leaves a next_step record out while it has an open task, and keeps every other group", () => {
     expect(isInQueue(facts({ hasOpenTask: true }), NOW)).toBe(false);
     expect(isInQueue(facts({ hasOpenTask: true, hasDraftToReview: true }), NOW)).toBe(true);
-    expect(isInQueue(facts({ hasOpenTask: true, hasClassificationToReview: true }), NOW)).toBe(true);
+    expect(isInQueue(facts({ hasOpenTask: true, hasReplyTypePickToReview: true }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, workflowState: "error" }), NOW)).toBe(true);
     expect(isInQueue(facts({ hasOpenTask: true, workflowState: "waiting", nextActionAt: new Date("2026-10-19T09:00:00Z") }), NOW)).toBe(true);
   });
@@ -96,8 +98,8 @@ describe("action queue domain", () => {
 
   it("parses filters and reads a bare due-before date as the end of that day", () => {
     expect(parseQueueFilter({})).toEqual({});
-    const f = parseQueueFilter({ category: "interested", channel: "email", group: "reply", subcategoryId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
-    expect(f).toMatchObject({ categoryKey: "interested", channel: "email", group: "reply", subcategoryId: ID });
+    const f = parseQueueFilter({ category: "interested", channel: "email", group: "reply", replyTypeId: ID, dueBefore: "2026-10-15", dueAfter: "2026-10-01" });
+    expect(f).toMatchObject({ groupKey: "interested", channel: "email", group: "reply", replyTypeId: ID });
     expect(f.dueBefore?.toISOString()).toBe("2026-10-15T23:59:59.999Z");
     expect(f.dueAfter?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
     expect(parseQueueFilter({ errorsOnly: "1" }).errorsOnly).toBe(true);
@@ -191,5 +193,50 @@ describe("queue scopes", () => {
     expect(parseQueueFilter({ scope: "mine" }).scope).toBe("mine");
     expect(parseQueueFilter({ scope: "" }).scope).toBeUndefined();
     expect(() => parseQueueFilter({ scope: "everyone" })).toThrow(ValidationError);
+  });
+});
+
+describe("what an AI pick waits for", () => {
+  const pick = (partial: Partial<PickReviewFacts> = {}): PickReviewFacts => ({
+    status: "proposed",
+    current: true,
+    hasProposedType: true,
+    proposedSystemRole: null,
+    stopRequested: false,
+    acknowledged: false,
+    appliedIsCurrentType: false,
+    checkMode: "before",
+    stopped: false,
+    ...partial,
+  });
+  const applied = (partial: Partial<PickReviewFacts> = {}) => pick({ status: "auto_applied", appliedIsCurrentType: true, checkMode: "after", ...partial });
+
+  it("asks to accept a current held pick, and nothing once the record version moved on", () => {
+    expect(pickReviewOf(pick())).toBe("held");
+    expect(pickReviewOf(pick({ current: false }))).toBeNull();
+    expect(pickReviewOf(pick({ hasProposedType: false }))).toBeNull();
+    expect(pickReviewOf(pick({ status: "stale", current: false }))).toBeNull();
+  });
+
+  it("asks Looks right only for an applied pick decided with Check after, still the record's type, not looked at", () => {
+    expect(pickReviewOf(applied())).toBe("looks_right");
+    expect(pickReviewOf(applied({ checkMode: null }))).toBe("looks_right");
+    expect(pickReviewOf(applied({ checkMode: "skip" }))).toBeNull();
+    expect(pickReviewOf(applied({ checkMode: "before" }))).toBeNull();
+    expect(pickReviewOf(applied({ acknowledged: true }))).toBeNull();
+    expect(pickReviewOf(applied({ appliedIsCurrentType: false }))).toBeNull();
+    for (const status of ["accepted", "overridden", "rejected", "failed"]) expect(pickReviewOf(applied({ status }))).toBeNull();
+  });
+
+  it("turns an open pick that reads as a stop request into a stop review, unless contact already stopped", () => {
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request" }))).toBe("stop_review");
+    expect(pickReviewOf(pick({ stopRequested: true }))).toBe("stop_review");
+    expect(pickReviewOf(applied({ stopRequested: true, checkMode: "skip" }))).toBe("stop_review");
+    // Do not contact or a suppressed address: nothing is left to stop, and a held stop request is not offered for Accept.
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", stopped: true }))).toBeNull();
+    expect(pickReviewOf(pick({ stopRequested: true, stopped: true }))).toBe("held");
+    expect(pickReviewOf(applied({ stopRequested: true, stopped: true }))).toBe("looks_right");
+    // A stop request whose record moved on is answered.
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", current: false }))).toBeNull();
   });
 });

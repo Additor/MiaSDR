@@ -47,10 +47,10 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     const member = await user("member");
     const other = await user("other");
     const admin = await user("admin");
-    const pipeline = await one(sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
+    const pipeline = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true) returning id`);
     // A person has one record per pipeline, so the private record of `contact` lives in a second pipeline.
-    const pipeline2 = await one(sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p2', false) returning id`);
-    const sub = await one(sql`insert into subcategories (organization_id, pipeline_id, category_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
+    const pipeline2 = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p2', false) returning id`);
+    const sub = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
     const personal = await one(sql`insert into campaigns (organization_id, channel, name, type, created_by) values (${org}, 'linkedin', 'Mine', 'personal', ${other}) returning id`);
     const actors = {
       member: { userId: member, organizationId: org, role: "member" } satisfies Actor,
@@ -71,7 +71,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     const t = `${o.tag}-${label}`;
     const person = await one(sql`
       insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${o.org}, ${`${t}@lead.test`}, ${label}, 'contact', now()) returning id`);
-    const record = await one(sql`insert into records (organization_id, person_id, pipeline_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
+    const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
     const mailbox = `me-${t}@x.test`;
     const conversation = await one(sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${o.org}, ${record}, 'email', ${mailbox}) returning id`);
     const inbound = await one(sql`
@@ -82,7 +82,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
       values (${o.org}, ${conversation}, 'email', ${mailbox}, 'outbound', ${`out-${t}`}, 'reply', now()) returning id`);
     await sql`update records set latest_inbound_message_id = ${inbound} where id = ${record}`;
     const classification = await one(sql`
-      insert into classifications (organization_id, record_id, message_id, expected_context_version, previous_subcategory_id, proposed_subcategory_id, applied_subcategory_id, confidence)
+      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_reply_type_id, proposed_reply_type_id, applied_reply_type_id, confidence)
       values (${o.org}, ${record}, ${inbound}, 0, ${o.sub}, ${o.sub}, ${o.sub}, 0.9) returning id`);
     await sql`insert into ai_jobs (organization_id, kind, status, entity_type, entity_id, idempotency_key, completed_at) values (${o.org}, 'classification', 'succeeded', 'message', ${inbound}, ${`job-c-${t}`}, now())`;
     await sql`insert into ai_jobs (organization_id, kind, status, entity_type, entity_id, idempotency_key) values (${o.org}, 'initial_draft', 'queued', 'classification', ${classification}, ${`job-d-${t}`})`;
@@ -99,12 +99,12 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
       values (${o.org}, ${version}, 1, 'reply', 'Step 1', 0, 'Write a short note.') returning id`);
     await sql`update sequence_versions set status = 'published', published_at = now() where id = ${version}`;
     const run = await one(sql`
-      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, subcategory_id, status, started_by, trigger_message_id, last_inbound_at_start)
+      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
       values (${o.org}, ${record}, ${conversation}, ${sequence}, ${version}, ${o.sub}, 'completed', 'ai_assignment', ${inbound}, now()) returning id`);
     await sql`
       insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, draft_id, sent_message_id, expected_context_version)
       values (${o.org}, ${run}, ${step}, 'sent', now(), ${draft}, ${outbound}, 0)`;
-    await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'stage.moved', 'system')`;
+    await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${record}, 'reply_type.changed', 'system')`;
     await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${o.org}, ${person}, 'lifecycle.converted', 'system')`;
     await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${record}, 'on the record')`;
     await sql`insert into notes (organization_id, person_id, body) values (${o.org}, ${person}, 'on the person')`;
@@ -117,13 +117,13 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     if (opts.privateThread) {
       // A second record whose only thread is private, with an event, a note and a task of its own.
       const account = `li-${t}`;
-      const privateRecord = await one(sql`insert into records (organization_id, person_id, pipeline_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
+      const privateRecord = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
       privateConversation = await one(sql`
         insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${o.org}, ${privateRecord}, 'linkedin', ${account}, ${o.personal}) returning id`);
       await sql`
         insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
         values (${o.org}, ${privateConversation}, 'linkedin', ${account}, 'inbound', ${`li-in-${t}`}, 'private hello', now())`;
-      await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${privateRecord}, 'stage.moved', 'system')`;
+      await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${privateRecord}, 'reply_type.changed', 'system')`;
       await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${privateRecord}, 'private note')`;
       await sql`insert into tasks (organization_id, person_id, record_id, name) values (${o.org}, ${person}, ${privateRecord}, 'private task')`;
     }
@@ -139,7 +139,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
         (select count(*) from records where person_id = ${p.person})::int as records,
         (select count(*) from conversations where id in ${convs})::int as conversations,
         (select count(*) from messages where conversation_id in ${convs})::int as messages,
-        (select count(*) from classifications where record_id in ${recs})::int as classifications,
+        (select count(*) from reply_type_picks where record_id in ${recs})::int as classifications,
         (select count(*) from drafts where record_id in ${recs})::int as drafts,
         (select count(*) from send_attempts sa join drafts d on d.id = sa.draft_id where d.record_id in ${recs})::int as send_attempts,
         (select count(*) from sequence_runs where record_id in ${recs})::int as sequence_runs,
@@ -149,7 +149,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
         (select count(*) from tasks where person_id = ${p.person})::int as tasks,
         (select count(*) from ai_jobs where organization_id = ${o.org} and entity_id in (
           select id from messages where conversation_id in ${convs}
-          union all select id from classifications where record_id in ${recs}))::int as ai_jobs`;
+          union all select id from reply_type_picks where record_id in ${recs}))::int as ai_jobs`;
     return row as Record<string, number>;
   }
 
@@ -162,7 +162,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
           (select count(*) from messages where organization_id = ${org})::int as messages,
           (select count(*) from events where organization_id = ${org})::int as events,
           (select count(*) from drafts where organization_id = ${org})::int as drafts,
-          (select count(*) from classifications where organization_id = ${org})::int as classifications,
+          (select count(*) from reply_type_picks where organization_id = ${org})::int as classifications,
           (select count(*) from ai_jobs where organization_id = ${org})::int as ai_jobs,
           (select count(*) from notes where organization_id = ${org})::int as notes,
           (select count(*) from lead_ccs where organization_id = ${org})::int as lead_ccs`

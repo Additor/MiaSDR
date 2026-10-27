@@ -11,7 +11,7 @@ const BOX_B = "sdr25b@e2e-corp.test";
 async function seedBulk(mailboxAddress: string) {
   const db = sql();
   const [box] = await db`select organization_id as org from mailboxes where email_address = ${mailboxAddress}`;
-  const [pipeline] = await db`select id from pipelines where organization_id = ${box.org} and is_default`;
+  const [pipeline] = await db`select id from reply_type_sets where organization_id = ${box.org} and is_default`;
   return { db, org: box.org as string, pipeline: pipeline.id as string };
 }
 
@@ -22,7 +22,7 @@ async function addThread(
 ) {
   const { db, org, pipeline } = seed;
   const [person] = await db`insert into people (organization_id, email, full_name, first_name, source) values (${org}, ${input.email}, ${input.name}, ${input.name.split(" ")[0]}, 'inbound') returning id`;
-  const [record] = await db`insert into records (organization_id, person_id, pipeline_id, workflow_state) values (${org}, ${person.id}, ${pipeline}, 'idle') returning id`;
+  const [record] = await db`insert into records (organization_id, person_id, reply_type_set_id, workflow_state) values (${org}, ${person.id}, ${pipeline}, 'idle') returning id`;
   const [conv] = await db`insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id) values (${org}, ${record.id}, 'email', ${mailbox}, ${"e25-" + input.email}) returning id`;
   let n = 0;
   for (const m of input.messages) {

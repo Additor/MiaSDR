@@ -55,8 +55,8 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   }
 
   const sub = async (f: Fx, key: string) => {
-    const taxonomy = await replies.getReplyTaxonomy(deps, f.actor);
-    const found = taxonomy.subcategories.find((s) => s.key === key);
+    const taxonomy = await replies.getReplyTypeCatalog(deps, f.actor);
+    const found = taxonomy.replyTypes.find((s) => s.key === key);
     if (!found) throw new Error(`no subcategory ${key}`);
     return found;
   };
@@ -72,16 +72,16 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   }
 
   /** An AI classification for the record's latest inbound message, already applied. */
-  async function appliedClassification(f: Fx, l: { recordId: string }, key: string, status = "auto_applied") {
+  async function appliedReplyTypePick(f: Fx, l: { recordId: string }, key: string, status = "auto_applied") {
     const target = await sub(f, key);
     const r = await rec(l.recordId);
     const [c] = await sql`
-      insert into classifications (organization_id, record_id, message_id, expected_context_version, previous_category_key, previous_subcategory_id,
-        proposed_category_key, proposed_subcategory_id, applied_category_key, applied_subcategory_id, confidence, reasoning, status, provider)
-      values (${f.org}, ${l.recordId}, ${r.latest_inbound_message_id}, ${r.context_version}, ${r.category_key}, ${r.subcategory_id},
-        ${target.categoryKey}, ${target.id}, ${status === "proposed" ? null : target.categoryKey}, ${status === "proposed" ? null : target.id}, 0.9, 'asked for a demo', ${status}, 'fake') returning id`;
+      insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, previous_group_key, previous_reply_type_id,
+        proposed_group_key, proposed_reply_type_id, applied_group_key, applied_reply_type_id, confidence, reasoning, status, provider)
+      values (${f.org}, ${l.recordId}, ${r.latest_inbound_message_id}, ${r.context_version}, ${r.group_key}, ${r.reply_type_id},
+        ${target.groupKey}, ${target.id}, ${status === "proposed" ? null : target.groupKey}, ${status === "proposed" ? null : target.id}, 0.9, 'asked for a demo', ${status}, 'fake') returning id`;
     if (status !== "proposed") {
-      await sql`update records set category_key = ${target.categoryKey}, subcategory_id = ${target.id}, category_source = 'ai', context_version = context_version where id = ${l.recordId}`;
+      await sql`update records set group_key = ${target.groupKey}, reply_type_id = ${target.id}, reply_type_source = 'ai', context_version = context_version where id = ${l.recordId}`;
     }
     return c.id as string;
   }
@@ -108,14 +108,14 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const before = await rec(l.recordId);
       const meetingDone = await sub(f, "meeting_done");
 
-      const result = await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: meetingDone.id, expectedContextVersion: before.context_version, note: "Met on Tuesday" });
-      expect(result).toMatchObject({ subcategoryKey: "meeting_done", contextVersion: before.context_version + 1, draftsRetired: 1 });
+      const result = await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: meetingDone.id, expectedContextVersion: before.context_version, note: "Met on Tuesday" });
+      expect(result).toMatchObject({ replyTypeKey: "meeting_done", contextVersion: before.context_version + 1, draftsRetired: 1 });
 
       const after = await rec(l.recordId);
-      expect(after).toMatchObject({ category_key: "interested", subcategory_id: meetingDone.id, category_source: "human", category_locked: false, workflow_state: "action_required", context_version: before.context_version + 1 });
+      expect(after).toMatchObject({ group_key: "interested", reply_type_id: meetingDone.id, reply_type_source: "human", reply_type_locked: false, workflow_state: "action_required", context_version: before.context_version + 1 });
       expect((await sql`select status from drafts where id = ${draftId}`)[0].status).toBe("stale");
-      const [event] = await sql`select * from events where record_id = ${l.recordId} and event_type = 'stage.moved'`;
-      expect(event).toMatchObject({ actor_type: "human", actor_user_id: f.actor.userId, to_data: expect.objectContaining({ subcategoryId: meetingDone.id }), meta: expect.objectContaining({ note: "Met on Tuesday" }) });
+      const [event] = await sql`select * from events where record_id = ${l.recordId} and event_type = 'reply_type.changed'`;
+      expect(event).toMatchObject({ actor_type: "human", actor_user_id: f.actor.userId, to_data: expect.objectContaining({ replyTypeId: meetingDone.id }), meta: expect.objectContaining({ note: "Met on Tuesday" }) });
     });
 
     it("rejects a stale version, a no-op, a mismatched category and an archived subcategory", async () => {
@@ -123,13 +123,13 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const l = await lead(f);
       const v = (await rec(l.recordId)).context_version as number;
       const demo = await sub(f, "demo_request");
-      await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: demo.id, expectedContextVersion: v + 5 })).rejects.toThrow(ConflictError);
-      await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: demo.id, expectedContextVersion: v });
-      await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(/already in this category/);
-      await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "customer", subcategoryId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(ValidationError);
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v + 5 })).rejects.toThrow(ConflictError);
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v });
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(/already has this type/);
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(ValidationError);
       const trial = await sub(f, "trial_user");
-      await replies.updateSubcategory(deps, f.admin, trial.id, { active: false });
-      await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: trial.id, expectedContextVersion: v + 1 })).rejects.toThrow(/archived/);
+      await replies.updateReplyType(deps, f.admin, trial.id, { active: false });
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: trial.id, expectedContextVersion: v + 1 })).rejects.toThrow(/archived/);
     });
 
     it("locks a customer and needs a confirmation to move them out", async () => {
@@ -137,24 +137,67 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const l = await lead(f);
       const customer = await sub(f, "customer");
       let v = (await rec(l.recordId)).context_version as number;
-      await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "customer", subcategoryId: customer.id, expectedContextVersion: v });
-      expect((await rec(l.recordId)).category_locked).toBe(true);
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: customer.id, expectedContextVersion: v });
+      expect((await rec(l.recordId)).reply_type_locked).toBe(true);
       v += 1;
       const other = await sub(f, "other");
-      await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "other", subcategoryId: other.id, expectedContextVersion: v })).rejects.toThrow(/locked as Existing customer/);
-      await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "other", subcategoryId: other.id, expectedContextVersion: v, confirmUnlock: true });
-      expect(await rec(l.recordId)).toMatchObject({ category_key: "other", category_locked: false });
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "other", replyTypeId: other.id, expectedContextVersion: v })).rejects.toThrow(/locked as Existing customer/);
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "other", replyTypeId: other.id, expectedContextVersion: v, confirmUnlock: true });
+      expect(await rec(l.recordId)).toMatchObject({ group_key: "other", reply_type_locked: false });
     });
 
-    it("sets do not contact and stops enrollments when the record moves to Do not contact", async () => {
+    it("never marks do not contact when the record moves to the stop request type: only the type changes", async () => {
       const f = await fixture();
       const l = await lead(f);
       const [campaign] = await sql`insert into campaigns (organization_id, channel, name, status) values (${f.org}, 'email', 'C', 'active') returning id`;
       await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status, next_send_at) values (${f.org}, ${campaign.id}, ${l.personId}, 'email', 'active', now())`;
-      const dnc = await sub(f, "do_not_contact");
-      await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "not_interested", subcategoryId: dnc.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      expect((await sql`select do_not_contact, source from contact_policies where person_id = ${l.personId}`)[0]).toMatchObject({ do_not_contact: true, source: "human" });
-      expect((await sql`select status, stop_reason from campaign_enrollments where person_id = ${l.personId}`)[0]).toMatchObject({ status: "suppressed", stop_reason: "do_not_contact" });
+      const stop = await sub(f, "do_not_contact");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "not_interested", replyTypeId: stop.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(await rec(l.recordId)).toMatchObject({ reply_type_id: stop.id });
+      expect(await sql`select 1 from contact_policies where person_id = ${l.personId} and do_not_contact`).toHaveLength(0);
+      expect((await sql`select status from campaign_enrollments where person_id = ${l.personId}`)[0].status).toBe("active");
+      expect(await eventTypes(l.recordId)).not.toContain("contact_policy.enforced");
+    });
+
+    it("decides the workflow by the type's rules and logs the rules it used", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      expect((await rec(l.recordId)).workflow_state).toBe("action_required");
+      const notNow = await sub(f, "not_required_right_now");
+      const result = await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "not_interested", replyTypeId: notNow.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(result).toMatchObject({ runStarted: false });
+      // Not now writes no draft, so nothing is left for a person.
+      expect((await rec(l.recordId)).workflow_state).toBe("idle");
+      const [event] = await sql`select meta from events where record_id = ${l.recordId} and event_type = 'reply_type.changed'`;
+      expect(event.meta).toMatchObject({ rules: { checkMode: "skip", replyDraft: false, followUps: "stop" } });
+
+      const demo = await sub(f, "demo_request");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect((await rec(l.recordId)).workflow_state).toBe("action_required");
+    });
+  });
+
+  describe("type change outcomes", () => {
+    it("reads what a change to each other active type would do, and never marks do not contact", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const demo = await sub(f, "demo_request");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      const outcomes = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId);
+      const of = async (key: string) => {
+        const id = (await sub(f, key)).id;
+        return outcomes.find((o) => o.replyTypeId === id)?.outcome;
+      };
+      expect(outcomes.some((o) => o.replyTypeId === demo.id)).toBe(false);
+      // No campaign emailed this lead, so no follow-ups apply.
+      expect(await of("not_required_right_now")).toEqual({
+        replyDraft: "Reply draft: none. Not now is set to not write one.",
+        followUps: "Follow-ups: none for this conversation.",
+        contact: "Contact: unchanged.",
+      });
+      expect((await of("meeting_requested"))?.replyDraft).toBe("Reply draft: the AI writes a new one.");
+      expect((await of("do_not_contact"))?.contact).toBe("Contact: unchanged until you choose Stop contacting.");
+      await expect(replies.getTypeChangeOutcomes(deps, (await fixture()).actor, l.recordId)).rejects.toThrow(NotFoundError);
     });
   });
 
@@ -163,33 +206,33 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const f = await fixture();
       const l = await lead(f);
       const draftId = await openDraft(f, l);
-      const classificationId = await appliedClassification(f, l, "demo_request");
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
       const before = await rec(l.recordId);
 
-      const result = await replies.undoClassification(deps, f.actor, classificationId);
-      expect(result).toMatchObject({ recordId: l.recordId, draftsRetired: 1 });
+      const result = await replies.undoReplyTypePick(deps, f.actor, replyTypePickId);
+      expect(result).toEqual({ recordId: l.recordId, draftsRetired: 1, runEnded: false, draftJobCancelled: false });
       const after = await rec(l.recordId);
-      expect(after).toMatchObject({ category_key: null, subcategory_id: null, category_source: null, workflow_state: "action_required", context_version: before.context_version + 1 });
-      expect((await sql`select status, acknowledged_at from classifications where id = ${classificationId}`)[0]).toMatchObject({ status: "rejected" });
+      expect(after).toMatchObject({ group_key: null, reply_type_id: null, reply_type_source: null, workflow_state: "action_required", context_version: before.context_version + 1 });
+      expect((await sql`select status, acknowledged_at from reply_type_picks where id = ${replyTypePickId}`)[0]).toMatchObject({ status: "rejected" });
       expect((await sql`select status from drafts where id = ${draftId}`)[0].status).toBe("stale");
-      expect(await eventTypes(l.recordId)).toContain("classification.undone");
-      await expect(replies.undoClassification(deps, f.actor, classificationId)).rejects.toThrow(ConflictError);
+      expect(await eventTypes(l.recordId)).toContain("reply_type_pick.undone");
+      await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
     });
 
     it("cancels a queued draft job for the undone classification", async () => {
       const f = await fixture();
       const l = await lead(f);
-      const classificationId = await appliedClassification(f, l, "demo_request");
-      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key) values (${f.org}, 'initial_draft', 'classification', ${classificationId}, ${"k-" + classificationId})`;
-      await replies.undoClassification(deps, f.actor, classificationId);
-      expect((await sql`select status from ai_jobs where entity_id = ${classificationId}`)[0].status).toBe("failed");
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
+      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key) values (${f.org}, 'initial_draft', 'classification', ${replyTypePickId}, ${"k-" + replyTypePickId})`;
+      expect(await replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).toMatchObject({ draftJobCancelled: true });
+      expect((await sql`select status from ai_jobs where entity_id = ${replyTypePickId}`)[0].status).toBe("failed");
     });
 
     it("ends the active sequence run with classification_undone, retires its drafts and cancels its steps; a second undo changes nothing", async () => {
       const f = await fixture();
       const l = await lead(f);
       const target = await sub(f, "demo_request");
-      const classificationId = await appliedClassification(f, l, "demo_request");
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
       const r = await rec(l.recordId);
       const [{ id: seq }] = await sql`insert into sequences (organization_id, name) values (${f.org}, 'Demo follow-up') returning id`;
       // Steps go in while the version is a draft: sequence_steps_frozen_trg refuses them under a published one.
@@ -203,13 +246,13 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       }
       await sql`update sequence_versions set status = 'published', published_at = now() where id = ${ver}`;
       const [{ id: runId }] = await sql`
-        insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, subcategory_id, status, started_by, trigger_message_id, last_inbound_at_start)
+        insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
         values (${f.org}, ${l.recordId}, ${l.conversationId}, ${seq}, ${ver}, ${target.id}, 'active', 'ai_assignment', ${r.latest_inbound_message_id}, now()) returning id`;
       const draftId = await openDraft(f, l);
       await sql`insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, draft_id, expected_context_version) values (${f.org}, ${runId}, ${stepIds[0]}, 'awaiting_review', now(), ${draftId}, ${r.context_version})`;
       await sql`insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, expected_context_version) values (${f.org}, ${runId}, ${stepIds[1]}, 'scheduled', now() + interval '1 day', ${r.context_version})`;
 
-      await replies.undoClassification(deps, f.actor, classificationId);
+      expect(await replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).toEqual({ recordId: l.recordId, draftsRetired: 1, runEnded: true, draftJobCancelled: false });
 
       expect((await sql`select status from sequence_runs where id = ${runId}`)[0].status).toBe("interrupted");
       expect((await sql`select status from sequence_step_runs where sequence_run_id = ${runId} order by due_at`).map((x) => x.status)).toEqual(["cancelled", "cancelled"]);
@@ -218,7 +261,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect(interrupted).toHaveLength(1);
       expect(interrupted[0].meta).toMatchObject({ reason: "classification_undone" });
 
-      await expect(replies.undoClassification(deps, f.actor, classificationId)).rejects.toThrow(ConflictError);
+      await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
       expect(await sql`select 1 from events where record_id = ${l.recordId} and event_type = 'sequence.interrupted'`).toHaveLength(1);
       expect((await sql`select status from sequence_runs where id = ${runId}`)[0].status).toBe("interrupted");
     });
@@ -226,31 +269,31 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     it("refuses to undo over a later stage move, and only the latest message's classification", async () => {
       const f = await fixture();
       const l = await lead(f);
-      const classificationId = await appliedClassification(f, l, "demo_request");
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
       const meeting = await sub(f, "meeting_requested");
-      await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: meeting.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      await expect(replies.undoClassification(deps, f.actor, classificationId)).rejects.toThrow(/another category after this classification/);
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(/changed the reply type after this pick/);
 
       // A second reply makes the first message's classification history only.
       const g = await lead(f);
-      const oldId = await appliedClassification(f, g, "demo_request");
+      const oldId = await appliedReplyTypePick(f, g, "demo_request");
       const [conv] = await sql`select provider_thread_id, account_ref from conversations where id = ${g.conversationId}`;
       await composition.ingestInbound(mail(f, { providerThreadId: conv.provider_thread_id, from: { email: "x@acme.test", name: null } }));
-      await expect(replies.undoClassification(deps, f.actor, oldId)).rejects.toThrow(/latest inbound/);
+      await expect(replies.undoReplyTypePick(deps, f.actor, oldId)).rejects.toThrow(/latest inbound/);
     });
 
     it("acknowledges an applied classification and refuses a held proposal", async () => {
       const f = await fixture();
       const l = await lead(f);
-      const applied = await appliedClassification(f, l, "demo_request");
-      await replies.acknowledgeClassification(deps, f.actor, applied);
-      expect((await sql`select acknowledged_at from classifications where id = ${applied}`)[0].acknowledged_at).not.toBeNull();
-      await replies.acknowledgeClassification(deps, f.actor, applied);
-      expect((await sql`select count(*)::int as n from events where record_id = ${l.recordId} and event_type = 'classification.acknowledged'`)[0].n).toBe(1);
+      const applied = await appliedReplyTypePick(f, l, "demo_request");
+      await replies.acknowledgeReplyTypePick(deps, f.actor, applied);
+      expect((await sql`select acknowledged_at from reply_type_picks where id = ${applied}`)[0].acknowledged_at).not.toBeNull();
+      await replies.acknowledgeReplyTypePick(deps, f.actor, applied);
+      expect((await sql`select count(*)::int as n from events where record_id = ${l.recordId} and event_type = 'reply_type_pick.acknowledged'`)[0].n).toBe(1);
 
       const g = await lead(f);
-      const held = await appliedClassification(f, g, "demo_request", "proposed");
-      await expect(replies.acknowledgeClassification(deps, f.actor, held)).rejects.toThrow(/Accept or change/);
+      const held = await appliedReplyTypePick(f, g, "demo_request", "proposed");
+      await expect(replies.acknowledgeReplyTypePick(deps, f.actor, held)).rejects.toThrow(/Accept or change/);
     });
   });
 
@@ -319,7 +362,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const la = await lead(a);
       const lb = await lead(b);
       await openDraft(a, la);
-      const classificationId = await appliedClassification(a, la, "demo_request");
+      const replyTypePickId = await appliedReplyTypePick(a, la, "demo_request");
 
       // Reads
       expect((await workQueue.getWorkQueue(queueDeps, b.actor)).groups.reply.items).toHaveLength(0);
@@ -328,18 +371,18 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       // Writes
       const v = (await rec(la.recordId)).context_version as number;
       const meeting = await sub(a, "meeting_done");
-      await expect(replies.moveRecordStage(deps, b.actor, la.recordId, { categoryKey: "interested", subcategoryId: meeting.id, expectedContextVersion: v })).rejects.toThrow(NotFoundError);
-      await expect(replies.moveRecordStage(deps, b.actor, lb.recordId, { categoryKey: "interested", subcategoryId: meeting.id, expectedContextVersion: 0 })).rejects.toThrow(NotFoundError);
-      await expect(replies.undoClassification(deps, b.actor, classificationId)).rejects.toThrow(NotFoundError);
-      await expect(replies.acknowledgeClassification(deps, b.actor, classificationId)).rejects.toThrow(NotFoundError);
+      await expect(replies.changeReplyType(deps, b.actor, la.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: v })).rejects.toThrow(NotFoundError);
+      await expect(replies.changeReplyType(deps, b.actor, lb.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: 0 })).rejects.toThrow(NotFoundError);
+      await expect(replies.undoReplyTypePick(deps, b.actor, replyTypePickId)).rejects.toThrow(NotFoundError);
+      await expect(replies.acknowledgeReplyTypePick(deps, b.actor, replyTypePickId)).rejects.toThrow(NotFoundError);
       await expect(replies.setPersonDoNotContact(deps, b.actor, la.personId, { enabled: true, reason: "x" })).rejects.toThrow(NotFoundError);
       await expect(replies.closeRecord(deps, b.actor, la.recordId, { reason: "x" })).rejects.toThrow(NotFoundError);
       await expect(replies.addRecordNote(deps, b.actor, la.recordId, { body: "hi" })).rejects.toThrow(NotFoundError);
-      await expect(replies.updateSubcategory(deps, b.admin, meeting.id, { active: false })).rejects.toThrow(NotFoundError);
-      await expect(replies.deleteSubcategory(deps, b.admin, meeting.id)).rejects.toThrow(NotFoundError);
-      expect(await rec(la.recordId)).toMatchObject({ context_version: v, category_source: "ai" });
+      await expect(replies.updateReplyType(deps, b.admin, meeting.id, { active: false })).rejects.toThrow(NotFoundError);
+      await expect(replies.deleteReplyType(deps, b.admin, meeting.id)).rejects.toThrow(NotFoundError);
+      expect(await rec(la.recordId)).toMatchObject({ context_version: v, reply_type_source: "ai" });
       expect((await sql`select count(*)::int as n from contact_policies where person_id = ${la.personId}`)[0].n).toBe(0);
-      expect((await sql`select active from subcategories where id = ${meeting.id}`)[0].active).toBe(true);
+      expect((await sql`select active from reply_types where id = ${meeting.id}`)[0].active).toBe(true);
     });
   });
 
@@ -354,7 +397,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await replies.closeRecord(deps, f.actor, l.recordId, { reason: "Went with a competitor" });
       expect(await rec(l.recordId)).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
       const demo = await sub(f, "demo_request");
-      await expect(replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version })).rejects.toThrow(/closed/);
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version })).rejects.toThrow(/closed/);
     });
 
     it("reopens a closed record once", async () => {
@@ -380,33 +423,69 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       f = await fixture();
     });
 
-    it("creates a subcategory and saves edits to it", async () => {
-      const created = await replies.createSubcategory(deps, f.admin, { categoryKey: "interested", name: "Pricing question", classificationGuidance: "Asks what it costs.", reviewRequired: true, stageRank: 2 });
-      expect(await sub(f, "pricing_question")).toMatchObject({ id: created.id, reviewRequired: true, stageRank: 2, classificationGuidance: "Asks what it costs.", recordCount: 0 });
-      await replies.updateSubcategory(deps, f.admin, created.id, { name: "Pricing questions", reviewRequired: false, stageRank: null });
-      expect(await sub(f, "pricing_question")).toMatchObject({ name: "Pricing questions", reviewRequired: false, stageRank: null });
+    it("creates a reply type with its rules and saves edits to them", async () => {
+      const created = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Pricing question", classificationGuidance: "Asks what it costs.", checkMode: "before" });
+      expect(await sub(f, "pricing_question")).toMatchObject({
+        id: created.id,
+        rules: { checkMode: "before", replyDraft: true, followUps: "continue" },
+        systemRole: null,
+        classificationGuidance: "Asks what it costs.",
+        recordCount: 0,
+      });
+      await replies.updateReplyType(deps, f.admin, created.id, { name: "Pricing questions", checkMode: "skip", followUps: "stop" });
+      expect(await sub(f, "pricing_question")).toMatchObject({ name: "Pricing questions", rules: { checkMode: "skip", replyDraft: true, followUps: "stop" } });
+    });
+
+    it("keeps the stop request rules and roles of the starter types", async () => {
+      const stop = await sub(f, "do_not_contact");
+      expect(stop).toMatchObject({ name: "Asked to stop", systemRole: "stop_request", rules: { checkMode: "before", replyDraft: false, followUps: "stop" } });
+      expect(await sub(f, "customer")).toMatchObject({ name: "Customer question", systemRole: "customer" });
+      await expect(replies.updateReplyType(deps, f.admin, stop.id, { followUps: "continue" })).rejects.toThrow(/always stops follow-ups/);
+    });
+
+    it("refuses to archive or delete a type with a system role, with the role's reason", async () => {
+      const { SYSTEM_ROLE_REASONS } = await import("../../domain/reply-type");
+      for (const [key, role] of [["do_not_contact", "stop_request"], ["customer", "customer"]] as const) {
+        const t = await sub(f, key);
+        const archive = await replies.updateReplyType(deps, f.admin, t.id, { active: false }).catch((e: unknown) => e);
+        expect(archive).toBeInstanceOf(ConflictError);
+        expect((archive as ConflictError).message).toBe(SYSTEM_ROLE_REASONS[role]);
+        expect((archive as ConflictError).details).toEqual({ code: "system_role" });
+        await expect(replies.deleteReplyType(deps, f.admin, t.id)).rejects.toThrow(SYSTEM_ROLE_REASONS[role]);
+        expect((await sub(f, key)).active).toBe(true);
+      }
+      // Rules a system role allows still save.
+      await replies.updateReplyType(deps, f.admin, (await sub(f, "customer")).id, { checkMode: "before" });
+      expect((await sub(f, "customer")).rules.checkMode).toBe("before");
+    });
+
+    it("validates rules on create and update", async () => {
+      await expect(replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Bad check", checkMode: "sometimes" })).rejects.toThrow(ValidationError);
+      const t = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Rules check" });
+      await expect(replies.updateReplyType(deps, f.admin, t.id, { followUps: "maybe" })).rejects.toThrow(ValidationError);
+      await expect(replies.updateReplyType(deps, f.admin, (await sub(f, "do_not_contact")).id, { replyDraft: true })).rejects.toThrow(/never gets a reply draft/);
     });
 
     it("refuses to delete a subcategory a record is in, and archives it instead", async () => {
-      const created = await replies.createSubcategory(deps, f.admin, { categoryKey: "interested", name: "Contract review" });
+      const created = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Contract review" });
       const l = await lead(f);
-      await replies.moveRecordStage(deps, f.actor, l.recordId, { categoryKey: "interested", subcategoryId: created.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      await expect(replies.deleteSubcategory(deps, f.admin, created.id)).rejects.toThrow(/1 person is in/);
-      await replies.updateSubcategory(deps, f.admin, created.id, { active: false });
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: created.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      await expect(replies.deleteReplyType(deps, f.admin, created.id)).rejects.toThrow(/1 person has/);
+      await replies.updateReplyType(deps, f.admin, created.id, { active: false });
       expect((await sub(f, "contract_review")).active).toBe(false);
     });
 
     it("deletes an unused subcategory", async () => {
-      const spare = await replies.createSubcategory(deps, f.admin, { categoryKey: "other", name: "Spare" });
-      await replies.deleteSubcategory(deps, f.admin, spare.id);
-      expect((await replies.getReplyTaxonomy(deps, f.actor)).subcategories.some((s) => s.id === spare.id)).toBe(false);
+      const spare = await replies.createReplyType(deps, f.admin, { groupKey: "other", name: "Spare" });
+      await replies.deleteReplyType(deps, f.admin, spare.id);
+      expect((await replies.getReplyTypeCatalog(deps, f.actor)).replyTypes.some((s) => s.id === spare.id)).toBe(false);
     });
 
     it("saves the thresholds and draft instructions, and rejects a confidence above 1", async () => {
-      await replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 0.7, reviewOther: false });
+      await replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 0.7 });
       await replies.updateReplyAiInstructions(deps, f.admin, { draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }] });
-      const { settings } = await replies.getReplyTaxonomy(deps, f.actor);
-      expect(settings).toMatchObject({ autoApplyConfidence: 0.7, reviewOther: false, customerRequiresReview: true, draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }], classificationInstructions: [] });
+      const { settings } = await replies.getReplyTypeCatalog(deps, f.actor);
+      expect(settings).toEqual({ autoApplyConfidence: 0.7, draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }], classificationInstructions: [] });
       await expect(replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 2 })).rejects.toThrow(ValidationError);
     });
   });

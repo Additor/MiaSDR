@@ -78,11 +78,11 @@ describeDb("inbox filters, views and search", () => {
       values (${c.organization_id}, ${conversationId}, ${c.channel}, ${c.account_ref}, ${m.direction}, ${"k-" + ++counter}, ${m.subject ?? null}, ${m.from ?? null}, ${m.body}, ${m.at}, ${m.raw ? sql.json(m.raw as never) : null})`;
   }
 
-  async function classify(conversationId: string, subcategoryKey: string) {
+  async function classify(conversationId: string, replyTypeKey: string) {
     await sql`
-      update records set category_key = s.category_key, subcategory_id = s.id, category_source = 'human'
-      from subcategories s, conversations c
-      where c.id = ${conversationId} and records.id = c.record_id and s.pipeline_id = records.pipeline_id and s.key = ${subcategoryKey}`;
+      update records set group_key = s.group_key, reply_type_id = s.id, reply_type_source = 'human'
+      from reply_types s, conversations c
+      where c.id = ${conversationId} and records.id = c.record_id and s.reply_type_set_id = records.reply_type_set_id and s.key = ${replyTypeKey}`;
   }
 
   const ids = (rows: Array<{ conversationId: string }>) => rows.map((r) => r.conversationId).sort();
@@ -105,7 +105,7 @@ describeDb("inbox filters, views and search", () => {
       for (let i = 0; i < 3; i++) await inboundThread(f, { at: new Date(Date.now() - (i + 2) * 24 * HOUR) });
       const plain = await list(f);
       const empty = await list(f, {
-        leadIds: [], leadQuery: "", campaignIds: [], mailboxIds: [], subcategoryKeys: [], categoryKeys: [], dateMode: "all", dateFrom: "", dateTo: "",
+        leadIds: [], leadQuery: "", campaignIds: [], mailboxIds: [], replyTypeKeys: [], groupKeys: [], dateMode: "all", dateFrom: "", dateTo: "",
       });
       expect(plain.total).toBe(3);
       expect(empty.rows.map((r) => r.conversationId)).toEqual(plain.rows.map((r) => r.conversationId));
@@ -153,12 +153,12 @@ describeDb("inbox filters, views and search", () => {
       const c = await inboundThread(f);
       await classify(a.conversationId, "demo_request");
       await classify(b.conversationId, "not_required_right_now");
-      const demo = await list(f, { subcategoryKeys: ["demo_request"] });
+      const demo = await list(f, { replyTypeKeys: ["demo_request"] });
       expect(ids(demo.rows)).toEqual([a.conversationId]);
-      expect(demo.rows[0]).toMatchObject({ categoryKey: "interested", subcategoryName: expect.any(String) });
-      expect(ids((await list(f, { categoryKeys: ["not_interested"] })).rows)).toEqual([b.conversationId]);
-      expect(ids((await list(f, { categoryKeys: ["interested", "not_interested"] })).rows)).toEqual(ids([a, b]));
-      expect((await list(f)).rows.find((r) => r.conversationId === c.conversationId)).toMatchObject({ categoryKey: null, subcategoryName: null });
+      expect(demo.rows[0]).toMatchObject({ groupKey: "interested", replyTypeName: expect.any(String) });
+      expect(ids((await list(f, { groupKeys: ["not_interested"] })).rows)).toEqual([b.conversationId]);
+      expect(ids((await list(f, { groupKeys: ["interested", "not_interested"] })).rows)).toEqual(ids([a, b]));
+      expect((await list(f)).rows.find((r) => r.conversationId === c.conversationId)).toMatchObject({ groupKey: null, replyTypeName: null });
     });
 
     it("filters by date range on the latest message: today, yesterday, custom", async () => {
@@ -205,10 +205,10 @@ describeDb("inbox filters, views and search", () => {
       const b = await inboundThread(f, { email: "bob@acme.test", name: "Bob", body: "pricing question" });
       await classify(a.conversationId, "demo_request");
       await classify(b.conversationId, "demo_request");
-      const combined = { subcategoryKeys: ["demo_request"], mailboxIds: [f.mailboxId], query: "pricing" };
+      const combined = { replyTypeKeys: ["demo_request"], mailboxIds: [f.mailboxId], query: "pricing" };
       expect((await list(f, combined)).total).toBe(2);
       expect(ids((await list(f, { ...combined, leadQuery: "bob" })).rows)).toEqual([b.conversationId]);
-      expect((await list(f, { ...combined, leadQuery: "bob", categoryKeys: ["not_interested"] })).total).toBe(0);
+      expect((await list(f, { ...combined, leadQuery: "bob", groupKeys: ["not_interested"] })).total).toBe(0);
       expect(ids((await list(f, { ...combined, view: "unread", leadIds: [a.personId] })).rows)).toEqual([a.conversationId]);
     });
 
@@ -221,7 +221,7 @@ describeDb("inbox filters, views and search", () => {
       expect((await list(f, { leadIds: [theirs.personId] })).total).toBe(0);
       expect((await list(f, { mailboxIds: [other.mailboxId] })).total).toBe(0);
       expect((await list(f, { query: "secretword" })).total).toBe(0);
-      expect((await list(f, { subcategoryKeys: ["demo_request"] })).total).toBe(0);
+      expect((await list(f, { replyTypeKeys: ["demo_request"] })).total).toBe(0);
       expect(ids((await list(f)).rows)).toEqual([mine.conversationId]);
       expect((await inbox.inboxFilterOptions(composition.inboxDeps(), f.actor, [theirs.personId])).leads).toEqual([]);
       const options = await inbox.inboxFilterOptions(composition.inboxDeps(), f.actor, [mine.personId]);
@@ -373,11 +373,11 @@ describeDb("inbox filters, views and search", () => {
       async function run(email: string, status: string, stepStatus: string, dueIn: number) {
         const t = await inboundThread(f, { email, name: email.split("@")[0] });
         await classify(t.conversationId, "demo_request");
-        const [rec] = await sql`select r.id, r.subcategory_id, c.id as conv from records r join conversations c on c.record_id = r.id where c.id = ${t.conversationId}`;
+        const [rec] = await sql`select r.id, r.reply_type_id, c.id as conv from records r join conversations c on c.record_id = r.id where c.id = ${t.conversationId}`;
         const [msg] = await sql`select id from messages where conversation_id = ${t.conversationId} limit 1`;
         const [r] = await sql`
-          insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, subcategory_id, status, started_by, trigger_message_id, last_inbound_at_start)
-          values (${f.org}, ${rec.id}, ${t.conversationId}, ${seq.id}, ${ver.id}, ${rec.subcategory_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
+          insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
+          values (${f.org}, ${rec.id}, ${t.conversationId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, ${status}, 'ai_assignment', ${msg.id}, now()) returning id`;
         const [sr] = await sql`
           insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, expected_context_version)
           values (${f.org}, ${r.id}, ${step.id}, ${stepStatus}, ${new Date(Date.now() + dueIn * HOUR)}, 1) returning id`;
@@ -422,11 +422,11 @@ describeDb("inbox filters, views and search", () => {
       await sql`update sequence_versions set status = 'published', published_at = now() where id = ${ver.id}`;
       const t = await inboundThread(f, { email: "legacy@acme.test", name: "Legacy Lou" });
       await classify(t.conversationId, "demo_request");
-      const [rec] = await sql`select r.id, r.subcategory_id from records r join conversations c on c.record_id = r.id where c.id = ${t.conversationId}`;
+      const [rec] = await sql`select r.id, r.reply_type_id from records r join conversations c on c.record_id = r.id where c.id = ${t.conversationId}`;
       const [msg] = await sql`select id from messages where conversation_id = ${t.conversationId} limit 1`;
       const [run] = await sql`
-        insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, subcategory_id, status, started_by, trigger_message_id, last_inbound_at_start)
-        values (${f.org}, ${rec.id}, ${t.conversationId}, ${seq.id}, ${ver.id}, ${rec.subcategory_id}, 'active', 'ai_assignment', ${msg.id}, now()) returning id`;
+        insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, started_by, trigger_message_id, last_inbound_at_start)
+        values (${f.org}, ${rec.id}, ${t.conversationId}, ${seq.id}, ${ver.id}, ${rec.reply_type_id}, 'active', 'ai_assignment', ${msg.id}, now()) returning id`;
       const [sr] = await sql`
         insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, expected_context_version)
         values (${f.org}, ${run.id}, ${step.id}, 'scheduled', ${new Date(Date.now() + 2 * HOUR)}, 1) returning id`;

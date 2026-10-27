@@ -20,13 +20,13 @@ describeDb("lead list benchmark", () => {
     q = await import("@/contexts/people/infrastructure/queries");
     org = await createTestOrg(sql, "Bench");
     const o = org.organizationId;
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${o}, 'default', true) returning id`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${o}, 'default', true) returning id`;
     const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${o}, 'email', 'Big', 'active', 'regular') returning id`;
     await sql`insert into people (organization_id, email, full_name)
       select ${o}, 'bulk' || g || '-' || ${org.slug} || '@la.test', 'Bulk ' || g from generate_series(1, ${LEADS}) g`;
     await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status)
       select ${o}, ${campaign}, id, 'email', case when random() < 0.1 then 'replied' else 'active' end from people where organization_id = ${o}`;
-    await sql`insert into records (organization_id, person_id, pipeline_id) select ${o}, id, ${pipeline} from people where organization_id = ${o}`;
+    await sql`insert into records (organization_id, person_id, reply_type_set_id) select ${o}, id, ${pipeline} from people where organization_id = ${o}`;
     await sql`insert into conversations (organization_id, record_id, channel, account_ref) select ${o}, id, 'email', ${"bulk-" + org.slug} from records where organization_id = ${o}`;
     await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
       select ${o}, c.id, 'email', ${"bulk-" + org.slug}, 'outbound', 'bulk-' || c.id, 'hello', now() - (random() * interval '60 days') from conversations c where c.organization_id = ${o}`;

@@ -1,4 +1,5 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
+import type { FollowUpsRule } from "../../domain/reply-type";
 
 /**
  * Pure rules for a campaign's After a reply flow. The flow has versions; a published version is immutable and a
@@ -123,23 +124,23 @@ export const AFTER_REPLY_OFF = "after_reply_off";
 
 export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bounce" | "suppressed" | "terminal_stage" | "record_closed" | "converted" | typeof AFTER_REPLY_OFF;
 
-/** Subcategories after which a follow-up would be wrong: a refusal, a wrong or departed contact, a closed deal. */
-const TERMINAL_SUBCATEGORIES = new Set(["do_not_contact", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]);
-
 /**
- * Subcategories a run never starts for: the reply policy's no-reply keys (Out of office) and the terminal ones.
- * `not_interested` is a category and the engine filters it by category key.
+ * Whether the record's reply type lets follow-ups run. The type's Follow-ups rule (`reply_types.follow_ups`) decides;
+ * a record without a type, or a type the read could not find, starts nothing.
  */
-export const NO_START_KEYS: readonly string[] = ["do_not_contact", "out_of_office", "left_company", "wrong_contact", "connected_to_different_contact", "customer"];
-
-export function isTerminalSubcategory(categoryKey: string | null, subcategoryKey: string | null): boolean {
-  if (categoryKey === "not_interested") return true;
-  return subcategoryKey !== null && TERMINAL_SUBCATEGORIES.has(subcategoryKey);
-}
+export const followUpsContinue = (followUps: FollowUpsRule | null): boolean => followUps === "continue";
 
 export interface InterruptFacts {
-  run: { triggerMessageId: string; subcategoryId: string };
-  record: { latestInboundMessageId: string | null; subcategoryId: string | null; categoryKey: string | null; subcategoryKey: string | null; workflowState: string };
+  run: { triggerMessageId: string; replyTypeId: string };
+  record: {
+    latestInboundMessageId: string | null;
+    replyTypeId: string | null;
+    groupKey: string | null;
+    replyTypeKey: string | null;
+    /** The Follow-ups rule of the record's reply type (`reply_types.follow_ups`), or null without a type. */
+    followUps: FollowUpsRule | null;
+    workflowState: string;
+  };
   doNotContact: boolean;
   /** Reason on the suppression list for the person's address, if any. */
   suppression: "unsubscribed" | "bounced" | "manual" | "complaint" | null;
@@ -150,8 +151,9 @@ export interface InterruptFacts {
 }
 
 /**
- * Why a run must stop now, or null. A move to a terminal subcategory stops it only when the run did not start
- * there, so a sequence deliberately assigned to such a subcategory is not cancelled by its own start.
+ * Why a run must stop now, or null. A move to a reply type whose Follow-ups rule is Stop ends the run. A run whose
+ * record still carries the type it started on is spared: rules apply at decision time, so an edit of that type's
+ * rule later does not reach back into a run already going.
  */
 export function interruptReason(facts: InterruptFacts): InterruptReason | null {
   if (facts.doNotContact) return "do_not_contact";
@@ -161,7 +163,7 @@ export function interruptReason(facts: InterruptFacts): InterruptReason | null {
   if (facts.contact) return "converted";
   if (facts.record.latestInboundMessageId !== null && facts.record.latestInboundMessageId !== facts.run.triggerMessageId) return "reply";
   if (facts.record.workflowState === "closed") return "record_closed";
-  if (facts.record.subcategoryId !== facts.run.subcategoryId && isTerminalSubcategory(facts.record.categoryKey, facts.record.subcategoryKey)) return "terminal_stage";
+  if (facts.record.replyTypeId !== facts.run.replyTypeId && facts.record.followUps === "stop") return "terminal_stage";
   if (!facts.flowActive) return AFTER_REPLY_OFF;
   return null;
 }
@@ -171,9 +173,13 @@ export function isAnswered(record: { lastInboundAt: Date | null; lastOutboundAt:
   return Boolean(record.lastInboundAt && record.lastOutboundAt && record.lastOutboundAt >= record.lastInboundAt);
 }
 
-/** First step a new run starts at, or null when no run should start. `answered`: a person already replied by hand. */
-export function startPosition(input: { stepCount: number; answered: boolean; skipReply?: boolean }): number | null {
-  const position = input.answered || input.skipReply ? 2 : 1;
+/**
+ * First step a new run starts at, or null when no run should start. Step 1 ("Reply to their answer") is skipped when a
+ * person already replied by hand (`answered`), when the caller asks (`skipReply`), and when the record's reply type is
+ * set to Don't write a reply draft (`replyDraft: false`). The later steps still run.
+ */
+export function startPosition(input: { stepCount: number; answered: boolean; skipReply?: boolean; replyDraft?: boolean | null }): number | null {
+  const position = input.answered || input.skipReply || input.replyDraft === false ? 2 : 1;
   return input.stepCount >= position ? position : null;
 }
 

@@ -8,8 +8,9 @@ import * as afterReply from "@/contexts/conversations/after-reply/domain/after-r
 import { STOP_REASON_LABELS, stopReasonLabel as enrollmentStopLabel } from "@/contexts/outreach/domain/campaign-view";
 
 /**
- * Vocabulary gate for the Leads and CRM split ("Leads and CRM" in docs/decisions.md). People read
- * "reply handling", "category", "deal" and "stage" (of a deal); code and tables keep `records` and `pipelines`. The
+ * Vocabulary gate for the Leads and CRM split ("Leads and CRM" in docs/decisions.md) and for reply types ("Reply types
+ * and type rules"). People read "reply handling", "reply type", "AI pick", "deal" and "stage" (of a deal); code and
+ * tables keep `records`, `reply_type_sets`, the AI job kind `classification` and the model field `subcategoryKey`. The
  * scan reads the string literals, template text and JSX text of the UI and the domain layers and rejects the old words.
  */
 
@@ -136,10 +137,25 @@ const DEAL_FILES = [
 /** Files about reply handling, which never say "pipeline". */
 const REPLY_FILES = [/^src\/app\/\(app\)\/inbox\//, /^src\/app\/\(app\)\/actions\//, /^src\/app\/\(app\)\/settings\/replies\//, /^src\/contexts\/conversations\/domain\//];
 
+/** Model-facing prompt files. Their text never reaches a person, and a wording change needs a draft and classification eval. */
+const PROMPT_FILES = [/^src\/contexts\/[^/]+\/ai\/domain\//, /^src\/contexts\/ai\/domain\//];
+
+/**
+ * Reply type words the screens no longer use. "Reply type", "Change type", "AI picks" and "Looks right" replace them;
+ * `REPLY_TYPE_TERMS` below lists the words that took their place.
+ */
+const RETIRED_REPLY_WORDS =
+  /\breply (sub)?categor(y|ies)\b|\bsub-?categor(y|ies)\b|\bchange category\b|\bclassifications?\b|\bmark reviewed\b|\bfollow up later\b|\balways stops on\b|\bAI suggests\b|\bunclassified\b/i;
+
+/** A lowercase token such as `classification` or `unclassified`: an identifier or a stored value, never a sentence. */
+const CODE_TOKEN = /^[a-z0-9_.:-]+$/;
+
 interface Rule {
   name: string;
   pattern: RegExp;
   applies: (file: string) => boolean;
+  /** The rule ignores strings that look like code tokens. */
+  skipsCodeTokens?: boolean;
 }
 
 const RULES: readonly Rule[] = [
@@ -153,10 +169,12 @@ const RULES: readonly Rule[] = [
     pattern: /\b(the|this) lead\b(?!(?:'s|&apos;s)? page)|\bfunnel\b|\blocked customer\b/i,
     applies: (file) => REPLY_FILES.some((re) => re.test(file)) || /^src\/contexts\/conversations\//.test(file),
   },
+  { name: "retired reply type wording", pattern: RETIRED_REPLY_WORDS, applies: (file) => !PROMPT_FILES.some((re) => re.test(file)), skipsCodeTokens: true },
 ];
 
 /** The rules one string breaks in the context of a file. */
-const broken = (file: string, text: string): string[] => RULES.filter((rule) => rule.applies(file) && rule.pattern.test(text)).map((rule) => rule.name);
+const broken = (file: string, text: string): string[] =>
+  RULES.filter((rule) => rule.applies(file) && !(rule.skipsCodeTokens && CODE_TOKEN.test(text)) && rule.pattern.test(text)).map((rule) => rule.name);
 
 /**
  * Reviewed exceptions: a file, the exact string as the scan reports it (whitespace collapsed), and why it stays.
@@ -195,6 +213,40 @@ const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> = [
   },
 ];
 
+/**
+ * The reply type words people read, as PRODUCT.md defines them. Each one must appear in the UI or domain copy, so a
+ * rename that drops one fails here as well as in the docs.
+ */
+const REPLY_TYPE_TERMS = [
+  "Reply type",
+  "Change type",
+  "AI picks",
+  "AI picked",
+  "AI applied",
+  "Looks right",
+  "Review stop request",
+  "Possible stop request",
+  "Only change the type",
+  "Asked to stop",
+  "Held for a check",
+  "Not checked",
+  "Picked by the AI",
+  "No type yet",
+  "Group",
+  "Action",
+  "Confidence floor",
+  "Check before",
+  "Check after",
+  "No check",
+  "Write one",
+  "Don't write",
+  "Keep going",
+  "Stop",
+  "Remind me",
+  "Follow-ups after a reply",
+  "Stops for these reply types",
+];
+
 const isAllowed = (found: { file: string; text: string }) => ALLOWED.some((entry) => entry.file === found.file && entry.text === found.text);
 
 describe("copy vocabulary in source", () => {
@@ -213,6 +265,12 @@ describe("copy vocabulary in source", () => {
       .filter((found) => found.rules.length > 0 && !isAllowed(found))
       .map((found) => `${found.file}:${found.line} [${found.rules.join(", ")}] ${JSON.stringify(found.text)}`);
     expect(offenders).toEqual([]);
+  });
+
+  it("uses the reply type words the screens show", () => {
+    const texts = strings.filter((found) => !PROMPT_FILES.some((re) => re.test(found.file))).map((found) => found.text);
+    const missing = REPLY_TYPE_TERMS.filter((term) => !texts.some((text) => text.includes(term)));
+    expect(missing).toEqual([]);
   });
 
   it("keeps every allowlist entry in use", () => {
@@ -324,7 +382,7 @@ const EVENT_LABELS_FILE = "src/app/(app)/_components/event-labels.ts";
 const CAMPAIGN_VIEW_FILE = "src/contexts/outreach/domain/campaign-view.ts";
 
 const baseFacts: afterReply.StartBlockFacts = {
-  record: { subcategoryId: "s", categoryKey: "interested", subcategoryKey: "interested", subcategoryName: "Interested", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
+  record: { replyTypeId: "s", groupKey: "interested", replyTypeKey: "interested", replyTypeName: "Interested", followUps: "continue", latestInboundMessageId: "m", lastInboundAt: new Date(0), workflowState: "waiting", hasEmail: true },
   conversation: { channel: "email" },
   doNotContact: false,
   suppressed: false,
@@ -350,9 +408,10 @@ const blockedFacts: afterReply.StartBlockFacts[] = [
   { ...baseFacts, doNotContact: true },
   { ...baseFacts, suppressed: true },
   { ...baseFacts, record: { ...baseFacts.record, hasEmail: false } },
-  { ...baseFacts, record: { ...baseFacts.record, subcategoryId: null } },
-  { ...baseFacts, record: { ...baseFacts.record, categoryKey: "not_interested", subcategoryKey: "not_interested", subcategoryName: "Not interested" } },
+  { ...baseFacts, record: { ...baseFacts.record, replyTypeId: null } },
+  { ...baseFacts, record: { ...baseFacts.record, groupKey: "not_interested", replyTypeKey: "not_interested", replyTypeName: "Not interested", followUps: "stop" } },
   { ...baseFacts, stepCount: 1, answered: true },
+  { ...baseFacts, stepCount: 1, record: { ...baseFacts.record, replyDraft: false } },
 ];
 
 /** Each label a person reads, with the file whose rules apply to it. */
@@ -370,7 +429,8 @@ function renderedLabels(): Array<{ file: string; text: string }> {
   push(AFTER_REPLY_FILE, stringValues(afterReply.AFTER_REPLY_MODE_LABELS));
   push(AFTER_REPLY_FILE, stringValues(afterReply.RUN_STATUS_LABELS));
   push(AFTER_REPLY_FILE, stringValues(afterReply.STARTED_BY_LABELS));
-  push(AFTER_REPLY_FILE, afterReply.ALWAYS_STOPS_ON.map((rule) => rule.label));
+  push(AFTER_REPLY_FILE, afterReply.FIXED_STOP_RULES.map((rule) => rule.label));
+  push(AFTER_REPLY_FILE, afterReply.stopsOnLines([{ id: "t1", name: "Out of office" }]).map((line) => line.label));
   push(AFTER_REPLY_FILE, [afterReply.afterReplyFlowName("Spring")]);
   push(AFTER_REPLY_FILE, [afterReply.afterReplyLockedReason({ channel: "email", type: "personal" }), afterReply.afterReplyLockedReason({ channel: "linkedin", type: "team" })]);
   push(AFTER_REPLY_FILE, blockedFacts.map(afterReply.startBlockedReason));
@@ -522,7 +582,7 @@ describe("stored values have labels", () => {
   it("labels every event type the code writes, deal events included", () => {
     const written = writtenEventTypes();
     const values = new Set(written.map((w) => w.value));
-    for (const expected of ["lifecycle.converted", "deal.created", "deal.stage_moved", "deal.updated", "deal.deleted", "stage.moved"]) expect(values).toContain(expected);
+    for (const expected of ["lifecycle.converted", "deal.created", "deal.stage_moved", "deal.updated", "deal.deleted", "reply_type.changed"]) expect(values).toContain(expected);
     expect(written.filter((w) => !Object.hasOwn(EVENT_LABELS, w.value)).map((w) => `${w.file}: ${w.value}`)).toEqual([]);
   });
 });

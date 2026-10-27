@@ -1,9 +1,10 @@
 "use client";
 
-import { CircleHelpIcon, CircleXIcon } from "lucide-react";
+import { CircleHelpIcon, CircleXIcon, MailIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { InfoTip } from "@/components/shell/info-tip";
@@ -11,9 +12,12 @@ import { Time } from "@/components/shell/time";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
+import type { PickReviewKind } from "@/contexts/conversations/actions/domain/action-queue";
 import { personHref } from "@/app/(app)/_components/person/person-href";
+import { LinkedInMark } from "@/app/(app)/_components/person/reach-icons";
+import { confidenceText, LOOKS_RIGHT_DONE } from "@/app/(app)/inbox/[id]/_lib/type-line";
 import { threadQueryFromActions } from "./actions-query";
+import { typeLabel } from "./type-label";
 import { waitingLabel } from "./waiting-label";
 
 /** A queue item as it crosses the network: dates are ISO strings. */
@@ -24,8 +28,8 @@ export interface QueueItemView {
   personName: string | null;
   personLifecycle: "lead" | "contact";
   conversationId: string | null;
-  categoryKey: string | null;
-  subcategoryName: string | null;
+  groupKey: string | null;
+  replyTypeName: string | null;
   channel: string | null;
   workflowState: string;
   assignee: { id: string; name: string | null } | null;
@@ -33,7 +37,7 @@ export interface QueueItemView {
   snippet: string | null;
   waitingSince: { at: string; basis: "inbound" | "failure" | "due" };
   draft: { draftId: string; status: string; subject: string | null; updatedAt: string; preview: string | null } | null;
-  classification: { classificationId: string; kind: "held" | "changed"; categoryKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
+  classification: { replyTypePickId: string; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
   problem: { kind: "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
 }
 
@@ -51,6 +55,50 @@ function rowHref(item: QueueItemView, query: string): string {
   return `/inbox/${item.conversationId}?${threadQueryFromActions(Object.fromEntries(new URLSearchParams(query)))}`;
 }
 
+/** Review stop request opens the thread with Stop contacting open (`stop=1`). Null without a public thread. */
+function stopHref(item: QueueItemView, query: string): string | null {
+  return item.conversationId ? `${rowHref(item, query)}&stop=1` : null;
+}
+
+/** The channel as a mark after the name, with its name for screen readers. */
+function ChannelMark({ channel }: { channel: string }) {
+  return (
+    <span role="img" aria-label={channelLabel(channel)} className="inline-flex shrink-0 translate-y-0.5 text-muted-foreground [&_svg]:size-3.5" data-testid="queue-channel">
+      {channel === "linkedin" ? <LinkedInMark /> : <MailIcon aria-hidden />}
+    </span>
+  );
+}
+
+/** A done notice for one row of many, so a screen reader hears whose row left: "Marked as looked at: Eli Moss." */
+const doneFor = (done: string, name: string | null) => `${done.replace(/\.$/, "")}: ${name ?? "the sender"}.`;
+
+const ACCEPTED = "AI pick accepted.";
+
+const NOTICE_EVENT = "miasdr:actions-notice";
+
+/** Says what a row step did through the page's one live region, `QueueNotice`. */
+function announce(text: string) {
+  window.dispatchEvent(new CustomEvent(NOTICE_EVENT, { detail: text }));
+}
+
+/**
+ * The page's live region for row steps (Accept, Looks right). It sits outside the groups: a step changes a group's total,
+ * the refresh mounts the group again, and a region inside it would lose the text before a screen reader read it.
+ */
+export function QueueNotice() {
+  const [text, setText] = useState("");
+  useEffect(() => {
+    const on = (event: Event) => setText((event as CustomEvent<string>).detail);
+    window.addEventListener(NOTICE_EVENT, on);
+    return () => window.removeEventListener(NOTICE_EVENT, on);
+  }, []);
+  return (
+    <div role="status" className="sr-only" data-testid="queue-notice">
+      {text}
+    </div>
+  );
+}
+
 /**
  * The mark of a problem row. A send that may or may not have gone out is uncertain, so it takes the amber icon and nothing else
  * (DESIGN.md: never a fill, never red). A draft, a job or a record that failed is an error a person has to fix, so its icon is red.
@@ -61,7 +109,7 @@ function ProblemMark({ kind }: { kind: NonNullable<QueueItemView["problem"]>["ki
 }
 
 /** The line under the snippet and the verb at its end: what waits on the person in this row. */
-function describe(item: QueueItemView): { detail: ReactNode; action: string } {
+function describe(item: QueueItemView, ambiguous: ReadonlySet<string>): { detail: ReactNode; action: string } {
   const contact = item.personLifecycle === "contact";
   const open = item.conversationId ? "Open conversation" : contact ? "Open contact" : "Open lead";
   switch (item.group) {
@@ -73,12 +121,23 @@ function describe(item: QueueItemView): { detail: ReactNode; action: string } {
       };
     case "classification": {
       const c = item.classification;
-      // "Other: Other" says the same word twice.
-      const label = c?.categoryKey ? (c.name && c.name !== categoryLabel(c.categoryKey) ? `${categoryLabel(c.categoryKey)}: ${c.name}` : categoryLabel(c.categoryKey)) : "a category";
-      return {
-        detail: `${c?.kind === "held" ? "AI suggests " : "AI set "}${label}${c?.confidence != null ? `, ${Math.round(c.confidence * 100)}% confident` : ""}`,
-        action: c?.kind === "held" ? "Accept or change" : "Looks right?",
-      };
+      if (c?.kind === "stop_review") {
+        // The AI's uncertain reading, worded as on the thread: the amber icon and lead words, the sentence in the foreground.
+        return {
+          detail: (
+            <>
+              <CircleHelpIcon aria-hidden className="mr-1 inline size-3.5 -translate-y-px text-warning" />
+              <span className="font-medium text-warning">Possible stop request.</span> Nothing stops until you choose.
+            </>
+          ),
+          action: "Review stop request",
+        };
+      }
+      const label = typeLabel(c?.name ?? null, c?.groupKey ?? null, ambiguous) ?? "a type";
+      const confidence = c?.confidence != null ? `, ${confidenceText(c.confidence)}` : "";
+      // Accepting this one takes a locked customer out of Existing customer, so the row opens the thread instead of settling.
+      if (c?.kind === "held" && c.unlocksCustomer) return { detail: `AI picked ${label}${confidence}. Accepting takes them out of Existing customer.`, action: open };
+      return c?.kind === "held" ? { detail: `AI picked ${label}${confidence}`, action: "Accept" } : { detail: `AI applied ${label}${confidence}`, action: "Looks right" };
     }
     case "follow_up":
       return {
@@ -96,7 +155,7 @@ function describe(item: QueueItemView): { detail: ReactNode; action: string } {
       if (item.problem?.kind === "delivery_uncertain") return { detail: item.problem.message, action: "Resolve" };
       return { detail: item.problem?.message ?? "Something failed.", action: open };
     default:
-      return { detail: "Needs a person, but nothing is drafted or classified yet.", action: open };
+      return { detail: "No draft or AI pick waits on this reply.", action: open };
   }
 }
 
@@ -110,6 +169,7 @@ export function QueueGroup({
   query,
   showAssignee,
   now,
+  ambiguousTypes,
 }: {
   group: string;
   title: string;
@@ -124,7 +184,10 @@ export function QueueGroup({
   showAssignee: boolean;
   /** The server's clock as an ISO string, so the waiting times print the same on the server and in the browser. */
   now: string;
+  /** Lowercased type names more than one group uses (`ambiguousTypeNames`): rows name their group too. */
+  ambiguousTypes: string[];
 }) {
+  const ambiguous = new Set(ambiguousTypes);
   const [items, setItems] = useState(initialItems);
   const [cursor, setCursor] = useState(initialCursor);
   const [busy, setBusy] = useState(false);
@@ -132,7 +195,6 @@ export function QueueGroup({
   const router = useRouter();
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState("");
   const list = useRef<HTMLUListElement>(null);
   // After Load more the button can vanish with the last page, so focus moves to the first new row instead of the body.
   const focusAfterLoad = useRef<string | null>(null);
@@ -153,21 +215,24 @@ export function QueueGroup({
   }
 
   /**
-   * Settles a classification row where it stands. A held suggestion is accepted as it is (a person who disagrees opens the
-   * thread and picks another subcategory); an applied change is marked as looked at. Both go through the endpoints the thread
-   * uses, so a stale suggestion answers 409 here as it does there.
+   * Answers an AI pick row where it stands. A held pick is accepted as it is (a person who disagrees opens the thread and
+   * changes the type); an applied pick is marked as looked at (Looks right). Both go through the endpoints the thread uses, so
+   * a stale pick answers 409 here as it does there. A stop request is never accepted here: if a held pick turns out to be one,
+   * the server answers `stop_review` and the thread opens with Stop contacting.
    */
   async function settle(item: QueueItemView): Promise<boolean> {
     const c = item.classification;
-    if (!c) return false;
+    if (!c || c.kind === "stop_review" || (c.kind === "held" && c.unlocksCustomer)) return false;
     const result =
       c.kind === "held"
         ? item.conversationId
-          ? await callApi(`/api/inbox/${item.conversationId}/classification`, "POST", { subcategoryKey: null, expectedContextVersion: c.contextVersion })
-          : { ok: false, error: "Open the person to decide." }
-        : await callApi(`/api/classifications/${c.classificationId}/acknowledge`, "POST");
+          ? await callApi(`/api/inbox/${item.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
+          : { ok: false, error: "Open the person to decide.", details: null }
+        : await callApi(`/api/reply-type-picks/${c.replyTypePickId}/acknowledge`, "POST");
     if (!result.ok) {
-      setRowErrors((current) => ({ ...current, [item.recordId]: result.error ?? "Could not save. Try again." }));
+      const stop = result.details?.code === "stop_review" ? stopHref(item, query) : null;
+      if (stop) router.push(stop);
+      else setRowErrors((current) => ({ ...current, [item.recordId]: result.error ?? "Could not save. Try again." }));
       return false;
     }
     return true;
@@ -181,14 +246,14 @@ export function QueueGroup({
     setRowBusy(null);
     if (ok) {
       removeRows([item.recordId]);
-      setNotice(`${item.classification?.kind === "held" ? "Accepted" : "Marked as looked at"}: ${item.personName ?? "the sender"}.`);
+      announce(doneFor(item.classification?.kind === "held" ? ACCEPTED : LOOKS_RIGHT_DONE, item.personName));
     }
     // Totals and the group the record moves to are the server's to say.
     router.refresh();
   }
 
-  /** Applied changes the AI was at least 90 percent sure of. A held suggestion needs a person's eyes, so it is never in here. */
-  const confident = group === "classification" ? items.filter((i) => i.classification?.kind === "changed" && (i.classification.confidence ?? 0) >= 0.9) : [];
+  /** Applied picks the AI was at least 90 percent sure of. A held pick or a stop request needs a person's eyes, so it is never in here. */
+  const confident = group === "classification" ? items.filter((i) => i.classification?.kind === "looks_right" && (i.classification.confidence ?? 0) >= 0.9) : [];
 
   async function markConfident() {
     if (rowBusy) return;
@@ -201,7 +266,7 @@ export function QueueGroup({
     setRowBusy(null);
     if (done.length > 0) {
       removeRows(done);
-      setNotice(`Marked ${done.length} ${done.length === 1 ? "change" : "changes"} as looked at.`);
+      announce(`Marked ${done.length} ${done.length === 1 ? "AI pick" : "AI picks"} as looked at.`);
     }
     router.refresh();
   }
@@ -247,16 +312,18 @@ export function QueueGroup({
         )}
         {confident.length >= 2 && (
           <Button variant="ghost" size="xs" className="ml-auto max-sm:h-11" disabled={rowBusy !== null} onClick={markConfident} data-testid="mark-confident">
-            {rowBusy === "bulk" ? "Saving…" : `Mark ${confident.length} sure changes as looked at`}
+            {rowBusy === "bulk" ? "Saving…" : `Looks right: ${confident.length} sure picks`}
           </Button>
         )}
       </div>
       <ul ref={list} className="divide-y rounded-lg border text-sm">
         {items.map((item) => {
           const thread = rowHref(item, query);
-          const { detail, action } = describe(item);
+          const { detail, action } = describe(item, ambiguous);
           const wait = waitingLabel(item.waitingSince, now);
-          const meta = [categoryLabel(item.categoryKey), item.subcategoryName, item.channel ? channelLabel(item.channel) : null].filter(Boolean).join(" · ");
+          const type = typeLabel(item.replyTypeName, item.groupKey, ambiguous);
+          const kind = item.classification?.kind;
+          const stop = kind === "stop_review" ? stopHref(item, query) : null;
           return (
             <li
               key={item.recordId}
@@ -274,7 +341,12 @@ export function QueueGroup({
                       , {action}, {wait}
                     </span>
                   </RowLink>
-                  {meta && <span className="hidden truncate text-xs text-muted-foreground sm:inline">{meta}</span>}
+                  {item.channel && <ChannelMark channel={item.channel} />}
+                  {type && (
+                    <span className="hidden truncate text-xs text-muted-foreground sm:inline" data-testid="queue-type">
+                      {type}
+                    </span>
+                  )}
                 </div>
                 <time dateTime={item.waitingSince.at} className="shrink-0 text-xs text-muted-foreground tabular-nums" data-testid="queue-waiting">
                   {wait}
@@ -282,11 +354,22 @@ export function QueueGroup({
               </div>
               {item.snippet && <p className="truncate text-muted-foreground">{item.snippet}</p>}
               <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span className="min-w-0 truncate">
+                {/* A stop request wraps on a phone: cut short, it would lose the sentence that says nothing stops yet. */}
+                <span className={cn("min-w-0", stop ? "max-sm:text-pretty sm:truncate" : "truncate")}>
                   {detail}
                   {showAssignee && <span data-testid="queue-assignee">{` · ${item.assignee ? `Assigned to ${item.assignee.name ?? "a former member"}` : "Unassigned"}`}</span>}
                 </span>
-                {item.classification && (item.classification.kind === "changed" || item.conversationId) ? (
+                {stop ? (
+                  // Above the stretched link. It opens the thread with Stop contacting open; nothing is accepted here.
+                  <Link
+                    href={stop}
+                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "relative z-10 shrink-0 max-sm:h-11 max-sm:px-4")}
+                    aria-label={`${action}: ${item.personName ?? "the sender"}`}
+                    data-testid="review-stop"
+                  >
+                    {action}
+                  </Link>
+                ) : (kind === "held" && item.conversationId && !item.classification?.unlocksCustomer) || kind === "looks_right" ? (
                   // Above the stretched link, so the click settles the row and does not open the thread.
                   <Button
                     variant="outline"
@@ -294,10 +377,10 @@ export function QueueGroup({
                     className="relative z-10 shrink-0 max-sm:h-11 max-sm:px-4"
                     disabled={rowBusy !== null}
                     onClick={() => decide(item)}
-                    aria-label={`${item.classification.kind === "held" ? "Accept" : "Looks right"}: ${item.personName ?? "the sender"}`}
+                    aria-label={`${action}: ${item.personName ?? "the sender"}`}
                     data-testid="settle"
                   >
-                    {rowBusy === item.recordId ? "Saving…" : item.classification.kind === "held" ? "Accept" : "Looks right"}
+                    {rowBusy === item.recordId ? "Saving…" : action}
                   </Button>
                 ) : (
                   <span className="shrink-0 font-medium text-foreground">{action}</span>
@@ -316,7 +399,6 @@ export function QueueGroup({
       <div className={cn("flex items-center justify-between gap-2 text-xs text-muted-foreground", !cursor && "sr-only")}>
         <span role="status" aria-live="polite">
           Showing {items.length} of {total}
-          <span className="sr-only">{notice && ` ${notice}`}</span>
         </span>
         {cursor && (
           <Button variant="outline" size="sm" className="max-sm:h-11 max-sm:px-4" onClick={loadMore} disabled={busy}>

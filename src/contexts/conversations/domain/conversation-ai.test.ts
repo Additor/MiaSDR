@@ -1,43 +1,73 @@
 import { describe, expect, it } from "vitest";
-import { decideApplication, type PolicyInput } from "./classification-policy";
+import { stopRequestedBy } from "./reply-type-pick-policy";
+import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES, decideReplyType, type ReplyType, type ReplyTypeFacts } from "./reply-type";
 import { normalizeSubject } from "./subject";
-import { needsReply, replySubject } from "./reply-policy";
+import { replySubject } from "./reply-policy";
 import { detectsStopRequest, stripQuoted } from "./stop-request";
 
-const base: PolicyInput = {
-  proposal: { categoryKey: "interested", subcategoryKey: "demo_request", reviewRequired: false, stageRank: 1, confidence: 0.9 },
-  current: { categoryKey: null, stageRank: null, categoryLocked: false },
-  settings: { autoApplyConfidence: 0.85, reviewOther: true, customerRequiresReview: true },
+interface AiPick {
+  proposal: Pick<ReplyType, "groupKey" | "rules">;
+  confidence: number;
+  current: { groupKey: string | null; replyTypeLocked: boolean };
+  floor: number;
+  stopRequested?: boolean;
+}
+const base: AiPick = {
+  proposal: { groupKey: "interested", rules: { ...DEFAULT_TYPE_RULES } },
+  confidence: 0.9,
+  current: { groupKey: null, replyTypeLocked: false },
+  floor: 0.85,
 };
-const withProposal = (p: Partial<PolicyInput["proposal"]>, c: Partial<PolicyInput["current"]> = {}, s: Partial<PolicyInput["settings"]> = {}): PolicyInput => ({
-  proposal: { ...base.proposal, ...p },
-  current: { ...base.current, ...c },
-  settings: { ...base.settings, ...s },
-});
+const pick = (over: Partial<AiPick> = {}): AiPick => ({ ...base, ...over });
+/** An AI pick as the apply path decides it. Follow-ups are not under test here. */
+const decide = ({ proposal, confidence, current, floor, stopRequested = false }: AiPick) => {
+  const facts: ReplyTypeFacts = {
+    confidence,
+    floor,
+    locked: current.replyTypeLocked,
+    currentType: { groupKey: current.groupKey },
+    stopRequested,
+    isContact: false,
+    campaignMode: null,
+    channel: null,
+  };
+  const { hold, wantsDraft } = decideReplyType(proposal, facts);
+  return { hold, wantsDraft };
+};
 
-describe("classification policy", () => {
-  it("applies at or above the threshold and holds below it", () => {
-    expect(decideApplication(withProposal({ confidence: 0.85 }))).toEqual({ action: "auto_apply" });
-    expect(decideApplication(withProposal({ confidence: 0.84 }))).toEqual({ action: "hold", reason: "low_confidence" });
+describe("reply type pick policy", () => {
+  it("applies at or above the confidence floor and holds below it", () => {
+    expect(decide(pick({ confidence: 0.85 })).hold).toBeNull();
+    expect(decide(pick({ confidence: 0.84 })).hold).toBe("low_confidence");
   });
 
-  it("holds customer, review-required subcategories and the other category", () => {
-    expect(decideApplication(withProposal({ categoryKey: "customer", subcategoryKey: "customer" }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ categoryKey: "customer", subcategoryKey: "customer" }, {}, { customerRequiresReview: false }))).toEqual({ action: "auto_apply" });
-    expect(decideApplication(withProposal({ reviewRequired: true }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ categoryKey: "other", subcategoryKey: "other", stageRank: null }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(withProposal({ categoryKey: "other", subcategoryKey: "other", stageRank: null }, {}, { reviewOther: false }))).toEqual({ action: "auto_apply" });
+  it("holds a type checked before it applies, whatever the confidence", () => {
+    expect(decide(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES, checkMode: "before" } }, confidence: 1 })).hold).toBe("requires_review");
+    expect(decide(pick({ proposal: { groupKey: "not_interested", rules: { ...STOP_REQUEST_RULES } }, confidence: 1 })).hold).toBe("requires_review");
+    expect(decide(pick({ proposal: { groupKey: "other", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } } })).hold).toBeNull();
   });
 
-  it("protects a locked customer and a higher funnel stage", () => {
-    expect(decideApplication(withProposal({}, { categoryKey: "customer", categoryLocked: true }))).toEqual({ action: "hold", reason: "protected_customer" });
-    expect(decideApplication(withProposal({ stageRank: 1 }, { categoryKey: "interested", stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
-    expect(decideApplication(withProposal({ categoryKey: "not_interested", subcategoryKey: "not_required_right_now", stageRank: null }, { stageRank: 3 }))).toEqual({ action: "hold", reason: "protected_stage" });
-    expect(decideApplication(withProposal({ stageRank: 3 }, { stageRank: 3 }))).toEqual({ action: "auto_apply" });
+  it("protects a locked customer", () => {
+    expect(decide(pick({ current: { groupKey: "customer", replyTypeLocked: true } })).hold).toBe("protected_customer");
+    expect(decide(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES } }, current: { groupKey: "customer", replyTypeLocked: true } })).hold).toBeNull();
   });
 
-  it("lets do not contact through a stage", () => {
-    expect(decideApplication(withProposal({ categoryKey: "not_interested", subcategoryKey: "do_not_contact", stageRank: null, confidence: 0.99 }, { stageRank: 3 }))).toEqual({ action: "auto_apply" });
+  it("no longer holds a move to a lower position: progress belongs to deal stages", () => {
+    expect(decide(pick({ proposal: { groupKey: "not_interested", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } }, current: { groupKey: "interested", replyTypeLocked: false } })).hold).toBeNull();
+  });
+
+  it("wants a draft when the type writes one and the reply asks nothing to stop", () => {
+    expect(decide(pick())).toEqual({ hold: null, wantsDraft: true });
+    expect(decide(pick({ stopRequested: true }))).toEqual({ hold: null, wantsDraft: false });
+    expect(decide(pick({ proposal: { groupKey: "interested", rules: { ...DEFAULT_TYPE_RULES, replyDraft: false } } })).wantsDraft).toBe(false);
+    expect(decide(pick({ confidence: 0.5 }))).toEqual({ hold: "low_confidence", wantsDraft: true });
+  });
+
+  it("reads a stop request from the sender's words or from the stop request type, never from the key", () => {
+    expect(stopRequestedBy("Please unsubscribe me.", { systemRole: null })).toBe(true);
+    expect(stopRequestedBy("Sounds good.", { systemRole: "stop_request" })).toBe(true);
+    expect(stopRequestedBy("Sounds good.", { systemRole: null })).toBe(false);
+    expect(stopRequestedBy("Sounds good.", { systemRole: "customer" })).toBe(false);
   });
 });
 
@@ -55,12 +85,6 @@ describe("stop requests", () => {
 });
 
 describe("reply policy", () => {
-  it("drafts for interest and not for stop or out-of-office outcomes", () => {
-    expect(needsReply("interested", "demo_request")).toBe(true);
-    expect(needsReply("customer", "customer")).toBe(true);
-    expect(needsReply("not_interested", "not_required_right_now")).toBe(false);
-    expect(needsReply("other", "out_of_office")).toBe(false);
-  });
   it("builds a reply subject without doubling Re:", () => {
     expect(replySubject("Hello")).toBe("Re: Hello");
     expect(replySubject("RE: Hello")).toBe("RE: Hello");

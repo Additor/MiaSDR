@@ -2,8 +2,8 @@ import type { AppliedFilter } from "@/components/shell/filter-chip";
 import { DateRangeField, SelectField, TextField } from "@/components/shell/filter-fields";
 import { FilterPopover } from "@/components/shell/filter-popover";
 import type { InboxFilterOptions } from "@/contexts/conversations/application/ports";
-import { categoryLabel } from "@/contexts/conversations/domain/reply-handling";
-import { inboxHref, INBOX_CATEGORIES, type InboxParams } from "@/contexts/conversations/domain/inbox-filter";
+import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
+import { inboxHref, INBOX_GROUPS, type InboxParams } from "@/contexts/conversations/domain/inbox-filter";
 
 const DATE_MODES = [
   { value: "all", label: "All time" },
@@ -21,8 +21,8 @@ export function activeFilterChips(params: InboxParams, options: InboxFilterOptio
   if (params.leadQuery) chips.push({ key: "leadq", name: "Person", value: params.leadQuery, href: drop({ leadQuery: "" }) });
   for (const id of params.campaignIds) chips.push({ key: `c-${id}`, name: "Campaign", value: label(options.campaigns, id), href: drop({ campaignIds: params.campaignIds.filter((v) => v !== id) }) });
   for (const id of params.mailboxIds) chips.push({ key: `m-${id}`, name: "Mailbox", value: label(options.mailboxes, id), href: drop({ mailboxIds: params.mailboxIds.filter((v) => v !== id) }) });
-  for (const k of params.subcategoryKeys) chips.push({ key: `s-${k}`, name: "Reply subcategory", value: label(options.subcategories, k), href: drop({ subcategoryKeys: params.subcategoryKeys.filter((v) => v !== k) }) });
-  for (const k of params.categoryKeys) chips.push({ key: `k-${k}`, name: "Reply category", value: categoryLabel(k), href: drop({ categoryKeys: params.categoryKeys.filter((v) => v !== k) }) });
+  for (const k of params.replyTypeKeys) chips.push({ key: `s-${k}`, name: "Reply type", value: label(options.replyTypes, k), href: drop({ replyTypeKeys: params.replyTypeKeys.filter((v) => v !== k) }) });
+  for (const k of params.groupKeys) chips.push({ key: `k-${k}`, name: "Reply group", value: groupLabel(k), href: drop({ groupKeys: params.groupKeys.filter((v) => v !== k) }) });
   if (params.dateMode !== "all") {
     const value = params.dateMode === "custom" ? `${params.dateFrom || "any"} to ${params.dateTo || "any"}` : params.dateMode;
     chips.push({ key: "date", name: "Dates", value, href: drop({ dateMode: "all", dateFrom: "", dateTo: "" }) });
@@ -32,7 +32,7 @@ export function activeFilterChips(params: InboxParams, options: InboxFilterOptio
 
 /** The Inbox without any filter, keeping search and view. */
 export const clearedInboxHref = (params: InboxParams) =>
-  inboxHref(params, { leadIds: [], leadQuery: "", campaignIds: [], mailboxIds: [], subcategoryKeys: [], categoryKeys: [], dateMode: "all", dateFrom: "", dateTo: "", page: 1 });
+  inboxHref(params, { leadIds: [], leadQuery: "", campaignIds: [], mailboxIds: [], replyTypeKeys: [], groupKeys: [], dateMode: "all", dateFrom: "", dateTo: "", page: 1 });
 
 /**
  * The Filters popover as its own GET form: Apply rebuilds the URL; `clearedInboxHref` drops every filter but keeps search
@@ -60,8 +60,8 @@ export function InboxFilters({ params, options, count }: { params: InboxParams; 
       <TextField label="Person name or email" name="lead" defaultValue={params.leadQuery} placeholder="Ada or ada@example.com" />
       <SelectField label="Campaign" name="campaign" defaultValue={first(params.campaignIds)} options={[{ value: "", label: "Any campaign" }, ...options.campaigns.map((c) => ({ value: c.id, label: c.label }))]} />
       <SelectField label="Mailbox" name="mailbox" defaultValue={first(params.mailboxIds)} options={[{ value: "", label: "Any mailbox" }, ...options.mailboxes.map((m) => ({ value: m.id, label: m.label }))]} />
-      <SelectField label="Reply category" name="category" defaultValue={first(params.categoryKeys)} options={[{ value: "", label: "Any reply category" }, ...INBOX_CATEGORIES.map((k) => ({ value: k, label: categoryLabel(k) }))]} />
-      <SelectField label="Reply subcategory" name="subcategory" defaultValue={first(params.subcategoryKeys)} options={[{ value: "", label: "Any reply subcategory" }, ...options.subcategories.map((s) => ({ value: s.key, label: s.label }))]} />
+      <SelectField label="Reply group" name="category" defaultValue={first(params.groupKeys)} options={[{ value: "", label: "Any group" }, ...INBOX_GROUPS.map((k) => ({ value: k, label: groupLabel(k) }))]} />
+      <SelectField label="Reply type" name="subcategory" defaultValue={first(params.replyTypeKeys)} options={[{ value: "", label: "Any reply type" }, ...options.replyTypes.map((s) => ({ value: s.key, label: s.label }))]} />
       <SelectField label="Last message" name="range" defaultValue={params.dateMode} options={DATE_MODES} />
       <DateRangeField label="Custom range" from={{ name: "from", value: params.dateFrom }} to={{ name: "to", value: params.dateTo }} />
     </FilterPopover>

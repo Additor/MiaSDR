@@ -81,6 +81,6 @@ test.describe("old CRM URLs", () => {
     // Settings: Reply handling sits in the AI group, Pipeline stages in the CRM group.
     await page.goto("/settings/replies");
     await expect(page.locator("#main-content").getByRole("link", { name: "Reply handling" }).first()).toBeVisible();
-    await expect(page.locator("#main-content").getByText("Position").first()).toBeVisible();
+    await expect(page.locator("#main-content").getByText("Asked to stop", { exact: true })).toBeVisible();
   });
 });

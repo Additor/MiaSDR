@@ -2,19 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import {
   closeRecord,
-  createSubcategory,
-  deleteSubcategory,
+  createReplyType,
+  deleteReplyType,
   ignoreIdentityException,
-  moveRecordStage,
+  changeReplyType,
   quarantineInbound,
   reconcileSendAttempt,
   resolveIdentityException,
   setPersonDoNotContact,
-  updateSubcategory,
+  updateReplyType,
   type ReplyHandlingDeps,
   type IdentityPayload,
 } from "./reply-handling";
-import type { ReplyHandlingStore, IdentityExceptionRow, TaxonomyRow } from "./reply-handling-ports";
+import type { ReplyHandlingStore, IdentityExceptionRow, ReplyTypeRow } from "./reply-handling-ports";
+import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES, SYSTEM_ROLE_REASONS } from "../domain/reply-type";
 import type { ReplyDeps } from "./reply-management";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -24,23 +25,23 @@ const admin: Actor = { ...actor, role: "admin" };
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const NOW = new Date("2026-01-01T00:00:00Z");
 
-const sub = (over: Partial<TaxonomyRow>): TaxonomyRow => ({
-  id: id(1), categoryKey: "interested", key: "demo_request", name: "Demo request", description: null, classificationGuidance: null,
-  active: true, reviewRequired: false, stageRank: 1, sortOrder: 0, recordCount: 0, historyCount: 0, ...over,
+const sub = (over: Partial<ReplyTypeRow>): ReplyTypeRow => ({
+  id: id(1), groupKey: "interested", key: "demo_request", name: "Demo request", description: null, classificationGuidance: null,
+  active: true, rules: { ...DEFAULT_TYPE_RULES }, systemRole: null, sortOrder: 0, recordCount: 0, historyCount: 0, ...over,
 });
 
 /** In-memory store: only what the use cases under test touch. Everything else throws so a stray call fails loudly. */
-function fakeStore(over: Partial<ReplyHandlingStore> & { subs?: TaxonomyRow[]; exceptions?: IdentityExceptionRow[] } = {}) {
+function fakeStore(over: Partial<ReplyHandlingStore> & { subs?: ReplyTypeRow[]; exceptions?: IdentityExceptionRow[] } = {}) {
   const subs = over.subs ?? [];
   const exceptions = over.exceptions ?? [];
   const calls: Record<string, unknown[]> = {};
   const record = (name: string, arg: unknown) => ((calls[name] ??= []).push(arg), arg);
   const store = {
-    taxonomy: async (org: string) => ({ pipeline: { id: id(90), name: "Default" }, subcategories: org === ORG ? subs : [], settings: { autoApplyConfidence: 0.85, reviewOther: true, customerRequiresReview: true, draftInstructions: [], classificationInstructions: [] } }),
-    createSubcategory: async (_org: string, input: unknown) => (record("createSubcategory", input), { id: id(50) }),
-    updateSubcategory: async (_org: string, sid: string, patch: unknown) => void record("updateSubcategory", { sid, patch }),
-    deleteSubcategory: async (_org: string, sid: string) => void record("deleteSubcategory", sid),
-    moveStage: async (input: { personId?: string }) => (record("moveStage", input), { recordId: id(2), personId: id(3), categoryKey: "not_interested", subcategoryKey: "do_not_contact", contextVersion: 4, draftsRetired: 1 }),
+    replyTypeCatalog: async (org: string) => ({ replyTypeSet: { id: id(90), name: "Default" }, replyTypes: org === ORG ? subs : [], settings: { autoApplyConfidence: 0.85, draftInstructions: [], classificationInstructions: [] } }),
+    createReplyType: async (_org: string, input: unknown) => (record("createReplyType", input), { id: id(50) }),
+    updateReplyType: async (_org: string, sid: string, patch: unknown) => void record("updateReplyType", { sid, patch }),
+    deleteReplyType: async (_org: string, sid: string) => void record("deleteReplyType", sid),
+    changeReplyType: async (input: { personId?: string }) => (record("changeReplyType", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1, runStarted: false }),
     setDoNotContact: async (input: unknown) => (record("setDoNotContact", input), { changed: true, doNotContact: true, recordsUpdated: 1, draftsRetired: 0, enrollmentsStopped: 2 }),
     closeRecord: async (input: unknown) => void record("closeRecord", input),
     getIdentityException: async (org: string, eid: string) => exceptions.find((e) => e.id === eid && org === ORG) ?? null,
@@ -68,29 +69,23 @@ function deps(store: ReplyHandlingStore) {
 }
 
 describe("stage moves", () => {
-  it("passes the move to the store and sets do not contact when the target is the Do not contact subcategory", async () => {
+  it("passes the change to the store and never sets do not contact, the stop request type included", async () => {
     const { store, calls } = fakeStore();
     const { d } = deps(store);
-    const result = await moveRecordStage(d, actor, id(2), { categoryKey: "not_interested", subcategoryId: id(5), expectedContextVersion: 3, note: "  asked to stop  " });
-    expect(result.contextVersion).toBe(4);
-    expect(calls.moveStage[0]).toMatchObject({ organizationId: ORG, actorUserId: actor.userId, recordId: id(2), note: "asked to stop", confirmUnlock: false });
-    expect(calls.setDoNotContact[0]).toMatchObject({ organizationId: ORG, personId: id(3), enabled: true });
-  });
-
-  it("does not touch do not contact for other subcategories", async () => {
-    const { store, calls } = fakeStore({ moveStage: async () => ({ recordId: id(2), personId: id(3), categoryKey: "interested", subcategoryKey: "meeting_done", contextVersion: 4, draftsRetired: 0 }) });
-    await moveRecordStage(deps(store).d, actor, id(2), { categoryKey: "interested", subcategoryId: id(5), expectedContextVersion: 3 });
+    const result = await changeReplyType(d, actor, id(2), { groupKey: "not_interested", replyTypeId: id(5), expectedContextVersion: 3, note: "  asked to stop  " });
+    expect(result).toMatchObject({ contextVersion: 4, replyTypeKey: "do_not_contact" });
+    expect(calls.changeReplyType[0]).toMatchObject({ organizationId: ORG, actorUserId: actor.userId, recordId: id(2), note: "asked to stop", confirmUnlock: false });
     expect(calls.setDoNotContact).toBeUndefined();
   });
 
   it("rejects bad input before the store is called", async () => {
     const { store, calls } = fakeStore();
     const { d } = deps(store);
-    await expect(moveRecordStage(d, actor, "nope", { categoryKey: "other", subcategoryId: null, expectedContextVersion: 0 })).rejects.toThrow(NotFoundError);
-    await expect(moveRecordStage(d, actor, id(2), { categoryKey: "won", subcategoryId: null, expectedContextVersion: 0 })).rejects.toThrow(ValidationError);
-    await expect(moveRecordStage(d, actor, id(2), { categoryKey: "other", subcategoryId: null, expectedContextVersion: 0, occurredAt: new Date(NOW.getTime() + 3_600_000) })).rejects.toThrow(ConflictError);
-    await expect(moveRecordStage(d, actor, id(2), { categoryKey: "other", subcategoryId: null, expectedContextVersion: 0, note: "x".repeat(4001) })).rejects.toThrow(ValidationError);
-    expect(calls.moveStage).toBeUndefined();
+    await expect(changeReplyType(d, actor, "nope", { groupKey: "other", replyTypeId: null, expectedContextVersion: 0 })).rejects.toThrow(NotFoundError);
+    await expect(changeReplyType(d, actor, id(2), { groupKey: "won", replyTypeId: null, expectedContextVersion: 0 })).rejects.toThrow(ValidationError);
+    await expect(changeReplyType(d, actor, id(2), { groupKey: "other", replyTypeId: null, expectedContextVersion: 0, occurredAt: new Date(NOW.getTime() + 3_600_000) })).rejects.toThrow(ConflictError);
+    await expect(changeReplyType(d, actor, id(2), { groupKey: "other", replyTypeId: null, expectedContextVersion: 0, note: "x".repeat(4001) })).rejects.toThrow(ValidationError);
+    expect(calls.changeReplyType).toBeUndefined();
   });
 });
 
@@ -121,18 +116,37 @@ describe("taxonomy", () => {
   it("rejects a duplicate key and a duplicate name in the category", async () => {
     const { store, calls } = fakeStore({ subs: [sub({})] });
     const { d } = deps(store);
-    await expect(createSubcategory(d, admin, { categoryKey: "interested", name: "Something else", key: "demo_request" })).rejects.toThrow(/already exists/);
-    await expect(createSubcategory(d, admin, { categoryKey: "interested", name: "demo REQUEST" })).rejects.toThrow(/already exists/);
-    await createSubcategory(d, admin, { categoryKey: "other", name: "Demo ask" });
-    expect(calls.createSubcategory).toHaveLength(1);
+    await expect(createReplyType(d, admin, { groupKey: "interested", name: "Something else", key: "demo_request" })).rejects.toThrow(/already exists/);
+    await expect(createReplyType(d, admin, { groupKey: "interested", name: "demo REQUEST" })).rejects.toThrow(/already exists/);
+    await createReplyType(d, admin, { groupKey: "other", name: "Demo ask" });
+    expect(calls.createReplyType).toHaveLength(1);
   });
 
-  it("never archives or deletes Do not contact", async () => {
-    const dnc = sub({ id: id(4), key: "do_not_contact", categoryKey: "not_interested", name: "Do not contact", stageRank: null });
-    const { d } = deps(fakeStore({ subs: [dnc] }).store);
-    await expect(updateSubcategory(d, admin, id(4), { active: false })).rejects.toThrow(/cannot be archived/);
-    await expect(deleteSubcategory(d, admin, id(4))).rejects.toThrow(/cannot be deleted/);
-    await expect(updateSubcategory(d, admin, id(4), { reviewRequired: true })).resolves.toBeUndefined();
+  it("never archives or deletes a type with a system role, and says why", async () => {
+    const dnc = sub({ id: id(4), key: "do_not_contact", groupKey: "not_interested", name: "Asked to stop", rules: { ...STOP_REQUEST_RULES }, systemRole: "stop_request" });
+    const customer = sub({ id: id(6), key: "customer", groupKey: "customer", name: "Customer question", systemRole: "customer" });
+    // The key alone carries no role: a type keyed do_not_contact without one archives like any other.
+    const plain = sub({ id: id(7), key: "do_not_contact_old", name: "Old stop" });
+    const { store, calls } = fakeStore({ subs: [dnc, customer, plain] });
+    const { d } = deps(store);
+    for (const [tid, role] of [[id(4), "stop_request"], [id(6), "customer"]] as const) {
+      await expect(updateReplyType(d, admin, tid, { active: false })).rejects.toThrow(SYSTEM_ROLE_REASONS[role]);
+      await expect(deleteReplyType(d, admin, tid)).rejects.toThrow(SYSTEM_ROLE_REASONS[role]);
+    }
+    await expect(updateReplyType(d, admin, id(4), { name: "Stop" })).resolves.toBeUndefined();
+    await updateReplyType(d, admin, id(7), { active: false });
+    expect(calls.deleteReplyType).toBeUndefined();
+  });
+
+  it("merges the rules a change names with the stored ones and checks them against the system role", async () => {
+    const dnc = sub({ id: id(4), key: "do_not_contact", groupKey: "not_interested", name: "Asked to stop", rules: { ...STOP_REQUEST_RULES }, systemRole: "stop_request" });
+    const plain = sub({ id: id(5), key: "pricing", name: "Pricing" });
+    const { store, calls } = fakeStore({ subs: [dnc, plain] });
+    const { d } = deps(store);
+    await expect(updateReplyType(d, admin, id(4), { replyDraft: true })).rejects.toThrow(/never gets a reply draft/);
+    await expect(updateReplyType(d, admin, id(4), { checkMode: "skip" })).rejects.toThrow(/checked before/);
+    await updateReplyType(d, admin, id(5), { followUps: "stop" });
+    expect(calls.updateReplyType).toEqual([{ sid: id(5), patch: { rules: { checkMode: "after", replyDraft: true, followUps: "stop" } } }]);
   });
 
   it("blocks a delete while records or history use the subcategory", async () => {
@@ -141,24 +155,24 @@ describe("taxonomy", () => {
     const free = sub({ id: id(10), key: "free", name: "Free" });
     const { store, calls } = fakeStore({ subs: [used, past, free] });
     const { d } = deps(store);
-    await expect(deleteSubcategory(d, admin, id(5))).rejects.toThrow(/2 people are in/);
-    await expect(deleteSubcategory(d, admin, id(6))).rejects.toThrow(/Archive it/);
-    await deleteSubcategory(d, admin, id(10));
-    expect(calls.deleteSubcategory).toEqual([id(10)]);
+    await expect(deleteReplyType(d, admin, id(5))).rejects.toThrow(/2 people have/);
+    await expect(deleteReplyType(d, admin, id(6))).rejects.toThrow(/Archive it/);
+    await deleteReplyType(d, admin, id(10));
+    expect(calls.deleteReplyType).toEqual([id(10)]);
   });
 
   it("refuses a member", async () => {
     const { d } = deps(fakeStore({ subs: [sub({ id: id(5) })] }).store);
-    await expect(createSubcategory(d, actor, { categoryKey: "other", name: "Demo ask" })).rejects.toThrow(ForbiddenError);
-    await expect(updateSubcategory(d, actor, id(5), { active: false })).rejects.toThrow(ForbiddenError);
-    await expect(deleteSubcategory(d, actor, id(5))).rejects.toThrow(ForbiddenError);
+    await expect(createReplyType(d, actor, { groupKey: "other", name: "Demo ask" })).rejects.toThrow(ForbiddenError);
+    await expect(updateReplyType(d, actor, id(5), { active: false })).rejects.toThrow(ForbiddenError);
+    await expect(deleteReplyType(d, actor, id(5))).rejects.toThrow(ForbiddenError);
   });
 
   it("answers 404 for a subcategory of another organization", async () => {
     const other: Actor = { ...admin, organizationId: OTHER_ORG };
     const { d } = deps(fakeStore({ subs: [sub({ id: id(5) })] }).store);
-    await expect(deleteSubcategory(d, other, id(5))).rejects.toThrow(NotFoundError);
-    await expect(updateSubcategory(d, other, id(5), { active: false })).rejects.toThrow(NotFoundError);
+    await expect(deleteReplyType(d, other, id(5))).rejects.toThrow(NotFoundError);
+    await expect(updateReplyType(d, other, id(5), { active: false })).rejects.toThrow(NotFoundError);
   });
 });
 

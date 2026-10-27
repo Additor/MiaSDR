@@ -113,10 +113,10 @@ describeDb("route matrix", () => {
       if (table === "members") {
         const [row] = await world.sql`select * from members where organization_id = ${organizationId} order by created_at limit 1`;
         rowCache.set(cacheKey, row ?? null);
-      } else if (table === "subcategories") {
-        // The pipeline and its subcategories are created on first read, so read it as the organization's owner first.
-        await callRoute("reply-categories/route.ts", "GET", { as: organizationId === world.orgA.id ? world.admin : world.other });
-        const [row] = await world.sql`select * from subcategories where organization_id = ${organizationId} and key <> 'do_not_contact' order by ${fresh ? world.sql`random()` : world.sql`created_at`} limit 1`;
+      } else if (table === "reply_types") {
+        // The reply type set and its types are created on first read, so read it as the organization's owner first.
+        await callRoute("reply-types/route.ts", "GET", { as: organizationId === world.orgA.id ? world.admin : world.other });
+        const [row] = await world.sql`select * from reply_types where organization_id = ${organizationId} and key <> 'do_not_contact' order by ${fresh ? world.sql`random()` : world.sql`created_at`} limit 1`;
         rowCache.set(cacheKey, row ?? null);
       } else {
         rowCache.set(cacheKey, await world.seed(table, organizationId, force));

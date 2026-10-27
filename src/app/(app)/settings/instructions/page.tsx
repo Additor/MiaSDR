@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
+import { getReplyTypeCatalog } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
@@ -26,7 +26,7 @@ async function Instructions() {
   await connection();
   const ctx = await requireOrgContext();
   const canManage = isOwnerOrAdmin(ctx.role);
-  const { settings } = await getReplyTaxonomy(replyHandlingDeps(), toActor(ctx));
+  const { settings } = await getReplyTypeCatalog(replyHandlingDeps(), toActor(ctx));
   return (
     <>
       {!canManage && (

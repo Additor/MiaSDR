@@ -3,15 +3,15 @@ import { retryOnce } from "@/platform/db/errors";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import {
-  PROTECTED_SUBCATEGORY_KEY,
-  isCategoryKey,
+  isReplyTypeGroup,
   parseInstructionBlocks,
-  parsePipelineSettings,
-  parseSubcategoryInput,
-  parseSubcategoryPatch,
-  type CategoryKey,
+  parseReplyHandlingSettings,
+  parseReplyTypeInput,
+  parseReplyTypePatch,
+  type ReplyTypeGroup,
 } from "../domain/reply-handling";
-import type { ReplyHandlingStore, IdentityExceptionRow, RecordDetail } from "./reply-handling-ports";
+import { SYSTEM_ROLE_REASONS, typeChangeOutcome, validateTypeRules, type TypeChangeOutcome } from "../domain/reply-type";
+import type { ReplyHandlingStore, IdentityExceptionRow, RecordDetail, UndoReplyTypePickResult } from "./reply-handling-ports";
 import type { InboundLinkedInInput } from "./linkedin-ports";
 import type { InboundEmailInput, IngestResult, InboxStore, ThreadMessage } from "./ports";
 import { resolveUncertainSend, type ReplyDeps } from "./reply-management";
@@ -68,9 +68,23 @@ export async function getRecord(deps: ReplyHandlingDeps, actor: Actor, recordId:
   return { ...detail, timeline };
 }
 
-export interface MoveStageInput {
-  categoryKey: string;
-  subcategoryId: string | null;
+/**
+ * What Change type would do for each active reply type of the record, as the three lines of `typeChangeOutcome`. The
+ * record's current type is left out: it is not a target.
+ */
+export async function getTypeChangeOutcomes(deps: ReplyHandlingDeps, actor: Actor, recordId: string): Promise<Array<{ replyTypeId: string; outcome: TypeChangeOutcome }>> {
+  assertId(recordId, "Reply handling");
+  const read = await deps.store.typeChangeFacts(actor.organizationId, recordId);
+  if (!read) throw new NotFoundError("Reply handling not found");
+  const facts = { ...read.facts, currentType: read.current };
+  return read.targets
+    .filter((t) => t.id !== read.current?.id)
+    .map((t) => ({ replyTypeId: t.id, outcome: typeChangeOutcome(read.current, t, facts) }));
+}
+
+export interface ChangeReplyTypeInput {
+  groupKey: string;
+  replyTypeId: string | null;
   expectedContextVersion: number;
   confirmUnlock?: boolean;
   note?: string | null;
@@ -78,15 +92,16 @@ export interface MoveStageInput {
 }
 
 /**
- * A person moves a record to another stage because something happened off the thread (a meeting took
- * place, a trial started). The AI's reading of the latest reply stays as it was; the move is logged as
- * `stage.moved`. A move into Do not contact also sets the person's do-not-contact flag, because the
- * person who made it has decided to stop contact.
+ * A person changes the record's reply type because something happened off the thread (a meeting took place, a trial
+ * started). The AI's reading of the latest reply stays as it was; the change is logged as `reply_type.changed` with the
+ * rules of the new type. The type's rules decide, through `decideReplyType` with no confidence: the workflow state
+ * (`afterTypeChange`) and whether a follow-up run starts. No new draft is written here. A type change never marks the
+ * person do not contact, the stop request type included: contact stops only through Stop contacting.
  */
-export async function moveRecordStage(deps: ReplyHandlingDeps, actor: Actor, recordId: string, input: MoveStageInput) {
+export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, recordId: string, input: ChangeReplyTypeInput) {
   assertId(recordId, "Reply handling");
-  if (!isCategoryKey(input.categoryKey)) throw new ValidationError("Choose one of the four categories.");
-  if (input.subcategoryId !== null) assertId(input.subcategoryId, "Subcategory");
+  if (!isReplyTypeGroup(input.groupKey)) throw new ValidationError("Choose one of the four groups.");
+  if (input.replyTypeId !== null) assertId(input.replyTypeId, "Reply type");
   if (!Number.isInteger(input.expectedContextVersion) || input.expectedContextVersion < 0) throw new ValidationError("The reply handling version is missing. Reload and try again.");
   const note = input.note?.trim() || null;
   if (note && note.length > 4000) throw new ValidationError("The note is longer than 4000 characters.");
@@ -94,41 +109,33 @@ export async function moveRecordStage(deps: ReplyHandlingDeps, actor: Actor, rec
   const occurredAt = input.occurredAt ?? now;
   if (occurredAt.getTime() > now.getTime() + 60_000) throw new ConflictError("A category change cannot be dated in the future.");
 
-  const result = await deps.store.moveStage({
+  return deps.store.changeReplyType({
     organizationId: actor.organizationId,
     actorUserId: actor.userId,
     recordId,
-    categoryKey: input.categoryKey as CategoryKey,
-    subcategoryId: input.subcategoryId,
+    groupKey: input.groupKey as ReplyTypeGroup,
+    replyTypeId: input.replyTypeId,
     expectedContextVersion: input.expectedContextVersion,
     confirmUnlock: input.confirmUnlock === true,
     note,
     occurredAt,
     now,
   });
-  await followDoNotContactCategory(deps, actor, result);
-  return result;
 }
 
 /**
- * A person put the record in Do not contact, by a move off the thread or by their own reading of the reply: they have decided
- * to stop contact, so the do-not-contact flag follows on every channel. Any other subcategory leaves the flag alone.
+ * Reverts the latest applied pick to the type the record had before, as a person's decision. Open drafts retire, the
+ * follow-up run ends and a queued draft job for the pick is cancelled; the result says which of these happened.
  */
-export async function followDoNotContactCategory(deps: ReplyHandlingDeps, actor: Actor, result: { personId: string; subcategoryKey: string | null }) {
-  if (result.subcategoryKey !== PROTECTED_SUBCATEGORY_KEY) return;
-  await deps.store.setDoNotContact({ organizationId: actor.organizationId, actorUserId: actor.userId, personId: result.personId, enabled: true, reason: "Moved to Do not contact by a person.", now: deps.now() });
-}
-
-/** Reverts the latest applied classification to what the record had before, as a person's decision. */
-export async function undoClassification(deps: ReplyHandlingDeps, actor: Actor, classificationId: string) {
-  assertId(classificationId, "Classification");
-  return deps.store.undoClassification({ organizationId: actor.organizationId, actorUserId: actor.userId, classificationId, now: deps.now() });
+export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<UndoReplyTypePickResult> {
+  assertId(replyTypePickId, "AI pick");
+  return deps.store.undoReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
 }
 
 /** Marks an AI classification as seen. A held proposal is not acknowledged, it is accepted or overridden. */
-export async function acknowledgeClassification(deps: ReplyHandlingDeps, actor: Actor, classificationId: string): Promise<void> {
-  assertId(classificationId, "Classification");
-  await deps.store.acknowledgeClassification({ organizationId: actor.organizationId, actorUserId: actor.userId, classificationId, now: deps.now() });
+export async function acknowledgeReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<void> {
+  assertId(replyTypePickId, "AI pick");
+  await deps.store.acknowledgeReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
 }
 
 /**
@@ -248,56 +255,58 @@ function requireAdmin(actor: Actor): void {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can change reply settings.");
 }
 
-export const getReplyTaxonomy = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.taxonomy(actor.organizationId);
+export const getReplyTypeCatalog = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.replyTypeCatalog(actor.organizationId);
 
-export async function createSubcategory(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
+export async function createReplyType(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
   requireAdmin(actor);
-  const input = parseSubcategoryInput(raw);
-  const { subcategories } = await deps.store.taxonomy(actor.organizationId);
-  if (subcategories.some((s) => s.key === input.key)) throw new ConflictError(`A subcategory with the key "${input.key}" already exists.`);
-  if (subcategories.some((s) => s.categoryKey === input.categoryKey && s.name.toLowerCase() === input.name.toLowerCase())) {
-    throw new ConflictError(`"${input.name}" already exists in this category.`);
+  const input = parseReplyTypeInput(raw);
+  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
+  if (replyTypes.some((s) => s.key === input.key)) throw new ConflictError(`A reply type with the key "${input.key}" already exists.`);
+  if (replyTypes.some((s) => s.groupKey === input.groupKey && s.name.toLowerCase() === input.name.toLowerCase())) {
+    throw new ConflictError(`"${input.name}" already exists in this group.`);
   }
-  return deps.store.createSubcategory(actor.organizationId, input);
+  return deps.store.createReplyType(actor.organizationId, input);
 }
 
-export async function updateSubcategory(deps: ReplyHandlingDeps, actor: Actor, id: string, raw: Record<string, unknown>): Promise<void> {
+export async function updateReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string, raw: Record<string, unknown>): Promise<void> {
   requireAdmin(actor);
-  assertId(id, "Subcategory");
-  const patch = parseSubcategoryPatch(raw);
-  const { subcategories } = await deps.store.taxonomy(actor.organizationId);
-  const current = subcategories.find((s) => s.id === id);
-  if (!current) throw new NotFoundError("Subcategory not found");
-  if (current.key === PROTECTED_SUBCATEGORY_KEY && patch.active === false) throw new ConflictError("Do not contact drives the stop-contact paths and cannot be archived.");
-  if (patch.name && subcategories.some((s) => s.id !== id && s.categoryKey === current.categoryKey && s.name.toLowerCase() === patch.name!.toLowerCase())) {
-    throw new ConflictError(`"${patch.name}" already exists in this category.`);
+  assertId(id, "Reply type");
+  const patch = parseReplyTypePatch(raw);
+  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
+  const current = replyTypes.find((s) => s.id === id);
+  if (!current) throw new NotFoundError("Reply type not found");
+  if (current.systemRole && patch.active === false) throw new ConflictError(SYSTEM_ROLE_REASONS[current.systemRole], { code: "system_role" });
+  if (patch.name && replyTypes.some((s) => s.id !== id && s.groupKey === current.groupKey && s.name.toLowerCase() === patch.name!.toLowerCase())) {
+    throw new ConflictError(`"${patch.name}" already exists in this group.`);
   }
-  await deps.store.updateSubcategory(actor.organizationId, id, patch);
+  // The rules the request names, on top of the stored ones, checked against the type's system role.
+  const rules = patch.rules ? validateTypeRules(current, { ...current.rules, ...patch.rules }) : undefined;
+  await deps.store.updateReplyType(actor.organizationId, id, { ...patch, ...(rules ? { rules } : {}) });
 }
 
-/** Delete is blocked while records or classification history use the subcategory. Archive it instead. */
-export async function deleteSubcategory(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {
+/** Delete is blocked for a type with a system role, and while records or pick history use the type. Archive it instead. */
+export async function deleteReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {
   requireAdmin(actor);
-  assertId(id, "Subcategory");
-  const { subcategories } = await deps.store.taxonomy(actor.organizationId);
-  const current = subcategories.find((s) => s.id === id);
-  if (!current) throw new NotFoundError("Subcategory not found");
-  if (current.key === PROTECTED_SUBCATEGORY_KEY) throw new ConflictError("Do not contact drives the stop-contact paths and cannot be deleted.");
-  if (current.recordCount > 0) throw new ConflictError(`${current.recordCount} ${current.recordCount === 1 ? "person is" : "people are"} in this subcategory. Move them first, or archive it.`);
-  if (current.historyCount > 0) throw new ConflictError("Classification history refers to this subcategory. Archive it instead of deleting it.");
-  await deps.store.deleteSubcategory(actor.organizationId, id);
+  assertId(id, "Reply type");
+  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
+  const current = replyTypes.find((s) => s.id === id);
+  if (!current) throw new NotFoundError("Reply type not found");
+  if (current.systemRole) throw new ConflictError(SYSTEM_ROLE_REASONS[current.systemRole], { code: "system_role" });
+  if (current.recordCount > 0) throw new ConflictError(`${current.recordCount} ${current.recordCount === 1 ? "person has" : "people have"} this reply type. Change their type first, or archive it.`);
+  if (current.historyCount > 0) throw new ConflictError("AI picks refer to this reply type. Archive it instead of deleting it.");
+  await deps.store.deleteReplyType(actor.organizationId, id);
 }
 
 export async function updateReplySettings(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>): Promise<void> {
   requireAdmin(actor);
-  await deps.store.updateSettings(actor.organizationId, parsePipelineSettings(raw));
+  await deps.store.updateSettings(actor.organizationId, parseReplyHandlingSettings(raw));
 }
 
 export async function updateReplyAiInstructions(deps: ReplyHandlingDeps, actor: Actor, raw: { draftInstructions?: unknown; classificationInstructions?: unknown }): Promise<void> {
   requireAdmin(actor);
   const patch: { draftInstructions?: ReturnType<typeof parseInstructionBlocks>; classificationInstructions?: ReturnType<typeof parseInstructionBlocks> } = {};
   if (raw.draftInstructions !== undefined) patch.draftInstructions = parseInstructionBlocks(raw.draftInstructions, "Drafting instructions");
-  if (raw.classificationInstructions !== undefined) patch.classificationInstructions = parseInstructionBlocks(raw.classificationInstructions, "Classification instructions");
+  if (raw.classificationInstructions !== undefined) patch.classificationInstructions = parseInstructionBlocks(raw.classificationInstructions, "Reply type instructions");
   if (Object.keys(patch).length === 0) throw new ValidationError("Nothing to change.");
   await deps.store.updateSettings(actor.organizationId, patch);
 }

@@ -11,16 +11,19 @@ function facts(over: Partial<StartFacts> = {}): StartFacts {
     record: {
       id: "rec1",
       personId: "p1",
-      subcategoryId: "sub1",
-      categoryKey: "interested",
-      subcategoryKey: "demo_request",
-      subcategoryName: "Demo request",
+      replyTypeId: "sub1",
+      groupKey: "interested",
+      replyTypeKey: "demo_request",
+      replyTypeName: "Demo request",
+      followUps: "continue",
+      replyDraft: true,
       latestInboundMessageId: "m1",
       lastInboundAt: new Date("2026-10-15T08:00:00Z"),
       lastOutboundAt: null,
       contextVersion: 1,
       workflowState: "action_required",
       hasEmail: true,
+      stopRequested: false,
     },
     doNotContact: false,
     suppressed: false,
@@ -97,13 +100,15 @@ describe("startRun invariants", () => {
     expect(s.created[0].steps.map((x) => x.position)).toEqual([2]);
   });
 
-  it("starts nothing for terminal, no-reply and non-email cases or when there is no sequence", async () => {
+  it("starts nothing for a type set to stop follow-ups, a non-email reply or no sequence", async () => {
     const terminal = facts();
-    terminal.record.categoryKey = "not_interested";
-    terminal.record.subcategoryKey = "not_required_right_now";
+    terminal.record.groupKey = "not_interested";
+    terminal.record.replyTypeKey = "not_required_right_now";
+    terminal.record.followUps = "stop";
     const ooo = facts();
-    ooo.record.categoryKey = "other";
-    ooo.record.subcategoryKey = "out_of_office";
+    ooo.record.groupKey = "other";
+    ooo.record.replyTypeKey = "out_of_office";
+    ooo.record.followUps = "stop";
     const cases = [terminal, ooo, facts({ conversation: { id: "c1", recordId: "rec1", channel: "linkedin" } }), facts({ selection: null })];
     for (const f of cases) {
       const s = store(f);
@@ -138,11 +143,11 @@ describe("restartSequenceRun", () => {
     ["AI drafts were never turned on", { flow: null, selection: null }, /AI drafts are off for the campaign Autumn/],
     ["the flow has no published steps", { flow: { status: "active", hasPublished: false }, selection: null }, /no published follow-up steps/],
     ["no campaign emailed the person", { owner: null, flow: null, selection: null }, /No campaign has emailed this person/],
-    ["the reply is a closing category", { record: { ...facts().record, categoryKey: "not_interested", subcategoryKey: "not_required_right_now", subcategoryName: "Not required right now" } }, /classified as Not required right now, so follow-ups do not apply/],
+    ["the reply type stops follow-ups", { record: { ...facts().record, groupKey: "not_interested", replyTypeKey: "not_required_right_now", replyTypeName: "Not now", followUps: "stop" } }, /^Not now is set to stop follow-ups\.$/],
     ["the person is marked do not contact", { doNotContact: true }, /marked do not contact/],
     ["the address is suppressed", { suppressed: true }, /suppression list/],
     ["reply handling is closed", { record: { ...facts().record, workflowState: "closed" } }, /Reply handling is closed/],
-    ["the reply is not classified", { record: { ...facts().record, subcategoryId: null } }, /not classified yet/],
+    ["the reply is not classified", { record: { ...facts().record, replyTypeId: null } }, /no reply type yet/],
     ["the conversation is not email", { conversation: { id: "c1", recordId: "rec1", channel: "linkedin" } }, /no email reply/],
     ["there is no reply at all", { record: { ...facts().record, latestInboundMessageId: null, lastInboundAt: null } }, /no email reply/],
   ];
@@ -164,16 +169,37 @@ describe("restartSequenceRun", () => {
   });
 });
 
+describe("a reply type set to Don't write a reply draft", () => {
+  it("starts the run at step 2, so step 1 writes no draft and the later steps continue", async () => {
+    const base = facts();
+    const s = store(facts({ record: { ...base.record, replyDraft: false } }));
+    expect(await startRun(s.deps, { organizationId: "org", recordId: "rec1", source: "ai_assignment" })).toEqual({ runId: "run1", created: true });
+    expect(s.created[0]).toMatchObject({ startPosition: 2 });
+    expect(s.created[0].steps.map((x) => x.position)).toEqual([2]);
+  });
+
+  it("starts no run when the flow has only step 1", async () => {
+    const base = facts();
+    const s = store(facts({ record: { ...base.record, replyDraft: false }, steps: [{ id: "s1", sequenceVersionId: "v1", position: 1, delayMinutes: 0 }] }));
+    expect(await attemptRun(s.deps, { organizationId: "org", recordId: "rec1", source: "ai_assignment" })).toEqual({
+      blocked: "Demo request is set to not write a reply draft, and the flow has no follow-up step after the reply.",
+    });
+    expect(s.created).toHaveLength(0);
+  });
+});
+
 describe("Restart button and restart result agree", () => {
   const record = (answered: boolean) => ({ lastInboundAt: new Date("2026-10-15T08:00:00Z"), lastOutboundAt: answered ? new Date("2026-10-15T08:30:00Z") : null });
   const stepsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `s${i + 1}`, sequenceVersionId: "v1", position: i + 1, delayMinutes: 0 }));
   const cases = [false, true].flatMap((answered) =>
-    [false, true].flatMap((skipReply) => [0, 1, 2, 3].flatMap((stepCount) => [false, true].map((hasRun) => ({ answered, skipReply, stepCount, hasRun })))),
+    [false, true].flatMap((skipReply) =>
+      [false, true].flatMap((replyDraft) => [0, 1, 2, 3].flatMap((stepCount) => [false, true].map((hasRun) => ({ answered, skipReply, replyDraft, stepCount, hasRun })))),
+    ),
   );
 
-  it.each(cases)("answered=$answered skipReply=$skipReply steps=$stepCount run=$hasRun", async ({ answered, skipReply, stepCount, hasRun }) => {
+  it.each(cases)("answered=$answered skipReply=$skipReply replyDraft=$replyDraft steps=$stepCount run=$hasRun", async ({ answered, skipReply, replyDraft, stepCount, hasRun }) => {
     const base = facts();
-    const f = facts({ record: { ...base.record, ...record(answered) }, steps: stepsOf(stepCount) });
+    const f = facts({ record: { ...base.record, ...record(answered), replyDraft }, steps: stepsOf(stepCount) });
     const reason = startBlocker(f, { source: "human_override", skipReply });
     const created: NewRun[] = [];
     // An existing run in progress is the store's business (it replaces the run); it must not change the verdict.

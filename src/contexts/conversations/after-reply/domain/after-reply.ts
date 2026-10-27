@@ -1,4 +1,5 @@
-import { AFTER_REPLY_OFF, isTerminalSubcategory, startPosition, type InterruptReason, type RunStatus } from "./sequences";
+import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
+import { AFTER_REPLY_OFF, followUpsContinue, startPosition, type InterruptReason, type RunStatus } from "./sequences";
 
 export { AFTER_REPLY_OFF };
 
@@ -14,8 +15,8 @@ export const AFTER_REPLY_MODES: readonly AfterReplyMode[] = ["handoff", "ai_draf
 export const DEFAULT_AFTER_REPLY_MODE: AfterReplyMode = "handoff";
 
 export const AFTER_REPLY_MODE_LABELS: Record<AfterReplyMode, string> = {
-  handoff: "Stop and hand the conversation to the Inbox",
-  ai_drafts: "AI drafts follow-ups for my approval",
+  handoff: "Off, hand to the Inbox",
+  ai_drafts: "AI drafts, you approve",
 };
 
 export const isAfterReplyMode = (value: unknown): value is AfterReplyMode => value === "handoff" || value === "ai_drafts";
@@ -49,14 +50,20 @@ export const NEW_REPLY_MARGIN_MINUTES = 10;
 /** The facts that decide whether a run can start for a record, in the shape the use case loads them. */
 export interface StartBlockFacts {
   record: {
-    subcategoryId: string | null;
-    categoryKey: string | null;
-    subcategoryKey: string | null;
-    subcategoryName: string | null;
+    replyTypeId: string | null;
+    groupKey: string | null;
+    replyTypeKey: string | null;
+    replyTypeName: string | null;
+    /** The Follow-ups rule of the record's reply type, or null without a type. */
+    followUps: FollowUpsRule | null;
+    /** The Reply draft rule of the record's reply type: false for Don't write, which skips step 1. Null without a type. */
+    replyDraft?: boolean | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     workflowState: string;
     hasEmail: boolean;
+    /** The latest reply asked to stop. */
+    stopRequested?: boolean;
   };
   conversation: { channel: string } | null;
   doNotContact: boolean;
@@ -95,9 +102,13 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (f.doNotContact) return "This person is marked do not contact, so follow-ups do not apply.";
   if (f.suppressed) return "This address is on the suppression list, so follow-ups do not apply.";
   if (!record.hasEmail) return "This person has no email address, so follow-ups cannot start.";
-  if (!record.subcategoryId) return "The reply is not classified yet, so follow-ups cannot start.";
-  if (isTerminalSubcategory(record.categoryKey, record.subcategoryKey)) return `The reply is classified as ${record.subcategoryName ?? record.subcategoryKey ?? "a closing category"}, so follow-ups do not apply.`;
-  if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply }) === null) return "A person already answered, and the flow has no follow-up step after the reply.";
+  if (!record.replyTypeId) return "The reply has no reply type yet, so follow-ups cannot start.";
+  if (record.stopRequested) return "The reply asked to stop, so follow-ups do not start.";
+  if (!followUpsContinue(record.followUps)) return followUpsStopReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
+  if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply, replyDraft: record.replyDraft }) === null) {
+    if (record.replyDraft === false && !f.answered && !f.skipReply) return replyDraftSkipReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
+    return "A person already answered, and the flow has no follow-up step after the reply.";
+  }
   return null;
 }
 
@@ -134,7 +145,7 @@ export const INTERRUPT_REASON_LABELS: Record<StopReason, string> = {
   unsubscribed: "The person unsubscribed",
   bounce: "The email address bounced",
   suppressed: "The address is on the suppression list",
-  terminal_stage: "The reply moved to a category that ends outreach",
+  terminal_stage: "The reply moved to a reply type that stops follow-ups",
   record_closed: "A person closed reply handling",
   converted: "The person became a contact",
   [AFTER_REPLY_OFF]: "Follow-ups turned off for this campaign",
@@ -147,9 +158,9 @@ export const INTERRUPT_REASON_LABELS: Record<StopReason, string> = {
 export const OTHER_END_REASON_LABELS: Record<string, string> = {
   manual: "A person cancelled the follow-ups",
   replaced: "A person started a different flow",
-  stage_moved: "A person changed the reply category",
-  classification_corrected: "A person corrected the classification",
-  classification_undone: "A person undid the classification",
+  stage_moved: "A person changed the reply type",
+  classification_corrected: "A person corrected the AI pick",
+  classification_undone: "A person undid the AI pick",
 };
 
 /** Wording for any reason stored on a run. An unknown reason reads as a plain stop. */
@@ -162,48 +173,44 @@ export function stopReasonLabel(reason: string | null | undefined): string {
 
 // What always stops follow-ups ---------------------------------------------------------------------------
 
-/** A category and subcategory key pair, the shape `isTerminalSubcategory` reads. */
-export interface SubcategoryFact {
-  categoryKey: string | null;
-  subcategoryKey: string | null;
-}
-
-export interface AlwaysStopRule {
+/** A fact about the person or the record that ends a run whatever the reply type's rules say. */
+export interface FixedStopRule {
   id: string;
   /** One line for the read-only list in the campaign's After a reply settings. */
   label: string;
-  /** The reason the engine stores when this fact ends a run. Null for a rule that only keeps a flow from starting. */
-  reason: InterruptReason | null;
-  /** Classifications that trigger the rule. Absent for rules about the lead or the record. */
-  subcategories?: readonly SubcategoryFact[];
+  /** The reason the engine stores when this fact ends a run. */
+  reason: InterruptReason;
 }
 
-/**
- * Facts after which a follow-up would be wrong. The first five come from `interruptReason`; the rest are the
- * subcategories `isTerminalSubcategory` treats as terminal, plus Out of office, which keeps a flow from starting
- * but does not end one that is running (the engine's no-start list holds it next to the terminal keys).
- */
-export const ALWAYS_STOPS_ON: readonly AlwaysStopRule[] = [
+/** The fixed rules, in the order `interruptReason` checks them. The reply types that stop follow-ups are data: see `StopReplyType`. */
+export const FIXED_STOP_RULES: readonly FixedStopRule[] = [
   { id: "reply", label: "The person replies again", reason: "reply" },
   { id: "do_not_contact", label: "The person is marked do not contact", reason: "do_not_contact" },
   { id: "unsubscribe", label: "The person unsubscribes", reason: "unsubscribed" },
   { id: "bounce", label: "The address bounces", reason: "bounce" },
+  { id: "suppressed", label: "The address is on the suppression list", reason: "suppressed" },
   { id: "record_closed", label: "Reply handling is closed", reason: "record_closed" },
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
-  { id: "not_interested", label: "The reply is classified Not interested", reason: "terminal_stage", subcategories: [{ categoryKey: "not_interested", subcategoryKey: null }] },
-  { id: "out_of_office", label: "The reply is classified Out of office", reason: null, subcategories: [{ categoryKey: null, subcategoryKey: "out_of_office" }] },
-  { id: "left_company", label: "The reply is classified Left company", reason: "terminal_stage", subcategories: [{ categoryKey: null, subcategoryKey: "left_company" }] },
-  {
-    id: "wrong_contact",
-    label: "The reply is classified Wrong or different contact",
-    reason: "terminal_stage",
-    subcategories: [
-      { categoryKey: null, subcategoryKey: "wrong_contact" },
-      { categoryKey: null, subcategoryKey: "connected_to_different_contact" },
-    ],
-  },
-  { id: "customer", label: "The reply is classified Existing customer", reason: "terminal_stage", subcategories: [{ categoryKey: null, subcategoryKey: "customer" }] },
 ];
 
-/** Whether a classification ends a running flow, by the same rule the engine's interrupt sweep applies. */
-export const endsFlow = (fact: SubcategoryFact): boolean => isTerminalSubcategory(fact.categoryKey, fact.subcategoryKey);
+/** Why no run starts on a one-step flow for a type set to Don't write a reply draft: step 1 is skipped, and nothing follows it. */
+export const replyDraftSkipReason = (typeName: string): string => `${typeName} is set to not write a reply draft, and the flow has no follow-up step after the reply.`;
+
+/** Why a reply type ends follow-ups, worded as the Restart button and the campaign settings show it. */
+export const followUpsStopReason = (typeName: string): string => `${typeName} is set to stop follow-ups.`;
+
+/** An active reply type of the organization whose Follow-ups rule is Stop. A move into it ends a running run, and no run starts on it. */
+export interface StopReplyType {
+  id: string;
+  key: string;
+  name: string;
+  groupKey: string;
+  systemRole: SystemRole | null;
+  /** `followUpsStopReason` for this type. */
+  reason: string;
+}
+
+/** One line per thing that ends follow-ups: the fixed rules, then each stop type by name. */
+export function stopsOnLines(stopTypes: readonly Pick<StopReplyType, "id" | "name">[]): Array<{ id: string; label: string }> {
+  return [...FIXED_STOP_RULES.map(({ id, label }) => ({ id, label })), ...stopTypes.map((t) => ({ id: `reply_type:${t.id}`, label: `The reply type is ${t.name}` }))];
+}

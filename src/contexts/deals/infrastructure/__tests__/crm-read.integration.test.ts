@@ -331,8 +331,8 @@ describeDb("crm-read against Postgres", () => {
       const f = await kit.organization();
       const personId = await f.person({ name: "Private" });
       await create(f, personId);
-      const [pipeline] = await kit.sql`select id from pipelines where organization_id = ${f.org} limit 1`.then(async (rows) => (rows.length ? rows : kit.sql`insert into pipelines (organization_id, name) values (${f.org}, 'Default') returning id`));
-      const [record] = await kit.sql`insert into records (organization_id, person_id, pipeline_id) values (${f.org}, ${personId}, ${pipeline.id}) returning id`;
+      const [pipeline] = await kit.sql`select id from reply_type_sets where organization_id = ${f.org} limit 1`.then(async (rows) => (rows.length ? rows : kit.sql`insert into reply_type_sets (organization_id, name) values (${f.org}, 'Default') returning id`));
+      const [record] = await kit.sql`insert into records (organization_id, person_id, reply_type_set_id) values (${f.org}, ${personId}, ${pipeline.id}) returning id`;
       const campaign = await f.campaign({ type: "personal", createdBy: f.owner.userId });
       await kit.sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${f.org}, ${record.id}, 'linkedin', ${`acct-${f.tag}`}, ${campaign})`;
       const before = (await deals.listContacts(composition.dealsDeps(), f.owner)).rows[0].lastActivityAt;

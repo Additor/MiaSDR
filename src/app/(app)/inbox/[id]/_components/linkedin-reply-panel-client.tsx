@@ -19,9 +19,10 @@ type SendResult = { status: string; error?: string | null };
 
 /**
  * Composer for a LinkedIn chat. An AI draft fills the box; the person edits it and presses Send, which is the approval.
- * Nothing goes out without it.
+ * Nothing goes out without it. Without a draft, `noDraft` says why the reply type writes none, and `drafting` that one is on
+ * its way.
  */
-export function LinkedInReplyPanelClient({ panel }: { panel: LinkedInReplyPanelView }) {
+export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: LinkedInReplyPanelView; noDraft: string | null; drafting: boolean }) {
   const router = useRouter();
   const draft = panel.draft;
   const [text, setText] = useState(draft?.status === "awaiting_review" ? draft.text : "");
@@ -125,8 +126,15 @@ export function LinkedInReplyPanelClient({ panel }: { panel: LinkedInReplyPanelV
           <div className="grid gap-1">
             {stale && <p className="text-sm">This draft may be out of date: a newer message arrived after it was written. Regenerate or discard it.</p>}
             {!draft && !panel.canGenerate && panel.aiOff && !panel.doNotContact && <p className="text-sm text-muted-foreground">{panel.aiOff} Until then, write the message yourself below.</p>}
-            {!draft && panel.canGenerate && !panel.doNotContact && (
-              <div>
+            {!draft && panel.canGenerate && !panel.doNotContact && drafting && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="no-draft">
+                <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+                Drafting…
+              </p>
+            )}
+            {!draft && panel.canGenerate && !panel.doNotContact && !drafting && (
+              <div className="grid justify-items-start gap-2 text-sm" data-testid="no-draft">
+                {noDraft && <p>{noDraft}</p>}
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
                   {busy ? "Writing…" : "Write a draft"}
                 </Button>

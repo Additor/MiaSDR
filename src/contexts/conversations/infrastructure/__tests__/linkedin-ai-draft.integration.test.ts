@@ -119,7 +119,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
       expect(input.senderName).toBe("Jo Owner");
       expect(input.person.name).toBe("Ada Lovelace");
       expect(input.thread.map((e) => e.text)).toEqual(["Could we book a demo next week?"]);
-      expect(input.classification?.subcategoryName).toBe("Demo request");
+      expect(input.classification?.replyTypeName).toBe("Demo request");
 
       const prompt = buildDraftPrompt(input, "n1");
       expect(prompt.system).toMatch(/LinkedIn/);
@@ -155,14 +155,14 @@ describeDb("AI drafts for LinkedIn threads", () => {
       const f = await drafted();
       await knowledgeApp.createKnowledge(stores.knowledge, { ...f.actor, role: "admin" }, { title: "Demo process", kind: "faq", content: "Demos run 30 minutes on Zoom.", alwaysInclude: true, tags: [] });
       const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
-      const target = await one("select id, category_key from subcategories where organization_id = $1 and key = 'meeting_done' limit 1", [f.org]);
-      await replyHandlingApp.moveRecordStage(f.replyHandlingDeps, f.actor, record.id, { categoryKey: target.category_key, subcategoryId: target.id, expectedContextVersion: Number(record.context_version), note: "We met on a call, send the contract" });
+      const target = await one("select id, group_key from reply_types where organization_id = $1 and key = 'meeting_done' limit 1", [f.org]);
+      await replyHandlingApp.changeReplyType(f.replyHandlingDeps, f.actor, record.id, { groupKey: target.group_key, replyTypeId: target.id, expectedContextVersion: Number(record.context_version), note: "We met on a call, send the contract" });
       // The move retires the open draft; a person asks for a fresh one.
       expect(await count("drafts", f.org, "status = 'stale'")).toBe(1);
       await mgmt.requestDraft(f.replyDeps, f.actor, f.conversationId);
       const input = f.ai!.lastDraftInput!;
       expect(input.channel).toBe("linkedin");
-      expect(input.stageChange?.note).toBe("We met on a call, send the contract");
+      expect(input.replyTypeChange?.note).toBe("We met on a call, send the contract");
       expect(input.knowledge.map((k) => k.title)).toContain("Demo process");
       expect(await count("drafts", f.org, "channel = 'linkedin' and subject is null and status = 'awaiting_review'")).toBe(1);
       expect(await count("drafts", f.org, "status = 'stale'")).toBe(1);

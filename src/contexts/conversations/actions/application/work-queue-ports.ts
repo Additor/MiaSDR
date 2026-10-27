@@ -1,4 +1,4 @@
-import type { QueueCursor, QueueFilter, QueueGroup, QueueProblemKind, QueueScope, WaitingSince } from "../domain/action-queue";
+import type { PickReviewKind, QueueCursor, QueueFilter, QueueGroup, QueueProblemKind, QueueScope, WaitingSince } from "../domain/action-queue";
 
 /** The work queue: what waits on a person, as the Actions page, the badges and the API read it. Every method carries the organization and filters by it. */
 
@@ -10,8 +10,8 @@ export interface QueueItem {
   personLifecycle: "lead" | "contact";
   /** The thread to open. Null when the record has no public conversation. */
   conversationId: string | null;
-  categoryKey: string | null;
-  subcategoryName: string | null;
+  groupKey: string | null;
+  replyTypeName: string | null;
   channel: string | null;
   workflowState: string;
   /** Who handles the replies, or null while nobody does. */
@@ -23,8 +23,12 @@ export interface QueueItem {
   waitingSince: WaitingSince;
   /** `preview` is the start of the draft's current text on one line, read for the rows of a page only. */
   draft: { draftId: string; status: string; subject: string | null; updatedAt: Date; preview: string | null } | null;
-  /** `contextVersion` is the record version the suggestion was written for: accepting a held one sends it back. */
-  classification: { classificationId: string; kind: "held" | "changed"; categoryKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
+  /**
+   * The AI pick of the latest reply when it waits for a person (`pickReviewOf`), else null. The field keeps its old name
+   * because the API carries it. `contextVersion` is the record version the pick was written for: accepting a held one sends
+   * it back. `groupKey` and `name` are the applied type, or the proposed one for a held pick.
+   */
+  classification: { replyTypePickId: string; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
   problem: { kind: QueueProblemKind; message: string } | null;
 }
 
@@ -53,7 +57,7 @@ export interface ActionQueueCounts {
   tasks: Record<QueueScope, number>;
   /** Records and tasks together. A `next_step` record with an open task is in the queue's task count only, so nothing counts twice. `work.mine` is the sidebar number. */
   work: Record<QueueScope, number>;
-  /** Per scope, the earliest waiting time over replies, classifications, next steps and problems. Follow-ups are left out. Null when none waits. */
+  /** Per scope, the earliest waiting time over replies, AI picks, next steps and problems. Follow-ups are left out. Null when none waits. */
   oldestWaiting: Record<QueueScope, Date | null>;
 }
 

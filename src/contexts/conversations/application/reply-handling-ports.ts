@@ -1,59 +1,88 @@
-import type { AiInstructionBlock, CategoryKey, PipelineSettingsPatch, SubcategoryInput, SubcategoryPatch } from "../domain/reply-handling";
+import type { AiInstructionBlock, ReplyTypeGroup, ReplyHandlingSettingsPatch, ReplyTypeInput, ReplyTypePatch } from "../domain/reply-handling";
+import type { HoldReason, ReplyTypeFacts, SystemRole, TypeRules } from "../domain/reply-type";
 import type { NoteScope } from "../actions/application/tasks-ports";
 
 /** Read models and write ports for reply handling. Every method carries the organization and filters by it. */
 
-export interface PipelineRef {
+export interface ReplyTypeSetRef {
   id: string;
   name: string;
 }
 
-export interface TaxonomyRow {
+export interface ReplyTypeRow {
   id: string;
-  categoryKey: CategoryKey;
+  groupKey: ReplyTypeGroup;
   key: string;
   name: string;
   description: string | null;
   classificationGuidance: string | null;
   active: boolean;
-  reviewRequired: boolean;
-  stageRank: number | null;
+  /** The type's rules, as they apply to picks from now on. */
+  rules: TypeRules;
+  systemRole: SystemRole | null;
   sortOrder: number;
   recordCount: number;
-  /** Classification rows that name this subcategory, so deleting it would break history. */
+  /** Picks that name this reply type, so deleting it would break history. */
   historyCount: number;
 }
 
-export interface PipelineSettingsRow {
+export interface ReplyHandlingSettingsRow {
+  /** The confidence floor: an AI pick below it waits for a person. */
   autoApplyConfidence: number;
-  reviewOther: boolean;
-  customerRequiresReview: boolean;
   draftInstructions: AiInstructionBlock[];
   classificationInstructions: AiInstructionBlock[];
 }
 
-export interface Taxonomy {
-  pipeline: PipelineRef;
-  subcategories: TaxonomyRow[];
-  settings: PipelineSettingsRow;
+export interface ReplyTypeCatalog {
+  replyTypeSet: ReplyTypeSetRef;
+  replyTypes: ReplyTypeRow[];
+  settings: ReplyHandlingSettingsRow;
 }
 
-export interface ClassificationEntry {
+/** A reply type as a person's type change reads it: what it is and the rules it would apply. */
+export interface ReplyTypeOption {
+  id: string;
+  key: string;
+  groupKey: ReplyTypeGroup;
+  name: string;
+  systemRole: SystemRole | null;
+  rules: TypeRules;
+}
+
+/** What `typeChangeOutcome` needs for one record: its current type, the active types it can move to, and the facts. */
+export interface TypeChangeFacts {
+  current: ReplyTypeOption | null;
+  targets: ReplyTypeOption[];
+  facts: Omit<ReplyTypeFacts, "confidence" | "currentType">;
+}
+
+export interface ReplyTypePickEntry {
   id: string;
   status: string;
   messageId: string;
   conversationId: string;
-  previous: { categoryKey: string | null; name: string | null };
-  proposed: { categoryKey: string | null; name: string | null };
-  applied: { categoryKey: string | null; name: string | null };
+  previous: { groupKey: string | null; name: string | null };
+  proposed: { groupKey: string | null; name: string | null };
+  applied: { groupKey: string | null; name: string | null };
+  appliedReplyTypeId: string | null;
   confidence: number | null;
   reasoning: string | null;
   error: string | null;
   provider: string | null;
   acknowledged: boolean;
+  /** The type rules the pick was decided with. Null for a pick without a type. */
+  rules: TypeRules | null;
+  /** System role of the proposed type, so the thread can tell a held stop request apart. */
+  proposedSystemRole: SystemRole | null;
+  /** Why the AI held the pick for a person, from the pick's response. Null when it applied. */
+  holdReason: HoldReason | null;
+  /** The reply asked to stop, as the AI read it. */
+  stopRequested: boolean;
   createdAt: Date;
   /** Belongs to the record's latest inbound message. */
   latest: boolean;
+  /** Decided on the record's current context version and not stale, so Accept and Looks right still apply to it. */
+  current: boolean;
   canUndo: boolean;
   canAcknowledge: boolean;
 }
@@ -66,6 +95,8 @@ export interface DraftEntry {
   subject: string | null;
   preview: string;
   revision: number;
+  /** The record's context version the draft was written for. */
+  expectedContextVersion: number;
   createdAt: Date;
   attemptId: string | null;
 }
@@ -102,12 +133,17 @@ export interface EnrollmentEntry {
 export interface RecordDetail {
   record: {
     id: string;
-    pipelineId: string;
-    categoryKey: string | null;
-    subcategoryId: string | null;
-    subcategoryName: string | null;
-    categorySource: string | null;
-    categoryLocked: boolean;
+    replyTypeSetId: string;
+    groupKey: string | null;
+    replyTypeId: string | null;
+    replyTypeName: string | null;
+    replyTypeSource: string | null;
+    replyTypeLocked: boolean;
+    /** Rules of the record's type as they stand now, archived types included. Null without a type. */
+    replyTypeRules: TypeRules | null;
+    replyTypeSystemRole: SystemRole | null;
+    /** An initial draft job for one of the record's picks is queued or running. */
+    draftJobPending: boolean;
     workflowState: string;
     activeChannel: string | null;
     contextVersion: number;
@@ -124,20 +160,21 @@ export interface RecordDetail {
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
   suppressed: boolean;
   conversations: Array<{ id: string; channel: string; accountRef: string; status: string }>;
-  classifications: ClassificationEntry[];
+  replyTypePicks: ReplyTypePickEntry[];
   drafts: DraftEntry[];
   events: EventEntry[];
   notes: NoteEntry[];
   enrollments: EnrollmentEntry[];
-  stages: Array<{ id: string; key: string; categoryKey: CategoryKey; name: string; stageRank: number | null }>;
+  /** Active reply types in group order, the targets of Change type. */
+  replyTypes: ReplyTypeOption[];
 }
 
-export interface StageMoveInput {
+export interface ReplyTypeChangeInput {
   organizationId: string;
   actorUserId: string;
   recordId: string;
-  categoryKey: CategoryKey;
-  subcategoryId: string | null;
+  groupKey: ReplyTypeGroup;
+  replyTypeId: string | null;
   expectedContextVersion: number;
   confirmUnlock: boolean;
   note: string | null;
@@ -145,13 +182,26 @@ export interface StageMoveInput {
   now: Date;
 }
 
-export interface StageMoveResult {
+export interface ReplyTypeChangeResult {
   recordId: string;
   personId: string;
-  categoryKey: string;
-  subcategoryKey: string | null;
+  groupKey: string;
+  replyTypeKey: string | null;
   contextVersion: number;
   draftsRetired: number;
+  /** A follow-up run of the owning campaign started for the new type. */
+  runStarted: boolean;
+}
+
+/** What an undo retired, so the client can say it. */
+export interface UndoReplyTypePickResult {
+  recordId: string;
+  /** Open drafts of the record that turned stale. */
+  draftsRetired: number;
+  /** An active or paused follow-up run ended. */
+  runEnded: boolean;
+  /** A draft job queued for the undone pick was cancelled before it wrote anything. */
+  draftJobCancelled: boolean;
 }
 
 export interface DncResult {
@@ -190,10 +240,12 @@ export interface ReplyHandlingStore {
   /** Everything but the conversation timelines, which the use case reads through the inbox store. */
   recordDetail(organizationId: string, recordId: string): Promise<RecordDetail | null>;
   draftIdForAttempt(organizationId: string, attemptId: string): Promise<string | null>;
+  /** Null when the record is not in the organization or has only private conversations. */
+  typeChangeFacts(organizationId: string, recordId: string): Promise<TypeChangeFacts | null>;
 
-  moveStage(input: StageMoveInput): Promise<StageMoveResult>;
-  undoClassification(input: { organizationId: string; actorUserId: string; classificationId: string; now: Date }): Promise<{ recordId: string; draftsRetired: number }>;
-  acknowledgeClassification(input: { organizationId: string; actorUserId: string; classificationId: string; now: Date }): Promise<void>;
+  changeReplyType(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
+  undoReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<UndoReplyTypePickResult>;
+  acknowledgeReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<void>;
   /** Sets or clears the person's do-not-contact flag and stops everything that would contact them. */
   setDoNotContact(input: { organizationId: string; actorUserId: string; personId: string; enabled: boolean; reason: string; now: Date }): Promise<DncResult>;
   closeRecord(input: { organizationId: string; actorUserId: string; recordId: string; reason: string; now: Date }): Promise<void>;
@@ -202,11 +254,11 @@ export interface ReplyHandlingStore {
   addNote(input: { organizationId: string; actorUserId: string; scope: NoteScope; title: string | null; body: string }): Promise<{ id: string }>;
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;
 
-  taxonomy(organizationId: string): Promise<Taxonomy>;
-  createSubcategory(organizationId: string, input: SubcategoryInput): Promise<{ id: string }>;
-  updateSubcategory(organizationId: string, id: string, patch: SubcategoryPatch): Promise<void>;
-  deleteSubcategory(organizationId: string, id: string): Promise<void>;
-  updateSettings(organizationId: string, patch: PipelineSettingsPatch & { draftInstructions?: AiInstructionBlock[]; classificationInstructions?: AiInstructionBlock[] }): Promise<void>;
+  replyTypeCatalog(organizationId: string): Promise<ReplyTypeCatalog>;
+  createReplyType(organizationId: string, input: ReplyTypeInput): Promise<{ id: string }>;
+  updateReplyType(organizationId: string, id: string, patch: ReplyTypePatch): Promise<void>;
+  deleteReplyType(organizationId: string, id: string): Promise<void>;
+  updateSettings(organizationId: string, patch: ReplyHandlingSettingsPatch & { draftInstructions?: AiInstructionBlock[]; classificationInstructions?: AiInstructionBlock[] }): Promise<void>;
 
   listIdentityExceptions(organizationId: string, status: "open" | "resolved" | "ignored"): Promise<IdentityExceptionRow[]>;
   getIdentityException(organizationId: string, id: string): Promise<IdentityExceptionRow | null>;

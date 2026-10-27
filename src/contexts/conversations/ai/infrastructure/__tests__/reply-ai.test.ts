@@ -6,15 +6,15 @@ import { createReplyAi } from "../reply-ai";
 
 const input: ClassifyInput = {
   taxonomy: [
-    { key: "demo_request", name: "Demo request", categoryKey: "interested", description: null, guidance: null },
-    { key: "other", name: "Other", categoryKey: "other", description: null, guidance: null },
+    { key: "demo_request", name: "Demo request", groupKey: "interested", description: null, guidance: null },
+    { key: "other", name: "Other", groupKey: "other", description: null, guidance: null },
   ],
   person: { name: "Eve", email: "eve@x.test", title: null, company: null },
   thread: [{ direction: "inbound", at: new Date("2026-10-14T10:00:00Z"), subject: "Hi", text: "SECRET-BODY please book a demo" }],
   operatorInstructions: "",
   businessContext: "",
 };
-const draftInput = (channel: "email" | "linkedin"): DraftInput => ({ channel, person: input.person, thread: input.thread, subject: "Re: Hi", classification: null, stageChange: null, operatorInstructions: "", knowledge: [], feedback: null, previousDraft: null, senderName: null });
+const draftInput = (channel: "email" | "linkedin"): DraftInput => ({ channel, person: input.person, thread: input.thread, subject: "Re: Hi", classification: null, replyTypeChange: null, operatorInstructions: "", knowledge: [], feedback: null, previousDraft: null, senderName: null });
 
 function answering(text: string) {
   const seen: GenerateRequest[] = [];

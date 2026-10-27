@@ -87,15 +87,15 @@ async function interruptRuns(tx: Tx, organizationId: string, runIds: string[], r
 }
 
 /**
- * Ends every active or paused run of one record. `exceptSubcategoryId` spares a run that started at that
+ * Ends every active or paused run of one record. `exceptReplyTypeId` spares a run that started at that
  * subcategory, so a sequence assigned to a terminal subcategory is not cancelled by its own start.
  */
-export async function interruptRecordRunsTx(tx: Tx, organizationId: string, recordId: string, reason: string, now: Date, exceptSubcategoryId?: string): Promise<number> {
+export async function interruptRecordRunsTx(tx: Tx, organizationId: string, recordId: string, reason: string, now: Date, exceptReplyTypeId?: string): Promise<number> {
   const runs = rowsOf<{ id: string }>(
     await tx.execute(sql`
       select id from sequence_runs
       where organization_id = ${organizationId} and record_id = ${recordId} and status in ('active', 'paused')
-        ${exceptSubcategoryId ? sql`and subcategory_id <> ${exceptSubcategoryId}` : sql``}
+        ${exceptReplyTypeId ? sql`and reply_type_id <> ${exceptReplyTypeId}` : sql``}
       order by id`),
   );
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);

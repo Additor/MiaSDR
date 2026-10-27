@@ -11,7 +11,7 @@ export const MAX_REASON_LENGTH = 500;
 export const MAX_DRAFT_BODY = 20_000;
 
 export function classificationSchema(keys: readonly string[]) {
-  if (keys.length === 0) throw new Error("The reply categories need at least one active subcategory to classify into.");
+  if (keys.length === 0) throw new Error("The AI needs at least one active reply type to pick from.");
   return z.strictObject({
     subcategoryKey: z.enum(keys as [string, ...string[]]),
     confidence: z.number().finite().min(0).max(1),
@@ -77,10 +77,10 @@ export const DRAFT_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export interface TaxonomyEntry {
+export interface ReplyType {
   key: string;
   name: string;
-  categoryKey: string;
+  groupKey: string;
   description: string | null;
   guidance: string | null;
 }
@@ -100,7 +100,7 @@ export interface AiPersonContext {
 }
 
 export interface ClassifyInput {
-  taxonomy: TaxonomyEntry[];
+  taxonomy: ReplyType[];
   person: AiPersonContext;
   /** Oldest first. The last inbound entry is the message to classify. */
   thread: ThreadEntry[];
@@ -110,7 +110,7 @@ export interface ClassifyInput {
 }
 
 /** A person moved the record to another stage after the last inbound message, because something happened off the thread. */
-export interface StageChange {
+export interface ReplyTypeChange {
   /** Name of the stage the record moved to. */
   stage: string;
   occurredAt: Date;
@@ -124,9 +124,9 @@ export interface DraftInput {
   thread: ThreadEntry[];
   /** Empty for LinkedIn. */
   subject: string;
-  classification: { subcategoryName: string; reason: string | null } | null;
+  classification: { replyTypeName: string; reason: string | null } | null;
   /** The newest stage move since the last inbound message, or null. The classifier's reason is dropped when it is set. */
-  stageChange: StageChange | null;
+  replyTypeChange: ReplyTypeChange | null;
   operatorInstructions: string;
   knowledge: Array<{ title: string; content: string }>;
   /** Reviewer feedback for a regeneration, with the draft it applies to. */

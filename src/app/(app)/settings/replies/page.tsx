@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getReplyTaxonomy } from "@/contexts/conversations/application/reply-handling";
+import { getReplyTypeCatalog } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getOrganization } from "@/contexts/tenancy/application/organization-settings";
@@ -10,8 +10,8 @@ import { organizationDeps } from "@/contexts/tenancy/infrastructure/organization
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { AdminNotice } from "../admin-notice";
-import { TaxonomyPanel } from "./taxonomy-panel";
-import { ThresholdsForm } from "./thresholds-form";
+import { ConfidenceFloorForm } from "./confidence-floor-form";
+import { ReplyTypesPanel } from "./reply-types-panel";
 import { UnknownSenderLimitForm } from "./unknown-sender-limit-form";
 
 export const metadata: Metadata = { title: "Reply handling" };
@@ -31,7 +31,7 @@ async function Settings() {
   const ctx = await requireOrgContext();
   const actor = toActor(ctx);
   const canManage = isOwnerOrAdmin(ctx.role);
-  const [{ subcategories, settings }, org] = await Promise.all([getReplyTaxonomy(replyHandlingDeps(), actor), getOrganization(organizationDeps(), actor)]);
+  const [{ replyTypes, settings }, org] = await Promise.all([getReplyTypeCatalog(replyHandlingDeps(), actor), getOrganization(organizationDeps(), actor)]);
   return (
     <>
       {!canManage && (
@@ -39,9 +39,10 @@ async function Settings() {
           <AdminNotice action="change reply settings" />
         </div>
       )}
-      <ThresholdsForm settings={{ autoApplyConfidence: settings.autoApplyConfidence, reviewOther: settings.reviewOther, customerRequiresReview: settings.customerRequiresReview }} canManage={canManage} />
+      {/* The list of reply types leads the page; the two organization-wide limits follow it. */}
+      <ReplyTypesPanel replyTypes={replyTypes} canManage={canManage} />
+      <ConfidenceFloorForm confidenceFloor={settings.autoApplyConfidence} canManage={canManage} />
       <UnknownSenderLimitForm limit={org.unknownSenderAiDailyCap} timeZone={org.timeZone} canManage={canManage} />
-      <TaxonomyPanel subcategories={subcategories} canManage={canManage} />
     </>
   );
 }

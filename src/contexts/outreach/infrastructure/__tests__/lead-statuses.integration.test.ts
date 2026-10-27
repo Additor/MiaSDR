@@ -14,7 +14,7 @@ describeDb("lead status read model", () => {
     const tag = uniqueKey();
     const [{ id }] = await sql`insert into organizations (name, slug) values ('A', ${"lo-" + tag}) returning id`;
     orgs.push(id);
-    const [{ id: pipeline }] = await sql`insert into pipelines (organization_id, name, is_default) values (${id}, 'default', true) returning id`;
+    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${id}, 'default', true) returning id`;
     return { id: id as string, pipeline: pipeline as string, tag };
   }
   type Org = Awaited<ReturnType<typeof org>>;
@@ -37,7 +37,7 @@ describeDb("lead status read model", () => {
       values (${o.id}, ${campaignId}, ${personId}, 'email', ${status}, ${updatedAt}, ${lastSentAt})`;
   };
   const record = async (o: Org, personId: string) => {
-    const [{ id }] = await sql`insert into records (organization_id, person_id, pipeline_id) values (${o.id}, ${personId}, ${o.pipeline}) returning id`;
+    const [{ id }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.id}, ${personId}, ${o.pipeline}) returning id`;
     return id as string;
   };
   let msg = 0;

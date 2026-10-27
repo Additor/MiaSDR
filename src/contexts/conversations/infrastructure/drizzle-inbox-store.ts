@@ -29,8 +29,8 @@ interface ListRow {
   auto_reply: boolean;
   possible_bounce: boolean;
   automated: boolean;
-  category_key: string | null;
-  subcategory_name: string | null;
+  group_key: string | null;
+  reply_type_name: string | null;
   unread: number;
   has_important: boolean;
 }
@@ -84,8 +84,8 @@ function conversationFilters(organizationId: string, f: InboxFilter): SQL[] {
     out.push(sql`exists (select 1 from campaign_enrollments ce where ce.organization_id = ${organizationId} and ce.person_id = p.id and ce.campaign_id in (${uuidList(f.campaignIds)}))`);
   }
   if (present(f.mailboxIds)) out.push(sql`lower(c.account_ref) in ${mailboxAddresses(organizationId, f.mailboxIds)}`);
-  if (present(f.subcategoryKeys)) out.push(sql`s.key in (${textList(f.subcategoryKeys)})`);
-  if (present(f.categoryKeys)) out.push(sql`r.category_key in (${textList(f.categoryKeys)})`);
+  if (present(f.replyTypeKeys)) out.push(sql`s.key in (${textList(f.replyTypeKeys)})`);
+  if (present(f.groupKeys)) out.push(sql`r.group_key in (${textList(f.groupKeys)})`);
   if (f.from) out.push(sql`lm.sent_at >= ${f.from.toISOString()}::timestamptz`);
   if (f.to) out.push(sql`lm.sent_at < ${f.to.toISOString()}::timestamptz`);
   return out;
@@ -95,7 +95,7 @@ function conversationFilters(organizationId: string, f: InboxFilter): SQL[] {
 function conversationSource(organizationId: string, f: InboxFilter): SQL {
   return sql`
     select c.id as conversation_id, c.channel, c.account_ref, p.id as person_id, p.full_name, p.first_name, p.email,
-           r.category_key, s.key as subcategory_key, s.name as subcategory_name,
+           r.group_key, s.key as reply_type_key, s.name as reply_type_name,
            lm.subject, lm.body_text, lm.sent_at, lm.direction, lm.auto_reply, lm.possible_bounce,
            (lm.direction = 'inbound' and (lm.auto_reply or lm.possible_bounce or lm.by_pattern)) as automated,
            (select count(*)::int from messages m
@@ -104,7 +104,7 @@ function conversationSource(organizationId: string, f: InboxFilter): SQL {
     from conversations c
     join records r on r.id = c.record_id
     join people p on p.id = r.person_id
-    left join subcategories s on s.id = r.subcategory_id
+    left join reply_types s on s.id = r.reply_type_id
     join lateral (
       select m.subject, m.body_text, m.sent_at, m.direction, ${autoReplyFlag("m")} as auto_reply, ${POSSIBLE_BOUNCE} as possible_bounce,
              ${automatedByPattern("m")} as by_pattern
@@ -123,9 +123,9 @@ function viewCondition(f: InboxFilter): SQL {
     case "sent":
       return sql`t.direction = 'outbound'`;
     case "replied":
-      return sql`t.direction = 'inbound' and not t.automated and coalesce(t.subcategory_key, '') <> ${OUT_OF_OFFICE_KEY}`;
+      return sql`t.direction = 'inbound' and not t.automated and coalesce(t.reply_type_key, '') <> ${OUT_OF_OFFICE_KEY}`;
     case "ooo":
-      return sql`t.subcategory_key = ${OUT_OF_OFFICE_KEY}`;
+      return sql`t.reply_type_key = ${OUT_OF_OFFICE_KEY}`;
     case "automated":
       return sql`t.automated`;
     // `all` bundles machine mail into the Automated view. A search still finds it.
@@ -168,8 +168,8 @@ export const drizzleInboxStore: InboxStore = {
       possibleBounce: r.possible_bounce,
       hasImportant: r.has_important,
       automated: r.automated,
-      categoryKey: r.category_key,
-      subcategoryName: r.subcategory_name,
+      groupKey: r.group_key,
+      replyTypeName: r.reply_type_name,
     }));
     return { rows: mapped, total, automatedHidden: hidden };
   },
@@ -252,7 +252,7 @@ export const drizzleInboxStore: InboxStore = {
     const [boxes, camps, subs, leads] = await Promise.all([
       db.select({ id: mailboxes.id, label: mailboxes.emailAddress }).from(mailboxes).where(eq(mailboxes.organizationId, organizationId)).orderBy(mailboxes.emailAddress),
       db.execute(sql`select id, name as label from campaigns where organization_id = ${organizationId} and status <> 'draft' and type = 'regular' order by name limit 200`),
-      db.execute(sql`select key, min(name) as label from subcategories where organization_id = ${organizationId} and active group by key order by min(name)`),
+      db.execute(sql`select key, min(name) as label from reply_types where organization_id = ${organizationId} and active group by key order by min(name)`),
       leadIds.length > 0
         ? db.execute(sql`select id, coalesce(full_name, first_name, email) as label from people where organization_id = ${organizationId} and id in (${uuidList(leadIds)})`)
         : Promise.resolve([]),
@@ -260,7 +260,7 @@ export const drizzleInboxStore: InboxStore = {
     return {
       mailboxes: boxes,
       campaigns: camps as unknown as InboxFilterOptions["campaigns"],
-      subcategories: subs as unknown as InboxFilterOptions["subcategories"],
+      replyTypes: subs as unknown as InboxFilterOptions["replyTypes"],
       leads: leads as unknown as InboxFilterOptions["leads"],
     };
   },
@@ -274,7 +274,6 @@ export const drizzleInboxStore: InboxStore = {
         recordId: conversations.recordId,
         providerThreadId: conversations.providerThreadId,
         workflowState: records.workflowState,
-        contextVersion: records.contextVersion,
         personId: people.id,
         fullName: people.fullName,
         firstName: people.firstName,
@@ -289,13 +288,6 @@ export const drizzleInboxStore: InboxStore = {
       .leftJoin(companies, eq(companies.id, people.companyId))
       .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
     if (!head) return null;
-
-    const [latestDraft] = (await db.execute(sql`
-      select status from drafts
-      where organization_id = ${organizationId} and conversation_id = ${conversationId} and status not in ('discarded', 'stale')
-        and expected_context_version = (select r.context_version from records r where r.id = drafts.record_id)
-      order by created_at desc, id desc limit 1
-    `)) as unknown as Array<{ status: string }>;
 
     const stored = await db
       .select()
@@ -410,8 +402,6 @@ export const drizzleInboxStore: InboxStore = {
       accountRef: head.accountRef,
       accountLabel,
       workflowState: head.workflowState,
-      contextVersion: head.contextVersion,
-      latestDraftStatus: latestDraft?.status ?? null,
       person: {
         id: head.personId,
         name: head.fullName ?? head.firstName,

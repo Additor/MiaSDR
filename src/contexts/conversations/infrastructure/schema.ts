@@ -21,6 +21,7 @@ import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES } from "../domain/draft-status";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
+import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
 import { inList } from "@/platform/db/sql-values";
 
 /**
@@ -34,10 +35,10 @@ import { inList } from "@/platform/db/sql-values";
  * The After a reply flow keeps its tables in `after-reply/infrastructure/sequences-schema.ts`.
  */
 
-export const CATEGORY_KEYS = ["customer", "interested", "not_interested", "other"] as const;
+export const REPLY_TYPE_GROUP_KEYS = ["customer", "interested", "not_interested", "other"] as const;
 
-export const pipelines = pgTable(
-  "pipelines",
+export const replyTypeSets = pgTable(
+  "reply_type_sets",
   {
     id: pk(),
     organizationId: orgId(),
@@ -48,40 +49,53 @@ export const pipelines = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    unique("pipelines_org_name_uq").on(t.organizationId, t.name),
-    unique("pipelines_id_org_uq").on(t.id, t.organizationId),
-    uniqueIndex("pipelines_one_default_uq").on(t.organizationId).where(sql`${t.isDefault}`),
-    check("pipelines_name_ck", sql`length(btrim(${t.name})) > 0`),
+    unique("reply_type_sets_org_name_uq").on(t.organizationId, t.name),
+    unique("reply_type_sets_id_org_uq").on(t.id, t.organizationId),
+    uniqueIndex("reply_type_sets_one_default_uq").on(t.organizationId).where(sql`${t.isDefault}`),
+    check("reply_type_sets_name_ck", sql`length(btrim(${t.name})) > 0`),
   ],
 );
 
-export const subcategories = pgTable(
-  "subcategories",
+export const replyTypes = pgTable(
+  "reply_types",
   {
     id: pk(),
     organizationId: orgId(),
-    pipelineId: uuid("pipeline_id").notNull(),
-    categoryKey: text("category_key").notNull(),
+    replyTypeSetId: uuid("reply_type_set_id").notNull(),
+    groupKey: text("group_key").notNull(),
     key: text("key").notNull(),
     name: text("name").notNull(),
     description: text("description"),
     classificationGuidance: text("classification_guidance"),
     active: boolean("active").notNull().default(true),
-    reviewRequired: boolean("review_required").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
-    stageRank: integer("stage_rank"),
+    /** Type rules (`domain/reply-type.ts`): who checks the AI's pick, whether it drafts a reply, whether follow-ups go on. */
+    checkMode: text("check_mode").$type<CheckMode>().notNull().default("after"),
+    replyDraft: boolean("reply_draft").notNull().default(true),
+    followUps: text("follow_ups").$type<FollowUpsRule>().notNull().default("continue"),
+    /** A fixed path this type drives. At most one type per role in a set, and it never changes. */
+    systemRole: text("system_role").$type<SystemRole>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.pipelineId, t.organizationId], foreignColumns: [pipelines.id, pipelines.organizationId] }).onDelete("restrict"),
-    unique("subcategories_pipeline_key_uq").on(t.pipelineId, t.key),
+    foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("restrict"),
+    unique("reply_types_set_key_uq").on(t.replyTypeSetId, t.key),
     // Target of the record's composite FK: a subcategory must belong to the record's pipeline and category.
-    unique("subcategories_id_pipeline_category_uq").on(t.id, t.pipelineId, t.categoryKey),
-    unique("subcategories_id_org_uq").on(t.id, t.organizationId),
-    check("subcategories_category_ck", inList(t.categoryKey, CATEGORY_KEYS)),
-    check("subcategories_key_ck", sql`${t.key} ~ '^[a-z][a-z0-9_]*$'`),
-    check("subcategories_sort_ck", sql`${t.sortOrder} >= 0 and (${t.stageRank} is null or ${t.stageRank} >= 1)`),
+    unique("reply_types_id_set_group_uq").on(t.id, t.replyTypeSetId, t.groupKey),
+    unique("reply_types_id_org_uq").on(t.id, t.organizationId),
+    check("reply_types_group_ck", inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)),
+    check("reply_types_key_ck", sql`${t.key} ~ '^[a-z][a-z0-9_]*$'`),
+    check("reply_types_sort_ck", sql`${t.sortOrder} >= 0`),
+    check("reply_types_rules_ck", sql`${inList(t.checkMode, CHECK_MODES)} and ${inList(t.followUps, FOLLOW_UPS_RULES)}`),
+    check("reply_types_system_role_ck", sql`${t.systemRole} is null or ${inList(t.systemRole, SYSTEM_ROLES)}`),
+    // The stop request type keeps STOP_REQUEST_RULES and stays active; the customer type stays in the customer group.
+    check(
+      "reply_types_stop_request_ck",
+      sql`${t.systemRole} is distinct from 'stop_request' or (${t.checkMode} = 'before' and not ${t.replyDraft} and ${t.followUps} = 'stop' and ${t.active})`,
+    ),
+    check("reply_types_customer_ck", sql`${t.systemRole} is distinct from 'customer' or ${t.groupKey} = 'customer'`),
+    uniqueIndex("reply_types_set_system_role_uq").on(t.replyTypeSetId, t.systemRole).where(sql`${t.systemRole} is not null`),
   ],
 );
 
@@ -91,25 +105,23 @@ export interface AiInstructionBlock {
   content: string;
 }
 
-export const pipelineSettings = pgTable(
-  "pipeline_settings",
+export const replyHandlingSettings = pgTable(
+  "reply_handling_settings",
   {
-    pipelineId: uuid("pipeline_id").primaryKey(),
+    replyTypeSetId: uuid("reply_type_set_id").primaryKey(),
     organizationId: orgId(),
-    /** Classifications at or above this confidence apply without review. */
+    /** The confidence floor: an AI pick below it waits for a person, whatever its type's Check rule says. */
     autoApplyConfidence: numeric("auto_apply_confidence", { precision: 4, scale: 3 }).notNull().default("0.850"),
-    reviewOther: boolean("review_other").notNull().default(true),
-    customerRequiresReview: boolean("customer_requires_review").notNull().default(true),
     draftInstructions: jsonb("draft_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     classificationInstructions: jsonb("classification_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.pipelineId, t.organizationId], foreignColumns: [pipelines.id, pipelines.organizationId] }).onDelete("cascade"),
-    check("pipeline_settings_confidence_ck", sql`${t.autoApplyConfidence} between 0 and 1`),
+    foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("cascade"),
+    check("reply_handling_settings_confidence_ck", sql`${t.autoApplyConfidence} between 0 and 1`),
     // The API caps instructions at 20,000 characters of text; 100,000 leaves room for JSON escapes and titles.
     check(
-      "pipeline_settings_instructions_ck",
+      "reply_handling_settings_instructions_ck",
       sql`jsonb_typeof(${t.draftInstructions}) = 'array' and jsonb_typeof(${t.classificationInstructions}) = 'array'
         and length(${t.draftInstructions}::text) <= 100000 and length(${t.classificationInstructions}::text) <= 100000`,
     ),
@@ -125,12 +137,12 @@ export const records = pgTable(
     id: pk(),
     organizationId: orgId(),
     personId: uuid("person_id").notNull(),
-    pipelineId: uuid("pipeline_id").notNull(),
-    categoryKey: text("category_key"),
-    subcategoryId: uuid("subcategory_id"),
+    replyTypeSetId: uuid("reply_type_set_id").notNull(),
+    groupKey: text("group_key"),
+    replyTypeId: uuid("reply_type_id"),
     workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("unclassified"),
-    categorySource: text("category_source"),
-    categoryLocked: boolean("category_locked").notNull().default(false),
+    replyTypeSource: text("reply_type_source"),
+    replyTypeLocked: boolean("reply_type_locked").notNull().default(false),
     activeChannel: text("active_channel"),
     latestInboundMessageId: uuid("latest_inbound_message_id"),
     contextVersion: integer("context_version").notNull().default(0),
@@ -148,25 +160,25 @@ export const records = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
-    foreignKey({ columns: [t.pipelineId, t.organizationId], foreignColumns: [pipelines.id, pipelines.organizationId] }).onDelete("restrict"),
+    foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("restrict"),
     // A member who leaves the organization unassigns the record. The migration writes `ON DELETE SET NULL (assigned_to)`, so
     // organization_id stays set; `assigned_source` keeps its old value and is read only while `assigned_to` is set.
     foreignKey({ name: "records_assigned_to_fk", columns: [t.organizationId, t.assignedTo], foreignColumns: [members.organizationId, members.userId] }).onDelete("set null"),
     foreignKey({
-      columns: [t.subcategoryId, t.pipelineId, t.categoryKey],
-      foreignColumns: [subcategories.id, subcategories.pipelineId, subcategories.categoryKey],
+      columns: [t.replyTypeId, t.replyTypeSetId, t.groupKey],
+      foreignColumns: [replyTypes.id, replyTypes.replyTypeSetId, replyTypes.groupKey],
     }),
     // `latest_inbound_message_id -> messages (id, organization_id) ON DELETE SET NULL (latest_inbound_message_id)` lives in
     // the migration SQL only: `messages` is declared after this table through `conversations`, and a typed reference here
     // would make the three tables' types circular.
-    unique("records_person_pipeline_uq").on(t.personId, t.pipelineId),
+    unique("records_person_reply_type_set_uq").on(t.personId, t.replyTypeSetId),
     unique("records_id_org_uq").on(t.id, t.organizationId),
-    check("records_category_ck", sql`${t.categoryKey} is null or ${inList(t.categoryKey, CATEGORY_KEYS)}`),
+    check("records_group_ck", sql`${t.groupKey} is null or ${inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)}`),
     check("records_workflow_ck", inList(t.workflowState, WORKFLOW_STATES)),
-    check("records_source_ck", sql`${t.categorySource} is null or ${t.categorySource} in ('ai', 'human', 'integration')`),
-    check("records_category_source_pair_ck", sql`(${t.categoryKey} is null) = (${t.categorySource} is null)`),
-    check("records_locked_ck", sql`not ${t.categoryLocked} or ${t.categoryKey} = 'customer'`),
-    check("records_subcategory_needs_category_ck", sql`${t.subcategoryId} is null or ${t.categoryKey} is not null`),
+    check("records_source_ck", sql`${t.replyTypeSource} is null or ${t.replyTypeSource} in ('ai', 'human', 'integration')`),
+    check("records_reply_type_source_pair_ck", sql`(${t.groupKey} is null) = (${t.replyTypeSource} is null)`),
+    check("records_locked_ck", sql`not ${t.replyTypeLocked} or ${t.groupKey} = 'customer'`),
+    check("records_reply_type_needs_group_ck", sql`${t.replyTypeId} is null or ${t.groupKey} is not null`),
     check("records_version_ck", sql`${t.contextVersion} >= 0`),
     check("records_active_channel_ck", sql`${t.activeChannel} is null or ${inList(t.activeChannel, CHANNELS)}`),
     check("records_assigned_source_ck", sql`(${t.assignedSource} is null or ${t.assignedSource} in ('auto', 'human', 'cleared')) and (${t.assignedTo} is null or ${t.assignedSource} is not null)`),
@@ -379,8 +391,8 @@ export const events = pgTable(
   ],
 );
 
-export const classifications = pgTable(
-  "classifications",
+export const replyTypePicks = pgTable(
+  "reply_type_picks",
   {
     id: pk(),
     organizationId: orgId(),
@@ -388,12 +400,12 @@ export const classifications = pgTable(
     messageId: uuid("message_id").notNull(),
     /** The record's context_version when the work started. A mismatch at apply time makes this `stale`. */
     expectedContextVersion: integer("expected_context_version").notNull(),
-    previousCategoryKey: text("previous_category_key"),
-    previousSubcategoryId: uuid("previous_subcategory_id"),
-    proposedCategoryKey: text("proposed_category_key"),
-    proposedSubcategoryId: uuid("proposed_subcategory_id"),
-    appliedCategoryKey: text("applied_category_key"),
-    appliedSubcategoryId: uuid("applied_subcategory_id"),
+    previousGroupKey: text("previous_group_key"),
+    previousReplyTypeId: uuid("previous_reply_type_id"),
+    proposedGroupKey: text("proposed_group_key"),
+    proposedReplyTypeId: uuid("proposed_reply_type_id"),
+    appliedGroupKey: text("applied_group_key"),
+    appliedReplyTypeId: uuid("applied_reply_type_id"),
     confidence: numeric("confidence", { precision: 5, scale: 4 }),
     reasoning: text("reasoning"),
     status: text("status").notNull().default("proposed"),
@@ -401,6 +413,8 @@ export const classifications = pgTable(
     model: text("model"),
     request: jsonb("request").$type<unknown>(),
     response: jsonb("response").$type<unknown>(),
+    /** The type rules the pick was decided with. Null for a pick that names no type (a stale or failed one). */
+    rules: jsonb("rules").$type<TypeRules>(),
     error: text("error"),
     acknowledgedAt: tstz("acknowledged_at"),
     createdAt: createdAt(),
@@ -408,26 +422,27 @@ export const classifications = pgTable(
   (t) => [
     foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.messageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("restrict"),
-    unique("classifications_id_org_uq").on(t.id, t.organizationId),
+    unique("reply_type_picks_id_org_uq").on(t.id, t.organizationId),
     // The migration writes `ON DELETE SET NULL (<column>)` for these three; Drizzle cannot express the column list.
-    foreignKey({ name: "classifications_previous_subcategory_fk", columns: [t.previousSubcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("set null"),
-    foreignKey({ name: "classifications_proposed_subcategory_fk", columns: [t.proposedSubcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("set null"),
-    foreignKey({ name: "classifications_applied_subcategory_fk", columns: [t.appliedSubcategoryId, t.organizationId], foreignColumns: [subcategories.id, subcategories.organizationId] }).onDelete("set null"),
-    unique("classifications_message_version_uq").on(t.messageId, t.expectedContextVersion),
+    foreignKey({ name: "reply_type_picks_previous_reply_type_fk", columns: [t.previousReplyTypeId, t.organizationId], foreignColumns: [replyTypes.id, replyTypes.organizationId] }).onDelete("set null"),
+    foreignKey({ name: "reply_type_picks_proposed_reply_type_fk", columns: [t.proposedReplyTypeId, t.organizationId], foreignColumns: [replyTypes.id, replyTypes.organizationId] }).onDelete("set null"),
+    foreignKey({ name: "reply_type_picks_applied_reply_type_fk", columns: [t.appliedReplyTypeId, t.organizationId], foreignColumns: [replyTypes.id, replyTypes.organizationId] }).onDelete("set null"),
+    unique("reply_type_picks_message_version_uq").on(t.messageId, t.expectedContextVersion),
     check(
-      "classifications_status_ck",
+      "reply_type_picks_status_ck",
       inList(t.status, ["proposed", "auto_applied", "accepted", "rejected", "overridden", "stale", "failed"]),
     ),
-    check("classifications_confidence_ck", sql`${t.status} = 'failed' or ${t.confidence} is not null`),
-    check("classifications_confidence_range_ck", sql`${t.confidence} is null or ${t.confidence} between 0 and 1`),
-    check("classifications_context_version_ck", sql`${t.expectedContextVersion} >= 0`),
+    check("reply_type_picks_confidence_ck", sql`${t.status} = 'failed' or ${t.confidence} is not null`),
+    check("reply_type_picks_confidence_range_ck", sql`${t.confidence} is null or ${t.confidence} between 0 and 1`),
+    check("reply_type_picks_context_version_ck", sql`${t.expectedContextVersion} >= 0`),
+    check("reply_type_picks_rules_ck", sql`${t.rules} is null or jsonb_typeof(${t.rules}) = 'object'`),
     check(
-      "classifications_category_keys_ck",
-      sql`(${t.previousCategoryKey} is null or ${inList(t.previousCategoryKey, CATEGORY_KEYS)})
-        and (${t.proposedCategoryKey} is null or ${inList(t.proposedCategoryKey, CATEGORY_KEYS)})
-        and (${t.appliedCategoryKey} is null or ${inList(t.appliedCategoryKey, CATEGORY_KEYS)})`,
+      "reply_type_picks_group_keys_ck",
+      sql`(${t.previousGroupKey} is null or ${inList(t.previousGroupKey, REPLY_TYPE_GROUP_KEYS)})
+        and (${t.proposedGroupKey} is null or ${inList(t.proposedGroupKey, REPLY_TYPE_GROUP_KEYS)})
+        and (${t.appliedGroupKey} is null or ${inList(t.appliedGroupKey, REPLY_TYPE_GROUP_KEYS)})`,
     ),
-    index("classifications_record_created_idx").on(t.recordId, t.createdAt),
+    index("reply_type_picks_record_created_idx").on(t.recordId, t.createdAt),
   ],
 );
 

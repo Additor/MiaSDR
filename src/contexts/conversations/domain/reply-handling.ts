@@ -1,26 +1,24 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 import type { WorkflowState } from "./workflow-state";
+import { DEFAULT_TYPE_RULES, isCheckMode, isFollowUpsRule, validateTypeRules, type SystemRole, type TypeRules } from "./reply-type";
 
 /**
- * Pure reply-handling rules: the fixed categories, validation of the taxonomy and AI-instruction settings, and
- * the rules for a person's stage move. Nothing here reads or writes data.
+ * Pure reply-handling rules: the fixed groups, validation of reply types and AI-instruction settings, and the rules
+ * for a person's type change. Nothing here reads or writes data.
  */
 
-export const REPLY_CATEGORIES = [
+export const REPLY_TYPE_GROUPS = [
   { key: "interested", label: "Interested" },
   { key: "customer", label: "Existing customer" },
   { key: "not_interested", label: "Not interested" },
   { key: "other", label: "Other" },
 ] as const;
 
-export type CategoryKey = (typeof REPLY_CATEGORIES)[number]["key"];
+export type ReplyTypeGroup = (typeof REPLY_TYPE_GROUPS)[number]["key"];
 
-export const isCategoryKey = (value: string): value is CategoryKey => REPLY_CATEGORIES.some((c) => c.key === value);
+export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPLY_TYPE_GROUPS.some((c) => c.key === value);
 
-export const categoryLabel = (key: string | null) => REPLY_CATEGORIES.find((c) => c.key === key)?.label ?? "Unclassified";
-
-/** This subcategory drives the do-not-contact paths, so it can be neither deleted nor archived. */
-export const PROTECTED_SUBCATEGORY_KEY = "do_not_contact";
+export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "No type yet";
 
 export interface AiInstructionBlock {
   id: string;
@@ -60,18 +58,17 @@ export function parseInstructionBlocks(value: unknown, label: string): AiInstruc
   return blocks;
 }
 
-export interface SubcategoryInput {
-  categoryKey: CategoryKey;
+export interface ReplyTypeInput {
+  groupKey: ReplyTypeGroup;
   key: string;
   name: string;
   description: string | null;
   classificationGuidance: string | null;
-  reviewRequired: boolean;
-  /** Position in the reply categories. Null marks an unranked outcome. */
-  stageRank: number | null;
+  rules: TypeRules;
 }
 
-export type SubcategoryPatch = Partial<Omit<SubcategoryInput, "categoryKey" | "key">> & { active?: boolean; sortOrder?: number };
+/** A change to a reply type. `rules` holds only the rules the request names; the use case merges and validates them. */
+export type ReplyTypePatch = Partial<Omit<ReplyTypeInput, "groupKey" | "key" | "rules">> & { active?: boolean; sortOrder?: number; rules?: Partial<TypeRules> };
 
 const KEY = /^[a-z][a-z0-9_]*$/;
 
@@ -98,41 +95,50 @@ function parseName(value: unknown): string {
   return value.trim();
 }
 
-function parseRank(value: unknown): number | null {
-  if (value === null) return null;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 100) throw new ValidationError("The position must be a whole number from 1 to 100, or empty.");
-  return value;
+/** The type rules a request names, as `checkMode`, `replyDraft` and `followUps` fields. Absent fields stay absent. */
+function parseRules(raw: Record<string, unknown>): Partial<TypeRules> {
+  const rules: Partial<TypeRules> = {};
+  if (raw.checkMode !== undefined) {
+    if (!isCheckMode(raw.checkMode)) throw new ValidationError("Check must be before, after or skip.");
+    rules.checkMode = raw.checkMode;
+  }
+  if (raw.replyDraft !== undefined) {
+    if (typeof raw.replyDraft !== "boolean") throw new ValidationError("Reply draft must be true or false.");
+    rules.replyDraft = raw.replyDraft;
+  }
+  if (raw.followUps !== undefined) {
+    if (!isFollowUpsRule(raw.followUps)) throw new ValidationError("Follow-ups must be continue or stop.");
+    rules.followUps = raw.followUps;
+  }
+  return rules;
 }
 
-export function parseSubcategoryInput(raw: Record<string, unknown>): SubcategoryInput {
-  const categoryKey = typeof raw.categoryKey === "string" ? raw.categoryKey : "";
-  if (!isCategoryKey(categoryKey)) throw new ValidationError("Choose one of the four categories.");
+export function parseReplyTypeInput(raw: Record<string, unknown>): ReplyTypeInput {
+  const groupKey = typeof raw.groupKey === "string" ? raw.groupKey : "";
+  if (!isReplyTypeGroup(groupKey)) throw new ValidationError("Choose one of the four groups.");
   const name = parseName(raw.name);
   const key = typeof raw.key === "string" && raw.key.trim() !== "" ? raw.key.trim() : keyFromName(name);
   if (!KEY.test(key) || key.length > 60) throw new ValidationError("The key must start with a letter and use only lowercase letters, digits and underscores.");
   return {
-    categoryKey,
+    groupKey,
     key,
     name,
     description: optionalText(raw.description, "The description", 500) ?? null,
     classificationGuidance: optionalText(raw.classificationGuidance, "The guidance", 2000) ?? null,
-    reviewRequired: raw.reviewRequired === true,
-    stageRank: raw.stageRank === undefined ? null : parseRank(raw.stageRank),
+    // A type a person adds has no system role, so any rules are valid for it.
+    rules: validateTypeRules({ systemRole: null }, { ...DEFAULT_TYPE_RULES, ...parseRules(raw) }),
   };
 }
 
-export function parseSubcategoryPatch(raw: Record<string, unknown>): SubcategoryPatch {
-  const patch: SubcategoryPatch = {};
+export function parseReplyTypePatch(raw: Record<string, unknown>): ReplyTypePatch {
+  const patch: ReplyTypePatch = {};
   if (raw.name !== undefined) patch.name = parseName(raw.name);
   const description = optionalText(raw.description, "The description", 500);
   if (description !== undefined) patch.description = description;
   const guidance = optionalText(raw.classificationGuidance, "The guidance", 2000);
   if (guidance !== undefined) patch.classificationGuidance = guidance;
-  if (raw.reviewRequired !== undefined) {
-    if (typeof raw.reviewRequired !== "boolean") throw new ValidationError("Review required must be true or false.");
-    patch.reviewRequired = raw.reviewRequired;
-  }
-  if (raw.stageRank !== undefined) patch.stageRank = parseRank(raw.stageRank);
+  const rules = parseRules(raw);
+  if (Object.keys(rules).length > 0) patch.rules = rules;
   if (raw.active !== undefined) {
     if (typeof raw.active !== "boolean") throw new ValidationError("Active must be true or false.");
     patch.active = raw.active;
@@ -145,52 +151,69 @@ export function parseSubcategoryPatch(raw: Record<string, unknown>): Subcategory
   return patch;
 }
 
-export interface PipelineSettingsPatch {
+export interface ReplyHandlingSettingsPatch {
+  /** The confidence floor. */
   autoApplyConfidence?: number;
-  reviewOther?: boolean;
-  customerRequiresReview?: boolean;
 }
 
-export function parsePipelineSettings(raw: Record<string, unknown>): PipelineSettingsPatch {
-  const patch: PipelineSettingsPatch = {};
+export function parseReplyHandlingSettings(raw: Record<string, unknown>): ReplyHandlingSettingsPatch {
+  const patch: ReplyHandlingSettingsPatch = {};
   if (raw.autoApplyConfidence !== undefined) {
     const value = raw.autoApplyConfidence;
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError("The auto-apply threshold must be a number from 0 to 1.");
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError("The confidence floor must be a number from 0 to 1.");
     patch.autoApplyConfidence = Math.round(value * 1000) / 1000;
-  }
-  for (const flag of ["reviewOther", "customerRequiresReview"] as const) {
-    if (raw[flag] === undefined) continue;
-    if (typeof raw[flag] !== "boolean") throw new ValidationError(`${flag} must be true or false.`);
-    patch[flag] = raw[flag];
   }
   if (Object.keys(patch).length === 0) throw new ValidationError("Nothing to change.");
   return patch;
 }
 
-export interface StageMoveCheck {
-  before: { categoryKey: string | null; subcategoryId: string | null; categoryLocked: boolean; contextVersion: number; workflowState: string };
-  target: { categoryKey: string; subcategoryId: string | null };
+export interface ReplyTypeChangeCheck {
+  before: { groupKey: string | null; replyTypeId: string | null; replyTypeLocked: boolean; contextVersion: number; workflowState: string };
+  /** `systemRole` of the target type, or null for a type without one or a group without a type. */
+  target: { groupKey: string; replyTypeId: string | null; systemRole: SystemRole | null };
   expectedContextVersion: number;
-  /** The person confirmed that a locked customer may leave the customer category. */
+  /** The person confirmed that a locked customer may leave the customer group. */
   confirmUnlock: boolean;
 }
 
-/** What a person's stage move needs to be true. Returns the lock flag the record gets afterwards. */
-export function checkStageMove({ before, target, expectedContextVersion, confirmUnlock }: StageMoveCheck): { categoryLocked: boolean } {
-  if (!isCategoryKey(target.categoryKey)) throw new ValidationError("Choose one of the four categories.");
+/**
+ * The lock a record gets when a person moves it to `target`, by any path: Change type, their own pick, or accepting an
+ * AI pick. The type with the customer role locks (`records_locked_ck` keeps a locked record in the customer group), a
+ * move inside the locked group keeps the lock, and a move out of it unlocks.
+ */
+export function lockAfterPersonMove(before: { groupKey: string | null; replyTypeLocked: boolean }, target: { groupKey: string; systemRole: SystemRole | null }): boolean {
+  return target.systemRole === "customer" || (before.replyTypeLocked && target.groupKey === before.groupKey);
+}
+
+/**
+ * The lock a record had before a pick applied, kept in the pick's `response.previousLocked` so undo and a thread that
+ * turns private give back exactly that. A pick stored before the field existed falls back to the type: the customer role
+ * type was locked.
+ */
+export function lockBeforePick(response: unknown, previousSystemRole: SystemRole | null): boolean {
+  const kept = (response as { previousLocked?: unknown } | null)?.previousLocked;
+  return typeof kept === "boolean" ? kept : previousSystemRole === "customer";
+}
+
+/**
+ * What a person's type change needs to be true. Returns the lock flag the record gets afterwards
+ * (`lockAfterPersonMove`). Leaving the locked group needs the person's confirmation.
+ */
+export function checkReplyTypeChange({ before, target, expectedContextVersion, confirmUnlock }: ReplyTypeChangeCheck): { replyTypeLocked: boolean } {
+  if (!isReplyTypeGroup(target.groupKey)) throw new ValidationError("Choose one of the four groups.");
   if (before.contextVersion !== expectedContextVersion) throw new ConflictError("Reply handling changed since you opened it. Reload and try again.");
-  if (before.workflowState === "closed") throw new ConflictError("Reply handling is closed. Reopen it before you change the category.");
-  if (before.categoryKey === target.categoryKey && before.subcategoryId === target.subcategoryId) throw new ConflictError("The reply is already in this category.");
-  if (before.categoryLocked && before.categoryKey === "customer" && target.categoryKey !== "customer" && !confirmUnlock) {
+  if (before.workflowState === "closed") throw new ConflictError("Reply handling is closed. Reopen it before you change the type.");
+  if (before.groupKey === target.groupKey && before.replyTypeId === target.replyTypeId) throw new ConflictError("The reply already has this type.");
+  const leavesLockedGroup = before.replyTypeLocked && target.groupKey !== before.groupKey;
+  if (leavesLockedGroup && !confirmUnlock) {
     throw new ConflictError("This person is locked as Existing customer. Confirm the change to take them out of it.");
   }
-  // A customer stays locked so the AI cannot pull them back out; any other category unlocks.
-  return { categoryLocked: target.categoryKey === "customer" };
+  return { replyTypeLocked: lockAfterPersonMove(before, target) };
 }
 
 export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
-  unclassified: "Unclassified",
-  classifying: "Classifying",
+  unclassified: "No type yet",
+  classifying: "Picking a type",
   action_required: "Needs action",
   waiting: "Waiting on them",
   idle: "Idle",

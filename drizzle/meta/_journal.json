@@ -15,6 +15,20 @@
       "when": 1792995184750,
       "tag": "0001_tenant_scoped_search_and_reply_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793001514631,
+      "tag": "0002_rename_reply_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793004009121,
+      "tag": "0003_reply_type_rules",
+      "breakpoints": true
     }
   ]
 }

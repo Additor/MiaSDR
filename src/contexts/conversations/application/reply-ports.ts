@@ -1,6 +1,6 @@
-import type { AiPersonContext, DraftChannel, StageChange, TaxonomyEntry, ThreadEntry } from "../ai/domain/ai-contract";
+import type { AiPersonContext, DraftChannel, ReplyTypeChange, ReplyType, ThreadEntry } from "../ai/domain/ai-contract";
 import type { FailureKind } from "../ai/domain/ai-job-requeue";
-import type { HoldReason } from "../domain/classification-policy";
+import type { SystemRole, TypeRules } from "../domain/reply-type";
 import type { DraftStatus } from "../domain/draft-status";
 
 export type JobKind = "classification" | "initial_draft";
@@ -44,13 +44,10 @@ export interface ClassifyContext {
   recordId: string;
   contextVersion: number;
   latestInboundMessageId: string | null;
-  categoryKey: string | null;
-  categoryLocked: boolean;
-  currentStageRank: number | null;
-  settings: { autoApplyConfidence: number; reviewOther: boolean; customerRequiresReview: boolean };
   operatorInstructions: string;
   businessContext: string;
-  taxonomy: Array<TaxonomyEntry & { id: string; reviewRequired: boolean; stageRank: number | null }>;
+  /** Active reply types with their rules. The prompt reads key, name, group, description and guidance only. */
+  taxonomy: Array<ReplyType & { id: string; systemRole: SystemRole | null; rules: TypeRules }>;
   person: AiPersonContext;
   thread: ThreadEntry[];
   messageText: string;
@@ -60,13 +57,10 @@ export interface FinishClassification {
   job: ClaimedJob;
   messageId: string;
   expectedContextVersion: number;
-  proposedSubcategoryKey: string;
+  proposedReplyTypeKey: string;
   confidence: number;
   reason: string;
   stopRequested: boolean;
-  decision: { action: "auto_apply" } | { action: "hold"; reason: HoldReason };
-  /** Whether an applied classification should queue a draft. */
-  wantsDraft: boolean;
   provider: string;
   model: string;
   request: unknown;
@@ -83,8 +77,8 @@ export interface DraftContext {
   person: AiPersonContext;
   thread: ThreadEntry[];
   subject: string;
-  classification: { id: string | null; subcategoryName: string; reason: string | null } | null;
-  stageChange: StageChange | null;
+  classification: { id: string | null; replyTypeName: string; reason: string | null } | null;
+  replyTypeChange: ReplyTypeChange | null;
   operatorInstructions: string;
   knowledge: Array<{ documentVersionId: string; title: string; content: string }>;
   senderName: string | null;
@@ -185,22 +179,8 @@ export interface PanelData {
   recipient: string | null;
   /** Subject of the newest message in the thread, the base for a typed reply's subject. */
   lastSubject: string | null;
-  category: { categoryKey: string; subcategoryKey: string | null; name: string; source: string } | null;
-  classification: {
-    id: string;
-    status: string;
-    proposed: { subcategoryKey: string; name: string; categoryKey: string } | null;
-    confidence: number | null;
-    reasoning: string | null;
-    holdReason: HoldReason | null;
-    stopRequested: boolean;
-    error: string | null;
-    current: boolean;
-    /** A person looked at an applied classification (Mark reviewed, Looks right). */
-    acknowledged: boolean;
-  } | null;
   draft: (DraftRow & { attempt: AttemptRow | null }) | null;
-  taxonomy: Array<{ key: string; name: string; categoryKey: string }>;
+  taxonomy: Array<{ key: string; name: string; groupKey: string }>;
   suppressed: boolean;
   doNotContact: boolean;
   mailboxIssue: string | null;
@@ -243,8 +223,11 @@ export interface ReplyStore {
   listUnsettled(olderThan: Date, limit: number): Promise<Array<{ send: SendContext; status: "sending" | "delivery_uncertain"; startedAt: Date }>>;
   resolveUncertain(input: { organizationId: string; draftId: string; outcome: "delivered" | "not_delivered"; note: string; actorUserId: string; now: Date }): Promise<void>;
 
-  /** Human classification. Returns what was applied and whether a draft job was queued. */
-  applyHumanClassification(input: { organizationId: string; conversationId: string; subcategoryKey: string | null; expectedContextVersion: number; actorUserId: string; wantsDraft: (categoryKey: string, subcategoryKey: string) => boolean }): Promise<{ personId: string; categoryKey: string; subcategoryKey: string; draftQueued: boolean }>;
+  /**
+   * A person's pick for the latest reply: `replyTypeKey: null` accepts the held AI pick, a key overrides it. The type's
+   * rules decide the draft and follow-ups (`decideReplyType`). Accepting a held stop request answers 409 `stop_review`.
+   */
+  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string }): Promise<{ personId: string; groupKey: string; replyTypeKey: string; draftQueued: boolean }>;
   suppressSender(input: { organizationId: string; conversationId: string; actorUserId: string }): Promise<{ email: string }>;
 }
 
@@ -289,7 +272,7 @@ export interface AiJobStore {
 
   loadClassifyContext(organizationId: string, messageId: string): Promise<ClassifyContext | null>;
   finishClassification(input: FinishClassification): Promise<{ status: "auto_applied" | "proposed" | "stale" }>;
-  loadDraftContext(organizationId: string, classificationId: string): Promise<(DraftContext & { skip: string | null }) | null>;
+  loadDraftContext(organizationId: string, replyTypePickId: string): Promise<(DraftContext & { skip: string | null }) | null>;
 }
 
 export interface ReplySendRequest {

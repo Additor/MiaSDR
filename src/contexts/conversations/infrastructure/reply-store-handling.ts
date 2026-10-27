@@ -2,26 +2,29 @@ import { and, eq, sql } from "drizzle-orm";
 import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
-import { restartRecordWorkTx } from "./restart-record-work";
-import { aiJobs, classifications, conversations, drafts, events, people, records, subcategories } from "@/platform/db/schema";
+import { personTypeDecisionTx, queuePickDraftTx, restartRecordWorkTx } from "./restart-record-work";
+import { replyTypePicks, conversations, drafts, events, people, records, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
-import { afterManualCategory } from "../domain/workflow-state";
+import { afterTypeChange } from "../domain/workflow-state";
+import { typeRulesOf } from "../domain/reply-type";
+import { lockAfterPersonMove } from "../domain/reply-handling";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** What a person decides about a reply: a classification of their own, or suppressing the sender. */
-export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" | "suppressSender"> = {
-  async applyHumanClassification(input) {
+export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | "suppressSender"> = {
+  async applyHumanReplyTypePick(input) {
     return db.transaction(async (tx) => {
       const [head] = await tx
         .select({
           recordId: records.id,
           personId: records.personId,
-          pipelineId: records.pipelineId,
+          replyTypeSetId: records.replyTypeSetId,
           version: records.contextVersion,
           latest: records.latestInboundMessageId,
-          categoryKey: records.categoryKey,
-          subcategoryId: records.subcategoryId,
+          groupKey: records.groupKey,
+          replyTypeId: records.replyTypeId,
+          locked: records.replyTypeLocked,
           state: records.workflowState,
         })
         .from(conversations)
@@ -34,60 +37,81 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
 
       const [existing] = await tx
         .select()
-        .from(classifications)
-        .where(and(eq(classifications.messageId, head.latest), eq(classifications.expectedContextVersion, head.version)));
+        .from(replyTypePicks)
+        .where(and(eq(replyTypePicks.messageId, head.latest), eq(replyTypePicks.expectedContextVersion, head.version)));
 
       let targetId: string | null;
-      if (input.subcategoryKey === null) {
-        if (!existing || existing.status !== "proposed" || !existing.proposedSubcategoryId) throw new ConflictError("There is no AI proposal to accept.");
-        targetId = existing.proposedSubcategoryId;
+      if (input.replyTypeKey === null) {
+        if (!existing || existing.status !== "proposed" || !existing.proposedReplyTypeId) throw new ConflictError("There is no AI proposal to accept.");
+        targetId = existing.proposedReplyTypeId;
       } else {
         const [found] = await tx
-          .select({ id: subcategories.id })
-          .from(subcategories)
-          .where(and(eq(subcategories.pipelineId, head.pipelineId), eq(subcategories.key, input.subcategoryKey), eq(subcategories.active, true)));
-        if (!found) throw new ValidationError("That subcategory is not active in your reply categories.");
+          .select({ id: replyTypes.id })
+          .from(replyTypes)
+          .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.key, input.replyTypeKey), eq(replyTypes.active, true)));
+        if (!found) throw new ValidationError("That reply type is not active.");
         targetId = found.id;
       }
-      const [target] = await tx.select().from(subcategories).where(eq(subcategories.id, targetId));
-      const accepted = input.subcategoryKey === null;
+      const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
+      const accepted = input.replyTypeKey === null;
+      // Accepting a stop request would only change the type, while the person asked us to stop. The client opens Stop
+      // contacting on this code. Choosing the stop request type by name stays allowed and changes only the type.
+      if (accepted && target.systemRole === "stop_request") {
+        throw new ConflictError("This reply asks to stop. Review the stop request: choose Stop contacting, or change the type.", { code: "stop_review" });
+      }
+      const rules = typeRulesOf(target);
+      const decision = await personTypeDecisionTx(tx, input.organizationId, head.recordId, { groupKey: target.groupKey, rules });
+      if (!decision) throw new NotFoundError("Conversation not found");
+      // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
+      const locked = lockAfterPersonMove({ groupKey: head.groupKey, replyTypeLocked: head.locked }, target);
 
-      let classificationId: string;
+      let replyTypePickId: string;
       if (existing) {
         await tx
-          .update(classifications)
-          .set({ status: accepted ? "accepted" : "overridden", appliedCategoryKey: target.categoryKey, appliedSubcategoryId: target.id, acknowledgedAt: new Date() })
-          .where(eq(classifications.id, existing.id));
-        classificationId = existing.id;
+          .update(replyTypePicks)
+          .set({
+            status: accepted ? "accepted" : "overridden",
+            appliedGroupKey: target.groupKey,
+            appliedReplyTypeId: target.id,
+            rules,
+            acknowledgedAt: new Date(),
+            // The lock before the first pick of this row stays: undo goes back to it.
+            response: sql`case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
+              else coalesce(${replyTypePicks.response}, '{}'::jsonb) || jsonb_build_object('previousLocked', ${head.locked}::boolean) end`,
+          })
+          .where(eq(replyTypePicks.id, existing.id));
+        replyTypePickId = existing.id;
       } else {
         const [row] = await tx
-          .insert(classifications)
+          .insert(replyTypePicks)
           .values({
             organizationId: input.organizationId,
             recordId: head.recordId,
             messageId: head.latest,
             expectedContextVersion: head.version,
-            previousCategoryKey: head.categoryKey,
-            previousSubcategoryId: head.subcategoryId,
-            proposedCategoryKey: target.categoryKey,
-            proposedSubcategoryId: target.id,
-            appliedCategoryKey: target.categoryKey,
-            appliedSubcategoryId: target.id,
+            previousGroupKey: head.groupKey,
+            previousReplyTypeId: head.replyTypeId,
+            proposedGroupKey: target.groupKey,
+            proposedReplyTypeId: target.id,
+            appliedGroupKey: target.groupKey,
+            appliedReplyTypeId: target.id,
+            rules,
+            response: { previousLocked: head.locked },
             confidence: "1.0000",
             reasoning: "Set by a person.",
             status: "overridden",
             provider: "human",
             acknowledgedAt: new Date(),
           })
-          .returning({ id: classifications.id });
-        classificationId = row.id;
+          .returning({ id: replyTypePicks.id });
+        replyTypePickId = row.id;
       }
 
-      const wantsDraft = input.wantsDraft(target.categoryKey, target.key);
-      const nextState = afterManualCategory(head.state, wantsDraft);
+      const { wantsDraft } = decision;
+      const nextState = afterTypeChange(head.state, decision);
       await tx
         .update(records)
-        .set({ categoryKey: target.categoryKey, subcategoryId: target.id, categorySource: "human", workflowState: nextState })
+        .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", replyTypeLocked: locked, workflowState: nextState })
         .where(eq(records.id, head.recordId));
       // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
       // sequence of the corrected subcategory starts. The classification row follows to the new version so the fresh draft job accepts it.
@@ -96,40 +120,26 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanClassification" |
         organizationId: input.organizationId,
         recordId: head.recordId,
         reason: "classification_corrected",
-        draftReason: "A person corrected the category after this draft was written.",
+        draftReason: "A person corrected the reply type after this draft was written.",
+        followUps: decision.followUps,
         now,
         actorUserId: input.actorUserId,
       });
-      await tx.update(classifications).set({ expectedContextVersion: restart.contextVersion }).where(eq(classifications.id, classificationId));
+      await tx.update(replyTypePicks).set({ expectedContextVersion: restart.contextVersion }).where(eq(replyTypePicks.id, replyTypePickId));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,
         recordId: head.recordId,
-        eventType: accepted ? "classification.accepted" : "classification.overridden",
+        eventType: accepted ? "reply_type_pick.accepted" : "reply_type_pick.overridden",
         actorType: "human",
         actorUserId: input.actorUserId,
-        fromData: { categoryKey: head.categoryKey, subcategoryId: head.subcategoryId },
-        toData: { categoryKey: target.categoryKey, subcategoryId: target.id },
-        meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted },
+        fromData: { groupKey: head.groupKey, replyTypeId: head.replyTypeId, replyTypeLocked: head.locked },
+        toData: { groupKey: target.groupKey, replyTypeId: target.id, replyTypeLocked: locked },
+        meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted, rules },
         contextVersion: restart.contextVersion,
       });
-      let draftQueued = false;
-      if (wantsDraft) {
-        // One draft job exists per classification (unique on kind and entity). A job that already finished for an earlier
-        // version goes back to the queue under a key for this version; a queued job stays and picks up the new version.
-        const key = `initial_draft:classification:${classificationId}:v${restart.contextVersion}`;
-        await tx
-          .insert(aiJobs)
-          .values({ organizationId: input.organizationId, kind: "initial_draft", entityType: "classification", entityId: classificationId, idempotencyKey: key, runAfter: sql`now() - interval '1 minute'`, payload: { humanInitiated: true } })
-          .onConflictDoUpdate({
-            target: [aiJobs.kind, aiJobs.entityType, aiJobs.entityId],
-            set: { status: "queued", attempts: 0, runAfter: sql`now() - interval '1 minute'`, idempotencyKey: key, payload: sql`${aiJobs.payload} || '{"humanInitiated":true}'::jsonb`, completedAt: null, failedAt: null, lastError: null, lockedAt: null, lockedBy: null },
-            setWhere: sql`${aiJobs.status} in ('succeeded', 'failed', 'skipped')`,
-          });
-        const [job] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, classificationId)));
-        draftQueued = job?.status === "queued" || job?.status === "running";
-      }
-      return { personId: head.personId, categoryKey: target.categoryKey, subcategoryKey: target.key, draftQueued };
+      const draftQueued = wantsDraft ? await queuePickDraftTx(tx, { organizationId: input.organizationId, replyTypePickId, contextVersion: restart.contextVersion }) : false;
+      return { personId: head.personId, groupKey: target.groupKey, replyTypeKey: target.key, draftQueued };
     });
   },
 

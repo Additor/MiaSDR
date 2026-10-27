@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import {
-  classifications,
+  replyTypePicks,
   conversations,
   events,
   knowledgeDocuments,
@@ -10,14 +10,15 @@ import {
   linkedinAccounts,
   mailboxes,
   messages,
-  pipelineSettings,
+  replyHandlingSettings,
   records,
-  subcategories,
+  replyTypes,
   type AiInstructionBlock,
 } from "@/platform/db/schema";
 import type { DraftContext } from "../application/reply-ports";
-import type { AiPersonContext, StageChange, ThreadEntry } from "../ai/domain/ai-contract";
+import type { AiPersonContext, ReplyTypeChange, ThreadEntry } from "../ai/domain/ai-contract";
 import { KNOWLEDGE_BUDGET_CHARS, normalizeTags, selectKnowledge } from "../ai/domain/knowledge";
+import { groupLabel } from "../domain/reply-handling";
 import { replySubject } from "../domain/reply-policy";
 import { drizzleInboxStore } from "./drizzle-inbox-store";
 import { publicConversation } from "@/platform/db/conversation-visibility";
@@ -91,24 +92,24 @@ export async function threadEntries(organizationId: string, conversationId: stri
 }
 
 /**
- * The newest `stage.moved` event written after the record's latest inbound message arrived: where a person moved
+ * The newest `reply_type.changed` event written after the record's latest inbound message arrived: where a person moved
  * it, when it happened and what they wrote. Null when there is none. A move before the last inbound is history.
  */
-export async function stageChangeFor(organizationId: string, recordId: string, latestInboundMessageId: string | null): Promise<StageChange | null> {
+export async function replyTypeChangeFor(organizationId: string, recordId: string, latestInboundMessageId: string | null): Promise<ReplyTypeChange | null> {
   const [inbound] = latestInboundMessageId ? await db.select({ at: messages.createdAt }).from(messages).where(eq(messages.id, latestInboundMessageId)) : [];
   const [moved] = await db
     .select({ toData: events.toData, meta: events.meta, createdAt: events.createdAt })
     .from(events)
-    .where(and(eq(events.organizationId, organizationId), eq(events.recordId, recordId), eq(events.eventType, "stage.moved"), inbound ? gt(events.createdAt, inbound.at) : sql`true`))
+    .where(and(eq(events.organizationId, organizationId), eq(events.recordId, recordId), eq(events.eventType, "reply_type.changed"), inbound ? gt(events.createdAt, inbound.at) : sql`true`))
     .orderBy(desc(events.createdAt))
     .limit(1);
   if (!moved) return null;
-  const to = (moved.toData ?? {}) as { categoryKey?: string | null; subcategoryId?: string | null };
-  const [sub] = to.subcategoryId ? await db.select({ name: subcategories.name }).from(subcategories).where(eq(subcategories.id, to.subcategoryId)) : [];
+  const to = (moved.toData ?? {}) as { groupKey?: string | null; replyTypeId?: string | null };
+  const [sub] = to.replyTypeId ? await db.select({ name: replyTypes.name }).from(replyTypes).where(eq(replyTypes.id, to.replyTypeId)) : [];
   const meta = moved.meta as { note?: unknown; occurredAt?: unknown };
   const occurred = typeof meta.occurredAt === "string" ? new Date(meta.occurredAt) : moved.createdAt;
   return {
-    stage: sub?.name ?? to.categoryKey ?? "another stage",
+    stage: sub?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another stage"),
     occurredAt: Number.isNaN(occurred.getTime()) ? moved.createdAt : occurred,
     note: typeof meta.note === "string" && meta.note.trim() !== "" ? meta.note : null,
   };
@@ -119,7 +120,7 @@ export async function buildDraftContext(organizationId: string, conversationId: 
   const [head] = await db
     .select({
       recordId: records.id,
-      pipelineId: records.pipelineId,
+      replyTypeSetId: records.replyTypeSetId,
       contextVersion: records.contextVersion,
       latestInbound: records.latestInboundMessageId,
       channel: conversations.channel,
@@ -133,7 +134,7 @@ export async function buildDraftContext(organizationId: string, conversationId: 
   const thread = await threadEntries(organizationId, conversationId);
   if (!thread) return null;
 
-  const [settings] = await db.select({ draft: pipelineSettings.draftInstructions }).from(pipelineSettings).where(eq(pipelineSettings.pipelineId, head.pipelineId));
+  const [settings] = await db.select({ draft: replyHandlingSettings.draftInstructions }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, head.replyTypeSetId));
   // The name the reply goes out under: the mailbox's display name, or the connected LinkedIn account's name.
   const senderName =
     channel === "email"
@@ -146,16 +147,16 @@ export async function buildDraftContext(organizationId: string, conversationId: 
   if (head.latestInbound) {
     const [row] = await db
       .select({
-        id: classifications.id,
-        name: subcategories.name,
-        reasoning: classifications.reasoning,
+        id: replyTypePicks.id,
+        name: replyTypes.name,
+        reasoning: replyTypePicks.reasoning,
       })
-      .from(classifications)
-      .innerJoin(subcategories, eq(subcategories.id, sql`coalesce(${classifications.appliedSubcategoryId}, ${classifications.proposedSubcategoryId})`))
-      .where(and(eq(classifications.recordId, head.recordId), eq(classifications.messageId, head.latestInbound), sql`${classifications.status} in ('auto_applied', 'accepted', 'overridden', 'proposed')`))
-      .orderBy(desc(classifications.createdAt))
+      .from(replyTypePicks)
+      .innerJoin(replyTypes, eq(replyTypes.id, sql`coalesce(${replyTypePicks.appliedReplyTypeId}, ${replyTypePicks.proposedReplyTypeId})`))
+      .where(and(eq(replyTypePicks.recordId, head.recordId), eq(replyTypePicks.messageId, head.latestInbound), sql`${replyTypePicks.status} in ('auto_applied', 'accepted', 'overridden', 'proposed')`))
+      .orderBy(desc(replyTypePicks.createdAt))
       .limit(1);
-    if (row) classification = { id: row.id, subcategoryName: row.name, reason: row.reasoning };
+    if (row) classification = { id: row.id, replyTypeName: row.name, reason: row.reasoning };
   }
 
   const lastInbound = [...thread.entries].reverse().find((e) => e.direction === "inbound" && e.subject);
@@ -171,7 +172,7 @@ export async function buildDraftContext(organizationId: string, conversationId: 
     // A chat message has no subject.
     subject: channel === "linkedin" ? "" : replySubject(lastInbound?.subject),
     classification,
-    stageChange: await stageChangeFor(organizationId, head.recordId, head.latestInbound),
+    replyTypeChange: await replyTypeChangeFor(organizationId, head.recordId, head.latestInbound),
     operatorInstructions: renderInstructions(settings?.draft),
     knowledge: await knowledgeFor(organizationId, { alwaysOnly: false }),
     senderName,

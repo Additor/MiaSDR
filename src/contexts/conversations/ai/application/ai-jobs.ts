@@ -1,10 +1,7 @@
 import type { Job } from "@/platform/jobs/types";
 import { classificationSchema, draftSchema, linkedinDraftSchema } from "../domain/ai-contract";
-import { decideApplication } from "../../domain/classification-policy";
-import { needsReply } from "../../domain/reply-policy";
+import { stopRequestedBy } from "../../domain/reply-type-pick-policy";
 import { normalizeSubject } from "../../domain/subject";
-import { detectsStopRequest } from "../../domain/stop-request";
-import { DO_NOT_CONTACT_KEY } from "../../domain/classification-policy";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import type { ReplyAi, ReplyAiResolver } from "./ai-ports";
 import type { AiJobStore, ClaimedJob, DraftContext, ReplyStore } from "../../application/reply-ports";
@@ -48,8 +45,8 @@ export async function produceDraft(
     thread: ctx.thread,
     subject: ctx.subject,
     // A stage move after the last reply outdates the classifier's reading of that reply.
-    classification: ctx.classification ? { subcategoryName: ctx.classification.subcategoryName, reason: ctx.stageChange ? null : ctx.classification.reason } : null,
-    stageChange: ctx.stageChange,
+    classification: ctx.classification ? { replyTypeName: ctx.classification.replyTypeName, reason: ctx.replyTypeChange ? null : ctx.classification.reason } : null,
+    replyTypeChange: ctx.replyTypeChange,
     operatorInstructions: ctx.operatorInstructions,
     knowledge: ctx.knowledge.map((k) => ({ title: k.title, content: k.content })),
     feedback: options.feedback ?? null,
@@ -74,12 +71,12 @@ export function draftCitations(ctx: DraftContext) {
 async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promise<string> {
   const ctx = await deps.jobs.loadClassifyContext(job.organizationId, job.entityId);
   if (!ctx) return "skipped";
-  if (ctx.taxonomy.length === 0) throw new AiError("The reply categories have no active subcategory.", "permanent");
+  if (ctx.taxonomy.length === 0) throw new AiError("The organization has no active reply type.", "permanent");
   const keys = ctx.taxonomy.map((t) => t.key);
   const schema = classificationSchema(keys);
 
   const result = await provider.classify({
-    taxonomy: ctx.taxonomy.map(({ key, name, categoryKey, description, guidance }) => ({ key, name, categoryKey, description, guidance })),
+    taxonomy: ctx.taxonomy.map(({ key, name, groupKey, description, guidance }) => ({ key, name, groupKey, description, guidance })),
     person: ctx.person,
     thread: ctx.thread,
     operatorInstructions: ctx.operatorInstructions,
@@ -91,23 +88,17 @@ async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Pr
   const proposal = ctx.taxonomy.find((t) => t.key === parsed.data.subcategoryKey);
   if (!proposal) throw new AiError("The AI answered outside the allowed categories.", "transient", "shape");
 
-  const decision = decideApplication({
-    proposal: { categoryKey: proposal.categoryKey, subcategoryKey: proposal.key, reviewRequired: proposal.reviewRequired, stageRank: proposal.stageRank, confidence: parsed.data.confidence },
-    current: { categoryKey: ctx.categoryKey, stageRank: ctx.currentStageRank, categoryLocked: ctx.categoryLocked },
-    settings: ctx.settings,
-  });
-  const stopRequested = detectsStopRequest(ctx.messageText) || proposal.key === DO_NOT_CONTACT_KEY;
+  // The store decides under the record lock (`decideReplyType`): the hold, the draft, the settle and the follow-ups.
+  const stopRequested = stopRequestedBy(ctx.messageText, proposal);
 
   const outcome = await deps.jobs.finishClassification({
     job,
     messageId: job.entityId,
     expectedContextVersion: ctx.contextVersion,
-    proposedSubcategoryKey: proposal.key,
+    proposedReplyTypeKey: proposal.key,
     confidence: parsed.data.confidence,
     reason: parsed.data.reason,
     stopRequested,
-    decision,
-    wantsDraft: needsReply(proposal.categoryKey, proposal.key) && !stopRequested,
     provider: provider.name,
     model: provider.model,
     request: { messageId: job.entityId, contextVersion: ctx.contextVersion, allowedKeys: keys },
@@ -132,7 +123,7 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
     bodyText: result.output.bodyText,
     provider: provider.name,
     model: provider.model,
-    request: { classificationId: job.entityId, contextVersion: ctx.contextVersion, knowledge: ctx.knowledge.map((k) => k.documentVersionId) },
+    request: { replyTypePickId: job.entityId, contextVersion: ctx.contextVersion, knowledge: ctx.knowledge.map((k) => k.documentVersionId) },
     response: { usage: result.usage ?? null },
     citations: draftCitations(ctx),
   });

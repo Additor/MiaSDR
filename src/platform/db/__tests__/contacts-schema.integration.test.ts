@@ -58,7 +58,7 @@ describeDb("contacts, deals, companies and assignees schema", () => {
     }
     [{ id: campaign }] = await sql<{ id: string }[]>`insert into campaigns (organization_id, channel, name) values (${orgA}, 'email', 'c') returning id`;
     [{ id: campaignB }] = await sql<{ id: string }[]>`insert into campaigns (organization_id, channel, name) values (${orgB}, 'email', 'cb') returning id`;
-    [{ id: pipeline }] = await sql<{ id: string }[]>`insert into pipelines (organization_id, name, is_default) values (${orgA}, 'Default', true) returning id`;
+    [{ id: pipeline }] = await sql<{ id: string }[]>`insert into reply_type_sets (organization_id, name, is_default) values (${orgA}, 'Default', true) returning id`;
   });
 
   afterAll(async () => {
@@ -99,7 +99,7 @@ describeDb("contacts, deals, companies and assignees schema", () => {
     return row.id;
   }
   async function record(): Promise<string> {
-    const [row] = await sql<{ id: string }[]>`insert into records (organization_id, person_id, pipeline_id) values (${orgA}, ${await lead()}, ${pipeline}) returning id`;
+    const [row] = await sql<{ id: string }[]>`insert into records (organization_id, person_id, reply_type_set_id) values (${orgA}, ${await lead()}, ${pipeline}) returning id`;
     return row.id;
   }
 

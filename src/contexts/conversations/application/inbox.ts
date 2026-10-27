@@ -26,8 +26,8 @@ async function toFilter(deps: InboxDeps, organizationId: string, input: Partial<
     leadQuery: input.leadQuery?.trim().slice(0, 200) || undefined,
     campaignIds: input.campaignIds,
     mailboxIds: input.mailboxIds,
-    subcategoryKeys: input.subcategoryKeys,
-    categoryKeys: input.categoryKeys,
+    replyTypeKeys: input.replyTypeKeys,
+    groupKeys: input.groupKeys,
     from: range.start,
     to: range.end,
   };

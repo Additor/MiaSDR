@@ -1,5 +1,4 @@
 import type { DraftStatus } from "@/contexts/conversations/domain/draft-status";
-import { workflowLabel } from "@/contexts/conversations/domain/reply-handling";
 import { humanizeToken } from "@/shared/humanize";
 
 /** Reply draft statuses as the person reads them. `stale` shows as "Out of date" everywhere. */
@@ -16,17 +15,7 @@ const DRAFT_STATUS_LABEL: Readonly<Record<string, string>> = {
 
 export const draftStatusLabel = (status: string) => DRAFT_STATUS_LABEL[status] ?? humanizeToken(status);
 
-const CATEGORY_SOURCE_LABEL: Record<string, string> = { ai: "AI", human: "set by a person", integration: "integration" };
+const REPLY_TYPE_SOURCE_TIP: Record<string, string> = { ai: "Picked by the AI", human: "Set by a person", integration: "Set by an integration" };
 
-/** Who set a thread's category, for the chip next to the category name. */
-export const categorySourceLabel = (source: string) => CATEGORY_SOURCE_LABEL[source] ?? humanizeToken(source);
-
-/** Who has to act next on a conversation, from the record's workflow state. */
-export function waitingOn(workflowState: string): string {
-  if (workflowState === "action_required" || workflowState === "error") return "You";
-  if (workflowState === "waiting") return "The person";
-  if (workflowState === "classifying") return "AI";
-  return "No one";
-}
-
-export { workflowLabel };
+/** Who set a thread's reply type, for the tip on the sparkle or person mark of the type line. */
+export const replyTypeSourceTip = (source: string) => REPLY_TYPE_SOURCE_TIP[source] ?? `Set by ${humanizeToken(source).toLowerCase()}`;

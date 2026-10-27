@@ -3,22 +3,23 @@ import {
   AFTER_REPLY_MODES,
   AFTER_REPLY_MODE_LABELS,
   AFTER_REPLY_OFF,
-  ALWAYS_STOPS_ON,
   DEFAULT_AFTER_REPLY_MODE,
+  FIXED_STOP_RULES,
   INTERRUPT_REASON_LABELS,
   RUN_STATUS_LABELS,
   afterReplyFlowName,
   afterReplyModeOf,
-  endsFlow,
+  followUpsStopReason,
   isAfterReplyMode,
   startBlockedReason,
   type StartBlockFacts,
   runStatusLabel,
   startedByLabel,
   stopReasonLabel,
+  stopsOnLines,
   type StopReason,
 } from "./after-reply";
-import { interruptReason, isTerminalSubcategory, NO_START_KEYS, type InterruptFacts, type InterruptReason, type RunStatus } from "./sequences";
+import { interruptReason, type InterruptFacts, type InterruptReason, type RunStatus } from "./sequences";
 
 const ALL_RUN_STATUSES: RunStatus[] = ["active", "paused", "interrupted", "completed", "cancelled"];
 const ALL_INTERRUPT_REASONS: InterruptReason[] = ["reply", "do_not_contact", "unsubscribed", "bounce", "suppressed", "terminal_stage", "record_closed", "converted", AFTER_REPLY_OFF];
@@ -72,84 +73,61 @@ describe("labels", () => {
 
   it("words the reasons that people and writes store, and falls back for unknown ones", () => {
     expect(stopReasonLabel("manual")).toBe("A person cancelled the follow-ups");
-    expect(stopReasonLabel("stage_moved")).toBe("A person changed the reply category");
+    expect(stopReasonLabel("stage_moved")).toBe("A person changed the reply type");
     expect(stopReasonLabel("something_new")).toBe("Stopped");
     expect(stopReasonLabel(null)).toBe("Stopped");
     expect(stopReasonLabel("toString")).toBe("Stopped");
   });
 });
 
-describe("ALWAYS_STOPS_ON", () => {
-  it("lists the lead facts first and the classifications after", () => {
-    expect(ALWAYS_STOPS_ON.map((r) => r.id)).toEqual([
-      "reply",
-      "do_not_contact",
-      "unsubscribe",
-      "bounce",
-      "record_closed",
-      "converted",
-      "not_interested",
-      "out_of_office",
-      "left_company",
-      "wrong_contact",
-      "customer",
-    ]);
-    expect(new Set(ALWAYS_STOPS_ON.map((r) => r.id)).size).toBe(ALWAYS_STOPS_ON.length);
-    for (const rule of ALWAYS_STOPS_ON) expect(rule.label.length).toBeGreaterThan(0);
+describe("FIXED_STOP_RULES", () => {
+  it("lists the lead and record facts, in the order interruptReason checks them", () => {
+    expect(FIXED_STOP_RULES.map((r) => r.id)).toEqual(["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "record_closed", "converted"]);
+    expect(new Set(FIXED_STOP_RULES.map((r) => r.id)).size).toBe(FIXED_STOP_RULES.length);
+    for (const rule of FIXED_STOP_RULES) expect(rule.label.length).toBeGreaterThan(0);
   });
 
   it("uses reasons the interrupt rule can produce", () => {
-    for (const rule of ALWAYS_STOPS_ON) if (rule.reason) expect(ALL_INTERRUPT_REASONS).toContain(rule.reason);
+    for (const rule of FIXED_STOP_RULES) expect(ALL_INTERRUPT_REASONS).toContain(rule.reason);
   });
 
   it("matches what interruptReason returns for each lead or record fact", () => {
     const base: InterruptFacts = {
-      run: { triggerMessageId: "m1", subcategoryId: "s1" },
-      record: { latestInboundMessageId: "m1", subcategoryId: "s1", categoryKey: "interested", subcategoryKey: "interested", workflowState: "open" },
+      run: { triggerMessageId: "m1", replyTypeId: "s1" },
+      record: { latestInboundMessageId: "m1", replyTypeId: "s1", groupKey: "interested", replyTypeKey: "interested", followUps: "continue", workflowState: "open" },
       doNotContact: false,
       suppression: null,
       contact: false,
       flowActive: true,
     };
     expect(interruptReason(base)).toBeNull();
-    const byId = (id: string) => ALWAYS_STOPS_ON.find((r) => r.id === id)?.reason;
+    const byId = (id: string) => FIXED_STOP_RULES.find((r) => r.id === id)?.reason;
     expect(interruptReason({ ...base, record: { ...base.record, latestInboundMessageId: "m2" } })).toBe(byId("reply"));
     expect(interruptReason({ ...base, doNotContact: true })).toBe(byId("do_not_contact"));
     expect(interruptReason({ ...base, suppression: "unsubscribed" })).toBe(byId("unsubscribe"));
     expect(interruptReason({ ...base, suppression: "bounced" })).toBe(byId("bounce"));
+    expect(interruptReason({ ...base, suppression: "manual" })).toBe(byId("suppressed"));
     expect(interruptReason({ ...base, record: { ...base.record, workflowState: "closed" } })).toBe(byId("record_closed"));
     expect(interruptReason({ ...base, contact: true })).toBe(byId("converted"));
   });
 
-  it("shares one no-start list with the engine", () => {
-    for (const rule of ALWAYS_STOPS_ON) {
-      for (const fact of rule.subcategories ?? []) if (fact.subcategoryKey) expect(NO_START_KEYS).toContain(fact.subcategoryKey);
-    }
-  });
-
-  it("agrees with isTerminalSubcategory for every classification it names", () => {
-    for (const rule of ALWAYS_STOPS_ON) {
-      for (const fact of rule.subcategories ?? []) {
-        const terminal = isTerminalSubcategory(fact.categoryKey, fact.subcategoryKey);
-        expect(endsFlow(fact)).toBe(terminal);
-        // A rule without a reason keeps a flow from starting but never ends one, so its classification is not terminal.
-        expect(terminal).toBe(rule.reason === "terminal_stage");
-      }
-    }
-  });
-
-  it("covers the subcategories that stop a running flow", () => {
-    const named = ALWAYS_STOPS_ON.flatMap((r) => r.subcategories ?? []).filter((f) => endsFlow(f));
-    const keys = named.map((f) => f.subcategoryKey ?? `category:${f.categoryKey}`);
-    expect(keys).toEqual(expect.arrayContaining(["category:not_interested", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]));
-    // do_not_contact lives in the not_interested category and in the lead fact above, so the category entry covers it.
-    expect(isTerminalSubcategory("not_interested", "do_not_contact")).toBe(true);
+  it("adds one line per stop type after the fixed rules", () => {
+    const lines = stopsOnLines([
+      { id: "t1", name: "Out of office" },
+      { id: "t2", name: "Not now" },
+    ]);
+    expect(lines.slice(0, FIXED_STOP_RULES.length).map((l) => l.id)).toEqual(FIXED_STOP_RULES.map((r) => r.id));
+    expect(lines.slice(FIXED_STOP_RULES.length)).toEqual([
+      { id: "reply_type:t1", label: "The reply type is Out of office" },
+      { id: "reply_type:t2", label: "The reply type is Not now" },
+    ]);
+    expect(followUpsStopReason("Not now")).toBe("Not now is set to stop follow-ups.");
   });
 });
 
 describe("why a run cannot start", () => {
   const ok = (): StartBlockFacts => ({
-    record: { subcategoryId: "s1", categoryKey: "interested", subcategoryKey: "demo_request", subcategoryName: "Demo request", latestInboundMessageId: "m1", lastInboundAt: new Date("2026-10-15T08:00:00Z"), workflowState: "action_required", hasEmail: true },
+    record: { replyTypeId: "s1", groupKey: "interested", replyTypeKey: "demo_request", replyTypeName: "Demo request", followUps: "continue", latestInboundMessageId: "m1", lastInboundAt: new Date("2026-10-15T08:00:00Z"), workflowState: "action_required", hasEmail: true },
     conversation: { channel: "email" },
     doNotContact: false,
     suppressed: false,
@@ -199,12 +177,23 @@ describe("why a run cannot start", () => {
     expect(startBlockedReason(f)).toBe("Personal campaigns keep replies out of the Inbox, so they cannot draft follow-ups.");
   });
 
-  it("names the closing category the reply is classified into", () => {
+  it("names the reply type whose Follow-ups rule is Stop", () => {
     const f = ok();
-    f.record.categoryKey = "not_interested";
-    f.record.subcategoryKey = "not_required_right_now";
-    f.record.subcategoryName = "Not required right now";
-    expect(startBlockedReason(f)).toBe("The reply is classified as Not required right now, so follow-ups do not apply.");
+    f.record.groupKey = "not_interested";
+    f.record.replyTypeKey = "not_required_right_now";
+    f.record.replyTypeName = "Not now";
+    f.record.followUps = "stop";
+    expect(startBlockedReason(f)).toBe("Not now is set to stop follow-ups.");
+  });
+
+  it("reads the rule, not the group or the key", () => {
+    const keepsGoing = ok();
+    keepsGoing.record.groupKey = "not_interested";
+    keepsGoing.record.replyTypeKey = "not_required_right_now";
+    expect(startBlockedReason(keepsGoing)).toBeNull();
+    const stops = ok();
+    stops.record.followUps = "stop";
+    expect(startBlockedReason(stops)).toBe("Demo request is set to stop follow-ups.");
   });
 
   it("needs a step after the reply when a person already answered", () => {
@@ -213,5 +202,14 @@ describe("why a run cannot start", () => {
     expect(startBlockedReason(f)).toBeNull();
     f.answered = true;
     expect(startBlockedReason(f)).toMatch(/no follow-up step after the reply/);
+  });
+
+  it("needs a step after the reply when the reply type is set to Don't write a reply draft", () => {
+    const f = ok();
+    f.record.replyDraft = false;
+    f.stepCount = 2;
+    expect(startBlockedReason(f)).toBeNull();
+    f.stepCount = 1;
+    expect(startBlockedReason(f)).toBe("Demo request is set to not write a reply draft, and the flow has no follow-up step after the reply.");
   });
 });

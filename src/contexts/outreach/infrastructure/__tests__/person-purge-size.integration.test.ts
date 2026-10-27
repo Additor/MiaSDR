@@ -45,10 +45,10 @@ describeDb("contact delete: purge size check", () => {
   /** A contact with `conversations` email threads of `perConversation` messages each, `campaigns` enrollments of `steps` sends, and `events` history lines. */
   async function seed(org: string, tag: string, label: string, size: { conversations: number; perConversation: number; campaigns: number; steps: number; events: number }) {
     const t = `${tag}-${label}`;
-    const pipeline = await one(sql`select id from pipelines where organization_id = ${org} and is_default`);
+    const pipeline = await one(sql`select id from reply_type_sets where organization_id = ${org} and is_default`);
     const person = await one(sql`
       insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${org}, ${`${t}@lead.test`}, ${label}, 'contact', now()) returning id`);
-    const record = await one(sql`insert into records (organization_id, person_id, pipeline_id) values (${org}, ${person}, ${pipeline}) returning id`);
+    const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${org}, ${person}, ${pipeline}) returning id`);
     await sql`
       insert into conversations (organization_id, record_id, channel, account_ref)
       select ${org}, ${record}, 'email', ${`me-${t}-`} || g from generate_series(1, ${size.conversations}) g`;
@@ -66,7 +66,7 @@ describeDb("contact delete: purge size check", () => {
       where id = ${record}`;
     await sql`
       insert into events (organization_id, person_id, record_id, event_type, actor_type)
-      select ${org}, ${person}, case when g % 2 = 0 then ${record}::uuid end, 'stage.moved', 'system' from generate_series(1, ${size.events}) g`;
+      select ${org}, ${person}, case when g % 2 = 0 then ${record}::uuid end, 'reply_type.changed', 'system' from generate_series(1, ${size.events}) g`;
     await sql`
       insert into notes (organization_id, person_id, record_id, body)
       select ${org}, ${person}, ${record}, 'Note ' || g from generate_series(1, 20) g`;
@@ -108,7 +108,7 @@ describeDb("contact delete: purge size check", () => {
       const tag = uniqueKey();
       const org = await one(sql`insert into organizations (name, slug) values ('Purge size', ${"purge-size-" + tag}) returning id`);
       orgs.push(org);
-      await sql`insert into pipelines (organization_id, name, is_default) values (${org}, 'p', true)`;
+      await sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p', true)`;
       const size = { conversations: CONVERSATIONS, perConversation: MESSAGES_PER_CONVERSATION, campaigns: CAMPAIGNS, steps: STEPS, events: EVENTS };
       const target = await seed(org, tag, "target", size);
       const bystander = await seed(org, tag, "bystander", { ...size, conversations: 10, campaigns: 20 });
