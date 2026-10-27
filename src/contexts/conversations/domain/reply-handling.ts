@@ -177,9 +177,27 @@ export interface ReplyTypeChangeCheck {
 }
 
 /**
- * What a person's type change needs to be true. Returns the lock flag the record gets afterwards. The type with the
- * customer role locks the record (`records_locked_ck` keeps a locked record in the customer group), a change inside the
- * locked group keeps the lock, and leaving the group needs the person's confirmation and unlocks.
+ * The lock a record gets when a person moves it to `target`, by any path: Change type, their own pick, or accepting an
+ * AI pick. The type with the customer role locks (`records_locked_ck` keeps a locked record in the customer group), a
+ * move inside the locked group keeps the lock, and a move out of it unlocks.
+ */
+export function lockAfterPersonMove(before: { groupKey: string | null; replyTypeLocked: boolean }, target: { groupKey: string; systemRole: SystemRole | null }): boolean {
+  return target.systemRole === "customer" || (before.replyTypeLocked && target.groupKey === before.groupKey);
+}
+
+/**
+ * The lock a record had before a pick applied, kept in the pick's `response.previousLocked` so undo and a thread that
+ * turns private give back exactly that. A pick stored before the field existed falls back to the type: the customer role
+ * type was locked.
+ */
+export function lockBeforePick(response: unknown, previousSystemRole: SystemRole | null): boolean {
+  const kept = (response as { previousLocked?: unknown } | null)?.previousLocked;
+  return typeof kept === "boolean" ? kept : previousSystemRole === "customer";
+}
+
+/**
+ * What a person's type change needs to be true. Returns the lock flag the record gets afterwards
+ * (`lockAfterPersonMove`). Leaving the locked group needs the person's confirmation.
  */
 export function checkReplyTypeChange({ before, target, expectedContextVersion, confirmUnlock }: ReplyTypeChangeCheck): { replyTypeLocked: boolean } {
   if (!isReplyTypeGroup(target.groupKey)) throw new ValidationError("Choose one of the four groups.");
@@ -190,8 +208,7 @@ export function checkReplyTypeChange({ before, target, expectedContextVersion, c
   if (leavesLockedGroup && !confirmUnlock) {
     throw new ConflictError("This person is locked as Existing customer. Confirm the change to take them out of it.");
   }
-  // A customer stays locked so the AI cannot pull them back out; a type outside the locked group unlocks.
-  return { replyTypeLocked: target.systemRole === "customer" || (before.replyTypeLocked && !leavesLockedGroup) };
+  return { replyTypeLocked: lockAfterPersonMove(before, target) };
 }
 
 export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {

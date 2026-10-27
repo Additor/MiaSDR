@@ -130,4 +130,87 @@ describeDb("AI pick apply path: type rules decide hold, draft and settle", () =>
       expect(await count("drafts", f.org)).toBe(0);
     });
   });
+
+  describe("the customer lock on a person's pick, undo and detach", () => {
+    /** The record locked on `typeId` of the customer group, as a person's type change leaves it. */
+    const lockOn = (f: ReplyFixture, typeId: string) =>
+      sql`update records set group_key = 'customer', reply_type_id = ${typeId}, reply_type_source = 'human', reply_type_locked = true where organization_id = ${f.org}`;
+    const customerType = async (f: ReplyFixture) => (await sql`select id from reply_types where organization_id = ${f.org} and system_role = 'customer'`)[0].id as string;
+    /** A second type in the customer group, without a role. */
+    const renewalType = async (f: ReplyFixture) =>
+      (await sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name, sort_order)
+                 select organization_id, reply_type_set_id, 'customer', 'renewal', 'Renewal', 99 from reply_types where organization_id = ${f.org} and system_role = 'customer' returning id`)[0].id as string;
+    const pickRequest = async (f: ReplyFixture, replyTypeKey: string | null) => {
+      const [conv] = await sql`select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = ${f.org}`;
+      return modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey, expectedContextVersion: conv.context_version, actorUserId: f.user });
+    };
+    const handling = async () => (await import("../../../infrastructure/drizzle-reply-handling-store")).drizzleReplyHandlingStore;
+    const lockRow = (f: ReplyFixture) => one("select group_key, reply_type_id, reply_type_locked from records where organization_id = $1", [f.org]);
+
+    it("accepting a protected_customer hold moves the locked customer out and unlocks", async () => {
+      const f = await fixture();
+      answer(f, "demo_request", 0.99);
+      await modules.composition.ingestInbound(mail(f));
+      await lockOn(f, await customerType(f));
+      await f.run();
+      expect((await pickRow(f)).response).toMatchObject({ holdReason: "protected_customer" });
+      await pickRequest(f, null);
+      expect(await lockRow(f)).toMatchObject({ group_key: "interested", reply_type_locked: false });
+    });
+
+    it("a person's pick of a type outside the customer group unlocks, and the customer role type locks", async () => {
+      const f = await fixture();
+      answer(f, "demo_request", 0.99);
+      await modules.composition.ingestInbound(mail(f));
+      await lockOn(f, await customerType(f));
+      await f.run();
+      await pickRequest(f, "meeting_requested");
+      expect(await lockRow(f)).toMatchObject({ group_key: "interested", reply_type_locked: false });
+      await pickRequest(f, "customer");
+      expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_locked: true });
+    });
+
+    it("undo restores the lock the record had before the pick, on any type of the customer group", async () => {
+      const f = await fixture();
+      answer(f, "customer", 0.99);
+      await modules.composition.ingestInbound(mail(f));
+      const renewal = await renewalType(f);
+      await lockOn(f, renewal);
+      await sql`update reply_types set check_mode = 'skip' where organization_id = ${f.org} and system_role = 'customer'`;
+      await f.run();
+      const pick = await one("select id, status from reply_type_picks where organization_id = $1", [f.org]);
+      expect(pick.status).toBe("auto_applied");
+      await (await handling()).undoReplyTypePick({ organizationId: f.org, replyTypePickId: pick.id, actorUserId: f.user, now: new Date() });
+      expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_id: renewal, reply_type_locked: true });
+    });
+
+    it("undo of a person's pick that moved a locked customer out locks them again", async () => {
+      const f = await fixture();
+      answer(f, "demo_request", 0.99);
+      await modules.composition.ingestInbound(mail(f));
+      const renewal = await renewalType(f);
+      await lockOn(f, renewal);
+      await f.run();
+      await pickRequest(f, null);
+      const pick = await one("select id from reply_type_picks where organization_id = $1", [f.org]);
+      await (await handling()).undoReplyTypePick({ organizationId: f.org, replyTypePickId: pick.id, actorUserId: f.user, now: new Date() });
+      expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_id: renewal, reply_type_locked: true });
+    });
+
+    it("a thread that turns private gives back the lock the record had before the AI's pick", async () => {
+      const f = await fixture();
+      answer(f, "customer", 0.99);
+      await modules.composition.ingestInbound(mail(f));
+      const renewal = await renewalType(f);
+      await lockOn(f, renewal);
+      await sql`update reply_types set check_mode = 'skip' where organization_id = ${f.org} and system_role = 'customer'`;
+      await f.run();
+      expect((await pickRow(f)).status).toBe("auto_applied");
+      const [conv] = await sql`select id, record_id from conversations where organization_id = ${f.org}`;
+      const { db } = await import("@/platform/db/client");
+      const { detachPrivateThreadTx } = await import("../../../infrastructure/private-thread-detach");
+      await db.transaction((tx) => detachPrivateThreadTx(tx, { organizationId: f.org, conversationId: conv.id, recordId: conv.record_id, now: new Date() }));
+      expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_id: renewal, reply_type_locked: true });
+    });
+  });
 });

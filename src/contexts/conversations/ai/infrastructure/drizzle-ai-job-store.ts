@@ -467,7 +467,7 @@ export const drizzleAiJobStore: AiJobStore = {
           status: auto ? "auto_applied" : "proposed",
           appliedGroupKey: auto ? proposed.groupKey : null,
           appliedReplyTypeId: auto ? proposed.id : null,
-          response: { ...(input.response as object), holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested },
+          response: { ...(input.response as object), holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested, previousLocked: record.locked },
         })
         .onConflictDoNothing()
         .returning({ id: replyTypePicks.id });
