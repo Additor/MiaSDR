@@ -229,7 +229,7 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
                       {row.subject && <span className="text-muted-foreground">{` ${row.subject}`}</span>}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
-                      <Badge variant="outline">{row.kind === "campaign" ? "Campaign" : "Follow-ups after a reply"}</Badge> {row.sourceName}
+                      <Badge variant="outline">{row.kind === "campaign" ? "Campaign" : "Follow-up"}</Badge> {row.sourceName}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">{row.mailbox ?? row.channel}</TableCell>
                     <TableCell className="text-right whitespace-nowrap text-muted-foreground"><Time value={row.dueAt} /></TableCell>

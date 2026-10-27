@@ -12,7 +12,7 @@ import { callApi } from "@/app/_lib/api-client";
 import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { TypeRules } from "@/contexts/conversations/domain/reply-type";
 import { afterSavingEdits } from "../_lib/draft-edits";
-import { confidenceText, LOOKS_RIGHT_DONE, pickBadge, undoMessage } from "../_lib/type-line";
+import { confidenceText, LOOKS_RIGHT_DONE, offersLooksRight, pickBadge, undoMessage } from "../_lib/type-line";
 
 interface Entry {
   id: string;
@@ -54,8 +54,8 @@ const STATUS: Record<string, string> = {
 const UNDO_TIP = "Puts back the type from before the AI's pick. Open drafts retire and follow-ups end.";
 
 /**
- * Each AI pick for this person's replies, with Looks right and Undo on the ones a person may still change. Only a pick that
- * waits for a person carries a badge; the rest of its facts read as one muted line. Undo says in its toast what it retired.
+ * Each AI pick for this person's replies. Looks right shows only on a pick marked Not checked, and Undo on the ones a person
+ * may still change. Only a pick that waits for a person carries a badge; the rest of its facts read as one muted line. Undo says in its toast what it retired.
  * The caller frames it and leaves it out when there are no picks.
  */
 export function AiPicksHistory({ entries, currentConversationId }: { entries: Entry[]; currentConversationId?: string }) {
@@ -92,6 +92,7 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
       <ul className="divide-y">
         {entries.map((e) => {
           const badge = pickBadge(e);
+          const canLookRight = offersLooksRight(e);
           const meta = [
             badge ? null : (STATUS[e.status] ?? e.status),
             e.confidence !== null && e.status !== "failed" && e.provider !== "human" ? confidenceText(e.confidence) : null,
@@ -109,14 +110,14 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
               </p>
               {e.reasoning && <p className="text-muted-foreground">{e.reasoning}</p>}
               {e.error && <p className="text-destructive">{e.error}</p>}
-              {(e.canAcknowledge || e.canUndo || (e.status === "proposed" && e.latest && e.conversationId !== currentConversationId)) && (
+              {(canLookRight || e.canUndo || (e.status === "proposed" && e.latest && e.conversationId !== currentConversationId)) && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {e.status === "proposed" && e.latest && e.conversationId !== currentConversationId && (
                     <Link href={`/inbox/${e.conversationId}`} className="text-sm underline underline-offset-4 max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
                       Review in that conversation
                     </Link>
                   )}
-                  {e.canAcknowledge && (
+                  {canLookRight && (
                     <Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} onClick={() => looksRight(e.id)}>
                       Looks right
                     </Button>

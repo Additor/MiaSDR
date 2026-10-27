@@ -150,3 +150,6 @@ export function pickBadge(e: { status: string; acknowledged: boolean; current: b
   if (e.status === "auto_applied" && !e.acknowledged && e.current && (e.rules === null || e.rules.checkMode === "after")) return "Not checked";
   return null;
 }
+
+/** The history offers Looks right only on a pick it marks Not checked, so the button and the badge agree. */
+export const offersLooksRight = (e: Parameters<typeof pickBadge>[0] & { canAcknowledge: boolean }): boolean => e.canAcknowledge && pickBadge(e) === "Not checked";

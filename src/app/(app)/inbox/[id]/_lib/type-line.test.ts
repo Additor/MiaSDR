@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decisionKey, decisionView, holdText, latestAiPick, latestPick, noDraftReason, pickBadge, rulesSummary, typeDecision, undoMessage, type PickFacts } from "./type-line";
+import { decisionKey, decisionView, holdText, latestAiPick, latestPick, noDraftReason, offersLooksRight, pickBadge, rulesSummary, typeDecision, undoMessage, type PickFacts } from "./type-line";
 
 const pick = (over: Partial<PickFacts> = {}): PickFacts => ({
   id: "p1",
@@ -142,5 +142,20 @@ describe("pickBadge", () => {
     expect(pickBadge({ ...entry, status: "proposed" })).toBe("Held for a check");
     expect(pickBadge({ ...entry, status: "failed" })).toBe("Failed");
     expect(pickBadge({ ...entry, status: "accepted" })).toBeNull();
+  });
+});
+
+describe("offersLooksRight", () => {
+  const entry = { status: "auto_applied", acknowledged: false, current: true, rules: { checkMode: "after" as const }, canAcknowledge: true };
+
+  it("offers Looks right on a pick marked Not checked", () => {
+    expect(offersLooksRight(entry)).toBe(true);
+  });
+
+  it("offers it on no pick without that badge, even when the server would take it", () => {
+    expect(offersLooksRight({ ...entry, rules: { checkMode: "skip" } })).toBe(false);
+    expect(offersLooksRight({ ...entry, current: false })).toBe(false);
+    expect(offersLooksRight({ ...entry, status: "failed" })).toBe(false);
+    expect(offersLooksRight({ ...entry, canAcknowledge: false })).toBe(false);
   });
 });
