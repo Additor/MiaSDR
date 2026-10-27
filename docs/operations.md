@@ -71,6 +71,20 @@ An empty `jobs` array means no jobs are registered. Without a mailbox provider t
 
 `conversations.sequences` runs the follow-ups of the campaign setting Follow-ups after a reply on every tick. It first stops runs whose person replied, asked not to be contacted, unsubscribed, bounced, was suppressed or became a contact (reason `converted`), and runs whose reply handling a person closed or whose reply moved to a reply type set to stop follow-ups (`reply_types.follow_ups = 'stop'`). It then starts runs for replies whose applied pick keeps follow-ups going, and writes the draft for each due step. Any applied pick counts: one the AI applied, one a person accepted and a person's own pick. The start reads the rules the pick stored, so an edit of the type after the pick does not change that reply's run. A run on a type set to Don't write a reply draft starts at step 2. A run starts from the campaign that most recently emailed the person, and only when that campaign is an email campaign in "AI drafts, you approve" mode with a published flow. A paused campaign starts no new runs and holds draft writing for runs in progress. Switching the campaign back to "Off, hand to the Inbox" interrupts its runs in progress with the reason `after_reply_off`. A contact starts no run; creating a deal ends the person's runs in the same transaction. The job never sends: a person approves every draft on the Inbox thread, and only that path sends. One step is claimed at a time with a row lock, and a step stuck in `drafting` for longer than the lease is taken over, so overlapping ticks do not write two drafts. Whole-day delays follow the organization's time zone (Settings, Organization, UTC when unset). Retention: runs, step runs and their drafts are kept. No pruning step touches them.
 
+## Upgrades that change the reply tables
+
+Migrations 0002 and 0003 rename the reply tables and add and drop columns. Each `ALTER TABLE` waits for an exclusive lock on its table. Drizzle applies all pending migrations in one transaction, so a long query from an old instance keeps the migration waiting, and every query that arrives after it waits too. Stop every old instance before the new version boots.
+
+The migration files stay as they are: a released migration never changes ([database.md](database.md#migrations)). To make a migration that waits on a lock fail fast, set a lock timeout on the app's database role before the upgrade and clear it once the app is up:
+
+```bash
+docker compose exec db psql -U miasdr -d miasdr -c "ALTER ROLE miasdr SET lock_timeout = '30s'"
+# upgrade, check the app log, then
+docker compose exec db psql -U miasdr -d miasdr -c "ALTER ROLE miasdr RESET lock_timeout"
+```
+
+The setting reaches new connections only, which includes the one the migrator opens at boot. A migration that hits the timeout rolls back whole and logs `Migration failed: canceling statement due to lock timeout`. The app log shows it at boot, and `scripts/migrate.mjs` prints it and exits 1. Find the session that holds the lock in `pg_stat_activity`, end it, and start the app again.
+
 ## Grid job and enrichment settings
 
 `grid.run` runs the queued enrichment and AI cells of the Tables feature, one job row per cell, in a lease-protected claim (5 minute lease, a displaced worker changes nothing). A pass keeps `GRID_RUN_CONCURRENCY` cells running and starts the next cell the moment one finishes, until the queue is empty, the tick budget (50 seconds) ends, or the safety ceiling of 2,000 claimed cells is reached. A run, retry or auto-run request also starts a pass in the receiving process about 25 ms after the response (one kicked pass at a time, repeated while cells remain). Other instances pick the cells up on their tick. One organization runs at most 8 cells at once across all workers.

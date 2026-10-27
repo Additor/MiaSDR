@@ -45,6 +45,8 @@ Run the dump from cron daily and copy it off the server. Test a restore once on 
 
 ## Upgrades
 
+Read the Upgrade notes of each release in [CHANGELOG.md](../../CHANGELOG.md) before you pull it.
+
 ```bash
 # back up first
 git pull

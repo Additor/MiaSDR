@@ -18,3 +18,15 @@ First public release.
 - CRM: contacts, companies with merge, deals on a pipeline board.
 - Tables: a spreadsheet with formulas, enrichment and AI columns. Enrichment calls Hunter, ZeroBounce, MillionVerifier, NeverBounce, Findymail, Prospeo, LeadMagic, Apollo and People Data Labs natively, and vendors that share an action line up in a waterfall.
 - Self-hosting with Docker Compose and Postgres 17.
+
+### Upgrade notes
+
+For a server that ran a build from before this release:
+
+- Back up the database before you upgrade ([Backups](docs/deploy/self-host.md#backups)).
+- Migrations run when the app boots, unless you set `RUN_MIGRATIONS=false` and run `scripts/migrate.mjs` yourself.
+- You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. [Operations](docs/operations.md#upgrades-that-change-the-reply-tables) shows how to make a migration that waits on a lock fail fast.
+- Out of office now ends a follow-up run already going. Before, it only kept a new run from starting.
+- The stage rank is gone, so the AI may move a person to an earlier reply type. To review such moves, set the type's Check to Before it applies in Settings > Reply handling.
+- If your organization archived Asked to stop, the upgrade restores it. Every AI pick of it waits for a person.
+- The upgrade renames the default types and rewrites their default guidance only where your organization kept the old text. Guidance you edited stays as you wrote it and may still name a type by its old name, such as Not required right now (now Not now) or Connected to different contact (now Referred someone else). Read the AI guidance of each type in Settings > Reply handling.
