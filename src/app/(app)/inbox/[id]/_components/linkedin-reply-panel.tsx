@@ -10,10 +10,8 @@ export async function LinkedInReplyPanel({ conversationId, recordId, actor }: { 
   const [panel, detail] = await Promise.all([getLinkedInReplyPanel(linkedinReplyDeps(), actor, conversationId), recordDetail(actor, recordId)]);
   if (!panel) return null;
   const state = draftState(detail, "linkedin");
-  // A new draft id or revision remounts the client, so its text box starts from the stored draft.
   return (
     <LinkedInReplyPanelClient
-      key={`${panel.draft?.id ?? "none"}-${panel.draft?.revision ?? 0}-${panel.draft?.status ?? ""}`}
       panel={JSON.parse(JSON.stringify(panel))}
       noDraft={state.noDraft}
       drafting={state.drafting}

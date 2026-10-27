@@ -2,7 +2,7 @@
 
 import { CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
@@ -14,13 +14,15 @@ import { Textarea } from "@/components/ui/textarea";
 import type { LinkedInReplyPanelView } from "@/contexts/conversations/application/linkedin-reply";
 import { callApi } from "@/app/_lib/api-client";
 import { draftStatusLabel } from "../../labels";
+import { draftingAbove, reloadsAfter } from "../_lib/reply-panel";
 
 type SendResult = { status: string; error?: string | null };
 
 /**
  * Composer for a LinkedIn chat. An AI draft fills the box; the person edits it and presses Send, which is the approval.
  * Nothing goes out without it. Without a draft, `noDraft` says why the reply type writes none, and `drafting` that one is on
- * its way.
+ * its way. A new draft, revision or status resets the text box to the stored draft; an error stays, so a refusal that reloads
+ * the page is still read.
  */
 export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: LinkedInReplyPanelView; noDraft: string | null; drafting: boolean }) {
   const router = useRouter();
@@ -34,14 +36,33 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
   const [note, setNote] = useState("");
   const [showRegenerate, setShowRegenerate] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const revision = draft ? `${draft.id}:${draft.revision}:${draft.status}` : "";
+  const [seenRevision, setSeenRevision] = useState(revision);
+  if (revision !== seenRevision) {
+    setSeenRevision(revision);
+    setText(draft?.status === "awaiting_review" ? draft.text : "");
+    setShowRegenerate(false);
+    setNote("");
+  }
+  // A send key belongs to one draft state: the next state is a new decision.
+  useEffect(() => {
+    key.current = "";
+  }, [revision]);
+  const draftingNext = draftingAbove(draft, drafting);
 
-  async function run(action: () => Promise<{ ok: boolean; error?: string | null }>) {
+  async function run(action: () => Promise<{ ok: boolean; status: number; error?: string | null }>) {
     setBusy(true);
     setError(null);
     const result = await action();
     setBusy(false);
-    if (!result.ok) return setError(result.error ?? "The request failed.");
+    if (!result.ok) {
+      setError(result.error ?? "The request failed.");
+      // The thread moved while the AI wrote: the reload shows the out-of-date draft.
+      if (reloadsAfter(result)) router.refresh();
+      return false;
+    }
     router.refresh();
+    return true;
   }
 
   async function send() {
@@ -124,6 +145,12 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
           <p className="text-sm">A reply is being sent. Reload in a moment to see the result.</p>
         ) : (
           <div className="grid gap-1">
+            {draftingNext && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="drafting">
+                <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+                Drafting…
+              </p>
+            )}
             {stale && <p className="text-sm">This draft may be out of date: a newer message arrived after it was written. Regenerate or discard it.</p>}
             {!draft && !panel.canGenerate && panel.aiOff && !panel.doNotContact && <p className="text-sm text-muted-foreground">{panel.aiOff} Until then, write the message yourself below.</p>}
             {!draft && panel.canGenerate && !panel.doNotContact && drafting && (
@@ -170,12 +197,14 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
             <>
               <Button
                 variant="outline"
-                disabled={busy || !panel.canGenerate}
+                // While a draft job writes the next draft, Regenerate stays off so it cannot add a second one.
+                disabled={busy || !panel.canGenerate || draftingNext}
                 onClick={async () => {
                   if (!showRegenerate) return setShowRegenerate(true);
-                  await run(() => callApi(`/api/drafts/${draft.id}/regenerate`, "POST", { note }));
-                  setShowRegenerate(false);
-                  setNote("");
+                  if (await run(() => callApi(`/api/drafts/${draft.id}/regenerate`, "POST", { note }))) {
+                    setShowRegenerate(false);
+                    setNote("");
+                  }
                 }}
               >
                 {showRegenerate ? "Regenerate now" : "Regenerate"}

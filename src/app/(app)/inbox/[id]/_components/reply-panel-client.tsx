@@ -17,6 +17,7 @@ import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { draftStatusLabel } from "../../labels";
 import { registerDraftEdits } from "../_lib/draft-edits";
+import { draftingAbove, regenerateControl, reloadsAfter } from "../_lib/reply-panel";
 import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
 
@@ -89,13 +90,15 @@ export function ReplyPanelClient({
   const composerSubject = panel.lastSubject ? (/^re:/i.test(panel.lastSubject) ? panel.lastSubject : `Re: ${panel.lastSubject}`) : "";
   const composer = <ReplyComposer conversationId={panel.conversationId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
 
-  async function run<T>(name: string, call: () => Promise<{ ok: boolean; data: T | null; error: string | null }>): Promise<T | null> {
+  async function run<T>(name: string, call: () => Promise<{ ok: boolean; status: number; data: T | null; error: string | null }>): Promise<T | null> {
     setBusy(name);
     setError(null);
     const result = await call();
     setBusy(null);
     if (!result.ok) {
       setError(result.error);
+      // The thread moved while the AI wrote: the reload shows the out-of-date draft under the message.
+      if (reloadsAfter(result)) router.refresh();
       return null;
     }
     router.refresh();
@@ -219,6 +222,13 @@ export function ReplyPanelClient({
               composer
             ))}
 
+          {/* A draft job writes the next draft: say so above the one still shown, so nobody acts on the old one. */}
+          {draft && draftingAbove(draft, drafting) && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="drafting">
+              <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+              Drafting…
+            </p>
+          )}
           {draft?.status === "stale" && (
             <div className="grid gap-3" data-testid="stale-draft">
               <p className="text-sm">{draft.error ?? "The thread or the reply type changed after this draft was written."}</p>
@@ -336,9 +346,9 @@ export function ReplyPanelClient({
               </Button>
             )}
             <Button
-              // One filled button on the page: a decision on the type line keeps it, and Regenerate leads only when it is the next step.
-              variant={draft.status === "stale" && !decisionWaiting ? "default" : "outline"}
-              disabled={busy !== null || !panel.aiConfigured}
+              // One filled button on the page: a decision on the type line keeps it, and Regenerate leads only when it is the next
+              // step. While a draft job writes the next draft it stays off, so it cannot add a second one.
+              {...regenerateControl({ status: draft.status, decisionWaiting, drafting, busy: busy !== null, aiConfigured: panel.aiConfigured })}
               onClick={async () => {
                 if (!showRegenerate) return setShowRegenerate(true);
                 if (await run("regen", () => callApi(`/api/drafts/${draft.id}/regenerate`, "POST", { note }))) {
