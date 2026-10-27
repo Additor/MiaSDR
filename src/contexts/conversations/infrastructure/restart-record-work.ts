@@ -7,7 +7,8 @@ import { rowsOf } from "@/platform/db/sql-values";
 import { interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
 import { decideReplyType, type ReplyTypeDecision, type ReplyType, type FollowUpsOutcome } from "../domain/reply-type";
 import { staleOpenDraftsTx } from "./stale-drafts-sql";
-import { typeChangeFactsOf } from "./type-change-facts-read";
+import { followUpModeFactsTx } from "./follow-up-mode-facts";
+import { stopRequestedSql } from "./stop-requested-sql";
 
 /**
  * A person changed what the record is: a type change off the thread, or their own pick for the latest reply. Work that
@@ -57,19 +58,30 @@ export async function restartRecordWorkTx(
 }
 
 /**
- * What a person's choice of `target` means for the record, read inside the caller's transaction after it locked the
- * record and before it writes the new type. A person's pick has no confidence, so it never holds. Null when the record
- * is not visible in the organization.
+ * What a person's choice of `target` means for `record`, read inside the caller's transaction after it locked the record
+ * and before it writes the new type. The caller has already checked that the person may see the record, so this read
+ * applies no visibility rule: a record with only private conversations decides by the type's rules as any other. A
+ * person's pick has no confidence, so it never holds, and the floor, the lock and the current type play no part.
  */
 export async function personTypeDecisionTx(
   tx: Tx,
-  organizationId: string,
-  recordId: string,
-  target: Pick<ReplyType, "groupKey" | "rules">,
-): Promise<ReplyTypeDecision | null> {
-  const read = await typeChangeFactsOf(organizationId, recordId, tx);
-  if (!read) return null;
-  return decideReplyType(target, { ...read.facts, currentType: read.current, confidence: null });
+  input: { organizationId: string; record: { id: string; latestInboundMessageId: string | null; replyTypeLocked: boolean }; target: Pick<ReplyType, "groupKey" | "rules"> },
+): Promise<ReplyTypeDecision> {
+  const { organizationId, record, target } = input;
+  const [stop] = record.latestInboundMessageId
+    ? rowsOf<{ asked: boolean }>(await tx.execute(sql`select ${stopRequestedSql(sql`${record.latestInboundMessageId}::uuid`)} as asked`))
+    : [];
+  const mode = await followUpModeFactsTx(tx, organizationId, record.id);
+  return decideReplyType(target, {
+    stopRequested: stop?.asked === true,
+    isContact: mode?.isContact ?? false,
+    campaignMode: mode?.campaignMode ?? null,
+    channel: mode?.channel ?? null,
+    confidence: null,
+    floor: 1,
+    locked: record.replyTypeLocked,
+    currentType: null,
+  });
 }
 
 /**

@@ -23,7 +23,7 @@ export const replyTypeOption = (t: typeof replyTypes.$inferSelect): ReplyTypeOpt
  * The facts `typeChangeOutcome` reads for one record: its current type, the active types of its set, whether the latest
  * reply asked to stop (`stopRequestedSql`), whether the person is a contact, and the After a reply mode
  * and channel that decide whether follow-ups apply. Null for a record outside the organization or with only private
- * conversations. A write path passes its transaction, after it locked the record, so the facts match what it changes.
+ * conversations. The Change type outcomes read it; a write decides through `personTypeDecisionTx`.
  */
 export async function typeChangeFactsOf(organizationId: string, recordId: string, exec: DbHandle = db): Promise<TypeChangeFacts | null> {
   const [head] = await exec

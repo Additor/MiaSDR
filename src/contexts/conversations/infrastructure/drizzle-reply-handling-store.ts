@@ -289,7 +289,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       // The type's rules decide, as a person's pick: a type that writes a draft keeps the record in front of a person,
       // and its follow-ups rule decides whether a run starts. A change to a group without a type has no rules: no run.
       const rules = sub ? typeRulesOf(sub) : null;
-      const decision = sub && rules ? await personTypeDecisionTx(tx, input.organizationId, before.id, { groupKey: sub.groupKey, rules }) : null;
+      const decision = sub && rules ? await personTypeDecisionTx(tx, { organizationId: input.organizationId, record: before, target: { groupKey: sub.groupKey, rules } }) : null;
       await tx
         .update(records)
         .set({
