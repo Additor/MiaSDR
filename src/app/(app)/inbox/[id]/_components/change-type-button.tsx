@@ -14,6 +14,7 @@ import { cn } from "@/components/ui/utils";
 import { REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
 import { callApi } from "@/app/_lib/api-client";
+import { submitSteps } from "../_lib/change-type";
 import { saveDraftEdits } from "../_lib/draft-edits";
 import { confidenceText } from "../_lib/type-line";
 import { useStopScope, type StopTarget } from "./stop-contacting";
@@ -92,6 +93,8 @@ export function ChangeTypeButton({
   const [pending, setPending] = useState<"change" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
+  // The type this dialog already changed to. A retry after a failed stop only stops.
+  const changedTo = useRef<string | null>(null);
   const stopScope = useStopScope(stop);
 
   const correcting = why === "reply" && conversationId !== undefined;
@@ -135,6 +138,7 @@ export function ChangeTypeButton({
     setWhy(conversationId ? "reply" : "offThread");
     setOutcomes(null);
     setError(null);
+    changedTo.current = null;
     stopScope.reset();
   }
 
@@ -157,14 +161,16 @@ export function ChangeTypeButton({
     running.current = true;
     setPending(mode);
     setError(null);
-    let changed = false;
+    const steps = submitSteps(changedTo.current, chosen.id, mode);
     try {
-      const unsaved = await saveDraftEdits();
-      if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
-      await changeType(chosen);
-      changed = true;
+      if (steps.change) {
+        const unsaved = await saveDraftEdits();
+        if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
+        await changeType(chosen);
+        changedTo.current = chosen.id;
+      }
       const changedText = `Changed the reply type of ${personName} to ${chosen.name}.`;
-      if (mode === "stop") {
+      if (steps.stop) {
         const stopped = await stopScope.stop().catch((e: unknown) => {
           throw new Error(`The reply type changed, but contact did not stop. ${e instanceof Error ? e.message : ""} Use Stop contacting under Next step.`.trim());
         });
@@ -180,7 +186,7 @@ export function ChangeTypeButton({
       running.current = false;
       setPending(null);
       setError(e instanceof Error ? e.message : "Something went wrong.");
-      if (changed) router.refresh();
+      if (changedTo.current) router.refresh();
     }
   }
 
