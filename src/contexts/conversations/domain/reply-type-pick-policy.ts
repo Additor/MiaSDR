@@ -41,11 +41,6 @@ function decide({ proposal, confidence, current, floor, stopRequested = false }:
   });
 }
 
-export function decideApplication(input: PolicyInput): ApplyDecision {
-  const { hold } = decide(input);
-  return hold === null ? { action: "auto_apply" } : { action: "hold", reason: hold };
-}
-
 /** Whether the pick applies, and whether it then wants a draft. A stop request never gets one. */
 export function decideAiPick(input: PolicyInput): AiPickDecision {
   const { hold, wantsDraft } = decide(input);

@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isTerminalReplyType, NO_START_KEYS } from "../after-reply/domain/sequences";
 import { DEFAULT_REPLY_TYPES } from "./default-reply-types";
-import { needsReply } from "./reply-policy";
 import {
   decideReplyType,
   DEFAULT_TYPE_RULES,
@@ -36,34 +34,43 @@ const type = (rules: Partial<TypeRules> = {}, over: Partial<ReplyType> = {}): Re
   ...over,
 });
 
-/** The review hold before type rules, with the default settings (review_other and customer_requires_review on). */
-const oldReviewHold = (groupKey: string, reviewRequired: boolean) => reviewRequired || groupKey === "customer" || groupKey === "other";
+type SeededDecision = [key: string, hold: "requires_review" | null, needsLooksRight: boolean, wantsDraft: boolean, followUps: "continue" | "stop", settles: boolean];
 
-describe("decideReplyType against the rules it replaces, for every default type", () => {
-  for (const d of DEFAULT_REPLY_TYPES) {
-    it(`${d.key}: same draft, start, stop and settle as the key and group rules`, () => {
+/**
+ * What an AI pick of each default type decides, with `facts` above. The values are written out so a change to the
+ * seeded rules or to `decideReplyType` shows up here. `settles` is `settlesAfterAiPick` from `action_required`.
+ */
+const SEEDED: readonly SeededDecision[] = [
+  ["information_requested", null, true, true, "continue", false],
+  ["case_study", null, true, true, "continue", false],
+  ["demo_request", null, true, true, "continue", false],
+  ["meeting_requested", null, true, true, "continue", false],
+  ["meeting_no_show", null, true, true, "continue", false],
+  ["meeting_done", null, true, true, "continue", false],
+  ["trial_requested", null, true, true, "continue", false],
+  ["trial_user", null, true, true, "continue", false],
+  ["customer", "requires_review", false, true, "stop", false],
+  ["do_not_contact", "requires_review", false, false, "stop", false],
+  ["not_required_right_now", null, false, false, "stop", true],
+  ["already_using_a_tool", null, false, false, "stop", true],
+  ["wrong_contact", "requires_review", false, true, "stop", false],
+  ["connected_to_different_contact", "requires_review", false, true, "stop", false],
+  ["left_company", "requires_review", false, false, "stop", false],
+  ["out_of_office", "requires_review", false, false, "stop", false],
+  ["other", "requires_review", false, true, "continue", false],
+];
+
+describe("decideReplyType for every default type", () => {
+  it("covers each default type once", () => {
+    expect(SEEDED.map(([key]) => key)).toEqual(DEFAULT_REPLY_TYPES.map((d) => d.key));
+  });
+
+  for (const [key, hold, needsLooksRight, wantsDraft, followUps, settles] of SEEDED) {
+    it(`${key}: hold ${hold ?? "none"}, draft ${wantsDraft}, follow-ups ${followUps}`, () => {
+      const d = DEFAULT_REPLY_TYPES.find((t) => t.key === key)!;
       const decision = decideReplyType(d, facts);
-      // reply-policy needsReply
-      expect(decision.wantsDraft).toBe(needsReply(d.groupKey, d.key));
-      // after-reply start rule: NO_START_KEYS plus the not_interested group
-      const startBlocked = NO_START_KEYS.includes(d.key) || d.groupKey === "not_interested";
-      expect(decision.followUps === "stop").toBe(startBlocked);
-      // after-reply interrupt rule. The one intended difference: Out of office follow-ups now stop instead of running on.
-      if (d.key === "out_of_office") {
-        expect(isTerminalReplyType(d.groupKey, d.key)).toBe(false);
-        expect(decision.followUps).toBe("stop");
-      } else {
-        expect(decision.followUps === "stop").toBe(isTerminalReplyType(d.groupKey, d.key));
-      }
-      // The review hold of classification-policy. The stop request type is now always checked before it applies
-      // (`systemRole: stop_request`), where do_not_contact used to apply on its own.
-      if (d.systemRole === "stop_request") expect(decision.hold).toBe("requires_review");
-      else expect(decision.hold === "requires_review").toBe(oldReviewHold(d.groupKey, d.key === "customer"));
-      // workflow-state settle, for a pick that applied. The old rule settled `action_required` when no draft was wanted
-      // and nothing asked to stop.
-      if (decision.hold === null) {
-        expect(settlesAfterAiPick("action_required", decision, false)).toBe(!needsReply(d.groupKey, d.key));
-      }
+      expect(decision).toEqual({ hold, needsLooksRight, wantsDraft, followUps });
+      expect(settlesAfterAiPick("action_required", decision, false)).toBe(settles);
     });
   }
 

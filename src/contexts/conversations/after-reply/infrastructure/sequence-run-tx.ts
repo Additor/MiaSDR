@@ -53,10 +53,6 @@ export async function interruptOnTerminalStageTx(
   input: {
     organizationId: string;
     recordId: string;
-    /** @deprecated Unused: the type's Follow-ups rule decides. W1 drops it from the AI path's call. */
-    groupKey?: string | null;
-    /** @deprecated Unused: the type's Follow-ups rule decides. W1 drops it from the AI path's call. */
-    replyTypeKey?: string | null;
     replyTypeId: string | null;
     followUps?: FollowUpsOutcome;
     now: Date;

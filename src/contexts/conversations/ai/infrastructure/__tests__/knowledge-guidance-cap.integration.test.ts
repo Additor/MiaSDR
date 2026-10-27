@@ -254,7 +254,7 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
       // A person corrects B's category: the new draft job carries the flag and runs although the cap is used up.
       const [conv] = await sql`select c.id, r.context_version from conversations c join records r on r.id = c.record_id join messages m on m.conversation_id = c.id where c.organization_id = ${f.org} and m.from_address = ${b}`;
       const replies = (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore;
-      const corrected = await replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: userId, wantsDraft: () => true });
+      const corrected = await replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: userId });
       expect(corrected.draftQueued).toBe(true);
       expect((await statusOf("initial_draft", b)).payload).toMatchObject({ humanInitiated: true });
       const draftsBefore = ai.draftCalls;
