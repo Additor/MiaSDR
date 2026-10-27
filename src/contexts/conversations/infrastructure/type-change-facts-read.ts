@@ -1,6 +1,8 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { people, records, replyHandlingSettings, replyTypePicks, replyTypes } from "@/platform/db/schema";
+import { people, records, replyHandlingSettings, replyTypes } from "@/platform/db/schema";
+import { rowsOf } from "@/platform/db/sql-values";
+import { stopRequestedSql } from "./stop-requested-sql";
 import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { afterReplyLockedReason, afterReplyModeOf } from "../after-reply/domain/after-reply";
 import { loadStartOn } from "../after-reply/infrastructure/drizzle-sequence-store";
@@ -22,7 +24,7 @@ export const replyTypeOption = (t: typeof replyTypes.$inferSelect): ReplyTypeOpt
 
 /**
  * The facts `typeChangeOutcome` reads for one record: its current type, the active types of its set, whether the latest
- * reply asked to stop (the latest pick's `stopRequested`), whether the person is a contact, and the After a reply mode
+ * reply asked to stop (`stopRequestedSql`), whether the person is a contact, and the After a reply mode
  * and channel that decide whether follow-ups apply. Null for a record outside the organization or with only private
  * conversations. A write path passes its transaction, after it locked the record, so the facts match what it changes.
  */
@@ -35,16 +37,11 @@ export async function typeChangeFactsOf(organizationId: string, recordId: string
   if (!head) return null;
   const { record } = head;
 
-  const [types, [settings], [latestPick], start] = await Promise.all([
+  const [types, [settings], [stop], start] = await Promise.all([
     exec.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, record.replyTypeSetId))),
     exec.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
     record.latestInboundMessageId
-      ? exec
-          .select({ response: replyTypePicks.response })
-          .from(replyTypePicks)
-          .where(and(eq(replyTypePicks.organizationId, organizationId), eq(replyTypePicks.messageId, record.latestInboundMessageId)))
-          .orderBy(desc(replyTypePicks.createdAt))
-          .limit(1)
+      ? exec.execute(sql`select ${stopRequestedSql(sql`${record.latestInboundMessageId}::uuid`)} as asked`).then((r) => rowsOf<{ asked: boolean }>(r))
       : Promise.resolve([]),
     loadStartOn(exec, organizationId, recordId, {}),
   ]);
@@ -64,7 +61,7 @@ export async function typeChangeFactsOf(organizationId: string, recordId: string
       .sort((a, b) => (GROUP_ORDER.get(a.groupKey) ?? 9) - (GROUP_ORDER.get(b.groupKey) ?? 9) || a.sortOrder - b.sortOrder)
       .map(replyTypeOption),
     facts: {
-      stopRequested: (latestPick?.response as { stopRequested?: boolean } | null)?.stopRequested === true,
+      stopRequested: stop?.asked === true,
       isContact: head.lifecycle === "contact",
       campaignMode,
       channel: start?.conversation?.channel ?? record.activeChannel,

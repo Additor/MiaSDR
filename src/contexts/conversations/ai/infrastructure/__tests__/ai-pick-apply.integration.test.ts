@@ -97,6 +97,28 @@ describeDb("AI pick apply path: type rules decide hold, draft and settle", () =>
       expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
     });
 
+    it("a person's later picks of the same reply keep the stop request: no draft, and the outcomes say why", async () => {
+      const f = await fixture();
+      answer(f, "do_not_contact", 0.99);
+      await pickOn(f, "Thanks, that is all from me.");
+      expect((await pickRow(f)).response).toMatchObject({ stopRequested: true });
+      const handling = await import("../../../application/reply-handling");
+      const deps = (await import("../../../infrastructure/reply-handling-composition")).replyHandlingDeps();
+      const record = await one("select id, context_version from records where organization_id = $1", [f.org]);
+      const other = await one("select id from reply_types where organization_id = $1 and key = 'other'", [f.org]);
+      // Off the thread first: the held AI pick stays at the old version, so the person's pick below is a new row.
+      await handling.changeReplyType(deps, f.actor, record.id, { groupKey: "other", replyTypeId: other.id, expectedContextVersion: record.context_version });
+      const conv = await one("select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = $1", [f.org]);
+      const first = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "demo_request", expectedContextVersion: conv.context_version, actorUserId: f.user });
+      expect(first.draftQueued).toBe(false);
+      const again = await one("select r.context_version from records r where r.organization_id = $1", [f.org]);
+      const second = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "meeting_requested", expectedContextVersion: again.context_version, actorUserId: f.user });
+      expect(second.draftQueued).toBe(false);
+      const outcomes = await handling.getTypeChangeOutcomes(deps, f.actor, record.id);
+      const demo = await one("select id from reply_types where organization_id = $1 and key = 'demo_request'", [f.org]);
+      expect(outcomes.find((o) => o.replyTypeId === demo.id)?.outcome.replyDraft).toBe("Reply draft: none, because they asked to stop.");
+    });
+
     it("a stop request type that a person renamed is still read by its role", async () => {
       const f = await fixture();
       answer(f, "do_not_contact", 0.99);
