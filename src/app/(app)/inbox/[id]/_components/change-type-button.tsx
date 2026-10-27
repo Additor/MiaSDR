@@ -40,10 +40,9 @@ interface Option {
   type: TypeOption;
 }
 
-type Outcomes = ReadonlyMap<string, TypeChangeOutcome>;
-
-/** The draft line for a change that takes the off-thread path, which writes no draft (`changeReplyType`). */
-const OFF_THREAD_DRAFT = "Reply draft: none written now. Write a draft from the reply when you need one.";
+type Path = "correct" | "off_thread";
+/** The outcome lines of one path, or why they did not load. */
+type Outcomes = { path: Path; lines: ReadonlyMap<string, TypeChangeOutcome>; error: null } | { path: Path; lines: null; error: string };
 
 /**
  * Changes the reply type, from the thread's type line. The person says why, and that picks the path:
@@ -51,9 +50,9 @@ const OFF_THREAD_DRAFT = "Reply draft: none written now. Write a draft from the 
  * - The AI read the last reply wrong: a person's pick for the latest reply (`POST /api/inbox/[id]/reply-type` with the type's
  *   key). The new type's rules apply as for any pick, so a type set to write a draft gets one.
  * - Something happened off the thread: the record's type moves (`POST /api/records/[id]/reply-type`), the AI's pick stays, and
- *   no draft is written, so the draft line says so instead of the server's "the AI writes a new one".
+ *   no draft is written.
  *
- * The three outcome lines come from `GET /api/records/[id]/reply-type/outcomes`. Choosing the stop request type asks how far
+ * The three outcome lines come from `GET /api/records/[id]/reply-type/outcomes`, for the path of the chosen answer. Choosing the stop request type asks how far
  * the stop reaches inside this dialog: Stop contacting changes the type and stops contact, Only change the type does not
  * stop anything. Unsaved edits in the reply editor are saved first, so the out-of-date draft keeps them.
  */
@@ -90,7 +89,6 @@ export function ChangeTypeButton({
   const [unlock, setUnlock] = useState(false);
   const [why, setWhy] = useState<"reply" | "offThread">(conversationId ? "reply" : "offThread");
   const [outcomes, setOutcomes] = useState<Outcomes | null>(null);
-  const [outcomeError, setOutcomeError] = useState<string | null>(null);
   const [pending, setPending] = useState<"change" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
@@ -108,19 +106,24 @@ export function ChangeTypeButton({
   const chosen = target?.type;
   const leavesCustomer = replyTypeLocked && chosen !== undefined && chosen.groupKey !== "customer";
   const asksStop = chosen?.systemRole === "stop_request" && !stop.doNotContact;
-  const outcome = chosen ? outcomes?.get(chosen.id) : undefined;
+  const path: Path = correcting ? "correct" : "off_thread";
+  // Lines loaded for the other path wait for this path's own.
+  const loaded = outcomes?.path === path ? outcomes : null;
+  const outcome = chosen ? loaded?.lines?.get(chosen.id) : undefined;
+  const outcomeError = loaded?.error ?? null;
 
-  // The outcome lines depend on the record as it is now, so they load each time the dialog opens.
+  // The outcome lines depend on the record as it is now and on the path, so they load when the dialog opens and again
+  // when the answer to What changed? moves the change to the other path.
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    void callApi<{ outcomes: Array<{ replyTypeId: string; outcome: TypeChangeOutcome }> }>(`/api/records/${recordId}/reply-type/outcomes`, "GET", undefined, { signal: controller.signal }).then((result) => {
+    void callApi<{ outcomes: Array<{ replyTypeId: string; outcome: TypeChangeOutcome }> }>(`/api/records/${recordId}/reply-type/outcomes?path=${path}`, "GET", undefined, { signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
-      if (result.ok && result.data) setOutcomes(new Map(result.data.outcomes.map((o) => [o.replyTypeId, o.outcome])));
-      else setOutcomeError(result.error ?? "What the change does did not load.");
+      if (result.ok && result.data) setOutcomes({ path, lines: new Map(result.data.outcomes.map((o) => [o.replyTypeId, o.outcome])), error: null });
+      else setOutcomes({ path, lines: null, error: result.error ?? "What the change does did not load." });
     });
     return () => controller.abort();
-  }, [open, recordId, contextVersion]);
+  }, [open, recordId, contextVersion, path]);
 
   function change(next: boolean) {
     if (pending) return;
@@ -131,7 +134,6 @@ export function ChangeTypeButton({
     setUnlock(false);
     setWhy(conversationId ? "reply" : "offThread");
     setOutcomes(null);
-    setOutcomeError(null);
     setError(null);
     stopScope.reset();
   }
@@ -183,7 +185,6 @@ export function ChangeTypeButton({
   }
 
   const ready = chosen !== undefined && !(leavesCustomer && !unlock);
-  const draftLine = outcome && !correcting && !outcome.replyDraft.startsWith("Reply draft: none") ? OFF_THREAD_DRAFT : outcome?.replyDraft;
 
   return (
     <>
@@ -253,9 +254,9 @@ export function ChangeTypeButton({
                 </Combobox>
                 {chosen && (
                   <div className="text-sm" data-testid="type-outcome">
-                    {outcome && draftLine ? (
+                    {outcome ? (
                       <ul className="grid gap-0.5">
-                        <li>{draftLine}</li>
+                        <li>{outcome.replyDraft}</li>
                         <li>{outcome.followUps}</li>
                         <li>{outcome.contact}</li>
                       </ul>

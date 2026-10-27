@@ -204,7 +204,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const l = await lead(f);
       const demo = await sub(f, "demo_request");
       await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      const outcomes = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId);
+      const outcomes = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId, "correct");
       const of = async (key: string) => {
         const id = (await sub(f, key)).id;
         return outcomes.find((o) => o.replyTypeId === id)?.outcome;
@@ -218,7 +218,25 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       });
       expect((await of("meeting_requested"))?.replyDraft).toBe("Reply draft: the AI writes a new one.");
       expect((await of("do_not_contact"))?.contact).toBe("Contact: unchanged until you choose Stop contacting.");
-      await expect(replies.getTypeChangeOutcomes(deps, (await fixture()).actor, l.recordId)).rejects.toThrow(NotFoundError);
+      await expect(replies.getTypeChangeOutcomes(deps, (await fixture()).actor, l.recordId, "correct")).rejects.toThrow(NotFoundError);
+    });
+
+    it("says a change off the thread writes no draft, as the change itself does", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const meeting = await sub(f, "meeting_requested");
+      const offThread = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId, "off_thread");
+      expect(offThread.find((o) => o.replyTypeId === meeting.id)?.outcome.replyDraft).toBe("Reply draft: none written now. Write a draft from the reply when you need one.");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(await sql`select id from ai_jobs where organization_id = ${f.org} and kind = 'initial_draft'`).toHaveLength(0);
+      // The record stays in front of a person under Next step.
+      expect((await rec(l.recordId)).workflow_state).toBe("action_required");
+    });
+
+    it("refuses an unknown path", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      await expect(replies.getTypeChangeOutcomes(deps, f.actor, l.recordId, "sideways")).rejects.toThrow(ValidationError);
     });
   });
 

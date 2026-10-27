@@ -193,6 +193,17 @@ describe("typeChangeOutcome", () => {
     });
   });
 
+  it("says a change off the thread writes no draft now, and keeps the other draft lines", () => {
+    expect(typeChangeOutcome(notNow, type(), outcomeFacts, "off_thread")).toEqual({
+      replyDraft: "Reply draft: none written now. Write a draft from the reply when you need one.",
+      followUps: "Follow-ups: keep going.",
+      contact: "Contact: unchanged.",
+    });
+    expect(typeChangeOutcome(notNow, type(), outcomeFacts, "correct").replyDraft).toBe("Reply draft: the AI writes a new one.");
+    expect(typeChangeOutcome(type(), notNow, outcomeFacts, "off_thread").replyDraft).toBe("Reply draft: none. Not now is set to not write one.");
+    expect(typeChangeOutcome(notNow, type(), { ...outcomeFacts, stopRequested: true }, "off_thread").replyDraft).toBe("Reply draft: none, because they asked to stop.");
+  });
+
   it("says when follow-ups do not apply", () => {
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, isContact: true }).followUps).toBe("Follow-ups: none, because the person is a contact.");
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, campaignMode: "handoff" }).followUps).toBe("Follow-ups: none for this conversation.");

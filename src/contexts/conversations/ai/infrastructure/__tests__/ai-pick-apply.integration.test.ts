@@ -114,7 +114,7 @@ describeDb("AI pick apply path: type rules decide hold, draft and settle", () =>
       const again = await one("select r.context_version from records r where r.organization_id = $1", [f.org]);
       const second = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "meeting_requested", expectedContextVersion: again.context_version, actorUserId: f.user });
       expect(second.draftQueued).toBe(false);
-      const outcomes = await handling.getTypeChangeOutcomes(deps, f.actor, record.id);
+      const outcomes = await handling.getTypeChangeOutcomes(deps, f.actor, record.id, "correct");
       const demo = await one("select id from reply_types where organization_id = $1 and key = 'demo_request'", [f.org]);
       expect(outcomes.find((o) => o.replyTypeId === demo.id)?.outcome.replyDraft).toBe("Reply draft: none, because they asked to stop.");
     });

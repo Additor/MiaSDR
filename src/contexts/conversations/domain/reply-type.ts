@@ -151,19 +151,30 @@ export interface TypeChangeOutcome {
 }
 
 /**
- * Three lines for the Change type dialog, from the decision the change would get. A type change never marks the
- * person do not contact: only Stop contacting does.
+ * The two ways Change type moves a record. `correct` is a person's pick for the latest reply, which queues a draft when
+ * the type writes one. `off_thread` changes the record's type for something that happened elsewhere and writes no draft.
+ */
+export const TYPE_CHANGE_PATHS = ["correct", "off_thread"] as const;
+export type TypeChangePath = (typeof TYPE_CHANGE_PATHS)[number];
+export const isTypeChangePath = (value: unknown): value is TypeChangePath => TYPE_CHANGE_PATHS.includes(value as TypeChangePath);
+
+/**
+ * Three lines for the Change type dialog, from the decision the change would get on `path`. A type change never marks
+ * the person do not contact: only Stop contacting does.
  */
 export function typeChangeOutcome(
   current: Pick<ReplyType, "name" | "groupKey" | "rules" | "systemRole"> | null,
   target: Pick<ReplyType, "name" | "groupKey" | "rules" | "systemRole">,
   facts: Omit<ReplyTypeFacts, "confidence">,
+  path: TypeChangePath = "correct",
 ): TypeChangeOutcome {
   const decision = decideReplyType(target, { ...facts, confidence: null });
   const before = current ? decideReplyType(current, { ...facts, confidence: null }) : null;
 
   const replyDraft = decision.wantsDraft
-    ? "Reply draft: the AI writes a new one."
+    ? path === "correct"
+      ? "Reply draft: the AI writes a new one."
+      : "Reply draft: none written now. Write a draft from the reply when you need one."
     : facts.stopRequested
       ? "Reply draft: none, because they asked to stop."
       : `Reply draft: none. ${target.name} is set to not write one.`;
