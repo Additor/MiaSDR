@@ -16,6 +16,9 @@ export const REPLY_TYPE_GROUPS = [
 
 export type ReplyTypeGroup = (typeof REPLY_TYPE_GROUPS)[number]["key"];
 
+/** The one group with a fixed rule: a person's move into Existing customer locks the person there (`lockAfterPersonMove`). */
+export const CUSTOMER_GROUP: ReplyTypeGroup = "customer";
+
 export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPLY_TYPE_GROUPS.some((c) => c.key === value);
 
 export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "No type yet";
@@ -189,7 +192,7 @@ export interface ReplyTypeChangeCheck {
  * a move inside it keeps the lock, and a move out of it unlocks. `records_locked_ck` keeps a locked record in that group.
  */
 export function lockAfterPersonMove(target: { groupKey: string }): boolean {
-  return target.groupKey === "customer";
+  return target.groupKey === CUSTOMER_GROUP;
 }
 
 /**
@@ -199,7 +202,7 @@ export function lockAfterPersonMove(target: { groupKey: string }): boolean {
  */
 export function lockBeforePick(response: unknown, previousGroupKey: string | null): boolean {
   const kept = (response as { previousLocked?: unknown } | null)?.previousLocked;
-  return typeof kept === "boolean" ? kept : previousGroupKey === "customer";
+  return typeof kept === "boolean" ? kept : previousGroupKey === CUSTOMER_GROUP;
 }
 
 /**

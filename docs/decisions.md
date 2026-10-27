@@ -491,7 +491,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### Reply types and type rules
 
-- A reply type (`reply_types`) belongs to one of four fixed groups: Interested, Customer, Not interested and Other. A group carries no behavior.
+- A reply type (`reply_types`) belongs to one of four fixed groups: Interested, Customer, Not interested and Other. A group carries no behavior, except the customer lock of Existing customer (`CUSTOMER_GROUP`).
 - Each type holds three type rules, shown as "When the AI picks {type}": Check (`check_mode`: `before`, `after` or `skip`), Reply draft (`reply_draft`) and Follow-ups (`follow_ups`: `continue` or `stop`). A type a person adds starts at after, write one, keep going.
 - `decideReplyType` (`domain/reply-type.ts`) is the only reader of the rules. The AI apply path, a person's type change and the Change type outcome lines all call it. Fixed rules sit on top of the type's: an AI pick below the confidence floor waits for a person, a locked customer stays in its group until a person moves it, a reply that asked to stop gets no draft and stops follow-ups, and follow-ups apply only to an email reply of a campaign in `ai_drafts` mode whose person is a lead.
 - Rules apply at decision time. An edit changes the picks made after it. Each pick stores the rules it used in `reply_type_picks.rules`.
