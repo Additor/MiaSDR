@@ -242,9 +242,10 @@ export function ReplyPanelClient({
                   disabledReason={composerBlocked}
                 />
               ) : (
-                <p className="line-clamp-4 rounded-lg bg-muted/40 p-3 text-sm whitespace-pre-wrap text-muted-foreground" data-testid="stale-preview">
-                  {saved || "The draft is empty."}
-                </p>
+                // The clamp sits inside the padding, so a fifth line cannot peek through the bottom padding.
+                <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground" data-testid="stale-preview">
+                  <p className="line-clamp-4 whitespace-pre-wrap">{saved || "The draft is empty."}</p>
+                </div>
               )}
               {showRegenerate && (
                 <div className="grid gap-1">
