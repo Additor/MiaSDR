@@ -64,7 +64,7 @@ export function typeDecision<T extends PickFacts>(
 
 /** Why a held pick waits, in one sentence. */
 export const HOLD_TEXT: Record<HoldReason, string> = {
-  protected_customer: "The person is locked as Existing customer.",
+  protected_customer: "The person is locked as Existing customer. Accept takes them out of it.",
   requires_review: "This type waits for a person to check it.",
   low_confidence: "The AI's confidence is under the confidence floor.",
 };

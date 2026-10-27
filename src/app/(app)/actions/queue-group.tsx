@@ -37,7 +37,7 @@ export interface QueueItemView {
   snippet: string | null;
   waitingSince: { at: string; basis: "inbound" | "failure" | "due" };
   draft: { draftId: string; status: string; subject: string | null; updatedAt: string; preview: string | null } | null;
-  classification: { replyTypePickId: string; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
+  classification: { replyTypePickId: string; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
   problem: { kind: "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed"; message: string } | null;
 }
 
@@ -135,6 +135,8 @@ function describe(item: QueueItemView, ambiguous: ReadonlySet<string>): { detail
       }
       const label = typeLabel(c?.name ?? null, c?.groupKey ?? null, ambiguous) ?? "a type";
       const confidence = c?.confidence != null ? `, ${confidenceText(c.confidence)}` : "";
+      // Accepting this one takes a locked customer out of Existing customer, so the row opens the thread instead of settling.
+      if (c?.kind === "held" && c.unlocksCustomer) return { detail: `AI picked ${label}${confidence}. Accepting takes them out of Existing customer.`, action: open };
       return c?.kind === "held" ? { detail: `AI picked ${label}${confidence}`, action: "Accept" } : { detail: `AI applied ${label}${confidence}`, action: "Looks right" };
     }
     case "follow_up":
@@ -220,7 +222,7 @@ export function QueueGroup({
    */
   async function settle(item: QueueItemView): Promise<boolean> {
     const c = item.classification;
-    if (!c || c.kind === "stop_review") return false;
+    if (!c || c.kind === "stop_review" || (c.kind === "held" && c.unlocksCustomer)) return false;
     const result =
       c.kind === "held"
         ? item.conversationId
@@ -367,7 +369,7 @@ export function QueueGroup({
                   >
                     {action}
                   </Link>
-                ) : (kind === "held" && item.conversationId) || kind === "looks_right" ? (
+                ) : (kind === "held" && item.conversationId && !item.classification?.unlocksCustomer) || kind === "looks_right" ? (
                   // Above the stretched link, so the click settles the row and does not open the thread.
                   <Button
                     variant="outline"
