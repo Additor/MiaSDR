@@ -209,6 +209,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         acknowledged: c.acknowledgedAt !== null,
         rules: (c.rules as TypeRules | null) ?? null,
         proposedSystemRole: subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null,
+        proposedActive: subs.find((s) => s.id === c.proposedReplyTypeId)?.active === true,
         holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
         createdAt: c.createdAt,

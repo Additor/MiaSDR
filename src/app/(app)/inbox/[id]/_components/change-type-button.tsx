@@ -15,7 +15,7 @@ import { REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/r
 import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
 import { callApi } from "@/app/_lib/api-client";
 import { submitSteps } from "../_lib/change-type";
-import { saveDraftEdits } from "../_lib/draft-edits";
+import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 import { confidenceText } from "../_lib/type-line";
 import { useStopScope, type StopTarget } from "./stop-contacting";
 
@@ -80,8 +80,8 @@ export function ChangeTypeButton({
   aiReading?: AiReading | null;
   /** What Stop contacting needs, and whether the person is already marked. */
   stop: StopTarget & { doNotContact: boolean };
-  /** A link at the end of the type line, or an outline button beside Accept or Looks right. */
-  variant?: "link" | "outline";
+  /** A link at the end of the type line, an outline button beside Accept or Looks right, or the lead button when the AI's pick names an archived type. */
+  variant?: "link" | "outline" | "default";
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -165,7 +165,7 @@ export function ChangeTypeButton({
     try {
       if (steps.change) {
         const unsaved = await saveDraftEdits();
-        if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
+        if (unsaved) throw new Error(unsavedEditsError(unsaved));
         await changeType(chosen);
         changedTo.current = chosen.id;
       }

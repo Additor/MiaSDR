@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { callApi } from "@/app/_lib/api-client";
 import { DNC_REASON_REQUIRED } from "@/app/(app)/_components/person/dnc-control";
-import { saveDraftEdits } from "../_lib/draft-edits";
+import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 
 const OPEN_STOP_EVENT = "miasdr:open-stop-contacting";
 
@@ -130,7 +130,7 @@ export function StopContactingDialog({ open, onOpenChange, onDone, ...target }: 
   async function confirm() {
     if (!stopScope.ready()) return false;
     const unsaved = await saveDraftEdits();
-    if (unsaved) throw new Error(`Your draft edits were not saved, so nothing changed. ${unsaved}`);
+    if (unsaved) throw new Error(unsavedEditsError(unsaved));
     const done = await stopScope.stop();
     change(false);
     onDone(done);

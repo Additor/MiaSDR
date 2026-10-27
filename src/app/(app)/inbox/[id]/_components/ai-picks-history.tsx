@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { callApi } from "@/app/_lib/api-client";
 import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
-import { confidenceText, LOOKS_RIGHT_DONE, undoMessage } from "../_lib/type-line";
+import type { TypeRules } from "@/contexts/conversations/domain/reply-type";
+import { afterSavingEdits } from "../_lib/draft-edits";
+import { confidenceText, LOOKS_RIGHT_DONE, pickBadge, undoMessage } from "../_lib/type-line";
 
 interface Entry {
   id: string;
@@ -26,6 +28,8 @@ interface Entry {
   acknowledged: boolean;
   createdAt: string;
   latest: boolean;
+  current: boolean;
+  rules: Pick<TypeRules, "checkMode"> | null;
   canUndo: boolean;
   canAcknowledge: boolean;
 }
@@ -72,7 +76,8 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
   async function undo(id: string) {
     setBusy(id);
     setError(null);
-    const result = await callApi<{ draftsRetired: number; runEnded: boolean; draftJobCancelled: boolean }>(`/api/reply-type-picks/${id}/undo`, "POST");
+    // Undo retires the open draft, so the editor's unsaved edits are saved first.
+    const result = await afterSavingEdits(() => callApi<{ draftsRetired: number; runEnded: boolean; draftJobCancelled: boolean }>(`/api/reply-type-picks/${id}/undo`, "POST"));
     setBusy(null);
     if (!result.ok || !result.data) return setError(result.error);
     toast.success(undoMessage(result.data));
@@ -86,18 +91,16 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
       </p>
       <ul className="divide-y">
         {entries.map((e) => {
-          const waiting = e.status === "proposed" || (!e.acknowledged && e.status === "auto_applied");
+          const badge = pickBadge(e);
           const meta = [
-            waiting || e.status === "failed" ? null : (STATUS[e.status] ?? e.status),
+            badge ? null : (STATUS[e.status] ?? e.status),
             e.confidence !== null && e.status !== "failed" && e.provider !== "human" ? confidenceText(e.confidence) : null,
             e.latest ? "latest reply" : null,
           ].filter(Boolean);
           return (
             <li key={e.id} className="grid gap-1 py-group text-sm first:pt-0 last:pb-0" data-testid="ai-pick">
               <div className="flex flex-wrap items-center gap-2">
-                {e.status === "failed" && <Badge variant="destructive">Failed</Badge>}
-                {e.status === "proposed" && <Badge variant="outline">Held for a check</Badge>}
-                {!e.acknowledged && e.status === "auto_applied" && <Badge variant="outline">Not checked</Badge>}
+                {badge && <Badge variant={badge === "Failed" ? "destructive" : "outline"}>{badge}</Badge>}
                 <span>{e.status === "proposed" ? `Picked ${label(e.proposed)}` : e.status === "failed" ? "No type picked." : `${label(e.previous)} to ${label(e.applied)}`}</span>
               </div>
               <p className="text-xs text-muted-foreground">

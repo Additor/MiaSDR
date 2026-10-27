@@ -18,6 +18,8 @@ export interface PickFacts {
   /** The rules the pick was decided with: only Check after asks for Looks right. */
   rules: Pick<TypeRules, "checkMode"> | null;
   proposedSystemRole: SystemRole | null;
+  /** The proposed type is still active. An admin may archive it while the pick waits. */
+  proposedActive: boolean;
   holdReason: HoldReason | null;
   stopRequested: boolean;
   confidence: number | null;
@@ -36,11 +38,14 @@ export function latestAiPick<T extends Pick<PickFacts, "latest" | "status" | "pr
   return latestPick(entries.filter((e) => e.provider !== "human"));
 }
 
-export type TypeDecision<T extends PickFacts = PickFacts> = { kind: "stop" | "held" | "looks_right"; pick: T } | null;
+export type DecisionKind = "stop" | "held" | "archived" | "looks_right";
+
+export type TypeDecision<T extends PickFacts = PickFacts> = { kind: DecisionKind; pick: T } | null;
 
 /**
  * What the type line asks of a person, if anything. A stop request comes first: Accept would only change the type, so the
- * line offers Review stop request instead. Then a held pick (Accept), then an applied pick that waits for Looks right. A
+ * line offers Review stop request instead. Then a held pick (Accept), or a held pick whose type an admin archived since
+ * (`archived`: Accept would refuse it, so the line leads with Change type), then an applied pick that waits for Looks right. A
  * person already marked do not contact, or an email address on the suppression list, has nothing left to stop. An applied
  * pick asks only when its type is checked after it applies, and only while the record still has that type: a person who
  * changed the type since has answered it.
@@ -57,7 +62,7 @@ export function typeDecision<T extends PickFacts>(
   const stopAsked = pick.stopRequested || pick.proposedSystemRole === "stop_request";
   const stopped = reach.doNotContact || (reach.channel === "email" && reach.suppressed);
   if (open && stopAsked && !stopped) return { kind: "stop", pick };
-  if (pick.status === "proposed" && pick.current && pick.proposed.name && pick.proposedSystemRole !== "stop_request") return { kind: "held", pick };
+  if (pick.status === "proposed" && pick.current && pick.proposed.name && pick.proposedSystemRole !== "stop_request") return { kind: pick.proposedActive ? "held" : "archived", pick };
   if (unchecked) return { kind: "looks_right", pick };
   return null;
 }
@@ -118,4 +123,30 @@ export function draftState(
     drafting: detail.record.draftJobPending,
     decisionWaiting: typeDecision(latestPick(detail.replyTypePicks), { doNotContact: detail.policy?.doNotContact === true, suppressed: detail.suppressed, channel }, detail.record) !== null,
   };
+}
+
+/** The key of one decision on the type line: a new key is a new question for the person. */
+export const decisionKey = (decision: { kind: DecisionKind; pickId: string } | null): string | null => (decision ? `${decision.kind}:${decision.pickId}` : null);
+
+/**
+ * What the type line shows around a decision a person just answered. The answer hides the decision at once, so a second
+ * click cannot send it again before the refresh lands, and the done line stays once the decision is gone. A new decision
+ * (another key) clears the done line and shows itself.
+ */
+export function decisionView(current: string | null, settled: { key: string; text: string } | null): { showDecision: boolean; done: string | null } {
+  if (!settled) return { showDecision: current !== null, done: null };
+  if (current === null || current === settled.key) return { showDecision: false, done: settled.text };
+  return { showDecision: true, done: null };
+}
+
+/**
+ * The badge of an AI pick in the history, only while it waits for a person: Held for a check on a held pick, Not checked on
+ * an applied pick that is still current, nobody looked at and whose stored rules check after it applies. A pick stored
+ * without rules counts as checked after, as on the type line.
+ */
+export function pickBadge(e: { status: string; acknowledged: boolean; current: boolean; rules: Pick<TypeRules, "checkMode"> | null }): "Failed" | "Held for a check" | "Not checked" | null {
+  if (e.status === "failed") return "Failed";
+  if (e.status === "proposed") return "Held for a check";
+  if (e.status === "auto_applied" && !e.acknowledged && e.current && (e.rules === null || e.rules.checkMode === "after")) return "Not checked";
+  return null;
 }
