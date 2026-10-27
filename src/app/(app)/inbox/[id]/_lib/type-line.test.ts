@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestAiPick, latestPick, noDraftReason, rulesSummary, typeDecision, undoMessage, type PickFacts } from "./type-line";
+import { holdText, latestAiPick, latestPick, noDraftReason, rulesSummary, typeDecision, undoMessage, type PickFacts } from "./type-line";
 
 const pick = (over: Partial<PickFacts> = {}): PickFacts => ({
   id: "p1",
@@ -84,5 +84,15 @@ describe("texts", () => {
     expect(undoMessage({ draftsRetired: 0, runEnded: false })).toBe("AI pick undone. Nothing else changed.");
     expect(undoMessage({ draftsRetired: 1, runEnded: false })).toBe("AI pick undone. It retired 1 draft.");
     expect(undoMessage({ draftsRetired: 2, runEnded: true, draftJobCancelled: true })).toBe("AI pick undone. It retired 2 drafts, cancelled the draft the AI was about to write and ended follow-ups.");
+  });
+});
+
+describe("holdText", () => {
+  it("says why a held pick waits, and falls back for a reason stored before 0003 or none", () => {
+    expect(holdText("low_confidence")).toBe("The AI's confidence is under the confidence floor.");
+    expect(holdText("protected_customer")).toBe("The person is locked as Existing customer. Accept takes them out of it.");
+    for (const legacy of ["protected_stage", "customer_requires_review", "review_other", "anything", null, undefined]) {
+      expect(holdText(legacy)).toBe("It waits for you.");
+    }
   });
 });

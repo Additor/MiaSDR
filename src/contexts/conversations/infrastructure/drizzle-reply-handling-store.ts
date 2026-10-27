@@ -38,7 +38,7 @@ import type {
 } from "../application/reply-handling-ports";
 import { byGroupThenOrder, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
-import { typeRulesOf, type HoldReason, type TypeRules } from "../domain/reply-type";
+import { holdReasonOf, typeRulesOf, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
@@ -171,7 +171,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
       const latest = c.messageId === record.latestInboundMessageId;
       const applied = ["auto_applied", "accepted", "overridden"].includes(c.status) && c.appliedGroupKey !== null;
-      const response = (c.response ?? {}) as { holdReason?: HoldReason | null; stopRequested?: boolean };
+      const response = (c.response ?? {}) as { holdReason?: unknown; stopRequested?: boolean };
       return {
         id: c.id,
         status: c.status,
@@ -188,7 +188,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         acknowledged: c.acknowledgedAt !== null,
         rules: (c.rules as TypeRules | null) ?? null,
         proposedSystemRole: subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null,
-        holdReason: response.holdReason ?? null,
+        holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
         createdAt: c.createdAt,
         latest,

@@ -5,6 +5,7 @@ import type { ActionQueue, ActionQueueCounts, ActionQueueExtras, QueueGroupPage,
 import { NO_TYPE_FILTER, QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type PickReviewKind, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
 import { publicConversationSql, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
+import { holdReasonOf } from "../../domain/reply-type";
 
 /*
  * work-queue-read: the explicit read model of the Actions queue, built like `deals/infrastructure/crm-read.ts`.
@@ -213,7 +214,7 @@ function toQueueItem(r: Record<string, unknown>): QueueItem {
         : null
       : null,
     classification: r.k_kind
-      ? { replyTypePickId: r.k_id as string, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx), unlocksCustomer: r.k_hold === "protected_customer" }
+      ? { replyTypePickId: r.k_id as string, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx), unlocksCustomer: holdReasonOf(r.k_hold) === "protected_customer" }
       : null,
     problem: problemKind ? { kind: problemKind, message: problemMessage[problemKind] } : null,
   };

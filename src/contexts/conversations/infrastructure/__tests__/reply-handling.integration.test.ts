@@ -240,6 +240,19 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
     });
 
+    it("reads a hold reason stored before 0003 as none", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request", "proposed");
+      await sql`update reply_type_picks set response = '{"holdReason":"protected_stage"}'::jsonb where id = ${replyTypePickId}`;
+      const detail = await replies.getRecordDetail(deps, f.actor, l.recordId);
+      expect(detail.replyTypePicks.find((p) => p.id === replyTypePickId)?.holdReason).toBeNull();
+      // The Actions row reads the same pick: it is held, and it does not unlock a customer.
+      const queue = await workQueue.getWorkQueue(queueDeps, f.actor);
+      const row = Object.values(queue.groups).flatMap((g) => g.items).find((i) => i.recordId === l.recordId);
+      expect(row?.classification).toMatchObject({ replyTypePickId, kind: "held", unlocksCustomer: false });
+    });
+
     it("cancels a queued draft job for the undone classification", async () => {
       const f = await fixture();
       const l = await lead(f);

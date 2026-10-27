@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_REPLY_TYPES } from "./default-reply-types";
 import {
   decideReplyType,
+  holdReasonOf,
   DEFAULT_TYPE_RULES,
   STOP_REQUEST_RULES,
   typeChangeOutcome,
@@ -195,5 +196,12 @@ describe("typeChangeOutcome", () => {
   it("says when follow-ups do not apply", () => {
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, isContact: true }).followUps).toBe("Follow-ups: none, because the person is a contact.");
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, campaignMode: "handoff" }).followUps).toBe("Follow-ups: none for this conversation.");
+  });
+});
+
+describe("holdReasonOf", () => {
+  it("reads the three hold reasons and nothing else", () => {
+    for (const reason of ["protected_customer", "requires_review", "low_confidence"]) expect(holdReasonOf(reason)).toBe(reason);
+    for (const legacy of ["protected_stage", "customer_requires_review", "review_other", "", 3, null, undefined, {}]) expect(holdReasonOf(legacy)).toBeNull();
   });
 });

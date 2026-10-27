@@ -75,7 +75,14 @@ export function validateTypeRules(type: { systemRole: SystemRole | null }, rules
 // Decision --------------------------------------------------------------------------------------------------
 
 /** Why an AI pick waits for a person. The values are stored in `reply_type_picks.response.holdReason`. */
-export type HoldReason = "protected_customer" | "requires_review" | "low_confidence";
+export const HOLD_REASONS = ["protected_customer", "requires_review", "low_confidence"] as const;
+export type HoldReason = (typeof HOLD_REASONS)[number];
+
+/**
+ * A stored hold reason, read back. A reason stored before migration 0003 (`protected_stage`, `customer_requires_review`,
+ * `review_other`) or any other value reads as null, so a reader shows its fallback.
+ */
+export const holdReasonOf = (value: unknown): HoldReason | null => (HOLD_REASONS.includes(value as HoldReason) ? (value as HoldReason) : null);
 
 /** After a reply mode of the campaign that owns the conversation, or null when no campaign does. */
 export type CampaignMode = "handoff" | "ai_drafts" | null;
