@@ -245,6 +245,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           subject: d.subject,
           preview: (d.editedBodyText ?? d.aiBodyText ?? "").replace(/\s+/g, " ").trim().slice(0, 160),
           revision: d.revision,
+          expectedContextVersion: d.expectedContextVersion,
           createdAt: d.createdAt,
           attemptId: attemptOf.get(d.id) ?? null,
         }),

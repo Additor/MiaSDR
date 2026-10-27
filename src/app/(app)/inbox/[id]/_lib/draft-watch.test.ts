@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DRAFT_POLL_INTERVAL_MS, DRAFT_WATCH_MS, initialWatch, isWatching, observe, type WatchSnapshot } from "./draft-watch";
+import { DRAFT_POLL_INTERVAL_MS, DRAFT_WATCH_MS, initialWatch, isWatching, observe, watchedDraftStatus, type WatchSnapshot } from "./draft-watch";
 
 const base: WatchSnapshot = { contextVersion: 3, draftStatus: null, workflowState: "action_required", drafting: false };
 
@@ -66,5 +66,16 @@ describe("draft watch", () => {
     const running = observe(initialWatch(base, 0), { ...base, contextVersion: 4 }, 2_000);
     expect(observe(running, { ...base, contextVersion: 4 }, 9_000)).toEqual(running);
     expect(observe(running, { ...base, contextVersion: 3 }, 9_000)).toEqual(running);
+  });
+});
+
+describe("watchedDraftStatus", () => {
+  it("reads the newest open draft of the current context version only, so an earlier sent draft does not end the watch", () => {
+    const sentBefore = { conversationId: "c1", status: "sent", expectedContextVersion: 3 };
+    expect(watchedDraftStatus([sentBefore], "c1", 4)).toBeNull();
+    const generating = { conversationId: "c1", status: "generating", expectedContextVersion: 4 };
+    expect(watchedDraftStatus([generating, sentBefore], "c1", 4)).toBe("generating");
+    expect(watchedDraftStatus([{ ...generating, status: "stale" }, sentBefore], "c1", 4)).toBeNull();
+    expect(watchedDraftStatus([{ ...generating, conversationId: "c2" }], "c1", 4)).toBeNull();
   });
 });

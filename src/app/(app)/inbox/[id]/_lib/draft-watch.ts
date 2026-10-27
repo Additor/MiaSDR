@@ -29,6 +29,19 @@ export interface WatchState {
   startedAt: number | null;
 }
 
+/**
+ * The draft status the watch reads: the newest draft of the conversation for the record's current context version that
+ * is neither discarded nor stale. A draft sent for an earlier version does not count, so it cannot end the watch for the
+ * draft a type change queued. `drafts` comes newest first.
+ */
+export function watchedDraftStatus(
+  drafts: ReadonlyArray<{ conversationId: string; status: string; expectedContextVersion: number }>,
+  conversationId: string,
+  contextVersion: number,
+): string | null {
+  return drafts.find((d) => d.conversationId === conversationId && d.expectedContextVersion === contextVersion && d.status !== "discarded" && d.status !== "stale")?.status ?? null;
+}
+
 const draftComing = (snapshot: WatchSnapshot) => snapshot.drafting || snapshot.draftStatus === "generating";
 
 /** A draft job or a draft already generating when the page opens starts a watch; otherwise the page waits for a version bump. */

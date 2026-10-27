@@ -162,10 +162,6 @@ export interface ThreadDetail {
   /** What to show for the receiving account: the mailbox address, or the LinkedIn account's name. */
   accountLabel: string;
   workflowState: string;
-  /** The record's version. A reclassification bumps it, which the thread page watches to refresh the draft. */
-  contextVersion: number;
-  /** Status of the newest draft that is neither discarded nor stale, or null. */
-  latestDraftStatus: string | null;
   person: { id: string; name: string | null; email: string | null; linkedinUrl: string | null; title: string | null; company: string | null };
   messages: ThreadMessage[];
   unreadCount: number;
