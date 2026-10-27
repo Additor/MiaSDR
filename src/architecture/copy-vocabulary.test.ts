@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { parseSource, walk } from "./source-ast";
 import { EVENT_LABELS, eventLabel } from "@/app/(app)/_components/event-labels";
 import * as actionQueue from "@/contexts/conversations/actions/domain/action-queue";
 import * as afterReply from "@/contexts/conversations/after-reply/domain/after-reply";
@@ -97,7 +98,7 @@ function excludedByContext(node: ts.Node): boolean {
 
 /** The strings a person could read in one file. */
 function userStrings(file: string): Found[] {
-  const source = ts.createSourceFile(file, readFileSync(join(root, file), "utf8"), ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const source = parse(file);
   const out: Found[] = [];
   const add = (node: ts.Node, text: string) => {
     const trimmed = text.replace(/\s+/g, " ").trim();
@@ -480,14 +481,7 @@ describe("copy vocabulary in rendered labels", () => {
 
 // Stored values have labels ---------------------------------------------------------------------------------
 
-function parse(file: string): ts.SourceFile {
-  return ts.createSourceFile(file, readFileSync(join(root, file), "utf8"), ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-}
-
-function walk(node: ts.Node, visit: (node: ts.Node) => void) {
-  visit(node);
-  ts.forEachChild(node, (child) => walk(child, visit));
-}
+const parse = (file: string): ts.SourceFile => parseSource(join(root, file));
 
 /** String literals in an expression or a type, through conditionals and unions. */
 function literalsIn(node: ts.Node): string[] {

@@ -1,4 +1,4 @@
-import { csvFile, expect, signInAdmin, test, unique } from "./support/fixtures";
+import { csvFile, expect, pickOption, signInAdmin, test, unique } from "./support/fixtures";
 
 test.describe("import keeps source data", () => {
   test("an extra column lands in Imported fields and can be mapped to a custom field", async ({ page }) => {
@@ -21,8 +21,7 @@ test.describe("import keeps source data", () => {
     await expect(page.getByText("{{region}}")).toBeVisible();
     // This scenario covers source data, so switch both extra columns to "Do not map".
     for (const header of ["Region", "Company Size"]) {
-      await page.getByLabel(`Import ${header} as`).click();
-      await page.getByRole("option", { name: "Keep in source data only" }).click();
+      await pickOption(page, page.getByLabel(`Import ${header} as`), "Keep in source data only");
       await expect(page.getByLabel(`Import ${header} as`)).toContainText("Keep in source data only");
     }
     await page.getByRole("button", { name: "Review import" }).click();

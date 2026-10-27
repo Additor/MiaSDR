@@ -313,7 +313,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                   >
                     <MoreHorizontalIcon className="size-3.5" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-44" finalFocus={() => !renaming.current}>
+                  <DropdownMenuContent className="w-44" finalFocus={() => !renaming.current}>
                     <DropdownMenuItem
                       onClick={() => {
                         renaming.current = true;

@@ -219,7 +219,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<Button type="button" variant="ghost" />}>More</DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-auto min-w-48">
+                  <DropdownMenuContent className="w-auto min-w-48">
                     <DropdownMenuItem onClick={() => setEditingCredentials(true)}>Edit credentials</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => act("Accounts synced", () => callApi("/api/linkedin/sync", "POST"))}>Sync accounts</DropdownMenuItem>
                     <DropdownMenuItem onClick={registerWebhooks}>Register webhooks</DropdownMenuItem>

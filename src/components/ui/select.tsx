@@ -3,7 +3,8 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
-import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { popupPositioner, POPUP_SURFACE, type PopupPlacement } from "./popup"
+import { ChevronDownIcon, CheckIcon } from "lucide-react"
 
 const Select = SelectPrimitive.Root
 
@@ -62,39 +63,28 @@ function SelectTrigger({
   )
 }
 
-function SelectContent({
-  className,
-  children,
-  side = "bottom",
-  sideOffset = 4,
-  align = "center",
-  alignOffset = 0,
-  alignItemWithTrigger = true,
-  ...props
-}: SelectPrimitive.Popup.Props &
-  Pick<
-    SelectPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
-  >) {
+/**
+ * Opens under the trigger like every popup (`popupPositioner`). Base UI's default lays the list over the trigger so the
+ * chosen option sits on it, which moves the list on every open; `alignItemWithTrigger` is off and not a prop. A long list
+ * scrolls with the scrollbar. The scroll arrows belong to the overlaid list: under the trigger they cover the last
+ * option and scroll the list while the pointer rests on them. The list opens with the menu motion and closes at once:
+ * an open Select lays a backdrop that takes outside clicks until the popup unmounts, so a close transition would eat
+ * the click on the next field's trigger.
+ */
+function SelectContent({ className, children, side, align, ...props }: SelectPrimitive.Popup.Props & PopupPlacement) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
-        side={side}
-        sideOffset={sideOffset}
-        align={align}
-        alignOffset={alignOffset}
-        alignItemWithTrigger={alignItemWithTrigger}
+        {...popupPositioner({ side, align })}
+        alignItemWithTrigger={false}
         className="isolate z-50"
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
-          data-align-trigger={alignItemWithTrigger}
-          className={cn("relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 transition-[opacity,scale] duration-(--duration-menu) ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-[align-trigger=true]:transition-none", className )}
+          className={cn("relative isolate z-50 flex w-(--anchor-width) min-w-36 flex-col overflow-hidden", POPUP_SURFACE, "data-ending-style:transition-none", className)}
           {...props}
         >
-          <SelectScrollUpButton />
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
-          <SelectScrollDownButton />
+          <SelectPrimitive.List className="min-h-0 overflow-x-hidden overflow-y-auto">{children}</SelectPrimitive.List>
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
     </SelectPrimitive.Portal>
@@ -155,52 +145,12 @@ function SelectSeparator({
   )
 }
 
-function SelectScrollUpButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollUpArrow>) {
-  return (
-    <SelectPrimitive.ScrollUpArrow
-      data-slot="select-scroll-up-button"
-      className={cn(
-        "top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
-      {...props}
-    >
-      <ChevronUpIcon
-      />
-    </SelectPrimitive.ScrollUpArrow>
-  )
-}
-
-function SelectScrollDownButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollDownArrow>) {
-  return (
-    <SelectPrimitive.ScrollDownArrow
-      data-slot="select-scroll-down-button"
-      className={cn(
-        "bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
-      {...props}
-    >
-      <ChevronDownIcon
-      />
-    </SelectPrimitive.ScrollDownArrow>
-  )
-}
-
 export {
   Select,
   SelectContent,
   SelectGroup,
   SelectItem,
   SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
   SelectSeparator,
   SelectTrigger,
   SelectValue,

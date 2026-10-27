@@ -326,6 +326,16 @@ Every choice in the app goes through one of these parts. The app has no native `
 - **Quick choices first.** Where a few days cover most picks, buttons come before the calendar. Due offers Today, Tomorrow and Next week, and Pick a date shows a `DatePicker` with its calendar open.
 - **Exception.** Add field on a person's Details suggests field names through an Input with a `datalist`. It takes a new field name as typed text, and the list only suggests.
 
+### Popups
+
+`Select`, `DropdownMenu`, `Popover` and `Combobox` open one way. Each spreads `popupPositioner(...)` from `src/components/ui/popup.ts` onto its positioner and draws `POPUP_SURFACE`:
+
+- **Place.** Under the trigger, left edges lined up, 4px below it, and 8px from the viewport edge, the inset of the sidebar's own triggers, so a menu there stays lined up with its trigger. A popup without room below opens above. A `Select` list opens under its trigger like the rest; it never lays itself over the trigger to line the chosen option up with it, and a long list scrolls with the scrollbar.
+- **Surface.** The menu surface (`bg-popover`, `shadow-md`, the foreground ring) scales from 95% and fades in from the trigger's side over `--duration-menu`. A submenu takes `shadow-lg`, a step above the menu under it. A `Select` list closes at once: its backdrop takes outside clicks until it unmounts, so a fading list would swallow the click on the next field.
+- **Moving one.** A trigger at the right edge (a More menu, a row's actions) opens with `align="end"`, so the popup grows to the left. A trigger at the bottom edge (the selection bar, the sidebar footer) opens with `side="top"`. The primitives' props accept nothing else, so tsc refuses any other placement.
+- **Tips and submenus.** A tooltip opens above the trigger and centered (`TIP_POSITIONER`), and `beside` opens it to the right for an icon in the collapsed sidebar. `TouchTip`'s popover on a tap opens where its tooltip does (`PopoverContent tip`). A submenu opens to the right of its item (`SUBMENU_POSITIONER`).
+- **Enforcement.** `src/architecture/popup-placement.test.ts` holds `@ts-expect-error` lines that fail `pnpm typecheck` once a primitive accepts another placement, fails on a positioner in `src/components/ui` that sets its own placement or does not spread one from popup.ts, and fails on a Base UI import outside `src/components/ui`.
+
 ### Dialogs
 
 Every confirm and form dialog builds on `ConfirmDialog` (`src/components/shell/confirm-dialog.tsx`): Add contact, Add company, Make contact, Create deal, the company merge, Delete contact and Delete company, New campaign, Add to campaign, New search, Upload sheet, and the tables dialogs that name, move, describe, add rows, import and push. The column dialogs and the run dialog stay plain `Dialog`s (see Tables).

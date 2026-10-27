@@ -109,7 +109,7 @@ export function MergeFieldPicker({ fields, disabled, onPick }: { fields: MergeFi
         <SelectTrigger id="merge-field-picker" className="min-w-0 max-w-full flex-1 sm:max-w-xs max-sm:data-[size=default]:h-11">
           <SelectValue placeholder="Choose a field" />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start">
+        <SelectContent>
           {GROUPS.map(([group, label]) => {
             const items = fields.filter((f) => f.group === group);
             return items.length === 0 ? null : (

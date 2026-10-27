@@ -23,7 +23,7 @@ export function TouchTip({ trigger, tip, children, className }: { trigger: React
         <PopoverTrigger nativeButton={trigger.type === "button"} render={button}>
           {children}
         </PopoverTrigger>
-        <PopoverContent side="top" align="center" className={cn("px-3 py-2 text-xs", body)}>
+        <PopoverContent tip className={cn("px-3 py-2 text-xs", body)}>
           {tip}
         </PopoverContent>
       </Popover>
