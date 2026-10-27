@@ -196,7 +196,8 @@ export interface ReplyStore {
   /** Null when the conversation does not exist. */
   draftContext(organizationId: string, conversationId: string): Promise<DraftContext | null>;
   draftContextForDraft(organizationId: string, draftId: string): Promise<(DraftContext & { draft: DraftRow }) | null>;
-  insertDraft(draft: NewDraft & { feedback?: string | null }): Promise<{ id: string }>;
+  /** Writes an AI draft. `stale` is true when the record's version moved past the draft's, so it went in stale. */
+  insertDraft(draft: NewDraft & { feedback?: string | null }): Promise<{ id: string; stale: boolean }>;
   getDraft(organizationId: string, draftId: string): Promise<DraftRow | null>;
   /**
    * A draft a person typed (source `manual`), written in `awaiting_review` for the record's current context version.

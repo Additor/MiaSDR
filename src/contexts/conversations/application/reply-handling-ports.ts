@@ -255,6 +255,8 @@ export interface ReplyHandlingStore {
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;
 
   replyTypeCatalog(organizationId: string): Promise<ReplyTypeCatalog>;
+  /** The confidence floor and the AI instructions, without the types and their counts. */
+  replySettings(organizationId: string): Promise<ReplyHandlingSettingsRow>;
   createReplyType(organizationId: string, input: ReplyTypeInput): Promise<{ id: string }>;
   updateReplyType(organizationId: string, id: string, patch: ReplyTypePatch): Promise<void>;
   deleteReplyType(organizationId: string, id: string): Promise<void>;

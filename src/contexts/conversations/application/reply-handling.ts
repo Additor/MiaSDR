@@ -258,6 +258,9 @@ function requireAdmin(actor: Actor): void {
 
 export const getReplyTypeCatalog = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.replyTypeCatalog(actor.organizationId);
 
+/** The confidence floor and the AI instructions, for readers that need no types or counts. */
+export const getReplySettings = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.replySettings(actor.organizationId);
+
 export async function createReplyType(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
   requireAdmin(actor);
   const input = parseReplyTypeInput(raw);

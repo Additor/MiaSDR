@@ -207,6 +207,9 @@ describe("typeChangeOutcome", () => {
   it("says when follow-ups do not apply", () => {
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, isContact: true }).followUps).toBe("Follow-ups: none, because the person is a contact.");
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, campaignMode: "handoff" }).followUps).toBe("Follow-ups: none for this conversation.");
+    expect(typeChangeOutcome(null, type(), { ...outcomeFacts, campaignMode: "paused" }).followUps).toBe("Follow-ups: none while the campaign is paused.");
+    expect(typeChangeOutcome(null, type(), { ...outcomeFacts, campaignMode: "not_started" }).followUps).toBe("Follow-ups: none until the campaign starts.");
+    expect(typeChangeOutcome(null, type(), { ...outcomeFacts, campaignMode: "archived" }).followUps).toBe("Follow-ups: none, because the campaign is archived.");
   });
 });
 

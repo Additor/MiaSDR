@@ -33,6 +33,7 @@ import type {
   EventEntry,
   NoteEntry,
   RecordDetail,
+  ReplyHandlingSettingsRow,
   ReplyTypeCatalog,
   ReplyTypeOption,
 } from "../application/reply-handling-ports";
@@ -55,6 +56,16 @@ async function replyTypeSetFor(organizationId: string) {
     if (!settings) await tx.insert(replyHandlingSettings).values({ replyTypeSetId: id, organizationId }).onConflictDoNothing();
     return id;
   });
+}
+
+/** The confidence floor and the AI instructions of a set. `replyTypeSetFor` makes sure the row exists. */
+async function settingsOf(replyTypeSetId: string): Promise<ReplyHandlingSettingsRow> {
+  const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, replyTypeSetId));
+  return {
+    autoApplyConfidence: Number(settings.autoApplyConfidence),
+    draftInstructions: settings.draftInstructions,
+    classificationInstructions: settings.classificationInstructions,
+  };
 }
 
 /** Locks a record a person may see. A record whose conversations are all private answers 404, as a foreign id does. */
@@ -584,17 +595,27 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
   async replyTypeCatalog(organizationId): Promise<ReplyTypeCatalog> {
     const replyTypeSetId = await replyTypeSetFor(organizationId);
     const [replyTypeSet] = rowsOf<{ id: string; name: string }>(await db.execute(sql`select id, name from reply_type_sets where id = ${replyTypeSetId}`));
+    // One grouped count per table. A pick that names a type in more than one column counts once for it.
     const rows = rowsOf<Record<string, unknown>>(
       await db.execute(sql`
-        select s.*,
-          (select count(*)::int from records r where r.reply_type_id = s.id) as record_count,
-          (select count(*)::int from reply_type_picks k
-            where k.organization_id = s.organization_id and s.id in (k.previous_reply_type_id, k.proposed_reply_type_id, k.applied_reply_type_id)) as history_count
+        with record_counts as (
+          select r.reply_type_id as id, count(*)::int as n from records r
+          where r.organization_id = ${organizationId} and r.reply_type_id is not null group by r.reply_type_id
+        ), history_counts as (
+          select named.id, count(distinct k.id)::int as n
+          from reply_type_picks k
+          cross join lateral (values (k.previous_reply_type_id), (k.proposed_reply_type_id), (k.applied_reply_type_id)) as named(id)
+          where k.organization_id = ${organizationId} and named.id is not null
+          group by named.id
+        )
+        select s.*, coalesce(rc.n, 0) as record_count, coalesce(hc.n, 0) as history_count
         from reply_types s
+        left join record_counts rc on rc.id = s.id
+        left join history_counts hc on hc.id = s.id
         where s.organization_id = ${organizationId} and s.reply_type_set_id = ${replyTypeSetId}
         order by s.sort_order, s.name`),
     );
-    const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, replyTypeSetId));
+    const settings = await settingsOf(replyTypeSetId);
     return {
       replyTypeSet,
       replyTypes: rows
@@ -613,12 +634,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           historyCount: Number(r.history_count),
         }))
         .sort(byGroupThenOrder),
-      settings: {
-        autoApplyConfidence: Number(settings.autoApplyConfidence),
-        draftInstructions: settings.draftInstructions,
-        classificationInstructions: settings.classificationInstructions,
-      },
+      settings,
     };
+  },
+
+  async replySettings(organizationId) {
+    return settingsOf(await replyTypeSetFor(organizationId));
   },
 
   async createReplyType(organizationId, input) {

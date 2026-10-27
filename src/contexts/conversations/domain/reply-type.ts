@@ -84,8 +84,11 @@ export type HoldReason = (typeof HOLD_REASONS)[number];
  */
 export const holdReasonOf = (value: unknown): HoldReason | null => (HOLD_REASONS.includes(value as HoldReason) ? (value as HoldReason) : null);
 
-/** After a reply mode of the campaign that owns the conversation, or null when no campaign does. */
-export type CampaignMode = "handoff" | "ai_drafts" | null;
+/**
+ * After a reply mode of the campaign that owns the conversation, or null when no campaign does. A campaign that starts
+ * no runs (`startableCampaignSql`) reads as its state instead: `paused`, `not_started` (a draft) or `archived`.
+ */
+export type CampaignMode = "handoff" | "ai_drafts" | "paused" | "not_started" | "archived" | null;
 
 export interface ReplyTypeFacts {
   /** The reply's own words ask us to stop (`detectsStopRequest`), or the pick is a stop request type. */
@@ -183,7 +186,13 @@ export function typeChangeOutcome(
     decision.followUps === "not_applicable"
       ? facts.isContact
         ? "Follow-ups: none, because the person is a contact."
-        : "Follow-ups: none for this conversation."
+        : facts.campaignMode === "paused"
+          ? "Follow-ups: none while the campaign is paused."
+          : facts.campaignMode === "not_started"
+            ? "Follow-ups: none until the campaign starts."
+            : facts.campaignMode === "archived"
+              ? "Follow-ups: none, because the campaign is archived."
+              : "Follow-ups: none for this conversation."
       : decision.followUps === "continue"
         ? "Follow-ups: keep going."
         : facts.stopRequested

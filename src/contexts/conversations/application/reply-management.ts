@@ -72,7 +72,7 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
   try {
     const result = await produceDraft(provider, ctx);
     return {
-      draftId: (
+      draftId: personDraftId(
         await deps.store.insertDraft({
           organizationId: ctx.organizationId,
           recordId: ctx.recordId,
@@ -87,12 +87,18 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
           request: { requestedBy: actor.userId, contextVersion: ctx.contextVersion },
           response: { usage: result.usage ?? null },
           citations: draftCitations(ctx),
-        })
-      ).id,
+        }),
+      ),
     };
   } catch (error) {
     throw asValidation(error);
   }
+}
+
+/** A draft a person asked for that went in stale reads as a conflict: it cannot be sent, and the thread needs a reload. */
+function personDraftId(written: { id: string; stale: boolean }): string {
+  if (written.stale) throw new ConflictError("The thread changed while the draft was written.");
+  return written.id;
 }
 
 function asValidation(error: unknown) {
@@ -112,7 +118,7 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
   try {
     const result = await produceDraft(provider, ctx, { feedback: note, previousDraft: ctx.draft.editedBodyText ?? ctx.draft.aiBodyText });
     return {
-      draftId: (
+      draftId: personDraftId(
         await deps.store.insertDraft({
           organizationId: ctx.organizationId,
           recordId: ctx.recordId,
@@ -129,8 +135,8 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
           citations: draftCitations(ctx),
           regeneratesDraftId: draftId,
           feedback: note,
-        })
-      ).id,
+        }),
+      ),
     };
   } catch (error) {
     throw asValidation(error);

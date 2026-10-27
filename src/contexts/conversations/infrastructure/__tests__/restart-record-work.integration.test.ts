@@ -319,6 +319,23 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     });
   });
 
+  describe("outcomes for a campaign that starts no runs", () => {
+    it("names the campaign state on the follow-ups line, as the start rule reads it", async () => {
+      const { f, recordId, campaignId } = await withRun();
+      const meetingDone = (await sub(f.org, "meeting_done")).id;
+      const followUpsOf = async () => (await replyHandlingApp.getTypeChangeOutcomes(f.replyHandlingDeps, f.actor, recordId, "correct")).find((o) => o.replyTypeId === meetingDone)?.outcome.followUps;
+      expect(await followUpsOf()).toBe("Follow-ups: keep going.");
+      await sql`update campaigns set status = 'paused' where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: none while the campaign is paused.");
+      await sql`update campaigns set status = 'draft' where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: none until the campaign starts.");
+      await sql`update campaigns set status = 'active', archived_at = now() where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: none, because the campaign is archived.");
+      await sql`update campaigns set status = 'completed', archived_at = null where id = ${campaignId}`;
+      expect(await followUpsOf()).toBe("Follow-ups: keep going.");
+    });
+  });
+
   describe("a stop request in the reply text", () => {
     it("a person's pick before the AI's writes no draft and starts no run, and the outcomes say so", async () => {
       const f = await fixture();
@@ -478,6 +495,36 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       const b = await withRun();
       await expect(mgmt.setReplyType(b.f.replyDeps, b.f.actor, a.r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: a.version })).rejects.toBeInstanceOf(NotFoundError);
       expect(await versionOf(a.recordId)).toBe(a.version);
+    });
+  });
+
+  describe("a person's draft request while the thread changes", () => {
+    /** Reply deps whose context reads are followed by a version bump, as when a new reply lands while the AI writes. */
+    const racing = (f: Fx, recordId: string) => {
+      const bump = () => sql`update records set context_version = context_version + 1 where id = ${recordId}`;
+      const store = {
+        ...stores.replies,
+        draftContext: async (o: string, c: string) => {
+          const ctx = await stores.replies.draftContext(o, c);
+          await bump();
+          return ctx;
+        },
+        draftContextForDraft: async (o: string, d: string) => {
+          const ctx = await stores.replies.draftContextForDraft(o, d);
+          await bump();
+          return ctx;
+        },
+      };
+      return { ...f.replyDeps, store };
+    };
+
+    it("Write draft and Regenerate answer 409 and leave no draft to send", async () => {
+      const { f, r, recordId } = await withRun({ flow: false });
+      const draft = await one("select id from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org]);
+      await expect(mgmt.regenerateDraft(racing(f, recordId), f.actor, draft.id, {})).rejects.toThrow("The thread changed while the draft was written.");
+      await sql`update drafts set status = 'discarded' where organization_id = ${f.org}`;
+      await expect(mgmt.requestDraft(racing(f, recordId), f.actor, r.conversationId)).rejects.toBeInstanceOf(ConflictError);
+      expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
     });
   });
 

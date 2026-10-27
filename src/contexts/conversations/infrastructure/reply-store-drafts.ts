@@ -97,10 +97,14 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
     return db.transaction(async (tx) => {
       // A writer that read its context before the version moved (an undo, a type change, a new reply) wrote for a context
       // that no longer holds. Its draft goes in as stale and leaves the record's open drafts alone.
-      const [record] = await tx.select({ version: records.contextVersion }).from(records).where(eq(records.id, input.recordId)).for("update");
-      if (record && record.version !== input.expectedContextVersion) {
-        return (
-          await tx
+      const [record] = await tx
+        .select({ version: records.contextVersion })
+        .from(records)
+        .where(and(eq(records.id, input.recordId), eq(records.organizationId, input.organizationId)))
+        .for("update");
+      if (!record) throw new NotFoundError("Reply handling not found");
+      if (record.version !== input.expectedContextVersion) {
+        const [stale] = await tx
             .insert(drafts)
             .values({
               organizationId: input.organizationId,
@@ -118,8 +122,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
               request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
               response: input.response,
             })
-            .returning({ id: drafts.id })
-        )[0];
+            .returning({ id: drafts.id });
+        return { id: stale.id, stale: true };
       }
       const [created] = await tx
         .insert(drafts)
@@ -156,7 +160,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
           .values(input.citations.map((c, rank) => ({ organizationId: input.organizationId, draftId: created.id, documentVersionId: c.documentVersionId, excerptHash: excerptHash(c.excerpt), excerpt: c.excerpt, rank: String(rank) })))
           .onConflictDoNothing();
       }
-      return created;
+      return { id: created.id, stale: false };
     });
   },
 

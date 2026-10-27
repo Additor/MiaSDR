@@ -560,6 +560,16 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect(await sub(f, "pricing_question")).toMatchObject({ name: "Pricing questions", rules: { checkMode: "skip", replyDraft: true, followUps: "stop" } });
     });
 
+    it("counts the people in a type and the picks that name it, each pick once", async () => {
+      const g = await fixture();
+      const l = await lead(g);
+      await appliedReplyTypePick(g, l, "demo_request");
+      // The pick names Demo request as proposed and applied: one pick in its history.
+      expect(await sub(g, "demo_request")).toMatchObject({ recordCount: 1, historyCount: 1 });
+      expect(await sub(g, "meeting_done")).toMatchObject({ recordCount: 0, historyCount: 0 });
+      expect(await replies.getReplySettings(deps, g.actor)).toEqual({ autoApplyConfidence: 0.85, draftInstructions: [], classificationInstructions: [] });
+    });
+
     it("keeps the stop request rules and roles of the starter types", async () => {
       const stop = await sub(f, "do_not_contact");
       expect(stop).toMatchObject({ name: "Asked to stop", systemRole: "stop_request", rules: { checkMode: "before", replyDraft: false, followUps: "stop" } });
