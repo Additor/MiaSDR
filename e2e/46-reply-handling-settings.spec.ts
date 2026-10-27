@@ -98,7 +98,7 @@ test.describe("reply handling settings", () => {
     await waitForHydrated(field);
     const before = await field.inputValue();
     const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "Confidence floor" }) });
-    await expect(section).toContainText("Below this, the AI only suggests and a person decides.");
+    await expect(section).toContainText("Below this, an AI pick waits for a person.");
 
     await field.fill("81");
     await section.getByRole("button", { name: "Save" }).click();

@@ -37,7 +37,7 @@ export function ConfidenceFloorForm({ confidenceFloor, canManage }: { confidence
           <Field>
             <FieldLabel htmlFor="confidence-floor">Percent confidence</FieldLabel>
             <Input id="confidence-floor" type="number" min={0} max={100} step={0.1} value={percent} onChange={(e) => setPercent(e.target.value)} disabled={!canManage} className="w-32" required />
-            <FieldDescription>Below this, the AI only suggests and a person decides.</FieldDescription>
+            <FieldDescription>Below this, an AI pick waits for a person.</FieldDescription>
           </Field>
           {canManage && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setPercent(saved)} />}
         </FieldGroup>

@@ -165,10 +165,10 @@ describe("why a run cannot start", () => {
   it("separates a flow that is off from a flow with no published steps", () => {
     const off = ok();
     off.flow = { status: "archived", hasPublished: true };
-    expect(startBlockedReason(off)).toMatch(/AI drafts are off for the campaign Autumn/);
+    expect(startBlockedReason(off)).toMatch(/AI drafts are off for the campaign Autumn\. Turn them on in its Follow-ups after a reply setting\./);
     const empty = ok();
     empty.flow = { status: "active", hasPublished: false };
-    expect(startBlockedReason(empty)).toMatch(/no published follow-up steps/);
+    expect(startBlockedReason(empty)).toMatch(/no published follow-up steps\. Add them in its Follow-ups after a reply setting\./);
   });
 
   it("says a personal campaign cannot draft follow-ups", () => {

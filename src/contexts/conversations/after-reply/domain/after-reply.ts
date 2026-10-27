@@ -96,8 +96,8 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (owner.archived) return `The campaign ${owner.name} is archived, so it starts no new follow-ups.`;
   if (owner.status === "paused") return `The campaign ${owner.name} is paused. Resume it to restart follow-ups.`;
   if (owner.status === "draft") return `The campaign ${owner.name} has not started yet. Start it to run follow-ups.`;
-  if (!flow || flow.status !== "active") return `AI drafts are off for the campaign ${owner.name}. Turn them on in its After a reply setting.`;
-  if (!flow.hasPublished) return `The campaign ${owner.name} has no published follow-up steps. Add them in its After a reply setting.`;
+  if (!flow || flow.status !== "active") return `AI drafts are off for the campaign ${owner.name}. Turn them on in its Follow-ups after a reply setting.`;
+  if (!flow.hasPublished) return `The campaign ${owner.name} has no published follow-up steps. Add them in its Follow-ups after a reply setting.`;
   if (record.workflowState === "closed") return "Reply handling is closed, so follow-ups do not apply.";
   if (f.doNotContact) return "This person is marked do not contact, so follow-ups do not apply.";
   if (f.suppressed) return "This address is on the suppression list, so follow-ups do not apply.";

@@ -187,7 +187,7 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
           <Field>
             <FieldLabel htmlFor="k-tags">Tags, comma separated</FieldLabel>
             <Input id="k-tags" value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} placeholder="pricing, onboarding" />
-            <FieldDescription>Follow-up drafts receive the documents that share the most tags with the After a reply setting. Up to 50 tags, 80 characters each, lowercase.</FieldDescription>
+            <FieldDescription>Follow-up drafts receive the documents that share the most tags with the Follow-ups after a reply setting. Up to 50 tags, 80 characters each, lowercase.</FieldDescription>
           </Field>
           <Field orientation="horizontal">
             <Checkbox id="k-always" checked={draft.always} onCheckedChange={(c) => setDraft({ ...draft, always: c === true })} />

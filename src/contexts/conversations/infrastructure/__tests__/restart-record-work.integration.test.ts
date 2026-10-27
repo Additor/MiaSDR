@@ -406,7 +406,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     it("answers 409 on a version mismatch and changes nothing", async () => {
       const { f, r, recordId, version } = await withRun();
       const before = { runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), drafts: await count("drafts", f.org, "status = 'awaiting_review'") };
-      await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version - 1 })).rejects.toBeInstanceOf(ConflictError);
+      await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version - 1 })).rejects.toThrow("Reply handling changed after you opened it. Reload and choose the type again.");
       await expect(mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_done", expectedContextVersion: version + 1 })).rejects.toBeInstanceOf(ConflictError);
       expect(await versionOf(recordId)).toBe(version);
       expect({ runs: await count("sequence_runs", f.org), jobs: await count("ai_jobs", f.org), drafts: await count("drafts", f.org, "status = 'awaiting_review'") }).toEqual(before);

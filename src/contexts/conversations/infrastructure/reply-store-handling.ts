@@ -33,7 +33,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         .for("update", { of: records });
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.latest) throw new ConflictError("There is no inbound message to classify.");
-      if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the category again.");
+      if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the type again.");
 
       // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the record
       // of what went wrong, and the person's pick goes in as a row of its own.

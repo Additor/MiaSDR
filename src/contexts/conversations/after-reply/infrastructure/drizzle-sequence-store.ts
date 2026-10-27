@@ -370,7 +370,7 @@ export async function createRunOn(tx: Tx, run: NewRun): Promise<{ runId: string;
   // The flow row is the lock `save` takes for update. Taking it shared first makes a switch-off wait for this run and
   // count it, and a run that starts after the switch-off stops here instead of starting on an archived flow.
   const [flow] = rowsOf<{ status: string }>(await tx.execute(sql`select status from sequences where id = ${run.sequenceId} and organization_id = ${run.organizationId} for share`));
-  if (!flow || flow.status !== "active") throw new ConflictError("After a reply was switched off for this campaign.", { code: "flow_off" });
+  if (!flow || flow.status !== "active") throw new ConflictError("Follow-ups after a reply were switched off for this campaign.", { code: "flow_off" });
   const record = await recordLock(tx, run.organizationId, run.recordId);
   // A conversion holds this record's lock until it commits, so this read sees the committed lifecycle. The facts the
   // caller loaded earlier may predate it.
