@@ -1,6 +1,6 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 import type { WorkflowState } from "./workflow-state";
-import { DEFAULT_TYPE_RULES, isCheckMode, isFollowUpsRule, validateTypeRules, type TypeRules } from "./reply-type";
+import { DEFAULT_TYPE_RULES, isCheckMode, isFollowUpsRule, validateTypeRules, type SystemRole, type TypeRules } from "./reply-type";
 
 /**
  * Pure reply-handling rules: the fixed groups, validation of reply types and AI-instruction settings, and the rules
@@ -169,23 +169,29 @@ export function parseReplyHandlingSettings(raw: Record<string, unknown>): ReplyH
 
 export interface ReplyTypeChangeCheck {
   before: { groupKey: string | null; replyTypeId: string | null; replyTypeLocked: boolean; contextVersion: number; workflowState: string };
-  target: { groupKey: string; replyTypeId: string | null };
+  /** `systemRole` of the target type, or null for a type without one or a group without a type. */
+  target: { groupKey: string; replyTypeId: string | null; systemRole: SystemRole | null };
   expectedContextVersion: number;
-  /** The person confirmed that a locked customer may leave the customer category. */
+  /** The person confirmed that a locked customer may leave the customer group. */
   confirmUnlock: boolean;
 }
 
-/** What a person's stage move needs to be true. Returns the lock flag the record gets afterwards. */
+/**
+ * What a person's type change needs to be true. Returns the lock flag the record gets afterwards. The type with the
+ * customer role locks the record (`records_locked_ck` keeps a locked record in the customer group), a change inside the
+ * locked group keeps the lock, and leaving the group needs the person's confirmation and unlocks.
+ */
 export function checkReplyTypeChange({ before, target, expectedContextVersion, confirmUnlock }: ReplyTypeChangeCheck): { replyTypeLocked: boolean } {
   if (!isReplyTypeGroup(target.groupKey)) throw new ValidationError("Choose one of the four groups.");
   if (before.contextVersion !== expectedContextVersion) throw new ConflictError("Reply handling changed since you opened it. Reload and try again.");
-  if (before.workflowState === "closed") throw new ConflictError("Reply handling is closed. Reopen it before you change the category.");
-  if (before.groupKey === target.groupKey && before.replyTypeId === target.replyTypeId) throw new ConflictError("The reply is already in this category.");
-  if (before.replyTypeLocked && before.groupKey === "customer" && target.groupKey !== "customer" && !confirmUnlock) {
+  if (before.workflowState === "closed") throw new ConflictError("Reply handling is closed. Reopen it before you change the type.");
+  if (before.groupKey === target.groupKey && before.replyTypeId === target.replyTypeId) throw new ConflictError("The reply already has this type.");
+  const leavesLockedGroup = before.replyTypeLocked && target.groupKey !== before.groupKey;
+  if (leavesLockedGroup && !confirmUnlock) {
     throw new ConflictError("This person is locked as Existing customer. Confirm the change to take them out of it.");
   }
-  // A customer stays locked so the AI cannot pull them back out; any other category unlocks.
-  return { replyTypeLocked: target.groupKey === "customer" };
+  // A customer stays locked so the AI cannot pull them back out; a type outside the locked group unlocks.
+  return { replyTypeLocked: target.systemRole === "customer" || (before.replyTypeLocked && !leavesLockedGroup) };
 }
 
 export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {

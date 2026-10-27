@@ -4,27 +4,33 @@ import { checkReplyTypeChange, keyFromName, parseInstructionBlocks, parseReplyHa
 
 const before = { groupKey: "interested", replyTypeId: "s1", replyTypeLocked: false, contextVersion: 3, workflowState: "waiting" };
 
-describe("stage move rules", () => {
-  it("accepts a move to another subcategory and locks only customers", () => {
-    expect(checkReplyTypeChange({ before, target: { groupKey: "interested", replyTypeId: "s2" }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: false });
-    expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: "c1" }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: true });
+describe("type change rules", () => {
+  it("accepts a change to another type and locks only for the customer role", () => {
+    expect(checkReplyTypeChange({ before, target: { groupKey: "interested", replyTypeId: "s2", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: false });
+    expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: "c1", systemRole: "customer" }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: true });
+    expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: "c2", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: false });
+  });
+
+  it("keeps the lock for a change inside the locked group", () => {
+    const locked = { ...before, groupKey: "customer", replyTypeId: "c1", replyTypeLocked: true };
+    expect(checkReplyTypeChange({ before: locked, target: { groupKey: "customer", replyTypeId: "c2", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: true });
   });
 
   it("rejects a stale version, a closed record and a no-op", () => {
-    expect(() => checkReplyTypeChange({ before, target: { groupKey: "other", replyTypeId: null }, expectedContextVersion: 2, confirmUnlock: false })).toThrow(ConflictError);
-    expect(() => checkReplyTypeChange({ before: { ...before, workflowState: "closed" }, target: { groupKey: "other", replyTypeId: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/closed/);
-    expect(() => checkReplyTypeChange({ before, target: { groupKey: "interested", replyTypeId: "s1" }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/already/);
+    expect(() => checkReplyTypeChange({ before, target: { groupKey: "other", replyTypeId: null, systemRole: null }, expectedContextVersion: 2, confirmUnlock: false })).toThrow(ConflictError);
+    expect(() => checkReplyTypeChange({ before: { ...before, workflowState: "closed" }, target: { groupKey: "other", replyTypeId: null, systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/closed/);
+    expect(() => checkReplyTypeChange({ before, target: { groupKey: "interested", replyTypeId: "s1", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/already/);
   });
 
-  it("needs a confirmation to take a locked customer out of the category", () => {
+  it("needs a confirmation to take a locked customer out of the group", () => {
     const locked = { ...before, groupKey: "customer", replyTypeId: "c1", replyTypeLocked: true };
-    const target = { groupKey: "not_interested", replyTypeId: null };
+    const target = { groupKey: "not_interested", replyTypeId: null, systemRole: null };
     expect(() => checkReplyTypeChange({ before: locked, target, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/locked as Existing customer/);
     expect(checkReplyTypeChange({ before: locked, target, expectedContextVersion: 3, confirmUnlock: true })).toEqual({ replyTypeLocked: false });
   });
 
-  it("rejects an unknown category", () => {
-    expect(() => checkReplyTypeChange({ before, target: { groupKey: "won", replyTypeId: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(ValidationError);
+  it("rejects an unknown group", () => {
+    expect(() => checkReplyTypeChange({ before, target: { groupKey: "won", replyTypeId: null, systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(ValidationError);
   });
 });
 
