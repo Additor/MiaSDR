@@ -63,7 +63,7 @@ export const METRIC_DEFINITIONS: readonly MetricDefinition[] = [
   { key: "acceptanceRate", label: "Acceptance rate", definition: "Accepted divided by invited." },
   { key: "linkedinReplyRate", label: "LinkedIn reply rate", definition: "LinkedIn replied divided by accepted." },
   { key: "replies", label: "Replies", definition: "Inbound messages inside the window from people who were contacted before the message arrived. Each message counts once, even when the person is in several campaigns." },
-  { key: "classified", label: "Classified share", definition: "Replies whose latest classification is applied (auto_applied, accepted or overridden) divided by all replies. Proposed classifications count as pending review." },
+  { key: "classified", label: "Reply type share", definition: "Replies whose latest AI pick is applied (auto_applied, accepted or overridden) divided by all replies. A pick held for a check counts as pending review." },
 ];
 
 // ---------------------------------------------------------------- campaigns
@@ -232,7 +232,7 @@ const BUCKET_LABELS: Record<CategoryBucket, string> = {
   not_interested: "Not interested",
   other: "Other",
   pending_review: "Pending review",
-  unclassified: "Unclassified",
+  unclassified: "No type yet",
 };
 
 export const bucketLabel = (bucket: CategoryBucket): string => BUCKET_LABELS[bucket];

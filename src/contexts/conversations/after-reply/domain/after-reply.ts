@@ -56,6 +56,8 @@ export interface StartBlockFacts {
     replyTypeName: string | null;
     /** The Follow-ups rule of the record's reply type, or null without a type. */
     followUps: FollowUpsRule | null;
+    /** The Reply draft rule of the record's reply type: false for Don't write, which skips step 1. Null without a type. */
+    replyDraft?: boolean | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     workflowState: string;
@@ -100,7 +102,10 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (!record.hasEmail) return "This person has no email address, so follow-ups cannot start.";
   if (!record.replyTypeId) return "The reply has no reply type yet, so follow-ups cannot start.";
   if (!followUpsContinue(record.followUps)) return followUpsStopReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
-  if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply }) === null) return "A person already answered, and the flow has no follow-up step after the reply.";
+  if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply, replyDraft: record.replyDraft }) === null) {
+    if (record.replyDraft === false && !f.answered && !f.skipReply) return replyDraftSkipReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
+    return "A person already answered, and the flow has no follow-up step after the reply.";
+  }
   return null;
 }
 
@@ -185,8 +190,8 @@ export const FIXED_STOP_RULES: readonly FixedStopRule[] = [
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
 ];
 
-/** @deprecated W8 moves `src/architecture/copy-vocabulary.test.ts` to `FIXED_STOP_RULES` and removes this alias. */
-export const ALWAYS_STOPS_ON: readonly FixedStopRule[] = FIXED_STOP_RULES;
+/** Why no run starts on a one-step flow for a type set to Don't write a reply draft: step 1 is skipped, and nothing follows it. */
+export const replyDraftSkipReason = (typeName: string): string => `${typeName} is set to not write a reply draft, and the flow has no follow-up step after the reply.`;
 
 /** Why a reply type ends follow-ups, worded as the Restart button and the campaign settings show it. */
 export const followUpsStopReason = (typeName: string): string => `${typeName} is set to stop follow-ups.`;
@@ -204,5 +209,5 @@ export interface StopReplyType {
 
 /** One line per thing that ends follow-ups: the fixed rules, then each stop type by name. */
 export function stopsOnLines(stopTypes: readonly Pick<StopReplyType, "id" | "name">[]): Array<{ id: string; label: string }> {
-  return [...FIXED_STOP_RULES.map(({ id, label }) => ({ id, label })), ...stopTypes.map((t) => ({ id: `reply_type:${t.id}`, label: `The reply is classified ${t.name}` }))];
+  return [...FIXED_STOP_RULES.map(({ id, label }) => ({ id, label })), ...stopTypes.map((t) => ({ id: `reply_type:${t.id}`, label: `The reply type is ${t.name}` }))];
 }

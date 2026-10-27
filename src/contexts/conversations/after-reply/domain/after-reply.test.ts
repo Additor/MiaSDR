@@ -118,8 +118,8 @@ describe("FIXED_STOP_RULES", () => {
     ]);
     expect(lines.slice(0, FIXED_STOP_RULES.length).map((l) => l.id)).toEqual(FIXED_STOP_RULES.map((r) => r.id));
     expect(lines.slice(FIXED_STOP_RULES.length)).toEqual([
-      { id: "reply_type:t1", label: "The reply is classified Out of office" },
-      { id: "reply_type:t2", label: "The reply is classified Not now" },
+      { id: "reply_type:t1", label: "The reply type is Out of office" },
+      { id: "reply_type:t2", label: "The reply type is Not now" },
     ]);
     expect(followUpsStopReason("Not now")).toBe("Not now is set to stop follow-ups.");
   });
@@ -202,5 +202,14 @@ describe("why a run cannot start", () => {
     expect(startBlockedReason(f)).toBeNull();
     f.answered = true;
     expect(startBlockedReason(f)).toMatch(/no follow-up step after the reply/);
+  });
+
+  it("needs a step after the reply when the reply type is set to Don't write a reply draft", () => {
+    const f = ok();
+    f.record.replyDraft = false;
+    f.stepCount = 2;
+    expect(startBlockedReason(f)).toBeNull();
+    f.stepCount = 1;
+    expect(startBlockedReason(f)).toBe("Demo request is set to not write a reply draft, and the flow has no follow-up step after the reply.");
   });
 });

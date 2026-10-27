@@ -338,7 +338,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
       if (cls.messageId !== record.latestInboundMessageId) throw new ConflictError("Only the pick of the latest inbound message can be undone.");
-      if (!cls.appliedGroupKey || !["auto_applied", "accepted", "overridden"].includes(cls.status)) throw new ConflictError("This classification has no applied change to undo.");
+      if (!cls.appliedGroupKey || !["auto_applied", "accepted", "overridden"].includes(cls.status)) throw new ConflictError("This AI pick has no applied change to undo.");
       if (record.groupKey !== cls.appliedGroupKey || record.replyTypeId !== cls.appliedReplyTypeId) {
         throw new ConflictError("A person changed the reply type after this pick. Change the type by hand.");
       }

@@ -34,7 +34,7 @@ describe("EVENT_LABELS", () => {
   });
 
   it("uses the to-be wording", () => {
-    expect(eventLabel({ eventType: "reply_type.changed" })).toBe("Changed category");
+    expect(eventLabel({ eventType: "reply_type.changed" })).toBe("Changed the reply type");
     expect(eventLabel({ eventType: "lifecycle.converted" })).toBe("Became a contact");
     expect(eventLabel({ eventType: "deal.created" })).toBe("Created deal");
     expect(eventLabel({ eventType: "assignee.changed", toData: { assignedTo: "u1", assigneeName: "Ann" } })).toBe("Assigned to Ann");

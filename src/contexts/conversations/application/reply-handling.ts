@@ -306,7 +306,7 @@ export async function updateReplyAiInstructions(deps: ReplyHandlingDeps, actor: 
   requireAdmin(actor);
   const patch: { draftInstructions?: ReturnType<typeof parseInstructionBlocks>; classificationInstructions?: ReturnType<typeof parseInstructionBlocks> } = {};
   if (raw.draftInstructions !== undefined) patch.draftInstructions = parseInstructionBlocks(raw.draftInstructions, "Drafting instructions");
-  if (raw.classificationInstructions !== undefined) patch.classificationInstructions = parseInstructionBlocks(raw.classificationInstructions, "Classification instructions");
+  if (raw.classificationInstructions !== undefined) patch.classificationInstructions = parseInstructionBlocks(raw.classificationInstructions, "Reply type instructions");
   if (Object.keys(patch).length === 0) throw new ValidationError("Nothing to change.");
   await deps.store.updateSettings(actor.organizationId, patch);
 }

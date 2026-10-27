@@ -185,9 +185,9 @@ test.describe("lead list filters, sort and lifecycle", () => {
     await expect(page.getByText("5 leads", { exact: true })).toBeVisible();
     await expect(page.getByTestId("filter-chip-lifecycle")).toHaveCount(0);
 
-    // The filter bar labels the reply taxonomy "Reply category".
+    // The filter bar labels the reply type group "Reply group".
     await openFilters(page);
-    await expect(page.getByRole("combobox", { name: "Reply category" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Reply group" })).toBeVisible();
     await expect(page.getByText("CRM category")).toHaveCount(0);
   });
 });

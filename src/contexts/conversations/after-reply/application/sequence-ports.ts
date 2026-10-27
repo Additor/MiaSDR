@@ -103,6 +103,8 @@ export interface StartFacts {
     replyTypeName: string | null;
     /** The Follow-ups rule of the record's reply type (`reply_types.follow_ups`), or null without a type. */
     followUps: FollowUpsRule | null;
+    /** The Reply draft rule of the record's reply type (`reply_types.reply_draft`), or null without a type. False skips step 1. */
+    replyDraft: boolean | null;
     latestInboundMessageId: string | null;
     lastInboundAt: Date | null;
     lastOutboundAt: Date | null;

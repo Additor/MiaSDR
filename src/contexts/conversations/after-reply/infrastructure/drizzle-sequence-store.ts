@@ -12,6 +12,7 @@ import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
+import { defaultReplyTypeSetId } from "../../infrastructure/drizzle-conversation-store";
 
 interface StepRow {
   id: string;
@@ -139,13 +140,18 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
     };
   },
 
+  // A fresh organization has no reply types until something creates its default set. Create it here, as the Settings
+  // page does, so the campaign's After a reply view never shows an empty stop list for a real organization.
   async stopReplyTypes(organizationId) {
-    const rows = rowsOf<{ id: string; key: string; name: string; group_key: string; system_role: SystemRole | null; sort_order: number }>(
-      await db.execute(sql`
-        select rt.id, rt.key, rt.name, rt.group_key, rt.system_role, rt.sort_order
-        from reply_types rt join reply_type_sets rs on rs.id = rt.reply_type_set_id and rs.organization_id = rt.organization_id
-        where rt.organization_id = ${organizationId} and rs.is_default and rt.active and rt.follow_ups = 'stop'`),
-    );
+    const rows = await db.transaction(async (tx) => {
+      const setId = await defaultReplyTypeSetId(tx, organizationId);
+      return rowsOf<{ id: string; key: string; name: string; group_key: string; system_role: SystemRole | null; sort_order: number }>(
+        await tx.execute(sql`
+          select rt.id, rt.key, rt.name, rt.group_key, rt.system_role, rt.sort_order
+          from reply_types rt
+          where rt.organization_id = ${organizationId} and rt.reply_type_set_id = ${setId} and rt.active and rt.follow_ups = 'stop'`),
+      );
+    });
     return rows.map((r) => ({ id: r.id, key: r.key, name: r.name, groupKey: r.group_key, systemRole: r.system_role, sortOrder: r.sort_order }));
   },
 
@@ -245,6 +251,7 @@ export async function loadStartOn(
     sub_key: string | null;
     sub_name: string | null;
     follow_ups: FollowUpsRule | null;
+    reply_draft: boolean | null;
     latest_inbound_message_id: string | null;
     last_inbound_at: Date | string | null;
     last_outbound_at: Date | string | null;
@@ -259,7 +266,7 @@ export async function loadStartOn(
     conv_channel: string | null;
   }>(
     await exec.execute(sql`
-      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
+      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, s.reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              p.lifecycle = 'contact' as contact,
@@ -326,6 +333,7 @@ export async function loadStartOn(
       replyTypeKey: r.sub_key,
       replyTypeName: r.sub_name,
       followUps: r.follow_ups,
+      replyDraft: r.reply_draft,
       latestInboundMessageId: r.latest_inbound_message_id,
       lastInboundAt: asDateOrNull(r.last_inbound_at),
       lastOutboundAt: asDateOrNull(r.last_outbound_at),

@@ -33,8 +33,8 @@ export function InstructionsPanel({ draft, classification, canManage }: { draft:
       />
       <BlockList
         field="classificationInstructions"
-        title="Classification instructions"
-        description="Added to every classification. Use them to explain how your sales process works and how to read ambiguous replies."
+        title="Reply type instructions"
+        description="Added each time the AI picks a reply type. Use them to explain how your sales process works and how to read ambiguous replies."
         initial={classification}
         canManage={canManage}
       />

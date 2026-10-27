@@ -69,7 +69,7 @@ export async function attemptRun(deps: { runs: Pick<RunStore, "loadStart" | "cre
   }
 
   assertStepsBelongToVersion(facts.steps, facts.selection.sequenceVersionId);
-  const from = startPosition({ stepCount: facts.steps.length, answered: isAnswered(record), skipReply: input.skipReply });
+  const from = startPosition({ stepCount: facts.steps.length, answered: isAnswered(record), skipReply: input.skipReply, replyDraft: record.replyDraft });
   if (from === null) return { blocked: "A person already answered, and the flow has no follow-up step after the reply." };
 
   const now = deps.now();

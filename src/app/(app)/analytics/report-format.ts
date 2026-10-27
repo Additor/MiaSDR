@@ -79,8 +79,8 @@ export function summaryItems(result: AnalyticsResult): SummaryItem[] {
       const pending = byBucket.find((b) => b.bucket === "pending_review")?.replies ?? 0;
       return [
         { label: "Replies", value: int(total), hint: "Inbound messages in this window from people who were contacted before the message arrived." },
-        { label: "Classified", value: classifiedShare === null ? "-" : percent(classifiedShare), hint: `Replies with an applied classification, out of ${int(total)} replies.` },
-        { label: "Pending review", value: int(pending), hint: "Replies whose latest classification is only proposed." },
+        { label: "With a reply type", value: classifiedShare === null ? "-" : percent(classifiedShare), hint: `Replies with an applied reply type, out of ${int(total)} replies.` },
+        { label: "Pending review", value: int(pending), hint: "Replies whose latest AI pick is held for a check." },
       ];
     }
     case "timeseries": {

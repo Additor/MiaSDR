@@ -65,6 +65,7 @@ const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
 export const drizzleSequenceEngine: SequenceEngineStore = {
   // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned
   // on, and the record's reply type keeps follow-ups going (`reply_types.follow_ups`, the rule `startBlockedReason` reads).
+  // A run that skips step 1 (a person answered, or the type is set to Don't write a reply draft) needs a step 2.
   async startCandidates(limit) {
     return rowsOf<{ organization_id: string; id: string }>(
       await db.execute(sql`
@@ -92,7 +93,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and not exists (select 1 from sequence_runs sr where sr.record_id = r.id and (sr.trigger_message_id = r.latest_inbound_message_id or sr.status in ('active', 'paused')))
           and not exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.do_not_contact)
           and not exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email))
-          and (not (r.last_outbound_at is not null and r.last_inbound_at is not null and r.last_outbound_at >= r.last_inbound_at)
+          and (not ((r.last_outbound_at is not null and r.last_inbound_at is not null and r.last_outbound_at >= r.last_inbound_at) or not s.reply_draft)
                or (select count(*) from sequence_steps st where st.sequence_version_id = pick.version_id) >= 2)
         order by r.last_inbound_at desc nulls last
         limit ${limit}`),

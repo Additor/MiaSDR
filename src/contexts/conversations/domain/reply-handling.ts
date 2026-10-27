@@ -18,7 +18,7 @@ export type ReplyTypeGroup = (typeof REPLY_TYPE_GROUPS)[number]["key"];
 
 export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPLY_TYPE_GROUPS.some((c) => c.key === value);
 
-export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "Unclassified";
+export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "No type yet";
 
 export interface AiInstructionBlock {
   id: string;
@@ -189,8 +189,8 @@ export function checkReplyTypeChange({ before, target, expectedContextVersion, c
 }
 
 export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
-  unclassified: "Unclassified",
-  classifying: "Classifying",
+  unclassified: "No type yet",
+  classifying: "Picking a type",
   action_required: "Needs action",
   waiting: "Waiting on them",
   idle: "Idle",

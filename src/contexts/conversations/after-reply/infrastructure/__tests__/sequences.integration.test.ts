@@ -657,6 +657,35 @@ describeDb("After a reply flows", () => {
       expect(state).toMatchObject({ canRestart: false, restartBlockedReason: "Demo request is set to stop follow-ups." });
     });
 
+    it("a type set to Don't write a reply draft and Keep going starts the run at step 2, so step 1 writes no draft", async () => {
+      const f = await fixture();
+      await ingest(f);
+      await sql`update reply_types set reply_draft = false where organization_id = ${f.org} and key = 'demo_request'`;
+      await emailedBy(f);
+      await f.cycle();
+      await f.cycle();
+      expect(await one("select s.key from records r join reply_types s on s.id = r.reply_type_id where r.organization_id = $1", [f.org])).toMatchObject({ key: "demo_request" });
+      expect(await one("select status, start_step_position, current_step_position from sequence_runs where organization_id = $1", [f.org])).toMatchObject({
+        status: "active",
+        start_step_position: 2,
+        current_step_position: 2,
+      });
+      // No AI reply draft (the type's rule) and no step 1 draft; step 2 waits for its delay.
+      expect(await count("drafts", f.org)).toBe(0);
+    });
+
+    it("a fresh organization lists its stop types before any reply arrives", async () => {
+      const f = await fixture();
+      expect(await count("reply_type_sets", f.org)).toBe(0);
+      const types = await arApp.getFollowUpStopTypes(f.arDeps, f.actor);
+      expect(types.map((t) => t.key)).toEqual(expect.arrayContaining(["do_not_contact", "out_of_office", "customer"]));
+      expect(await count("reply_type_sets", f.org)).toBe(1);
+      // The first reply reuses the set the read created.
+      await ingest(f);
+      expect(await count("reply_type_sets", f.org)).toBe(1);
+      expect(await arApp.getFollowUpStopTypes(f.arDeps, f.actor)).toEqual(types);
+    });
+
     it("the campaign lists the organization's active stop types of its default set, with their reasons", async () => {
       const f = await fixture();
       await ingest(f);
@@ -680,7 +709,7 @@ describeDb("After a reply flows", () => {
 
       const view = await arApp.getCampaignAfterReply(f.arDeps, f.actor, campaignId);
       expect(view.stopReplyTypes).toEqual(types);
-      expect(view.stopsOn.map((l) => l.label)).toContain("The reply is classified Out of office");
+      expect(view.stopsOn.map((l) => l.label)).toContain("The reply type is Out of office");
     });
   });
 

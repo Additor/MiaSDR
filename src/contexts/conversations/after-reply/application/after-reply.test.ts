@@ -107,10 +107,10 @@ describe("stop types", () => {
       "The address is on the suppression list",
       "Reply handling is closed",
       "The person becomes a contact",
-      "The reply is classified Customer question",
-      "The reply is classified Asked to stop",
-      "The reply is classified Not now",
-      "The reply is classified Out of office",
+      "The reply type is Customer question",
+      "The reply type is Asked to stop",
+      "The reply type is Not now",
+      "The reply type is Out of office",
     ]);
   });
 
