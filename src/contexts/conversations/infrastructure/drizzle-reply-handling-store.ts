@@ -183,6 +183,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         previous: { groupKey: c.previousGroupKey, name: subName(c.previousReplyTypeId) },
         proposed: { groupKey: c.proposedGroupKey, name: subName(c.proposedReplyTypeId) },
         applied: { groupKey: c.appliedGroupKey, name: subName(c.appliedReplyTypeId) },
+        appliedReplyTypeId: c.appliedReplyTypeId,
         confidence: c.confidence === null ? null : Number(c.confidence),
         reasoning: c.reasoning,
         error: c.error,
