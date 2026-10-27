@@ -4,7 +4,7 @@ import { AFTER_REPLY_OFF, followUpsContinue, startPosition, type InterruptReason
 export { AFTER_REPLY_OFF };
 
 /**
- * Pure rules and wording for a campaign's "After a reply" setting. A campaign either hands a classified reply to the
+ * Pure rules and wording for a campaign's "Follow-ups after a reply" setting. A campaign either hands a classified reply to the
  * Inbox (`handoff`) or lets the AI draft timed follow-ups that a person approves (`ai_drafts`). The mode is not stored
  * in a column: `ai_drafts` is a campaign-owned sequence that is active and has a published version, `handoff` is no
  * sequence or an archived one. Nothing here reads data, and nothing here can send.
@@ -21,7 +21,7 @@ export const AFTER_REPLY_MODE_LABELS: Record<AfterReplyMode, string> = {
 
 export const isAfterReplyMode = (value: unknown): value is AfterReplyMode => value === "handoff" || value === "ai_drafts";
 
-/** The mode a campaign is in, from the state of its After a reply sequence (null when it has none). */
+/** The mode a campaign is in, from the state of its Follow-ups after a reply sequence (null when it has none). */
 export function afterReplyModeOf(flow: { status: string; hasPublishedVersion: boolean } | null): AfterReplyMode {
   return flow !== null && flow.status === "active" && flow.hasPublishedVersion ? "ai_drafts" : "handoff";
 }
@@ -73,7 +73,7 @@ export interface StartBlockFacts {
   contact: boolean;
   /** The campaign that most recently emailed the person, or null. */
   owner: { name: string; channel: string; type: string; status: string; archived: boolean } | null;
-  /** The owner's After a reply sequence, or null when it has none. */
+  /** The owner's Follow-ups after a reply sequence, or null when it has none. */
   flow: { status: string; hasPublished: boolean } | null;
   stepCount: number;
   /** A person already answered the reply by hand. */
@@ -176,7 +176,7 @@ export function stopReasonLabel(reason: string | null | undefined): string {
 /** A fact about the person or the record that ends a run whatever the reply type's rules say. */
 export interface FixedStopRule {
   id: string;
-  /** One line for the read-only list in the campaign's After a reply settings. */
+  /** One line for the read-only list in the campaign's Follow-ups after a reply settings. */
   label: string;
   /** The reason the engine stores when this fact ends a run. */
   reason: InterruptReason;

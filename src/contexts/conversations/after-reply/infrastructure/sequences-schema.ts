@@ -14,7 +14,7 @@ import { inList } from "@/platform/db/sql-values";
  * pointers on the sequence (the "one draft" and "highest published" facts come
  * from the versions table), so no circular foreign keys.
  *
- * A campaign owns at most one sequence: its "After a reply" flow (`campaign_id` set). Sequences without a
+ * A campaign owns at most one sequence: its "Follow-ups after a reply" flow (`campaign_id` set). Sequences without a
  * campaign are the legacy standalone ones, kept as archived rows. Deleting a campaign deletes its sequence
  * with the versions and steps; the RESTRICT keys from runs block that when any run exists.
  */
@@ -33,7 +33,7 @@ export const sequences = pgTable(
     status: text("status").notNull().default("active"),
     /** The campaign this sequence belongs to, or null for a legacy standalone sequence. */
     campaignId: uuid("campaign_id"),
-    /** When the After a reply setting last turned on. Only the flow save writes it. The engine's "new reply" cutoff reads it. */
+    /** When the Follow-ups after a reply setting last turned on. Only the flow save writes it. The engine's "new reply" cutoff reads it. */
     afterReplyEnabledAt: tstz("after_reply_enabled_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

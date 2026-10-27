@@ -20,7 +20,7 @@ export const replyTypeOption = (t: typeof replyTypes.$inferSelect): ReplyTypeOpt
 
 /**
  * The facts `typeChangeOutcome` reads for one record: its current type, the active types of its set, whether the latest
- * reply asked to stop (`replyAskedToStop`), whether the person is a contact, and the After a reply mode
+ * reply asked to stop (`replyAskedToStop`), whether the person is a contact, and the Follow-ups after a reply mode
  * and channel that decide whether follow-ups apply. Null for a record outside the organization or with only private
  * conversations. The Change type outcomes read it; a write decides through `personTypeDecisionTx`.
  */

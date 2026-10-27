@@ -240,7 +240,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await count("sequence_runs", f.org)).toBe(1);
     });
 
-    it("ends the run and starts nothing when the campaign has After a reply off", async () => {
+    it("ends the run and starts nothing when the campaign has Follow-ups after a reply off", async () => {
       const { f, recordId, version, campaignId } = await withRun();
       await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff", confirmStopRuns: true });
       await move(f, recordId, "meeting_done", version);

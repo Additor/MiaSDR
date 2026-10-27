@@ -18,7 +18,7 @@ import { replyAskedToStop } from "./stop-requested-sql";
  * 2. The active or paused sequence run ends as `interrupted` with `reason`.
  * 3. `context_version` goes up by one, so draft and classification jobs queued for the old version skip.
  * 4. A new run starts only when the person's decision says follow-ups keep going (`followUps` of `decideReplyType`)
- *    and the campaign that most recently emailed the person has After a reply on; otherwise no run starts.
+ *    and the campaign that most recently emailed the person has Follow-ups after a reply on; otherwise no run starts.
  *
  * The caller holds the record's lock and has already written the new type. Undo only ends work, so it calls
  * `interruptRecordRunsTx` and retires drafts itself.

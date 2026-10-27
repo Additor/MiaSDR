@@ -144,7 +144,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
   });
 
   describe("a conversion that commits while a run starts", () => {
-    /** A lead with a classified reply and an owner campaign with After a reply on, and no run yet. */
+    /** A lead with a classified reply and an owner campaign with Follow-ups after a reply on, and no run yet. */
     async function readyToStart() {
       const f = await fixture();
       const lead = await ingest(f);

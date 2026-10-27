@@ -81,7 +81,7 @@ async function latestPublished(tx: Tx | typeof db, sequenceId: string) {
   return row ?? null;
 }
 
-// The After a reply flow of a campaign ---------------------------------------------------------------
+// The Follow-ups after a reply flow of a campaign ---------------------------------------------------------------
 
 const OPEN_STEP_RUNS = sql`('scheduled', 'drafting', 'awaiting_review', 'failed')`;
 
