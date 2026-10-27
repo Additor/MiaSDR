@@ -37,7 +37,6 @@ const MESSAGE_EXEMPT: Record<string, string> = {
   "src/contexts/conversations/infrastructure/drizzle-conversation-store.ts": "Email ingest: finds a stored message by idempotency key to answer `duplicate`; returns ids only.",
   "src/contexts/conversations/infrastructure/drizzle-linkedin-conversation-store.ts": "LinkedIn ingest: finds a stored message by idempotency key to answer `duplicate`; returns ids only.",
   "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts": "Email follow-up engine: reads the latest inbound message of an email conversation to time a step; no content leaves it.",
-  "src/contexts/conversations/infrastructure/reply-store-drafts.ts": "Reads the newest subject of a conversation that the same method already loaded through a guarded read (`publicConversation`); a private conversation never gets this far.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": "The campaign's own thread view, limited to conversations marked with that campaign.",
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": "Restore refuses a person who replied. A private reply counts as a reply, so this safety check must see private messages; it returns person ids.",
   "src/test-support/route-client.ts": "Test seeder, not application code (see the conversations exemption above).",
