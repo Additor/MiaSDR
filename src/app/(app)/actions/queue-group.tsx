@@ -82,8 +82,8 @@ function announce(text: string) {
 }
 
 /**
- * The page's live region for row steps (Accept, Looks right). It sits outside the groups: a step changes a group's total,
- * the refresh mounts the group again, and a region inside it would lose the text before a screen reader read it.
+ * The page's live region for row steps (Accept, Looks right). It sits outside the groups: a step can empty a group, the
+ * refresh then takes it off the page, and a region inside it would lose the text before a screen reader read it.
  */
 export function QueueNotice() {
   const [text, setText] = useState("");
@@ -137,7 +137,9 @@ function describe(item: QueueItemView, ambiguous: ReadonlySet<string>): { detail
       const confidence = c?.confidence != null ? `, ${confidenceText(c.confidence)}` : "";
       // Accepting this one takes a locked customer out of Existing customer, so the row opens the thread instead of settling.
       if (c?.kind === "held" && c.unlocksCustomer) return { detail: `AI picked ${label}${confidence}. Accepting takes them out of Existing customer.`, action: open };
-      return c?.kind === "held" ? { detail: `AI picked ${label}${confidence}`, action: "Accept" } : { detail: `AI applied ${label}${confidence}`, action: "Looks right" };
+      // Accept answers on a public thread only; without one the row opens the person.
+      if (c?.kind === "held") return { detail: `AI picked ${label}${confidence}`, action: item.conversationId ? "Accept" : open };
+      return { detail: `AI applied ${label}${confidence}`, action: "Looks right" };
     }
     case "follow_up":
       return {
@@ -190,6 +192,15 @@ export function QueueGroup({
   const ambiguous = new Set(ambiguousTypes);
   const [items, setItems] = useState(initialItems);
   const [cursor, setCursor] = useState(initialCursor);
+  // The group stays mounted across refreshes, so the row that took a settled row's place keeps focus and j and k go on
+  // from it. Fresh rows from the server replace the list; a refresh that brings the same rows keeps the pages loaded since.
+  const serverRows = JSON.stringify([initialItems, initialCursor]);
+  const [seenRows, setSeenRows] = useState(serverRows);
+  if (serverRows !== seenRows) {
+    setSeenRows(serverRows);
+    setItems(initialItems);
+    setCursor(initialCursor);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();

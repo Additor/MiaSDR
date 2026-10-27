@@ -86,16 +86,30 @@ test.describe("the Actions queue as a list to work through", () => {
 
   test("a held AI pick is accepted in its row, and the person stays on the queue", async ({ page }) => {
     await signInAdmin(page);
+    // A second AI pick row, so a row moves up into the accepted one's place.
+    const [seeded] = await sql()`select 1 from people where email = ${FAY.email}`;
+    if (!seeded) await seedReply(page.request, { key: "S43E", mailbox: "sdr43e@e2e-corp.test", lead: FAY, reply: { bodyText: "Please stop emailing me." } });
     await page.goto("/actions");
+    await expect(page.getByTestId("queue-item").filter({ hasText: "Fay Stone" })).toBeVisible();
     const suggested = page.getByTestId("queue-item").filter({ hasText: "Eli Moss" }).filter({ hasText: /AI picked/ });
     await expect(suggested).toHaveCount(1);
     await waitForHydrated(suggested);
+    const total = page.getByTestId("queue-total-classification");
+    const before = Number(await total.textContent());
     await suggested.getByTestId("settle").click();
     // The click settles the row where it stands: no thread opens, and the suggestion is not asked for again.
     await expect(page).toHaveURL(/\/actions/);
     await expect(page.getByTestId("queue-item").filter({ hasText: "Eli Moss" }).filter({ hasText: /AI picked/ })).toHaveCount(0);
-    // The page's one live region says whose pick was accepted, after the refresh mounts the group again.
+    // The page's one live region says whose pick was accepted.
     await expect(page.getByTestId("queue-notice")).toHaveText("AI pick accepted: Eli Moss.");
+    // Once the refresh brings the new total, focus is still on the row that moved up, and j goes on from it.
+    await expect(total).toHaveText(String(before - 1));
+    const focused = page.getByTestId("queue-item").filter({ has: page.locator("a:focus") });
+    await expect(focused).toHaveCount(1);
+    const from = await focused.getAttribute("data-list-row");
+    const ids = await page.locator("[data-list-row]").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-list-row")));
+    await page.keyboard.press("j");
+    await expect(page.locator("[data-list-row][data-active=true]")).toHaveAttribute("data-list-row", ids[Math.min(ids.indexOf(from) + 1, ids.length - 1)] ?? "");
   });
 
   test("a stop request is its own row: Review stop request opens the thread with Stop contacting, and nothing is accepted", async ({ page }) => {
