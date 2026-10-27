@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
@@ -35,10 +35,18 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       if (!head.latest) throw new ConflictError("There is no inbound message to classify.");
       if (head.version !== input.expectedContextVersion) throw new ConflictError("Reply handling changed after you opened it. Reload and choose the category again.");
 
+      // The pick this decision settles. A failed or stale row names no type and no previous type: it stays as the record
+      // of what went wrong, and the person's pick goes in as a row of its own.
       const [existing] = await tx
         .select()
         .from(replyTypePicks)
-        .where(and(eq(replyTypePicks.messageId, head.latest), eq(replyTypePicks.expectedContextVersion, head.version)));
+        .where(
+          and(
+            eq(replyTypePicks.messageId, head.latest),
+            eq(replyTypePicks.expectedContextVersion, head.version),
+            inArray(replyTypePicks.status, ["proposed", "auto_applied", "accepted", "overridden"]),
+          ),
+        );
 
       let targetId: string | null;
       if (input.replyTypeKey === null) {
@@ -68,7 +76,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
       const locked = lockAfterPersonMove(target);
 
-      let replyTypePickId: string;
+      let replyTypePickId: string | null = null;
       if (existing) {
         await tx
           .update(replyTypePicks)
@@ -86,14 +94,37 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           })
           .where(eq(replyTypePicks.id, existing.id));
         replyTypePickId = existing.id;
+      }
+
+      const { wantsDraft } = decision;
+      const nextState = afterTypeChange(head.state, decision);
+      await tx
+        .update(records)
+        .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", replyTypeLocked: locked, workflowState: nextState })
+        .where(eq(records.id, head.recordId));
+      // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
+      // sequence of the corrected subcategory starts. The pick follows to the new version so the fresh draft job accepts it.
+      const now = new Date();
+      const restart = await restartRecordWorkTx(tx, {
+        organizationId: input.organizationId,
+        recordId: head.recordId,
+        reason: "classification_corrected",
+        draftReason: "A person corrected the reply type after this draft was written.",
+        followUps: decision.followUps,
+        now,
+        actorUserId: input.actorUserId,
+      });
+      if (replyTypePickId) {
+        await tx.update(replyTypePicks).set({ expectedContextVersion: restart.contextVersion }).where(eq(replyTypePicks.id, replyTypePickId));
       } else {
+        // A new row takes the new version at once: the old version's slot may hold a failed or stale pick.
         const [row] = await tx
           .insert(replyTypePicks)
           .values({
             organizationId: input.organizationId,
             recordId: head.recordId,
             messageId: head.latest,
-            expectedContextVersion: head.version,
+            expectedContextVersion: restart.contextVersion,
             previousGroupKey: head.groupKey,
             previousReplyTypeId: head.replyTypeId,
             proposedGroupKey: target.groupKey,
@@ -111,26 +142,6 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           .returning({ id: replyTypePicks.id });
         replyTypePickId = row.id;
       }
-
-      const { wantsDraft } = decision;
-      const nextState = afterTypeChange(head.state, decision);
-      await tx
-        .update(records)
-        .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", replyTypeLocked: locked, workflowState: nextState })
-        .where(eq(records.id, head.recordId));
-      // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
-      // sequence of the corrected subcategory starts. The classification row follows to the new version so the fresh draft job accepts it.
-      const now = new Date();
-      const restart = await restartRecordWorkTx(tx, {
-        organizationId: input.organizationId,
-        recordId: head.recordId,
-        reason: "classification_corrected",
-        draftReason: "A person corrected the reply type after this draft was written.",
-        followUps: decision.followUps,
-        now,
-        actorUserId: input.actorUserId,
-      });
-      await tx.update(replyTypePicks).set({ expectedContextVersion: restart.contextVersion }).where(eq(replyTypePicks.id, replyTypePickId));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,

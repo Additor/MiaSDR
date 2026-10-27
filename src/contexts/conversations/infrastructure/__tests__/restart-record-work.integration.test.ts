@@ -438,6 +438,25 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await one("select expected_context_version from drafts where organization_id = $1 and status = 'awaiting_review' order by created_at desc limit 1", [f.org])).toMatchObject({ expected_context_version: version + 2 });
     });
 
+    it("a pick after a failed AI pick stores a fresh pick that Undo can take back", async () => {
+      const f = await fixture();
+      const r = await composition.ingestInbound(mail(f));
+      const recordId = (await one("select id from records where organization_id = $1", [f.org])).id as string;
+      await move(f, recordId, "meeting_done", await versionOf(recordId));
+      const record = await one("select context_version, latest_inbound_message_id from records where id = $1", [recordId]);
+      // What `fail` writes when the classification job gives up.
+      await sql`insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, status, error)
+                values (${f.org}, ${recordId}, ${record.latest_inbound_message_id}, ${record.context_version}, 'failed', 'the model was down')`;
+
+      await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "demo_request", expectedContextVersion: Number(record.context_version) });
+      const picks = await rows("select id, status, provider, previous_reply_type_id from reply_type_picks where organization_id = $1 order by created_at", [f.org]);
+      expect(picks.map((p) => p.status)).toEqual(["failed", "overridden"]);
+      expect(picks[1]).toMatchObject({ provider: "human", previous_reply_type_id: (await sub(f.org, "meeting_done")).id });
+
+      await replyHandlingApp.undoReplyTypePick(f.replyHandlingDeps, f.actor, picks[1].id as string);
+      expect(await one("select reply_type_id from records where id = $1", [recordId])).toMatchObject({ reply_type_id: (await sub(f.org, "meeting_done")).id });
+    });
+
     it("another organization's person gets 404", async () => {
       const a = await withRun();
       const b = await withRun();
