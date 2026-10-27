@@ -23,6 +23,7 @@ function facts(over: Partial<StartFacts> = {}): StartFacts {
       contextVersion: 1,
       workflowState: "action_required",
       hasEmail: true,
+      stopRequested: false,
     },
     doNotContact: false,
     suppressed: false,

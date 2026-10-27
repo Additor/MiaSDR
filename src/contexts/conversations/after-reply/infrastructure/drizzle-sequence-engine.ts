@@ -9,6 +9,7 @@ import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, ts, zoneOfTx } from "./sequence-run-tx";
 import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
 import { knowledgeFor } from "../../infrastructure/thread-context";
+import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 
@@ -64,7 +65,8 @@ const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
 
 export const drizzleSequenceEngine: SequenceEngineStore = {
   // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned
-  // on, and the record's reply type keeps follow-ups going (`reply_types.follow_ups`, the rule `startBlockedReason` reads).
+  // on, the record's reply type keeps follow-ups going (`reply_types.follow_ups`, the rule `startBlockedReason` reads),
+  // and the reply did not ask to stop.
   // A run that skips step 1 (a person answered, or the type is set to Don't write a reply draft) needs a step 2.
   async startCandidates(limit) {
     return rowsOf<{ organization_id: string; id: string }>(
@@ -87,6 +89,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and lm.sent_at >= pick.enabled_at - make_interval(mins => ${NEW_REPLY_MARGIN_MINUTES})
           and r.workflow_state not in ('closed', 'paused')
           and s.follow_ups = 'continue'
+          and not ${stopRequestedSql(sql`r.latest_inbound_message_id`)}
           and p.email is not null
           and p.lifecycle <> 'contact'
           and exists (select 1 from reply_type_picks cl where cl.message_id = r.latest_inbound_message_id and cl.expected_context_version = r.context_version and cl.status in ('auto_applied', 'accepted', 'overridden'))

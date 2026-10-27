@@ -115,6 +115,12 @@ describe("decideReplyType", () => {
     expect(decideReplyType(type(), { ...facts, campaignMode: null }).followUps).toBe("not_applicable");
     expect(decideReplyType(type(), { ...facts, channel: "linkedin" }).followUps).toBe("not_applicable");
   });
+
+  it("stops follow-ups for a reply that asked to stop, whatever the type says", () => {
+    expect(decideReplyType(type({ followUps: "continue" }), { ...facts, stopRequested: true }).followUps).toBe("stop");
+    expect(decideReplyType(type({ followUps: "continue" }), { ...facts, stopRequested: true, confidence: null }).followUps).toBe("stop");
+    expect(decideReplyType(type({ followUps: "continue" }), { ...facts, stopRequested: true, isContact: true }).followUps).toBe("not_applicable");
+  });
 });
 
 describe("validateTypeRules", () => {
@@ -163,8 +169,16 @@ describe("typeChangeOutcome", () => {
   it("never marks do not contact, even for the stop request type", () => {
     expect(typeChangeOutcome(type(), askedToStop, { ...outcomeFacts, stopRequested: true })).toEqual({
       replyDraft: "Reply draft: none, because they asked to stop.",
-      followUps: "Follow-ups: stop. Asked to stop is set to stop follow-ups.",
+      followUps: "Follow-ups: stop, because they asked to stop.",
       contact: "Contact: unchanged until you choose Stop contacting.",
+    });
+  });
+
+  it("stops follow-ups for a reply that asked to stop, even on a type that keeps them going", () => {
+    expect(typeChangeOutcome(notNow, type(), { ...outcomeFacts, stopRequested: true })).toEqual({
+      replyDraft: "Reply draft: none, because they asked to stop.",
+      followUps: "Follow-ups: stop, because they asked to stop.",
+      contact: "Contact: unchanged.",
     });
   });
 

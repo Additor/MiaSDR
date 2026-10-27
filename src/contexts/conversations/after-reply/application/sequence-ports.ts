@@ -112,6 +112,8 @@ export interface StartFacts {
     workflowState: string;
     /** The person has an email address. */
     hasEmail: boolean;
+    /** The latest reply asked to stop (`stopRequestedSql`), which starts no follow-ups. */
+    stopRequested: boolean;
   };
   doNotContact: boolean;
   /** The person's address is on the suppression list. */

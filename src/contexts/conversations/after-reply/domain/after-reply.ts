@@ -62,6 +62,8 @@ export interface StartBlockFacts {
     lastInboundAt: Date | null;
     workflowState: string;
     hasEmail: boolean;
+    /** The latest reply asked to stop. */
+    stopRequested?: boolean;
   };
   conversation: { channel: string } | null;
   doNotContact: boolean;
@@ -101,6 +103,7 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (f.suppressed) return "This address is on the suppression list, so follow-ups do not apply.";
   if (!record.hasEmail) return "This person has no email address, so follow-ups cannot start.";
   if (!record.replyTypeId) return "The reply has no reply type yet, so follow-ups cannot start.";
+  if (record.stopRequested) return "The reply asked to stop, so follow-ups do not start.";
   if (!followUpsContinue(record.followUps)) return followUpsStopReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
   if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply, replyDraft: record.replyDraft }) === null) {
     if (record.replyDraft === false && !f.answered && !f.skipReply) return replyDraftSkipReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
