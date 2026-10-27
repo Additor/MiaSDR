@@ -285,6 +285,40 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     });
   });
 
+  describe("a run start reads the rules the pick stored", () => {
+    /** A reply the AI picks and applies, from a lead the campaign emailed an hour earlier. The sequence tick has not run. */
+    async function picked(body: string) {
+      const f = await fixture();
+      const r = await composition.ingestInbound(mail(f, { bodyText: body }));
+      const personId = (await one("select id from people where organization_id = $1", [f.org])).id as string;
+      const campaignId = await createCampaign(sql, { organizationId: f.org, name: "Autumn" });
+      await recordSentEmail(sql, { organizationId: f.org, campaignId, personId, sentAt: new Date(f.clock().getTime() - 3_600_000) });
+      await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "ai_drafts", steps: STEPS("Flow") });
+      await f.aiRun();
+      const recordId = (await one("select id from records where organization_id = $1", [f.org])).id as string;
+      return { f, r, recordId };
+    }
+
+    it("starts no run when a type set to stop follow-ups is edited to keep going after the pick", async () => {
+      const { f, recordId } = await picked("Not now, thanks.");
+      expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "auto_applied", rules: { followUps: "stop" } });
+      await sql`update reply_types set follow_ups = 'continue' where organization_id = ${f.org} and key = 'not_required_right_now'`;
+      await f.cycle();
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      const seq = await import("../../after-reply/application/sequences");
+      expect((await seq.getRecordSequence(f.seqDeps, f.actor, recordId)).restartBlockedReason).toBe("Not now is set to stop follow-ups.");
+    });
+
+    it("starts at the step the pick's Reply draft rule chose, after the type's rule changed", async () => {
+      const { f } = await picked("Could we book a demo next week?");
+      await sql`update reply_types set reply_draft = false where organization_id = ${f.org} and key = 'demo_request'`;
+      await f.cycle();
+      const run = await one("select id from sequence_runs where organization_id = $1 and status = 'active'", [f.org]);
+      // The pick wrote a reply draft, so the run starts at step 1 and adopts it.
+      expect(await count("sequence_step_runs", f.org, `sequence_run_id = '${run.id}'`)).toBe(2);
+    });
+  });
+
   describe("replyTypeChange in the draft prompt", () => {
     it("passes the move's stage, time and note to the model and drops the classifier's reason", async () => {
       const { f, r, recordId, version } = await withRun({ flow: false });

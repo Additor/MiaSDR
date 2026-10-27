@@ -4,7 +4,7 @@ import type { ClaimedStep, InterruptCandidate, SequenceEngineStore } from "../ap
 import { MAX_DRAFT_ATTEMPTS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
 import { NEW_REPLY_MARGIN_MINUTES } from "../domain/after-reply";
 import type { FollowUpsRule } from "../../domain/reply-type";
-import { flowRunnableSql, owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
+import { flowRunnableSql, owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, ts, zoneOfTx } from "./sequence-run-tx";
 import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
@@ -65,8 +65,8 @@ const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
 
 export const drizzleSequenceEngine: SequenceEngineStore = {
   // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned
-  // on, the record's reply type keeps follow-ups going (`reply_types.follow_ups`, the rule `startBlockedReason` reads),
-  // and the reply did not ask to stop.
+  // on, the rules the applied pick stored keep follow-ups going (`startFollowUpsSql`, the rule `startBlockedReason`
+  // reads), and the reply did not ask to stop.
   // A run that skips step 1 (a person answered, or the type is set to Don't write a reply draft) needs a step 2.
   async startCandidates(limit) {
     return rowsOf<{ organization_id: string; id: string }>(
@@ -88,7 +88,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and ${startableCampaignSql({ channel: sql`own.channel`, type: sql`own.type`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}
           and lm.sent_at >= pick.enabled_at - make_interval(mins => ${NEW_REPLY_MARGIN_MINUTES})
           and r.workflow_state not in ('closed', 'paused')
-          and s.follow_ups = 'continue'
+          and ${startFollowUpsSql("r", "s")} = 'continue'
           and not ${stopRequestedSql(sql`r.latest_inbound_message_id`)}
           and p.email is not null
           and p.lifecycle <> 'contact'
@@ -96,7 +96,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and not exists (select 1 from sequence_runs sr where sr.record_id = r.id and (sr.trigger_message_id = r.latest_inbound_message_id or sr.status in ('active', 'paused')))
           and not exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.do_not_contact)
           and not exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email))
-          and (not ((r.last_outbound_at is not null and r.last_inbound_at is not null and r.last_outbound_at >= r.last_inbound_at) or not s.reply_draft)
+          and (not ((r.last_outbound_at is not null and r.last_inbound_at is not null and r.last_outbound_at >= r.last_inbound_at) or not ${startReplyDraftSql("r", "s")})
                or (select count(*) from sequence_steps st where st.sequence_version_id = pick.version_id) >= 2)
         order by r.last_inbound_at desc nulls last
         limit ${limit}`),

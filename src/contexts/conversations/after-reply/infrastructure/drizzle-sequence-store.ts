@@ -4,7 +4,7 @@ import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { AfterReplyStore, FlowRunRow, FlowState, NewRun, RecordSequenceState, RunStore, StartFacts, StepView } from "../application/sequence-ports";
 import { afterReplyFlowName, afterReplyModeOf } from "../domain/after-reply";
 import { AFTER_REPLY_OFF, assertPublishable, assertRunTransition, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
-import { owningCampaignSql, startableCampaignSql } from "./after-reply-sql";
+import { owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, asDateOrNull, ts, zoneOfTx } from "./sequence-run-tx";
 import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
@@ -271,7 +271,7 @@ export async function loadStartOn(
     conv_channel: string | null;
   }>(
     await exec.execute(sql`
-      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, s.reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
+      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, ${startFollowUpsSql("r", "s")} as follow_ups, ${startReplyDraftSql("r", "s")} as reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              ${stopRequestedSql(sql`r.latest_inbound_message_id`)} as stop_requested,
