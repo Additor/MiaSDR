@@ -250,7 +250,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
                 More
                 <ChevronDownIcon aria-hidden />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-auto min-w-48">
+              <DropdownMenuContent className="w-auto min-w-48">
                 <DropdownMenuItem onClick={() => setDanger({ kind: "results", ids: picked })}>Delete stored results</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => setDanger({ kind: "remove", ids: picked })}>

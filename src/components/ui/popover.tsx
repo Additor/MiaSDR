@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { cn } from "cn"
+import { popupPositioner, POPUP_SURFACE, TIP_POSITIONER, type PopupPlacement } from "./popup"
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -15,14 +16,13 @@ function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
 /**
  * The popup on the menu surface. `container` and `keepMounted` keep the popup inside a given node while it is closed,
  * so a form around that node still submits its fields. `anchor` places it against an element other than the trigger,
- * for a popover without one (the calendar under a grid cell's date editor).
+ * for a popover without one (the calendar under a grid cell's date editor). `tip` places it where a tooltip opens, for
+ * `TouchTip`'s popover on a tap.
  */
 function PopoverContent({
-  align = "start",
-  alignOffset = 0,
-  side = "bottom",
-  sideOffset = 4,
-  collisionPadding = 16,
+  side,
+  align,
+  tip = false,
   positionMethod,
   anchor,
   positionerClassName,
@@ -31,28 +31,23 @@ function PopoverContent({
   className,
   ...props
 }: PopoverPrimitive.Popup.Props &
-  Pick<
-    PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset" | "collisionPadding" | "positionMethod" | "anchor"
-  > &
+  PopupPlacement &
+  Pick<PopoverPrimitive.Positioner.Props, "positionMethod" | "anchor"> &
   Pick<PopoverPrimitive.Portal.Props, "container" | "keepMounted"> & {
     positionerClassName?: string
+    tip?: boolean
   }) {
   return (
     <PopoverPrimitive.Portal container={container} keepMounted={keepMounted}>
       <PopoverPrimitive.Positioner
         className={cn("isolate z-50 outline-none", positionerClassName)}
-        align={align}
-        alignOffset={alignOffset}
-        side={side}
-        sideOffset={sideOffset}
-        collisionPadding={collisionPadding}
+        {...(tip ? TIP_POSITIONER : popupPositioner({ side, align }))}
         positionMethod={positionMethod}
         anchor={anchor}
       >
         <PopoverPrimitive.Popup
           data-slot="popover-content"
-          className={cn("z-50 max-h-(--available-height) origin-(--transform-origin) overflow-hidden rounded-lg bg-popover text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none transition-[opacity,scale] duration-(--duration-menu) ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0", className)}
+          className={cn("z-50 overflow-hidden text-sm", POPUP_SURFACE, className)}
           {...props}
         />
       </PopoverPrimitive.Positioner>

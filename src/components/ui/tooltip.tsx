@@ -2,6 +2,7 @@
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 import { cn } from "cn"
+import { BESIDE_TIP_POSITIONER, TIP_POSITIONER } from "./popup"
 
 function TooltipProvider({
   delay = 0,
@@ -24,28 +25,11 @@ function TooltipTrigger({ ...props }: TooltipPrimitive.Trigger.Props) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
 }
 
-function TooltipContent({
-  className,
-  side = "top",
-  sideOffset = 4,
-  align = "center",
-  alignOffset = 0,
-  children,
-  ...props
-}: TooltipPrimitive.Popup.Props &
-  Pick<
-    TooltipPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
+/** Opens above the trigger and centered (`TIP_POSITIONER`); `beside` opens it to the right, for the collapsed sidebar. */
+function TooltipContent({ className, children, beside = false, ...props }: TooltipPrimitive.Popup.Props & { beside?: boolean }) {
   return (
     <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Positioner
-        align={align}
-        alignOffset={alignOffset}
-        side={side}
-        sideOffset={sideOffset}
-        className="isolate z-50"
-      >
+      <TooltipPrimitive.Positioner className="isolate z-50" {...(beside ? BESIDE_TIP_POSITIONER : TIP_POSITIONER)}>
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"
           className={cn(

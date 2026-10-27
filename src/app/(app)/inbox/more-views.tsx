@@ -33,7 +33,7 @@ export function MoreViews({ items }: { items: MoreView[] }) {
         {current ? current.label : "More"}
         <ChevronDownIcon aria-hidden className="size-3" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-44" align="start">
+      <DropdownMenuContent className="w-44">
         {items.map((item) => (
           <DropdownMenuItem key={item.label} render={<Link href={item.href} aria-current={item.active ? "true" : undefined} />}>
             {item.label}

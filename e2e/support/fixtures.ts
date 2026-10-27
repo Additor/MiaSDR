@@ -541,9 +541,23 @@ export async function openFilters(page: Page): Promise<void> {
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
 }
 
+/**
+ * Waits until a popup has finished opening. It scales from 95% over `--duration-menu`, and its transition starts a frame
+ * after mount, so this waits two frames and then for every transition on it. A click before that can land while the box
+ * still moves, and Playwright then scrolls the page to reach it.
+ */
+export async function settled(popup: Locator): Promise<void> {
+  await expect(popup).toBeVisible();
+  await popup.evaluate(async (el) => {
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    await Promise.all(el.getAnimations().map((a) => a.finished));
+  });
+}
+
 /** Picks an option in the app's Select: opens the combobox, clicks the option by its name and waits for the list to close. */
 export async function pickOption(page: Page, trigger: Locator, option: string | RegExp): Promise<void> {
   await trigger.click();
+  await settled(page.locator('[data-slot="select-content"][data-open]'));
   await page.getByRole("option", { name: option, exact: typeof option === "string" }).click();
   await expect(page.getByRole("listbox")).toHaveCount(0);
 }

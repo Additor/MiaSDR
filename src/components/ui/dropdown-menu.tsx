@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { cn } from "cn"
+import { popupPositioner, POPUP_SURFACE, SUBMENU_POSITIONER, type PopupPlacement } from "./popup"
 import { ChevronRightIcon, CheckIcon } from "lucide-react"
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
@@ -17,30 +18,13 @@ function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
   return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
 }
 
-function DropdownMenuContent({
-  align = "start",
-  alignOffset = 0,
-  side = "bottom",
-  sideOffset = 4,
-  className,
-  ...props
-}: MenuPrimitive.Popup.Props &
-  Pick<
-    MenuPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
+function DropdownMenuContent({ side, align, className, ...props }: MenuPrimitive.Popup.Props & PopupPlacement) {
   return (
     <MenuPrimitive.Portal>
-      <MenuPrimitive.Positioner
-        className="isolate z-50 outline-none"
-        align={align}
-        alignOffset={alignOffset}
-        side={side}
-        sideOffset={sideOffset}
-      >
+      <MenuPrimitive.Positioner className="isolate z-50 outline-none" {...popupPositioner({ side, align })}>
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
-          className={cn("z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none transition-[opacity,scale] duration-(--duration-menu) ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-closed:overflow-hidden", className )}
+          className={cn("z-50 w-(--anchor-width) min-w-32 overflow-x-hidden overflow-y-auto p-1 data-closed:overflow-hidden", POPUP_SURFACE, className )}
           {...props}
         />
       </MenuPrimitive.Positioner>
@@ -123,24 +107,18 @@ function DropdownMenuSubTrigger({
   )
 }
 
-function DropdownMenuSubContent({
-  align = "start",
-  alignOffset = -3,
-  side = "right",
-  sideOffset = 0,
-  className,
-  ...props
-}: React.ComponentProps<typeof DropdownMenuContent>) {
+/** Opens to the right of the item that opened it, a step above the menu under it (`shadow-lg`). */
+function DropdownMenuSubContent({ className, ...props }: MenuPrimitive.Popup.Props) {
   return (
-    <DropdownMenuContent
-      data-slot="dropdown-menu-sub-content"
-      className={cn("w-auto min-w-[96px] rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10", className )}
-      align={align}
-      alignOffset={alignOffset}
-      side={side}
-      sideOffset={sideOffset}
-      {...props}
-    />
+    <MenuPrimitive.Portal>
+      <MenuPrimitive.Positioner className="isolate z-50 outline-none" {...SUBMENU_POSITIONER}>
+        <MenuPrimitive.Popup
+          data-slot="dropdown-menu-sub-content"
+          className={cn("z-50 w-auto min-w-[96px] overflow-x-hidden overflow-y-auto p-1 data-closed:overflow-hidden", POPUP_SURFACE, "shadow-lg", className)}
+          {...props}
+        />
+      </MenuPrimitive.Positioner>
+    </MenuPrimitive.Portal>
   )
 }
 

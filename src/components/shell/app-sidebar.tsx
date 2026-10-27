@@ -213,7 +213,7 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
                   </div>
                   <ChevronsUpDownIcon className="ml-auto size-4" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent side="bottom" align="start" className="min-w-56">
+                <DropdownMenuContent className="min-w-56">
                   <DropdownMenuGroup>
                     <DropdownMenuLabel>Organizations</DropdownMenuLabel>
                     <DropdownMenuRadioGroup value={activeId ?? ""} onValueChange={(id) => void switchTo(id)}>
@@ -315,7 +315,7 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
                 </div>
                 <ChevronsUpDownIcon className="ml-auto size-4" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="start" className="min-w-56">
+              <DropdownMenuContent side="top" className="min-w-56">
                 <DropdownMenuGroup>
                   <DropdownMenuLabel>Theme</DropdownMenuLabel>
                   <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>

@@ -4,6 +4,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_REPLY_TYPES } from "@/contexts/conversations/domain/default-reply-types";
 import { sourceFiles } from "./context-layers";
+import { parseSource } from "./source-ast";
 
 /**
  * Behavior follows a reply type's rules and `systemRole`, never its key or group ("Reply types and type rules" in
@@ -95,7 +96,7 @@ interface Finding {
 }
 
 function scan(file: string, text = readFileSync(file, "utf8")): Finding[] {
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const source = parseSource(file, text);
   const out: Finding[] = [];
   const add = (node: ts.Node, rule: Finding["rule"]) =>
     out.push({ file: rel(file), line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, rule, text: node.getText(source).slice(0, 120) });

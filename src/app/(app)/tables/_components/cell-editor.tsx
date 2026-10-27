@@ -172,7 +172,7 @@ function SelectEditor({
       <SelectTrigger aria-label={label} className="h-full w-full rounded-none border-0 bg-background px-2 focus-visible:ring-0 dark:bg-background">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false} align="start">
+      <SelectContent>
         {items.map((item) => (
           <SelectItem key={item.value} value={item.value} className={item.value === EMPTY ? "text-muted-foreground" : undefined}>
             {item.label}
