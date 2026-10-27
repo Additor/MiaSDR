@@ -106,7 +106,7 @@ export function ChangeTypeButton({
     [types, currentReplyTypeId],
   );
   const chosen = target?.type;
-  const leavesCustomer = !correcting && replyTypeLocked && chosen !== undefined && chosen.groupKey !== "customer";
+  const leavesCustomer = replyTypeLocked && chosen !== undefined && chosen.groupKey !== "customer";
   const asksStop = chosen?.systemRole === "stop_request" && !stop.doNotContact;
   const outcome = chosen ? outcomes?.get(chosen.id) : undefined;
 

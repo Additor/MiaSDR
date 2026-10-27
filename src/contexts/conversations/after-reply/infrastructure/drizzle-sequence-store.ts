@@ -13,6 +13,7 @@ import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import { defaultReplyTypeSetId } from "../../infrastructure/drizzle-conversation-store";
+import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 
 interface StepRow {
   id: string;
@@ -258,6 +259,7 @@ export async function loadStartOn(
     context_version: number;
     workflow_state: string;
     has_email: boolean;
+    stop_requested: boolean;
     dnc: boolean;
     suppressed: boolean;
     contact: boolean;
@@ -269,6 +271,7 @@ export async function loadStartOn(
       select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, s.reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
+             ${stopRequestedSql(sql`r.latest_inbound_message_id`)} as stop_requested,
              p.lifecycle = 'contact' as contact,
              exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact) as dnc,
              exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)) as suppressed
@@ -340,6 +343,7 @@ export async function loadStartOn(
       contextVersion: r.context_version,
       workflowState: r.workflow_state,
       hasEmail: r.has_email,
+      stopRequested: r.stop_requested,
     },
     doNotContact: r.dnc,
     suppressed: r.suppressed,

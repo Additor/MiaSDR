@@ -94,8 +94,8 @@ export interface ReplyTypeFacts {
   floor: number;
   /** The record is locked to its current group (`records.reply_type_locked`). */
   locked: boolean;
-  /** The record's type before this pick, or null when it has none. */
-  currentType: { id: string | null; groupKey: string | null; systemRole: SystemRole | null } | null;
+  /** The record's type before this pick, or null when it has none. Its group decides the customer lock hold. */
+  currentType: { groupKey: string | null } | null;
 }
 
 export type FollowUpsOutcome = FollowUpsRule | "not_applicable";
@@ -114,8 +114,8 @@ export interface ReplyTypeDecision {
 /**
  * What applying `type` means for one reply. The type's rules decide, inside fixed rules no setting changes: a
  * locked customer stays in its group until a person moves it, an AI pick below the floor waits for a person, a stop
- * request gets no draft, and follow-ups only apply to email conversations of a campaign in `ai_drafts` mode whose
- * person is not a contact.
+ * request gets no draft and stops follow-ups, and follow-ups only apply to email conversations of a campaign in
+ * `ai_drafts` mode whose person is not a contact.
  */
 export function decideReplyType(type: Pick<ReplyType, "groupKey" | "rules">, facts: ReplyTypeFacts): ReplyTypeDecision {
   const ai = facts.confidence !== null;
@@ -126,7 +126,7 @@ export function decideReplyType(type: Pick<ReplyType, "groupKey" | "rules">, fac
     else if ((facts.confidence as number) < facts.floor) hold = "low_confidence";
   }
   const followUps: FollowUpsOutcome =
-    facts.isContact || facts.campaignMode !== "ai_drafts" || facts.channel !== "email" ? "not_applicable" : type.rules.followUps;
+    facts.isContact || facts.campaignMode !== "ai_drafts" || facts.channel !== "email" ? "not_applicable" : facts.stopRequested ? "stop" : type.rules.followUps;
   return {
     hold,
     needsLooksRight: ai && hold === null && type.rules.checkMode === "after",
@@ -168,7 +168,9 @@ export function typeChangeOutcome(
         : "Follow-ups: none for this conversation."
       : decision.followUps === "continue"
         ? "Follow-ups: keep going."
-        : before?.followUps === "stop"
+        : facts.stopRequested
+          ? "Follow-ups: stop, because they asked to stop."
+          : before?.followUps === "stop"
           ? "Follow-ups: stay stopped."
           : `Follow-ups: stop. ${target.name} is set to stop follow-ups.`;
 

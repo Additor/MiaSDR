@@ -160,7 +160,7 @@ export function TypeLineClient(props: TypeLineProps) {
                 disabled={busy}
                 onClick={() => decide(() => callApi(`/api/inbox/${props.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion }), "AI pick accepted.")}
               >
-                {busy ? "Accepting…" : "Accept"}
+                {busy ? "Accepting…" : decision.holdReason === "protected_customer" ? "Accept and unlock" : "Accept"}
               </Button>
             ) : (
               <Button size="sm" variant={lead} className="max-sm:h-11" disabled={busy} onClick={() => decide(() => callApi(`/api/reply-type-picks/${decision.pickId}/acknowledge`, "POST"), LOOKS_RIGHT_DONE)}>

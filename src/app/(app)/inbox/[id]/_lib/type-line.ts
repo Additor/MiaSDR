@@ -14,6 +14,7 @@ export interface PickFacts {
   acknowledged: boolean;
   proposed: { groupKey: string | null; name: string | null };
   applied: { groupKey: string | null; name: string | null };
+  appliedReplyTypeId: string | null;
   /** The rules the pick was decided with: only Check after asks for Looks right. */
   rules: Pick<TypeRules, "checkMode"> | null;
   proposedSystemRole: SystemRole | null;
@@ -47,10 +48,10 @@ export type TypeDecision<T extends PickFacts = PickFacts> = { kind: "stop" | "he
 export function typeDecision<T extends PickFacts>(
   pick: T | undefined,
   reach: { doNotContact: boolean; suppressed: boolean; channel: string },
-  record: { groupKey: string | null; replyTypeName: string | null },
+  record: { groupKey: string | null; replyTypeId: string | null },
 ): TypeDecision<T> {
   if (!pick || !pick.latest) return null;
-  const applied = pick.status === "auto_applied" && !pick.acknowledged && pick.applied.groupKey === record.groupKey && pick.applied.name === record.replyTypeName;
+  const applied = pick.status === "auto_applied" && !pick.acknowledged && pick.applied.groupKey === record.groupKey && pick.appliedReplyTypeId === record.replyTypeId;
   const unchecked = applied && (pick.rules === null || pick.rules.checkMode === "after");
   const open = (pick.status === "proposed" && pick.current) || applied;
   const stopAsked = pick.stopRequested || pick.proposedSystemRole === "stop_request";
@@ -63,7 +64,7 @@ export function typeDecision<T extends PickFacts>(
 
 /** Why a held pick waits, in one sentence. */
 export const HOLD_TEXT: Record<HoldReason, string> = {
-  protected_customer: "The person is locked as Existing customer.",
+  protected_customer: "The person is locked as Existing customer. Accept takes them out of it.",
   requires_review: "This type waits for a person to check it.",
   low_confidence: "The AI's confidence is under the confidence floor.",
 };
@@ -100,7 +101,7 @@ export const LOOKS_RIGHT_DONE = "Marked as looked at.";
 /** What the reply panel says when no draft is open, read from the record behind the thread. */
 export function draftState(
   detail: {
-    record: { groupKey: string | null; replyTypeName: string | null; replyTypeRules: Pick<TypeRules, "replyDraft"> | null; draftJobPending: boolean };
+    record: { groupKey: string | null; replyTypeId: string | null; replyTypeName: string | null; replyTypeRules: Pick<TypeRules, "replyDraft"> | null; draftJobPending: boolean };
     replyTypePicks: readonly PickFacts[];
     policy: { doNotContact: boolean } | null;
     suppressed: boolean;

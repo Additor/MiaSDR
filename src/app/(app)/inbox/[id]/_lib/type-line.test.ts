@@ -10,6 +10,7 @@ const pick = (over: Partial<PickFacts> = {}): PickFacts => ({
   acknowledged: false,
   proposed: { groupKey: "interested", name: "Demo request" },
   applied: { groupKey: "interested", name: "Demo request" },
+  appliedReplyTypeId: "t-demo",
   rules: { checkMode: "after" },
   proposedSystemRole: null,
   holdReason: null,
@@ -20,7 +21,7 @@ const pick = (over: Partial<PickFacts> = {}): PickFacts => ({
   ...over,
 });
 const email = { doNotContact: false, suppressed: false, channel: "email" };
-const demo = { groupKey: "interested", replyTypeName: "Demo request" };
+const demo = { groupKey: "interested", replyTypeId: "t-demo" };
 
 describe("typeDecision", () => {
   it("asks for Looks right on an applied pick nobody looked at", () => {
@@ -29,7 +30,9 @@ describe("typeDecision", () => {
     // A type that skips the check asks nothing.
     expect(typeDecision(pick({ rules: { checkMode: "skip" } }), email, demo)).toBeNull();
     // A person changed the type since: the pick no longer describes the record.
-    expect(typeDecision(pick(), email, { groupKey: "interested", replyTypeName: "Meeting requested" })).toBeNull();
+    expect(typeDecision(pick(), email, { groupKey: "interested", replyTypeId: "t-meeting" })).toBeNull();
+    // Another type with the same name in the same group is still another type.
+    expect(typeDecision(pick({ applied: { groupKey: "interested", name: "Demo request" } }), email, { groupKey: "interested", replyTypeId: "t-demo-2" })).toBeNull();
   });
 
   it("holds a proposed pick only while it is current", () => {

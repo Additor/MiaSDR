@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
 import { db } from "@/platform/db/client";
@@ -8,6 +8,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { ReplyStore } from "../application/reply-ports";
 import { afterTypeChange } from "../domain/workflow-state";
 import { typeRulesOf } from "../domain/reply-type";
+import { lockAfterPersonMove } from "../domain/reply-handling";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** What a person decides about a reply: a classification of their own, or suppressing the sender. */
@@ -23,6 +24,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           latest: records.latestInboundMessageId,
           groupKey: records.groupKey,
           replyTypeId: records.replyTypeId,
+          locked: records.replyTypeLocked,
           state: records.workflowState,
         })
         .from(conversations)
@@ -60,12 +62,23 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       const rules = typeRulesOf(target);
       const decision = await personTypeDecisionTx(tx, input.organizationId, head.recordId, { groupKey: target.groupKey, rules });
       if (!decision) throw new NotFoundError("Conversation not found");
+      // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
+      const locked = lockAfterPersonMove({ groupKey: head.groupKey, replyTypeLocked: head.locked }, target);
 
       let replyTypePickId: string;
       if (existing) {
         await tx
           .update(replyTypePicks)
-          .set({ status: accepted ? "accepted" : "overridden", appliedGroupKey: target.groupKey, appliedReplyTypeId: target.id, rules, acknowledgedAt: new Date() })
+          .set({
+            status: accepted ? "accepted" : "overridden",
+            appliedGroupKey: target.groupKey,
+            appliedReplyTypeId: target.id,
+            rules,
+            acknowledgedAt: new Date(),
+            // The lock before the first pick of this row stays: undo goes back to it.
+            response: sql`case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
+              else coalesce(${replyTypePicks.response}, '{}'::jsonb) || jsonb_build_object('previousLocked', ${head.locked}::boolean) end`,
+          })
           .where(eq(replyTypePicks.id, existing.id));
         replyTypePickId = existing.id;
       } else {
@@ -83,6 +96,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             appliedGroupKey: target.groupKey,
             appliedReplyTypeId: target.id,
             rules,
+            response: { previousLocked: head.locked },
             confidence: "1.0000",
             reasoning: "Set by a person.",
             status: "overridden",
@@ -97,7 +111,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       const nextState = afterTypeChange(head.state, decision);
       await tx
         .update(records)
-        .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", workflowState: nextState })
+        .set({ groupKey: target.groupKey, replyTypeId: target.id, replyTypeSource: "human", replyTypeLocked: locked, workflowState: nextState })
         .where(eq(records.id, head.recordId));
       // A correction replaces the reading every open draft and run was built on: they end, the version goes up, and the
       // sequence of the corrected subcategory starts. The classification row follows to the new version so the fresh draft job accepts it.
@@ -119,8 +133,8 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         eventType: accepted ? "reply_type_pick.accepted" : "reply_type_pick.overridden",
         actorType: "human",
         actorUserId: input.actorUserId,
-        fromData: { groupKey: head.groupKey, replyTypeId: head.replyTypeId },
-        toData: { groupKey: target.groupKey, replyTypeId: target.id },
+        fromData: { groupKey: head.groupKey, replyTypeId: head.replyTypeId, replyTypeLocked: head.locked },
+        toData: { groupKey: target.groupKey, replyTypeId: target.id, replyTypeLocked: locked },
         meta: { draftsRetired: restart.draftsRetired, runsEnded: restart.runsEnded, runStarted: restart.runStarted, rules },
         contextVersion: restart.contextVersion,
       });

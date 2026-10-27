@@ -657,6 +657,33 @@ describeDb("After a reply flows", () => {
       expect(state).toMatchObject({ canRestart: false, restartBlockedReason: "Demo request is set to stop follow-ups." });
     });
 
+    it("a reply that asked to stop starts no run on a type set to keep going, and Restart names why", async () => {
+      const f = await fixture();
+      f.ai.classifyWith = () => ({ subcategoryKey: "demo_request", confidence: 0.99, reason: "Forced." });
+      await ingest(f, { bodyText: "A demo could be nice, but please stop emailing me." });
+      await emailedBy(f);
+      await f.cycle();
+      await f.cycle();
+      const pick = await one("select status, response from reply_type_picks where organization_id = $1", [f.org]);
+      expect(pick).toMatchObject({ status: "auto_applied", response: expect.objectContaining({ stopRequested: true }) });
+      expect(await count("sequence_runs", f.org)).toBe(0);
+      const record = (await one("select id from records where organization_id = $1", [f.org])).id as string;
+      const state = await seqApp.getRecordSequence(f.seqDeps, f.actor, record);
+      expect(state).toMatchObject({ canRestart: false, restartBlockedReason: "The reply asked to stop, so follow-ups do not start." });
+    });
+
+    it("a person's pick of a type set to keep going starts no run for a reply that asked to stop", async () => {
+      const f = await fixture();
+      await ingest(f, { bodyText: "Please stop emailing me." });
+      await emailedBy(f);
+      await f.cycle();
+      const conversation = await one("select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = $1", [f.org]);
+      const result = await stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conversation.id, replyTypeKey: "demo_request", expectedContextVersion: conversation.context_version, actorUserId: f.user });
+      expect(result.draftQueued).toBe(false);
+      await f.cycle();
+      expect(await count("sequence_runs", f.org)).toBe(0);
+    });
+
     it("a type set to Don't write a reply draft and Keep going starts the run at step 2, so step 1 writes no draft", async () => {
       const f = await fixture();
       await ingest(f);

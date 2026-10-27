@@ -30,7 +30,7 @@ interface Entry {
   canAcknowledge: boolean;
 }
 
-/** "Demo request · Interested", or just "Other" when the type repeats its group. */
+/** "Demo request · Interested", or "Other" alone when the type repeats its group. */
 const label = (c: { groupKey: string | null; name: string | null }) => {
   if (!c.groupKey) return "No type";
   const group = groupLabel(c.groupKey);

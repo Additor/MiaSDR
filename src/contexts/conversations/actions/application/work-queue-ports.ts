@@ -28,7 +28,7 @@ export interface QueueItem {
    * because the API carries it. `contextVersion` is the record version the pick was written for: accepting a held one sends
    * it back. `groupKey` and `name` are the applied type, or the proposed one for a held pick.
    */
-  classification: { replyTypePickId: string; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number } | null;
+  classification: { replyTypePickId: string; kind: PickReviewKind; groupKey: string | null; name: string | null; confidence: number | null; contextVersion: number; unlocksCustomer: boolean } | null;
   problem: { kind: QueueProblemKind; message: string } | null;
 }
 

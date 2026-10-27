@@ -64,6 +64,7 @@ export interface ReplyTypePickEntry {
   previous: { groupKey: string | null; name: string | null };
   proposed: { groupKey: string | null; name: string | null };
   applied: { groupKey: string | null; name: string | null };
+  appliedReplyTypeId: string | null;
   confidence: number | null;
   reasoning: string | null;
   error: string | null;

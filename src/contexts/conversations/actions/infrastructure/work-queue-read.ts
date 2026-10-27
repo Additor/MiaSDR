@@ -50,7 +50,7 @@ const queueRowsSql = (organizationId: string) => sql`
            pd.id as pd_id, pd.status as pd_status, pd.error as pd_error, pd.conversation_id as pd_conv, pd.subject as pd_subject, pd.updated_at as pd_updated,
            rd.id as rd_id, rd.conversation_id as rd_conv, rd.subject as rd_subject, rd.updated_at as rd_updated,
            fj.id as fj_id, fj.last_error as fj_error, fj.failed_at as fj_at,
-           nk.id as k_id, nk.kind as k_kind, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub,
+           nk.id as k_id, nk.kind as k_kind, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub, nk.hold_reason as k_hold,
            cv.id as conv_id,
            case
              when r.workflow_state = 'error' or pd.id is not null or fj.id is not null then 'problem'
@@ -87,7 +87,7 @@ const queueRowsSql = (organizationId: string) => sql`
     ) fj on true
     left join lateral (
       -- The pick of the latest reply (a stale one only when nothing else exists), and what it waits for: pickReviewOf.
-      select lp.id, lp.confidence, lp.ctx, lp.cat, lp.sub_name,
+      select lp.id, lp.confidence, lp.ctx, lp.cat, lp.sub_name, lp.hold_reason,
              case
                when (lp.held or lp.applied) and lp.stop_asked and not lp.stopped then 'stop_review'
                when lp.held and lp.proposed_role is distinct from 'stop_request' and lp.proposed_name is not null then 'held'
@@ -95,7 +95,7 @@ const queueRowsSql = (organizationId: string) => sql`
              end as kind
       from (
         select k.id, k.confidence, k.expected_context_version as ctx, coalesce(k.applied_group_key, k.proposed_group_key) as cat, ks.name as sub_name,
-               kp.name as proposed_name, kp.system_role as proposed_role, k.rules->>'checkMode' as check_mode,
+               kp.name as proposed_name, kp.system_role as proposed_role, k.rules->>'checkMode' as check_mode, k.response->>'holdReason' as hold_reason,
                k.status = 'proposed' and k.expected_context_version = r.context_version as held,
                k.status = 'auto_applied' and k.acknowledged_at is null
                  and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied,
@@ -213,7 +213,7 @@ function toQueueItem(r: Record<string, unknown>): QueueItem {
         : null
       : null,
     classification: r.k_kind
-      ? { replyTypePickId: r.k_id as string, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx) }
+      ? { replyTypePickId: r.k_id as string, kind: r.k_kind as PickReviewKind, groupKey: r.k_cat as string | null, name: r.k_sub as string | null, confidence: r.k_confidence === null ? null : Number(r.k_confidence), contextVersion: Number(r.k_ctx), unlocksCustomer: r.k_hold === "protected_customer" }
       : null,
     problem: problemKind ? { kind: problemKind, message: problemMessage[problemKind] } : null,
   };

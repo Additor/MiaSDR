@@ -1,6 +1,5 @@
 import type { AiPersonContext, DraftChannel, ReplyTypeChange, ReplyType, ThreadEntry } from "../ai/domain/ai-contract";
 import type { FailureKind } from "../ai/domain/ai-job-requeue";
-import type { HoldReason } from "../domain/reply-type-pick-policy";
 import type { SystemRole, TypeRules } from "../domain/reply-type";
 import type { DraftStatus } from "../domain/draft-status";
 
@@ -45,12 +44,6 @@ export interface ClassifyContext {
   recordId: string;
   contextVersion: number;
   latestInboundMessageId: string | null;
-  groupKey: string | null;
-  replyTypeLocked: boolean;
-  /** The record's reply type before this pick, or null. */
-  currentType: { id: string; groupKey: string; systemRole: SystemRole | null } | null;
-  /** `autoApplyConfidence` is the confidence floor. */
-  settings: { autoApplyConfidence: number };
   operatorInstructions: string;
   businessContext: string;
   /** Active reply types with their rules. The prompt reads key, name, group, description and guidance only. */
@@ -68,9 +61,6 @@ export interface FinishClassification {
   confidence: number;
   reason: string;
   stopRequested: boolean;
-  decision: { action: "auto_apply" } | { action: "hold"; reason: HoldReason };
-  /** Whether an applied classification should queue a draft. */
-  wantsDraft: boolean;
   provider: string;
   model: string;
   request: unknown;

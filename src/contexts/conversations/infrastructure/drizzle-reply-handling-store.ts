@@ -36,7 +36,7 @@ import type {
   ReplyTypeCatalog,
   ReplyTypeOption,
 } from "../application/reply-handling-ports";
-import { REPLY_TYPE_GROUPS, checkReplyTypeChange, type ReplyTypeGroup } from "../domain/reply-handling";
+import { REPLY_TYPE_GROUPS, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
 import { typeRulesOf, type HoldReason, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
@@ -183,6 +183,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         previous: { groupKey: c.previousGroupKey, name: subName(c.previousReplyTypeId) },
         proposed: { groupKey: c.proposedGroupKey, name: subName(c.proposedReplyTypeId) },
         applied: { groupKey: c.appliedGroupKey, name: subName(c.appliedReplyTypeId) },
+        appliedReplyTypeId: c.appliedReplyTypeId,
         confidence: c.confidence === null ? null : Number(c.confidence),
         reasoning: c.reasoning,
         error: c.error,
@@ -346,15 +347,16 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const version = record.contextVersion + 1;
       const previous = cls.previousGroupKey;
       const previousTypeId = previous ? cls.previousReplyTypeId : null;
-      // The lock comes back with the customer role type, as in a person's type change.
+      // The lock comes back as the record had it before the pick.
       const [previousType] = previousTypeId ? await tx.select({ systemRole: replyTypes.systemRole }).from(replyTypes).where(eq(replyTypes.id, previousTypeId)) : [];
+      const previousLocked = previous !== null && lockBeforePick(cls.response, previousType?.systemRole ?? null);
       await tx
         .update(records)
         .set({
           groupKey: previous,
           replyTypeId: previousTypeId,
           replyTypeSource: previous ? "human" : null,
-          replyTypeLocked: previousType?.systemRole === "customer",
+          replyTypeLocked: previousLocked,
           workflowState: afterPersonDecision(record.workflowState),
           nextActionAt: null,
           contextVersion: version,

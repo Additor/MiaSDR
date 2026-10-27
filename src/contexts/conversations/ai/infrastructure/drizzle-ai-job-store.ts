@@ -11,34 +11,28 @@ import { publicConversation, publicConversationText } from "@/platform/db/conver
 import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { settlesAfterAiPick } from "../../domain/workflow-state";
-import { decideReplyType, typeRulesOf, type CampaignMode, type ReplyTypeFacts } from "../../domain/reply-type";
-import { afterReplyLockedReason, afterReplyModeOf } from "../../after-reply/domain/after-reply";
-import { loadStartOn } from "../../after-reply/infrastructure/drizzle-sequence-store";
+import { decideReplyType, typeRulesOf, type ReplyTypeFacts } from "../../domain/reply-type";
+import { followUpModeFactsTx } from "../../infrastructure/follow-up-mode-facts";
 import type { Tx } from "../../after-reply/infrastructure/sequence-stop";
 
 /**
  * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: the
- * confidence floor, whether the person is a contact, and the After a reply mode and channel that decide whether
- * follow-ups apply. Mirrors `typeChangeFactsOf`.
+ * confidence floor, and whether follow-ups apply (`followUpModeFactsTx`, as a person's type change reads them).
  */
-async function followUpFactsTx(
+async function applyFactsTx(
   tx: Tx,
   organizationId: string,
   record: { id: string; replyTypeSetId: string; activeChannel: string | null },
 ): Promise<Pick<ReplyTypeFacts, "floor" | "isContact" | "campaignMode" | "channel">> {
-  const [settings] = await tx.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId));
-  const start = await loadStartOn(tx, organizationId, record.id, {});
-  const owner = start?.owner ?? null;
-  const campaignMode: CampaignMode = owner
-    ? afterReplyLockedReason(owner)
-      ? "handoff"
-      : afterReplyModeOf(start?.flow ? { status: start.flow.status, hasPublishedVersion: start.flow.hasPublished } : null)
-    : null;
+  const [[settings], mode] = await Promise.all([
+    tx.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
+    followUpModeFactsTx(tx, organizationId, record.id),
+  ]);
   return {
     floor: Number(settings?.floor ?? 0.85),
-    isContact: start?.contact ?? false,
-    campaignMode,
-    channel: start?.conversation?.channel ?? record.activeChannel,
+    isContact: mode?.isContact ?? false,
+    campaignMode: mode?.campaignMode ?? null,
+    channel: mode?.channel ?? record.activeChannel,
   };
 }
 
@@ -356,9 +350,6 @@ export const drizzleAiJobStore: AiJobStore = {
         replyTypeSetId: records.replyTypeSetId,
         contextVersion: records.contextVersion,
         latest: records.latestInboundMessageId,
-        groupKey: records.groupKey,
-        locked: records.replyTypeLocked,
-        replyTypeId: records.replyTypeId,
       })
       .from(messages)
       .innerJoin(conversations, eq(conversations.id, messages.conversationId))
@@ -374,20 +365,12 @@ export const drizzleAiJobStore: AiJobStore = {
     const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, row.replyTypeSetId));
     const thread = await threadEntries(organizationId, row.conversationId);
     if (!thread) return null;
-    // The current type may be archived, so it is read on its own rather than from the active list.
-    const [current] = row.replyTypeId
-      ? await db.select({ id: replyTypes.id, groupKey: replyTypes.groupKey, systemRole: replyTypes.systemRole }).from(replyTypes).where(eq(replyTypes.id, row.replyTypeId))
-      : [];
     const knowledge = await knowledgeFor(organizationId, { alwaysOnly: true });
 
     const ctx: ClassifyContext = {
       recordId: row.recordId,
       contextVersion: row.contextVersion,
       latestInboundMessageId: row.latest,
-      groupKey: row.groupKey,
-      replyTypeLocked: row.locked,
-      currentType: current ?? null,
-      settings: { autoApplyConfidence: Number(settings?.autoApplyConfidence ?? 0.85) },
       operatorInstructions: renderInstructions(settings?.classificationInstructions),
       businessContext: knowledge.map((k) => `${k.title}\n${k.content}`).join("\n\n"),
       taxonomy: taxonomyRows.map((t) => ({
@@ -459,7 +442,19 @@ export const drizzleAiJobStore: AiJobStore = {
         return { status: "stale" as const };
       }
 
-      const auto = input.decision.action === "auto_apply";
+      // The one decision for this pick, under the record lock and with the facts as they are now: a floor raised or a
+      // lock set after the job read its context holds the pick here.
+      const decision = decideReplyType(
+        { groupKey: proposed.groupKey, rules: typeRulesOf(proposed) },
+        {
+          ...(await applyFactsTx(tx, input.job.organizationId, record)),
+          stopRequested: input.stopRequested,
+          confidence: input.confidence,
+          locked: record.locked,
+          currentType: { groupKey: record.groupKey },
+        },
+      );
+      const auto = decision.hold === null;
       const [row] = await tx
         .insert(replyTypePicks)
         .values({
@@ -467,7 +462,7 @@ export const drizzleAiJobStore: AiJobStore = {
           status: auto ? "auto_applied" : "proposed",
           appliedGroupKey: auto ? proposed.groupKey : null,
           appliedReplyTypeId: auto ? proposed.id : null,
-          response: { ...(input.response as object), holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested },
+          response: { ...(input.response as object), holdReason: decision.hold, stopRequested: input.stopRequested, previousLocked: record.locked },
         })
         .onConflictDoNothing()
         .returning({ id: replyTypePicks.id });
@@ -475,18 +470,6 @@ export const drizzleAiJobStore: AiJobStore = {
       if (!row) return { status: "stale" as const };
 
       if (auto) {
-        // The decision again, under the record lock and with the facts that decide the follow-ups. A hold here that the
-        // job did not see (a newer floor or lock) only keeps the record from settling.
-        const decision = decideReplyType(
-          { groupKey: proposed.groupKey, rules: typeRulesOf(proposed) },
-          {
-            ...(await followUpFactsTx(tx, input.job.organizationId, record)),
-            stopRequested: input.stopRequested,
-            confidence: input.confidence,
-            locked: record.locked,
-            currentType: { id: record.replyTypeId, groupKey: record.groupKey, systemRole: null },
-          },
-        );
         const settle = settlesAfterAiPick(record.state, decision, input.stopRequested);
         await tx
           .update(records)
@@ -504,7 +487,7 @@ export const drizzleAiJobStore: AiJobStore = {
           followUps: decision.followUps,
           now: new Date(),
         });
-        if (input.wantsDraft) {
+        if (decision.wantsDraft) {
           await tx
             .insert(aiJobs)
             .values({ organizationId: input.job.organizationId, kind: "initial_draft", entityType: "classification", entityId: row.id, idempotencyKey: `initial_draft:classification:${row.id}`, runAfter: sql`now() - interval '1 minute'` })
@@ -519,7 +502,7 @@ export const drizzleAiJobStore: AiJobStore = {
         actorType: "ai",
         fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
         toData: { groupKey: proposed.groupKey, replyTypeId: proposed.id },
-        meta: { confidence: input.confidence, holdReason: input.decision.action === "hold" ? input.decision.reason : null, stopRequested: input.stopRequested },
+        meta: { confidence: input.confidence, holdReason: decision.hold, stopRequested: input.stopRequested },
         contextVersion: input.expectedContextVersion,
       });
       return { status: auto ? ("auto_applied" as const) : ("proposed" as const) };

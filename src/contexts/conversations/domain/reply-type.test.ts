@@ -85,7 +85,7 @@ describe("decideReplyType for every default type", () => {
 
 describe("decideReplyType", () => {
   it("holds an AI pick for the customer lock, then for Check before, then below the floor", () => {
-    const locked = { ...facts, locked: true, currentType: { id: "c", groupKey: "customer", systemRole: "customer" as const } };
+    const locked = { ...facts, locked: true, currentType: { groupKey: "customer" } };
     expect(decideReplyType(type({ checkMode: "before" }), { ...locked, confidence: 0.1 }).hold).toBe("protected_customer");
     expect(decideReplyType(type({}, { groupKey: "customer" }), locked).hold).toBeNull();
     expect(decideReplyType(type({ checkMode: "before" }), { ...facts, confidence: 0.1 }).hold).toBe("requires_review");
@@ -94,7 +94,7 @@ describe("decideReplyType", () => {
   });
 
   it("never holds a person's pick, and asks Looks right only of an applied AI pick of a type checked after", () => {
-    const person = { ...facts, confidence: null, locked: true, currentType: { id: "c", groupKey: "customer", systemRole: "customer" as const } };
+    const person = { ...facts, confidence: null, locked: true, currentType: { groupKey: "customer" } };
     expect(decideReplyType(type({ checkMode: "before" }), person)).toMatchObject({ hold: null, needsLooksRight: false });
     expect(decideReplyType(type({ checkMode: "after" }), facts).needsLooksRight).toBe(true);
     expect(decideReplyType(type({ checkMode: "after" }), { ...facts, confidence: 0.5 }).needsLooksRight).toBe(false);
@@ -114,6 +114,12 @@ describe("decideReplyType", () => {
     expect(decideReplyType(type(), { ...facts, campaignMode: "handoff" }).followUps).toBe("not_applicable");
     expect(decideReplyType(type(), { ...facts, campaignMode: null }).followUps).toBe("not_applicable");
     expect(decideReplyType(type(), { ...facts, channel: "linkedin" }).followUps).toBe("not_applicable");
+  });
+
+  it("stops follow-ups for a reply that asked to stop, whatever the type says", () => {
+    expect(decideReplyType(type({ followUps: "continue" }), { ...facts, stopRequested: true }).followUps).toBe("stop");
+    expect(decideReplyType(type({ followUps: "continue" }), { ...facts, stopRequested: true, confidence: null }).followUps).toBe("stop");
+    expect(decideReplyType(type({ followUps: "continue" }), { ...facts, stopRequested: true, isContact: true }).followUps).toBe("not_applicable");
   });
 });
 
@@ -163,8 +169,16 @@ describe("typeChangeOutcome", () => {
   it("never marks do not contact, even for the stop request type", () => {
     expect(typeChangeOutcome(type(), askedToStop, { ...outcomeFacts, stopRequested: true })).toEqual({
       replyDraft: "Reply draft: none, because they asked to stop.",
-      followUps: "Follow-ups: stop. Asked to stop is set to stop follow-ups.",
+      followUps: "Follow-ups: stop, because they asked to stop.",
       contact: "Contact: unchanged until you choose Stop contacting.",
+    });
+  });
+
+  it("stops follow-ups for a reply that asked to stop, even on a type that keeps them going", () => {
+    expect(typeChangeOutcome(notNow, type(), { ...outcomeFacts, stopRequested: true })).toEqual({
+      replyDraft: "Reply draft: none, because they asked to stop.",
+      followUps: "Follow-ups: stop, because they asked to stop.",
+      contact: "Contact: unchanged.",
     });
   });
 
