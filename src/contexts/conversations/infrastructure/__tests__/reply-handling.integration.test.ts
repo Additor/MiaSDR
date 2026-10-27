@@ -280,6 +280,37 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect((await sql`select status from ai_jobs where entity_id = ${replyTypePickId}`)[0].status).toBe("failed");
     });
 
+    it("discards the draft of a job that was already running when the pick was undone", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
+      const version = (await rec(l.recordId)).context_version as number;
+      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key, status, locked_at, locked_by, started_at, attempts)
+                values (${f.org}, 'initial_draft', 'classification', ${replyTypePickId}, ${"k-" + replyTypePickId}, 'running', now(), 'w1', now(), 1)`;
+      expect(await replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).toMatchObject({ draftJobCancelled: true });
+      // A person writes a reply after the undo.
+      const manual = await openDraft(f, l);
+      // The running job finishes with the context it read before the undo.
+      const { drizzleReplyStore } = await import("../drizzle-reply-store");
+      const late = await drizzleReplyStore.insertDraft({
+        organizationId: f.org,
+        recordId: l.recordId,
+        conversationId: l.conversationId,
+        replyForMessageId: null,
+        expectedContextVersion: version,
+        channel: "email",
+        subject: "Re: hello",
+        bodyText: "Here is the demo link.",
+        provider: "fake",
+        model: "fake",
+        request: { replyTypePickId },
+        response: {},
+        citations: [],
+      });
+      expect((await sql`select status from drafts where id = ${late.id}`)[0].status).toBe("stale");
+      expect((await sql`select status from drafts where id = ${manual}`)[0].status).toBe("awaiting_review");
+    });
+
     it("ends the active sequence run with classification_undone, retires its drafts and cancels its steps; a second undo changes nothing", async () => {
       const f = await fixture();
       const l = await lead(f);

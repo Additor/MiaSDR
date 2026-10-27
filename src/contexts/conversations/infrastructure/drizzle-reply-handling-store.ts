@@ -359,12 +359,17 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         })
         .where(eq(records.id, record.id));
       await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
-      // A draft job that has not run yet would write a reply for the classification a person just rejected.
+      // A draft job that has not run yet would write a reply for the classification a person just rejected. A job that
+      // already runs read the old version, and `insertDraft` writes its draft as stale once this commit bumps it.
       const cancelled = await tx
         .update(aiJobs)
         .set({ status: "failed", failedAt: input.now, lastError: "The classification was undone before the draft was written." })
         .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "queued")))
         .returning({ id: aiJobs.id });
+      const running = await tx
+        .select({ id: aiJobs.id })
+        .from(aiJobs)
+        .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "running")));
       const draftsRetired = await retireOpenDrafts(tx, [record.id], "The classification was undone after this draft was written.");
       // The run started for the classification a person just rejected. It ends in this commit and keeps no follow-up drafting.
       const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, record.id, "classification_undone", input.now);
@@ -380,7 +385,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         meta: { replyTypePickId: cls.id, draftsRetired, runsEnded },
         contextVersion: version,
       });
-      return { recordId: record.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length > 0 };
+      return { recordId: record.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length + running.length > 0 };
     });
   },
 

@@ -200,7 +200,7 @@ export interface UndoReplyTypePickResult {
   draftsRetired: number;
   /** An active or paused follow-up run ended. */
   runEnded: boolean;
-  /** A draft job queued for the undone pick was cancelled before it wrote anything. */
+  /** The undone pick's draft job will write nothing a person can send: a queued job was cancelled, or a running one writes its draft as stale. */
   draftJobCancelled: boolean;
 }
 
