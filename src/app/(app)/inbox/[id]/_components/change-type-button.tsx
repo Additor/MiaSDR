@@ -11,7 +11,7 @@ import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLeg
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
-import { REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
+import { CUSTOMER_GROUP, REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
 import { callApi } from "@/app/_lib/api-client";
 import { submitSteps } from "../_lib/change-type";
@@ -107,7 +107,7 @@ export function ChangeTypeButton({
     [types, currentReplyTypeId],
   );
   const chosen = target?.type;
-  const leavesCustomer = replyTypeLocked && chosen !== undefined && chosen.groupKey !== "customer";
+  const leavesCustomer = replyTypeLocked && chosen !== undefined && chosen.groupKey !== CUSTOMER_GROUP;
   const asksStop = chosen?.systemRole === "stop_request" && !stop.doNotContact;
   const path: Path = correcting ? "correct" : "off_thread";
   // Lines loaded for the other path wait for this path's own.

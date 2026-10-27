@@ -1,6 +1,7 @@
 import { fence, UNTRUSTED_DATA_RULES } from "@/contexts/ai/domain/prompt-fence";
 import type { ClassifyInput, DraftInput, ThreadEntry } from "./ai-contract";
 import { MAX_LINKEDIN_REPLY } from "../../domain/linkedin-reply";
+import { CATCH_ALL_TYPE_KEY } from "../../domain/reply-handling";
 
 /**
  * Prompt text for reply classification and drafts. Anything a stranger wrote (email bodies, names, titles) or an operator
@@ -34,7 +35,7 @@ const SHARED_RULES = UNTRUSTED_DATA_RULES;
 
 export const CLASSIFY_SYSTEM = [
   "You classify the latest inbound email reply in a sales conversation.",
-  "Choose exactly one subcategory key from the list in the user message. Do not invent keys. If nothing fits, choose the catch-all key `other` when it is listed.",
+  `Choose exactly one subcategory key from the list in the user message. Do not invent keys. If nothing fits, choose the catch-all key \`${CATCH_ALL_TYPE_KEY}\` when it is listed.`,
   "Give a confidence between 0 and 1 that reflects how clearly the reply matches the chosen subcategory, and a reason of one or two sentences.",
   SHARED_RULES,
 ].join("\n\n");
