@@ -57,8 +57,13 @@ async function replyTypeSetFor(organizationId: string) {
   });
 }
 
+/** Locks a record a person may see. A record whose conversations are all private answers 404, as a foreign id does. */
 async function lockRecord(tx: Tx, organizationId: string, recordId: string) {
-  const [row] = await tx.select().from(records).where(and(eq(records.id, recordId), eq(records.organizationId, organizationId))).for("update");
+  const [row] = await tx
+    .select()
+    .from(records)
+    .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId), visibleRecordSql("records")))
+    .for("update");
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;
 }
@@ -337,7 +342,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const [candidate] = await tx
         .select({ recordId: replyTypePicks.recordId })
         .from(replyTypePicks)
-        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId)));
+        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId), visibleReplyTypePickSql("reply_type_picks")));
       if (!candidate) throw new NotFoundError("AI pick not found");
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
@@ -399,7 +404,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const [candidate] = await tx
         .select({ recordId: replyTypePicks.recordId })
         .from(replyTypePicks)
-        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId)));
+        .where(and(eq(replyTypePicks.id, input.replyTypePickId), eq(replyTypePicks.organizationId, input.organizationId), visibleReplyTypePickSql("reply_type_picks")));
       if (!candidate) throw new NotFoundError("AI pick not found");
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");

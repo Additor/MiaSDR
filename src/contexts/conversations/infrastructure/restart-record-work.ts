@@ -59,9 +59,9 @@ export async function restartRecordWorkTx(
 
 /**
  * What a person's choice of `target` means for `record`, read inside the caller's transaction after it locked the record
- * and before it writes the new type. The caller has already checked that the person may see the record, so this read
- * applies no visibility rule: a record with only private conversations decides by the type's rules as any other. A
- * person's pick has no confidence, so it never holds, and the floor, the lock and the current type play no part.
+ * and before it writes the new type. The caller locked the record through a visibility rule, so a record with only
+ * private conversations never gets here. A person's pick has no confidence, so it never holds, and the floor, the lock
+ * and the current type play no part.
  */
 export async function personTypeDecisionTx(
   tx: Tx,

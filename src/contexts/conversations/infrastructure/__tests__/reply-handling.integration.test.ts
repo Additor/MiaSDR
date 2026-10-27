@@ -488,6 +488,28 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     });
   });
 
+  describe("visibility", () => {
+    it("answers 404 for every write on a record whose conversations are all private", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const pickId = await appliedReplyTypePick(f, l, "demo_request");
+      const [personal] = await sql`insert into campaigns (organization_id, channel, name, type, status) values (${f.org}, 'linkedin', 'Mine', 'personal', 'active') returning id`;
+      await sql`update conversations set private_campaign_id = ${personal.id} where record_id = ${l.recordId}`;
+      const before = await rec(l.recordId);
+      const meeting = await sub(f, "meeting_done");
+
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: before.context_version })).rejects.toThrow(NotFoundError);
+      await expect(replies.undoReplyTypePick(deps, f.actor, pickId)).rejects.toThrow(NotFoundError);
+      await expect(replies.acknowledgeReplyTypePick(deps, f.actor, pickId)).rejects.toThrow(NotFoundError);
+      await expect(replies.closeRecord(deps, f.actor, l.recordId, { reason: "x" })).rejects.toThrow(NotFoundError);
+      await sql`update records set workflow_state = 'closed' where id = ${l.recordId}`;
+      await expect(replies.reopenRecord(deps, f.actor, l.recordId)).rejects.toThrow(NotFoundError);
+
+      expect(await rec(l.recordId)).toMatchObject({ context_version: before.context_version, reply_type_id: before.reply_type_id, workflow_state: "closed" });
+      expect((await sql`select status, acknowledged_at from reply_type_picks where id = ${pickId}`)[0]).toMatchObject({ status: "auto_applied", acknowledged_at: null });
+    });
+  });
+
   describe("close, reopen and notes", () => {
     let f: Fx;
     beforeAll(async () => {
