@@ -189,9 +189,13 @@ export function isAnswered(record: { lastInboundAt: Date | null; lastOutboundAt:
   return Boolean(record.lastInboundAt && record.lastOutboundAt && record.lastOutboundAt >= record.lastInboundAt);
 }
 
-/** First step a new run starts at, or null when no run should start. `answered`: a person already replied by hand. */
-export function startPosition(input: { stepCount: number; answered: boolean; skipReply?: boolean }): number | null {
-  const position = input.answered || input.skipReply ? 2 : 1;
+/**
+ * First step a new run starts at, or null when no run should start. Step 1 ("Reply to their answer") is skipped when a
+ * person already replied by hand (`answered`), when the caller asks (`skipReply`), and when the record's reply type is
+ * set to Don't write a reply draft (`replyDraft: false`). The later steps still run.
+ */
+export function startPosition(input: { stepCount: number; answered: boolean; skipReply?: boolean; replyDraft?: boolean | null }): number | null {
+  const position = input.answered || input.skipReply || input.replyDraft === false ? 2 : 1;
   return input.stepCount >= position ? position : null;
 }
 

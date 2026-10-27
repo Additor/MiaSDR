@@ -245,6 +245,7 @@ export async function loadStartOn(
     sub_key: string | null;
     sub_name: string | null;
     follow_ups: FollowUpsRule | null;
+    reply_draft: boolean | null;
     latest_inbound_message_id: string | null;
     last_inbound_at: Date | string | null;
     last_outbound_at: Date | string | null;
@@ -259,7 +260,7 @@ export async function loadStartOn(
     conv_channel: string | null;
   }>(
     await exec.execute(sql`
-      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
+      select r.id, r.person_id, r.reply_type_id, r.group_key, s.key as sub_key, s.name as sub_name, s.follow_ups, s.reply_draft, r.latest_inbound_message_id, r.last_inbound_at, r.last_outbound_at, r.context_version, r.workflow_state,
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              p.lifecycle = 'contact' as contact,
@@ -326,6 +327,7 @@ export async function loadStartOn(
       replyTypeKey: r.sub_key,
       replyTypeName: r.sub_name,
       followUps: r.follow_ups,
+      replyDraft: r.reply_draft,
       latestInboundMessageId: r.latest_inbound_message_id,
       lastInboundAt: asDateOrNull(r.last_inbound_at),
       lastOutboundAt: asDateOrNull(r.last_outbound_at),

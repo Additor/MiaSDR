@@ -126,6 +126,11 @@ describe("start position", () => {
     expect(startPosition({ stepCount: 1, answered: true })).toBeNull();
     expect(startPosition({ stepCount: 0, answered: false })).toBeNull();
     expect(startPosition({ stepCount: 2, answered: false, skipReply: true })).toBe(2);
+    // A reply type set to Don't write a reply draft skips step 1 ("Reply to their answer"); later steps still run.
+    expect(startPosition({ stepCount: 3, answered: false, replyDraft: false })).toBe(2);
+    expect(startPosition({ stepCount: 1, answered: false, replyDraft: false })).toBeNull();
+    expect(startPosition({ stepCount: 3, answered: false, replyDraft: true })).toBe(1);
+    expect(startPosition({ stepCount: 3, answered: false, replyDraft: null })).toBe(1);
   });
 });
 

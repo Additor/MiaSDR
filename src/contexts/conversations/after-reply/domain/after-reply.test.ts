@@ -203,4 +203,13 @@ describe("why a run cannot start", () => {
     f.answered = true;
     expect(startBlockedReason(f)).toMatch(/no follow-up step after the reply/);
   });
+
+  it("needs a step after the reply when the reply type is set to Don't write a reply draft", () => {
+    const f = ok();
+    f.record.replyDraft = false;
+    f.stepCount = 2;
+    expect(startBlockedReason(f)).toBeNull();
+    f.stepCount = 1;
+    expect(startBlockedReason(f)).toBe("Demo request is set to not write a reply draft, and the flow has no follow-up step after the reply.");
+  });
 });
