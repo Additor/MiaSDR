@@ -93,6 +93,16 @@ describe("decideReplyType", () => {
     expect(decideReplyType(type({ checkMode: "skip" }), { ...facts, confidence: 0.85 }).hold).toBeNull();
   });
 
+  it("applies a confident AI pick of a type checked after, whatever type it replaces", () => {
+    // Progress belongs to Deal stage: no pick waits to protect the type it replaces. A team that wants a person to confirm
+    // a move into a type sets that type's Check to before.
+    const meetingDone = type({ checkMode: "after" }, { key: "meeting_done", name: "Meeting done" });
+    for (const currentType of [null, { groupKey: "interested" }, { groupKey: "not_interested" }, { groupKey: "other" }]) {
+      expect(decideReplyType(meetingDone, { ...facts, currentType })).toMatchObject({ hold: null, needsLooksRight: true });
+    }
+    expect(decideReplyType({ ...meetingDone, rules: { ...meetingDone.rules, checkMode: "before" } }, facts).hold).toBe("requires_review");
+  });
+
   it("never holds a person's pick, and asks Looks right only of an applied AI pick of a type checked after", () => {
     const person = { ...facts, confidence: null, locked: true, currentType: { groupKey: "customer" } };
     expect(decideReplyType(type({ checkMode: "before" }), person)).toMatchObject({ hold: null, needsLooksRight: false });

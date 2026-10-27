@@ -501,6 +501,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 - Accepting a held stop request pick answers 409 with `code: "stop_review"`, and the client opens Stop contacting. Choosing the stop request type through Change type or an override is allowed and changes only the type.
 - A person's type change and pick run `decideReplyType` with no confidence: `afterTypeChange` sets the workflow state from its draft decision, and a new follow-up run starts only when its follow-ups decision is `continue`. Archiving or deleting a type with a system role answers 409 `code: "system_role"` with the role's reason.
 - Progress belongs to deal stages. A reply type has no rank, and no pick waits to protect a position. `reply_type.changed` is the event a deal can follow.
+- The AI may move a person to any type its rules allow, whatever type the person had before. A team that wants a person to confirm moves into a type sets that type's Check to Before it applies.
 - Out of office stops follow-ups. Pausing them until the person is back is a later decision.
 
 ### AI classification
