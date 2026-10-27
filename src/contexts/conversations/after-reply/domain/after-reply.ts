@@ -15,8 +15,8 @@ export const AFTER_REPLY_MODES: readonly AfterReplyMode[] = ["handoff", "ai_draf
 export const DEFAULT_AFTER_REPLY_MODE: AfterReplyMode = "handoff";
 
 export const AFTER_REPLY_MODE_LABELS: Record<AfterReplyMode, string> = {
-  handoff: "Stop and hand the conversation to the Inbox",
-  ai_drafts: "AI drafts follow-ups for my approval",
+  handoff: "Off, hand to the Inbox",
+  ai_drafts: "AI drafts, you approve",
 };
 
 export const isAfterReplyMode = (value: unknown): value is AfterReplyMode => value === "handoff" || value === "ai_drafts";
@@ -98,7 +98,7 @@ export function startBlockedReason(f: StartBlockFacts): string | null {
   if (f.doNotContact) return "This person is marked do not contact, so follow-ups do not apply.";
   if (f.suppressed) return "This address is on the suppression list, so follow-ups do not apply.";
   if (!record.hasEmail) return "This person has no email address, so follow-ups cannot start.";
-  if (!record.replyTypeId) return "The reply is not classified yet, so follow-ups cannot start.";
+  if (!record.replyTypeId) return "The reply has no reply type yet, so follow-ups cannot start.";
   if (!followUpsContinue(record.followUps)) return followUpsStopReason(record.replyTypeName ?? record.replyTypeKey ?? "This reply type");
   if (startPosition({ stepCount: f.stepCount, answered: f.answered, skipReply: f.skipReply }) === null) return "A person already answered, and the flow has no follow-up step after the reply.";
   return null;
@@ -150,9 +150,9 @@ export const INTERRUPT_REASON_LABELS: Record<StopReason, string> = {
 export const OTHER_END_REASON_LABELS: Record<string, string> = {
   manual: "A person cancelled the follow-ups",
   replaced: "A person started a different flow",
-  stage_moved: "A person changed the reply category",
-  classification_corrected: "A person corrected the classification",
-  classification_undone: "A person undid the classification",
+  stage_moved: "A person changed the reply type",
+  classification_corrected: "A person corrected the AI pick",
+  classification_undone: "A person undid the AI pick",
 };
 
 /** Wording for any reason stored on a run. An unknown reason reads as a plain stop. */
@@ -180,6 +180,7 @@ export const FIXED_STOP_RULES: readonly FixedStopRule[] = [
   { id: "do_not_contact", label: "The person is marked do not contact", reason: "do_not_contact" },
   { id: "unsubscribe", label: "The person unsubscribes", reason: "unsubscribed" },
   { id: "bounce", label: "The address bounces", reason: "bounce" },
+  { id: "suppressed", label: "The address is on the suppression list", reason: "suppressed" },
   { id: "record_closed", label: "Reply handling is closed", reason: "record_closed" },
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
 ];

@@ -104,6 +104,7 @@ describe("stop types", () => {
       "The person is marked do not contact",
       "The person unsubscribes",
       "The address bounces",
+      "The address is on the suppression list",
       "Reply handling is closed",
       "The person becomes a contact",
       "The reply is classified Customer question",
@@ -116,7 +117,7 @@ describe("stop types", () => {
   it("shows only the fixed rules when no type stops follow-ups", async () => {
     const view = await getCampaignAfterReply(fake(emailState(), []).deps, actor, "c1");
     expect(view.stopReplyTypes).toEqual([]);
-    expect(view.stopsOn).toHaveLength(6);
+    expect(view.stopsOn).toHaveLength(7);
   });
 });
 
