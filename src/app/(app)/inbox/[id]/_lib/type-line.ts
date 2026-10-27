@@ -1,4 +1,4 @@
-import type { HoldReason, SystemRole, TypeRules } from "@/contexts/conversations/domain/reply-type";
+import { holdReasonOf, type HoldReason, type SystemRole, type TypeRules } from "@/contexts/conversations/domain/reply-type";
 
 /**
  * Pure rules for the thread's type line: which AI pick it speaks for, whether it waits for a person, and the short texts
@@ -62,11 +62,16 @@ export function typeDecision<T extends PickFacts>(
   return null;
 }
 
-/** Why a held pick waits, in one sentence. */
-export const HOLD_TEXT: Record<HoldReason, string> = {
+const HOLD_TEXT: Record<HoldReason, string> = {
   protected_customer: "The person is locked as Existing customer. Accept takes them out of it.",
   requires_review: "This type waits for a person to check it.",
   low_confidence: "The AI's confidence is under the confidence floor.",
+};
+
+/** Why a held pick waits, in one sentence. A reason stored before 0003, or none, gets the fallback. */
+export const holdText = (reason: string | null | undefined): string => {
+  const known = holdReasonOf(reason);
+  return known ? HOLD_TEXT[known] : "It waits for you.";
 };
 
 /** "Draft · Follow-ups keep going": what a type's rules do once it applies. */

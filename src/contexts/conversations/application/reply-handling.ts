@@ -10,7 +10,7 @@ import {
   parseReplyTypePatch,
   type ReplyTypeGroup,
 } from "../domain/reply-handling";
-import { SYSTEM_ROLE_REASONS, typeChangeOutcome, validateTypeRules, type TypeChangeOutcome } from "../domain/reply-type";
+import { SYSTEM_ROLE_REASONS, isTypeChangePath, typeChangeOutcome, validateTypeRules, type TypeChangeOutcome } from "../domain/reply-type";
 import type { ReplyHandlingStore, IdentityExceptionRow, RecordDetail, UndoReplyTypePickResult } from "./reply-handling-ports";
 import type { InboundLinkedInInput } from "./linkedin-ports";
 import type { InboundEmailInput, IngestResult, InboxStore, ThreadMessage } from "./ports";
@@ -69,17 +69,18 @@ export async function getRecord(deps: ReplyHandlingDeps, actor: Actor, recordId:
 }
 
 /**
- * What Change type would do for each active reply type of the record, as the three lines of `typeChangeOutcome`. The
- * record's current type is left out: it is not a target.
+ * What Change type would do for each active reply type of the record on `path`, as the three lines of
+ * `typeChangeOutcome`. The record's current type is left out: it is not a target.
  */
-export async function getTypeChangeOutcomes(deps: ReplyHandlingDeps, actor: Actor, recordId: string): Promise<Array<{ replyTypeId: string; outcome: TypeChangeOutcome }>> {
+export async function getTypeChangeOutcomes(deps: ReplyHandlingDeps, actor: Actor, recordId: string, path: unknown): Promise<Array<{ replyTypeId: string; outcome: TypeChangeOutcome }>> {
+  if (!isTypeChangePath(path)) throw new ValidationError("The path must be correct or off_thread.");
   assertId(recordId, "Reply handling");
   const read = await deps.store.typeChangeFacts(actor.organizationId, recordId);
   if (!read) throw new NotFoundError("Reply handling not found");
   const facts = { ...read.facts, currentType: read.current };
   return read.targets
     .filter((t) => t.id !== read.current?.id)
-    .map((t) => ({ replyTypeId: t.id, outcome: typeChangeOutcome(read.current, t, facts) }));
+    .map((t) => ({ replyTypeId: t.id, outcome: typeChangeOutcome(read.current, t, facts, path) }));
 }
 
 export interface ChangeReplyTypeInput {

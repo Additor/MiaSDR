@@ -200,6 +200,18 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(f.ai.lastDraftInput?.operatorInstructions).toContain("Flow: answer.");
     });
 
+    it("a record with only private conversations still moves by the type's rules", async () => {
+      const { f, recordId, version } = await withRun();
+      const personal = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
+      await sql`update conversations set private_campaign_id = ${personal} where record_id = ${recordId}`;
+      const result = await move(f, recordId, "meeting_done", version);
+      // Meeting done writes a draft: the record stays in front of a person, as on a public record.
+      expect(await one("select workflow_state from records where id = $1", [recordId])).toMatchObject({ workflow_state: "action_required" });
+      // The old run ends. The new run start reads only public conversations, so a private-only record starts none.
+      expect(result.runStarted).toBe(false);
+      expect(await count("sequence_runs", f.org, "status = 'active'")).toBe(0);
+    });
+
     it("starts no run for a contact, and still moves the category", async () => {
       const { f, recordId, version } = await withRun();
       const personId = (await one("select person_id from records where id = $1", [recordId])).person_id as string;

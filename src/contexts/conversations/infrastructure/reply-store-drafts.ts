@@ -95,6 +95,32 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
 
   async insertDraft(input) {
     return db.transaction(async (tx) => {
+      // A writer that read its context before the version moved (an undo, a type change, a new reply) wrote for a context
+      // that no longer holds. Its draft goes in as stale and leaves the record's open drafts alone.
+      const [record] = await tx.select({ version: records.contextVersion }).from(records).where(eq(records.id, input.recordId)).for("update");
+      if (record && record.version !== input.expectedContextVersion) {
+        return (
+          await tx
+            .insert(drafts)
+            .values({
+              organizationId: input.organizationId,
+              recordId: input.recordId,
+              conversationId: input.conversationId,
+              replyForMessageId: input.replyForMessageId,
+              expectedContextVersion: input.expectedContextVersion,
+              channel: input.channel ?? "email",
+              subject: input.channel === "linkedin" ? null : input.subject,
+              aiBodyText: input.bodyText,
+              status: "stale",
+              error: "The reply handling changed while the AI wrote this draft.",
+              provider: input.provider,
+              model: input.model,
+              request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
+              response: input.response,
+            })
+            .returning({ id: drafts.id })
+        )[0];
+      }
       const [created] = await tx
         .insert(drafts)
         .values({

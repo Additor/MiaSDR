@@ -142,7 +142,7 @@ export interface RecordDetail {
     /** Rules of the record's type as they stand now, archived types included. Null without a type. */
     replyTypeRules: TypeRules | null;
     replyTypeSystemRole: SystemRole | null;
-    /** An initial draft job for one of the record's picks is queued or running. */
+    /** The initial draft job of the latest pick of the latest reply is queued or running, and that pick is applied at the record's version. */
     draftJobPending: boolean;
     workflowState: string;
     activeChannel: string | null;
@@ -200,7 +200,7 @@ export interface UndoReplyTypePickResult {
   draftsRetired: number;
   /** An active or paused follow-up run ended. */
   runEnded: boolean;
-  /** A draft job queued for the undone pick was cancelled before it wrote anything. */
+  /** The undone pick's draft job will write nothing a person can send: a queued job was cancelled, or a running one writes its draft as stale. */
   draftJobCancelled: boolean;
 }
 

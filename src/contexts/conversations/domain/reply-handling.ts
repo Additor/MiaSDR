@@ -16,9 +16,19 @@ export const REPLY_TYPE_GROUPS = [
 
 export type ReplyTypeGroup = (typeof REPLY_TYPE_GROUPS)[number]["key"];
 
+/** The one group with a fixed rule: a person's move into Existing customer locks the person there (`lockAfterPersonMove`). */
+export const CUSTOMER_GROUP: ReplyTypeGroup = "customer";
+
 export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPLY_TYPE_GROUPS.some((c) => c.key === value);
 
 export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "No type yet";
+
+const GROUP_RANK = new Map<string, number>(REPLY_TYPE_GROUPS.map((g, i) => [g.key, i]));
+const groupRank = (groupKey: string) => GROUP_RANK.get(groupKey) ?? REPLY_TYPE_GROUPS.length;
+
+/** Orders reply types by group as `REPLY_TYPE_GROUPS` lists them, then by sort order. A group outside the four sorts last. */
+export const byGroupThenOrder = (a: { groupKey: string; sortOrder: number }, b: { groupKey: string; sortOrder: number }): number =>
+  groupRank(a.groupKey) - groupRank(b.groupKey) || a.sortOrder - b.sortOrder;
 
 export interface AiInstructionBlock {
   id: string;
@@ -178,21 +188,21 @@ export interface ReplyTypeChangeCheck {
 
 /**
  * The lock a record gets when a person moves it to `target`, by any path: Change type, their own pick, or accepting an
- * AI pick. The type with the customer role locks (`records_locked_ck` keeps a locked record in the customer group), a
- * move inside the locked group keeps the lock, and a move out of it unlocks.
+ * AI pick. The lock follows the Existing customer group: any move into it locks (any of its types, or the group alone),
+ * a move inside it keeps the lock, and a move out of it unlocks. `records_locked_ck` keeps a locked record in that group.
  */
-export function lockAfterPersonMove(before: { groupKey: string | null; replyTypeLocked: boolean }, target: { groupKey: string; systemRole: SystemRole | null }): boolean {
-  return target.systemRole === "customer" || (before.replyTypeLocked && target.groupKey === before.groupKey);
+export function lockAfterPersonMove(target: { groupKey: string }): boolean {
+  return target.groupKey === CUSTOMER_GROUP;
 }
 
 /**
  * The lock a record had before a pick applied, kept in the pick's `response.previousLocked` so undo and a thread that
- * turns private give back exactly that. A pick stored before the field existed falls back to the type: the customer role
- * type was locked.
+ * turns private give back exactly that. A pick stored before the field existed falls back to the group: a record in the
+ * Existing customer group was locked.
  */
-export function lockBeforePick(response: unknown, previousSystemRole: SystemRole | null): boolean {
+export function lockBeforePick(response: unknown, previousGroupKey: string | null): boolean {
   const kept = (response as { previousLocked?: unknown } | null)?.previousLocked;
-  return typeof kept === "boolean" ? kept : previousSystemRole === "customer";
+  return typeof kept === "boolean" ? kept : previousGroupKey === CUSTOMER_GROUP;
 }
 
 /**
@@ -208,7 +218,7 @@ export function checkReplyTypeChange({ before, target, expectedContextVersion, c
   if (leavesLockedGroup && !confirmUnlock) {
     throw new ConflictError("This person is locked as Existing customer. Confirm the change to take them out of it.");
   }
-  return { replyTypeLocked: lockAfterPersonMove(before, target) };
+  return { replyTypeLocked: lockAfterPersonMove(target) };
 }
 
 export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {

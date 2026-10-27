@@ -42,7 +42,7 @@ export const DEFAULT_TYPE_RULES: Readonly<TypeRules> = { checkMode: "after", rep
 /** Why a system-role type cannot be archived and keeps the rules it has, worded for the settings screen. */
 export const SYSTEM_ROLE_REASONS: Record<SystemRole, string> = {
   stop_request: "The AI's pick of this type always waits for a person. It writes no draft and stops follow-ups. Use Stop contacting to stop all outreach to the person.",
-  customer: "This type locks the person as a customer, so the AI cannot move them to another group. It cannot be archived.",
+  customer: "A person moved into Existing customer is locked there, so the AI cannot move them to another group. This type keeps the group in use, so it cannot be archived.",
 };
 
 export const isCheckMode = (value: unknown): value is CheckMode => CHECK_MODES.includes(value as CheckMode);
@@ -75,7 +75,14 @@ export function validateTypeRules(type: { systemRole: SystemRole | null }, rules
 // Decision --------------------------------------------------------------------------------------------------
 
 /** Why an AI pick waits for a person. The values are stored in `reply_type_picks.response.holdReason`. */
-export type HoldReason = "protected_customer" | "requires_review" | "low_confidence";
+export const HOLD_REASONS = ["protected_customer", "requires_review", "low_confidence"] as const;
+export type HoldReason = (typeof HOLD_REASONS)[number];
+
+/**
+ * A stored hold reason, read back. A reason stored before migration 0003 (`protected_stage`, `customer_requires_review`,
+ * `review_other`) or any other value reads as null, so a reader shows its fallback.
+ */
+export const holdReasonOf = (value: unknown): HoldReason | null => (HOLD_REASONS.includes(value as HoldReason) ? (value as HoldReason) : null);
 
 /** After a reply mode of the campaign that owns the conversation, or null when no campaign does. */
 export type CampaignMode = "handoff" | "ai_drafts" | null;
@@ -144,19 +151,30 @@ export interface TypeChangeOutcome {
 }
 
 /**
- * Three lines for the Change type dialog, from the decision the change would get. A type change never marks the
- * person do not contact: only Stop contacting does.
+ * The two ways Change type moves a record. `correct` is a person's pick for the latest reply, which queues a draft when
+ * the type writes one. `off_thread` changes the record's type for something that happened elsewhere and writes no draft.
+ */
+export const TYPE_CHANGE_PATHS = ["correct", "off_thread"] as const;
+export type TypeChangePath = (typeof TYPE_CHANGE_PATHS)[number];
+export const isTypeChangePath = (value: unknown): value is TypeChangePath => TYPE_CHANGE_PATHS.includes(value as TypeChangePath);
+
+/**
+ * Three lines for the Change type dialog, from the decision the change would get on `path`. A type change never marks
+ * the person do not contact: only Stop contacting does.
  */
 export function typeChangeOutcome(
   current: Pick<ReplyType, "name" | "groupKey" | "rules" | "systemRole"> | null,
   target: Pick<ReplyType, "name" | "groupKey" | "rules" | "systemRole">,
   facts: Omit<ReplyTypeFacts, "confidence">,
+  path: TypeChangePath = "correct",
 ): TypeChangeOutcome {
   const decision = decideReplyType(target, { ...facts, confidence: null });
   const before = current ? decideReplyType(current, { ...facts, confidence: null }) : null;
 
   const replyDraft = decision.wantsDraft
-    ? "Reply draft: the AI writes a new one."
+    ? path === "correct"
+      ? "Reply draft: the AI writes a new one."
+      : "Reply draft: none written now. Write a draft from the reply when you need one."
     : facts.stopRequested
       ? "Reply draft: none, because they asked to stop."
       : `Reply draft: none. ${target.name} is set to not write one.`;

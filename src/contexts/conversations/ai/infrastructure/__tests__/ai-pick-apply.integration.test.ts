@@ -114,7 +114,7 @@ describeDb("AI pick apply path: type rules decide hold, draft and settle", () =>
       const again = await one("select r.context_version from records r where r.organization_id = $1", [f.org]);
       const second = await modules.stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conv.id, replyTypeKey: "meeting_requested", expectedContextVersion: again.context_version, actorUserId: f.user });
       expect(second.draftQueued).toBe(false);
-      const outcomes = await handling.getTypeChangeOutcomes(deps, f.actor, record.id);
+      const outcomes = await handling.getTypeChangeOutcomes(deps, f.actor, record.id, "correct");
       const demo = await one("select id from reply_types where organization_id = $1 and key = 'demo_request'", [f.org]);
       expect(outcomes.find((o) => o.replyTypeId === demo.id)?.outcome.replyDraft).toBe("Reply draft: none, because they asked to stop.");
     });
@@ -217,6 +217,34 @@ describeDb("AI pick apply path: type rules decide hold, draft and settle", () =>
       expect(await lockRow(f)).toMatchObject({ group_key: "interested", reply_type_locked: false });
       await pickRequest(f, "customer");
       expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_locked: true });
+    });
+
+    it("a person's pick of any type of the customer group locks, and a move out unlocks", async () => {
+      const f = await fixture();
+      answer(f, "demo_request", 0.99);
+      await modules.composition.ingestInbound(mail(f));
+      const renewal = await renewalType(f);
+      await f.run();
+      await pickRequest(f, "renewal");
+      expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_id: renewal, reply_type_locked: true });
+      await pickRequest(f, "meeting_requested");
+      expect(await lockRow(f)).toMatchObject({ group_key: "interested", reply_type_locked: false });
+    });
+
+    it("undo of a pick stored without its earlier lock falls back to the previous group", async () => {
+      const f = await fixture();
+      answer(f, "customer", 0.99);
+      await modules.composition.ingestInbound(mail(f));
+      const renewal = await renewalType(f);
+      await lockOn(f, renewal);
+      await sql`update reply_types set check_mode = 'skip' where organization_id = ${f.org} and system_role = 'customer'`;
+      await f.run();
+      // A pick from before `previousLocked` existed: only its previous group tells the lock.
+      const pick = await one("select id, status from reply_type_picks where organization_id = $1", [f.org]);
+      expect(pick.status).toBe("auto_applied");
+      await sql`update reply_type_picks set response = response - 'previousLocked' where id = ${pick.id}`;
+      await (await handling()).undoReplyTypePick({ organizationId: f.org, replyTypePickId: pick.id, actorUserId: f.user, now: new Date() });
+      expect(await lockRow(f)).toMatchObject({ group_key: "customer", reply_type_id: renewal, reply_type_locked: true });
     });
 
     it("undo restores the lock the record had before the pick, on any type of the customer group", async () => {

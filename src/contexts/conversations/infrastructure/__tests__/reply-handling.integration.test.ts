@@ -146,6 +146,27 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect(await rec(l.recordId)).toMatchObject({ group_key: "other", reply_type_locked: false });
     });
 
+    it("locks any move into the customer group: a second type of the group, and the group alone", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const customer = await sub(f, "customer");
+      const [renewal] = await sql`
+        insert into reply_types (organization_id, reply_type_set_id, group_key, key, name, sort_order)
+        values (${f.org}, ${(await rec(l.recordId)).reply_type_set_id}, 'customer', 'renewal', 'Renewal', 99) returning id`;
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: renewal.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(await rec(l.recordId)).toMatchObject({ group_key: "customer", reply_type_id: renewal.id, reply_type_locked: true });
+      // A move inside the locked group keeps the lock.
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: customer.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect((await rec(l.recordId)).reply_type_locked).toBe(true);
+      // A move out unlocks once the person confirms it.
+      const demo = await sub(f, "demo_request");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version, confirmUnlock: true });
+      expect(await rec(l.recordId)).toMatchObject({ group_key: "interested", reply_type_locked: false });
+      // The group alone, with no type.
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: null, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(await rec(l.recordId)).toMatchObject({ group_key: "customer", reply_type_id: null, reply_type_locked: true });
+    });
+
     it("never marks do not contact when the record moves to the stop request type: only the type changes", async () => {
       const f = await fixture();
       const l = await lead(f);
@@ -183,7 +204,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const l = await lead(f);
       const demo = await sub(f, "demo_request");
       await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      const outcomes = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId);
+      const outcomes = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId, "correct");
       const of = async (key: string) => {
         const id = (await sub(f, key)).id;
         return outcomes.find((o) => o.replyTypeId === id)?.outcome;
@@ -197,7 +218,25 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       });
       expect((await of("meeting_requested"))?.replyDraft).toBe("Reply draft: the AI writes a new one.");
       expect((await of("do_not_contact"))?.contact).toBe("Contact: unchanged until you choose Stop contacting.");
-      await expect(replies.getTypeChangeOutcomes(deps, (await fixture()).actor, l.recordId)).rejects.toThrow(NotFoundError);
+      await expect(replies.getTypeChangeOutcomes(deps, (await fixture()).actor, l.recordId, "correct")).rejects.toThrow(NotFoundError);
+    });
+
+    it("says a change off the thread writes no draft, as the change itself does", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const meeting = await sub(f, "meeting_requested");
+      const offThread = await replies.getTypeChangeOutcomes(deps, f.actor, l.recordId, "off_thread");
+      expect(offThread.find((o) => o.replyTypeId === meeting.id)?.outcome.replyDraft).toBe("Reply draft: none written now. Write a draft from the reply when you need one.");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(await sql`select id from ai_jobs where organization_id = ${f.org} and kind = 'initial_draft'`).toHaveLength(0);
+      // The record stays in front of a person under Next step.
+      expect((await rec(l.recordId)).workflow_state).toBe("action_required");
+    });
+
+    it("refuses an unknown path", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      await expect(replies.getTypeChangeOutcomes(deps, f.actor, l.recordId, "sideways")).rejects.toThrow(ValidationError);
     });
   });
 
@@ -219,6 +258,35 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
     });
 
+    it("shows drafting only for a job of the latest pick of the latest reply", async () => {
+      const f = await fixture();
+      const first = mail(f);
+      const l = await lead(f, first);
+      const older = await appliedReplyTypePick(f, l, "demo_request");
+      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key) values (${f.org}, 'initial_draft', 'classification', ${older}, ${"k-" + older})`;
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(true);
+      // A newer reply on the same thread: the older reply's job no longer drafts for what is on screen.
+      await composition.ingestInbound(mail(f, { from: first.from, providerThreadId: first.providerThreadId, receivedAt: new Date("2026-10-14T11:00:00Z") }));
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(false);
+      const newer = await appliedReplyTypePick(f, l, "meeting_requested");
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(false);
+      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key) values (${f.org}, 'initial_draft', 'classification', ${newer}, ${"k-" + newer})`;
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(true);
+    });
+
+    it("reads a hold reason stored before 0003 as none", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request", "proposed");
+      await sql`update reply_type_picks set response = '{"holdReason":"protected_stage"}'::jsonb where id = ${replyTypePickId}`;
+      const detail = await replies.getRecordDetail(deps, f.actor, l.recordId);
+      expect(detail.replyTypePicks.find((p) => p.id === replyTypePickId)?.holdReason).toBeNull();
+      // The Actions row reads the same pick: it is held, and it does not unlock a customer.
+      const queue = await workQueue.getWorkQueue(queueDeps, f.actor);
+      const row = Object.values(queue.groups).flatMap((g) => g.items).find((i) => i.recordId === l.recordId);
+      expect(row?.classification).toMatchObject({ replyTypePickId, kind: "held", unlocksCustomer: false });
+    });
+
     it("cancels a queued draft job for the undone classification", async () => {
       const f = await fixture();
       const l = await lead(f);
@@ -226,6 +294,40 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key) values (${f.org}, 'initial_draft', 'classification', ${replyTypePickId}, ${"k-" + replyTypePickId})`;
       expect(await replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).toMatchObject({ draftJobCancelled: true });
       expect((await sql`select status from ai_jobs where entity_id = ${replyTypePickId}`)[0].status).toBe("failed");
+    });
+
+    it("discards the draft of a job that was already running when the pick was undone", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const replyTypePickId = await appliedReplyTypePick(f, l, "demo_request");
+      const version = (await rec(l.recordId)).context_version as number;
+      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key, status, locked_at, locked_by, started_at, attempts)
+                values (${f.org}, 'initial_draft', 'classification', ${replyTypePickId}, ${"k-" + replyTypePickId}, 'running', now(), 'w1', now(), 1)`;
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(true);
+      expect(await replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).toMatchObject({ draftJobCancelled: true });
+      // The running job writes nothing a person can send, so the thread no longer says the AI is drafting.
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(false);
+      // A person writes a reply after the undo.
+      const manual = await openDraft(f, l);
+      // The running job finishes with the context it read before the undo.
+      const { drizzleReplyStore } = await import("../drizzle-reply-store");
+      const late = await drizzleReplyStore.insertDraft({
+        organizationId: f.org,
+        recordId: l.recordId,
+        conversationId: l.conversationId,
+        replyForMessageId: null,
+        expectedContextVersion: version,
+        channel: "email",
+        subject: "Re: hello",
+        bodyText: "Here is the demo link.",
+        provider: "fake",
+        model: "fake",
+        request: { replyTypePickId },
+        response: {},
+        citations: [],
+      });
+      expect((await sql`select status from drafts where id = ${late.id}`)[0].status).toBe("stale");
+      expect((await sql`select status from drafts where id = ${manual}`)[0].status).toBe("awaiting_review");
     });
 
     it("ends the active sequence run with classification_undone, retires its drafts and cancels its steps; a second undo changes nothing", async () => {

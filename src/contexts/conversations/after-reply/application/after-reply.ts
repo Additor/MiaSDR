@@ -8,7 +8,7 @@ import {
   type AfterReplyMode,
   type StopReplyType,
 } from "../domain/after-reply";
-import { REPLY_TYPE_GROUPS } from "../../domain/reply-handling";
+import { byGroupThenOrder } from "../../domain/reply-handling";
 import { assertPublishable, parseSteps, type RunStatus, type StepInput, type StepType } from "../domain/sequences";
 import type { AfterReplyStore, FlowCampaign, FlowRunRow, FlowState, StopReplyTypeRow } from "./sequence-ports";
 
@@ -80,14 +80,9 @@ export interface SaveAfterReplyResult extends AfterReplyView {
 /** Why a campaign cannot draft follow-ups, or null when it can. */
 export const afterReplyLockedReason: (campaign: Pick<FlowCampaign, "channel" | "type">) => string | null = lockedReasonOf;
 
-const groupRank = (groupKey: string) => {
-  const rank = REPLY_TYPE_GROUPS.findIndex((g) => g.key === groupKey);
-  return rank === -1 ? REPLY_TYPE_GROUPS.length : rank;
-};
-
 function toStopTypes(rows: readonly StopReplyTypeRow[]): StopReplyType[] {
   return [...rows]
-    .sort((a, b) => groupRank(a.groupKey) - groupRank(b.groupKey) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+    .sort((a, b) => byGroupThenOrder(a, b) || a.name.localeCompare(b.name))
     .map((r) => ({ id: r.id, key: r.key, name: r.name, groupKey: r.groupKey, systemRole: r.systemRole, reason: followUpsStopReason(r.name) }));
 }
 

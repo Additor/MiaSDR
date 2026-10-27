@@ -5,7 +5,6 @@ import { rowsOf } from "@/platform/db/sql-values";
 import { RETIRABLE_DRAFT_STATUSES } from "../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import { lockBeforePick } from "../domain/reply-handling";
-import { isSystemRole } from "../domain/reply-type";
 
 /**
  * An older public thread turns private when its person answers a personal campaign. The thread already moved the
@@ -60,21 +59,20 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
   const [applied] = rowsOf<{
     previous_group_key: string | null;
     previous_reply_type_id: string | null;
-    previous_role: string | null;
     applied_group_key: string;
     applied_reply_type_id: string | null;
     response: unknown;
   }>(
     await tx.execute(sql`
-      select k.previous_group_key, k.previous_reply_type_id, rt.system_role as previous_role, k.applied_group_key, k.applied_reply_type_id, k.response
-      from reply_type_picks k left join reply_types rt on rt.id = k.previous_reply_type_id
+      select k.previous_group_key, k.previous_reply_type_id, k.applied_group_key, k.applied_reply_type_id, k.response
+      from reply_type_picks k
       where k.record_id = ${input.recordId} and k.message_id = ${record.latest} and k.status = 'auto_applied' and k.applied_group_key is not null
       order by k.created_at desc limit 1`),
   );
   const revert = Boolean(applied && applied.applied_group_key === record.group_key && applied.applied_reply_type_id === record.reply_type_id);
   const previous = revert && applied ? applied.previous_group_key : record.group_key;
   const previousSub = revert && applied ? (previous ? applied.previous_reply_type_id : null) : record.reply_type_id;
-  const locked = revert && applied ? previous !== null && lockBeforePick(applied.response, isSystemRole(applied.previous_role) ? applied.previous_role : null) : record.reply_type_locked;
+  const locked = revert && applied ? previous !== null && lockBeforePick(applied.response, previous) : record.reply_type_locked;
   const nextState = record.state === "action_required" ? (remaining ? "action_required" : previous ? "idle" : "unclassified") : record.state;
 
   await tx.execute(sql`

@@ -120,7 +120,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "records/[id]/after-reply": { ids: { id: "records" }, handlers: { GET: ok(), POST: ok({ action: "pause" }) } },
   "records/[id]/assignee": { ids: { id: "records" }, handlers: { POST: ok({ action: "claim" }) } },
   "records/[id]/reply-type": { ids: { id: "records" }, handlers: { POST: ok({ groupKey: "interested", replyTypeId: null, expectedContextVersion: 0 }) } },
-  "records/[id]/reply-type/outcomes": { ids: { id: "records" }, handlers: { GET: ok() } },
+  "records/[id]/reply-type/outcomes": { ids: { id: "records" }, handlers: { GET: { query: { path: "correct" } } } },
   "send-attempts/[id]/reconcile": { ids: { id: "send_attempts" }, handlers: { POST: ok({ delivered: true, note: "checked" }) } },
   "settings/replies": { handlers: { GET: ok(), PATCH: admin() } },
   "settings/sending-pause": { handlers: { GET: ok(), PUT: admin({ paused: false }) } },

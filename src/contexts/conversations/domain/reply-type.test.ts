@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_REPLY_TYPES } from "./default-reply-types";
 import {
   decideReplyType,
+  holdReasonOf,
   DEFAULT_TYPE_RULES,
   STOP_REQUEST_RULES,
   typeChangeOutcome,
@@ -93,6 +94,16 @@ describe("decideReplyType", () => {
     expect(decideReplyType(type({ checkMode: "skip" }), { ...facts, confidence: 0.85 }).hold).toBeNull();
   });
 
+  it("applies a confident AI pick of a type checked after, whatever type it replaces", () => {
+    // Progress belongs to Deal stage: no pick waits to protect the type it replaces. A team that wants a person to confirm
+    // a move into a type sets that type's Check to before.
+    const meetingDone = type({ checkMode: "after" }, { key: "meeting_done", name: "Meeting done" });
+    for (const currentType of [null, { groupKey: "interested" }, { groupKey: "not_interested" }, { groupKey: "other" }]) {
+      expect(decideReplyType(meetingDone, { ...facts, currentType })).toMatchObject({ hold: null, needsLooksRight: true });
+    }
+    expect(decideReplyType({ ...meetingDone, rules: { ...meetingDone.rules, checkMode: "before" } }, facts).hold).toBe("requires_review");
+  });
+
   it("never holds a person's pick, and asks Looks right only of an applied AI pick of a type checked after", () => {
     const person = { ...facts, confidence: null, locked: true, currentType: { groupKey: "customer" } };
     expect(decideReplyType(type({ checkMode: "before" }), person)).toMatchObject({ hold: null, needsLooksRight: false });
@@ -182,8 +193,26 @@ describe("typeChangeOutcome", () => {
     });
   });
 
+  it("says a change off the thread writes no draft now, and keeps the other draft lines", () => {
+    expect(typeChangeOutcome(notNow, type(), outcomeFacts, "off_thread")).toEqual({
+      replyDraft: "Reply draft: none written now. Write a draft from the reply when you need one.",
+      followUps: "Follow-ups: keep going.",
+      contact: "Contact: unchanged.",
+    });
+    expect(typeChangeOutcome(notNow, type(), outcomeFacts, "correct").replyDraft).toBe("Reply draft: the AI writes a new one.");
+    expect(typeChangeOutcome(type(), notNow, outcomeFacts, "off_thread").replyDraft).toBe("Reply draft: none. Not now is set to not write one.");
+    expect(typeChangeOutcome(notNow, type(), { ...outcomeFacts, stopRequested: true }, "off_thread").replyDraft).toBe("Reply draft: none, because they asked to stop.");
+  });
+
   it("says when follow-ups do not apply", () => {
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, isContact: true }).followUps).toBe("Follow-ups: none, because the person is a contact.");
     expect(typeChangeOutcome(null, type(), { ...outcomeFacts, campaignMode: "handoff" }).followUps).toBe("Follow-ups: none for this conversation.");
+  });
+});
+
+describe("holdReasonOf", () => {
+  it("reads the three hold reasons and nothing else", () => {
+    for (const reason of ["protected_customer", "requires_review", "low_confidence"]) expect(holdReasonOf(reason)).toBe(reason);
+    for (const legacy of ["protected_stage", "customer_requires_review", "review_other", "", 3, null, undefined, {}]) expect(holdReasonOf(legacy)).toBeNull();
   });
 });

@@ -60,10 +60,13 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         throw new ConflictError("This reply asks to stop. Review the stop request: choose Stop contacting, or change the type.", { code: "stop_review" });
       }
       const rules = typeRulesOf(target);
-      const decision = await personTypeDecisionTx(tx, input.organizationId, head.recordId, { groupKey: target.groupKey, rules });
-      if (!decision) throw new NotFoundError("Conversation not found");
+      const decision = await personTypeDecisionTx(tx, {
+        organizationId: input.organizationId,
+        record: { id: head.recordId, latestInboundMessageId: head.latest, replyTypeLocked: head.locked },
+        target: { groupKey: target.groupKey, rules },
+      });
       // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
-      const locked = lockAfterPersonMove({ groupKey: head.groupKey, replyTypeLocked: head.locked }, target);
+      const locked = lockAfterPersonMove(target);
 
       let replyTypePickId: string;
       if (existing) {

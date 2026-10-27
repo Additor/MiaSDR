@@ -11,7 +11,7 @@ import { callApi } from "@/app/_lib/api-client";
 import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import type { NextInQueue } from "../_lib/next-queue";
 import { replyTypeSourceTip } from "../../labels";
-import { confidenceText, HOLD_TEXT, LOOKS_RIGHT_DONE } from "../_lib/type-line";
+import { confidenceText, holdText, LOOKS_RIGHT_DONE } from "../_lib/type-line";
 import { ChangeTypeButton, type TypeOption } from "./change-type-button";
 import { openStopContacting, type StopTarget } from "./stop-contacting";
 
@@ -140,7 +140,7 @@ export function TypeLineClient(props: TypeLineProps) {
           ) : decision.kind === "held" ? (
             <p>
               The AI picked <strong className="font-medium">{named(decision.proposed, decision.proposedGroup)}</strong>
-              {decision.confidence != null && `, ${confidenceText(decision.confidence)}`}. {decision.holdReason ? HOLD_TEXT[decision.holdReason] : "It waits for you."}
+              {decision.confidence != null && `, ${confidenceText(decision.confidence)}`}. {holdText(decision.holdReason)}
             </p>
           ) : (
             <p>

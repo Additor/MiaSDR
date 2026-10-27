@@ -36,9 +36,9 @@ import type {
   ReplyTypeCatalog,
   ReplyTypeOption,
 } from "../application/reply-handling-ports";
-import { REPLY_TYPE_GROUPS, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
+import { byGroupThenOrder, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
-import { typeRulesOf, type HoldReason, type TypeRules } from "../domain/reply-type";
+import { holdReasonOf, typeRulesOf, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
@@ -46,9 +46,6 @@ import { draftCanBecome } from "./reply-store-shared";
 import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
 import { rowsOf } from "@/platform/db/sql-values";
 
-const GROUP_ORDER = new Map<string, number>(REPLY_TYPE_GROUPS.map((c, i) => [c.key, i]));
-const byGroupThenOrder = (a: { groupKey: string; sortOrder: number }, b: { groupKey: string; sortOrder: number }) =>
-  (GROUP_ORDER.get(a.groupKey) ?? 9) - (GROUP_ORDER.get(b.groupKey) ?? 9) || a.sortOrder - b.sortOrder;
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
 
 async function replyTypeSetFor(organizationId: string) {
@@ -161,12 +158,17 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       : [];
     const attemptOf = new Map(attempts.map((a) => [a.draftId, a.id]));
     const currentType = subs.find((s) => s.id === record.replyTypeId);
-    const pickIds = cls.map(({ c }) => c.id);
-    const [pendingJob] = pickIds.length
+    // Only the latest pick of the latest reply drafts for what the thread shows: newest first, a stale pick only when the
+    // reply has nothing else, as the type line picks it. Its job writes a draft only while the pick is applied at the
+    // record's version (`loadDraftContext`, `insertDraft`), so an undone or outdated pick drafts nothing.
+    const ofLatest = cls.filter(({ c }) => c.messageId === record.latestInboundMessageId);
+    const latestPick = (ofLatest.find(({ c }) => c.status !== "stale") ?? ofLatest[0])?.c;
+    const pickDrafts = latestPick && ["auto_applied", "accepted", "overridden"].includes(latestPick.status) && latestPick.expectedContextVersion === record.contextVersion;
+    const [pendingJob] = pickDrafts
       ? await db
           .select({ id: aiJobs.id })
           .from(aiJobs)
-          .where(and(eq(aiJobs.organizationId, organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), inArray(aiJobs.entityId, pickIds), inArray(aiJobs.status, ["queued", "running"])))
+          .where(and(eq(aiJobs.organizationId, organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, latestPick.id), inArray(aiJobs.status, ["queued", "running"])))
           .limit(1)
       : [];
     const draftJobPending = pendingJob !== undefined;
@@ -174,7 +176,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
       const latest = c.messageId === record.latestInboundMessageId;
       const applied = ["auto_applied", "accepted", "overridden"].includes(c.status) && c.appliedGroupKey !== null;
-      const response = (c.response ?? {}) as { holdReason?: HoldReason | null; stopRequested?: boolean };
+      const response = (c.response ?? {}) as { holdReason?: unknown; stopRequested?: boolean };
       return {
         id: c.id,
         status: c.status,
@@ -191,7 +193,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         acknowledged: c.acknowledgedAt !== null,
         rules: (c.rules as TypeRules | null) ?? null,
         proposedSystemRole: subs.find((s) => s.id === c.proposedReplyTypeId)?.systemRole ?? null,
-        holdReason: response.holdReason ?? null,
+        holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
         createdAt: c.createdAt,
         latest,
@@ -292,7 +294,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       // The type's rules decide, as a person's pick: a type that writes a draft keeps the record in front of a person,
       // and its follow-ups rule decides whether a run starts. A change to a group without a type has no rules: no run.
       const rules = sub ? typeRulesOf(sub) : null;
-      const decision = sub && rules ? await personTypeDecisionTx(tx, input.organizationId, before.id, { groupKey: sub.groupKey, rules }) : null;
+      const decision = sub && rules ? await personTypeDecisionTx(tx, { organizationId: input.organizationId, record: before, target: { groupKey: sub.groupKey, rules } }) : null;
       await tx
         .update(records)
         .set({
@@ -348,8 +350,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const previous = cls.previousGroupKey;
       const previousTypeId = previous ? cls.previousReplyTypeId : null;
       // The lock comes back as the record had it before the pick.
-      const [previousType] = previousTypeId ? await tx.select({ systemRole: replyTypes.systemRole }).from(replyTypes).where(eq(replyTypes.id, previousTypeId)) : [];
-      const previousLocked = previous !== null && lockBeforePick(cls.response, previousType?.systemRole ?? null);
+      const previousLocked = previous !== null && lockBeforePick(cls.response, previous);
       await tx
         .update(records)
         .set({
@@ -363,12 +364,17 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         })
         .where(eq(records.id, record.id));
       await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
-      // A draft job that has not run yet would write a reply for the classification a person just rejected.
+      // A draft job that has not run yet would write a reply for the classification a person just rejected. A job that
+      // already runs read the old version, and `insertDraft` writes its draft as stale once this commit bumps it.
       const cancelled = await tx
         .update(aiJobs)
         .set({ status: "failed", failedAt: input.now, lastError: "The classification was undone before the draft was written." })
         .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "queued")))
         .returning({ id: aiJobs.id });
+      const running = await tx
+        .select({ id: aiJobs.id })
+        .from(aiJobs)
+        .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "running")));
       const draftsRetired = await retireOpenDrafts(tx, [record.id], "The classification was undone after this draft was written.");
       // The run started for the classification a person just rejected. It ends in this commit and keeps no follow-up drafting.
       const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, record.id, "classification_undone", input.now);
@@ -384,7 +390,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         meta: { replyTypePickId: cls.id, draftsRetired, runsEnded },
         contextVersion: version,
       });
-      return { recordId: record.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length > 0 };
+      return { recordId: record.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length + running.length > 0 };
     });
   },
 
