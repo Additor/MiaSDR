@@ -94,6 +94,8 @@ export interface DraftEntry {
   subject: string | null;
   preview: string;
   revision: number;
+  /** The record's context version the draft was written for. */
+  expectedContextVersion: number;
   createdAt: Date;
   attemptId: string | null;
 }

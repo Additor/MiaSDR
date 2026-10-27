@@ -11,7 +11,7 @@ export const MAX_REASON_LENGTH = 500;
 export const MAX_DRAFT_BODY = 20_000;
 
 export function classificationSchema(keys: readonly string[]) {
-  if (keys.length === 0) throw new Error("The reply categories need at least one active subcategory to classify into.");
+  if (keys.length === 0) throw new Error("The AI needs at least one active reply type to pick from.");
   return z.strictObject({
     subcategoryKey: z.enum(keys as [string, ...string[]]),
     confidence: z.number().finite().min(0).max(1),

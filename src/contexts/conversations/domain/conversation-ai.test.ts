@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { decideAiPick, decideApplication, stopRequestedBy, type PolicyInput } from "./reply-type-pick-policy";
+import { decideAiPick, stopRequestedBy, type PolicyInput } from "./reply-type-pick-policy";
 import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES } from "./reply-type";
 import { normalizeSubject } from "./subject";
-import { needsReply, replySubject } from "./reply-policy";
+import { replySubject } from "./reply-policy";
 import { detectsStopRequest, stripQuoted } from "./stop-request";
 
 const base: PolicyInput = {
@@ -15,23 +15,23 @@ const pick = (over: Partial<PolicyInput> = {}): PolicyInput => ({ ...base, ...ov
 
 describe("reply type pick policy", () => {
   it("applies at or above the confidence floor and holds below it", () => {
-    expect(decideApplication(pick({ confidence: 0.85 }))).toEqual({ action: "auto_apply" });
-    expect(decideApplication(pick({ confidence: 0.84 }))).toEqual({ action: "hold", reason: "low_confidence" });
+    expect(decideAiPick(pick({ confidence: 0.85 })).application).toEqual({ action: "auto_apply" });
+    expect(decideAiPick(pick({ confidence: 0.84 })).application).toEqual({ action: "hold", reason: "low_confidence" });
   });
 
   it("holds a type checked before it applies, whatever the confidence", () => {
-    expect(decideApplication(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES, checkMode: "before" } }, confidence: 1 }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(pick({ proposal: { groupKey: "not_interested", rules: { ...STOP_REQUEST_RULES } }, confidence: 1 }))).toEqual({ action: "hold", reason: "requires_review" });
-    expect(decideApplication(pick({ proposal: { groupKey: "other", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } } }))).toEqual({ action: "auto_apply" });
+    expect(decideAiPick(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES, checkMode: "before" } }, confidence: 1 })).application).toEqual({ action: "hold", reason: "requires_review" });
+    expect(decideAiPick(pick({ proposal: { groupKey: "not_interested", rules: { ...STOP_REQUEST_RULES } }, confidence: 1 })).application).toEqual({ action: "hold", reason: "requires_review" });
+    expect(decideAiPick(pick({ proposal: { groupKey: "other", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } } })).application).toEqual({ action: "auto_apply" });
   });
 
   it("protects a locked customer", () => {
-    expect(decideApplication(pick({ current: { groupKey: "customer", replyTypeLocked: true } }))).toEqual({ action: "hold", reason: "protected_customer" });
-    expect(decideApplication(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES } }, current: { groupKey: "customer", replyTypeLocked: true } }))).toEqual({ action: "auto_apply" });
+    expect(decideAiPick(pick({ current: { groupKey: "customer", replyTypeLocked: true } })).application).toEqual({ action: "hold", reason: "protected_customer" });
+    expect(decideAiPick(pick({ proposal: { groupKey: "customer", rules: { ...DEFAULT_TYPE_RULES } }, current: { groupKey: "customer", replyTypeLocked: true } })).application).toEqual({ action: "auto_apply" });
   });
 
   it("no longer holds a move to a lower position: progress belongs to deal stages", () => {
-    expect(decideApplication(pick({ proposal: { groupKey: "not_interested", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } }, current: { groupKey: "interested", replyTypeLocked: false } }))).toEqual({ action: "auto_apply" });
+    expect(decideAiPick(pick({ proposal: { groupKey: "not_interested", rules: { ...DEFAULT_TYPE_RULES, checkMode: "skip" } }, current: { groupKey: "interested", replyTypeLocked: false } })).application).toEqual({ action: "auto_apply" });
   });
 
   it("wants a draft when the type writes one and the reply asks nothing to stop", () => {
@@ -63,12 +63,6 @@ describe("stop requests", () => {
 });
 
 describe("reply policy", () => {
-  it("drafts for interest and not for stop or out-of-office outcomes", () => {
-    expect(needsReply("interested", "demo_request")).toBe(true);
-    expect(needsReply("customer", "customer")).toBe(true);
-    expect(needsReply("not_interested", "not_required_right_now")).toBe(false);
-    expect(needsReply("other", "out_of_office")).toBe(false);
-  });
   it("builds a reply subject without doubling Re:", () => {
     expect(replySubject("Hello")).toBe("Re: Hello");
     expect(replySubject("RE: Hello")).toBe("RE: Hello");

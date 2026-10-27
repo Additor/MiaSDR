@@ -1241,7 +1241,7 @@ describeDb("After a reply flows", () => {
     it("a person's classification into a terminal subcategory", async () => {
       const { f, run } = await withRun();
       const conversation = await one("select c.id, r.context_version from conversations c join records r on r.id = c.record_id where c.organization_id = $1", [f.org]);
-      await stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conversation.id, replyTypeKey: "not_required_right_now", expectedContextVersion: conversation.context_version, actorUserId: f.user, wantsDraft: () => false });
+      await stores.replies.applyHumanReplyTypePick({ organizationId: f.org, conversationId: conversation.id, replyTypeKey: "not_required_right_now", expectedContextVersion: conversation.context_version, actorUserId: f.user });
       await expectStoppedNow(f, run.id, "classification_corrected");
     });
 

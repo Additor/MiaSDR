@@ -130,22 +130,6 @@ export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bou
  */
 export const followUpsContinue = (followUps: FollowUpsRule | null): boolean => followUps === "continue";
 
-const LEGACY_TERMINAL_KEYS = new Set(["do_not_contact", "left_company", "wrong_contact", "connected_to_different_contact", "customer"]);
-
-/**
- * @deprecated The old key list. Only `domain/reply-type.test.ts` reads it, to compare the seeded rules with the old
- * key rules. P3 deletes it with that comparison. Nothing decides by it.
- */
-export const NO_START_KEYS: readonly string[] = [...LEGACY_TERMINAL_KEYS, "out_of_office"];
-
-/**
- * @deprecated The old key and group rule. Only `domain/reply-type.test.ts` reads it, to compare the seeded rules with
- * the old key rules. P3 deletes it with that comparison. Nothing decides by it.
- */
-export function isTerminalReplyType(groupKey: string | null, replyTypeKey: string | null): boolean {
-  return groupKey === "not_interested" || (replyTypeKey !== null && LEGACY_TERMINAL_KEYS.has(replyTypeKey));
-}
-
 export interface InterruptFacts {
   run: { triggerMessageId: string; replyTypeId: string };
   record: {

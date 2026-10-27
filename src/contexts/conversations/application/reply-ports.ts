@@ -189,20 +189,6 @@ export interface PanelData {
   recipient: string | null;
   /** Subject of the newest message in the thread, the base for a typed reply's subject. */
   lastSubject: string | null;
-  category: { groupKey: string; replyTypeKey: string | null; name: string; source: string } | null;
-  classification: {
-    id: string;
-    status: string;
-    proposed: { replyTypeKey: string; name: string; groupKey: string } | null;
-    confidence: number | null;
-    reasoning: string | null;
-    holdReason: HoldReason | null;
-    stopRequested: boolean;
-    error: string | null;
-    current: boolean;
-    /** A person looked at an applied classification (Mark reviewed, Looks right). */
-    acknowledged: boolean;
-  } | null;
   draft: (DraftRow & { attempt: AttemptRow | null }) | null;
   taxonomy: Array<{ key: string; name: string; groupKey: string }>;
   suppressed: boolean;
@@ -250,9 +236,8 @@ export interface ReplyStore {
   /**
    * A person's pick for the latest reply: `replyTypeKey: null` accepts the held AI pick, a key overrides it. The type's
    * rules decide the draft and follow-ups (`decideReplyType`). Accepting a held stop request answers 409 `stop_review`.
-   * `wantsDraft` is ignored; it stays optional until the callers that still pass it are gone.
    */
-  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string; wantsDraft?: (groupKey: string, replyTypeKey: string) => boolean }): Promise<{ personId: string; groupKey: string; replyTypeKey: string; draftQueued: boolean }>;
+  applyHumanReplyTypePick(input: { organizationId: string; conversationId: string; replyTypeKey: string | null; expectedContextVersion: number; actorUserId: string }): Promise<{ personId: string; groupKey: string; replyTypeKey: string; draftQueued: boolean }>;
   suppressSender(input: { organizationId: string; conversationId: string; actorUserId: string }): Promise<{ email: string }>;
 }
 

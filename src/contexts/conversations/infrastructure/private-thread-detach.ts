@@ -54,7 +54,7 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
       where c.record_id = ${input.recordId} and ${sql.raw(publicConversationText("c"))} and m.direction = 'inbound'
       order by m.sent_at desc, m.id limit 1`),
   );
-  // A category the AI applied for the private message goes back to what it replaced.
+  // A type the AI applied for the private message goes back to what it replaced. The customer role type locks again.
   const [applied] = rowsOf<{ previous_group_key: string | null; previous_reply_type_id: string | null; applied_group_key: string; applied_reply_type_id: string | null }>(
     await tx.execute(sql`
       select previous_group_key, previous_reply_type_id, applied_group_key, applied_reply_type_id from reply_type_picks
@@ -72,7 +72,9 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
       last_inbound_at = ${remaining ? sql`${new Date(remaining.sent_at).toISOString()}::timestamptz` : sql`null`},
       group_key = ${previous}, reply_type_id = ${previousSub},
       reply_type_source = case when ${previous}::text is null then null when ${revert}::boolean then 'human' else reply_type_source end,
-      reply_type_locked = case when ${revert}::boolean then ${previous === "customer"}::boolean else reply_type_locked end,
+      reply_type_locked = case when ${revert}::boolean
+        then exists (select 1 from reply_types rt where rt.id = ${previousSub} and rt.system_role = 'customer')
+        else reply_type_locked end,
       workflow_state = ${nextState},
       next_action_at = case when ${nextState}::text = ${record.state}::text then next_action_at else null end,
       context_version = context_version + 1

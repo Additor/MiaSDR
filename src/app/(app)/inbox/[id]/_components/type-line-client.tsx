@@ -86,7 +86,8 @@ export function TypeLineClient(props: TypeLineProps) {
   return (
     <div className="grid gap-2 text-sm" data-testid="type-line">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="sr-only">Reply type: </span>
+        {/* Without a type the visible text names the reply type itself. */}
+        {type && <span className="sr-only">Reply type: </span>}
         {type?.source && (
           <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="type-source" />} tip={replyTypeSourceTip(type.source)}>
             {type.source === "ai" ? <SparklesIcon aria-hidden className="size-3.5" /> : <UserIcon aria-hidden className="size-3.5" />}

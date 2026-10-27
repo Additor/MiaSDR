@@ -500,8 +500,6 @@ export const drizzleAiJobStore: AiJobStore = {
         await interruptOnTerminalStageTx(tx, {
           organizationId: input.job.organizationId,
           recordId: record.id,
-          groupKey: proposed.groupKey,
-          replyTypeKey: proposed.key,
           replyTypeId: proposed.id,
           followUps: decision.followUps,
           now: new Date(),

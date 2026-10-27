@@ -245,6 +245,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           subject: d.subject,
           preview: (d.editedBodyText ?? d.aiBodyText ?? "").replace(/\s+/g, " ").trim().slice(0, 160),
           revision: d.revision,
+          expectedContextVersion: d.expectedContextVersion,
           createdAt: d.createdAt,
           attemptId: attemptOf.get(d.id) ?? null,
         }),
@@ -283,7 +284,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       }
       const { replyTypeLocked } = checkReplyTypeChange({
         before: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeLocked: before.replyTypeLocked, contextVersion: before.contextVersion, workflowState: before.workflowState },
-        target: { groupKey: input.groupKey, replyTypeId: input.replyTypeId },
+        target: { groupKey: input.groupKey, replyTypeId: input.replyTypeId, systemRole: sub?.systemRole ?? null },
         expectedContextVersion: input.expectedContextVersion,
         confirmUnlock: input.confirmUnlock,
       });
@@ -321,7 +322,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         actorUserId: input.actorUserId,
         fromData: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeSource: before.replyTypeSource, replyTypeLocked: before.replyTypeLocked },
         toData: { groupKey: input.groupKey, replyTypeId: input.replyTypeId, replyTypeSource: "human", replyTypeLocked },
-        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && input.groupKey !== "customer", rules },
+        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && !replyTypeLocked, rules },
         contextVersion: version,
       });
       return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted };
@@ -344,13 +345,16 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       }
       const version = record.contextVersion + 1;
       const previous = cls.previousGroupKey;
+      const previousTypeId = previous ? cls.previousReplyTypeId : null;
+      // The lock comes back with the customer role type, as in a person's type change.
+      const [previousType] = previousTypeId ? await tx.select({ systemRole: replyTypes.systemRole }).from(replyTypes).where(eq(replyTypes.id, previousTypeId)) : [];
       await tx
         .update(records)
         .set({
           groupKey: previous,
-          replyTypeId: previous ? cls.previousReplyTypeId : null,
+          replyTypeId: previousTypeId,
           replyTypeSource: previous ? "human" : null,
-          replyTypeLocked: previous === "customer",
+          replyTypeLocked: previousType?.systemRole === "customer",
           workflowState: afterPersonDecision(record.workflowState),
           nextActionAt: null,
           contextVersion: version,

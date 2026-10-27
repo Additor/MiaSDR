@@ -185,8 +185,11 @@ export function scopeOf(assignedTo: string | null, actorUserId: string): QueueSc
 
 export type QueueProblemKind = "record_error" | "draft_failed" | "delivery_uncertain" | "job_failed";
 
+/** The group filter value for a record with no reply type yet. URLs keep it as `category=unclassified`. */
+export const NO_TYPE_FILTER = "unclassified";
+
 export interface QueueFilter {
-  /** A group key, or `unclassified` for a record with no reply type yet. */
+  /** A group key, or `NO_TYPE_FILTER` for a record with no reply type yet. */
   groupKey?: string;
   channel?: string;
   group?: QueueGroup;

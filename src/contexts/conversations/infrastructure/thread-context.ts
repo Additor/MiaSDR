@@ -18,6 +18,7 @@ import {
 import type { DraftContext } from "../application/reply-ports";
 import type { AiPersonContext, ReplyTypeChange, ThreadEntry } from "../ai/domain/ai-contract";
 import { KNOWLEDGE_BUDGET_CHARS, normalizeTags, selectKnowledge } from "../ai/domain/knowledge";
+import { groupLabel } from "../domain/reply-handling";
 import { replySubject } from "../domain/reply-policy";
 import { drizzleInboxStore } from "./drizzle-inbox-store";
 import { publicConversation } from "@/platform/db/conversation-visibility";
@@ -108,7 +109,7 @@ export async function replyTypeChangeFor(organizationId: string, recordId: strin
   const meta = moved.meta as { note?: unknown; occurredAt?: unknown };
   const occurred = typeof meta.occurredAt === "string" ? new Date(meta.occurredAt) : moved.createdAt;
   return {
-    stage: sub?.name ?? to.groupKey ?? "another stage",
+    stage: sub?.name ?? (to.groupKey ? groupLabel(to.groupKey) : "another stage"),
     occurredAt: Number.isNaN(occurred.getTime()) ? moved.createdAt : occurred,
     note: typeof meta.note === "string" && meta.note.trim() !== "" ? meta.note : null,
   };

@@ -125,7 +125,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const demo = await sub(f, "demo_request");
       await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v + 5 })).rejects.toThrow(ConflictError);
       await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v });
-      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(/already in this category/);
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(/already has this type/);
       await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(ValidationError);
       const trial = await sub(f, "trial_user");
       await replies.updateReplyType(deps, f.admin, trial.id, { active: false });

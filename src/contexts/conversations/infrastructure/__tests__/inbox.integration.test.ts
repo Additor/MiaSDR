@@ -217,21 +217,6 @@ describeDb("master inbox", () => {
       await expect(inbox.getThread(deps, f.actor, "not-a-uuid")).rejects.toBeInstanceOf(NotFoundError);
     });
 
-    it("reports a draft of the current context version only, so a sent draft from an earlier one does not end the draft watch", async () => {
-      const f = await fixture();
-      const r = await composition.ingestInbound(mail(f));
-      const [rec] = await sql`select id, context_version from records where organization_id = ${f.org}`;
-      const addDraft = (version: number, status: string) => sql`
-        insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject, ai_body_text, status)
-        values (${f.org}, ${rec.id}, ${r.conversationId}, ${version}, 'email', 'Re: hello', 'Sure.', ${status})`;
-      await addDraft(rec.context_version, "sent");
-      // The lead wrote again: the record moved to a new version and no draft exists for it yet.
-      await sql`update records set context_version = context_version + 1 where id = ${rec.id}`;
-      expect((await inbox.getThread(composition.inboxDeps(), f.actor, r.conversationId)).latestDraftStatus).toBeNull();
-      await addDraft(rec.context_version + 1, "generating");
-      expect((await inbox.getThread(composition.inboxDeps(), f.actor, r.conversationId)).latestDraftStatus).toBe("generating");
-    });
-
     it("shows the thread with the sequence email that started it, in time order", async () => {
       const f = await fixture();
       const [{ id: mailboxId }] = await sql`

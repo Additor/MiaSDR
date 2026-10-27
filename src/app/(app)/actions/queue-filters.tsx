@@ -1,7 +1,7 @@
 import type { AppliedFilter } from "@/components/shell/filter-chip";
 import { CheckField, DateRangeField, SelectField } from "@/components/shell/filter-fields";
 import { FilterPopover } from "@/components/shell/filter-popover";
-import { QUEUE_GROUPS, QUEUE_GROUP_LABELS } from "@/contexts/conversations/actions/domain/action-queue";
+import { NO_TYPE_FILTER, QUEUE_GROUPS, QUEUE_GROUP_LABELS } from "@/contexts/conversations/actions/domain/action-queue";
 import { REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import { ambiguousTypeNames, typeLabel } from "./type-label";
 
@@ -23,7 +23,7 @@ const CHANNELS = [
 ];
 
 /** The record has no reply type yet. The URL keeps its old value, `category=unclassified`. */
-const NO_TYPE = { value: "unclassified", label: "No type yet" };
+const NO_TYPE = { value: NO_TYPE_FILTER, label: "No type yet" };
 
 const typeOptions = (types: Array<{ id: string; name: string; groupKey: string }>) => {
   const ambiguous = ambiguousTypeNames(types);

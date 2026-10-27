@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import type { Actor } from "@/shared/errors";
 import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
+import { watchedDraftStatus } from "../_lib/draft-watch";
 import { loadNextInQueue } from "../_lib/next-queue";
 import { latestAiPick, latestPick, rulesSummary, typeDecision } from "../_lib/type-line";
 import { DraftWatch } from "./draft-watch-client";
@@ -23,7 +24,7 @@ export async function TypeLine({ actor, conversationId, channel, recordId, queue
   const personName = person.name ?? person.email ?? "Unknown sender";
   const typeName = record.replyTypeName ?? (record.groupKey ? groupLabel(record.groupKey) : null);
 
-  const draftStatus = detail.drafts.find((d) => d.conversationId === conversationId && d.status !== "discarded" && d.status !== "stale")?.status ?? null;
+  const draftStatus = watchedDraftStatus(detail.drafts, conversationId, record.contextVersion);
 
   return (
     <>

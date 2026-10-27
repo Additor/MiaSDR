@@ -2,7 +2,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { identityExceptions } from "@/platform/db/schema";
 import type { ActionQueue, ActionQueueCounts, ActionQueueExtras, QueueGroupPage, QueueItem, QueuePosition, WorkQueueStore } from "../application/work-queue-ports";
-import { QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type PickReviewKind, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
+import { NO_TYPE_FILTER, QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type PickReviewKind, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
 import { publicConversationSql, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 
@@ -124,7 +124,7 @@ function queueConditions(filter: QueueFilter, actorUserId: string) {
   if (filter.scope === "mine") parts.push(sql`q.assigned_to = ${actorUserId}`);
   else if (filter.scope === "unassigned") parts.push(sql`q.assigned_to is null`);
   else if (filter.scope === "others") parts.push(sql`q.assigned_to is not null and q.assigned_to <> ${actorUserId}`);
-  if (filter.groupKey === "unclassified") parts.push(sql`q.group_key is null`);
+  if (filter.groupKey === NO_TYPE_FILTER) parts.push(sql`q.group_key is null`);
   else if (filter.groupKey) parts.push(sql`q.group_key = ${filter.groupKey}`);
   if (filter.channel) parts.push(sql`q.active_channel = ${filter.channel}`);
   if (filter.replyTypeId) parts.push(sql`q.reply_type_id = ${filter.replyTypeId}`);

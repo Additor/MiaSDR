@@ -274,7 +274,6 @@ export const drizzleInboxStore: InboxStore = {
         recordId: conversations.recordId,
         providerThreadId: conversations.providerThreadId,
         workflowState: records.workflowState,
-        contextVersion: records.contextVersion,
         personId: people.id,
         fullName: people.fullName,
         firstName: people.firstName,
@@ -289,13 +288,6 @@ export const drizzleInboxStore: InboxStore = {
       .leftJoin(companies, eq(companies.id, people.companyId))
       .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
     if (!head) return null;
-
-    const [latestDraft] = (await db.execute(sql`
-      select status from drafts
-      where organization_id = ${organizationId} and conversation_id = ${conversationId} and status not in ('discarded', 'stale')
-        and expected_context_version = (select r.context_version from records r where r.id = drafts.record_id)
-      order by created_at desc, id desc limit 1
-    `)) as unknown as Array<{ status: string }>;
 
     const stored = await db
       .select()
@@ -410,8 +402,6 @@ export const drizzleInboxStore: InboxStore = {
       accountRef: head.accountRef,
       accountLabel,
       workflowState: head.workflowState,
-      contextVersion: head.contextVersion,
-      latestDraftStatus: latestDraft?.status ?? null,
       person: {
         id: head.personId,
         name: head.fullName ?? head.firstName,
