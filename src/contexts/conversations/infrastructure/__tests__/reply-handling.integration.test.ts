@@ -258,6 +258,22 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
     });
 
+    it("shows drafting only for a job of the latest pick of the latest reply", async () => {
+      const f = await fixture();
+      const first = mail(f);
+      const l = await lead(f, first);
+      const older = await appliedReplyTypePick(f, l, "demo_request");
+      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key) values (${f.org}, 'initial_draft', 'classification', ${older}, ${"k-" + older})`;
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(true);
+      // A newer reply on the same thread: the older reply's job no longer drafts for what is on screen.
+      await composition.ingestInbound(mail(f, { from: first.from, providerThreadId: first.providerThreadId, receivedAt: new Date("2026-10-14T11:00:00Z") }));
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(false);
+      const newer = await appliedReplyTypePick(f, l, "meeting_requested");
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(false);
+      await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key) values (${f.org}, 'initial_draft', 'classification', ${newer}, ${"k-" + newer})`;
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(true);
+    });
+
     it("reads a hold reason stored before 0003 as none", async () => {
       const f = await fixture();
       const l = await lead(f);
@@ -287,7 +303,10 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const version = (await rec(l.recordId)).context_version as number;
       await sql`insert into ai_jobs (organization_id, kind, entity_type, entity_id, idempotency_key, status, locked_at, locked_by, started_at, attempts)
                 values (${f.org}, 'initial_draft', 'classification', ${replyTypePickId}, ${"k-" + replyTypePickId}, 'running', now(), 'w1', now(), 1)`;
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(true);
       expect(await replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).toMatchObject({ draftJobCancelled: true });
+      // The running job writes nothing a person can send, so the thread no longer says the AI is drafting.
+      expect((await replies.getRecordDetail(deps, f.actor, l.recordId)).record.draftJobPending).toBe(false);
       // A person writes a reply after the undo.
       const manual = await openDraft(f, l);
       // The running job finishes with the context it read before the undo.

@@ -142,7 +142,7 @@ export interface RecordDetail {
     /** Rules of the record's type as they stand now, archived types included. Null without a type. */
     replyTypeRules: TypeRules | null;
     replyTypeSystemRole: SystemRole | null;
-    /** An initial draft job for one of the record's picks is queued or running. */
+    /** The initial draft job of the latest pick of the latest reply is queued or running, and that pick is applied at the record's version. */
     draftJobPending: boolean;
     workflowState: string;
     activeChannel: string | null;

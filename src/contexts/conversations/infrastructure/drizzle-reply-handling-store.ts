@@ -158,12 +158,17 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       : [];
     const attemptOf = new Map(attempts.map((a) => [a.draftId, a.id]));
     const currentType = subs.find((s) => s.id === record.replyTypeId);
-    const pickIds = cls.map(({ c }) => c.id);
-    const [pendingJob] = pickIds.length
+    // Only the latest pick of the latest reply drafts for what the thread shows: newest first, a stale pick only when the
+    // reply has nothing else, as the type line picks it. Its job writes a draft only while the pick is applied at the
+    // record's version (`loadDraftContext`, `insertDraft`), so an undone or outdated pick drafts nothing.
+    const ofLatest = cls.filter(({ c }) => c.messageId === record.latestInboundMessageId);
+    const latestPick = (ofLatest.find(({ c }) => c.status !== "stale") ?? ofLatest[0])?.c;
+    const pickDrafts = latestPick && ["auto_applied", "accepted", "overridden"].includes(latestPick.status) && latestPick.expectedContextVersion === record.contextVersion;
+    const [pendingJob] = pickDrafts
       ? await db
           .select({ id: aiJobs.id })
           .from(aiJobs)
-          .where(and(eq(aiJobs.organizationId, organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), inArray(aiJobs.entityId, pickIds), inArray(aiJobs.status, ["queued", "running"])))
+          .where(and(eq(aiJobs.organizationId, organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, latestPick.id), inArray(aiJobs.status, ["queued", "running"])))
           .limit(1)
       : [];
     const draftJobPending = pendingJob !== undefined;
