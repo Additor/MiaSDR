@@ -85,7 +85,7 @@ describe("decideReplyType for every default type", () => {
 
 describe("decideReplyType", () => {
   it("holds an AI pick for the customer lock, then for Check before, then below the floor", () => {
-    const locked = { ...facts, locked: true, currentType: { id: "c", groupKey: "customer", systemRole: "customer" as const } };
+    const locked = { ...facts, locked: true, currentType: { groupKey: "customer" } };
     expect(decideReplyType(type({ checkMode: "before" }), { ...locked, confidence: 0.1 }).hold).toBe("protected_customer");
     expect(decideReplyType(type({}, { groupKey: "customer" }), locked).hold).toBeNull();
     expect(decideReplyType(type({ checkMode: "before" }), { ...facts, confidence: 0.1 }).hold).toBe("requires_review");
@@ -94,7 +94,7 @@ describe("decideReplyType", () => {
   });
 
   it("never holds a person's pick, and asks Looks right only of an applied AI pick of a type checked after", () => {
-    const person = { ...facts, confidence: null, locked: true, currentType: { id: "c", groupKey: "customer", systemRole: "customer" as const } };
+    const person = { ...facts, confidence: null, locked: true, currentType: { groupKey: "customer" } };
     expect(decideReplyType(type({ checkMode: "before" }), person)).toMatchObject({ hold: null, needsLooksRight: false });
     expect(decideReplyType(type({ checkMode: "after" }), facts).needsLooksRight).toBe(true);
     expect(decideReplyType(type({ checkMode: "after" }), { ...facts, confidence: 0.5 }).needsLooksRight).toBe(false);

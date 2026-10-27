@@ -94,8 +94,8 @@ export interface ReplyTypeFacts {
   floor: number;
   /** The record is locked to its current group (`records.reply_type_locked`). */
   locked: boolean;
-  /** The record's type before this pick, or null when it has none. */
-  currentType: { id: string | null; groupKey: string | null; systemRole: SystemRole | null } | null;
+  /** The record's type before this pick, or null when it has none. Its group decides the customer lock hold. */
+  currentType: { groupKey: string | null } | null;
 }
 
 export type FollowUpsOutcome = FollowUpsRule | "not_applicable";

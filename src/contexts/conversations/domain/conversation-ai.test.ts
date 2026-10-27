@@ -25,7 +25,7 @@ const decide = ({ proposal, confidence, current, floor, stopRequested = false }:
     confidence,
     floor,
     locked: current.replyTypeLocked,
-    currentType: { id: null, groupKey: current.groupKey, systemRole: null },
+    currentType: { groupKey: current.groupKey },
     stopRequested,
     isContact: false,
     campaignMode: null,

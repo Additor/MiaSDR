@@ -44,12 +44,6 @@ export interface ClassifyContext {
   recordId: string;
   contextVersion: number;
   latestInboundMessageId: string | null;
-  groupKey: string | null;
-  replyTypeLocked: boolean;
-  /** The record's reply type before this pick, or null. */
-  currentType: { id: string; groupKey: string; systemRole: SystemRole | null } | null;
-  /** `autoApplyConfidence` is the confidence floor. */
-  settings: { autoApplyConfidence: number };
   operatorInstructions: string;
   businessContext: string;
   /** Active reply types with their rules. The prompt reads key, name, group, description and guidance only. */

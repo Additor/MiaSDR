@@ -356,9 +356,6 @@ export const drizzleAiJobStore: AiJobStore = {
         replyTypeSetId: records.replyTypeSetId,
         contextVersion: records.contextVersion,
         latest: records.latestInboundMessageId,
-        groupKey: records.groupKey,
-        locked: records.replyTypeLocked,
-        replyTypeId: records.replyTypeId,
       })
       .from(messages)
       .innerJoin(conversations, eq(conversations.id, messages.conversationId))
@@ -374,20 +371,12 @@ export const drizzleAiJobStore: AiJobStore = {
     const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, row.replyTypeSetId));
     const thread = await threadEntries(organizationId, row.conversationId);
     if (!thread) return null;
-    // The current type may be archived, so it is read on its own rather than from the active list.
-    const [current] = row.replyTypeId
-      ? await db.select({ id: replyTypes.id, groupKey: replyTypes.groupKey, systemRole: replyTypes.systemRole }).from(replyTypes).where(eq(replyTypes.id, row.replyTypeId))
-      : [];
     const knowledge = await knowledgeFor(organizationId, { alwaysOnly: true });
 
     const ctx: ClassifyContext = {
       recordId: row.recordId,
       contextVersion: row.contextVersion,
       latestInboundMessageId: row.latest,
-      groupKey: row.groupKey,
-      replyTypeLocked: row.locked,
-      currentType: current ?? null,
-      settings: { autoApplyConfidence: Number(settings?.autoApplyConfidence ?? 0.85) },
       operatorInstructions: renderInstructions(settings?.classificationInstructions),
       businessContext: knowledge.map((k) => `${k.title}\n${k.content}`).join("\n\n"),
       taxonomy: taxonomyRows.map((t) => ({
@@ -468,7 +457,7 @@ export const drizzleAiJobStore: AiJobStore = {
           stopRequested: input.stopRequested,
           confidence: input.confidence,
           locked: record.locked,
-          currentType: { id: record.replyTypeId, groupKey: record.groupKey, systemRole: null },
+          currentType: { groupKey: record.groupKey },
         },
       );
       const auto = decision.hold === null;
