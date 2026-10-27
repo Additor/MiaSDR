@@ -29,7 +29,7 @@ docker compose up -d --build
 
 The [quick start guide](docs/guides/quick-start.md) walks from install to a first campaign.
 
-<p align="center"><img src="docs/images/actions-preview.jpg" alt="The Actions queue: replies to approve with AI drafts and their classification, follow-ups due and your tasks" width="100%"></p>
+<p align="center"><img src="docs/images/actions-preview.jpg" alt="The Actions queue: replies to approve with AI drafts and their reply type, follow-ups due and your tasks" width="100%"></p>
 
 ## Features
 

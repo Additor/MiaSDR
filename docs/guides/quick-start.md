@@ -38,9 +38,9 @@ The campaign sends one email per mailbox per tick inside working hours and the d
 
 ## 6. Handle replies
 
-Replies appear in the Inbox (`/inbox`). A reply stops that lead's sequence in the campaign. With an AI provider connected under Settings, Integrations (Anthropic, Vercel AI Gateway or OpenRouter), the app classifies each reply and writes a draft. Vercel AI Gateway and OpenRouter have no default model: AI stays off until you pick one in the AI model card. Nothing sends until a person approves it. Without a key you write the reply yourself.
+Replies appear in the Inbox (`/inbox`). A reply stops that lead's sequence in the campaign. With an AI provider connected under Settings, Integrations (Anthropic, Vercel AI Gateway or OpenRouter), the AI picks a reply type for each reply and writes a draft when the type's rules ask for one. Vercel AI Gateway and OpenRouter have no default model: AI stays off until you pick one in the AI model card. Nothing sends until a person approves it. Without a key you write the reply yourself.
 
-The campaign's Settings tab has an After a reply card. The default, "Stop and hand the conversation to the Inbox", leaves the reply to you. "AI drafts follow-ups for my approval" lets the AI write follow-up drafts for that conversation, and you approve each one before it sends. LinkedIn and Personal campaigns keep the default.
+The campaign's Settings tab has a Follow-ups after a reply section. The default, "Off, hand to the Inbox", leaves the reply to you. "AI drafts, you approve" lets the AI write follow-up drafts for that conversation, and you approve each one before it sends. LinkedIn and Personal campaigns keep the default.
 
 ## 7. Watch it run
 
