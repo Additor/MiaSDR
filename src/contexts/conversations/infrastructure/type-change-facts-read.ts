@@ -5,11 +5,9 @@ import { rowsOf } from "@/platform/db/sql-values";
 import { stopRequestedSql } from "./stop-requested-sql";
 import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { followUpModeFactsTx } from "./follow-up-mode-facts";
-import { REPLY_TYPE_GROUPS, type ReplyTypeGroup } from "../domain/reply-handling";
+import { byGroupThenOrder, type ReplyTypeGroup } from "../domain/reply-handling";
 import { typeRulesOf } from "../domain/reply-type";
 import type { ReplyTypeOption, TypeChangeFacts } from "../application/reply-handling-ports";
-
-const GROUP_ORDER = new Map<string, number>(REPLY_TYPE_GROUPS.map((c, i) => [c.key, i]));
 
 /** A reply type row as Change type reads it. */
 export const replyTypeOption = (t: typeof replyTypes.$inferSelect): ReplyTypeOption => ({
@@ -49,7 +47,7 @@ export async function typeChangeFactsOf(organizationId: string, recordId: string
     current: current ? replyTypeOption(current) : null,
     targets: types
       .filter((t) => t.active)
-      .sort((a, b) => (GROUP_ORDER.get(a.groupKey) ?? 9) - (GROUP_ORDER.get(b.groupKey) ?? 9) || a.sortOrder - b.sortOrder)
+      .sort(byGroupThenOrder)
       .map(replyTypeOption),
     facts: {
       stopRequested: stop?.asked === true,

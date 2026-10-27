@@ -20,6 +20,13 @@ export const isReplyTypeGroup = (value: string): value is ReplyTypeGroup => REPL
 
 export const groupLabel = (key: string | null) => REPLY_TYPE_GROUPS.find((c) => c.key === key)?.label ?? "No type yet";
 
+const GROUP_RANK = new Map<string, number>(REPLY_TYPE_GROUPS.map((g, i) => [g.key, i]));
+const groupRank = (groupKey: string) => GROUP_RANK.get(groupKey) ?? REPLY_TYPE_GROUPS.length;
+
+/** Orders reply types by group as `REPLY_TYPE_GROUPS` lists them, then by sort order. A group outside the four sorts last. */
+export const byGroupThenOrder = (a: { groupKey: string; sortOrder: number }, b: { groupKey: string; sortOrder: number }): number =>
+  groupRank(a.groupKey) - groupRank(b.groupKey) || a.sortOrder - b.sortOrder;
+
 export interface AiInstructionBlock {
   id: string;
   title: string;

@@ -36,7 +36,7 @@ import type {
   ReplyTypeCatalog,
   ReplyTypeOption,
 } from "../application/reply-handling-ports";
-import { REPLY_TYPE_GROUPS, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
+import { byGroupThenOrder, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
 import { typeRulesOf, type HoldReason, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
@@ -46,9 +46,6 @@ import { draftCanBecome } from "./reply-store-shared";
 import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
 import { rowsOf } from "@/platform/db/sql-values";
 
-const GROUP_ORDER = new Map<string, number>(REPLY_TYPE_GROUPS.map((c, i) => [c.key, i]));
-const byGroupThenOrder = (a: { groupKey: string; sortOrder: number }, b: { groupKey: string; sortOrder: number }) =>
-  (GROUP_ORDER.get(a.groupKey) ?? 9) - (GROUP_ORDER.get(b.groupKey) ?? 9) || a.sortOrder - b.sortOrder;
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
 
 async function replyTypeSetFor(organizationId: string) {
