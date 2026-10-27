@@ -13,7 +13,7 @@ test.describe("reply handling on the thread and After a reply", () => {
   test("turn on AI follow-ups, let a reply start the run, control it on the thread, change the category", async ({ page }) => {
     await signInAdmin(page);
 
-    // The campaign emails Rae first. Before her reply arrives, its After a reply setting goes to "AI drafts follow-ups for my approval".
+    // The campaign emails Rae first. Before her reply arrives, its Follow-ups after a reply setting goes to "AI drafts, you approve".
     const { campaignId } = await seedReply(page.request, {
       key: "S7",
       mailbox: "sdr7@e2e-corp.test",
@@ -26,13 +26,19 @@ test.describe("reply handling on the thread and After a reply", () => {
     // The saved setting survives a reload: both steps, the wait in hours, the read-only stop list and no run yet.
     await page.goto(`/campaigns/${campaignId}?tab=settings`);
     const settings = afterReplySettings(page);
-    await expect(settings.getByRole("radio", { name: /AI drafts follow-ups for my approval/ })).toBeChecked();
+    await expect(settings.getByRole("radio", { name: /AI drafts, you approve/ })).toBeChecked();
     await expect(settings.getByText("1. Reply to their answer")).toBeVisible();
     await expect(settings.getByText("2. Follow-up")).toBeVisible();
     await expect(settings.getByLabel("Goal").nth(1)).toHaveValue("Check in once and offer two meeting times.");
     await expect(settings.getByLabel("Wait after the previous message")).toHaveValue("2");
     await expect(settings.getByRole("combobox", { name: "Unit for step 2" })).toContainText("Hours");
-    await expect(settings.getByRole("heading", { name: "Always stops on" })).toBeVisible();
+    // The reply types set to stop follow-ups, read from Reply handling, then the fixed stop rules in one line.
+    await expect(settings.getByRole("heading", { name: "Follow-ups after a reply", level: 2 })).toBeVisible();
+    const stops = settings.getByTestId("after-reply-stops");
+    await expect(stops).toContainText("lands on the suppression list");
+    await expect(stops.getByRole("heading", { name: "Stops for these reply types" })).toBeVisible();
+    await expect(stops).toContainText("Asked to stop");
+    await expect(stops.getByRole("link", { name: "Change in Settings" })).toHaveAttribute("href", "/settings/replies");
 
     // The run shows under Follow-ups in progress on the campaign and links to the conversation.
     await page.goto(`/campaigns/${campaignId}?tab=settings`);
@@ -129,8 +135,9 @@ test.describe("reply handling on the thread and After a reply", () => {
     // The default is the handoff, and nothing runs for the campaign.
     await page.goto(`/campaigns/${campaignId}?tab=settings`);
     const settings = afterReplySettings(page);
-    await expect(settings.getByRole("radio", { name: /hand the conversation to the Inbox/i })).toBeChecked();
-    await expect(settings.getByRole("radio", { name: /AI drafts follow-ups for my approval/ })).not.toBeChecked();
+    await expect(settings.getByRole("radio", { name: /Off, hand to the Inbox/ })).toBeChecked();
+    await expect(settings.getByRole("radio", { name: /AI drafts, you approve/ })).not.toBeChecked();
+    await expect(settings.getByText("The AI still drafts a first reply for reply types set to Write one.", { exact: false })).toBeVisible();
     await expect(settings.getByRole("heading", { name: "Follow-ups in progress (0)" })).toBeVisible();
     await expect(settings.getByText("No follow-ups are running for this campaign.")).toBeVisible();
 
@@ -212,7 +219,7 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(settings.getByRole("heading", { name: "Follow-ups in progress (1)" })).toBeVisible();
 
     // Back to the handoff: Save opens the confirmation. Keep following up leaves the run alone.
-    await settings.getByRole("radio", { name: /hand the conversation to the Inbox/i }).check();
+    await settings.getByRole("radio", { name: /Off, hand to the Inbox/ }).check();
     await settings.getByRole("button", { name: "Save", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Stop 1 follow-up in progress?" });
     await expect(dialog).toBeVisible();
@@ -225,6 +232,6 @@ test.describe("reply handling on the thread and After a reply", () => {
     await page.getByRole("dialog", { name: "Stop 1 follow-up in progress?" }).getByRole("button", { name: "Switch off follow-ups" }).click();
     await expect(page.getByText(/Follow-ups switched off\. 1 stopped\./)).toBeVisible();
     await expect(settings.getByRole("heading", { name: "Follow-ups in progress (0)" })).toBeVisible();
-    await expect(settings.getByRole("radio", { name: /hand the conversation to the Inbox/i })).toBeChecked();
+    await expect(settings.getByRole("radio", { name: /Off, hand to the Inbox/ })).toBeChecked();
   });
 });

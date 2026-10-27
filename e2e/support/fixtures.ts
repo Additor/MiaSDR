@@ -195,7 +195,7 @@ export async function openAddLeads(page: Page): Promise<void> {
   await expect(page.locator("#add-leads-panel")).toBeVisible();
 }
 
-/** The "After a reply" card on the Settings tab of a campaign. */
+/** The "Follow-ups after a reply" section on the Settings tab of a campaign. */
 export function afterReplySettings(page: Page): Locator {
   return page.locator("#after-reply");
 }
@@ -206,7 +206,7 @@ export function threadAfterReply(page: Page): Locator {
 }
 
 /**
- * Turns on "AI drafts follow-ups for my approval" in the Settings tab of a campaign: step 1 (the reply) with a goal, one follow-up
+ * Turns on "AI drafts, you approve" in the Settings tab of a campaign: step 1 (the reply) with a goal, one follow-up
  * with a goal and a wait, then Save, which stores and publishes in one step. Leaves the page on the Settings tab.
  */
 export async function enableAiFollowUps(
@@ -217,7 +217,7 @@ export async function enableAiFollowUps(
   const { replyGoal = "Answer their question and offer a short call.", followUpGoal = "Check in once and offer two meeting times.", wait = 2, unit = "Hours" } = opts;
   await page.goto(`/campaigns/${campaignId}?tab=settings`);
   const card = afterReplySettings(page);
-  const ai = card.getByRole("radio", { name: /AI drafts follow-ups for my approval/ });
+  const ai = card.getByRole("radio", { name: /AI drafts, you approve/ });
   await waitForHydrated(ai);
   await ai.check();
   await card.getByLabel("Goal").first().fill(replyGoal);

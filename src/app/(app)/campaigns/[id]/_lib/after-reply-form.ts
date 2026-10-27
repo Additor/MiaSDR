@@ -1,6 +1,7 @@
 // Pure rules of the After a reply form: delay units, the step list the person edits, its validation and the payload.
 // The API stores delays in minutes. The form shows days unless a stored delay only fits hours or minutes.
 
+import { AFTER_REPLY_MODE_LABELS } from "@/contexts/conversations/after-reply/domain/after-reply";
 import { MAX_STEPS, MAX_TAGS } from "@/contexts/conversations/after-reply/domain/sequences";
 
 export const MAX_FOLLOW_UP_STEPS = MAX_STEPS;
@@ -138,4 +139,28 @@ export function lockedNote(reason: string | null, personal: boolean): string | n
 export function earlierVersionNote(count: number): string | null {
   if (count <= 0) return null;
   return count === 1 ? "1 follow-up uses an earlier version" : `${count.toLocaleString("en-US")} follow-ups use an earlier version`;
+}
+
+/** The ids of `FIXED_STOP_RULES` that `FIXED_STOPS_LINE` names. A test fails when the rules change and the line does not. */
+export const FIXED_STOPS_LINE_COVERS = ["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "record_closed", "converted"] as const;
+
+/** The fixed stop rules in one muted line, under the reply types that stop follow-ups. */
+export const FIXED_STOPS_LINE =
+  "Follow-ups also stop when the person replies again, is marked do not contact, unsubscribes, bounces, lands on the suppression list or becomes a contact, and when reply handling is closed.";
+
+/**
+ * The names of the reply types set to stop follow-ups, as one line. Asked to stop always stops them, so an empty list
+ * means the organization has no reply types yet: they are created on first use.
+ */
+export function stopTypesLine(names: readonly string[]): string {
+  return names.length === 0 ? "No reply types yet." : names.join(", ");
+}
+
+/** The Off option of a campaign. A personal campaign keeps replies private, so the Inbox never sees them. */
+export function handoffOption(personal: boolean): { title: string; description: string } {
+  if (personal) return { title: "Off", description: "The sequence stops for that lead, and the reply stays out of the Inbox." };
+  return {
+    title: AFTER_REPLY_MODE_LABELS.handoff,
+    description: "The sequence stops for that lead and the reply waits in the Inbox. The AI still drafts a first reply for reply types set to Write one.",
+  };
 }

@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { FIXED_STOP_RULES } from "@/contexts/conversations/after-reply/domain/after-reply";
 import {
   blankFollowUp,
   blankReply,
   delayText,
   delayToMinutes,
   earlierVersionNote,
+  FIXED_STOPS_LINE_COVERS,
   formChanged,
+  handoffOption,
   lockedNote,
   parseTags,
   splitDelay,
   stepsFromApi,
   stepsPayload,
+  stopTypesLine,
   validateSteps,
   type EditorStep,
 } from "./after-reply-form";
@@ -114,5 +118,30 @@ describe("notes", () => {
     expect(earlierVersionNote(0)).toBeNull();
     expect(earlierVersionNote(1)).toBe("1 follow-up uses an earlier version");
     expect(earlierVersionNote(12)).toBe("12 follow-ups use an earlier version");
+  });
+});
+
+describe("what stops follow-ups", () => {
+  it("names every fixed stop rule in the one line", () => {
+    expect([...FIXED_STOPS_LINE_COVERS]).toEqual(FIXED_STOP_RULES.map((r) => r.id));
+  });
+
+  it("lists the stop types by name, or says the organization has none yet", () => {
+    expect(stopTypesLine(["Asked to stop", "Not now", "Out of office"])).toBe("Asked to stop, Not now, Out of office");
+    expect(stopTypesLine([])).toBe("No reply types yet.");
+  });
+});
+
+describe("handoffOption", () => {
+  it("hands replies to the Inbox, where the AI still drafts a first reply", () => {
+    const option = handoffOption(false);
+    expect(option.title).toBe("Off, hand to the Inbox");
+    expect(option.description).toContain("The AI still drafts a first reply for reply types set to Write one.");
+  });
+
+  it("keeps a personal campaign's replies out of the Inbox", () => {
+    const option = handoffOption(true);
+    expect(option.title).toBe("Off");
+    expect(option.description).not.toMatch(/waits in the Inbox|drafts/);
   });
 });

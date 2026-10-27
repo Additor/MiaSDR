@@ -145,7 +145,7 @@ describe("restartSequenceRun", () => {
     ["the person is marked do not contact", { doNotContact: true }, /marked do not contact/],
     ["the address is suppressed", { suppressed: true }, /suppression list/],
     ["reply handling is closed", { record: { ...facts().record, workflowState: "closed" } }, /Reply handling is closed/],
-    ["the reply is not classified", { record: { ...facts().record, replyTypeId: null } }, /not classified yet/],
+    ["the reply is not classified", { record: { ...facts().record, replyTypeId: null } }, /no reply type yet/],
     ["the conversation is not email", { conversation: { id: "c1", recordId: "rec1", channel: "linkedin" } }, /no email reply/],
     ["there is no reply at all", { record: { ...facts().record, latestInboundMessageId: null, lastInboundAt: null } }, /no email reply/],
   ];

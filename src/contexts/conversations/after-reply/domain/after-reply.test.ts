@@ -73,7 +73,7 @@ describe("labels", () => {
 
   it("words the reasons that people and writes store, and falls back for unknown ones", () => {
     expect(stopReasonLabel("manual")).toBe("A person cancelled the follow-ups");
-    expect(stopReasonLabel("stage_moved")).toBe("A person changed the reply category");
+    expect(stopReasonLabel("stage_moved")).toBe("A person changed the reply type");
     expect(stopReasonLabel("something_new")).toBe("Stopped");
     expect(stopReasonLabel(null)).toBe("Stopped");
     expect(stopReasonLabel("toString")).toBe("Stopped");
@@ -82,7 +82,7 @@ describe("labels", () => {
 
 describe("FIXED_STOP_RULES", () => {
   it("lists the lead and record facts, in the order interruptReason checks them", () => {
-    expect(FIXED_STOP_RULES.map((r) => r.id)).toEqual(["reply", "do_not_contact", "unsubscribe", "bounce", "record_closed", "converted"]);
+    expect(FIXED_STOP_RULES.map((r) => r.id)).toEqual(["reply", "do_not_contact", "unsubscribe", "bounce", "suppressed", "record_closed", "converted"]);
     expect(new Set(FIXED_STOP_RULES.map((r) => r.id)).size).toBe(FIXED_STOP_RULES.length);
     for (const rule of FIXED_STOP_RULES) expect(rule.label.length).toBeGreaterThan(0);
   });
@@ -106,6 +106,7 @@ describe("FIXED_STOP_RULES", () => {
     expect(interruptReason({ ...base, doNotContact: true })).toBe(byId("do_not_contact"));
     expect(interruptReason({ ...base, suppression: "unsubscribed" })).toBe(byId("unsubscribe"));
     expect(interruptReason({ ...base, suppression: "bounced" })).toBe(byId("bounce"));
+    expect(interruptReason({ ...base, suppression: "manual" })).toBe(byId("suppressed"));
     expect(interruptReason({ ...base, record: { ...base.record, workflowState: "closed" } })).toBe(byId("record_closed"));
     expect(interruptReason({ ...base, contact: true })).toBe(byId("converted"));
   });
