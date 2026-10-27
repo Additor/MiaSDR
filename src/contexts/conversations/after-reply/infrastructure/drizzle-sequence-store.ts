@@ -277,7 +277,8 @@ export async function loadStartOn(
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              ${stopRequestedSql(sql`r.latest_inbound_message_id`)} as stop_requested,
-             (select m.body_text from messages m where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id) as latest_body,
+             (select m.body_text from messages m join conversations mc on mc.id = m.conversation_id
+               where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id and ${publicConversationSql("mc")}) as latest_body,
              p.lifecycle = 'contact' as contact,
              exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact) as dnc,
              exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)) as suppressed
