@@ -662,6 +662,14 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
           await sql`update records set context_version = context_version + 1 where id = ${l.recordId}`;
         },
       },
+      {
+        name: "held, proposed type archived since",
+        facts: { ...base, hasProposedType: false },
+        setup: async (l) => {
+          await aiPick(f, l, { status: "proposed", key: "information_requested", checkMode: "before" });
+          await sql`update reply_types set active = false where organization_id = ${f.org} and key = 'information_requested'`;
+        },
+      },
       { name: "held stop request", facts: { ...base, proposedSystemRole: "stop_request" }, setup: (l) => aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" }) },
       {
         name: "held stop request, person do not contact",

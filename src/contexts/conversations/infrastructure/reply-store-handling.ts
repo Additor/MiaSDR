@@ -62,6 +62,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       }
       const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
       const accepted = input.replyTypeKey === null;
+      if (accepted && !target.active) throw new ConflictError("The AI picked a reply type that was archived since. Choose another type.");
       // Accepting a stop request would only change the type, while the person asked us to stop. The client opens Stop
       // contacting on this code. Choosing the stop request type by name stays allowed and changes only the type.
       if (accepted && target.systemRole === "stop_request") {

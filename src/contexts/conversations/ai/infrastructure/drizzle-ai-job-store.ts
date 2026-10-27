@@ -411,10 +411,11 @@ export const drizzleAiJobStore: AiJobStore = {
         .where(and(eq(messages.id, input.messageId), eq(messages.organizationId, input.job.organizationId), publicConversation))
         .for("update", { of: records });
       if (!record) return { status: "stale" as const };
+      // A type archived after the job read its context is no longer a choice: the result is stored stale.
       const [proposed] = await tx
         .select()
         .from(replyTypes)
-        .where(and(eq(replyTypes.replyTypeSetId, record.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey)));
+        .where(and(eq(replyTypes.replyTypeSetId, record.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey), eq(replyTypes.active, true)));
 
       const base = {
         rules: proposed ? typeRulesOf(proposed) : null,
