@@ -75,15 +75,9 @@ An empty `jobs` array means no jobs are registered. Without a mailbox provider t
 
 Migrations 0002 and 0003 rename the reply tables and add and drop columns. Each `ALTER TABLE` waits for an exclusive lock on its table. Drizzle applies all pending migrations in one transaction, so a long query from an old instance keeps the migration waiting, and every query that arrives after it waits too. Stop every old instance before the new version boots.
 
-The migration files stay as they are: a released migration never changes ([database.md](database.md#migrations)). To make a migration that waits on a lock fail fast, set a lock timeout on the app's database role before the upgrade and clear it once the app is up:
+Both migrators set `lock_timeout` to 30 seconds once they hold the migration lock (`MIGRATION_LOCK_TIMEOUT` in `src/platform/db/migrate.ts`, `LOCK_TIMEOUT` in `scripts/migrate.mjs`). A statement that waits longer for a table lock fails, and the whole run rolls back. The wait for the migration lock itself has no limit, so a replica still waits while another one migrates.
 
-```bash
-docker compose exec db psql -U miasdr -d miasdr -c "ALTER ROLE miasdr SET lock_timeout = '30s'"
-# upgrade, check the app log, then
-docker compose exec db psql -U miasdr -d miasdr -c "ALTER ROLE miasdr RESET lock_timeout"
-```
-
-The setting reaches new connections only, which includes the one the migrator opens at boot. A migration that hits the timeout rolls back whole and logs `Migration failed: canceling statement due to lock timeout`. The app log shows it at boot, and `scripts/migrate.mjs` prints it and exits 1. Find the session that holds the lock in `pg_stat_activity`, end it, and start the app again.
+A run that hits the timeout logs `Migration failed: canceling statement due to lock timeout`. The app log shows it at boot, and `scripts/migrate.mjs` prints it and exits 1. Find the session that holds the lock in `pg_stat_activity`, end it or stop the old instance, and start the app again.
 
 ## Grid job and enrichment settings
 

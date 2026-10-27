@@ -21,6 +21,9 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
 export const ADVISORY_LOCK_KEY = 724105302;
+// How long one statement waits for a table lock before the run fails and rolls back. Set after the advisory lock is
+// held, so this script still waits as long as a replica migrates.
+export const LOCK_TIMEOUT = "30s";
 // The schema uses NULLS NOT DISTINCT and ON DELETE SET NULL (column), which need 15. The supported floor is 17,
 // the version CI and the bundled compose file run.
 export const MIN_POSTGRES_MAJOR = 17;
@@ -52,7 +55,7 @@ async function appliedCount(sql) {
   }
 }
 
-export async function main(env, migrationsFolder) {
+export async function main(env, migrationsFolder, options = {}) {
   if (!env.DATABASE_URL) return console.error("DATABASE_URL is not set."), 1;
   const sql = postgres(env.DATABASE_URL, { max: 1, ssl: env.DATABASE_SSL === "disable" ? false : "require", onnotice: () => undefined });
   try {
@@ -60,6 +63,7 @@ export async function main(env, migrationsFolder) {
     const refusal = unsupportedVersionMessage(Number(v));
     if (refusal) return console.error(refusal), 1;
     await sql`select pg_advisory_lock(${ADVISORY_LOCK_KEY})`;
+    await sql`select set_config('lock_timeout', ${options.lockTimeout ?? LOCK_TIMEOUT}, false)`;
     const before = await appliedCount(sql);
     await migrate(drizzle(sql), { migrationsFolder });
     const after = await appliedCount(sql);
