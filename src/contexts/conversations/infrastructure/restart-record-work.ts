@@ -16,8 +16,9 @@ import { replyAskedToStop } from "./stop-requested-sql";
  *
  * 1. Open drafts retire (`stale`), so nobody sends a reply written for the old type.
  * 2. The active or paused sequence run ends as `interrupted` with `reason`.
- * 3. `context_version` goes up by one, so draft and classification jobs queued for the old version skip.
- * 4. A new run starts only when the person's decision says follow-ups keep going (`followUps` of `decideReplyType`)
+ * 3. An AI pick held for a check retires (`stale`), so Actions, the history and the reply counts stop showing it as waiting.
+ * 4. `context_version` goes up by one, so draft and classification jobs queued for the old version skip.
+ * 5. A new run starts only when the person's decision says follow-ups keep going (`followUps` of `decideReplyType`)
  *    and the campaign that most recently emailed the person has Follow-ups after a reply on; otherwise no run starts.
  *
  * The caller holds the record's lock and has already written the new type. Undo only ends work, so it calls
@@ -38,6 +39,10 @@ export async function restartRecordWorkTx(
 ): Promise<RestartResult> {
   const draftsRetired = await staleOpenDraftsTx(tx, { organizationId: input.organizationId, recordId: input.recordId, reason: input.draftReason, now: input.now });
   const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, input.recordId, input.reason, input.now);
+  // A held AI pick can no longer be accepted once the version goes up. A person's own pick settled it before this call.
+  await tx.execute(sql`
+    update reply_type_picks set status = 'stale'
+    where organization_id = ${input.organizationId} and record_id = ${input.recordId} and status = 'proposed'`);
   const [bumped] = rowsOf<{ context_version: number }>(
     await tx.execute(sql`update records set context_version = context_version + 1 where id = ${input.recordId} and organization_id = ${input.organizationId} returning context_version`),
   );
