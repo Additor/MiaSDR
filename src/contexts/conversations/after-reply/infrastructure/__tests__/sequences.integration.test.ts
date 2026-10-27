@@ -674,6 +674,18 @@ describeDb("After a reply flows", () => {
       expect(await count("drafts", f.org)).toBe(0);
     });
 
+    it("a fresh organization lists its stop types before any reply arrives", async () => {
+      const f = await fixture();
+      expect(await count("reply_type_sets", f.org)).toBe(0);
+      const types = await arApp.getFollowUpStopTypes(f.arDeps, f.actor);
+      expect(types.map((t) => t.key)).toEqual(expect.arrayContaining(["do_not_contact", "out_of_office", "customer"]));
+      expect(await count("reply_type_sets", f.org)).toBe(1);
+      // The first reply reuses the set the read created.
+      await ingest(f);
+      expect(await count("reply_type_sets", f.org)).toBe(1);
+      expect(await arApp.getFollowUpStopTypes(f.arDeps, f.actor)).toEqual(types);
+    });
+
     it("the campaign lists the organization's active stop types of its default set, with their reasons", async () => {
       const f = await fixture();
       await ingest(f);
