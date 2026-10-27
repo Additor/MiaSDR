@@ -63,6 +63,21 @@ const DUE_NOW = sql`now() - interval '1 minute'`;
 const UNLOCK = { lockedAt: null, lockedBy: null } as const;
 
 /**
+ * A draft job a person's pick marked while it ran (`queuePickDraftTx`): the run read an old version, so when it ends the
+ * job goes back to the queue with fresh attempts instead of finishing. One statement per row, so a mark that commits
+ * while the run ends is not lost.
+ */
+const RERUN = sql`(${aiJobs.payload} ? 'rerun')`;
+const endOrRerun = (end: { status: "succeeded" | "failed"; at: Date }) => ({
+  status: sql`case when ${RERUN} then 'queued' else ${end.status} end`,
+  attempts: sql`case when ${RERUN} then 0 else ${aiJobs.attempts} end`,
+  runAfter: sql`case when ${RERUN} then ${DUE_NOW} else ${aiJobs.runAfter} end`,
+  ...(end.status === "succeeded"
+    ? { completedAt: sql`case when ${RERUN} then null else ${end.at.toISOString()}::timestamptz end` }
+    : { failedAt: sql`case when ${RERUN} then null else ${end.at.toISOString()}::timestamptz end` }),
+});
+
+/**
  * The claim this worker still holds. A claim adds one attempt, so a job reclaimed after its lease ran out carries a
  * higher count, and the first worker's late settle matches nothing.
  */
@@ -155,10 +170,10 @@ export const drizzleAiJobStore: AiJobStore = {
 
   async claim(kind, workerId, now, leaseMs) {
     const expired = new Date(now.getTime() - leaseMs);
-    // A job whose lease ran out on its last attempt is finished, not re-run.
+    // A job whose lease ran out on its last attempt is finished, not re-run, unless a person's pick asked for a rerun.
     await db
       .update(aiJobs)
-      .set({ status: "failed", failedAt: now, lastError: "The worker stopped during the last attempt.", payload: failureMarks("lease"), ...UNLOCK })
+      .set({ ...endOrRerun({ status: "failed", at: now }), lastError: "The worker stopped during the last attempt.", payload: sql`case when ${RERUN} then ${aiJobs.payload} - 'rerun' else ${failureMarks("lease")} end`, ...UNLOCK })
       .where(and(eq(aiJobs.kind, kind), eq(aiJobs.status, "running"), sql`${aiJobs.lockedAt} < ${expired.toISOString()}::timestamptz`, sql`${aiJobs.attempts} >= ${aiJobs.maxAttempts}`));
     const rows = (await db.execute(sql`
       with candidate as (
@@ -182,7 +197,10 @@ export const drizzleAiJobStore: AiJobStore = {
   },
 
   async complete(job, now) {
-    await db.update(aiJobs).set({ status: "succeeded", completedAt: now, lastError: null, ...UNLOCK }).where(heldClaim(job));
+    await db
+      .update(aiJobs)
+      .set({ ...endOrRerun({ status: "succeeded", at: now }), payload: sql`${aiJobs.payload} - 'rerun'`, lastError: null, ...UNLOCK })
+      .where(heldClaim(job));
   },
 
   async release(job, runAfter) {
@@ -193,14 +211,19 @@ export const drizzleAiJobStore: AiJobStore = {
   },
 
   async retry(job, error, runAfter) {
-    await db.update(aiJobs).set({ status: "queued", runAfter, lastError: error.slice(0, 1000) || "retry", ...UNLOCK }).where(heldClaim(job));
+    // The retry reads the context again, so a rerun mark is spent.
+    await db.update(aiJobs).set({ status: "queued", runAfter, lastError: error.slice(0, 1000) || "retry", payload: sql`${aiJobs.payload} - 'rerun'`, ...UNLOCK }).where(heldClaim(job));
   },
 
   async fail(job, error, now, failureKind = "transient") {
     const lastError = error.slice(0, 1000) || "failed";
     await db.transaction(async (tx) => {
-      const moved = await tx.update(aiJobs).set({ status: "failed", failedAt: now, lastError, payload: failureMarks(failureKind), ...UNLOCK }).where(heldClaim(job)).returning({ id: aiJobs.id });
-      if (moved.length === 0 || job.kind !== "classification") return;
+      const moved = await tx
+        .update(aiJobs)
+        .set({ ...endOrRerun({ status: "failed", at: now }), lastError, payload: sql`case when ${RERUN} then ${aiJobs.payload} - 'rerun' else ${failureMarks(failureKind)} end`, ...UNLOCK })
+        .where(heldClaim(job))
+        .returning({ id: aiJobs.id, status: aiJobs.status });
+      if (moved.length === 0 || moved[0].status !== "failed" || job.kind !== "classification") return;
       const [record] = await tx
         .select({ id: records.id, personId: records.personId, version: records.contextVersion })
         .from(messages)

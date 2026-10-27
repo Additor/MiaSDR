@@ -376,10 +376,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .set({ status: "failed", failedAt: input.now, lastError: "The classification was undone before the draft was written." })
         .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "queued")))
         .returning({ id: aiJobs.id });
+      // A rerun a person's pick asked for has nothing left to draft for.
       const running = await tx
-        .select({ id: aiJobs.id })
-        .from(aiJobs)
-        .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "running")));
+        .update(aiJobs)
+        .set({ payload: sql`${aiJobs.payload} - 'rerun'` })
+        .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "running")))
+        .returning({ id: aiJobs.id });
       const draftsRetired = await retireOpenDrafts(tx, [record.id], "The classification was undone after this draft was written.");
       // The run started for the classification a person just rejected. It ends in this commit and keeps no follow-up drafting.
       const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, record.id, "classification_undone", input.now);

@@ -457,6 +457,22 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       expect(await one("select reply_type_id from records where id = $1", [recordId])).toMatchObject({ reply_type_id: (await sub(f.org, "meeting_done")).id });
     });
 
+    it("a correction while the pick's draft job runs drafts again once that job ends", async () => {
+      const { f, r, version } = await withRun({ flow: false });
+      // The pick's draft job is running in another worker, which read the old version.
+      const job = await one("select id, entity_id from ai_jobs where organization_id = $1 and kind = 'initial_draft'", [f.org]);
+      await sql`update ai_jobs set status = 'running', attempts = 1, locked_at = now(), locked_by = 'other', completed_at = null where id = ${job.id}`;
+
+      const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_requested", expectedContextVersion: version });
+      expect(result.draftQueued).toBe(true);
+      // The other worker finishes: its draft is stale, and the job goes back to the queue for the new version.
+      await stores.jobs.complete({ id: job.id, organizationId: f.org, kind: "initial_draft", entityId: job.entity_id, attempts: 1, maxAttempts: 3 }, f.clock());
+      expect(await one("select status from ai_jobs where id = $1", [job.id])).toMatchObject({ status: "queued" });
+      await f.aiRun();
+      expect(await one("select expected_context_version from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org])).toMatchObject({ expected_context_version: version + 1 });
+      expect(await one("select status from ai_jobs where id = $1", [job.id])).toMatchObject({ status: "succeeded" });
+    });
+
     it("another organization's person gets 404", async () => {
       const a = await withRun();
       const b = await withRun();

@@ -86,7 +86,9 @@ export async function personTypeDecisionTx(
 /**
  * Queues the initial draft for a pick at `contextVersion`. One draft job exists per pick (unique on kind and entity): a
  * job that already finished for an earlier version goes back to the queue under a key for this version, and a queued job
- * stays and picks up the new version. True when a job now waits or runs.
+ * stays and picks up the new version. A running job read the old version, so its draft goes in stale: it is marked
+ * `rerun`, and the job store puts it back in the queue when that run ends (`complete`, `fail`). True when a job now
+ * waits, or runs and will run again.
  */
 export async function queuePickDraftTx(tx: Tx, input: { organizationId: string; replyTypePickId: string; contextVersion: number }): Promise<boolean> {
   const key = `initial_draft:classification:${input.replyTypePickId}:v${input.contextVersion}`;
@@ -98,6 +100,12 @@ export async function queuePickDraftTx(tx: Tx, input: { organizationId: string; 
       set: { status: "queued", attempts: 0, runAfter: sql`now() - interval '1 minute'`, idempotencyKey: key, payload: sql`${aiJobs.payload} || '{"humanInitiated":true}'::jsonb`, completedAt: null, failedAt: null, lastError: null, lockedAt: null, lockedBy: null },
       setWhere: sql`${aiJobs.status} in ('succeeded', 'failed', 'skipped')`,
     });
-  const [job] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, input.replyTypePickId)));
-  return job?.status === "queued" || job?.status === "running";
+  const [job] = await tx
+    .update(aiJobs)
+    .set({ payload: sql`${aiJobs.payload} || jsonb_build_object('rerun', true, 'humanInitiated', true)` })
+    .where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, input.replyTypePickId), eq(aiJobs.status, "running")))
+    .returning({ status: aiJobs.status });
+  if (job) return true;
+  const [queued] = await tx.select({ status: aiJobs.status }).from(aiJobs).where(and(eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityType, "classification"), eq(aiJobs.entityId, input.replyTypePickId)));
+  return queued?.status === "queued";
 }
