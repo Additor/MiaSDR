@@ -9,7 +9,7 @@ import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-po
 export { waitForLockWaiters } from "@/test-support/db";
 
 /*
- * Fixtures for the deals integration tests: organizations with members, leads with a reply record, a running After a reply
+ * Fixtures for the deals integration tests: organizations with members, leads with a reply record, a running Follow-ups after a reply
  * follow-up with its draft, and live enrollments. Everything goes through the real ingest and sequence code where a test
  * needs that state. Needs TEST_DATABASE_URL pointing at a migrated Postgres; `bootDealsKit` sets the environment first and
  * `cleanup` puts it back.

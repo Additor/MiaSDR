@@ -120,7 +120,7 @@ describe("sequence draft channel", () => {
     expect(inserted[0].channel).toBe("email");
   });
 
-  it("ends a run whose campaign turned After a reply off, in the sweep, before any draft", async () => {
+  it("ends a run whose campaign turned Follow-ups after a reply off, in the sweep, before any draft", async () => {
     const { job, inserted, interrupted } = setup("email", { flowActive: false, sweep: true });
     const result = await run(job);
     // The fake engine still offers a claim after the sweep, and the guard stops it again.

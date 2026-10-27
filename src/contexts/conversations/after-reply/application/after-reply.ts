@@ -13,7 +13,7 @@ import { assertPublishable, parseSteps, type RunStatus, type StepInput, type Ste
 import type { AfterReplyStore, FlowCampaign, FlowRunRow, FlowState, StopReplyTypeRow } from "./sequence-ports";
 
 /**
- * The campaign setting After a reply. A campaign either hands a classified reply to the Inbox (`handoff`) or lets the
+ * The campaign setting Follow-ups after a reply. A campaign either hands a classified reply to the Inbox (`handoff`) or lets the
  * AI draft timed follow-ups that a person approves (`ai_drafts`). Any member of the organization can change it, as
  * with the campaign steps. Nothing here sends: the flow only asks for drafts.
  */

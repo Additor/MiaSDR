@@ -21,7 +21,7 @@ describe("/crm/sequences/[id] deep link", () => {
     lookups.campaign = null;
   });
 
-  it("sends a sequence of a campaign to that campaign's After a reply setting with a temporary redirect", async () => {
+  it("sends a sequence of a campaign to that campaign's Follow-ups after a reply setting with a temporary redirect", async () => {
     lookups.campaign = "camp-1";
     const response = await call(SEQUENCE);
     expect(response.status).toBe(307);

@@ -9,7 +9,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const temporaryRedirect = (location: string) => new NextResponse(null, { status: 307, headers: { Location: location } });
 
 /**
- * The CRM Sequences screen moved into each campaign. A link to one sequence opens the After a reply setting of the
+ * The CRM Sequences screen moved into each campaign. A link to one sequence opens the Follow-ups after a reply setting of the
  * campaign that owns it; anything else (a legacy standalone sequence, another organization's id, no session) opens
  * the campaign list. The redirect is temporary, so a browser does not keep it.
  */

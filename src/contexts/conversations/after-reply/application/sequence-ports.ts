@@ -2,7 +2,7 @@ import type { AfterReplyMode } from "../domain/after-reply";
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import type { InterruptFacts, InterruptReason, RunStatus, StepInput, StepRunStatus, StepType } from "../domain/sequences";
 
-/** Persistence for a campaign's After a reply flow. Every method carries the organization and filters by it. */
+/** Persistence for a campaign's Follow-ups after a reply flow. Every method carries the organization and filters by it. */
 
 export type SequenceStatus = "active" | "archived";
 
@@ -13,7 +13,7 @@ export interface StepView extends StepInput {
   stepType: StepType;
 }
 
-/** The campaign facts the After a reply card needs. */
+/** The campaign facts the Follow-ups after a reply card needs. */
 export interface FlowCampaign {
   id: string;
   name: string;
@@ -123,7 +123,7 @@ export interface StartFacts {
   contact: boolean;
   /** The campaign that most recently emailed the person, whatever its state. Null when none did. */
   owner: { id: string; name: string; channel: string; type: string; status: string; archived: boolean } | null;
-  /** The owner's After a reply sequence, whatever its state. Null when the owner has none. */
+  /** The owner's Follow-ups after a reply sequence, whatever its state. Null when the owner has none. */
   flow: { status: SequenceStatus; hasPublished: boolean } | null;
   /** The conversation asked for, or the one holding the latest inbound message. */
   conversation: { id: string; recordId: string; channel: string } | null;

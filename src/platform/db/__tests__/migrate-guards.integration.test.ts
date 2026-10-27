@@ -161,4 +161,52 @@ describeDb("migration guards", () => {
       expect(await applied(names.lockApp)).toEqual({ ledger: total, people: true });
     });
   });
+
+  /**
+   * An old instance that holds a table lock. The migrator reads its ledger first, so a session holding the ledger table
+   * stands in for it. Runs after "a held migration lock", which left both databases migrated.
+   */
+  describe("a held table lock", () => {
+    /** Runs `run` while another session holds the ledger table in an open transaction, then says whether the advisory lock is free. */
+    async function underTableLock(name: string, run: () => Promise<unknown>) {
+      const holder = postgres(url(name), { max: 1, onnotice: () => undefined });
+      try {
+        let result: unknown;
+        await holder.begin(async (tx) => {
+          await tx`lock table drizzle.__drizzle_migrations in access exclusive mode`;
+          result = await run().catch((error: unknown) => error);
+        });
+        const [{ free }] = await holder<{ free: boolean }[]>`select pg_try_advisory_lock(${LOCK_KEY}) as free`;
+        if (free) await holder`select pg_advisory_unlock(${LOCK_KEY})`;
+        return { result, advisoryFree: free };
+      } finally {
+        await holder.end();
+      }
+    }
+
+    it("scripts/migrate.mjs fails with the lock timeout and frees the advisory lock", async () => {
+      const out = quiet();
+      try {
+        const started = Date.now();
+        const { result, advisoryFree } = await underTableLock(names.lockScript, () =>
+          script.main({ DATABASE_URL: url(names.lockScript), DATABASE_SSL: "disable" }, migrations, { lockTimeout: "300ms" }),
+        );
+        expect(result).toBe(1);
+        expect(Date.now() - started).toBeLessThan(10_000);
+        expect(out.error.mock.calls.flat().join("\n")).toContain("lock timeout");
+        expect(advisoryFree).toBe(true);
+      } finally {
+        out.restore();
+      }
+    });
+
+    it("runMigrations fails with the lock timeout and frees the advisory lock", async () => {
+      vi.resetModules();
+      const { runMigrations } = await import("../migrate");
+      const { result, advisoryFree } = await underTableLock(names.lockApp, () => runMigrations({ lockTimeout: "300ms" }));
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toContain("lock timeout");
+      expect(advisoryFree).toBe(true);
+    });
+  });
 });

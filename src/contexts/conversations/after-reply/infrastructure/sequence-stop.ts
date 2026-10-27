@@ -12,7 +12,7 @@ import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports
  * calls one of these in the transaction that records the trigger, so the run stops and its unsent drafts retire
  * in the same commit. The 60 second sweep stays as a safety net. Conversations owns the runs, so outreach, a lower
  * layer, reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which src/composition wires to this module.
- * The conversations core reaches After a reply through this module and, to restart a run, `createRunOn` and
+ * The conversations core reaches Follow-ups after a reply through this module and, to restart a run, `createRunOn` and
  * `loadStartOn` in drizzle-sequence-store.ts. Every other file here depends on the core, not the other way.
  */
 

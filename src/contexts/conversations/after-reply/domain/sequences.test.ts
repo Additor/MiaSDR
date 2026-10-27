@@ -91,7 +91,7 @@ describe("interruptReason", () => {
     expect(interruptReason(facts({ contact: true, doNotContact: true }))).toBe("do_not_contact");
     expect(interruptReason(facts({ contact: true, suppression: "bounced" }))).toBe("bounce");
   });
-  it("stops when the campaign turns After a reply off, after the facts about the lead", () => {
+  it("stops when the campaign turns Follow-ups after a reply off, after the facts about the lead", () => {
     expect(interruptReason(facts({ flowActive: false }))).toBe("after_reply_off");
     expect(interruptReason(facts({ flowActive: false, doNotContact: true }))).toBe("do_not_contact");
     expect(interruptReason(facts({ flowActive: false, record: { latestInboundMessageId: "m2" } }))).toBe("reply");

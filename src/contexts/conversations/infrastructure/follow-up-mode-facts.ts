@@ -8,7 +8,7 @@ import type { CampaignMode, ReplyTypeFacts } from "../domain/reply-type";
 
 /**
  * The facts of `decideReplyType` that decide whether follow-ups apply to a record, in one query: whether the person is a
- * contact, the After a reply mode of the campaign that owns the conversation (the one that emailed the person last
+ * contact, the Follow-ups after a reply mode of the campaign that owns the conversation (the one that emailed the person last
  * before the reply, as `loadStartOn` finds it) or the state that keeps it from starting runs, and the channel of the
  * latest reply. The AI apply path and a person's
  * type change both read them here, inside their transaction. Null for a record outside the organization.

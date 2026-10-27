@@ -1,7 +1,7 @@
 import type postgres from "postgres";
 
 /**
- * Fixtures for the integration tests of After a reply: a campaign, a person's enrollment in it and a sent email,
+ * Fixtures for the integration tests of Follow-ups after a reply: a campaign, a person's enrollment in it and a sent email,
  * which together make the campaign the owner of the person's conversation. The tests run against a migrated database.
  */
 

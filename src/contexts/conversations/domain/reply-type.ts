@@ -85,7 +85,7 @@ export type HoldReason = (typeof HOLD_REASONS)[number];
 export const holdReasonOf = (value: unknown): HoldReason | null => (HOLD_REASONS.includes(value as HoldReason) ? (value as HoldReason) : null);
 
 /**
- * After a reply mode of the campaign that owns the conversation, or null when no campaign does. A campaign that starts
+ * Follow-ups after a reply mode of the campaign that owns the conversation, or null when no campaign does. A campaign that starts
  * no runs (`startableCampaignSql`) reads as its state instead: `paused`, `not_started` (a draft) or `archived`.
  */
 export type CampaignMode = "handoff" | "ai_drafts" | "paused" | "not_started" | "archived" | null;

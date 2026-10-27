@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as script from "../../../../scripts/migrate.mjs";
-import { MIGRATION_LOCK_KEY } from "../migrate";
+import { MIGRATION_LOCK_KEY, MIGRATION_LOCK_TIMEOUT } from "../migrate";
 import { readableMigrationError } from "../migration-error";
 import { MIN_POSTGRES_MAJOR, UnsupportedPostgresError } from "../postgres-version";
 
@@ -8,6 +8,10 @@ import { MIN_POSTGRES_MAJOR, UnsupportedPostgresError } from "../postgres-versio
 describe("migrate.mjs and src/shared/db agree", () => {
   it("uses the advisory lock key of runMigrations", () => {
     expect(script.ADVISORY_LOCK_KEY).toBe(MIGRATION_LOCK_KEY);
+  });
+
+  it("uses the lock timeout of runMigrations", () => {
+    expect(script.LOCK_TIMEOUT).toBe(MIGRATION_LOCK_TIMEOUT);
   });
 
   it("uses the same Postgres floor", () => {

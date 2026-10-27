@@ -2,7 +2,7 @@ import { ConflictError, ValidationError } from "@/shared/errors";
 import type { FollowUpsRule } from "../../domain/reply-type";
 
 /**
- * Pure rules for a campaign's After a reply flow. The flow has versions; a published version is immutable and a
+ * Pure rules for a campaign's Follow-ups after a reply flow. The flow has versions; a published version is immutable and a
  * run pins the version it started on. Step 1 is the reply, later steps are timed follow-ups. Nothing here
  * reads or writes data, and nothing here can send: a step only ever asks for a draft a person approves.
  */
@@ -119,7 +119,7 @@ export const ACTIVE_RUN_STATUSES: readonly RunStatus[] = ["active", "paused"];
 
 // What stops a run ------------------------------------------------------------------------------------
 
-/** The reason stored on a run that ended because its campaign turned After a reply off. */
+/** The reason stored on a run that ended because its campaign turned Follow-ups after a reply off. */
 export const AFTER_REPLY_OFF = "after_reply_off";
 
 export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bounce" | "suppressed" | "terminal_stage" | "record_closed" | "converted" | typeof AFTER_REPLY_OFF;
@@ -146,7 +146,7 @@ export interface InterruptFacts {
   suppression: "unsubscribed" | "bounced" | "manual" | "complaint" | null;
   /** The person is a contact (`people.lifecycle`). A contact starts no follow-up run, and a run that survives a conversion ends here. */
   contact: boolean;
-  /** The run's flow may keep running: a campaign-owned flow that is still active, or a legacy standalone flow. False once its campaign switches After a reply off. */
+  /** The run's flow may keep running: a campaign-owned flow that is still active, or a legacy standalone flow. False once its campaign switches Follow-ups after a reply off. */
   flowActive: boolean;
 }
 

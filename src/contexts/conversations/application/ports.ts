@@ -88,7 +88,7 @@ export interface InboxFilter {
 }
 
 export interface ScheduledRow {
-  /** `campaign`: a campaign step. `sequence`: an After a reply follow-up step. */
+  /** `campaign`: a campaign step. `sequence`: an Follow-ups after a reply follow-up step. */
   kind: "campaign" | "sequence";
   id: string;
   personId: string;

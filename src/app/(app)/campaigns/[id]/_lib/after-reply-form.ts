@@ -1,4 +1,4 @@
-// Pure rules of the After a reply form: delay units, the step list the person edits, its validation and the payload.
+// Pure rules of the Follow-ups after a reply form: delay units, the step list the person edits, its validation and the payload.
 // The API stores delays in minutes. The form shows days unless a stored delay only fits hours or minutes.
 
 import { AFTER_REPLY_MODE_LABELS } from "@/contexts/conversations/after-reply/domain/after-reply";

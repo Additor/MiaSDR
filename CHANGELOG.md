@@ -25,7 +25,7 @@ For a server that ran a build from before this release:
 
 - Back up the database before you upgrade ([Backups](docs/deploy/self-host.md#backups)).
 - Migrations run when the app boots, unless you set `RUN_MIGRATIONS=false` and run `scripts/migrate.mjs` yourself.
-- You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. [Operations](docs/operations.md#upgrades-that-change-the-reply-tables) shows how to make a migration that waits on a lock fail fast.
+- You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. A migration that waits more than 30 seconds for a table lock fails and rolls back. [Operations](docs/operations.md#upgrades-that-change-the-reply-tables) says how to find the session that holds it.
 - Out of office now ends a follow-up run already going. Before, it only kept a new run from starting.
 - The stage rank is gone, so the AI may move a person to an earlier reply type. To review such moves, set the type's Check to Before it applies in Settings > Reply handling.
 - If your organization archived Asked to stop, the upgrade restores it. Every AI pick of it waits for a person.

@@ -9,7 +9,7 @@ import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-po
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
 
-describeDb("After a reply flows", () => {
+describeDb("Follow-ups after a reply flows", () => {
   useTestEnv({ MAILBOX_PROVIDER: "fake" });
   const sql = testSql({ max: 6 });
   let composition: typeof import("../../../infrastructure/composition");
@@ -116,7 +116,7 @@ describeDb("After a reply flows", () => {
 
   /**
    * Makes a campaign the owner of the person's conversation: it emailed the person an hour before the reply. With
-   * `steps` the campaign also turns After a reply on. Returns the campaign id.
+   * `steps` the campaign also turns Follow-ups after a reply on. Returns the campaign id.
    */
   async function emailedBy(f: Fx, over: { personId?: string; name?: string; steps?: unknown[] | null; ago?: number; status?: "active" | "paused" | "completed" | "draft"; archived?: boolean } = {}) {
     const personId = over.personId ?? (await personOfOrg(f.org));
@@ -445,7 +445,7 @@ describeDb("After a reply flows", () => {
     });
   });
 
-  describe("switching After a reply off", () => {
+  describe("switching Follow-ups after a reply off", () => {
     it("asks first, then ends the runs in progress at once with reason after_reply_off", async () => {
       const { f, campaignId, run } = await withRun();
       const err = await arApp.saveCampaignAfterReply(f.arDeps, f.actor, campaignId, { mode: "handoff" }).catch((e) => e);
@@ -547,7 +547,7 @@ describeDb("After a reply flows", () => {
   });
 
   describe("switching off while a run starts", () => {
-    /** An org whose lead has a classified reply and an owner campaign with After a reply on, and no run yet. */
+    /** An org whose lead has a classified reply and an owner campaign with Follow-ups after a reply on, and no run yet. */
     async function readyToStart() {
       const f = await fixture();
       await ingest(f);
@@ -804,7 +804,7 @@ describeDb("After a reply flows", () => {
       expect(await count("sequence_runs", f.org)).toBe(1);
     });
 
-    it("turning After a reply off and on again sets a new cut-off; the first save and a step edit do not move it", async () => {
+    it("turning Follow-ups after a reply off and on again sets a new cut-off; the first save and a step edit do not move it", async () => {
       const f = await fixture();
       const first = await ingest(f, { receivedAt: new Date(f.clock().getTime() - 30 * DAY) });
       const campaignId = await emailedBy(f, { ago: 31 * DAY });
