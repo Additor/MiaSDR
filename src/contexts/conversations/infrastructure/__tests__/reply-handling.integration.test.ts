@@ -146,6 +146,27 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect(await rec(l.recordId)).toMatchObject({ group_key: "other", reply_type_locked: false });
     });
 
+    it("locks any move into the customer group: a second type of the group, and the group alone", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const customer = await sub(f, "customer");
+      const [renewal] = await sql`
+        insert into reply_types (organization_id, reply_type_set_id, group_key, key, name, sort_order)
+        values (${f.org}, ${(await rec(l.recordId)).reply_type_set_id}, 'customer', 'renewal', 'Renewal', 99) returning id`;
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: renewal.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(await rec(l.recordId)).toMatchObject({ group_key: "customer", reply_type_id: renewal.id, reply_type_locked: true });
+      // A move inside the locked group keeps the lock.
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: customer.id, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect((await rec(l.recordId)).reply_type_locked).toBe(true);
+      // A move out unlocks once the person confirms it.
+      const demo = await sub(f, "demo_request");
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version, confirmUnlock: true });
+      expect(await rec(l.recordId)).toMatchObject({ group_key: "interested", reply_type_locked: false });
+      // The group alone, with no type.
+      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: null, expectedContextVersion: (await rec(l.recordId)).context_version });
+      expect(await rec(l.recordId)).toMatchObject({ group_key: "customer", reply_type_id: null, reply_type_locked: true });
+    });
+
     it("never marks do not contact when the record moves to the stop request type: only the type changes", async () => {
       const f = await fixture();
       const l = await lead(f);

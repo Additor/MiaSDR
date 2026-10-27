@@ -1,14 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError, ValidationError } from "@/shared/errors";
-import { byGroupThenOrder, checkReplyTypeChange, keyFromName, parseInstructionBlocks, parseReplyHandlingSettings, parseReplyTypeInput, parseReplyTypePatch } from "./reply-handling";
+import { byGroupThenOrder, checkReplyTypeChange, keyFromName, lockAfterPersonMove, lockBeforePick, parseInstructionBlocks, parseReplyHandlingSettings, parseReplyTypeInput, parseReplyTypePatch } from "./reply-handling";
 
 const before = { groupKey: "interested", replyTypeId: "s1", replyTypeLocked: false, contextVersion: 3, workflowState: "waiting" };
 
 describe("type change rules", () => {
-  it("accepts a change to another type and locks only for the customer role", () => {
+  it("accepts a change to another type and locks for any move into the customer group", () => {
     expect(checkReplyTypeChange({ before, target: { groupKey: "interested", replyTypeId: "s2", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: false });
     expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: "c1", systemRole: "customer" }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: true });
-    expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: "c2", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: false });
+    // Renewal: a second type of the customer group, without a role.
+    expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: "c2", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: true });
+    // A change to the group alone.
+    expect(checkReplyTypeChange({ before, target: { groupKey: "customer", replyTypeId: null, systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toEqual({ replyTypeLocked: true });
+  });
+
+  it("locks by the target group alone, whatever the record had before", () => {
+    expect(lockAfterPersonMove({ groupKey: "customer" })).toBe(true);
+    expect(lockAfterPersonMove({ groupKey: "interested" })).toBe(false);
+    expect(lockAfterPersonMove({ groupKey: "other" })).toBe(false);
+  });
+
+  it("gives back the stored lock before a pick, and falls back to the previous group", () => {
+    expect(lockBeforePick({ previousLocked: false }, "customer")).toBe(false);
+    expect(lockBeforePick({ previousLocked: true }, "customer")).toBe(true);
+    expect(lockBeforePick({}, "customer")).toBe(true);
+    expect(lockBeforePick(null, "interested")).toBe(false);
+    expect(lockBeforePick(null, null)).toBe(false);
   });
 
   it("keeps the lock for a change inside the locked group", () => {

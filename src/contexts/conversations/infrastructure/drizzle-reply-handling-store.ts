@@ -345,8 +345,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const previous = cls.previousGroupKey;
       const previousTypeId = previous ? cls.previousReplyTypeId : null;
       // The lock comes back as the record had it before the pick.
-      const [previousType] = previousTypeId ? await tx.select({ systemRole: replyTypes.systemRole }).from(replyTypes).where(eq(replyTypes.id, previousTypeId)) : [];
-      const previousLocked = previous !== null && lockBeforePick(cls.response, previousType?.systemRole ?? null);
+      const previousLocked = previous !== null && lockBeforePick(cls.response, previous);
       await tx
         .update(records)
         .set({

@@ -42,7 +42,7 @@ export const DEFAULT_TYPE_RULES: Readonly<TypeRules> = { checkMode: "after", rep
 /** Why a system-role type cannot be archived and keeps the rules it has, worded for the settings screen. */
 export const SYSTEM_ROLE_REASONS: Record<SystemRole, string> = {
   stop_request: "The AI's pick of this type always waits for a person. It writes no draft and stops follow-ups. Use Stop contacting to stop all outreach to the person.",
-  customer: "This type locks the person as a customer, so the AI cannot move them to another group. It cannot be archived.",
+  customer: "A person moved into Existing customer is locked there, so the AI cannot move them to another group. This type keeps the group in use, so it cannot be archived.",
 };
 
 export const isCheckMode = (value: unknown): value is CheckMode => CHECK_MODES.includes(value as CheckMode);

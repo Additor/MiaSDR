@@ -63,7 +63,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       const decision = await personTypeDecisionTx(tx, input.organizationId, head.recordId, { groupKey: target.groupKey, rules });
       if (!decision) throw new NotFoundError("Conversation not found");
       // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
-      const locked = lockAfterPersonMove({ groupKey: head.groupKey, replyTypeLocked: head.locked }, target);
+      const locked = lockAfterPersonMove(target);
 
       let replyTypePickId: string;
       if (existing) {
