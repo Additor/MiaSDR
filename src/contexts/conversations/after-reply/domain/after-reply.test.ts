@@ -118,8 +118,8 @@ describe("FIXED_STOP_RULES", () => {
     ]);
     expect(lines.slice(0, FIXED_STOP_RULES.length).map((l) => l.id)).toEqual(FIXED_STOP_RULES.map((r) => r.id));
     expect(lines.slice(FIXED_STOP_RULES.length)).toEqual([
-      { id: "reply_type:t1", label: "The reply is classified Out of office" },
-      { id: "reply_type:t2", label: "The reply is classified Not now" },
+      { id: "reply_type:t1", label: "The reply type is Out of office" },
+      { id: "reply_type:t2", label: "The reply type is Not now" },
     ]);
     expect(followUpsStopReason("Not now")).toBe("Not now is set to stop follow-ups.");
   });

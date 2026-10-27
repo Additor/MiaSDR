@@ -71,7 +71,7 @@ export function draftCitations(ctx: DraftContext) {
 async function classify(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promise<string> {
   const ctx = await deps.jobs.loadClassifyContext(job.organizationId, job.entityId);
   if (!ctx) return "skipped";
-  if (ctx.taxonomy.length === 0) throw new AiError("The reply categories have no active subcategory.", "permanent");
+  if (ctx.taxonomy.length === 0) throw new AiError("The organization has no active reply type.", "permanent");
   const keys = ctx.taxonomy.map((t) => t.key);
   const schema = classificationSchema(keys);
 

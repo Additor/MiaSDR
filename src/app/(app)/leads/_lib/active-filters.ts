@@ -46,7 +46,7 @@ export function activeFilterChips(filter: LeadFilter, options: Options): FilterC
   if (filter.hasLinkedin !== undefined) add("linkedin", "Has LinkedIn", yesNo(filter.hasLinkedin), { hasLinkedin: undefined });
   if (filter.doNotContact !== undefined) add("dnc", "Do not contact", yesNo(filter.doNotContact), { doNotContact: undefined });
   if (filter.source) add("source", "Source", sourceLabel(filter.source), { source: undefined });
-  if (filter.category) add("category", "Reply category", humanizeToken(filter.category), { category: undefined });
+  if (filter.category) add("category", "Reply group", humanizeToken(filter.category), { category: undefined });
   if (filter.createdFrom) add("from", "Added from", filter.createdFrom, { createdFrom: undefined });
   if (filter.createdTo) add("to", "Added to", filter.createdTo, { createdTo: undefined });
   return chips;

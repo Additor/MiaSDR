@@ -56,7 +56,7 @@ export function LeadsFilterBar(props: {
               <SelectField label="Not in campaign" name="notCampaign" defaultValue={filter.notInCampaign ?? ""} options={[{ value: "", label: "No exclusion" }, ...campaigns]} />
               <TristateField label="Replied" name="replied" value={filter.replied} />
               <TristateField label="Has conversation" name="hasConversation" value={filter.hasConversation} />
-              <SelectField label="Reply category" name="category" defaultValue={filter.category ?? ""} options={[{ value: "", label: "Any category" }, ...options.categories.map((c) => ({ value: c, label: humanizeToken(c) }))]} />
+              <SelectField label="Reply group" name="category" defaultValue={filter.category ?? ""} options={[{ value: "", label: "Any group" }, ...options.categories.map((c) => ({ value: c, label: humanizeToken(c) }))]} />
             </FilterSection>
             <FilterSection title="Reachability">
               <TristateField label="Has email" name="email" value={filter.hasEmail} />

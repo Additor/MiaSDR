@@ -42,7 +42,7 @@ export const AI_CONNECTIONS: readonly AiConnectionSpec[] = [
   {
     key: "anthropic",
     label: "Anthropic",
-    description: "Your Anthropic API key, for reply classification, drafts and AI columns.",
+    description: "Your Anthropic API key, for reply types, drafts and AI columns.",
     protocol: "anthropic-messages",
     baseUrl: "https://api.anthropic.com",
     keyCheck: { url: "https://api.anthropic.com/v1/models?limit=1", auth: "anthropic" },

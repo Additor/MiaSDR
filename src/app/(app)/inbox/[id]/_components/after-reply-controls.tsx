@@ -87,7 +87,7 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
         <Link href={campaignLink} className="underline underline-offset-4 hover:text-foreground">
           {campaign.name}
         </Link>{" "}
-        start once a reply from this person is classified.
+        start once the AI picks a reply type for a reply from this person.
       </p>
     );
   }
@@ -116,7 +116,7 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
         <p className="text-muted-foreground">
           This campaign now hands replies to the Inbox.{" "}
           <Link href={campaignLink} className="underline underline-offset-4">
-            Open its After a reply setting
+            Open its Follow-ups after a reply setting
           </Link>
         </p>
       )}

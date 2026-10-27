@@ -5,15 +5,15 @@ import { humanizeToken } from "@/shared/humanize";
  * `to_data`. A type without a label falls back to a readable form of its token, so a new type still prints something.
  */
 export const EVENT_LABELS: Readonly<Record<string, string>> = {
-  "reply_type.changed": "Changed category",
+  "reply_type.changed": "Changed the reply type",
   "assignee.changed": "Changed who handles the replies",
-  "reply_type_pick.applied": "AI set the category",
-  "reply_type_pick.proposed": "AI suggested a category",
-  "reply_type_pick.failed": "AI classification failed",
-  "reply_type_pick.accepted": "Accepted the AI's suggestion",
-  "reply_type_pick.overridden": "Changed the category",
-  "reply_type_pick.undone": "Undid a classification",
-  "reply_type_pick.acknowledged": "Reviewed a classification",
+  "reply_type_pick.applied": "AI picked the reply type",
+  "reply_type_pick.proposed": "AI picked a reply type, held for a check",
+  "reply_type_pick.failed": "AI could not pick a reply type",
+  "reply_type_pick.accepted": "Accepted the AI pick",
+  "reply_type_pick.overridden": "Changed the AI pick",
+  "reply_type_pick.undone": "Undid an AI pick",
+  "reply_type_pick.acknowledged": "Marked an AI pick Looks right",
   "contact_policy.dnc_set": "Marked do not contact",
   "contact_policy.dnc_cleared": "Cleared do not contact",
   "contact_policy.enforced": "Applied do not contact",

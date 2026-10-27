@@ -709,7 +709,7 @@ describeDb("After a reply flows", () => {
 
       const view = await arApp.getCampaignAfterReply(f.arDeps, f.actor, campaignId);
       expect(view.stopReplyTypes).toEqual(types);
-      expect(view.stopsOn.map((l) => l.label)).toContain("The reply is classified Out of office");
+      expect(view.stopsOn.map((l) => l.label)).toContain("The reply type is Out of office");
     });
   });
 

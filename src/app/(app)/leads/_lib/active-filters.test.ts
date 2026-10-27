@@ -80,7 +80,7 @@ describe("lifecycle chip", () => {
 });
 
 describe("reply category chip", () => {
-  it("reads Reply category, never CRM category", () => {
-    expect(activeFilterChips({ category: "interested" }, options).map((c) => `${c.name}: ${c.value}`)).toEqual(["Reply category: Interested"]);
+  it("reads Reply group, never CRM category", () => {
+    expect(activeFilterChips({ category: "interested" }, options).map((c) => `${c.name}: ${c.value}`)).toEqual(["Reply group: Interested"]);
   });
 });

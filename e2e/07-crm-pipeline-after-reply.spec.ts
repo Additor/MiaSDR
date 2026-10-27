@@ -116,7 +116,7 @@ test.describe("reply handling on the thread and After a reply", () => {
     await expect(change).toBeHidden();
     await expect(typeLine(page).getByTestId("type-name")).toContainText("Meeting requested · Interested");
     await expect(typeLine(page).getByTestId("type-source")).toContainText("Set by a person");
-    await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Changed category");
+    await expect(page.locator("#main-content").getByTestId("thread-activity")).toContainText("Changed the reply type");
     await page.reload();
     await expect(typeLine(page).getByTestId("type-name")).toContainText("Meeting requested");
     await expect(typeLine(page).getByTestId("type-name")).not.toContainText("Demo request");

@@ -190,9 +190,6 @@ export const FIXED_STOP_RULES: readonly FixedStopRule[] = [
   { id: "converted", label: "The person becomes a contact", reason: "converted" },
 ];
 
-/** @deprecated W8 moves `src/architecture/copy-vocabulary.test.ts` to `FIXED_STOP_RULES` and removes this alias. */
-export const ALWAYS_STOPS_ON: readonly FixedStopRule[] = FIXED_STOP_RULES;
-
 /** Why no run starts on a one-step flow for a type set to Don't write a reply draft: step 1 is skipped, and nothing follows it. */
 export const replyDraftSkipReason = (typeName: string): string => `${typeName} is set to not write a reply draft, and the flow has no follow-up step after the reply.`;
 
@@ -212,5 +209,5 @@ export interface StopReplyType {
 
 /** One line per thing that ends follow-ups: the fixed rules, then each stop type by name. */
 export function stopsOnLines(stopTypes: readonly Pick<StopReplyType, "id" | "name">[]): Array<{ id: string; label: string }> {
-  return [...FIXED_STOP_RULES.map(({ id, label }) => ({ id, label })), ...stopTypes.map((t) => ({ id: `reply_type:${t.id}`, label: `The reply is classified ${t.name}` }))];
+  return [...FIXED_STOP_RULES.map(({ id, label }) => ({ id, label })), ...stopTypes.map((t) => ({ id: `reply_type:${t.id}`, label: `The reply type is ${t.name}` }))];
 }
