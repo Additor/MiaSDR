@@ -73,7 +73,8 @@ export interface AfterReplyStore {
   save(input: FlowSave): Promise<{ stoppedRuns: number }>;
   /**
    * The active reply types of the organization's default reply type set whose Follow-ups rule is Stop, in no set
-   * order. The application sorts them.
+   * order. The application sorts them. Before the set exists, the default types the seed would write, with their keys
+   * as ids. The read writes nothing.
    */
   stopReplyTypes(organizationId: string): Promise<StopReplyTypeRow[]>;
 }

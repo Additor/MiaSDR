@@ -701,16 +701,21 @@ describeDb("After a reply flows", () => {
       expect(await count("drafts", f.org)).toBe(0);
     });
 
-    it("a fresh organization lists its stop types before any reply arrives", async () => {
+    it("a fresh organization lists its stop types before any reply arrives, and the read writes nothing", async () => {
       const f = await fixture();
       expect(await count("reply_type_sets", f.org)).toBe(0);
       const types = await arApp.getFollowUpStopTypes(f.arDeps, f.actor);
-      expect(types.map((t) => t.key)).toEqual(expect.arrayContaining(["do_not_contact", "out_of_office", "customer"]));
-      expect(await count("reply_type_sets", f.org)).toBe(1);
-      // The first reply reuses the set the read created.
+      expect(types.map((t) => t.name)).toEqual(expect.arrayContaining(["Asked to stop", "Out of office", "Customer question"]));
+      expect(types.find((t) => t.key === "do_not_contact")).toMatchObject({ systemRole: "stop_request" });
+      expect(await count("reply_type_sets", f.org)).toBe(0);
+      expect(await count("reply_types", f.org)).toBe(0);
+      // The first reply seeds the set with the same rules, so the list keeps its types and order.
       await ingest(f);
       expect(await count("reply_type_sets", f.org)).toBe(1);
-      expect(await arApp.getFollowUpStopTypes(f.arDeps, f.actor)).toEqual(types);
+      const seeded = await arApp.getFollowUpStopTypes(f.arDeps, f.actor);
+      expect(seeded.map(({ key, name, groupKey, systemRole, reason }) => ({ key, name, groupKey, systemRole, reason }))).toEqual(
+        types.map(({ key, name, groupKey, systemRole, reason }) => ({ key, name, groupKey, systemRole, reason })),
+      );
     });
 
     it("the campaign lists the organization's active stop types of its default set, with their reasons", async () => {
