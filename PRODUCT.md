@@ -69,7 +69,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
   - The AI job kind `classification` is the job that picks a reply type.
   - The model output field `subcategoryKey` names the picked type.
   - The stored run reasons `stage_moved`, `classification_corrected` and `classification_undone` mean a person changed the reply type, corrected an AI pick or undid one.
-  - The workflow states `unclassified` and `classifying` read as No type yet and the AI picking a type.
+  - The workflow states `unclassified` and `classifying` read as No type yet and Picking a type.
 - A lead becomes a contact when you create a deal from it or make it a contact.
 - "Sequence" never names the post-reply feature in user-facing text. Code and table names keep `sequence`.
 

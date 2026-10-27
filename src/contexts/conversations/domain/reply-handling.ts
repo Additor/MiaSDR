@@ -190,7 +190,7 @@ export function checkReplyTypeChange({ before, target, expectedContextVersion, c
 
 export const WORKFLOW_LABELS: Readonly<Record<string, string>> = {
   unclassified: "No type yet",
-  classifying: "Classifying",
+  classifying: "Picking a type",
   action_required: "Needs action",
   waiting: "Waiting on them",
   idle: "Idle",
