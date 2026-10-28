@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { contactPolicies, conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes, suppressionList } from "@/platform/db/schema";
+import { conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { PanelData, ReplyStore } from "../application/reply-ports";
 import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
@@ -8,6 +8,7 @@ import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { canMoveDraft, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
+import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 /** The reply panel and the draft lifecycle: load, write, edit, discard, and the CC and blocked-address checks. */
 export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "draftContextForDraft" | "insertDraft" | "getDraft" | "ccContext" | "ccContextForConversation" | "createManualDraft" | "blockedAddresses" | "updateDraft" | "discardDraft"> = {
@@ -52,11 +53,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       draft = { ...toDraftRow(draftRow), attempt: attempt ? toAttempt(attempt) : null };
     }
 
-    const email = head.email?.toLowerCase() ?? null;
-    const [suppressed] = email
-      ? await db.select({ id: suppressionList.id }).from(suppressionList).where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.email, email)))
-      : [];
-    const [dnc] = await db.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, head.personId));
+    const suppressed = await isSuppressed(db, organizationId, head.email);
+    const dnc = await isDoNotContact(db, organizationId, head.personId);
     const mailbox = await mailboxFor(organizationId, head.accountRef);
 
     const [newest] = await db
@@ -76,8 +74,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       lastSubject: newest?.subject ?? null,
       draft,
       taxonomy: taxonomyRows.map(({ key, name, groupKey }) => ({ key, name, groupKey })),
-      suppressed: Boolean(suppressed),
-      doNotContact: dnc?.d === true,
+      suppressed,
+      doNotContact: dnc,
       mailboxIssue: !mailbox ? "No mailbox is connected for this thread." : mailbox.status !== "connected" ? `The mailbox ${mailbox.emailAddress} is ${mailbox.status}.` : head.status !== "active" ? "This conversation is closed." : null,
       answered: Boolean(head.lastOut && head.lastIn && head.lastOut >= head.lastIn),
       knownCcs: await knownCcsFor(organizationId, head.personId),
@@ -202,13 +200,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       if (head.status !== "active") throw new ConflictError("This conversation is closed.");
       if (!head.email) throw new ConflictError("This person has no email address.");
 
-      const [suppressed] = await tx
-        .select({ id: suppressionList.id })
-        .from(suppressionList)
-        .where(and(eq(suppressionList.organizationId, input.organizationId), eq(suppressionList.email, head.email.toLowerCase())));
-      if (suppressed) throw new ConflictError("This address is on the suppression list. A reply cannot be written.");
-      const [dnc] = await tx.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, head.personId));
-      if (dnc?.d) throw new ConflictError("This person is marked do not contact. A reply cannot be written.");
+      if (await isSuppressed(tx, input.organizationId, head.email)) throw new ConflictError("This address is on the suppression list. A reply cannot be written.");
+      if (await isDoNotContact(tx, input.organizationId, head.personId)) throw new ConflictError("This person is marked do not contact. A reply cannot be written.");
 
       const inFlight = await tx
         .select({ id: drafts.id })

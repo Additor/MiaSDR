@@ -12,19 +12,7 @@ import { layerOf, sourceFiles } from "./context-layers";
 
 /** Source files that write a table another owner declares, with those tables. Shrink only. */
 const FOREIGN_WRITES: Record<string, string[]> = {
-  "src/contexts/conversations/infrastructure/drizzle-conversation-store.ts": ["people"],
-  "src/contexts/conversations/infrastructure/drizzle-reply-handling-store.ts": ["campaignEnrollments"],
-  "src/contexts/conversations/infrastructure/drizzle-linkedin-conversation-store.ts": ["people"],
-  "src/contexts/conversations/infrastructure/drizzle-linkedin-reply-store.ts": ["linkedinAccounts"],
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "contactPolicies", "suppression_list"],
-  "src/contexts/outreach/infrastructure/drizzle-channel-settings-store.ts": ["channelSettings", "organizations"],
-  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["events"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["integrationAccounts", "integrationCredentials"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store.ts": ["people"],
-  "src/contexts/outreach/email/infrastructure/drizzle-test-send-store.ts": ["auditLog"],
-  "src/contexts/tenancy/infrastructure/drizzle-member-store.ts": ["sessions"],
-  "src/contexts/tenancy/infrastructure/drizzle-setup-store.ts": ["accounts", "users"],
-  "src/platform/db/audit.ts": ["auditLog"],
+  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments"],
 };
 
 /**
@@ -34,27 +22,17 @@ const FOREIGN_WRITES: Record<string, string[]> = {
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "events", "records", "sends", "suppressionList"],
-  "src/contexts/people/infrastructure/drizzle-contact-delete-store.ts": ["contactPolicies", "suppressionList"],
-  "src/contexts/people/infrastructure/people-directory.ts": ["contactPolicies", "suppressionList"],
-  "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "messages", "records"],
-  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["contactPolicies", "conversations", "events", "messages", "records"],
+  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "conversations", "events", "records", "sends"],
+  "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "conversations", "messages", "records"],
+  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-lead-statuses.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["contactPolicies", "conversations"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store.ts": ["contactPolicies"],
-  "src/contexts/outreach/email/infrastructure/drizzle-outreach-store.ts": ["contactPolicies"],
-  "src/contexts/outreach/infrastructure/drizzle-management-stores.ts": ["contactPolicies"],
+  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["conversations"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
-  "src/contexts/outreach/infrastructure/drizzle-reachability.ts": ["contactPolicies"],
-  "src/contexts/outreach/email/infrastructure/drizzle-test-send-store.ts": ["contactPolicies"],
   "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "records"],
   "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "drafts", "linkedinAccounts", "mailboxes", "people"],
-  "src/platform/db/audit.ts": ["auditLog"],
   "src/platform/db/columns.ts": ["organizations"],
   "src/platform/db/conversation-visibility.ts": ["conversations", "records"],
-  "src/platform/db/person-locks.ts": ["records"],
-  "src/platform/jobs/rollover.ts": ["channelSettings", "organizations"],
 };
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -118,7 +96,7 @@ export function foreignWrites(own: string, source: string, table: ReturnType<typ
 export function upwardReads(own: string, source: string, table: ReturnType<typeof owners>): string[] {
   const lists = [...source.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["'][^"']*schema["']/g)].map((m) => m[1]);
   const imported = lists.flatMap((list) => list.split(",")).map((n) => n.trim().replace(/^type\s+/, "").split(" as ")[0]).filter(Boolean);
-  const raw = [...source.matchAll(/sql`([^`]*)`/g)].flatMap((t) => [...t[1].matchAll(/(?<!delete\s+)\b(?:from|join)\s+"?(\w+)"?/gi)].map((m) => table.bindingOf.get(m[1]) ?? ""));
+  const raw = [...source.matchAll(/sql(?:<[^`]*?>)?`([^`]*)`/g)].flatMap((t) => [...t[1].matchAll(/(?<!delete\s+)\b(?:from|join)\s+"?(\w+)"?/gi)].map((m) => table.bindingOf.get(m[1]) ?? ""));
   const names = [...imported, ...raw];
   return [...new Set(names.filter((n) => {
     const owner = table.byBinding.get(n);
@@ -151,7 +129,7 @@ describe("table ownership", () => {
     expect(scan(upwardReads)).toEqual(UPWARD_READS);
   });
 
-  it("catches a Drizzle write, a raw SQL write and an upward import", () => {
+  it("catches a Drizzle write, a raw SQL write, an upward import and a read in a typed sql template", () => {
     const table = owners();
     const source = [
       'import { conversations, people, mailboxes } from "@/platform/db/schema";',
@@ -159,9 +137,10 @@ describe("table ownership", () => {
       "await tx.update(people).set({ name });",
       "await tx.execute(sql`delete from campaign_enrollments where id = ${id}`);",
       "await tx.execute(sql`select 1 from drafts d join sequence_runs r on r.id = d.run_id`);",
+      "const sent = sql<boolean>`exists (select 1 from sends s where s.person_id = people.id)`;",
     ].join("\n");
     expect(foreignWrites("people", source, table)).toEqual(["campaign_enrollments"]);
     expect(foreignWrites("outreach", source, table)).toEqual(["people"]);
-    expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "mailboxes", "records", "sequenceRuns"]);
+    expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "mailboxes", "records", "sends", "sequenceRuns"]);
   });
 });

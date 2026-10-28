@@ -1,6 +1,7 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { invitations, members, sessions, users } from "@/platform/db/schema";
+import { invitations, members, users } from "@/platform/db/schema";
+import { clearActiveOrganizationTx } from "@/contexts/identity/infrastructure/user-accounts";
 import type { MemberStore } from "../application/member-management";
 
 const invitationColumns = {
@@ -76,13 +77,7 @@ export const drizzleMemberStore: MemberStore = {
             .delete(members)
             .where(and(eq(members.organizationId, organizationId), eq(members.id, memberId)))
             .returning({ userId: members.userId });
-          // Sessions pointing at this organization fall back to another membership on the next sign-in.
-          if (row) {
-            await tx
-              .update(sessions)
-              .set({ activeOrganizationId: null })
-              .where(and(eq(sessions.userId, row.userId), eq(sessions.activeOrganizationId, organizationId)));
-          }
+          if (row) await clearActiveOrganizationTx(tx, row.userId, organizationId);
         },
       }),
     );

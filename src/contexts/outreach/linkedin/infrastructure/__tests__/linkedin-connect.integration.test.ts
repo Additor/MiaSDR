@@ -17,7 +17,7 @@ describeDb("linkedin hosted auth, limits and operations", () => {
   let accountStore: typeof import("../drizzle-linkedin-account-store").drizzleLinkedInAccountStore;
   let connectStore: typeof import("../drizzle-linkedin-connect-store").drizzleLinkedInConnectStore;
   let opsStore: typeof import("../drizzle-linkedin-operations-store").drizzleLinkedInOperationsStore;
-  let auditSink: typeof import("@/platform/db/audit").auditSink;
+  let auditSink: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
   let inboundStore: ReturnType<typeof import("../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
   let parse: typeof import("../unipile-webhook").parseUnipilePayload;
   const orgs: TestOrg[] = [];
@@ -61,7 +61,7 @@ describeDb("linkedin hosted auth, limits and operations", () => {
     ({ drizzleLinkedInAccountStore: accountStore } = await import("../drizzle-linkedin-account-store"));
     ({ drizzleLinkedInConnectStore: connectStore } = await import("../drizzle-linkedin-connect-store"));
     ({ drizzleLinkedInOperationsStore: opsStore } = await import("../drizzle-linkedin-operations-store"));
-    ({ auditSink } = await import("@/platform/db/audit"));
+    ({ auditSink } = await import("@/contexts/tenancy/infrastructure/audit"));
     inboundStore = (await import("../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
     ({ parseUnipilePayload: parse } = await import("../unipile-webhook"));
   });

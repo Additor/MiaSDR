@@ -1,4 +1,5 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import type { MemberDirectory } from "@/contexts/tenancy/application/member-directory";
 import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import {
   MAX_NOTE_BODY,
@@ -19,6 +20,8 @@ import type { NoteScope, TaskListFilter, TaskRow, TaskStore } from "./tasks-port
 
 export interface TaskDeps {
   store: TaskStore;
+  /** Tenancy's directory: an assignee must be a member. */
+  members: Pick<MemberDirectory, "isMember">;
   now: () => Date;
 }
 
@@ -50,7 +53,7 @@ const scopeMissing = (scope: NoteScope) => new NotFoundError(scope.recordId !== 
 async function assertAssignee(deps: TaskDeps, actor: Actor, assigneeId: string | null | undefined) {
   if (!assigneeId) return;
   assertId(assigneeId, "Assignee");
-  if (!(await deps.store.isMember(actor.organizationId, assigneeId))) throw new ValidationError("The assignee is not a member of this organization.");
+  if (!(await deps.members.isMember(actor.organizationId, assigneeId))) throw new ValidationError("The assignee is not a member of this organization.");
 }
 
 async function loadChangeable(deps: TaskDeps, actor: Actor, taskId: string): Promise<TaskRow> {

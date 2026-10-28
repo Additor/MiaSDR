@@ -74,7 +74,7 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 - Child tables reference their parents with composite `(column, organization_id)` foreign keys, so a row cannot point into another organization.
 - `src/platform/db/schema-audit.ts` requires every public table to have `organization_id uuid not null`, a foreign key to `organizations` and an index containing the column. Exceptions sit in `NO_SCOPE` (Better Auth tables, `organizations`, `integration_credentials`), `NULLABLE_SCOPE` (`inbound_events`, `job_runs`) and `INDEX_DEBT`, each with a reason. A stale entry fails the audit, so the lists only shrink.
 - `events`, `audit_log` and `messages` are append-only by trigger. `messages` accepts updates to `important` and `opened_at`. Deletes pass inside a cascade or in a transaction that sets `miasdr.allow_purge` to `on`.
-- `recordAudit` (`src/platform/db/audit.ts`) writes an `audit_log` row inside the caller's transaction, so the row commits with the change. `meta` never holds a secret.
+- `recordAudit` (`tenancy/infrastructure/audit.ts`, the one writer of the table tenancy declares) writes an `audit_log` row inside the caller's transaction, so the row commits with the change. `meta` never holds a secret.
 - Organization deletion is disabled. Foreign keys to `organizations` cascade, which tests use for cleanup.
 
 ### Secrets at rest
@@ -176,7 +176,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 ### Organization settings and time zone
 
 - `PATCH /api/settings/organization` (`updateOrganization`): the owner renames; owners and admins set the time zone, the unknown-sender AI cap and the default phone country. Settings, Organization edits the name, zone and phone country; Settings, Reply handling edits the AI cap through the same endpoint. Each change writes an audit row (`organization.renamed`, `organization.timezone_changed`, `organization.ai_cap_changed`, `organization.phone_country_changed` with `from` and `to`) in the same transaction. A value equal to the current one writes nothing.
-- The zone lives in two places: `channel_settings` `general.timeZone`, which the send engine, analytics and the day logic read, and `organizations.timezone`. Organization settings write both in one transaction. `PATCH /api/settings/email-rules` writes the zone only when the request carries one; the Sending rules block of Settings, Mailboxes sends none. Reads prefer a valid `general` value.
+- The zone lives in two places: `channel_settings` `general.timeZone`, which the send engine, analytics and the day logic read, and `organizations.timezone`. Organization settings (tenancy) is the one writer and writes both in one transaction. `PATCH /api/settings/email-rules` saves the pace only. Reads prefer a valid `general` value.
 - A mailbox without its own working hours follows the organization's zone. Its settings dialog offers Organization hours, which saves `workingHours: null`, or Custom hours.
 - `canonicalTimeZone` (`src/shared/time-zone.ts`) maps legacy ICU ids such as `Asia/Calcutta` to current IANA names at every write and at the reads that feed SQL or day math. An unset or unknown zone means UTC.
 - The UI prints timestamps in the organization's zone with the UTC original in a tooltip: `<Time value />` in JSX, `formatDateTime(value, zone)` elsewhere (`components/shell/org-time-zone.ts`, `src/shared/format-time.ts`). The output never depends on the viewer's locale or zone. A filter labelled UTC keeps UTC.
@@ -244,8 +244,9 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### Reachability and do not contact
 
-- Reachability is separate from lead status (`outreach/domain/reachability.ts`, read by `readReachability`): do not contact with reason and time, email open, suppressed or missing, LinkedIn open or missing. A suppressed address blocks email and leaves LinkedIn open.
-- `setPersonDoNotContact` (conversations) is the one writer. `POST /api/people/[personId]/dnc` sets or clears it; `POST /api/people/dnc` marks 1 to 200 people, one transaction each, reporting `already_marked`, `not_found` or `retryable`. Setting needs a reason (500 characters at most).
+- Reachability is separate from lead status (`people/domain/reachability.ts`, read by `readReachability`): do not contact with reason and time, email open, suppressed or missing, LinkedIn open or missing. A suppressed address blocks email and leaves LinkedIn open.
+- The people context owns `contact_policies` and `suppression_list` and is their one writer (`people/infrastructure/reachability.ts`). The contexts above decide when to write and run their own follow-through in the same transaction: conversations for do not contact (records, drafts, runs, and outreach's enrollment halt), outreach for a suppressed address (enrollments, and conversations' run stop through `FollowUpStop`).
+- `setPersonDoNotContact` (conversations) is the one use case that sets or clears the flag; it writes the policy through people's `writeDoNotContactTx`. `POST /api/people/[personId]/dnc` sets or clears it; `POST /api/people/dnc` marks 1 to 200 people, one transaction each, reporting `already_marked`, `not_found` or `retryable`. Setting needs a reason (500 characters at most).
 - Setting upserts `contact_policies` (source `human`) and, in the same transaction, sets the person's `pending` and `active` enrollments to `suppressed` with `stop_reason = 'do_not_contact'`, ends follow-up runs, retires open drafts and returns open reply handling to `action_required`. Clearing removes the flag and revives nothing. The flag applies to every channel, and the send engines check it again before each provider call.
 
 ### Delete
@@ -437,6 +438,14 @@ Code: `outreach/application/campaign-management.ts` (email), `linkedin-campaigns
 - **Restore** (`POST .../enrollments/restore`, up to 500) refuses: not removed, campaign completed or archived, a genuine reply, do not contact, suppressed (email), a contact, live in another campaign on the same channel, no step left. A lead with progress comes back `active`, otherwise `pending`. Restore and the reply stop share `lockPersonOutreachTx`, a per-person advisory lock, so one sees the other's commit. Each restore writes an `enrollment.restored` event and an audit row.
 - Enroll answers carry cross-campaign `notices` (other enrollments with a sent step or reply, leads skipped for `already_contacted_by_account`), at most 50 rows. Personal campaigns stay out.
 
+### Enrollment outcomes
+
+A live enrollment (`pending`, `active`) ends in one outcome, and outcomes are final; only a restore moves `removed` back. `ENROLLMENT_FROM` in `outreach/domain/enrollment-status.ts` lists the allowed moves, and the writes keep to it:
+
+- `endEnrollmentsTx` (`outreach/infrastructure/enrollment-end.ts`) writes every outcome. It filters on `ENROLLMENT_FROM[status]`, clears `next_send_at` and stamps `updated_at`, so a late writer leaves an outcome that landed first. Conversations calls it for a reply and do not contact; nothing outside outreach writes `campaign_enrollments`.
+- A send that advances an enrollment, or completes it with its last step, filters on `LIVE_ENROLLMENT_STATUSES`. A restore filters on `removed`.
+- An `OutreachHalt` (`replied`, `bounced`, `unsubscribed`, `complaint`, `manual`, `do_not_contact`, `converted`) stops a person or an address on every campaign; `haltOutcome` gives its status, and the token is the stored `stop_reason`. Outreach hands the same halt to conversations' `FollowUpStop`, and conversations stores its own run reason for it (`runReasonOfHalt`).
+
 ### Senders
 
 `campaign_senders` holds the sender list. Create and PATCH take `senderIds`; each must belong to the organization and be connected (422). An empty list means every connected sender. Email: a lead pinned to a mailbox outside the list moves to a listed one at the next claim (new thread). LinkedIn: the list gates lookups, invitations and messages; leads already invited stay with their account, while uninvited pending leads lose their pin when their account leaves the list.
@@ -479,7 +488,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### A reply stops all outreach
 
-`stopPersonOutreachOnReplyTx` (`conversations/after-reply/infrastructure/sequence-stop.ts`) runs in the transaction that stores a genuine reply, on both channels. It takes the person advisory lock (`lockPersonOutreachTx` in `src/platform/db/person-locks.ts`), has outreach's `stopEnrollmentsOnReplyTx` set every `pending` or `active` enrollment of the person to `replied` (`stop_reason = 'replied'`, on every channel, campaign and account), interrupts their runs, and writes one `outreach.stopped_by_reply` event per person. The person is the one the conversation is filed under plus anyone in the organization with the sender's address, so mail without thread headers still stops. Auto-replies and unverified bounces skip the stop. Finished enrollments keep their status. A replay stops nothing.
+`stopPersonOutreachOnReplyTx` (`conversations/after-reply/infrastructure/sequence-stop.ts`) runs in the transaction that stores a genuine reply, on both channels. It takes the person advisory lock (`lockPersonOutreachTx` in `src/platform/db/person-locks.ts`), has outreach's `haltPersonEnrollmentsTx` end every `pending` or `active` enrollment of the person as `replied` (`stop_reason = 'replied'`, on every channel, campaign and account), interrupts their runs, and writes one `outreach.stopped_by_reply` event per person. The person is the one the conversation is filed under plus anyone in the organization with the sender's address, so mail without thread headers still stops. Auto-replies and unverified bounces skip the stop. Finished enrollments keep their status. A replay stops nothing.
 
 ### AI providers
 
@@ -627,7 +636,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 #### Context boundaries
 
 - `src/contexts/deals` owns `deals` and `deal_stages`. Its one cross-context write port is `ConvertLead`. `deals/infrastructure/crm-read.ts` is the read model of the CRM screens: read-only SQL over `people`, `companies`, `deals`, `deal_stages` and `events`, with a test that pins the columns it reads.
-- The people context owns `people` and `companies`: `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`people/infrastructure/people-directory.ts`).
+- The people context owns `people`, `companies` and reachability (`contact_policies`, `suppression_list`): `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`people/infrastructure/people-directory.ts`).
 - Outreach owns `stopPersonEnrollmentsTx`, `liveEnrollmentSummary`, `latestRepliedEnrollment`, `enrollmentSources` (`drizzle-conversion-outreach.ts`), `notContactSql` and the delete side in `person-outreach.ts`.
 - Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
 - The people context imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
@@ -638,11 +647,11 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 
 `convertToContact(deps, tx, { reason, guard? })` (people) is the one transition. `createDealFromLead` runs it through `ConvertLead` and inserts the deal in the same transaction, so both commit or neither does. `makeContact` runs it with `reason: "added"` and no deal. In order:
 
-1. Lock the person: the person's `records` rows `FOR UPDATE` in id order, then the person advisory lock (`lockPersonOutreachTx`). `lockPersonForConversion` in `src/platform/db/person-locks.ts` does this for code outside conversations.
+1. Lock the person: the person's `records` rows `FOR UPDATE` in id order, then the person advisory lock (`lockPersonOutreachTx`). `lockPersonForConversion` in `conversations/infrastructure/person-handling.ts`, which owns `records`, does this; `src/composition/deals.ts` passes it to the conversion.
 2. Re-read `people.lifecycle`. A contact returns `changed: false` and nothing else happens.
 3. Run the caller's `guard(tx)`. Deals passes the personal-campaign rule here, so an enrollment that committed before the locks still counts.
 4. `markConverted` sets `lifecycle` and `converted_at`.
-5. `stopPersonEnrollmentsTx` sets `pending` and `active` enrollments to `cancelled` with `stop_reason = 'converted'` and clears the LinkedIn resolve retry time. Other statuses stay.
+5. `stopPersonEnrollmentsTx` ends `pending` and `active` enrollments as `cancelled` with `stop_reason = 'converted'` (`haltOutcome("converted")`) and clears the LinkedIn resolve retry time. Other statuses stay.
 6. `interruptPersonRuns`, reason `converted`, ends active and paused runs and retires every unsent draft of an open run step. In hand-off mode no run exists and the Inbox reply draft survives.
 7. `appendPersonEvent` writes `lifecycle.converted` with the counts in `meta`.
 
@@ -744,14 +753,14 @@ A contact without an open deal can be deleted (`deleteContact`, `DELETE /api/con
 
 1. `lockPersonForDelete`: the person's records `FOR UPDATE` in id order, their conversations `FOR UPDATE` in id order (a message insert needs `FOR KEY SHARE` on its conversation, so no reply lands mid-purge), then the person advisory lock. After the first lock the wait drops to 300 ms.
 2. The `people` row `FOR UPDATE`. A gone person answers 404, a lead 409 `not_a_contact`.
-3. The `contact_policies` row `FOR UPDATE`.
+3. The `contact_policies` row `FOR UPDATE` (people's `lockDoNotContact`).
 4. Every deal of the person `FOR UPDATE`.
 5. Blockers answer 409 `contact_blocked { blockers }`: `open_deals` (named and linked in the dialog), `send_in_flight`, `recent_send` (a campaign send under 24 hours old, which today's mailbox limit counts), `recent_invite` (a LinkedIn invitation under 7 days old, which the weekly cap counts), `ai_job_running`, and `private_conversation` or `personal_campaign_sends` when another member's personal campaign holds the person and the actor is not its creator, an owner or an admin.
 6. The counts must equal the counts the dialog showed, else 409 `counts_changed { counts }`.
-7. `keepEmailSuppressed`: a person marked do not contact gets a `manual` suppression row, so the address stays Email suppressed.
+7. `keepEmailSuppressed` (people): a person marked do not contact gets a `manual` suppression row, so the address stays Email suppressed. A lead delete applies the same rule (`suppressDoNotContactAddressesTx`).
 8. `purgePersonHandling` deletes reply handling, conversations, messages and history events. It turns `miasdr.allow_purge` on and off around its own deletes; `allow-purge-scope.test.ts` fails when another file sets the switch.
 9. Closed deals, then the person's enrollments and sends (campaign reports drop those sends).
-10. The `people` row; notes, tasks and `lead_ccs` go with it.
+10. The `contact_policies` row, then the `people` row; notes, tasks and `lead_ccs` go with it.
 11. Stamp `crm_listed_at` on the person's company when no contact is left.
 12. Audit `person.deleted` with the counts and `suppressionKept`.
 
@@ -866,7 +875,7 @@ Code: `src/contexts/grid` (README in `grid/README.md`), pages under `src/app/(ap
 
 ### Daily rollover
 
-- `platform.daily-rollover` claims `daily-rollover:<org>:<step>:<yyyy-mm-dd>` per organization and step, where the day is the local date in `channel_settings.general.timeZone` (UTC when unset). A DST day of 23 or 25 hours stays one day. A step that fails or runs out of budget retries alone after 5 minutes. One query reads the finished claims, so a finished organization costs nothing more.
+- `platform.daily-rollover` claims `daily-rollover:<org>:<step>:<yyyy-mm-dd>` per organization and step, where the day is the local date in the organization's zone. Tenancy's `organizationTimeZones` answers it by the rule every reader follows (a valid `general.timeZone`, then `organizations.timezone`, then UTC), and `src/composition/job-registry.ts` passes it to the job, so platform reads no context table. A DST day of 23 or 25 hours stays one day. A step that fails or runs out of budget retries alone after 5 minutes. One query reads the finished claims, so a finished organization costs nothing more.
 - Steps register in `src/composition/rollover-registry.ts` and must be idempotent. The one step, `backfill-linkedin-urls`, fills `people.linkedin_url` from the slug where it is missing.
 - No step resets a counter: the email daily limit counts today's `sends` rows, LinkedIn invitation caps are `sends` windows, `limit_reached_until` is a timestamp, and `search_leads_today` restarts on its own through `search_day` (UTC). A reset in the organization's zone would restart it mid UTC day and double the budget.
 

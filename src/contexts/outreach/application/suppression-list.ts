@@ -2,7 +2,8 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import type { SuppressionStore } from "../email/application/unsubscribe";
 
-export type SuppressionReason = "unsubscribed" | "bounced" | "manual" | "complaint";
+import type { SuppressionReason } from "@/contexts/people/domain/reachability";
+export type { SuppressionReason };
 
 export interface SuppressionRow {
   id: string;

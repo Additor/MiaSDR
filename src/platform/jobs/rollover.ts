@@ -1,6 +1,6 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { channelSettings, jobRuns, organizations } from "@/platform/db/schema";
+import { jobRuns } from "@/platform/db/schema";
 import { localDay } from "./local-day";
 import { claimSlot, finishSlot } from "./slots";
 import type { Job, JobResult } from "./types";
@@ -27,14 +27,12 @@ export interface OrganizationDay {
   day: string;
 }
 
-/** Each organization's local day, from channel_settings general.timeZone (UTC when unset or unknown). */
-export async function organizationDays(now: Date): Promise<OrganizationDay[]> {
-  const rows = await db
-    .select({ id: organizations.id, zone: sql<string | null>`${channelSettings.values} ->> 'timeZone'` })
-    .from(organizations)
-    .leftJoin(channelSettings, and(eq(channelSettings.organizationId, organizations.id), eq(channelSettings.channel, "general")))
-    .orderBy(organizations.id);
-  return rows.map((r) => ({ organizationId: r.id, day: localDay(now, r.zone) }));
+/** Every organization with its IANA zone, in id order. Tenancy answers it; src/composition passes it in. */
+export type OrganizationZones = () => Promise<Array<{ organizationId: string; timeZone: string }>>;
+
+/** Each organization's local day in its zone. */
+export async function organizationDays(zones: OrganizationZones, now: Date): Promise<OrganizationDay[]> {
+  return (await zones()).map((z) => ({ organizationId: z.organizationId, day: localDay(now, z.timeZone) }));
 }
 
 /**
@@ -42,13 +40,13 @@ export async function organizationDays(now: Date): Promise<OrganizationDay[]> {
  * or is cut off by the tick budget, leaves the others done and is picked up on
  * a later tick. Organizations with every step finished cost one query in total.
  */
-export function createDailyRolloverJob(steps: readonly RolloverStep[]): Job {
+export function createDailyRolloverJob(steps: readonly RolloverStep[], zones: OrganizationZones): Job {
   return {
     name: "platform.daily-rollover",
     async run(ctx): Promise<JobResult> {
       if (steps.length === 0) return { processed: 0, more: false };
       const now = ctx.now();
-      const days = await organizationDays(now);
+      const days = await organizationDays(zones, now);
       const names = days.flatMap((d) => steps.map((s) => rolloverJobName(d.organizationId, s.name, d.day)));
       const done = new Set<string>();
       if (names.length > 0) {

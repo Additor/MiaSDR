@@ -5,29 +5,28 @@ import {
   campaigns,
   channelSettings,
   companies,
-  contactPolicies,
   entityColumns,
   mailboxes,
   people,
   sends,
-  suppressionList,
 } from "@/platform/db/schema";
 import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend } from "../application/ports";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { readSendPause } from "../../domain/send-pause";
 import { mailboxBlock } from "../../domain/send-policy";
-import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
+import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
 
 /** Enrollment statuses a send may still change. Every later status was set on purpose and must survive a late send result. */
 const LIVE_STATUSES = [...LIVE_ENROLLMENT_STATUSES];
 
-const COUNTED_STATUSES = ["sending", "sent", "unknown"];
 
 /** Rows that still hold a provider-side question. */
 const UNRESOLVED = [...SEND_UNRESOLVED];
@@ -100,7 +99,7 @@ export const drizzleOutreachStore: OutreachStore = {
             eq(sends.mailboxId, mailbox.id),
             // Test sends (rate limited by their own partial index) do not use the campaign daily limit.
             eq(sends.kind, "campaign"),
-            inArray(sends.status, COUNTED_STATUSES),
+            inArray(sends.status, SEND_COUNTED),
             sql`${sends.claimedAt} >= ${startOfLocalDay(options.now, workingHours.timeZone).toISOString()}::timestamptz`,
           ),
         );
@@ -221,17 +220,8 @@ export const drizzleOutreachStore: OutreachStore = {
     const [campaign] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, claim.campaignId));
     if (campaign?.status !== "active") return "campaign_inactive";
 
-    const [suppressed] = await db
-      .select({ id: suppressionList.id })
-      .from(suppressionList)
-      .where(and(eq(suppressionList.organizationId, claim.organizationId), eq(suppressionList.email, claim.person.email.toLowerCase())));
-    if (suppressed) return "suppressed";
-
-    const [policy] = await db
-      .select({ doNotContact: contactPolicies.doNotContact })
-      .from(contactPolicies)
-      .where(and(eq(contactPolicies.organizationId, claim.organizationId), eq(contactPolicies.personId, claim.person.id)));
-    return policy?.doNotContact ? "do_not_contact" : null;
+    if (await isSuppressed(db, claim.organizationId, claim.person.email)) return "suppressed";
+    return (await isDoNotContact(db, claim.organizationId, claim.person.id)) ? "do_not_contact" : null;
   },
 
   async abandon(claim, reason, now) {
@@ -248,10 +238,7 @@ export const drizzleOutreachStore: OutreachStore = {
       if (moved.length === 0) return;
       // A stopped enrollment keeps the status that stopped it (replied, bounced, ...).
       if (reason === "enrollment_stopped") return;
-      await tx
-        .update(campaignEnrollments)
-        .set({ status: "suppressed", nextSendAt: null, stopReason: reason, updatedAt: now })
-        .where(and(eq(campaignEnrollments.id, claim.enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES)));
+      await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), { status: "suppressed", reason }, now);
     });
   },
 
@@ -352,6 +339,7 @@ async function advanceEnrollment(tx: Tx, enrollmentId: string, stepNumber: numbe
       status: nextWaitDays === null ? "completed" : "active",
       nextSendAt: nextWaitDays === null ? null : new Date(now.getTime() + nextWaitDays * 24 * 60 * 60_000),
       ...(mailboxId ? { mailboxId } : {}),
+      updatedAt: now,
     })
     // Never move backwards: a reconciliation that lands late must not undo a newer step.
     // Compare and set on the status: a reply or unsubscribe that landed meanwhile stays.
@@ -360,15 +348,12 @@ async function advanceEnrollment(tx: Tx, enrollmentId: string, stepNumber: numbe
 
 async function scheduleRetry(tx: Tx, enrollmentId: string, attempt: number, now: Date, retryAfterMinutes: number, maxAttempts: number, error: string) {
   if (attempt >= maxAttempts) {
-    await tx
-      .update(campaignEnrollments)
-      .set({ status: "failed", nextSendAt: null, stopReason: `send_failed: ${error}`.slice(0, 500) })
-      .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES)));
+    await endEnrollmentsTx(tx, eq(campaignEnrollments.id, enrollmentId), failedOutcome("send_failed", error), now);
     return;
   }
   await tx
     .update(campaignEnrollments)
-    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000) })
+    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000), updatedAt: now })
     .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES)));
 }
 

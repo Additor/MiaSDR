@@ -4,7 +4,8 @@ import type { InterruptFacts, InterruptReason, RunStatus, StepInput, StepRunStat
 
 /** Persistence for a campaign's Follow-ups after a reply flow. Every method carries the organization and filters by it. */
 
-export type SequenceStatus = "active" | "archived";
+export type { SequenceStatus } from "../domain/sequences";
+import type { SequenceStatus } from "../domain/sequences";
 
 export interface StepView extends StepInput {
   id: string;

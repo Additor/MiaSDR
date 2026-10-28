@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { accounts, channelSettings, members, organizations, users } from "@/platform/db/schema";
+import { members, organizations, users } from "@/platform/db/schema";
+import { createPasswordUserTx } from "@/contexts/identity/infrastructure/user-accounts";
+import { mergeChannelSettings } from "./channel-settings";
 import { SetupAlreadyDoneError, type InstanceSetupStore } from "../application/setup-instance";
 
 /** Arbitrary constant: serialises concurrent setups for the length of a transaction. */
@@ -12,25 +14,14 @@ export const drizzleSetupStore: InstanceSetupStore = {
     return Boolean(row);
   },
 
-  /**
-   * Rows are shaped as Better Auth's own signUpEmail writes them (credential
-   * account: accountId = user id), so signing in afterwards is an ordinary
-   * sign-in. The admin's email is verified: a new self-hoster may have no
-   * mail provider yet.
-   */
+  /** The first admin is an ordinary password user (identity's `createPasswordUserTx`) who owns the first organization. */
   async createInitialAdmin(instance) {
     return db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(${SETUP_LOCK})`);
       const [existing] = await tx.select({ id: users.id }).from(users).limit(1);
       if (existing) throw new SetupAlreadyDoneError();
 
-      const [user] = await tx
-        .insert(users)
-        .values({ name: instance.name, email: instance.email, emailVerified: true })
-        .returning({ id: users.id });
-      await tx
-        .insert(accounts)
-        .values({ userId: user.id, providerId: "credential", accountId: user.id, password: instance.passwordHash });
+      const { userId } = await createPasswordUserTx(tx, { name: instance.name, email: instance.email, passwordHash: instance.passwordHash });
       const [organization] = await tx
         .insert(organizations)
         .values({
@@ -40,16 +31,9 @@ export const drizzleSetupStore: InstanceSetupStore = {
           ...(instance.timeZone ? { timezone: instance.timeZone } : {}),
         })
         .returning({ id: organizations.id });
-      await tx.insert(members).values({ organizationId: organization.id, userId: user.id, role: "owner" });
-      if (instance.timeZone && instance.timeZone !== "UTC") {
-        await tx.insert(channelSettings).values({
-          organizationId: organization.id,
-          channel: "general",
-          values: { timeZone: instance.timeZone },
-          updatedBy: user.id,
-        });
-      }
-      return { userId: user.id, organizationId: organization.id };
+      await tx.insert(members).values({ organizationId: organization.id, userId, role: "owner" });
+      if (instance.timeZone && instance.timeZone !== "UTC") await mergeChannelSettings(tx, organization.id, "general", { timeZone: instance.timeZone }, userId);
+      return { userId, organizationId: organization.id };
     });
   },
 };

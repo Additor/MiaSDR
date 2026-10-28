@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { interruptOnTerminalStageTx } from "../../after-reply/infrastructure/sequence-run-tx";
-import { aiJobs, replyTypePicks, conversations, drafts, events, messages, replyHandlingSettings, records, replyTypes, suppressionList, contactPolicies, people } from "@/platform/db/schema";
+import { aiJobs, replyTypePicks, conversations, drafts, events, messages, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
 import type { AiJobStore, ClaimedJob, ClassifyContext, DraftContext, FailedAiJob, JobKind, SkippedAiJob } from "../../application/reply-ports";
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING, AUTO_REQUEUE_MAX_SECONDS, nextAutoRequeueAt, REQUEUEABLE_SKIP_REASONS, SWEEP_KINDS, type FailureKind } from "../domain/ai-job-requeue";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "@/contexts/tenancy/domain/ai-cap";
@@ -14,6 +14,7 @@ import { settlesAfterAiPick } from "../../domain/workflow-state";
 import { decideReplyType, typeRulesOf, type ReplyTypeFacts } from "../../domain/reply-type";
 import { followUpModeFactsTx } from "../../infrastructure/follow-up-mode-facts";
 import type { Tx } from "../../after-reply/infrastructure/sequence-stop";
+import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 /**
  * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: the
@@ -563,18 +564,10 @@ export const drizzleAiJobStore: AiJobStore = {
       if (open) return "has_draft";
       if (ctx.channel === "linkedin") {
         // The chat is the recipient. Only a do-not-contact person blocks a reply there (email suppression does not apply).
-        const [dnc] = await db.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, rec.personId));
-        return dnc?.d ? "blocked" : null;
+        return (await isDoNotContact(db, organizationId, rec.personId)) ? "blocked" : null;
       }
-      const email = ctx.person.email?.toLowerCase();
-      if (!email) return "no_recipient";
-      const [blocked] = await db
-        .select({ one: sql<number>`1` })
-        .from(people)
-        .leftJoin(contactPolicies, and(eq(contactPolicies.personId, people.id), eq(contactPolicies.doNotContact, true)))
-        .leftJoin(suppressionList, and(eq(suppressionList.organizationId, people.organizationId), eq(suppressionList.email, email)))
-        .where(and(eq(people.id, rec.personId), sql`(${contactPolicies.personId} is not null or ${suppressionList.id} is not null)`));
-      return blocked ? "blocked" : null;
+      if (!ctx.person.email?.trim()) return "no_recipient";
+      return (await isDoNotContact(db, organizationId, rec.personId)) || (await isSuppressed(db, organizationId, ctx.person.email)) ? "blocked" : null;
     })();
     return { ...(ctx as DraftContext), skip };
   },

@@ -1,3 +1,4 @@
+import { SUPPRESSION_REASONS, type SuppressionReason } from "@/contexts/people/domain/reachability";
 /**
  * Metric definitions for the analytics read model. Every number on the analytics pages comes from
  * one of the definitions below, and every rate goes through `ratio`.
@@ -257,8 +258,7 @@ export interface ReplyCountRow {
   replies: number;
 }
 
-export const SUPPRESSION_REASONS = ["unsubscribed", "bounced", "manual", "complaint"] as const;
-export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
+export { SUPPRESSION_REASONS, type SuppressionReason };
 
 export interface RepliesReport {
   total: number;

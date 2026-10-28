@@ -2,9 +2,11 @@ import { and, asc, eq, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
 import { db, inTransaction } from "@/platform/db/client";
 import { campaignEnrollments, campaignSenders, campaigns, linkedinAccounts, linkedinEnrollmentDetails, mailboxes, people } from "@/platform/db/schema";
 import type { EnrollmentAdminStore, OutreachChannel, SenderRef } from "../application/enrollment-admin";
-import { REMOVABLE_STATUSES, REMOVED_STATUS, canRemoveEnrollment } from "../domain/enrollment-status";
+import { REMOVED_STATUS, canRemoveEnrollment } from "../domain/enrollment-status";
+import { endEnrollmentsTx } from "./enrollment-end";
 import { profileUrlFor } from "../linkedin/domain/linkedin";
 import { insertSkippingContacts, notContactSql } from "./contact-guard";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 const CHUNK = 500;
 
@@ -19,9 +21,9 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
   async enrollPicked(organizationId, campaignId, channel, personIds, handle) {
     const ids = [...new Set(personIds)];
     return inTransaction(handle, async (tx) => {
+      const suppressed = sql<boolean>`${suppressedSql("people")}`;
+      const dnc = sql<boolean>`${doNotContactSql("people")}`;
       // Qualified by hand: a single-table select renders bare column names, which a subquery would bind to its own table.
-      const suppressed = sql<boolean>`exists (select 1 from suppression_list s where s.organization_id = people.organization_id and s.email = lower(people.email))`;
-      const dnc = sql<boolean>`exists (select 1 from contact_policies cp where cp.person_id = people.id and cp.organization_id = people.organization_id and cp.do_not_contact)`;
       const already = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status <> 'removed')`;
       const removed = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status = 'removed')`;
       const contact = sql<boolean>`not ${notContactSql}`;
@@ -106,11 +108,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
       let live: string[] = [];
       if (removable.length > 0) {
         // The status condition repeats in the UPDATE, so a writer that raced us (a reply, a bounce) keeps its final status.
-        const changed = await tx
-          .update(campaignEnrollments)
-          .set({ status: "removed", stopReason: "removed", nextSendAt: null, updatedAt: now })
-          .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.id, removable), inArray(campaignEnrollments.status, [...REMOVABLE_STATUSES])))
-          .returning({ id: campaignEnrollments.id });
+        const changed = await endEnrollmentsTx(tx, and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.id, removable)), { status: "removed", reason: "removed" }, now);
         live = changed.map((r) => r.id);
         if (channel === "linkedin" && live.length > 0) {
           await tx.update(linkedinEnrollmentDetails).set({ resolveNextAttemptAt: null }).where(inArray(linkedinEnrollmentDetails.enrollmentId, live));

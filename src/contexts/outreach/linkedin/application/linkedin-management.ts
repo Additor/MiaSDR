@@ -8,7 +8,7 @@ import { type WorkingHours } from "../../domain/working-hours";
 import { LinkedInGatewayError, type GatewayAccount, type LinkedInGateway } from "./linkedin-ports";
 import type { LinkedInConnectStore } from "./linkedin-connect-ports";
 
-import type { AuditSink } from "@/platform/db/audit";
+import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
 export type { AuditSink };
 
 /** The last webhook registration, kept on the integration row. It never holds the secret. */

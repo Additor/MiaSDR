@@ -29,7 +29,7 @@ const SKIPPED = new Set([`${BASE}/domain/default-reply-types.ts`]);
  * blockers share the word with the old type key; they name `contact_policies.do_not_contact`, not a reply type.
  */
 const ALLOWED_DNC: Record<string, { count: number; reason: string }> = {
-  [`${BASE}/after-reply/domain/sequences.ts`]: { count: 2, reason: "Interrupt reason for a run whose person is marked do not contact." },
+  [`${BASE}/after-reply/domain/sequences.ts`]: { count: 3, reason: "Interrupt reason for a run whose person is marked do not contact, and the outreach halt it maps from." },
   [`${BASE}/after-reply/domain/after-reply.ts`]: { count: 2, reason: "Start blocker for a person marked do not contact." },
   [`${BASE}/application/reply-ports.ts`]: { count: 3, reason: "Send and CC blockers for an address of a person marked do not contact." },
   [`${BASE}/application/linkedin-reply-ports.ts`]: { count: 1, reason: "LinkedIn send blocker for a person marked do not contact." },
@@ -38,7 +38,6 @@ const ALLOWED_DNC: Record<string, { count: number; reason: string }> = {
   [`${BASE}/infrastructure/drizzle-reply-handling-store.ts`]: { count: 3, reason: "Stop contacting writes the policy, its run interrupt reason and its enrollment stop reason." },
   [`${BASE}/infrastructure/reply-store-sending.ts`]: { count: 1, reason: "Send blocker for a person marked do not contact." },
   [`${BASE}/infrastructure/reply-store-shared.ts`]: { count: 3, reason: "Blocked address reason for a person marked do not contact." },
-  [`${BASE}/infrastructure/schema.ts`]: { count: 1, reason: "Column name of `people.do_not_contact`." },
   ["src/app/(app)/campaigns/[id]/_lib/after-reply-form.ts"]: { count: 1, reason: "Fixed stop of a run whose person is marked do not contact." },
   ["src/app/(app)/crm/_components/create-deal-dialog.tsx"]: { count: 1, reason: "Reach flag for a person marked do not contact." },
   ["src/app/(app)/inbox/[id]/_components/linkedin-reply-panel-client.tsx"]: { count: 1, reason: "Reach flag for a person marked do not contact." },

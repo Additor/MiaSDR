@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { canonicalProfileUrl } from "@/contexts/people/domain/linkedin-url";
+import { findOrCreateLeadByLinkedInTx } from "@/contexts/people/infrastructure/inbound-leads";
 import { db } from "@/platform/db/client";
 import { conversations, messages, people, records } from "@/platform/db/schema";
 import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/linkedin-ports";
@@ -23,30 +23,8 @@ async function resolvePerson(tx: Tx, input: InboundLinkedInInput) {
     if (known) return { id: known.id, created: false };
   }
   const { slug, name } = input.counterparty;
-  const findBySlug = async () =>
-    slug ? (await tx.select({ id: people.id }).from(people).where(and(eq(people.organizationId, input.organizationId), eq(people.linkedinSlug, slug))))[0]?.id : undefined;
-  const existing = await findBySlug();
-  if (existing) return { id: existing, created: false };
   if (!slug) return null;
-
-  const [firstName, ...rest] = name?.split(/\s+/) ?? [];
-  const [created] = await tx
-    .insert(people)
-    .values({
-      organizationId: input.organizationId,
-      linkedinSlug: slug,
-      linkedinUrl: canonicalProfileUrl(slug),
-      fullName: name,
-      firstName: firstName || null,
-      lastName: rest.join(" ") || null,
-      source: "inbound",
-      // An unknown sender is a lead until a person creates a deal from them.
-      lifecycle: "lead",
-    })
-    .onConflictDoNothing()
-    .returning({ id: people.id });
-  if (created) return { id: created.id, created: true };
-  return { id: (await findBySlug()) as string, created: false };
+  return findOrCreateLeadByLinkedInTx(tx, input.organizationId, { slug, name });
 }
 
 export const drizzleLinkedInConversationStore: InboundLinkedInStore = {

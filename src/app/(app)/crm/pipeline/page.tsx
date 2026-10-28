@@ -9,7 +9,6 @@ import { PageHeader } from "@/components/shell/page-header";
 import { ScrollCue } from "@/components/shell/scroll-cue";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import { board, isUuid } from "@/contexts/deals/application/deals";
 import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -20,6 +19,8 @@ import { BoardColumn } from "./board-column";
 import { BoardMovesProvider } from "./board-moves";
 import { boardHref, parseBoardUrl, type BoardUrlState } from "./board-url";
 import { OwnerFilter } from "./owner-filter";
+import { listMemberChoices } from "@/contexts/tenancy/application/member-directory";
+import { memberDirectoryDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 
 export const metadata: Metadata = { title: "Pipeline" };
 
@@ -67,7 +68,7 @@ async function Board({ searchParams }: { searchParams: PageProps<"/crm/pipeline"
   const parsed = parseBoardUrl(await searchParams);
   const state: BoardUrlState = { ...parsed, owner: ownerParam(parsed.owner) };
   const deps = dealsDeps();
-  const [view, members] = await Promise.all([board(deps, actor, { owner: state.owner, q: state.q, showAll: state.showAll }), taskDeps().store.members(actor.organizationId)]);
+  const [view, members] = await Promise.all([board(deps, actor, { owner: state.owner, q: state.q, showAll: state.showAll }), listMemberChoices(memberDirectoryDeps(), actor)]);
   const nowMs = deps.now().getTime();
   const filtered = Boolean(state.owner || state.q);
   const shown = view.columns.reduce((sum, c) => sum + c.total, 0);

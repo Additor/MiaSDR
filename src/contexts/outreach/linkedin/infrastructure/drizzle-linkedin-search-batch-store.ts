@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { campaigns, linkedinAccounts, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
-import { recordAudit } from "@/platform/db/audit";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import type { DbHandle } from "@/platform/db/client";
 import type { LinkedInSearchBatchStore, SearchBatchDetail, SearchBatchSummary, SearchResultExportRow } from "../application/linkedin-search-ports";
 import { ACTIVE_SEARCH_STATUSES, RERUNNABLE_STATUS } from "../domain/linkedin-search-batch";

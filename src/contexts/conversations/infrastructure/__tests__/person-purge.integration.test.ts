@@ -194,7 +194,8 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
       await handling.lockPersonForDelete(tx, o.org, target.person);
       const purged = await purge.purgePersonHandling(tx, o.org, target.person);
       expect(await purge.purgeSwitchIsOn(tx)).toBe(false);
-      // Notes, tasks and ccs of the person go with the people row; nothing of this context refuses it now.
+      // People's step: the do not contact row, then the people row. Notes, tasks and ccs go with it; nothing of this context refuses it now.
+      await tx.execute(dsql`delete from contact_policies where person_id = ${target.person}`);
       await tx.execute(dsql`delete from people where id = ${target.person}`);
       return purged;
     });
@@ -264,13 +265,14 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
   });
 
   it("reads the do-not-contact row under a lock, and a person without one is not marked", async () => {
+    const reach = await import("@/contexts/people/infrastructure/reachability");
     const o = await organization();
     const marked = await contact(o, "marked");
     const bare = await one(sql`insert into people (organization_id, email) values (${o.org}, ${`bare-${o.tag}@lead.test`}) returning id`);
-    expect(await db.transaction((tx) => handling.lockContactPolicy(tx, o.org, marked.person))).toEqual({ doNotContact: true });
-    expect(await db.transaction((tx) => handling.lockContactPolicy(tx, o.org, bare))).toEqual({ doNotContact: false });
+    expect(await db.transaction((tx) => reach.lockDoNotContactTx(tx, o.org, marked.person))).toEqual({ doNotContact: true });
+    expect(await db.transaction((tx) => reach.lockDoNotContactTx(tx, o.org, bare))).toEqual({ doNotContact: false });
     const elsewhere = await organization();
-    expect(await db.transaction((tx) => handling.lockContactPolicy(tx, elsewhere.org, marked.person))).toEqual({ doNotContact: false });
+    expect(await db.transaction((tx) => reach.lockDoNotContactTx(tx, elsewhere.org, marked.person))).toEqual({ doNotContact: false });
   });
 
   it("holds the records, the conversations and the person lock until the delete commits, so no reply lands in between", async () => {

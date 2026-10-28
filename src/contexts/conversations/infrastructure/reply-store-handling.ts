@@ -161,17 +161,18 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
   },
 
   async suppressSender(input) {
-    const [head] = await db
-      .select({ recordId: records.id, personId: records.personId, email: people.email })
-      .from(conversations)
-      .innerJoin(records, eq(records.id, conversations.recordId))
-      .innerJoin(people, eq(people.id, records.personId))
-      .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation));
-    if (!head) throw new NotFoundError("Conversation not found");
-    if (!head.email) throw new ConflictError("This person has no email address to suppress.");
-    const email = head.email.toLowerCase();
-    await createSuppressionStore(followUpStop).suppressEmail({ organizationId: input.organizationId, email, reason: "unsubscribed", note: "Asked to stop in a reply." });
-    await db.transaction(async (tx) => {
+    // One transaction: the suppression, the retired draft and the event commit together or not at all.
+    return db.transaction(async (tx) => {
+      const [head] = await tx
+        .select({ recordId: records.id, personId: records.personId, email: people.email })
+        .from(conversations)
+        .innerJoin(records, eq(records.id, conversations.recordId))
+        .innerJoin(people, eq(people.id, records.personId))
+        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation));
+      if (!head) throw new NotFoundError("Conversation not found");
+      if (!head.email) throw new ConflictError("This person has no email address to suppress.");
+      const email = head.email.toLowerCase();
+      await createSuppressionStore(followUpStop).suppressEmailTx(tx, { organizationId: input.organizationId, email, reason: "unsubscribed", note: "Asked to stop in a reply." });
       // A reply that is waiting for review would be refused at send time anyway; retire it now.
       await tx.update(drafts).set({ status: "stale", error: "The sender was suppressed." }).where(and(eq(drafts.recordId, head.recordId), eq(drafts.status, "awaiting_review")));
       await tx.insert(events).values({
@@ -183,7 +184,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         actorUserId: input.actorUserId,
         meta: { conversationId: input.conversationId },
       });
+      return { email };
     });
-    return { email };
   },
 };

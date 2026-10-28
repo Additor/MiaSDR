@@ -125,15 +125,32 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "identity/infrastructure/auth",
   "identity/infrastructure/session",
   "identity/infrastructure/signup-facts",
+  // The Better Auth rows tenancy writes: the first admin, and a removed member's sessions.
+  "identity/infrastructure/user-accounts",
   // Credential encryption and live checks, a generic service.
   "integrations/infrastructure/credential-cipher",
   "integrations/infrastructure/credential-verifier",
+  // The provider account writer: Settings, Integrations and the LinkedIn page save credentials and config through it.
+  "integrations/infrastructure/provider-accounts",
   // The organization read (time zone, name).
   "tenancy/infrastructure/drizzle-organization-store",
+  // The channel settings merge: each context saves its own keys through it.
+  "tenancy/infrastructure/channel-settings",
+  // The audit writer: every context records its organization-level changes through it.
+  "tenancy/infrastructure/audit",
+  // The member directory: assignee and owner checks and pickers.
+  "tenancy/infrastructure/drizzle-member-directory",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
-  // The reply stop and the suppression store, which conversations runs inside its own transactions.
-  "outreach/infrastructure/reply-stop",
+  // Reachability: the read model, and the one writer of do not contact and the suppression list.
+  "people/infrastructure/reachability",
+  // LinkedIn account limits and disconnects, which conversations' replies hit as campaign sends do.
+  "outreach/linkedin/infrastructure/linkedin-account-state",
+  // People's inbound leads and LinkedIn profile write-back, which conversations and outreach call inside their transactions.
+  "people/infrastructure/inbound-leads",
+  "people/infrastructure/linkedin-profile",
+  // The enrollment outcome writer and the suppression store, which conversations runs inside its own transactions.
+  "outreach/infrastructure/enrollment-end",
   "outreach/infrastructure/suppression-store",
 ]);
 

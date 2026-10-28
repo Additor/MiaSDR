@@ -5,7 +5,6 @@ import {
   campaigns,
   channelSettings,
   companies,
-  contactPolicies,
   entityColumns,
   linkedinAccounts,
   linkedinConnections,
@@ -30,19 +29,24 @@ import {
   pickMinutes,
   resolveRetryMinutes,
 } from "../domain/linkedin";
+import { sqlValues } from "@/platform/db/sql-values";
 import { readSendPause } from "../../domain/send-pause";
-import { canonicalProfileUrl, isMemberReference, normalizePublicSlug } from "../domain/linkedin-identity";
+import { ALREADY_CONTACTED_BY_ACCOUNT } from "../../domain/cross-campaign-notice";
+import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { messageBlock } from "../domain/linkedin-limits";
-import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
 import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns } from "../../infrastructure/enrollment-variables";
 import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
+import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
+import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
+import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
 
 type Tx = DbTx;
 
-const COUNTED = ["sending", "sent", "unknown"];
 const UNRESOLVED = [...SEND_UNRESOLVED];
 /** Statuses an engine write may still change. Anything else (replied, suppressed, removed) stays as it is. */
 const LIVE = [...LIVE_ENROLLMENT_STATUSES];
@@ -53,39 +57,6 @@ const fromCall = inArray(sends.status, [...SEND_FROM_CALL]);
 /** The claiming worker settling its own claim: a later attempt on the same row belongs to another worker. */
 const ownClaim = (claim: { sendId: string; attempt: number }) => and(eq(sends.id, claim.sendId), fromCall, eq(sends.attempt, claim.attempt));
 const SLUG_COLLISION_REASON = "This LinkedIn profile already belongs to another lead in your organization.";
-
-function isUniqueViolation(error: unknown): boolean {
-  for (let e: unknown = error, depth = 0; e && depth < 4; depth++, e = (e as { cause?: unknown }).cause) {
-    if ((e as { code?: unknown }).code === "23505") return true;
-  }
-  return false;
-}
-
-/**
- * Sets the person's slug (and a canonical URL when the stored one is empty or a member reference) once a lookup found it.
- * A person that already has a slug is left alone. The write runs in a savepoint, so a hit on people_org_linkedin_uq
- * leaves the surrounding transaction usable.
- */
-async function writeSlugBack(tx: DbTx, organizationId: string, personId: string, slug: string): Promise<"written" | "skipped" | "collision"> {
-  const [person] = await tx
-    .select({ slug: people.linkedinSlug, url: people.linkedinUrl })
-    .from(people)
-    .where(and(eq(people.id, personId), eq(people.organizationId, organizationId)))
-    .for("update");
-  if (!person || person.slug) return "skipped";
-  try {
-    await tx.transaction(async (savepoint) => {
-      await savepoint
-        .update(people)
-        .set({ linkedinSlug: slug, ...(person.url === null || isMemberReference(person.url) ? { linkedinUrl: canonicalProfileUrl(slug) } : {}) })
-        .where(and(eq(people.id, personId), eq(people.organizationId, organizationId)));
-    });
-    return "written";
-  } catch (error) {
-    if (isUniqueViolation(error)) return "collision";
-    throw error;
-  }
-}
 
 const RESOLVE_LEASE_MINUTES = 5;
 const DAY_MS = 86_400_000;
@@ -139,15 +110,12 @@ async function rememberChat(tx: Tx, organizationId: string, accountId: string, p
 
 async function scheduleRetry(tx: Tx, enrollmentId: string, attempt: number, now: Date, retryAfterMinutes: number, maxAttempts: number, error: string, fatal: boolean) {
   if (fatal || attempt >= maxAttempts) {
-    await tx
-      .update(campaignEnrollments)
-      .set({ status: "failed", nextSendAt: null, stopReason: `send_failed: ${error}`.slice(0, 500) })
-      .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE)));
+    await endEnrollmentsTx(tx, eq(campaignEnrollments.id, enrollmentId), failedOutcome("send_failed", error), now);
     return;
   }
   await tx
     .update(campaignEnrollments)
-    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000) })
+    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000), updatedAt: now })
     .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE)));
 }
 
@@ -160,6 +128,7 @@ async function advanceAfterMessage(tx: Tx, enrollmentId: string, stepNumber: num
       lastSentAt: now,
       status: nextWaitDays === null ? "completed" : "active",
       nextSendAt: nextWaitDays === null ? null : new Date(now.getTime() + nextWaitDays * DAY_MS),
+      updatedAt: now,
     })
     .where(and(eq(campaignEnrollments.id, enrollmentId), sql`${campaignEnrollments.currentStep} < ${stepNumber}`, inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES])));
 }
@@ -174,7 +143,7 @@ async function advanceAfterInvitation(tx: Tx, enrollmentId: string, accountId: s
   if (moved.length === 0) return;
   await tx
     .update(campaignEnrollments)
-    .set({ status: "active", currentStep: 1, lastSentAt: now, nextSendAt: null, linkedinAccountId: accountId })
+    .set({ status: "active", currentStep: 1, lastSentAt: now, nextSendAt: null, linkedinAccountId: accountId, updatedAt: now })
     .where(and(eq(campaignEnrollments.id, enrollmentId), sql`${campaignEnrollments.currentStep} < 1`, inArray(campaignEnrollments.status, LIVE)));
 }
 
@@ -216,17 +185,24 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const org = account.organizationId;
 
       // A person this account already invited through another campaign is not invited again.
-      await tx.execute(sql`
-        update campaign_enrollments e
-           set status = 'suppressed', next_send_at = null, stop_reason = 'already_contacted_by_account', updated_at = ${nowIso}::timestamptz
-         where e.organization_id = ${org} and e.channel = 'linkedin' and e.status = 'pending' and e.current_step = 0
-           and e.linkedin_account_id = ${account.id}
-           and exists (
-             select 1 from sends s join campaign_enrollments e2 on e2.id = s.enrollment_id
-             where e2.person_id = e.person_id and e2.id <> e.id and s.linkedin_account_id = ${account.id}
-               and s.step_number = 1 and s.status in ('sending', 'sent', 'unknown')
-           )
-      `);
+      // The subquery aliases its own enrollments as e2, so `campaign_enrollments` names the row being updated.
+      await endEnrollmentsTx(
+        tx,
+        and(
+          eq(campaignEnrollments.organizationId, org),
+          eq(campaignEnrollments.channel, "linkedin"),
+          eq(campaignEnrollments.status, "pending"),
+          eq(campaignEnrollments.currentStep, 0),
+          eq(campaignEnrollments.linkedinAccountId, account.id),
+          sql`exists (
+            select 1 from sends s join campaign_enrollments e2 on e2.id = s.enrollment_id
+            where e2.person_id = campaign_enrollments.person_id and e2.id <> campaign_enrollments.id and s.linkedin_account_id = ${account.id}
+              and s.step_number = 1 and s.status in ${sqlValues(SEND_COUNTED)}
+          )`,
+        ),
+        { status: "suppressed", reason: ALREADY_CONTACTED_BY_ACCOUNT },
+        options.now,
+      );
 
       const claimSend = async (kind: "invitation" | "message", gapMinutes: number, candidates: (exclude: ReturnType<typeof sql>) => Promise<CandidateRow[]>) => {
         const lost: string[] = [];
@@ -293,7 +269,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           week: sql<number>`count(*)::int`,
         })
         .from(sends)
-        .where(and(eq(sends.linkedinAccountId, account.id), eq(sends.stepNumber, 1), eq(sends.channel, "linkedin"), inArray(sends.status, COUNTED), sql`${sends.claimedAt} >= ${weekAgo}::timestamptz`));
+        .where(and(eq(sends.linkedinAccountId, account.id), eq(sends.stepNumber, 1), eq(sends.channel, "linkedin"), inArray(sends.status, SEND_COUNTED), sql`${sends.claimedAt} >= ${weekAgo}::timestamptz`));
       const limit = dailyInviteLimit({ dailyInviteLimit: account.dailyInviteLimit, isPremium: account.isPremium }, rules);
       if (!inviteBlock({ today, week }, limit, rules.invitesPerWeek)) {
         const invitation = await claimSend("invitation", pickMinutes(rules.inviteGapMinutes, options.random), async (exclude) =>
@@ -376,11 +352,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     if (!enrollment || !LIVE.includes(enrollment.status as "pending" | "active")) return "enrollment_stopped";
     const [campaign] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, claim.campaignId));
     if (campaign?.status !== "active") return "campaign_inactive";
-    const [policy] = await db
-      .select({ doNotContact: contactPolicies.doNotContact })
-      .from(contactPolicies)
-      .where(and(eq(contactPolicies.organizationId, claim.organizationId), eq(contactPolicies.personId, claim.person.id)));
-    return policy?.doNotContact ? "do_not_contact" : null;
+    return (await isDoNotContact(db, claim.organizationId, claim.person.id)) ? "do_not_contact" : null;
   },
 
   async abandon(claim, reason, now) {
@@ -391,10 +363,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       }
       const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: reason }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
-      await tx
-        .update(campaignEnrollments)
-        .set({ status: "suppressed", nextSendAt: null, stopReason: reason, updatedAt: now })
-        .where(and(eq(campaignEnrollments.id, claim.enrollmentId), inArray(campaignEnrollments.status, LIVE)));
+      await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), { status: "suppressed", reason }, now);
     });
   },
 
@@ -443,22 +412,19 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: "already_connected" }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
       await applyAcceptance(tx, claim.enrollmentId, claim.nextStep?.waitDays ?? null, now);
-      await tx.update(campaignEnrollments).set({ linkedinAccountId: claim.account.id }).where(eq(campaignEnrollments.id, claim.enrollmentId));
+      await tx.update(campaignEnrollments).set({ linkedinAccountId: claim.account.id, updatedAt: now }).where(eq(campaignEnrollments.id, claim.enrollmentId));
     });
   },
 
   async pauseAccountForLimit(claim, until) {
     await db.transaction(async (tx) => {
       await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "limit_reached" }).where(ownClaim(claim));
-      await tx.update(linkedinAccounts).set({ limitReachedUntil: until }).where(eq(linkedinAccounts.id, claim.account.id));
+      await pauseLinkedInAccount(tx, claim.account.id, until);
     });
   },
 
   async disconnectAccount(accountId, error) {
-    await db
-      .update(linkedinAccounts)
-      .set({ status: "disconnected", profileData: sql`jsonb_set(coalesce(${linkedinAccounts.profileData}, '{}'::jsonb), '{lastError}', to_jsonb(${error}::text))` })
-      .where(eq(linkedinAccounts.id, accountId));
+    await disconnectLinkedInAccount(db, accountId, error);
   },
 
   async markResolved(claim, profile, now) {
@@ -468,15 +434,12 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       // A resolved public slug goes back to the person, so a Sales Navigator lead becomes a classic lead. A slug that
       // another lead of the organization already holds fails the enrollment and changes neither person (D6).
       const slug = normalizePublicSlug(profile.slug);
-      if (slug && (await writeSlugBack(tx, claim.organizationId, owner.personId, slug)) === "collision") {
+      if (slug && (await writeLinkedInSlugTx(tx, claim.organizationId, owner.personId, slug)) === "collision") {
         await tx
           .update(linkedinEnrollmentDetails)
           .set({ resolveRetryCount: MAX_RESOLVE_ATTEMPTS, resolveNextAttemptAt: null, resolveLastError: SLUG_COLLISION_REASON })
           .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
-        await tx
-          .update(campaignEnrollments)
-          .set({ status: "failed", nextSendAt: null, stopReason: `profile_lookup_failed: ${SLUG_COLLISION_REASON}`.slice(0, 500), updatedAt: now })
-          .where(and(eq(campaignEnrollments.id, claim.enrollmentId), inArray(campaignEnrollments.status, LIVE)));
+        await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), failedOutcome("profile_lookup_failed", SLUG_COLLISION_REASON), now);
         return "slug_collision" as const;
       }
 
@@ -492,24 +455,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
       // The provider id belongs to the account that looked it up, so the lead is pinned to it from here.
       await tx.update(campaignEnrollments).set({ linkedinAccountId: claim.account.id, updatedAt: now }).where(eq(campaignEnrollments.id, claim.enrollmentId));
-      // Fill gaps only; never overwrite what the user imported.
-      await tx
-        .update(people)
-        .set({
-          firstName: sql`coalesce(${people.firstName}, ${profile.firstName})`,
-          lastName: sql`coalesce(${people.lastName}, ${profile.lastName})`,
-          fullName: sql`coalesce(${people.fullName}, ${[profile.firstName, profile.lastName].filter(Boolean).join(" ") || null})`,
-          title: sql`coalesce(${people.title}, ${profile.headline})`,
-          profilePictureUrl: sql`coalesce(${people.profilePictureUrl}, ${profile.pictureUrl})`,
-        })
-        .where(eq(people.id, owner.personId));
-      // Keep the member id the lookup started from, so a later import of the same Sales Navigator URL finds this lead.
-      if (profile.memberId) {
-        await tx
-          .update(people)
-          .set({ raw: sql`jsonb_build_object('linkedin_member_id', ${profile.memberId}::text) || coalesce(${people.raw}, '{}'::jsonb)` })
-          .where(eq(people.id, owner.personId));
-      }
+      await fillFromLinkedInProfileTx(tx, owner.personId, profile);
       return "resolved" as const;
     });
   },
@@ -527,10 +473,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         })
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
       if (exhausted) {
-        await tx
-          .update(campaignEnrollments)
-          .set({ status: "failed", nextSendAt: null, stopReason: `profile_lookup_failed: ${error}`.slice(0, 500) })
-          .where(and(eq(campaignEnrollments.id, claim.enrollmentId), inArray(campaignEnrollments.status, LIVE)));
+        await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), failedOutcome("profile_lookup_failed", error), now);
       }
     });
   },
@@ -610,15 +553,20 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   },
 
   async expireUnacceptedInvitations(before, now) {
-    const rows = await db.execute(sql`
-      update campaign_enrollments e
-         set status = 'completed', next_send_at = null, stop_reason = 'invite_not_accepted', updated_at = ${now.toISOString()}::timestamptz
-        from linkedin_enrollment_details d
-       where d.enrollment_id = e.id and e.channel = 'linkedin' and e.status = 'active'
-         and d.connection_state = 'request_sent' and d.request_sent_at < ${before.toISOString()}::timestamptz
-      returning e.id
-    `);
-    return (rows as unknown as unknown[]).length;
+    const expired = await endEnrollmentsTx(
+      db,
+      and(
+        eq(campaignEnrollments.channel, "linkedin"),
+        eq(campaignEnrollments.status, "active"),
+        sql`exists (
+          select 1 from linkedin_enrollment_details d
+          where d.enrollment_id = campaign_enrollments.id and d.connection_state = 'request_sent' and d.request_sent_at < ${before.toISOString()}::timestamptz
+        )`,
+      ),
+      { status: "completed", reason: "invite_not_accepted" },
+      now,
+    );
+    return expired.length;
   },
 };
 

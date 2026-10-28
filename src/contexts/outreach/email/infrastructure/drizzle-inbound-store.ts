@@ -5,7 +5,8 @@ import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, Sync
 import type { InboundEmail } from "../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
 import { createSuppressionStore } from "../../infrastructure/suppression-store";
-import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { haltOutcome } from "../../domain/enrollment-status";
+import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 
 type Tx = DbTx;
 
@@ -154,16 +155,7 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
           const matched = await db.transaction(async (tx) => {
             const enrollmentId = await matchEnrollment(tx, mailbox, email);
             if (!enrollmentId) return false;
-            await tx
-              .update(campaignEnrollments)
-              .set({ status: "replied", nextSendAt: null, stopReason: "replied", updatedAt: now })
-              .where(
-                and(
-                  eq(campaignEnrollments.id, enrollmentId),
-                  eq(campaignEnrollments.organizationId, mailbox.organizationId),
-                  inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES]),
-                ),
-              );
+            await endEnrollmentsTx(tx, and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)), haltOutcome("replied"), now);
             return true;
           });
           // After the sequence stopped: a replayed batch repeats both steps, and both are idempotent.

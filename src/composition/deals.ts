@@ -1,7 +1,7 @@
 import { db } from "@/platform/db/client";
-import { CONVERSION_LOCK_TIMEOUT, lockPersonForConversion, setLockTimeout } from "@/platform/db/person-locks";
-import { personReplyHandling } from "@/contexts/conversations/infrastructure/person-handling";
-import { drizzleTaskStore } from "@/contexts/conversations/actions/infrastructure/drizzle-task-store";
+import { CONVERSION_LOCK_TIMEOUT, setLockTimeout } from "@/platform/db/person-locks";
+import { lockPersonForConversion, personReplyHandling } from "@/contexts/conversations/infrastructure/person-handling";
+import { drizzleMemberDirectory } from "@/contexts/tenancy/infrastructure/drizzle-member-directory";
 import { convertToContact, type ConvertDeps, type PreviewDeps } from "@/contexts/people/application/convert-to-contact";
 import { drizzleLeadLifecycle } from "@/contexts/people/infrastructure/drizzle-lead-lifecycle";
 import { personSummaries } from "@/contexts/people/infrastructure/people-directory";
@@ -51,8 +51,8 @@ export const dealsDeps = (overrides: Partial<DealsDeps> = {}): DealsDeps => ({
   outreach: conversionOutreach,
   events: { append: personReplyHandling.appendPersonEvent },
   members: {
-    isMember: drizzleTaskStore.isMember,
-    names: async (organizationId) => new Map((await drizzleTaskStore.members(organizationId)).map((m) => [m.userId, m.name])),
+    isMember: drizzleMemberDirectory.isMember,
+    names: async (organizationId) => new Map((await drizzleMemberDirectory.list(organizationId)).map((m) => [m.userId, m.name])),
   },
   crm: crmRead,
   now: () => new Date(),

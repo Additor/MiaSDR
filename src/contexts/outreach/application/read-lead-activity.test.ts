@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { NEW_LEAD_STATUS, type LeadStatus, type ReadLeadStatuses } from "../domain/lead-status";
-import { NO_REACH, reachability, type ReadReachability } from "../domain/reachability";
+import { NO_REACH, reachability, type ReadReachability } from "@/contexts/people/domain/reachability";
 import { readLeadActivity } from "./read-lead-activity";
 
 const lead = (id: string, email: string | null = null, linkedinSlug: string | null = null, lifecycle = "lead") => ({ id, lifecycle, email, linkedinSlug, linkedinUrl: null });

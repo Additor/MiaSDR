@@ -3,7 +3,7 @@ import { env } from "@/shared/env";
 import type { CampaignDeps } from "../application/campaign-management";
 import type { EmailRulesDeps } from "../email/application/email-rules";
 import type { SendPauseDeps } from "../application/send-pause";
-import { auditSink } from "@/platform/db/audit";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";
@@ -23,15 +23,13 @@ import { drizzleMergeFieldSource } from "./drizzle-merge-fields";
 import { drizzleOutreachStore } from "../email/infrastructure/drizzle-outreach-store";
 import { createSuppressionStore } from "./suppression-store";
 import { drizzleSuppressionListStore } from "./drizzle-suppression-list-store";
-import { readReachability } from "./drizzle-reachability";
+import { readReachability } from "@/contexts/people/infrastructure/composition";
 import { drizzleTestSendStore } from "../email/infrastructure/drizzle-test-send-store";
 import { drizzleCampaignStore, drizzleMailboxStore } from "./drizzle-management-stores";
 import { FakeMailboxProvider } from "../email/infrastructure/fake-mailbox-provider";
 import { GmailMailboxProvider, parseServiceAccountJson } from "../email/infrastructure/gmail-mailbox-provider";
 import { notConfiguredProvider } from "../email/infrastructure/not-configured-provider";
 
-/** Reachability of a page of person ids (email, LinkedIn, do-not-contact, suppression). Pages call it directly. */
-export { readReachability } from "./drizzle-reachability";
 
 /** Enrollment admin store. Pages read the available senders from it. */
 export { drizzleEnrollmentAdminStore as enrollmentAdminStore } from "./drizzle-enrollment-admin";

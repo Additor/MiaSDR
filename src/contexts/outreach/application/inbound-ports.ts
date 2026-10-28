@@ -1,4 +1,5 @@
 import type { DbTx } from "@/platform/db/client";
+import type { OutreachHalt } from "../domain/enrollment-status";
 import type { InboundClass } from "../email/domain/inbound";
 import type { InboundEmail } from "../email/application/ports";
 
@@ -65,7 +66,7 @@ export interface InboxLinkedInMessage {
  * imports conversations.
  */
 export interface FollowUpStop {
-  endEmailRunsTx(tx: DbTx, organizationId: string, email: string, reason: string, now: Date): Promise<number>;
+  endEmailRunsTx(tx: DbTx, organizationId: string, email: string, halt: OutreachHalt, now: Date): Promise<number>;
 }
 
 /**
@@ -108,4 +109,15 @@ export interface InboundStore {
   recordMessageGone(mailbox: SyncMailbox, providerMessageId: string, now: Date): Promise<void>;
   /** Dead-lettered messages of this mailbox since `since`. */
   countDeadLetters(mailbox: SyncMailbox, since: Date): Promise<number>;
+}
+
+/**
+ * The person's timeline, which conversations owns (`events`). Outreach records an enrollment change a person made there,
+ * inside its own transaction. `src/composition` wires conversations' `appendPersonEvent`, so outreach never imports it.
+ */
+export interface PersonTimeline {
+  append(
+    tx: DbTx,
+    event: { organizationId: string; personId: string; eventType: string; actorType: "human" | "system"; actorUserId?: string | null; fromData?: unknown; toData?: unknown },
+  ): Promise<void>;
 }

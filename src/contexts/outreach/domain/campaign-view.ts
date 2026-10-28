@@ -48,6 +48,8 @@ export const STOP_REASON_LABELS: Record<string, string> = {
   replied: "Replied",
   bounced: "Bounced",
   unsubscribed: "Unsubscribed",
+  complaint: "Spam complaint",
+  manual: "Suppressed by hand",
   do_not_contact: "Do not contact",
   removed: "Removed",
   converted: "Became a contact",

@@ -7,8 +7,9 @@ import { maintenanceJobs } from "@/platform/jobs/maintenance";
 import type { Job } from "@/platform/jobs/types";
 import { followUps, inboxFiling } from "./inbox-filing";
 import { rolloverSteps } from "./rollover-registry";
+import { organizationTimeZones } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 
 /** The composition point for background work: each bounded context contributes its jobs here. */
 export function registeredJobs(): Job[] {
-  return [...emailJobs(inboxFiling, followUps), ...linkedinJobs(inboxFiling), ...conversationJobs(), ...sequenceJobs(), ...gridJobs(), ...maintenanceJobs(rolloverSteps())];
+  return [...emailJobs(inboxFiling, followUps), ...linkedinJobs(inboxFiling), ...conversationJobs(), ...sequenceJobs(), ...gridJobs(), ...maintenanceJobs({ steps: rolloverSteps(), zones: organizationTimeZones })];
 }

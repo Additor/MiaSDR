@@ -7,6 +7,7 @@ import { EVENT_LABELS, eventLabel } from "@/app/(app)/_components/event-labels";
 import * as actionQueue from "@/contexts/conversations/actions/domain/action-queue";
 import * as afterReply from "@/contexts/conversations/after-reply/domain/after-reply";
 import { STOP_REASON_LABELS, stopReasonLabel as enrollmentStopLabel } from "@/contexts/outreach/domain/campaign-view";
+import { OUTREACH_HALTS } from "@/contexts/outreach/domain/enrollment-status";
 
 /**
  * Vocabulary gate for the Leads and CRM split ("Leads and CRM" in docs/decisions.md) and for reply types ("Reply types
@@ -576,9 +577,17 @@ function writtenStopReasons(): string[] {
     for (const match of text.matchAll(/\bstop_reason = '([a-z_]+)'/g)) out.push(match[1]);
     walk(parse(file), (node) => {
       if (ts.isPropertyAssignment(node) && node.name.getText() === "stopReason") out.push(...valueLiterals(node.initializer));
+      // An outcome literal handed to `endEnrollmentsTx`: `{ status: "removed", reason: "removed" }`.
+      if (ts.isCallExpression(node) && node.expression.getText() === "endEnrollmentsTx") {
+        for (const arg of node.arguments.filter(ts.isObjectLiteralExpression)) {
+          const reason = arg.properties.filter(ts.isPropertyAssignment).find((p) => p.name.getText() === "reason");
+          if (reason) out.push(...valueLiterals(reason.initializer));
+        }
+      }
     });
   }
-  return out;
+  // Every halt is stored as its own token (`haltOutcome`).
+  return [...out, ...OUTREACH_HALTS];
 }
 
 describe("stored values have labels", () => {

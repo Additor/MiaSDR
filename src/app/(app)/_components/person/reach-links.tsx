@@ -2,7 +2,7 @@ import { BanIcon, ExternalLinkIcon, MailIcon, MailXIcon, PhoneIcon } from "lucid
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { LeadContactPoints } from "@/contexts/people/domain/lead-activity";
-import type { Reachability } from "@/contexts/outreach/domain/reachability";
+import type { Reachability } from "@/contexts/people/domain/reachability";
 import { cn } from "@/components/ui/utils";
 import { DoNotContactTip, SuppressedTip } from "./reach-icons";
 import { StateTip } from "./state-tip";

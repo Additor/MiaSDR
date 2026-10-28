@@ -1,6 +1,23 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, type Actor } from "@/shared/errors";
 
+/** One organization-level audit row. */
+export interface AuditEntry {
+  organizationId: string;
+  actorUserId: string | null;
+  /** Dotted verb such as `integration.saved`. */
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  /** Facts about the change. Never a secret, a token or a prefix of one. */
+  meta?: Record<string, unknown>;
+}
+
+/** Writes organization-level audit rows (`audit_log`). A failed write throws to the caller. Use cases take it as a port. */
+export interface AuditSink {
+  record(entry: AuditEntry): Promise<void>;
+}
+
 export interface AuditRow {
   id: string;
   action: string;

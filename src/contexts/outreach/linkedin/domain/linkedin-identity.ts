@@ -112,13 +112,3 @@ export function resultMemberId(item: { identifier: string; profileUrl: string | 
   }
   return null;
 }
-
-/** Same shape as the people context's canonical URL, so a write-back matches what an import stores. */
-export function canonicalProfileUrl(slug: string): string {
-  return `https://www.linkedin.com/in/${encodeURIComponent(slug)}/`;
-}
-
-/** True when a stored LinkedIn URL points at a member id (Sales Navigator, Recruiter, bare id) and is safe to replace with a profile URL. */
-export function isMemberReference(url: string | null): boolean {
-  return url !== null && parseLinkedInProfileRef(url)?.kind === "member";
-}

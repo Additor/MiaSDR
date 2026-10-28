@@ -6,7 +6,7 @@ import { rowsOf } from "@/platform/db/sql-values";
 /**
  * Step 10 of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md): removes everything this context holds
  * about one person. The leads use case calls it inside its transaction after `lockPersonForDelete`, the people row lock,
- * `lockContactPolicy` and the blockers, so no reply, draft or AI job of the person lands while it runs.
+ * the do not contact row lock and the blockers, so no reply, draft or AI job of the person lands while it runs.
  *
  * `events` and `messages` are append-only (trigger function `ledger_reject_delete`). This function alone turns the purge
  * switch `miasdr.allow_purge` on for its own deletes and off before it returns; allow-purge-scope.test.ts fails when any
@@ -57,7 +57,6 @@ export async function purgePersonHandling(tx: DbHandle, organizationId: string, 
   const conversations = await deleted(tx, sql`delete from conversations where organization_id = ${org} and record_id in ${recs}`);
   // Notes and tasks on these records get a null record and stay with the person, whose delete removes them.
   const records = await deleted(tx, sql`delete from records where organization_id = ${org} and person_id = ${personId}::uuid`);
-  await tx.execute(sql`delete from contact_policies where organization_id = ${org} and person_id = ${personId}::uuid`);
   await tx.execute(sql`select set_config('miasdr.allow_purge', 'off', true)`);
   return { records, conversations, messages, events };
 }

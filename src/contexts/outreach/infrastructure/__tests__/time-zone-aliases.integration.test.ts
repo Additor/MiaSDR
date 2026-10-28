@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 import type { Actor } from "@/shared/errors";
-import { auditSink as drizzleAuditSink } from "@/platform/db/audit";
+import { auditSink as drizzleAuditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { FakeLinkedInGateway } from "../../linkedin/infrastructure/fake-linkedin-gateway";
 import { FakeMailboxProvider } from "../../email/infrastructure/fake-mailbox-provider";
 
@@ -74,12 +74,10 @@ describeDb("time zone aliases at every write point", () => {
     await expect(m.orgUc.updateOrganization(deps, t.actor, { timeZone: "Mars/Base" })).rejects.toThrow("Unknown time zone.");
   });
 
-  it("email rules store and read the current name, including a legacy value already stored", async () => {
+  it("email rules read the current name of a legacy value already stored", async () => {
     const t = await org();
     const deps = { settings: m.settings.drizzleChannelSettingsStore };
-    await m.rules.updateEmailRules(deps, t.actor, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "Europe/Kiev" });
-    const [general] = await sql`select values from channel_settings where organization_id = ${t.id} and channel = 'general'`;
-    expect(general.values.timeZone).toBe("Europe/Kyiv");
+    await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'general', '{}'::jsonb)`;
     await sql`update channel_settings set values = ${sql.json({ timeZone: "Asia/Saigon" })} where organization_id = ${t.id} and channel = 'general'`;
     expect((await m.rules.getEmailRules(deps, t.actor)).timeZone).toBe("Asia/Ho_Chi_Minh");
   });

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Time } from "@/components/shell/time";
-import { suppressionReasonLabel } from "@/contexts/outreach/domain/reachability";
+import { suppressionReasonLabel } from "@/contexts/people/domain/reachability";
 import { AsideSection } from "../record/record-header";
 import { DncControl } from "./dnc-control";
 

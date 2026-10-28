@@ -17,6 +17,7 @@ import { parseMemberUrl } from "../domain/linkedin-identity";
 import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns, personVariableColumns } from "../../infrastructure/enrollment-variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
+import { doNotContactSql } from "@/contexts/people/infrastructure/reachability";
 
 const DAY_MS = 86_400_000;
 
@@ -202,7 +203,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
   async enroll(organizationId, id, filter, handle): Promise<LinkedInEnrollResult> {
     const matching = and(eq(people.organizationId, organizationId), leadSearchCondition(filter.query));
     return inTransaction(handle, async (tx) => {
-      const dnc = sql`exists (select 1 from contact_policies cp where cp.person_id = ${people.id} and cp.organization_id = ${people.organizationId} and cp.do_not_contact)`;
+      const dnc = doNotContactSql("people");
       const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
 
       const [skipped] = await tx
@@ -459,7 +460,7 @@ export async function enrollPeopleCounted(organizationId: string, campaignId: st
       .where(and(eq(campaigns.id, campaignId), eq(campaigns.organizationId, organizationId), eq(campaigns.channel, "linkedin")));
     if (!campaign || campaign.status === "completed") return { added: 0, skippedContact: 0 };
 
-    const dnc = sql`exists (select 1 from contact_policies cp where cp.person_id = ${people.id} and cp.organization_id = ${people.organizationId} and cp.do_not_contact)`;
+    const dnc = doNotContactSql("people");
     const picked = and(eq(people.organizationId, organizationId), inArray(people.id, personIds), hasProfile, sql`not ${dnc}`);
     const eligible = await tx
       .select({ id: people.id, slug: people.linkedinSlug, url: people.linkedinUrl, memberId: sql<string | null>`${people.raw}->>'linkedin_member_id'` })

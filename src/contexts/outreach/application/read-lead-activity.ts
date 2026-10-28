@@ -1,6 +1,6 @@
 import { leadContactPoints, type LeadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { NEW_LEAD_STATUS, type LeadStatus, type ReadLeadStatuses } from "../domain/lead-status";
-import { NO_REACH, type Reachability, type ReadReachability } from "../domain/reachability";
+import { NO_REACH, type Reachability, type ReadReachability } from "@/contexts/people/domain/reachability";
 
 /** One person's activity: the lead status (null for a contact, which carries no status), the reachability and the contact points. */
 export interface LeadActivity {

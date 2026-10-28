@@ -4,9 +4,10 @@ import { canonicalTimeZone } from "@/shared/time-zone";
 import { channelSettings, organizations } from "@/platform/db/schema";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "../domain/ai-cap";
 import { DEFAULT_PHONE_COUNTRY_KEY, normalizePhoneCountry } from "../domain/phone-country";
-import { recordAudit } from "@/platform/db/audit";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { isValidTimeZone } from "@/shared/time-zone";
 import type { OrganizationStore } from "../application/organization-settings";
+import { mergeChannelSettings } from "./channel-settings";
 
 const VALID_ZONE = (zone: unknown): zone is string => typeof zone === "string" && isValidTimeZone(zone);
 
@@ -26,6 +27,16 @@ export async function organizationTimeZone(organizationId: string, handle: Pick<
     left join channel_settings s on s.organization_id = o.id and s.channel = 'general'
     where o.id = ${organizationId}`)) as unknown as Array<{ column: string | null; general: string | null }>;
   return organizationZoneOf(rows[0]?.general, rows[0]?.column);
+}
+
+/** Every organization with its zone by the same rule, in id order. The daily rollover reads it for each local day. */
+export async function organizationTimeZones(): Promise<Array<{ organizationId: string; timeZone: string }>> {
+  const rows = (await db.execute(sql`
+    select o.id, o.timezone as "column", s."values" ->> 'timeZone' as general
+    from organizations o
+    left join channel_settings s on s.organization_id = o.id and s.channel = 'general'
+    order by o.id`)) as unknown as Array<{ id: string; column: string | null; general: string | null }>;
+  return rows.map((r) => ({ organizationId: r.id, timeZone: organizationZoneOf(r.general, r.column) }));
 }
 
 export const drizzleOrganizationStore: OrganizationStore = {
@@ -49,13 +60,7 @@ export const drizzleOrganizationStore: OrganizationStore = {
         ...(patch.defaultPhoneCountry === undefined ? {} : { [DEFAULT_PHONE_COUNTRY_KEY]: patch.defaultPhoneCountry }),
       };
       if (Object.keys(values).length > 0) {
-        await tx
-          .insert(channelSettings)
-          .values({ organizationId, channel: "general", values, updatedBy: actorUserId })
-          .onConflictDoUpdate({
-            target: [channelSettings.organizationId, channelSettings.channel],
-            set: { values: sql`${channelSettings.values} || ${JSON.stringify(values)}::jsonb`, updatedBy: actorUserId, updatedAt: new Date() },
-          });
+        await mergeChannelSettings(tx, organizationId, "general", values, actorUserId);
       }
       for (const entry of audit) await recordAudit(tx, entry);
     });

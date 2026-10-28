@@ -1,13 +1,14 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { settleLinkedInSent } from "./drizzle-linkedin-reply-store";
-import { contactPolicies, conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, sends, suppressionList } from "@/platform/db/schema";
+import { conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { BeginSend, ReplyStore } from "../application/reply-ports";
 import { ATTEMPT_FROM, ATTEMPT_FROM_CALL } from "../domain/send-attempt-status";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toAttempt, type Snapshot, mailboxFor, sendContextFor, settleSent, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
+import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 /** Sending an approved draft and settling the outcome: claim, blockers, sent, failed, uncertain, and the reconcile pass. */
 export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | "markSent" | "markFailed" | "markUncertain" | "listUnsettled" | "resolveUncertain"> = {
@@ -113,11 +114,8 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
   },
 
   async checkBlockers(send) {
-    const email = send.recipient.toLowerCase();
-    const [suppressed] = await db.select({ id: suppressionList.id }).from(suppressionList).where(and(eq(suppressionList.organizationId, send.organizationId), eq(suppressionList.email, email)));
-    if (suppressed) return "suppressed";
-    const [dnc] = await db.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, send.personId));
-    if (dnc?.d) return "do_not_contact";
+    if (await isSuppressed(db, send.organizationId, send.recipient)) return "suppressed";
+    if (await isDoNotContact(db, send.organizationId, send.personId)) return "do_not_contact";
     // Suppression and do-not-contact apply to every recipient, not only the lead.
     if (send.cc.length > 0 && (await blockedAddressesFor(send.organizationId, send.cc)).length > 0) return "cc_blocked";
     const mailbox = await mailboxFor(send.organizationId, send.mailbox?.emailAddress ?? "");

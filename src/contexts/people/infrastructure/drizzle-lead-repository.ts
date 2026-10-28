@@ -21,6 +21,7 @@ import type { BlockReason, DeleteOutcome, ExportRow, LeadFilter, LeadRepository,
 import { renameOnCompanyPage } from "../domain/company-domain";
 import { customColumnKey } from "../domain/normalize";
 import { MAX_CUSTOM_VALUE_LENGTH, type LeadEditPlan } from "../domain/lead-edit";
+import { deleteDoNotContactTx, suppressDoNotContactAddressesTx } from "./reachability";
 import { DOMAIN_GUARD_CONSTRAINTS, resolveCompanyDomain, stampCompaniesLeftByContacts } from "./company-domain-store";
 import { leadFilterCondition } from "./queries";
 import { resolvePeopleColumns } from "./resolve-custom-columns";
@@ -126,14 +127,8 @@ async function findBlocked(organizationId: string, ids: string[], viewer?: SendV
 /** Deletes people no rule blocks. A person marked do-not-contact leaves their address on the suppression list. */
 async function deleteBatch(organizationId: string, ids: string[]): Promise<number> {
   return db.transaction(async (tx: Tx) => {
-    await tx.execute(sql`
-      insert into suppression_list (organization_id, email, reason, note)
-      select p.organization_id, lower(p.email), 'manual', 'Deleted while marked do-not-contact'
-      from people p
-      join contact_policies cp on cp.person_id = p.id and cp.organization_id = p.organization_id
-      where p.organization_id = ${organizationId} and p.id in ${ids} and cp.do_not_contact and p.email is not null
-      on conflict (organization_id, email) do nothing`);
-    await tx.delete(contactPolicies).where(and(eq(contactPolicies.organizationId, organizationId), inArray(contactPolicies.personId, ids)));
+    await suppressDoNotContactAddressesTx(tx, organizationId, ids);
+    await deleteDoNotContactTx(tx, organizationId, ids);
     // Left here only when no send was ever made, so nothing is lost with them.
     await tx.delete(campaignEnrollments).where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, ids)));
     const removed = await tx.delete(people).where(and(eq(people.organizationId, organizationId), inArray(people.id, ids))).returning({ id: people.id });

@@ -65,7 +65,7 @@ describeDb("linkedin.sync-accounts job", () => {
   beforeAll(async () => {
     ({ drizzleLinkedInAccountStore: accountStore } = await import("../drizzle-linkedin-account-store"));
     const { drizzleLinkedInConnectStore } = await import("../drizzle-linkedin-connect-store");
-    const { auditSink: drizzleAuditSink } = await import("@/platform/db/audit");
+    const { auditSink: drizzleAuditSink } = await import("@/contexts/tenancy/infrastructure/audit");
     const { createLinkedInJobs } = await import("../../application/linkedin-jobs");
     mgmtDeps = {
       accounts: { ...accountStore, listCredentialedOrganizations: async () => (await accountStore.listCredentialedOrganizations()).filter((id) => (only ?? orgs).includes(id)) },

@@ -1,20 +1,20 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { channelSettings, contactPolicies, conversations, drafts, events, linkedinAccounts, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
+import { channelSettings, conversations, drafts, events, linkedinAccounts, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import type { AttemptRow } from "../application/reply-ports";
-import { ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
+import { ATTEMPT_COUNTED, ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
 import { replyBlock, replyGapSeconds, utcDayStart } from "../domain/linkedin-reply";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
+import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
+import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 
 type Tx = DbTx;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Attempts that sent or may have sent. A definite refusal used no quota. */
-const COUNTED = ["sending", "sent", "delivery_uncertain", "reconciled"];
 
 /** What the approval snapshot stores in `send_attempts.request` for a LinkedIn reply. */
 interface Snapshot {
@@ -60,7 +60,7 @@ async function usage(tx: Tx | typeof db, accountId: string, now: Date) {
   const [replies] = await tx
     .select({ n: sql<number>`count(*)::int`, last: sql<Date | null>`max(${sendAttempts.createdAt})` })
     .from(sendAttempts)
-    .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.accountRef, accountId), inArray(sendAttempts.status, COUNTED), sql`${sendAttempts.createdAt} >= ${dayStart}::timestamptz`));
+    .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.accountRef, accountId), inArray(sendAttempts.status, ATTEMPT_COUNTED), sql`${sendAttempts.createdAt} >= ${dayStart}::timestamptz`));
   const [sequence] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(sends)
@@ -253,8 +253,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   },
 
   async checkBlockers(send, now) {
-    const [dnc] = await db.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, send.personId));
-    if (dnc?.d) return { reason: "do_not_contact", message: "This person is marked do not contact. The reply was not sent." };
+    if (await isDoNotContact(db, send.organizationId, send.personId)) return { reason: "do_not_contact", message: "This person is marked do not contact. The reply was not sent." };
     const [account] = await db.select().from(linkedinAccounts).where(eq(linkedinAccounts.id, send.accountId));
     // Pause and connection state only: the cap and the gap were applied by the claim.
     const block = account ? replyBlock(now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: Number.MAX_SAFE_INTEGER }, { usedToday: 0, lastAttemptAt: null, gapSeconds: 0 }) : { reason: "not_connected" as const, message: "This LinkedIn account no longer exists." };
@@ -298,14 +297,11 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   },
 
   async pauseAccount(send, until) {
-    await db.update(linkedinAccounts).set({ limitReachedUntil: until }).where(eq(linkedinAccounts.id, send.accountId));
+    await pauseLinkedInAccount(db, send.accountId, until);
   },
 
   async disconnectAccount(send, error) {
-    await db
-      .update(linkedinAccounts)
-      .set({ status: "disconnected", profileData: sql`jsonb_set(coalesce(${linkedinAccounts.profileData}, '{}'::jsonb), '{lastError}', to_jsonb(${error}::text))` })
-      .where(eq(linkedinAccounts.id, send.accountId));
+    await disconnectLinkedInAccount(db, send.accountId, error);
   },
 
   async panel(organizationId, conversationId, now) {
@@ -328,7 +324,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
     if (head.channel !== "linkedin") return null;
 
     const [account] = UUID.test(head.accountRef) ? await db.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, head.accountRef), eq(linkedinAccounts.organizationId, organizationId))) : [];
-    const [dnc] = await db.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, head.personId));
+    const dnc = await isDoNotContact(db, organizationId, head.personId);
     const used = account ? await usage(db, account.id, now) : { usedToday: 0, lastAttemptAt: null };
     const block = account ? replyBlock(now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: 0 }) : null;
     // The gap is a few seconds and clears by itself, so the panel does not show it.
@@ -348,7 +344,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       recipient: head.name ?? head.firstName,
       accountLabel: account?.name ?? account?.username ?? "LinkedIn account",
       issue,
-      doNotContact: dnc?.d === true,
+      doNotContact: dnc,
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,
       draft: draft

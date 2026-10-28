@@ -2,8 +2,9 @@ import { sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
-import { stopEnrollmentsOnReplyTx } from "@/contexts/outreach/infrastructure/reply-stop";
+import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
+import { OPEN_STEP_STATUSES, RUN_FROM, runReasonOfHalt, STEP_FROM, type RunStatus, type StepRunStatus } from "../domain/sequences";
 import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports";
 
 /**
@@ -23,7 +24,12 @@ export type StopFinal = "interrupted" | "cancelled";
 const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 /** Draft statuses a person has not acted on. A run that ends retires them; a send in flight is left alone. */
 export const RETIRABLE_DRAFTS = sqlValues(RETIRABLE_DRAFT_STATUSES);
-export const OPEN_STEPS = sql`('scheduled', 'drafting', 'awaiting_review', 'failed')`;
+export const OPEN_STEPS = sqlValues(OPEN_STEP_STATUSES);
+
+/** `status in (...)`: the statuses a run may become `to` from (`RUN_FROM`). Every run status UPDATE adds it. */
+export const runMayBecome = (to: RunStatus) => sql`status in ${sqlValues(RUN_FROM[to])}`;
+/** `status in (...)`: the statuses a step run may become `to` from (`STEP_FROM`). Every step status UPDATE adds it. */
+export const stepMayBecome = (to: StepRunStatus) => sql`status in ${sqlValues(STEP_FROM[to])}`;
 
 export async function recordEvent(
   tx: Tx,
@@ -65,8 +71,8 @@ export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ dr
     returning id`));
   await tx.execute(sql`
     update sequence_step_runs set status = 'cancelled', updated_at = ${ts(input.now)}
-    where sequence_run_id = ${input.runId} and organization_id = ${input.organizationId} and status in ${OPEN_STEPS}`);
-  await tx.execute(sql`update sequence_runs set status = ${input.final}, updated_at = ${ts(input.now)} where id = ${input.runId}`);
+    where sequence_run_id = ${input.runId} and organization_id = ${input.organizationId} and ${stepMayBecome("cancelled")}`);
+  await tx.execute(sql`update sequence_runs set status = ${input.final}, updated_at = ${ts(input.now)} where id = ${input.runId} and ${runMayBecome(input.final)}`);
   await tx.execute(sql`update records set next_action_at = null where id = ${run.record_id} and organization_id = ${input.organizationId} and workflow_state = 'waiting'`);
   await recordEvent(tx, {
     organizationId: input.organizationId,
@@ -157,11 +163,11 @@ export async function stopPersonOutreachOnReplyTx(
   // Same lock as a restore of a removed lead (drizzle-enrollment-restore): one of the two commits first and the other sees it.
   await lockPersonOutreachTx(tx, input.organizationId, personIds);
 
-  const stopped = await stopEnrollmentsOnReplyTx(tx, input.organizationId, personIds, input.now);
+  const stopped = await haltPersonEnrollmentsTx(tx, input.organizationId, personIds, "replied", input.now);
   const runsEnded = await interruptPersonRunsTx(tx, input.organizationId, personIds, "reply", input.now);
 
-  for (const personId of new Set(stopped.map((e) => e.person_id))) {
-    const own = stopped.filter((e) => e.person_id === personId);
+  for (const personId of new Set(stopped.map((e) => e.personId))) {
+    const own = stopped.filter((e) => e.personId === personId);
     await tx.execute(sql`
       insert into events (organization_id, person_id, event_type, actor_type, to_data, meta)
       values (${input.organizationId}, ${personId}::uuid, 'outreach.stopped_by_reply', 'system',
@@ -172,4 +178,6 @@ export async function stopPersonOutreachOnReplyTx(
 }
 
 /** Outreach's view of these runs: src/composition hands it to outreach's suppression store. */
-export const followUpStop: FollowUpStop = { endEmailRunsTx: interruptEmailRunsTx };
+export const followUpStop: FollowUpStop = {
+  endEmailRunsTx: (tx, organizationId, email, halt, now) => interruptEmailRunsTx(tx, organizationId, email, runReasonOfHalt(halt), now),
+};

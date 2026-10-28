@@ -4,6 +4,7 @@
  */
 import { campaignLeadState } from "./campaign-lead-status";
 import { LEAD_STATE_LABELS, type LeadState } from "./lead-status";
+import type { EnrollmentStatus } from "./enrollment-status";
 
 export const ENROLLMENT_TABS = ["all", "queued", "in_sequence", "paused", "replied", "finished", "stopped", "removed"] as const;
 export type EnrollmentTab = (typeof ENROLLMENT_TABS)[number];
@@ -25,7 +26,7 @@ export const ENROLLMENT_TAB_LABELS: Record<EnrollmentTab, string> = {
  * Paused needs one that is not, so `pending` and `active` sit under two filters here; `statusesForTab` with the campaign
  * status keeps the one that applies. `all` has no list: it is every filter but `removed`.
  */
-export const TAB_STATUSES: Record<Exclude<EnrollmentTab, "all">, readonly string[]> = {
+export const TAB_STATUSES: Record<Exclude<EnrollmentTab, "all">, readonly EnrollmentStatus[]> = {
   queued: ["pending"],
   in_sequence: ["active"],
   paused: ["pending", "active"],
@@ -57,7 +58,7 @@ export function tabOfStatus(status: string, campaignStatus = "active"): Exclude<
  * Statuses a filter selects. With the campaign status, a filter that cannot apply selects nothing (Paused in an active
  * campaign). `all` is every status but removed.
  */
-export function statusesForTab(tab: EnrollmentTab, campaignStatus?: string): readonly string[] {
+export function statusesForTab(tab: EnrollmentTab, campaignStatus?: string): readonly EnrollmentStatus[] {
   if (tab === "all") return [...new Set(Object.entries(TAB_STATUSES).filter(([t]) => t !== "removed").flatMap(([, s]) => s))];
   if (campaignStatus === undefined || !isStateTab(tab)) return TAB_STATUSES[tab];
   return TAB_STATUSES[tab].filter((status) => campaignLeadState(status, campaignStatus) === tab);
@@ -72,7 +73,7 @@ export type TabCounts = Record<EnrollmentTab, number>;
 export function countsByTab(statusCounts: ReadonlyArray<{ status: string; n: number }>, campaignStatus?: string): TabCounts {
   const counts = Object.fromEntries(ENROLLMENT_TABS.map((t) => [t, 0])) as TabCounts;
   for (const { status, n } of statusCounts) {
-    const tabs = (Object.keys(TAB_STATUSES) as Array<Exclude<EnrollmentTab, "all">>).filter((tab) => statusesForTab(tab, campaignStatus).includes(status));
+    const tabs = (Object.keys(TAB_STATUSES) as Array<Exclude<EnrollmentTab, "all">>).filter((tab) => (statusesForTab(tab, campaignStatus) as readonly string[]).includes(status));
     if (tabs.length === 0) continue;
     for (const tab of tabs) counts[tab] += n;
     if (status !== "removed") counts.all += n;

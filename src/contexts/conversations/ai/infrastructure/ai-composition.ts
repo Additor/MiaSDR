@@ -5,7 +5,7 @@ import { linkedinGateways } from "@/contexts/outreach/linkedin/infrastructure/li
 import { aiFakeMode, languageModels } from "@/contexts/ai/infrastructure/composition";
 import { env } from "@/shared/env";
 import type { Job } from "@/platform/jobs/types";
-import { auditSink } from "@/platform/db/audit";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import type { AiJobOpsDeps } from "../application/ai-job-ops";
 import { AI_JOB_LEASE_MS, createAiJobs } from "../application/ai-jobs";
 import type { ReplyAi, ReplyAiResolver } from "../application/ai-ports";

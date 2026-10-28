@@ -16,7 +16,7 @@ import { drizzleEnrollmentAdminStore } from "../../infrastructure/drizzle-enroll
 import { drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
 import { drizzleLinkedInConnectStore } from "./drizzle-linkedin-connect-store";
 import { drizzleLinkedInOperationsStore } from "./drizzle-linkedin-operations-store";
-import { auditSink } from "@/platform/db/audit";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { drizzleLinkedInCampaignStore } from "./drizzle-linkedin-campaign-store";
 import { createDrizzleLinkedInInboundStore } from "./drizzle-linkedin-inbound-store";
 import { drizzleLinkedInSearchBatchStore } from "./drizzle-linkedin-search-batch-store";

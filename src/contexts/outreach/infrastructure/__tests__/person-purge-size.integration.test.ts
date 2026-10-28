@@ -123,9 +123,10 @@ describeDb("contact delete: purge size check", () => {
         await tx.execute(dsql.raw(`set local lock_timeout = '5s'`));
         await handling.lockPersonForDelete(tx, org, target.person);
         await tx.execute(dsql`select id from people where id = ${target.person}::uuid for update`);
-        await handling.lockContactPolicy(tx, org, target.person);
+        await (await import("@/contexts/people/infrastructure/reachability")).lockDoNotContactTx(tx, org, target.person);
         const conversations = await purge.purgePersonHandling(tx, org, target.person);
         const enrollments = await outreach.purgePersonOutreach(tx, org, target.person);
+        await tx.execute(dsql`delete from contact_policies where organization_id = ${org} and person_id = ${target.person}::uuid`);
         await tx.execute(dsql`delete from people where organization_id = ${org} and id = ${target.person}::uuid`);
         return { conversations, enrollments };
       });

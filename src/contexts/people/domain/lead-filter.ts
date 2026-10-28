@@ -37,7 +37,10 @@ export interface LeadFilter {
   ids?: string[];
 }
 
-export const LIFECYCLE_FILTERS = ["lead", "contact", "all"] as const;
+/** A person's stage: a lead until converted, then a contact for good (`people_lifecycle_ck`, `people_lifecycle_trg`). */
+export const LIFECYCLES = ["lead", "contact"] as const;
+export type Lifecycle = (typeof LIFECYCLES)[number];
+export const LIFECYCLE_FILTERS = [...LIFECYCLES, "all"] as const;
 export type LifecycleFilter = (typeof LIFECYCLE_FILTERS)[number];
 /** What a filter without a `lifecycle` shows. Every reader of the filter applies it, so a bare `{}` never lists a contact. */
 export const DEFAULT_LIFECYCLE: LifecycleFilter = "lead";

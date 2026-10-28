@@ -14,7 +14,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
   let ops: typeof import("../../application/ai-job-ops");
   let aiJobsApp: typeof import("../../application/ai-jobs");
   let store: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
-  let audit: typeof import("@/platform/db/audit").auditSink;
+  let audit: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
   let FakeAi: typeof import("../fake-reply-ai").FakeReplyAi;
   const orgs: TestOrg[] = [];
   let counter = 0;
@@ -84,7 +84,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     ops = await import("../../application/ai-job-ops");
     aiJobsApp = await import("../../application/ai-jobs");
     store = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
-    audit = (await import("@/platform/db/audit")).auditSink;
+    audit = (await import("@/contexts/tenancy/infrastructure/audit")).auditSink;
     FakeAi = (await import("../fake-reply-ai")).FakeReplyAi;
   });
 

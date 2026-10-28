@@ -1,5 +1,6 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 import type { FollowUpsRule } from "../../domain/reply-type";
+import type { OutreachHalt } from "@/contexts/outreach/domain/enrollment-status";
 
 /**
  * Pure rules for a campaign's Follow-ups after a reply flow. The flow has versions; a published version is immutable and a
@@ -81,8 +82,13 @@ export const stepsEqual = (a: readonly StepInput[], b: readonly StepInput[]) => 
 
 // Run and step-run state machines ---------------------------------------------------------------------
 
-export type RunStatus = "active" | "paused" | "interrupted" | "completed" | "cancelled";
-export type StepRunStatus = "scheduled" | "drafting" | "awaiting_review" | "sent" | "skipped" | "cancelled" | "failed";
+/** The statuses of each table. The schema's CHECK constraints are built from these lists. */
+export const SEQUENCE_STATUSES = ["active", "archived"] as const;
+export const SEQUENCE_RUN_STATUSES = ["active", "interrupted", "paused", "completed", "cancelled"] as const;
+export const STEP_RUN_STATUSES = ["scheduled", "drafting", "awaiting_review", "sent", "skipped", "cancelled", "failed"] as const;
+export type SequenceStatus = (typeof SEQUENCE_STATUSES)[number];
+export type RunStatus = (typeof SEQUENCE_RUN_STATUSES)[number];
+export type StepRunStatus = (typeof STEP_RUN_STATUSES)[number];
 
 const RUN_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
   active: ["paused", "interrupted", "completed", "cancelled"],
@@ -105,13 +111,11 @@ const STEP_TRANSITIONS: Record<StepRunStatus, readonly StepRunStatus[]> = {
 export const canRunTransition = (from: RunStatus, to: RunStatus) => RUN_TRANSITIONS[from].includes(to);
 export const canStepTransition = (from: StepRunStatus, to: StepRunStatus) => STEP_TRANSITIONS[from].includes(to);
 
-export function assertRunTransition(from: RunStatus, to: RunStatus): void {
-  if (!canRunTransition(from, to)) throw new ConflictError(`A ${from} follow-up run cannot become ${to}.`);
-}
-
-export function assertStepTransition(from: StepRunStatus, to: StepRunStatus): void {
-  if (!canStepTransition(from, to)) throw new ConflictError(`A ${from.replace(/_/g, " ")} step cannot become ${to.replace(/_/g, " ")}.`);
-}
+/** The same tables read the other way: the statuses a row may move to `to` from. Every status UPDATE filters on them. */
+const sourcesOf = <S extends string>(transitions: Record<S, readonly S[]>): Record<S, readonly S[]> =>
+  Object.fromEntries((Object.keys(transitions) as S[]).map((to) => [to, (Object.keys(transitions) as S[]).filter((from) => transitions[from].includes(to))])) as unknown as Record<S, readonly S[]>;
+export const RUN_FROM = sourcesOf(RUN_TRANSITIONS);
+export const STEP_FROM = sourcesOf(STEP_TRANSITIONS);
 
 /** Steps a run still has to get through. `failed` stays open so a person can retry or skip it. */
 export const OPEN_STEP_STATUSES: readonly StepRunStatus[] = ["scheduled", "drafting", "awaiting_review", "failed"];
@@ -123,6 +127,19 @@ export const ACTIVE_RUN_STATUSES: readonly RunStatus[] = ["active", "paused"];
 export const AFTER_REPLY_OFF = "after_reply_off";
 
 export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bounce" | "suppressed" | "terminal_stage" | "record_closed" | "converted" | typeof AFTER_REPLY_OFF;
+
+/** The run reason stored when outreach halts for a person or an address. A complaint reads as an unsubscribe, a hand-added address as suppressed. */
+const RUN_REASON_OF_HALT: Record<OutreachHalt, InterruptReason> = {
+  replied: "reply",
+  bounced: "bounce",
+  unsubscribed: "unsubscribed",
+  complaint: "unsubscribed",
+  manual: "suppressed",
+  do_not_contact: "do_not_contact",
+  converted: "converted",
+};
+
+export const runReasonOfHalt = (halt: OutreachHalt): InterruptReason => RUN_REASON_OF_HALT[halt];
 
 /**
  * Whether the record's reply type lets follow-ups run. The type's Follow-ups rule (`reply_types.follow_ups`) decides;

@@ -6,6 +6,7 @@ import { NO_TYPE_FILTER, QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type Pic
 import { publicConversationSql, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 import { holdReasonOf } from "../../domain/reply-type";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 /*
  * work-queue-read: the explicit read model of the Actions queue, built like `deals/infrastructure/crm-read.ts`.
@@ -101,9 +102,8 @@ const queueRowsSql = (organizationId: string) => sql`
                k.status = 'auto_applied' and k.acknowledged_at is null
                  and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied,
                coalesce((k.response->>'stopRequested')::boolean, false) or kp.system_role = 'stop_request' as stop_asked,
-               exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact)
-                 or (coalesce(r.active_channel, 'email') = 'email' and p.email is not null
-                     and exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email))) as stopped
+               ${doNotContactSql("p")}
+                 or (coalesce(r.active_channel, 'email') = 'email' and p.email is not null and ${suppressedSql("p")}) as stopped
         from reply_type_picks k
         left join reply_types ks on ks.id = coalesce(k.applied_reply_type_id, k.proposed_reply_type_id)
         -- An archived proposed type cannot be accepted, so its held pick waits for nothing here.

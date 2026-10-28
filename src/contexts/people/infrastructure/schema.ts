@@ -15,6 +15,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
+import type { Lifecycle } from "../domain/lead-filter";
+import type { SuppressionReason } from "../domain/reachability";
 
 /**
  * One `people` row per human across all channels. Importing creates or
@@ -109,7 +111,7 @@ export const people = pgTable(
      * `lead` or `contact`. Add contact inserts a contact; a lead becomes one when a deal is created from it or someone makes it a
      * contact, and never goes back (trigger `people_lifecycle_trg`).
      */
-    lifecycle: text("lifecycle").notNull().default("lead"),
+    lifecycle: text("lifecycle").$type<Lifecycle>().notNull().default("lead"),
     /** Set once, when the person became a contact. */
     convertedAt: tstz("converted_at"),
     /** The idempotency key of the Add contact request that created the person; nothing else writes it. */
@@ -195,5 +197,60 @@ export const importRuns = pgTable(
     // `destination_campaign_id -> campaigns (id, organization_id) ON DELETE SET NULL (destination_campaign_id)` lives in
     // the migration SQL only: the target table is in the outreach schema, which imports this one.
     index("import_runs_org_created_idx").on(t.organizationId, t.createdAt),
+  ],
+);
+
+// Reachability: whether the organization may contact a person (do not contact, every channel) or an address
+// (suppression, email only). The read model and the writers live in `infrastructure/reachability.ts`.
+
+/** Do-not-contact applies to every channel. Three legal shapes: never set, set, cleared. */
+export const contactPolicies = pgTable(
+  "contact_policies",
+  {
+    personId: uuid("person_id").primaryKey(),
+    organizationId: orgId(),
+    doNotContact: boolean("do_not_contact").notNull().default(false),
+    reason: text("reason"),
+    source: text("source"),
+    setAt: tstz("set_at"),
+    clearedAt: tstz("cleared_at"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
+    check("contact_policies_source_ck", sql`${t.source} is null or ${t.source} in ('human', 'integration', 'inbound_request')`),
+    check(
+      "contact_policies_state_ck",
+      sql`(
+        (${t.doNotContact} and ${t.source} is not null and ${t.setAt} is not null and ${t.clearedAt} is null)
+        or (not ${t.doNotContact} and ${t.source} is not null and ${t.setAt} is not null and ${t.clearedAt} is not null and ${t.clearedAt} >= ${t.setAt})
+        or (not ${t.doNotContact} and ${t.source} is null and ${t.setAt} is null and ${t.clearedAt} is null)
+      )`,
+    ),
+    // Few rows match, so the partial index stays small.
+    index("contact_policies_org_dnc_idx").on(t.organizationId).where(sql`${t.doNotContact}`),
+  ],
+);
+
+/** Addresses no email goes to. Keyed by the lowercased, trimmed address, so it holds for every person who carries it. */
+export const suppressionList = pgTable(
+  "suppression_list",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    /** Stored lowercased. */
+    email: text("email").notNull(),
+    reason: text("reason").$type<SuppressionReason>().notNull(),
+    note: text("note"),
+    /**
+     * True only for an address an owner or admin pasted on Settings, Suppression list. Only those rows can be removed
+     * there: other `manual` rows come from a stop request or from deleting a person marked do not contact.
+     */
+    addedInSettings: boolean("added_in_settings").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("suppression_org_email_uq").on(t.organizationId, t.email),
+    check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual', 'complaint')`),
   ],
 );

@@ -1,11 +1,12 @@
 import { sqlState } from "@/platform/db/errors";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { credentialCipher, envelopeVersion } from "@/contexts/integrations/infrastructure/credential-cipher";
+import { credentialCipher } from "@/contexts/integrations/infrastructure/credential-cipher";
 import { db } from "@/platform/db/client";
 import { drafts, integrationAccounts, integrationCredentials, linkedinAccounts, sendAttempts, sends } from "@/platform/db/schema";
 import type { AccountStatusChange, LinkedInAccountStore, LinkedInCredentials, SyncStatus, WebhookStatus } from "../application/linkedin-management";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
+import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
 
 const PROVIDER_KEY = "unipile";
 
@@ -69,20 +70,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
 
   async saveCredentials(organizationId, credentials) {
     const encrypted = credentialCipher.encrypt(JSON.stringify(credentials));
-    await db.transaction(async (tx) => {
-      const [existing] = await tx
-        .select({ id: integrationAccounts.id })
-        .from(integrationAccounts)
-        .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, PROVIDER_KEY)))
-        .for("update");
-      let id = existing?.id;
-      if (id) await tx.update(integrationAccounts).set({ enabled: true }).where(eq(integrationAccounts.id, id));
-      else [{ id }] = await tx.insert(integrationAccounts).values({ organizationId, kind: "platform", key: PROVIDER_KEY, name: "Unipile (LinkedIn)" }).returning({ id: integrationAccounts.id });
-      await tx
-        .insert(integrationCredentials)
-        .values({ accountId: id, encryptedPayload: encrypted, encryptionVersion: envelopeVersion(encrypted) })
-        .onConflictDoUpdate({ target: integrationCredentials.accountId, set: { encryptedPayload: encrypted, encryptionVersion: envelopeVersion(encrypted), updatedAt: new Date() } });
-    });
+    await db.transaction((tx) => saveProviderCredentialTx(tx, organizationId, { kind: "platform", key: PROVIDER_KEY, name: "Unipile (LinkedIn)" }, encrypted));
   },
 
   async getWebhookStatus(organizationId) {
@@ -95,10 +83,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
   },
 
   async saveWebhookStatus(organizationId, status) {
-    await db
-      .update(integrationAccounts)
-      .set({ config: sql`${integrationAccounts.config} || jsonb_build_object('webhooks', ${JSON.stringify(status)}::jsonb)` })
-      .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, PROVIDER_KEY)));
+    await mergeProviderConfig(db, organizationId, PROVIDER_KEY, { webhooks: status });
   },
 
   async listCredentialedOrganizations() {
@@ -124,15 +109,12 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
 
   async saveSyncStatus(organizationId, patch) {
     if (patch.lastSyncAt === undefined && patch.lastSyncError === undefined) return;
-    await db
-      .update(integrationAccounts)
-      .set({ config: sql`${integrationAccounts.config} || ${JSON.stringify(patch)}::jsonb` })
-      .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, PROVIDER_KEY)));
+    await mergeProviderConfig(db, organizationId, PROVIDER_KEY, patch);
   },
 
   async clearCredentials(organizationId) {
     await db.transaction(async (tx) => {
-      await tx.delete(integrationAccounts).where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, PROVIDER_KEY)));
+      await deleteProviderAccount(tx, organizationId, PROVIDER_KEY);
       await tx.update(linkedinAccounts).set({ status: "disconnected" }).where(eq(linkedinAccounts.organizationId, organizationId));
     });
   },

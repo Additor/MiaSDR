@@ -1,9 +1,11 @@
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
-import { auditLog, contactPolicies, mailboxes, people, sends, suppressionList } from "@/platform/db/schema";
+import { db, type DbHandle } from "@/platform/db/client";
+import { contactPolicies, mailboxes, people, sends } from "@/platform/db/schema";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
 import type { TestSendStore, UncertainTestSend } from "../application/send-test-email";
+import { isSuppressed } from "@/contexts/people/infrastructure/reachability";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 
 const UNRESOLVED = [...SEND_UNRESOLVED];
 const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
@@ -87,7 +89,7 @@ export const drizzleTestSendStore: TestSendStore = {
   },
 
   async audit(entry) {
-    await db.insert(auditLog).values({
+    await recordAudit(db, {
       organizationId: entry.organizationId,
       actorUserId: entry.actorUserId,
       action: "mailbox.test_sent",
@@ -125,16 +127,11 @@ export const drizzleTestSendStore: TestSendStore = {
   },
 };
 
-type Reader = Pick<typeof db, "select">;
+type Reader = DbHandle;
 
 /** The suppression list, then any lead with this address that is marked do not contact. */
 async function recipientBlockTx(tx: Reader, organizationId: string, to: string): Promise<"suppressed" | "do_not_contact" | null> {
-  const [suppressed] = await tx
-    .select({ id: suppressionList.id })
-    .from(suppressionList)
-    .where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.email, to.toLowerCase())))
-    .limit(1);
-  if (suppressed) return "suppressed";
+  if (await isSuppressed(tx, organizationId, to)) return "suppressed";
   const [dnc] = await tx
     .select({ id: contactPolicies.personId })
     .from(contactPolicies)

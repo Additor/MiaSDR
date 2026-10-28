@@ -3,11 +3,11 @@ import { db } from "@/platform/db/client";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { AfterReplyStore, FlowRunRow, FlowState, NewRun, RecordSequenceState, RunStore, StartFacts, StepView } from "../application/sequence-ports";
 import { afterReplyFlowName, afterReplyModeOf } from "../domain/after-reply";
-import { AFTER_REPLY_OFF, assertPublishable, assertRunTransition, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
+import { AFTER_REPLY_OFF, assertPublishable, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
 import { owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, asDateOrNull, ts, zoneOfTx } from "./sequence-run-tx";
-import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
+import { endRunTx, recordEvent, runMayBecome, stepMayBecome, type Tx } from "./sequence-stop";
 import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
@@ -15,6 +15,7 @@ import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import { DEFAULT_REPLY_TYPES } from "../../domain/default-reply-types";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { detectsStopRequest } from "../../domain/stop-request";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 interface StepRow {
   id: string;
@@ -280,8 +281,8 @@ export async function loadStartOn(
              (select m.body_text from messages m join conversations mc on mc.id = m.conversation_id
                where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id and ${publicConversationSql("mc")}) as latest_body,
              p.lifecycle = 'contact' as contact,
-             exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact) as dnc,
-             exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)) as suppressed
+             ${doNotContactSql("p")} as dnc,
+             ${suppressedSql("p")} as suppressed
       from records r
       join people p on p.id = r.person_id and p.organization_id = r.organization_id
       left join reply_types s on s.id = r.reply_type_id
@@ -499,7 +500,6 @@ export const drizzleRunStore: RunStore = {
         await tx.execute(sql`select id, status from sequence_runs where record_id = ${event.recordId} and organization_id = ${event.organizationId} and status = 'active' for update`),
       );
       if (!run) throw new ConflictError("There is no active sequence run to pause.");
-      assertRunTransition("active", "paused");
       // A draft waiting for review is retired and its step goes back to scheduled, so resuming drafts it afresh.
       await tx.execute(sql`
         update drafts set status = 'stale', error = 'The sequence was paused.', updated_at = ${ts(now)}
@@ -507,8 +507,8 @@ export const drizzleRunStore: RunStore = {
           and id in (select draft_id from sequence_step_runs where sequence_run_id = ${run.id} and draft_id is not null and status in ('drafting', 'awaiting_review', 'failed'))`);
       await tx.execute(sql`
         update sequence_step_runs set status = 'scheduled', draft_id = null, updated_at = ${ts(now)}
-        where sequence_run_id = ${run.id} and organization_id = ${event.organizationId} and status in ('drafting', 'awaiting_review', 'failed')`);
-      await tx.execute(sql`update sequence_runs set status = 'paused', updated_at = ${ts(now)} where id = ${run.id}`);
+        where sequence_run_id = ${run.id} and organization_id = ${event.organizationId} and ${stepMayBecome("scheduled")}`);
+      await tx.execute(sql`update sequence_runs set status = 'paused', updated_at = ${ts(now)} where id = ${run.id} and ${runMayBecome("paused")}`);
       await tx.execute(sql`update records set next_action_at = null where id = ${event.recordId} and organization_id = ${event.organizationId} and workflow_state = 'waiting'`);
       await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.paused", actorUserId: event.actorUserId, to: { sequenceRunId: run.id } });
     });
@@ -521,9 +521,8 @@ export const drizzleRunStore: RunStore = {
         await tx.execute(sql`select id from sequence_runs where record_id = ${event.recordId} and organization_id = ${event.organizationId} and status = 'paused' order by updated_at desc limit 1 for update`),
       );
       if (!run) throw new ConflictError("There is no paused sequence run to resume.");
-      assertRunTransition("paused", "active");
       await tx.execute(sql`update sequence_step_runs set due_at = greatest(due_at, ${ts(now)}), updated_at = ${ts(now)} where sequence_run_id = ${run.id} and status = 'scheduled'`);
-      await tx.execute(sql`update sequence_runs set status = 'active', updated_at = ${ts(now)} where id = ${run.id}`);
+      await tx.execute(sql`update sequence_runs set status = 'active', updated_at = ${ts(now)} where id = ${run.id} and ${runMayBecome("active")}`);
       await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.resumed", actorUserId: event.actorUserId, to: { sequenceRunId: run.id } });
     });
   },
@@ -556,7 +555,7 @@ export const drizzleRunStore: RunStore = {
       if (current.draft_id) {
         await tx.execute(sql`update drafts set status = 'discarded', updated_at = ${ts(now)} where id = ${current.draft_id} and organization_id = ${event.organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
       }
-      await tx.execute(sql`update sequence_step_runs set status = 'skipped', updated_at = ${ts(now)} where id = ${current.id}`);
+      await tx.execute(sql`update sequence_step_runs set status = 'skipped', updated_at = ${ts(now)} where id = ${current.id} and ${stepMayBecome("skipped")}`);
       // The next step waits its own delay from now, as if the skipped message had just gone out.
       const advanced = await advanceRunTx(tx, { organizationId: event.organizationId, runId: run.id, afterPosition: current.position, from: now, now });
       await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.step_skipped", actorUserId: event.actorUserId, from: { position: current.position }, to: advanced.next ? { position: advanced.next } : { completed: true } });

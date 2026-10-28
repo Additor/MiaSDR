@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  canRunTransition,
+  canStepTransition,
+  RUN_FROM,
+  STEP_FROM,
+  runReasonOfHalt,
   assertConversationBelongsToRecord,
   assertPublishable,
-  assertRunTransition,
   assertStepsBelongToVersion,
-  assertStepTransition,
   dueAfter,
   interruptReason,
   followUpsContinue,
@@ -50,21 +53,21 @@ describe("publish validation", () => {
 
 describe("state machines", () => {
   it("allows only the documented run transitions", () => {
-    expect(() => assertRunTransition("active", "paused")).not.toThrow();
-    expect(() => assertRunTransition("paused", "active")).not.toThrow();
-    expect(() => assertRunTransition("interrupted", "active")).toThrow();
-    expect(() => assertRunTransition("completed", "cancelled")).toThrow();
-    expect(() => assertRunTransition("cancelled", "active")).toThrow();
+    expect(canRunTransition("active", "paused")).toBe(true);
+    expect(canRunTransition("paused", "active")).toBe(true);
+    expect(canRunTransition("interrupted", "active")).toBe(false);
+    expect(canRunTransition("completed", "cancelled")).toBe(false);
+    expect(canRunTransition("cancelled", "active")).toBe(false);
   });
 
   it("keeps sent, skipped and cancelled steps final", () => {
-    expect(() => assertStepTransition("scheduled", "drafting")).not.toThrow();
-    expect(() => assertStepTransition("drafting", "awaiting_review")).not.toThrow();
-    expect(() => assertStepTransition("awaiting_review", "sent")).not.toThrow();
-    expect(() => assertStepTransition("failed", "scheduled")).not.toThrow();
-    expect(() => assertStepTransition("sent", "scheduled")).toThrow();
-    expect(() => assertStepTransition("skipped", "sent")).toThrow();
-    expect(() => assertStepTransition("scheduled", "sent")).toThrow();
+    expect(canStepTransition("scheduled", "drafting")).toBe(true);
+    expect(canStepTransition("drafting", "awaiting_review")).toBe(true);
+    expect(canStepTransition("awaiting_review", "sent")).toBe(true);
+    expect(canStepTransition("failed", "scheduled")).toBe(true);
+    expect(canStepTransition("sent", "scheduled")).toBe(false);
+    expect(canStepTransition("skipped", "sent")).toBe(false);
+    expect(canStepTransition("scheduled", "sent")).toBe(false);
   });
 });
 
@@ -190,5 +193,27 @@ describe("drafting helpers", () => {
     expect(reply).toContain("answers the lead's latest message");
     expect(nudge).toContain("has not replied");
     expect(nudge).toContain("Hi Lena");
+  });
+});
+
+describe("run reason of an outreach halt", () => {
+  it("keeps the run vocabulary the timeline labels", () => {
+    expect(runReasonOfHalt("replied")).toBe("reply");
+    expect(runReasonOfHalt("bounced")).toBe("bounce");
+    expect(runReasonOfHalt("complaint")).toBe("unsubscribed");
+    expect(runReasonOfHalt("manual")).toBe("suppressed");
+    expect(runReasonOfHalt("do_not_contact")).toBe("do_not_contact");
+  });
+});
+
+describe("run and step sources", () => {
+  it("reads the transition tables the other way", () => {
+    expect(RUN_FROM.paused).toEqual(["active"]);
+    expect(RUN_FROM.active).toEqual(["paused"]);
+    expect(RUN_FROM.interrupted).toEqual(["active", "paused"]);
+    expect(RUN_FROM.completed).toEqual(["active"]);
+    expect(STEP_FROM.sent).toEqual(["awaiting_review"]);
+    expect(STEP_FROM.cancelled).toEqual(["scheduled", "drafting", "awaiting_review", "failed"]);
+    expect(STEP_FROM.drafting).toEqual(["scheduled"]);
   });
 });

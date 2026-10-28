@@ -15,7 +15,9 @@ import {
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
-import { ENROLLMENT_STATUSES } from "../domain/enrollment-status";
+import { ENROLLMENT_STATUSES, type EnrollmentStatus } from "../domain/enrollment-status";
+import type { CampaignStatus } from "../domain/campaign";
+import type { SendStatus } from "../domain/send-status";
 import { inList } from "@/platform/db/sql-values";
 
 /**
@@ -60,28 +62,6 @@ export const mailboxes = pgTable(
     check("mailboxes_status_ck", sql`${t.status} in ('connecting', 'connected', 'failed', 'disabled')`),
     check("mailboxes_limit_ck", sql`${t.dailySendLimit} between 1 and 200`),
     index("mailboxes_org_idx").on(t.organizationId),
-  ],
-);
-
-export const suppressionList = pgTable(
-  "suppression_list",
-  {
-    id: pk(),
-    organizationId: orgId(),
-    /** Stored lowercased. */
-    email: text("email").notNull(),
-    reason: text("reason").notNull(),
-    note: text("note"),
-    /**
-     * True only for an address an owner or admin pasted on Settings, Suppression list. Only those rows can be removed
-     * there: other `manual` rows come from a stop request or from deleting a person marked do not contact.
-     */
-    addedInSettings: boolean("added_in_settings").notNull().default(false),
-    createdAt: createdAt(),
-  },
-  (t) => [
-    unique("suppression_org_email_uq").on(t.organizationId, t.email),
-    check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual', 'complaint')`),
   ],
 );
 
@@ -177,7 +157,7 @@ export const campaigns = pgTable(
     name: text("name").notNull(),
     /** `personal` is private outreach (LinkedIn only): replies stay out of the Inbox and the AI. Fixed once the first send exists. */
     type: text("type").notNull().default("regular"),
-    status: text("status").notNull().default("draft"),
+    status: text("status").$type<CampaignStatus>().notNull().default("draft"),
     steps: jsonb("steps").$type<CampaignStep[]>().default([]).notNull(),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     /** Set when a completed campaign is archived. Null means visible in the default list. */
@@ -225,7 +205,7 @@ export const campaignEnrollments = pgTable(
     personId: uuid("person_id").notNull(),
     /** Copied from the campaign so channel-specific claims can use one index. */
     channel: text("channel").notNull(),
-    status: text("status").notNull().default("pending"),
+    status: text("status").$type<EnrollmentStatus>().notNull().default("pending"),
     /** Steps already completed; the next step to send is currentStep + 1. */
     currentStep: integer("current_step").notNull().default(0),
     mailboxId: uuid("mailbox_id"),
@@ -300,7 +280,7 @@ export const sends = pgTable(
     /** Admin who triggered a test send. */
     requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
     /** sending: claimed, provider call not confirmed. unknown: crashed or timed out mid-call, needs reconciliation. */
-    status: text("status").notNull().default("sending"),
+    status: text("status").$type<SendStatus>().notNull().default("sending"),
     mailboxId: uuid("mailbox_id"),
     /** Set when another mailbox took over this follow-up; the mailbox that sent the earlier steps. Null for ordinary sends. */
     takenOverFromMailboxId: uuid("taken_over_from_mailbox_id"),
