@@ -437,6 +437,14 @@ Code: `outreach/application/campaign-management.ts` (email), `linkedin-campaigns
 - **Restore** (`POST .../enrollments/restore`, up to 500) refuses: not removed, campaign completed or archived, a genuine reply, do not contact, suppressed (email), a contact, live in another campaign on the same channel, no step left. A lead with progress comes back `active`, otherwise `pending`. Restore and the reply stop share `lockPersonOutreachTx`, a per-person advisory lock, so one sees the other's commit. Each restore writes an `enrollment.restored` event and an audit row.
 - Enroll answers carry cross-campaign `notices` (other enrollments with a sent step or reply, leads skipped for `already_contacted_by_account`), at most 50 rows. Personal campaigns stay out.
 
+### Enrollment outcomes
+
+A live enrollment (`pending`, `active`) ends in one outcome, and outcomes are final; only a restore moves `removed` back. `ENROLLMENT_FROM` in `outreach/domain/enrollment-status.ts` lists the allowed moves, and the writes keep to it:
+
+- `endEnrollmentsTx` (`outreach/infrastructure/enrollment-end.ts`) writes every outcome. It filters on `ENROLLMENT_FROM[status]`, clears `next_send_at` and stamps `updated_at`, so a late writer leaves an outcome that landed first. Conversations calls it for a reply and do not contact; nothing outside outreach writes `campaign_enrollments`.
+- A send that advances an enrollment, or completes it with its last step, filters on `LIVE_ENROLLMENT_STATUSES`. A restore filters on `removed`.
+- An `OutreachHalt` (`replied`, `bounced`, `unsubscribed`, `complaint`, `manual`, `do_not_contact`, `converted`) stops a person or an address on every campaign; `haltOutcome` gives its status, and the token is the stored `stop_reason`. Outreach hands the same halt to conversations' `FollowUpStop`, and conversations stores its own run reason for it (`runReasonOfHalt`).
+
 ### Senders
 
 `campaign_senders` holds the sender list. Create and PATCH take `senderIds`; each must belong to the organization and be connected (422). An empty list means every connected sender. Email: a lead pinned to a mailbox outside the list moves to a listed one at the next claim (new thread). LinkedIn: the list gates lookups, invitations and messages; leads already invited stay with their account, while uninvited pending leads lose their pin when their account leaves the list.
@@ -479,7 +487,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### A reply stops all outreach
 
-`stopPersonOutreachOnReplyTx` (`conversations/after-reply/infrastructure/sequence-stop.ts`) runs in the transaction that stores a genuine reply, on both channels. It takes the person advisory lock (`lockPersonOutreachTx` in `src/platform/db/person-locks.ts`), has outreach's `stopEnrollmentsOnReplyTx` set every `pending` or `active` enrollment of the person to `replied` (`stop_reason = 'replied'`, on every channel, campaign and account), interrupts their runs, and writes one `outreach.stopped_by_reply` event per person. The person is the one the conversation is filed under plus anyone in the organization with the sender's address, so mail without thread headers still stops. Auto-replies and unverified bounces skip the stop. Finished enrollments keep their status. A replay stops nothing.
+`stopPersonOutreachOnReplyTx` (`conversations/after-reply/infrastructure/sequence-stop.ts`) runs in the transaction that stores a genuine reply, on both channels. It takes the person advisory lock (`lockPersonOutreachTx` in `src/platform/db/person-locks.ts`), has outreach's `haltPersonEnrollmentsTx` end every `pending` or `active` enrollment of the person as `replied` (`stop_reason = 'replied'`, on every channel, campaign and account), interrupts their runs, and writes one `outreach.stopped_by_reply` event per person. The person is the one the conversation is filed under plus anyone in the organization with the sender's address, so mail without thread headers still stops. Auto-replies and unverified bounces skip the stop. Finished enrollments keep their status. A replay stops nothing.
 
 ### AI providers
 
@@ -642,7 +650,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 2. Re-read `people.lifecycle`. A contact returns `changed: false` and nothing else happens.
 3. Run the caller's `guard(tx)`. Deals passes the personal-campaign rule here, so an enrollment that committed before the locks still counts.
 4. `markConverted` sets `lifecycle` and `converted_at`.
-5. `stopPersonEnrollmentsTx` sets `pending` and `active` enrollments to `cancelled` with `stop_reason = 'converted'` and clears the LinkedIn resolve retry time. Other statuses stay.
+5. `stopPersonEnrollmentsTx` ends `pending` and `active` enrollments as `cancelled` with `stop_reason = 'converted'` (`haltOutcome("converted")`) and clears the LinkedIn resolve retry time. Other statuses stay.
 6. `interruptPersonRuns`, reason `converted`, ends active and paused runs and retires every unsent draft of an open run step. In hand-off mode no run exists and the Inbox reply draft survives.
 7. `appendPersonEvent` writes `lifecycle.converted` with the counts in `meta`.
 

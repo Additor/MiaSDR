@@ -44,7 +44,7 @@ import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { draftCanBecome } from "./reply-store-shared";
-import { LIVE_ENROLLMENT_STATUSES } from "@/contexts/outreach/domain/enrollment-status";
+import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { rowsOf } from "@/platform/db/sql-values";
 
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
@@ -493,11 +493,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       }
       const draftsRetired = await retireOpenDrafts(tx, recordIds, "The person was marked do not contact.");
       await interruptPersonRunsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
-      const stopped = await tx
-        .update(campaignEnrollments)
-        .set({ status: "suppressed", nextSendAt: null, stopReason: "do_not_contact", updatedAt: input.now })
-        .where(and(eq(campaignEnrollments.organizationId, input.organizationId), eq(campaignEnrollments.personId, input.personId), inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES])))
-        .returning({ id: campaignEnrollments.id });
+      const stopped = await haltPersonEnrollmentsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: input.personId,

@@ -20,7 +20,8 @@ import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStat
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 
 type Tx = DbTx;
 
@@ -247,10 +248,7 @@ export const drizzleOutreachStore: OutreachStore = {
       if (moved.length === 0) return;
       // A stopped enrollment keeps the status that stopped it (replied, bounced, ...).
       if (reason === "enrollment_stopped") return;
-      await tx
-        .update(campaignEnrollments)
-        .set({ status: "suppressed", nextSendAt: null, stopReason: reason, updatedAt: now })
-        .where(and(eq(campaignEnrollments.id, claim.enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES)));
+      await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), { status: "suppressed", reason }, now);
     });
   },
 
@@ -351,6 +349,7 @@ async function advanceEnrollment(tx: Tx, enrollmentId: string, stepNumber: numbe
       status: nextWaitDays === null ? "completed" : "active",
       nextSendAt: nextWaitDays === null ? null : new Date(now.getTime() + nextWaitDays * 24 * 60 * 60_000),
       ...(mailboxId ? { mailboxId } : {}),
+      updatedAt: now,
     })
     // Never move backwards: a reconciliation that lands late must not undo a newer step.
     // Compare and set on the status: a reply or unsubscribe that landed meanwhile stays.
@@ -359,15 +358,12 @@ async function advanceEnrollment(tx: Tx, enrollmentId: string, stepNumber: numbe
 
 async function scheduleRetry(tx: Tx, enrollmentId: string, attempt: number, now: Date, retryAfterMinutes: number, maxAttempts: number, error: string) {
   if (attempt >= maxAttempts) {
-    await tx
-      .update(campaignEnrollments)
-      .set({ status: "failed", nextSendAt: null, stopReason: `send_failed: ${error}`.slice(0, 500) })
-      .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES)));
+    await endEnrollmentsTx(tx, eq(campaignEnrollments.id, enrollmentId), failedOutcome("send_failed", error), now);
     return;
   }
   await tx
     .update(campaignEnrollments)
-    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000) })
+    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000), updatedAt: now })
     .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES)));
 }
 

@@ -132,8 +132,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "tenancy/infrastructure/drizzle-organization-store",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
-  // The reply stop and the suppression store, which conversations runs inside its own transactions.
-  "outreach/infrastructure/reply-stop",
+  // The enrollment outcome writer and the suppression store, which conversations runs inside its own transactions.
+  "outreach/infrastructure/enrollment-end",
   "outreach/infrastructure/suppression-store",
 ]);
 

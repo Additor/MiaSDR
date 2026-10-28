@@ -3,7 +3,8 @@ import { db, type DbTx } from "@/platform/db/client";
 import { campaignEnrollments, people, suppressionList } from "@/platform/db/schema";
 import type { FollowUpStop } from "../application/inbound-ports";
 import type { SuppressionStore } from "../email/application/unsubscribe";
-import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
+import { haltOutcome } from "../domain/enrollment-status";
+import { endEnrollmentsTx } from "./enrollment-end";
 
 type SuppressInput = Parameters<SuppressionStore["suppressEmail"]>[0];
 
@@ -17,26 +18,16 @@ export const createSuppressionStore = (followUps: FollowUpStop): SuppressionStor
       .values({ organizationId, email: normalized, reason, note: note ?? null, addedInSettings: addedInSettings ?? false })
       .onConflictDoNothing()
       .returning({ id: suppressionList.id });
-    const stopped = await tx
-      .update(campaignEnrollments)
-      .set({ status: reason === "bounced" ? "bounced" : "suppressed", nextSendAt: null, stopReason: reason })
-      .where(
-        and(
-          eq(campaignEnrollments.organizationId, organizationId),
-          eq(campaignEnrollments.channel, "email"),
-          inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES]),
-          inArray(
-            campaignEnrollments.personId,
-            tx
-              .select({ id: people.id })
-              .from(people)
-              .where(and(eq(people.organizationId, organizationId), sql`lower(${people.email}) = ${normalized}`)),
-          ),
-        ),
-      )
-      .returning({ id: campaignEnrollments.id });
+    const now = new Date();
+    const addressOwners = tx.select({ id: people.id }).from(people).where(and(eq(people.organizationId, organizationId), sql`lower(${people.email}) = ${normalized}`));
+    const stopped = await endEnrollmentsTx(
+      tx,
+      and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.channel, "email"), inArray(campaignEnrollments.personId, addressOwners)),
+      haltOutcome(reason),
+      now,
+    );
     // The follow-up sequence of a conversation stops in the same commit, with its unsent drafts.
-    await followUps.endEmailRunsTx(tx, organizationId, normalized, reason === "bounced" ? "bounce" : reason === "manual" ? "suppressed" : "unsubscribed", new Date());
+    await followUps.endEmailRunsTx(tx, organizationId, normalized, reason, now);
     return { stopped: stopped.length, added: inserted.length > 0 };
   }
   return {

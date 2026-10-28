@@ -1,4 +1,5 @@
 import type { DbTx } from "@/platform/db/client";
+import type { OutreachHalt } from "../domain/enrollment-status";
 import type { InboundClass } from "../email/domain/inbound";
 import type { InboundEmail } from "../email/application/ports";
 
@@ -65,7 +66,7 @@ export interface InboxLinkedInMessage {
  * imports conversations.
  */
 export interface FollowUpStop {
-  endEmailRunsTx(tx: DbTx, organizationId: string, email: string, reason: string, now: Date): Promise<number>;
+  endEmailRunsTx(tx: DbTx, organizationId: string, email: string, halt: OutreachHalt, now: Date): Promise<number>;
 }
 
 /**

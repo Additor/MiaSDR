@@ -29,7 +29,7 @@ const SKIPPED = new Set([`${BASE}/domain/default-reply-types.ts`]);
  * blockers share the word with the old type key; they name `contact_policies.do_not_contact`, not a reply type.
  */
 const ALLOWED_DNC: Record<string, { count: number; reason: string }> = {
-  [`${BASE}/after-reply/domain/sequences.ts`]: { count: 2, reason: "Interrupt reason for a run whose person is marked do not contact." },
+  [`${BASE}/after-reply/domain/sequences.ts`]: { count: 3, reason: "Interrupt reason for a run whose person is marked do not contact, and the outreach halt it maps from." },
   [`${BASE}/after-reply/domain/after-reply.ts`]: { count: 2, reason: "Start blocker for a person marked do not contact." },
   [`${BASE}/application/reply-ports.ts`]: { count: 3, reason: "Send and CC blockers for an address of a person marked do not contact." },
   [`${BASE}/application/linkedin-reply-ports.ts`]: { count: 1, reason: "LinkedIn send blocker for a person marked do not contact." },

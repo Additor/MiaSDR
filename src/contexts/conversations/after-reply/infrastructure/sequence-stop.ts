@@ -2,8 +2,9 @@ import { sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
-import { stopEnrollmentsOnReplyTx } from "@/contexts/outreach/infrastructure/reply-stop";
+import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
+import { runReasonOfHalt } from "../domain/sequences";
 import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports";
 
 /**
@@ -157,11 +158,11 @@ export async function stopPersonOutreachOnReplyTx(
   // Same lock as a restore of a removed lead (drizzle-enrollment-restore): one of the two commits first and the other sees it.
   await lockPersonOutreachTx(tx, input.organizationId, personIds);
 
-  const stopped = await stopEnrollmentsOnReplyTx(tx, input.organizationId, personIds, input.now);
+  const stopped = await haltPersonEnrollmentsTx(tx, input.organizationId, personIds, "replied", input.now);
   const runsEnded = await interruptPersonRunsTx(tx, input.organizationId, personIds, "reply", input.now);
 
-  for (const personId of new Set(stopped.map((e) => e.person_id))) {
-    const own = stopped.filter((e) => e.person_id === personId);
+  for (const personId of new Set(stopped.map((e) => e.personId))) {
+    const own = stopped.filter((e) => e.personId === personId);
     await tx.execute(sql`
       insert into events (organization_id, person_id, event_type, actor_type, to_data, meta)
       values (${input.organizationId}, ${personId}::uuid, 'outreach.stopped_by_reply', 'system',
@@ -172,4 +173,6 @@ export async function stopPersonOutreachOnReplyTx(
 }
 
 /** Outreach's view of these runs: src/composition hands it to outreach's suppression store. */
-export const followUpStop: FollowUpStop = { endEmailRunsTx: interruptEmailRunsTx };
+export const followUpStop: FollowUpStop = {
+  endEmailRunsTx: (tx, organizationId, email, halt, now) => interruptEmailRunsTx(tx, organizationId, email, runReasonOfHalt(halt), now),
+};

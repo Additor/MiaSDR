@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  runReasonOfHalt,
   assertConversationBelongsToRecord,
   assertPublishable,
   assertRunTransition,
@@ -190,5 +191,15 @@ describe("drafting helpers", () => {
     expect(reply).toContain("answers the lead's latest message");
     expect(nudge).toContain("has not replied");
     expect(nudge).toContain("Hi Lena");
+  });
+});
+
+describe("run reason of an outreach halt", () => {
+  it("keeps the run vocabulary the timeline labels", () => {
+    expect(runReasonOfHalt("replied")).toBe("reply");
+    expect(runReasonOfHalt("bounced")).toBe("bounce");
+    expect(runReasonOfHalt("complaint")).toBe("unsubscribed");
+    expect(runReasonOfHalt("manual")).toBe("suppressed");
+    expect(runReasonOfHalt("do_not_contact")).toBe("do_not_contact");
   });
 });

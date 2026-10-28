@@ -2,7 +2,8 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, linkedinEnrollmentDetails } from "@/platform/db/schema";
 import type { ConversionOutreach, EnrollmentSource, LiveEnrollmentSummary } from "../application/conversion";
-import { REMOVABLE_STATUSES } from "../domain/enrollment-status";
+import { haltOutcome, REMOVABLE_STATUSES } from "../domain/enrollment-status";
+import { endEnrollmentsTx } from "./enrollment-end";
 
 const CHUNK = 1_000;
 
@@ -13,8 +14,8 @@ function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
 }
 
 /**
- * Callee-owned writes and reads of the conversion. The raw stop SQL of `platform/db/sequence-stop.ts` gains nothing: the one write
- * here follows `removeEnrollments` (lock the rows in id order, repeat the status condition in the UPDATE).
+ * Callee-owned writes and reads of the conversion. The one write locks the rows in id order, as `removeEnrollments` does, then
+ * ends them through `endEnrollmentsTx`, which repeats the status condition in the UPDATE.
  */
 export async function stopPersonEnrollmentsTx(tx: DbHandle, input: { organizationId: string; personId: string; reason: "converted"; now: Date }): Promise<{ stopped: number }> {
   const { organizationId, personId, reason, now } = input;
@@ -40,11 +41,7 @@ export async function stopPersonEnrollmentsTx(tx: DbHandle, input: { organizatio
     .for("update");
   if (live.length === 0) return { stopped: 0 };
   // The status condition repeats in the UPDATE, so a writer that raced us (a reply, a bounce) keeps its final status.
-  const changed = await tx
-    .update(campaignEnrollments)
-    .set({ status: "cancelled", stopReason: reason, nextSendAt: null, updatedAt: now })
-    .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.id, live.map((e) => e.id)), inArray(campaignEnrollments.status, [...REMOVABLE_STATUSES])))
-    .returning({ id: campaignEnrollments.id, channel: campaignEnrollments.channel });
+  const changed = await endEnrollmentsTx(tx, and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.id, live.map((e) => e.id))), haltOutcome(reason), now);
   const linkedin = changed.filter((e) => e.channel === "linkedin").map((e) => e.id);
   if (linkedin.length > 0) await tx.update(linkedinEnrollmentDetails).set({ resolveNextAttemptAt: null }).where(inArray(linkedinEnrollmentDetails.enrollmentId, linkedin));
   return { stopped: changed.length };

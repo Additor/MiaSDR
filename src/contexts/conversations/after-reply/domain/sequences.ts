@@ -1,5 +1,6 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
 import type { FollowUpsRule } from "../../domain/reply-type";
+import type { OutreachHalt } from "@/contexts/outreach/domain/enrollment-status";
 
 /**
  * Pure rules for a campaign's Follow-ups after a reply flow. The flow has versions; a published version is immutable and a
@@ -128,6 +129,19 @@ export const ACTIVE_RUN_STATUSES: readonly RunStatus[] = ["active", "paused"];
 export const AFTER_REPLY_OFF = "after_reply_off";
 
 export type InterruptReason = "reply" | "do_not_contact" | "unsubscribed" | "bounce" | "suppressed" | "terminal_stage" | "record_closed" | "converted" | typeof AFTER_REPLY_OFF;
+
+/** The run reason stored when outreach halts for a person or an address. A complaint reads as an unsubscribe, a hand-added address as suppressed. */
+const RUN_REASON_OF_HALT: Record<OutreachHalt, InterruptReason> = {
+  replied: "reply",
+  bounced: "bounce",
+  unsubscribed: "unsubscribed",
+  complaint: "unsubscribed",
+  manual: "suppressed",
+  do_not_contact: "do_not_contact",
+  converted: "converted",
+};
+
+export const runReasonOfHalt = (halt: OutreachHalt): InterruptReason => RUN_REASON_OF_HALT[halt];
 
 /**
  * Whether the record's reply type lets follow-ups run. The type's Follow-ups rule (`reply_types.follow_ups`) decides;
