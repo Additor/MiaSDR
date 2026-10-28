@@ -38,6 +38,7 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/people/infrastructure/drizzle-contact-delete-store.ts": ["contactPolicies", "suppressionList"],
   "src/contexts/people/infrastructure/people-directory.ts": ["contactPolicies", "suppressionList"],
   "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "messages", "records"],
+  "src/contexts/outreach/infrastructure/drizzle-enrollment-admin.ts": ["contactPolicies"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["contactPolicies", "conversations", "events", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-lead-statuses.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
@@ -118,7 +119,7 @@ export function foreignWrites(own: string, source: string, table: ReturnType<typ
 export function upwardReads(own: string, source: string, table: ReturnType<typeof owners>): string[] {
   const lists = [...source.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["'][^"']*schema["']/g)].map((m) => m[1]);
   const imported = lists.flatMap((list) => list.split(",")).map((n) => n.trim().replace(/^type\s+/, "").split(" as ")[0]).filter(Boolean);
-  const raw = [...source.matchAll(/sql`([^`]*)`/g)].flatMap((t) => [...t[1].matchAll(/(?<!delete\s+)\b(?:from|join)\s+"?(\w+)"?/gi)].map((m) => table.bindingOf.get(m[1]) ?? ""));
+  const raw = [...source.matchAll(/sql(?:<[^`]*?>)?`([^`]*)`/g)].flatMap((t) => [...t[1].matchAll(/(?<!delete\s+)\b(?:from|join)\s+"?(\w+)"?/gi)].map((m) => table.bindingOf.get(m[1]) ?? ""));
   const names = [...imported, ...raw];
   return [...new Set(names.filter((n) => {
     const owner = table.byBinding.get(n);
@@ -151,7 +152,7 @@ describe("table ownership", () => {
     expect(scan(upwardReads)).toEqual(UPWARD_READS);
   });
 
-  it("catches a Drizzle write, a raw SQL write and an upward import", () => {
+  it("catches a Drizzle write, a raw SQL write, an upward import and a read in a typed sql template", () => {
     const table = owners();
     const source = [
       'import { conversations, people, mailboxes } from "@/platform/db/schema";',
@@ -159,9 +160,10 @@ describe("table ownership", () => {
       "await tx.update(people).set({ name });",
       "await tx.execute(sql`delete from campaign_enrollments where id = ${id}`);",
       "await tx.execute(sql`select 1 from drafts d join sequence_runs r on r.id = d.run_id`);",
+      "const dnc = sql<boolean>`exists (select 1 from contact_policies cp where cp.person_id = people.id)`;",
     ].join("\n");
     expect(foreignWrites("people", source, table)).toEqual(["campaign_enrollments"]);
     expect(foreignWrites("outreach", source, table)).toEqual(["people"]);
-    expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "mailboxes", "records", "sequenceRuns"]);
+    expect(upwardReads("people", source, table)).toEqual(["contactPolicies", "conversations", "drafts", "mailboxes", "records", "sequenceRuns"]);
   });
 });
