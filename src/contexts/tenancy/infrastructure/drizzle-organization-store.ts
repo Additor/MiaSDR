@@ -7,6 +7,7 @@ import { DEFAULT_PHONE_COUNTRY_KEY, normalizePhoneCountry } from "../domain/phon
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { isValidTimeZone } from "@/shared/time-zone";
 import type { OrganizationStore } from "../application/organization-settings";
+import { mergeChannelSettings } from "./channel-settings";
 
 const VALID_ZONE = (zone: unknown): zone is string => typeof zone === "string" && isValidTimeZone(zone);
 
@@ -59,13 +60,7 @@ export const drizzleOrganizationStore: OrganizationStore = {
         ...(patch.defaultPhoneCountry === undefined ? {} : { [DEFAULT_PHONE_COUNTRY_KEY]: patch.defaultPhoneCountry }),
       };
       if (Object.keys(values).length > 0) {
-        await tx
-          .insert(channelSettings)
-          .values({ organizationId, channel: "general", values, updatedBy: actorUserId })
-          .onConflictDoUpdate({
-            target: [channelSettings.organizationId, channelSettings.channel],
-            set: { values: sql`${channelSettings.values} || ${JSON.stringify(values)}::jsonb`, updatedBy: actorUserId, updatedAt: new Date() },
-          });
+        await mergeChannelSettings(tx, organizationId, "general", values, actorUserId);
       }
       for (const entry of audit) await recordAudit(tx, entry);
     });

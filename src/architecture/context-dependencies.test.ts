@@ -128,8 +128,12 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   // Credential encryption and live checks, a generic service.
   "integrations/infrastructure/credential-cipher",
   "integrations/infrastructure/credential-verifier",
+  // The provider account writer: Settings, Integrations and the LinkedIn page save credentials and config through it.
+  "integrations/infrastructure/provider-accounts",
   // The organization read (time zone, name).
   "tenancy/infrastructure/drizzle-organization-store",
+  // The channel settings merge: each context saves its own keys through it.
+  "tenancy/infrastructure/channel-settings",
   // The audit writer: every context records its organization-level changes through it.
   "tenancy/infrastructure/audit",
   // The member directory: assignee and owner checks and pickers.

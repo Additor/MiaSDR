@@ -3,7 +3,7 @@ import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db } from "@/platform/db/client";
 import { integrationAccounts, integrationCredentials } from "@/platform/db/schema";
 import type { IntegrationStore } from "../application/integration-management";
-import { envelopeVersion } from "./credential-cipher";
+import { saveProviderCredentialTx } from "./provider-accounts";
 
 export const drizzleIntegrationStore: IntegrationStore = {
   async list(organizationId) {
@@ -36,31 +36,16 @@ export const drizzleIntegrationStore: IntegrationStore = {
 
   async saveCredential(organizationId, account, encryptedPayload, audit) {
     return db.transaction(async (tx) => {
-      const [existing] = await tx
-        .select({ id: integrationAccounts.id })
-        .from(integrationAccounts)
-        .where(and(eq(integrationAccounts.organizationId, organizationId), eq(integrationAccounts.key, account.key)))
-        .for("update");
-      const now = new Date();
-      let id = existing?.id;
-      if (id) {
-        await tx.update(integrationAccounts).set({ enabled: true, updatedAt: now }).where(eq(integrationAccounts.id, id));
-      } else {
-        [{ id }] = await tx.insert(integrationAccounts).values({ organizationId, ...account }).returning({ id: integrationAccounts.id });
-      }
-      await tx
-        .insert(integrationCredentials)
-        .values({ accountId: id, encryptedPayload, encryptionVersion: envelopeVersion(encryptedPayload) })
-        .onConflictDoUpdate({ target: integrationCredentials.accountId, set: { encryptedPayload, encryptionVersion: envelopeVersion(encryptedPayload), updatedAt: now } });
+      const { id, created } = await saveProviderCredentialTx(tx, organizationId, account, encryptedPayload);
       await recordAudit(tx, {
         organizationId,
         actorUserId: audit.actorUserId,
         action: "integration.saved",
         entityType: "integration_account",
         entityId: id,
-        meta: { providerKey: account.key, change: existing ? "rotated" : "created", verified: audit.verified },
+        meta: { providerKey: account.key, change: created ? "created" : "rotated", verified: audit.verified },
       });
-      return { id, created: !existing };
+      return { id, created };
     });
   },
 
