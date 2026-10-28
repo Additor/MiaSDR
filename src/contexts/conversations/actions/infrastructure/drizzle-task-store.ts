@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { conversations, members, messages, notes, people, records, tasks, users } from "@/platform/db/schema";
+import { conversations, messages, notes, people, records, tasks, users } from "@/platform/db/schema";
 import { onVisibleRecordSql, publicConversation, publicConversationSql } from "@/platform/db/conversation-visibility";
 import type { NoteScope, TaskRow, TaskStore } from "../application/tasks-ports";
 
@@ -126,21 +126,6 @@ export const drizzleTaskStore: TaskStore = {
   async delete(organizationId, taskId) {
     const rows = await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.organizationId, organizationId))).returning({ id: tasks.id });
     return rows.length > 0;
-  },
-
-  async isMember(organizationId, userId) {
-    const [row] = await db.select({ id: members.id }).from(members).where(and(eq(members.organizationId, organizationId), eq(members.userId, userId)));
-    return Boolean(row);
-  },
-
-  async members(organizationId) {
-    const rows = await db
-      .select({ userId: members.userId, name: users.name })
-      .from(members)
-      .innerJoin(users, eq(users.id, members.userId))
-      .where(eq(members.organizationId, organizationId))
-      .orderBy(asc(users.name));
-    return rows;
   },
 
   async getNote(organizationId, scope, noteId) {

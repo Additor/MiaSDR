@@ -79,8 +79,6 @@ export interface TaskStore {
   setCompleted(input: { organizationId: string; taskId: string; actorUserId: string; completed: boolean; now: Date }): Promise<boolean>;
   delete(organizationId: string, taskId: string): Promise<boolean>;
   /** True when the user belongs to the organization. */
-  isMember(organizationId: string, userId: string): Promise<boolean>;
-  members(organizationId: string): Promise<Array<{ userId: string; name: string }>>;
 
   getNote(organizationId: string, scope: NoteScope, noteId: string): Promise<NoteRow | null>;
   updateNote(input: { organizationId: string; scope: NoteScope; noteId: string; title: string | null; body: string }): Promise<boolean>;

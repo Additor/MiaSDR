@@ -130,6 +130,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "integrations/infrastructure/credential-verifier",
   // The organization read (time zone, name).
   "tenancy/infrastructure/drizzle-organization-store",
+  // The member directory: assignee and owner checks and pickers.
+  "tenancy/infrastructure/drizzle-member-directory",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
   // Reachability: the read model, and the one writer of do not contact and the suppression list.

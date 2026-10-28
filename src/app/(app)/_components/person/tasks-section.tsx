@@ -5,6 +5,8 @@ import { listTasks } from "@/contexts/conversations/actions/application/tasks";
 import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-composition";
 import type { Actor } from "@/shared/errors";
 import { TasksPanel, type TaskTarget } from "./tasks-panel";
+import { listMemberChoices } from "@/contexts/tenancy/application/member-directory";
+import { memberDirectoryDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 
 /**
  * Loads the tasks and the organization's members. With `recordId`, one reply record's tasks; with `personId`, every task of
@@ -14,7 +16,7 @@ export async function TasksSection({ actor, compact, ...target }: TaskTarget & {
   await connection();
   const deps = taskDeps();
   const scope = target.recordId !== undefined ? { recordId: target.recordId } : { personId: target.personId };
-  const [tasks, members] = await Promise.all([listTasks(deps, actor, { state: "all", ...scope }), deps.store.members(actor.organizationId)]);
+  const [tasks, members] = await Promise.all([listTasks(deps, actor, { state: "all", ...scope }), listMemberChoices(memberDirectoryDeps(), actor)]);
   const admin = isOwnerOrAdmin(actor.role);
   return (
     <TasksPanel

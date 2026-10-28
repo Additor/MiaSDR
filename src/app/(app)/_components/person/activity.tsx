@@ -13,6 +13,8 @@ import { RecordSection } from "../record/record-header";
 import { toJson } from "../serialize";
 import { NotesPanel } from "./notes-panel";
 import { TasksPanel } from "./tasks-panel";
+import { listMemberChoices } from "@/contexts/tenancy/application/member-directory";
+import { memberDirectoryDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 
 const HISTORY_LIMIT = 50;
 
@@ -67,7 +69,7 @@ export async function PersonActivity({ actor, personId, first = "history" }: { a
     personReplyHandling.listPersonEvents(actor.organizationId, personId, HISTORY_LIMIT),
     listPersonNotes(deps, actor, personId),
     listTasks(deps, actor, { state: "all", personId }),
-    deps.store.members(actor.organizationId),
+    listMemberChoices(memberDirectoryDeps(), actor),
   ]);
   const admin = isOwnerOrAdmin(actor.role);
   const openTasks = tasks.filter((t) => !t.isCompleted).length;
