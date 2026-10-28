@@ -111,13 +111,11 @@ const STEP_TRANSITIONS: Record<StepRunStatus, readonly StepRunStatus[]> = {
 export const canRunTransition = (from: RunStatus, to: RunStatus) => RUN_TRANSITIONS[from].includes(to);
 export const canStepTransition = (from: StepRunStatus, to: StepRunStatus) => STEP_TRANSITIONS[from].includes(to);
 
-export function assertRunTransition(from: RunStatus, to: RunStatus): void {
-  if (!canRunTransition(from, to)) throw new ConflictError(`A ${from} follow-up run cannot become ${to}.`);
-}
-
-export function assertStepTransition(from: StepRunStatus, to: StepRunStatus): void {
-  if (!canStepTransition(from, to)) throw new ConflictError(`A ${from.replace(/_/g, " ")} step cannot become ${to.replace(/_/g, " ")}.`);
-}
+/** The same tables read the other way: the statuses a row may move to `to` from. Every status UPDATE filters on them. */
+const sourcesOf = <S extends string>(transitions: Record<S, readonly S[]>): Record<S, readonly S[]> =>
+  Object.fromEntries((Object.keys(transitions) as S[]).map((to) => [to, (Object.keys(transitions) as S[]).filter((from) => transitions[from].includes(to))])) as unknown as Record<S, readonly S[]>;
+export const RUN_FROM = sourcesOf(RUN_TRANSITIONS);
+export const STEP_FROM = sourcesOf(STEP_TRANSITIONS);
 
 /** Steps a run still has to get through. `failed` stays open so a person can retry or skip it. */
 export const OPEN_STEP_STATUSES: readonly StepRunStatus[] = ["scheduled", "drafting", "awaiting_review", "failed"];

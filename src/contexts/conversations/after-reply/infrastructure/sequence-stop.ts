@@ -4,7 +4,7 @@ import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
-import { runReasonOfHalt } from "../domain/sequences";
+import { OPEN_STEP_STATUSES, RUN_FROM, runReasonOfHalt, STEP_FROM, type RunStatus, type StepRunStatus } from "../domain/sequences";
 import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports";
 
 /**
@@ -24,7 +24,12 @@ export type StopFinal = "interrupted" | "cancelled";
 const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 /** Draft statuses a person has not acted on. A run that ends retires them; a send in flight is left alone. */
 export const RETIRABLE_DRAFTS = sqlValues(RETIRABLE_DRAFT_STATUSES);
-export const OPEN_STEPS = sql`('scheduled', 'drafting', 'awaiting_review', 'failed')`;
+export const OPEN_STEPS = sqlValues(OPEN_STEP_STATUSES);
+
+/** `status in (...)`: the statuses a run may become `to` from (`RUN_FROM`). Every run status UPDATE adds it. */
+export const runMayBecome = (to: RunStatus) => sql`status in ${sqlValues(RUN_FROM[to])}`;
+/** `status in (...)`: the statuses a step run may become `to` from (`STEP_FROM`). Every step status UPDATE adds it. */
+export const stepMayBecome = (to: StepRunStatus) => sql`status in ${sqlValues(STEP_FROM[to])}`;
 
 export async function recordEvent(
   tx: Tx,
@@ -66,8 +71,8 @@ export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ dr
     returning id`));
   await tx.execute(sql`
     update sequence_step_runs set status = 'cancelled', updated_at = ${ts(input.now)}
-    where sequence_run_id = ${input.runId} and organization_id = ${input.organizationId} and status in ${OPEN_STEPS}`);
-  await tx.execute(sql`update sequence_runs set status = ${input.final}, updated_at = ${ts(input.now)} where id = ${input.runId}`);
+    where sequence_run_id = ${input.runId} and organization_id = ${input.organizationId} and ${stepMayBecome("cancelled")}`);
+  await tx.execute(sql`update sequence_runs set status = ${input.final}, updated_at = ${ts(input.now)} where id = ${input.runId} and ${runMayBecome(input.final)}`);
   await tx.execute(sql`update records set next_action_at = null where id = ${run.record_id} and organization_id = ${input.organizationId} and workflow_state = 'waiting'`);
   await recordEvent(tx, {
     organizationId: input.organizationId,

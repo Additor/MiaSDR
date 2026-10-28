@@ -7,7 +7,7 @@ import type { FollowUpsRule } from "../../domain/reply-type";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, ts, zoneOfTx } from "./sequence-run-tx";
-import { endRunTx, recordEvent, type Tx } from "./sequence-stop";
+import { endRunTx, recordEvent, stepMayBecome, type Tx } from "./sequence-stop";
 import { knowledgeFor } from "../../infrastructure/thread-context";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
@@ -155,23 +155,23 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
             await tx.execute(sql`select id, sent_at from messages where organization_id = ${row.organization_id} and direction = 'outbound' and raw->>'draftId' = ${sr.draft_id} order by sent_at limit 1`),
           );
           if (!sent) return false;
-          await tx.execute(sql`update sequence_step_runs set status = 'sent', sent_message_id = ${sent.id}, last_error = null, updated_at = ${ts(now)} where id = ${sr.id}`);
+          await tx.execute(sql`update sequence_step_runs set status = 'sent', sent_message_id = ${sent.id}, last_error = null, updated_at = ${ts(now)} where id = ${sr.id} and ${stepMayBecome("sent")}`);
           await advanceRunTx(tx, { organizationId: row.organization_id, runId: sr.run_id, afterPosition: sr.position, from: asDate(sent.sent_at), now });
           await recordEvent(tx, { organizationId: row.organization_id, recordId: sr.record_id, type: "sequence.step_sent", actorUserId: null, to: { sequenceRunId: sr.run_id, position: sr.position, messageId: sent.id } });
         } else if (sr.draft_status === "discarded") {
           // A person discarded the draft: that step is handled, and the next waits its own delay from now.
-          await tx.execute(sql`update sequence_step_runs set status = 'skipped', updated_at = ${ts(now)} where id = ${sr.id}`);
+          await tx.execute(sql`update sequence_step_runs set status = 'skipped', updated_at = ${ts(now)} where id = ${sr.id} and ${stepMayBecome("skipped")}`);
           await advanceRunTx(tx, { organizationId: row.organization_id, runId: sr.run_id, afterPosition: sr.position, from: now, now });
           await recordEvent(tx, { organizationId: row.organization_id, recordId: sr.record_id, type: "sequence.step_skipped", actorUserId: null, to: { sequenceRunId: sr.run_id, position: sr.position, reason: "draft_discarded" } });
         } else if (sr.draft_status === "stale") {
           // Superseded or outdated by a context change that did not stop the run: draft the step again, a few times.
           if (sr.attempt_count >= MAX_DRAFT_ATTEMPTS) {
-            await tx.execute(sql`update sequence_step_runs set status = 'failed', last_error = 'The draft kept going stale.', updated_at = ${ts(now)} where id = ${sr.id}`);
+            await tx.execute(sql`update sequence_step_runs set status = 'failed', last_error = 'The draft kept going stale.', updated_at = ${ts(now)} where id = ${sr.id} and ${stepMayBecome("failed")}`);
           } else {
-            await tx.execute(sql`update sequence_step_runs set status = 'scheduled', draft_id = null, due_at = ${ts(now)}, updated_at = ${ts(now)} where id = ${sr.id}`);
+            await tx.execute(sql`update sequence_step_runs set status = 'scheduled', draft_id = null, due_at = ${ts(now)}, updated_at = ${ts(now)} where id = ${sr.id} and ${stepMayBecome("scheduled")}`);
           }
         } else {
-          await tx.execute(sql`update sequence_step_runs set status = 'failed', last_error = ${sr.draft_error ?? "The draft failed."}, updated_at = ${ts(now)} where id = ${sr.id}`);
+          await tx.execute(sql`update sequence_step_runs set status = 'failed', last_error = ${sr.draft_error ?? "The draft failed."}, updated_at = ${ts(now)} where id = ${sr.id} and ${stepMayBecome("failed")}`);
         }
         return true;
       });
@@ -312,7 +312,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
       // The draft must belong to the run's record. SQL only knows both sit in the organization.
       const [draft] = rowsOf<{ id: string }>(await tx.execute(sql`select id from drafts where id = ${draftId} and organization_id = ${organizationId} and record_id = ${sr.record_id}`));
       if (!draft) throw new Error("The draft does not belong to the run's record.");
-      await tx.execute(sql`update sequence_step_runs set status = 'awaiting_review', draft_id = ${draftId}, last_error = null, updated_at = ${ts(now)} where id = ${stepRunId}`);
+      await tx.execute(sql`update sequence_step_runs set status = 'awaiting_review', draft_id = ${draftId}, last_error = null, updated_at = ${ts(now)} where id = ${stepRunId} and ${stepMayBecome("awaiting_review")}`);
       await tx.execute(sql`
         update records set workflow_state = 'action_required', next_action_at = null
         where id = ${sr.record_id} and organization_id = ${organizationId} and workflow_state in ('waiting', 'idle')`);

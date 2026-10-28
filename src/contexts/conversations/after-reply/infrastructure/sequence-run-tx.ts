@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { dueAfter } from "../domain/sequences";
-import { interruptRecordRunsTx, recordEvent, type Tx } from "./sequence-stop";
+import { interruptRecordRunsTx, recordEvent, runMayBecome, type Tx } from "./sequence-stop";
 import { rowsOf } from "@/platform/db/sql-values";
 import type { FollowUpsOutcome, FollowUpsRule } from "../../domain/reply-type";
 
@@ -30,7 +30,7 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
       order by st.position limit 1`),
   );
   if (!next) {
-    await tx.execute(sql`update sequence_runs set status = 'completed', updated_at = ${ts(input.now)} where id = ${input.runId}`);
+    await tx.execute(sql`update sequence_runs set status = 'completed', updated_at = ${ts(input.now)} where id = ${input.runId} and ${runMayBecome("completed")}`);
     await tx.execute(sql`update records set next_action_at = null, workflow_state = case when workflow_state = 'waiting' then 'idle' else workflow_state end where id = ${run.record_id} and organization_id = ${input.organizationId}`);
     await recordEvent(tx, { organizationId: input.organizationId, recordId: run.record_id, type: "sequence.completed", actorUserId: null, to: { sequenceRunId: input.runId } });
     return { next: null };
