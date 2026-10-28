@@ -13,8 +13,6 @@ import { layerOf, sourceFiles } from "./context-layers";
 /** Source files that write a table another owner declares, with those tables. Shrink only. */
 const FOREIGN_WRITES: Record<string, string[]> = {
   "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments"],
-  "src/contexts/tenancy/infrastructure/drizzle-member-store.ts": ["sessions"],
-  "src/contexts/tenancy/infrastructure/drizzle-setup-store.ts": ["accounts", "users"],
 };
 
 /**

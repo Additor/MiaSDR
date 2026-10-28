@@ -125,6 +125,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "identity/infrastructure/auth",
   "identity/infrastructure/session",
   "identity/infrastructure/signup-facts",
+  // The Better Auth rows tenancy writes: the first admin, and a removed member's sessions.
+  "identity/infrastructure/user-accounts",
   // Credential encryption and live checks, a generic service.
   "integrations/infrastructure/credential-cipher",
   "integrations/infrastructure/credential-verifier",
