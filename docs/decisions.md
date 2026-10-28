@@ -875,7 +875,7 @@ Code: `src/contexts/grid` (README in `grid/README.md`), pages under `src/app/(ap
 
 ### Daily rollover
 
-- `platform.daily-rollover` claims `daily-rollover:<org>:<step>:<yyyy-mm-dd>` per organization and step, where the day is the local date in `channel_settings.general.timeZone` (UTC when unset). A DST day of 23 or 25 hours stays one day. A step that fails or runs out of budget retries alone after 5 minutes. One query reads the finished claims, so a finished organization costs nothing more.
+- `platform.daily-rollover` claims `daily-rollover:<org>:<step>:<yyyy-mm-dd>` per organization and step, where the day is the local date in the organization's zone. Tenancy's `organizationTimeZones` answers it by the rule every reader follows (a valid `general.timeZone`, then `organizations.timezone`, then UTC), and `src/composition/job-registry.ts` passes it to the job, so platform reads no context table. A DST day of 23 or 25 hours stays one day. A step that fails or runs out of budget retries alone after 5 minutes. One query reads the finished claims, so a finished organization costs nothing more.
 - Steps register in `src/composition/rollover-registry.ts` and must be idempotent. The one step, `backfill-linkedin-urls`, fills `people.linkedin_url` from the slug where it is missing.
 - No step resets a counter: the email daily limit counts today's `sends` rows, LinkedIn invitation caps are `sends` windows, `limit_reached_until` is a timestamp, and `search_leads_today` restarts on its own through `search_day` (UTC). A reset in the organization's zone would restart it mid UTC day and double the budget.
 

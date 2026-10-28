@@ -43,7 +43,6 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/platform/db/columns.ts": ["organizations"],
   "src/platform/db/conversation-visibility.ts": ["conversations", "records"],
   "src/platform/db/person-locks.ts": ["records"],
-  "src/platform/jobs/rollover.ts": ["channelSettings", "organizations"],
 };
 
 const ROOT = path.resolve(__dirname, "../..");

@@ -110,12 +110,14 @@ describeDb("slot claims, daily rollover and history pruning", () => {
       };
     };
     const ctx = (now: Date, budgetMs = 60_000) => ({ deadline: Date.now() + budgetMs, now: () => now });
+    // Tenancy's zones, as src/composition wires them.
+    const zones = async () => (await import("@/contexts/tenancy/infrastructure/drizzle-organization-store")).organizationTimeZones();
 
     it("runs once per local day per organization, with two zones", async () => {
       const seoul = await org("Asia/Seoul");
       const la = await org("America/Los_Angeles");
       const calls: string[] = [];
-      const job = rollover.createDailyRolloverJob([recorder(`t-${tag}-a`, calls)]);
+      const job = rollover.createDailyRolloverJob([recorder(`t-${tag}-a`, calls)], zones);
 
       // 23:30Z on the 14th: Seoul is already the 15th, Los Angeles still the 14th.
       const t1 = new Date("2026-10-14T23:30:00Z");
@@ -139,7 +141,7 @@ describeDb("slot claims, daily rollover and history pruning", () => {
       const calls: string[] = [];
       const bad = recorder(`t-${tag}-bad`, calls, { org: o });
       const good = recorder(`t-${tag}-good`, calls);
-      const job = rollover.createDailyRolloverJob([bad, good]);
+      const job = rollover.createDailyRolloverJob([bad, good], zones);
       const t = new Date();
       const first = await job.run(ctx(t));
       expect(first.detail?.failed).toBeGreaterThanOrEqual(1);
@@ -156,7 +158,7 @@ describeDb("slot claims, daily rollover and history pruning", () => {
     it("reports more work when the budget is spent and resumes later", async () => {
       const o = await org();
       const calls: string[] = [];
-      const job = rollover.createDailyRolloverJob([recorder(`t-${tag}-b1`, calls), recorder(`t-${tag}-b2`, calls)]);
+      const job = rollover.createDailyRolloverJob([recorder(`t-${tag}-b1`, calls), recorder(`t-${tag}-b2`, calls)], zones);
       const t = new Date();
       const cut = await job.run(ctx(t, -1));
       expect(cut.more).toBe(true);

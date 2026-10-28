@@ -28,6 +28,16 @@ export async function organizationTimeZone(organizationId: string, handle: Pick<
   return organizationZoneOf(rows[0]?.general, rows[0]?.column);
 }
 
+/** Every organization with its zone by the same rule, in id order. The daily rollover reads it for each local day. */
+export async function organizationTimeZones(): Promise<Array<{ organizationId: string; timeZone: string }>> {
+  const rows = (await db.execute(sql`
+    select o.id, o.timezone as "column", s."values" ->> 'timeZone' as general
+    from organizations o
+    left join channel_settings s on s.organization_id = o.id and s.channel = 'general'
+    order by o.id`)) as unknown as Array<{ id: string; column: string | null; general: string | null }>;
+  return rows.map((r) => ({ organizationId: r.id, timeZone: organizationZoneOf(r.general, r.column) }));
+}
+
 export const drizzleOrganizationStore: OrganizationStore = {
   async get(organizationId) {
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
