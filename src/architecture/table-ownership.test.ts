@@ -15,7 +15,7 @@ const FOREIGN_WRITES: Record<string, string[]> = {
   "src/contexts/conversations/infrastructure/drizzle-conversation-store.ts": ["people"],
   "src/contexts/conversations/infrastructure/drizzle-linkedin-conversation-store.ts": ["people"],
   "src/contexts/conversations/infrastructure/drizzle-linkedin-reply-store.ts": ["linkedinAccounts"],
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "contactPolicies", "suppression_list"],
+  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments"],
   "src/contexts/outreach/infrastructure/drizzle-channel-settings-store.ts": ["channelSettings"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["events"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["integrationAccounts", "integrationCredentials"],
@@ -33,21 +33,13 @@ const FOREIGN_WRITES: Record<string, string[]> = {
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "events", "records", "sends", "suppressionList"],
-  "src/contexts/people/infrastructure/drizzle-contact-delete-store.ts": ["contactPolicies", "suppressionList"],
-  "src/contexts/people/infrastructure/people-directory.ts": ["contactPolicies", "suppressionList"],
-  "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "contactPolicies", "conversations", "messages", "records"],
-  "src/contexts/outreach/infrastructure/drizzle-enrollment-admin.ts": ["contactPolicies"],
-  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["contactPolicies", "conversations", "events", "messages", "records"],
+  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "conversations", "events", "records", "sends"],
+  "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "conversations", "messages", "records"],
+  "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["conversations", "events", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-lead-statuses.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["contactPolicies", "conversations"],
-  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store.ts": ["contactPolicies"],
-  "src/contexts/outreach/email/infrastructure/drizzle-outreach-store.ts": ["contactPolicies"],
-  "src/contexts/outreach/infrastructure/drizzle-management-stores.ts": ["contactPolicies"],
+  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["conversations"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
-  "src/contexts/outreach/infrastructure/drizzle-reachability.ts": ["contactPolicies"],
-  "src/contexts/outreach/email/infrastructure/drizzle-test-send-store.ts": ["contactPolicies"],
   "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "records"],
   "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "drafts", "linkedinAccounts", "mailboxes", "people"],
   "src/platform/db/audit.ts": ["auditLog"],
@@ -159,10 +151,10 @@ describe("table ownership", () => {
       "await tx.update(people).set({ name });",
       "await tx.execute(sql`delete from campaign_enrollments where id = ${id}`);",
       "await tx.execute(sql`select 1 from drafts d join sequence_runs r on r.id = d.run_id`);",
-      "const dnc = sql<boolean>`exists (select 1 from contact_policies cp where cp.person_id = people.id)`;",
+      "const sent = sql<boolean>`exists (select 1 from sends s where s.person_id = people.id)`;",
     ].join("\n");
     expect(foreignWrites("people", source, table)).toEqual(["campaign_enrollments"]);
     expect(foreignWrites("outreach", source, table)).toEqual(["people"]);
-    expect(upwardReads("people", source, table)).toEqual(["contactPolicies", "conversations", "drafts", "mailboxes", "records", "sequenceRuns"]);
+    expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "mailboxes", "records", "sends", "sequenceRuns"]);
   });
 });

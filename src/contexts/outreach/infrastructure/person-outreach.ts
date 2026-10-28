@@ -8,8 +8,8 @@ import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 /*
  * Callee-owned functions for deleting a contact ("Contacts and Companies CRUD" in docs/decisions.md). The
  * leads use case holds the transaction and calls these after `lockPersonForDelete`, which takes the person's outreach
- * advisory lock, and the people row lock: `personOutreachBlockers` (step 5), `personOutreachCounts` (step 8),
- * `keepEmailSuppressed` (step 9) and `purgePersonOutreach` (step 12). `leadsInRunningCampaigns` feeds the merge preview.
+ * advisory lock, and the people row lock: `personOutreachBlockers` (step 5), `personOutreachCounts` (step 8) and
+ * `purgePersonOutreach` (step 12). `leadsInRunningCampaigns` feeds the merge preview.
  */
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -17,8 +17,6 @@ const HOUR_MS = 60 * 60 * 1000;
 export const RECENT_SEND_MS = 24 * HOUR_MS;
 /** A LinkedIn invitation this recent blocks a delete, so the weekly invitation cap keeps counting it (P3). */
 export const RECENT_INVITE_MS = 7 * 24 * HOUR_MS;
-
-export const DELETED_WHILE_MARKED_NOTE = "Deleted while marked do not contact.";
 
 export interface PersonOutreachCounts {
   /** Enrollments of the person, one per campaign. */
@@ -107,26 +105,6 @@ export async function personOutreachBlockers(tx: DbHandle, actor: Actor, personI
   if (row.last_invite) blockers.push({ reason: "recent_invite", until: new Date(new Date(row.last_invite).getTime() + RECENT_INVITE_MS) });
   if (row.personal) blockers.push({ reason: "personal_campaign_sends" });
   return blockers;
-}
-
-/**
- * Step 9 of a contact delete, the lead delete's rule: a person marked do not contact leaves their email on the suppression
- * list. An existing suppression row stays as it is. The caller reads `doNotContact` under its `contact_policies` lock.
- * Returns whether the email is suppressed after the call, which the dialog and the audit row report.
- */
-export async function keepEmailSuppressed(tx: DbHandle, organizationId: string, input: { email: string | null; doNotContact: boolean }): Promise<boolean> {
-  const email = input.email?.trim().toLowerCase();
-  if (!email) return false;
-  if (input.doNotContact) {
-    await tx.execute(sql`
-      insert into suppression_list (organization_id, email, reason, note)
-      values (${organizationId}, ${email}, 'manual', ${DELETED_WHILE_MARKED_NOTE})
-      on conflict (organization_id, email) do nothing`);
-  }
-  const [row] = rowsOf<{ kept: boolean }>(
-    await tx.execute(sql`select exists (select 1 from suppression_list where organization_id = ${organizationId} and email = ${email}) as kept`),
-  );
-  return row.kept;
 }
 
 /**

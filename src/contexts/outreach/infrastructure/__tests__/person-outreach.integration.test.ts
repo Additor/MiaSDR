@@ -180,26 +180,6 @@ describeDb("contact delete: outreach blockers, counts, suppression and purge", (
     expect(await count(o.actors.admin)).toEqual({ campaigns: 2, sends: 3, hidden: false });
   });
 
-  it("keeps a marked contact's email suppressed and leaves an existing row as it is", async () => {
-    const o = await organization();
-    const keep = (email: string | null, doNotContact: boolean) => inTx((tx) => outreach.keepEmailSuppressed(tx, o.org, { email, doNotContact }));
-
-    expect(await keep(`Marked-${o.tag}@Lead.test`, true)).toBe(true);
-    const [marked] = await sql`select reason, note from suppression_list where organization_id = ${o.org} and email = ${`marked-${o.tag}@lead.test`}`;
-    expect(marked).toEqual({ reason: "manual", note: "Deleted while marked do not contact." });
-
-    await sql`insert into suppression_list (organization_id, email, reason, note) values (${o.org}, ${`gone-${o.tag}@lead.test`}, 'unsubscribed', 'clicked')`;
-    expect(await keep(`gone-${o.tag}@lead.test`, true)).toBe(true);
-    expect(await keep(`gone-${o.tag}@lead.test`, false)).toBe(true);
-    const existing = await sql`select reason, note from suppression_list where organization_id = ${o.org} and email = ${`gone-${o.tag}@lead.test`}`;
-    expect(existing).toEqual([{ reason: "unsubscribed", note: "clicked" }]);
-
-    expect(await keep(`free-${o.tag}@lead.test`, false)).toBe(false);
-    expect(await keep(null, true)).toBe(false);
-    const [{ n }] = await sql`select count(*)::int as n from suppression_list where organization_id = ${o.org}`;
-    expect(n).toBe(2);
-  });
-
   it("purges the person's enrollments with their sends and LinkedIn details and touches no one else", async () => {
     const o = await organization();
     const other = await organization();

@@ -266,35 +266,6 @@ export const messages = pgTable(
   ],
 );
 
-/** Do-not-contact applies to every channel. Three legal shapes: never set, set, cleared. */
-export const contactPolicies = pgTable(
-  "contact_policies",
-  {
-    personId: uuid("person_id").primaryKey(),
-    organizationId: orgId(),
-    doNotContact: boolean("do_not_contact").notNull().default(false),
-    reason: text("reason"),
-    source: text("source"),
-    setAt: tstz("set_at"),
-    clearedAt: tstz("cleared_at"),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
-    check("contact_policies_source_ck", sql`${t.source} is null or ${t.source} in ('human', 'integration', 'inbound_request')`),
-    check(
-      "contact_policies_state_ck",
-      sql`(
-        (${t.doNotContact} and ${t.source} is not null and ${t.setAt} is not null and ${t.clearedAt} is null)
-        or (not ${t.doNotContact} and ${t.source} is not null and ${t.setAt} is not null and ${t.clearedAt} is not null and ${t.clearedAt} >= ${t.setAt})
-        or (not ${t.doNotContact} and ${t.source} is null and ${t.setAt} is null and ${t.clearedAt} is null)
-      )`,
-    ),
-    // Few rows match, so the partial index stays small.
-    index("contact_policies_org_dnc_idx").on(t.organizationId).where(sql`${t.doNotContact}`),
-  ],
-);
-
 /** Inbound events that could not be matched to a person. */
 export const identityExceptions = pgTable(
   "identity_exceptions",

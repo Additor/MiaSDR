@@ -244,8 +244,9 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### Reachability and do not contact
 
-- Reachability is separate from lead status (`outreach/domain/reachability.ts`, read by `readReachability`): do not contact with reason and time, email open, suppressed or missing, LinkedIn open or missing. A suppressed address blocks email and leaves LinkedIn open.
-- `setPersonDoNotContact` (conversations) is the one writer. `POST /api/people/[personId]/dnc` sets or clears it; `POST /api/people/dnc` marks 1 to 200 people, one transaction each, reporting `already_marked`, `not_found` or `retryable`. Setting needs a reason (500 characters at most).
+- Reachability is separate from lead status (`people/domain/reachability.ts`, read by `readReachability`): do not contact with reason and time, email open, suppressed or missing, LinkedIn open or missing. A suppressed address blocks email and leaves LinkedIn open.
+- The people context owns `contact_policies` and `suppression_list` and is their one writer (`people/infrastructure/reachability.ts`). The contexts above decide when to write and run their own follow-through in the same transaction: conversations for do not contact (records, drafts, runs, and outreach's enrollment halt), outreach for a suppressed address (enrollments, and conversations' run stop through `FollowUpStop`).
+- `setPersonDoNotContact` (conversations) is the one use case that sets or clears the flag; it writes the policy through people's `writeDoNotContactTx`. `POST /api/people/[personId]/dnc` sets or clears it; `POST /api/people/dnc` marks 1 to 200 people, one transaction each, reporting `already_marked`, `not_found` or `retryable`. Setting needs a reason (500 characters at most).
 - Setting upserts `contact_policies` (source `human`) and, in the same transaction, sets the person's `pending` and `active` enrollments to `suppressed` with `stop_reason = 'do_not_contact'`, ends follow-up runs, retires open drafts and returns open reply handling to `action_required`. Clearing removes the flag and revives nothing. The flag applies to every channel, and the send engines check it again before each provider call.
 
 ### Delete
@@ -635,7 +636,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 #### Context boundaries
 
 - `src/contexts/deals` owns `deals` and `deal_stages`. Its one cross-context write port is `ConvertLead`. `deals/infrastructure/crm-read.ts` is the read model of the CRM screens: read-only SQL over `people`, `companies`, `deals`, `deal_stages` and `events`, with a test that pins the columns it reads.
-- The people context owns `people` and `companies`: `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`people/infrastructure/people-directory.ts`).
+- The people context owns `people`, `companies` and reachability (`contact_policies`, `suppression_list`): `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`people/infrastructure/people-directory.ts`).
 - Outreach owns `stopPersonEnrollmentsTx`, `liveEnrollmentSummary`, `latestRepliedEnrollment`, `enrollmentSources` (`drizzle-conversion-outreach.ts`), `notContactSql` and the delete side in `person-outreach.ts`.
 - Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
 - The people context imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
@@ -752,14 +753,14 @@ A contact without an open deal can be deleted (`deleteContact`, `DELETE /api/con
 
 1. `lockPersonForDelete`: the person's records `FOR UPDATE` in id order, their conversations `FOR UPDATE` in id order (a message insert needs `FOR KEY SHARE` on its conversation, so no reply lands mid-purge), then the person advisory lock. After the first lock the wait drops to 300 ms.
 2. The `people` row `FOR UPDATE`. A gone person answers 404, a lead 409 `not_a_contact`.
-3. The `contact_policies` row `FOR UPDATE`.
+3. The `contact_policies` row `FOR UPDATE` (people's `lockDoNotContact`).
 4. Every deal of the person `FOR UPDATE`.
 5. Blockers answer 409 `contact_blocked { blockers }`: `open_deals` (named and linked in the dialog), `send_in_flight`, `recent_send` (a campaign send under 24 hours old, which today's mailbox limit counts), `recent_invite` (a LinkedIn invitation under 7 days old, which the weekly cap counts), `ai_job_running`, and `private_conversation` or `personal_campaign_sends` when another member's personal campaign holds the person and the actor is not its creator, an owner or an admin.
 6. The counts must equal the counts the dialog showed, else 409 `counts_changed { counts }`.
-7. `keepEmailSuppressed`: a person marked do not contact gets a `manual` suppression row, so the address stays Email suppressed.
+7. `keepEmailSuppressed` (people): a person marked do not contact gets a `manual` suppression row, so the address stays Email suppressed. A lead delete applies the same rule (`suppressDoNotContactAddressesTx`).
 8. `purgePersonHandling` deletes reply handling, conversations, messages and history events. It turns `miasdr.allow_purge` on and off around its own deletes; `allow-purge-scope.test.ts` fails when another file sets the switch.
 9. Closed deals, then the person's enrollments and sends (campaign reports drop those sends).
-10. The `people` row; notes, tasks and `lead_ccs` go with it.
+10. The `contact_policies` row, then the `people` row; notes, tasks and `lead_ccs` go with it.
 11. Stamp `crm_listed_at` on the person's company when no contact is left.
 12. Audit `person.deleted` with the counts and `suppressionKept`.
 

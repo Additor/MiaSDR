@@ -73,7 +73,11 @@ export interface ContactDeleteStore {
   lock(tx: DbHandle, organizationId: string, personId: string): Promise<ContactForDelete | null>;
   /** `statement_timeout` for the rest of the transaction. */
   limitStatements(tx: DbHandle): Promise<void>;
-  /** Step 14: deletes the people row. Notes, tasks and `lead_ccs` go with it. */
+  /** Step 3: the person's do not contact row `FOR UPDATE`. A person without a row is not marked. */
+  lockDoNotContact(tx: DbHandle, organizationId: string, personId: string): Promise<{ doNotContact: boolean }>;
+  /** Step 9: a person marked do not contact leaves their address suppressed. Returns whether the address is suppressed after the call. */
+  keepEmailSuppressed(tx: DbHandle, organizationId: string, person: { id: string; email: string | null }): Promise<boolean>;
+  /** Step 14: deletes the do not contact row and the people row. Notes, tasks and `lead_ccs` go with it. */
   deletePerson(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
   /** A company whose last contact went stays in Companies. */
   stampCompaniesLeftByContacts(tx: DbHandle, organizationId: string, companyIds: readonly string[]): Promise<void>;
@@ -82,7 +86,6 @@ export interface ContactDeleteStore {
 /** Conversations: `person-handling.ts` and `person-purge.ts`. */
 export interface ContactDeleteHandling {
   lockPersonForDelete(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
-  lockContactPolicy(tx: DbHandle, organizationId: string, personId: string): Promise<{ doNotContact: boolean }>;
   counts(tx: DbHandle, actor: Actor, personId: string): Promise<{ conversations: number; messages: number; events: number; notes: number; tasks: number; hidden: boolean }>;
   blockers(tx: DbHandle, actor: Actor, personId: string): Promise<Array<{ reason: "send_in_flight" | "ai_job_running" | "private_conversation" }>>;
   purge(tx: DbHandle, organizationId: string, personId: string): Promise<unknown>;
@@ -103,8 +106,6 @@ export interface ContactDeleteDeals {
 export interface ContactDeleteOutreach {
   counts(tx: DbHandle, actor: Actor, personId: string): Promise<{ campaigns: number; sends: number; hidden: boolean }>;
   blockers(tx: DbHandle, actor: Actor, personId: string, now: Date): Promise<Array<{ reason: "send_in_flight" | "personal_campaign_sends" } | { reason: "recent_send" | "recent_invite"; until: Date }>>;
-  /** Step 9: returns whether the email has a suppression row after the call. */
-  keepEmailSuppressed(tx: DbHandle, organizationId: string, input: { email: string | null; doNotContact: boolean }): Promise<boolean>;
   /** Step 12. */
   purge(tx: DbHandle, organizationId: string, personId: string): Promise<unknown>;
 }
@@ -248,7 +249,7 @@ export async function deleteContact(deps: ContactDeleteDeps, actor: Actor, perso
         await deps.people.limitStatements(tx);
         await deps.handling.lockPersonForDelete(tx, organizationId, personId);
         const person = checkPerson(await deps.people.lock(tx, organizationId, personId));
-        const { doNotContact } = await deps.handling.lockContactPolicy(tx, organizationId, personId);
+        await deps.people.lockDoNotContact(tx, organizationId, personId);
         const deals = await deps.deals.lock(tx, organizationId, personId);
         const blockers = await blockersOf(deps, tx, actor, personId, deals, deps.now?.() ?? new Date());
         if (blockers.length > 0) throw new ConflictError("This contact cannot be deleted.", { code: "contact_blocked", blockers });
@@ -259,7 +260,7 @@ export async function deleteContact(deps: ContactDeleteDeps, actor: Actor, perso
           throw new ConflictError(`${Name(person)} changed while this was open. Check the new counts and confirm again.`, { code: "counts_changed", counts });
         }
 
-        const suppressionKept = await deps.outreach.keepEmailSuppressed(tx, organizationId, { email: person.email, doNotContact });
+        const suppressionKept = await deps.people.keepEmailSuppressed(tx, organizationId, person);
         await deps.handling.purge(tx, organizationId, personId);
         await deps.deals.deleteClosed(tx, organizationId, personId);
         await deps.outreach.purge(tx, organizationId, personId);

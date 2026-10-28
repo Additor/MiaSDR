@@ -45,6 +45,7 @@ import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { draftCanBecome } from "./reply-store-shared";
 import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
+import { writeDoNotContactTx } from "@/contexts/people/infrastructure/reachability";
 import { rowsOf } from "@/platform/db/sql-values";
 
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
@@ -442,34 +443,24 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     return personGoneAsNotFound(() => db.transaction(async (tx) => {
       const [person] = await tx.select({ id: people.id }).from(people).where(and(eq(people.id, input.personId), eq(people.organizationId, input.organizationId)));
       if (!person) throw new NotFoundError("Person not found");
-      // One writer per person at a time, across set and clear.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`dnc:${input.personId}`}, 0))`);
-      const [previous] = await tx.select().from(contactPolicies).where(eq(contactPolicies.personId, input.personId));
+      // People writes the policy under the person's `dnc:` lock; the follow-through on records, drafts, runs and enrollments is ours.
+      const { changed, previous } = await writeDoNotContactTx(tx, input);
+      if (!changed) return { changed: false, doNotContact: input.enabled, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
 
       if (!input.enabled) {
-        if (!previous?.doNotContact) return { changed: false, doNotContact: false, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
-        await tx
-          .update(contactPolicies)
-          .set({ doNotContact: false, clearedAt: input.now, reason: input.reason, updatedAt: input.now })
-          .where(eq(contactPolicies.personId, input.personId));
         await tx.insert(events).values({
           organizationId: input.organizationId,
           personId: input.personId,
           eventType: "contact_policy.dnc_cleared",
           actorType: "human",
           actorUserId: input.actorUserId,
-          fromData: { doNotContact: true, reason: previous.reason },
+          fromData: { doNotContact: true, reason: previous?.reason ?? null },
           toData: { doNotContact: false },
           meta: { reason: input.reason },
         });
         return { changed: true, doNotContact: false, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
       }
 
-      if (previous?.doNotContact) return { changed: false, doNotContact: true, recordsUpdated: 0, draftsRetired: 0, enrollmentsStopped: 0 };
-      await tx
-        .insert(contactPolicies)
-        .values({ personId: input.personId, organizationId: input.organizationId, doNotContact: true, reason: input.reason, source: "human", setAt: input.now, clearedAt: null })
-        .onConflictDoUpdate({ target: contactPolicies.personId, set: { doNotContact: true, reason: input.reason, source: "human", setAt: input.now, clearedAt: null, updatedAt: input.now } });
 
       const owned = await tx.select().from(records).where(and(eq(records.personId, input.personId), eq(records.organizationId, input.organizationId))).for("update");
       const recordIds = owned.map((r) => r.id);

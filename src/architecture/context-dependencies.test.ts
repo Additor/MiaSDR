@@ -132,6 +132,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "tenancy/infrastructure/drizzle-organization-store",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
+  // Reachability: the read model, and the one writer of do not contact and the suppression list.
+  "people/infrastructure/reachability",
   // The enrollment outcome writer and the suppression store, which conversations runs inside its own transactions.
   "outreach/infrastructure/enrollment-end",
   "outreach/infrastructure/suppression-store",

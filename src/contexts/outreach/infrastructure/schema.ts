@@ -65,28 +65,6 @@ export const mailboxes = pgTable(
   ],
 );
 
-export const suppressionList = pgTable(
-  "suppression_list",
-  {
-    id: pk(),
-    organizationId: orgId(),
-    /** Stored lowercased. */
-    email: text("email").notNull(),
-    reason: text("reason").notNull(),
-    note: text("note"),
-    /**
-     * True only for an address an owner or admin pasted on Settings, Suppression list. Only those rows can be removed
-     * there: other `manual` rows come from a stop request or from deleting a person marked do not contact.
-     */
-    addedInSettings: boolean("added_in_settings").notNull().default(false),
-    createdAt: createdAt(),
-  },
-  (t) => [
-    unique("suppression_org_email_uq").on(t.organizationId, t.email),
-    check("suppression_reason_ck", sql`${t.reason} in ('unsubscribed', 'bounced', 'manual', 'complaint')`),
-  ],
-);
-
 export const linkedinAccounts = pgTable(
   "linkedin_accounts",
   {

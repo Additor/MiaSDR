@@ -3,6 +3,7 @@ import type { DbHandle } from "@/platform/db/client";
 import { CONTACT_DELETE_STATEMENT_TIMEOUT, type ContactDeleteStore, type ContactForDelete } from "../application/contact-delete";
 import { stampCompaniesLeftByContacts } from "./company-domain-store";
 import { rowsOf } from "@/platform/db/sql-values";
+import { deleteDoNotContactTx, isSuppressed, lockDoNotContactTx, suppressDoNotContactAddressesTx } from "./reachability";
 
 /*
  * The leads side of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md):
@@ -56,7 +57,13 @@ export const drizzleContactDeleteStore: ContactDeleteStore = {
   limitStatements: async (tx) => {
     await tx.execute(sql.raw(`set local statement_timeout = '${CONTACT_DELETE_STATEMENT_TIMEOUT}'`));
   },
+  lockDoNotContact: lockDoNotContactTx,
+  keepEmailSuppressed: async (tx, organizationId, person) => {
+    await suppressDoNotContactAddressesTx(tx, organizationId, [person.id]);
+    return isSuppressed(tx, organizationId, person.email);
+  },
   deletePerson: async (tx, organizationId, personId) => {
+    await deleteDoNotContactTx(tx, organizationId, [personId]);
     await tx.execute(sql`delete from people where organization_id = ${organizationId} and id = ${personId}::uuid`);
   },
   stampCompaniesLeftByContacts,

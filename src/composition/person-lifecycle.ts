@@ -1,4 +1,4 @@
-import { appendPersonEvent, lockContactPolicy, lockPersonForDelete, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
+import { appendPersonEvent, lockPersonForDelete, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
 import { purgePersonHandling } from "@/contexts/conversations/infrastructure/person-purge";
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
@@ -13,7 +13,7 @@ import { drizzleContactDeleteStore } from "@/contexts/people/infrastructure/driz
 import { drizzleContactStore, personTransaction } from "@/contexts/people/infrastructure/drizzle-contact-store";
 import { drizzleLeadsAudit } from "@/contexts/people/infrastructure/drizzle-leads-audit";
 import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
-import { keepEmailSuppressed, leadsInRunningCampaigns, personOutreachBlockers, personOutreachCounts, purgePersonOutreach } from "@/contexts/outreach/infrastructure/person-outreach";
+import { leadsInRunningCampaigns, personOutreachBlockers, personOutreachCounts, purgePersonOutreach } from "@/contexts/outreach/infrastructure/person-outreach";
 import { drizzleOrganizationStore } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { retryOnce } from "@/platform/db/errors";
 import type { Actor } from "@/shared/errors";
@@ -65,7 +65,6 @@ export const contactDeleteDeps: ContactDeleteDeps = {
   people: drizzleContactDeleteStore,
   handling: {
     lockPersonForDelete,
-    lockContactPolicy,
     counts: personHandlingCounts,
     blockers: personHandlingBlockers,
     purge: purgePersonHandling,
@@ -80,7 +79,6 @@ export const contactDeleteDeps: ContactDeleteDeps = {
   outreach: {
     counts: personOutreachCounts,
     blockers: personOutreachBlockers,
-    keepEmailSuppressed,
     purge: purgePersonOutreach,
   },
   audit: drizzleLeadsAudit,

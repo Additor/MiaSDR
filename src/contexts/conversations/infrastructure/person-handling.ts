@@ -4,7 +4,7 @@ import { db, type DbHandle } from "@/platform/db/client";
 import { HELD_LOCK_TIMEOUT, setLockTimeout } from "@/platform/db/person-locks";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { endRunCountingTx, OPEN_STEPS, RETIRABLE_DRAFTS, type Tx } from "../after-reply/infrastructure/sequence-stop";
-import { contactPolicies, conversations, events, records } from "@/platform/db/schema";
+import { conversations, events, records } from "@/platform/db/schema";
 import type { Actor } from "@/shared/errors";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
 import type { PersonChannel, PersonEventInput, PersonEventView, PersonReplyHandling, PersonRunStop } from "../application/person-ports";
@@ -140,7 +140,7 @@ export async function listPersonEvents(organizationId: string, personId: string,
 /*
  * Callee-owned functions for deleting a contact ("Contacts and Companies CRUD" in docs/decisions.md). The
  * leads use case holds the transaction and calls these in this order: `lockPersonForDelete` first, then the people row,
- * then `lockContactPolicy`, then the blockers and counts, then `purgePersonHandling` (person-purge.ts).
+ * then people's do not contact lock, then the blockers and counts, then `purgePersonHandling` (person-purge.ts).
  */
 
 /**
@@ -161,16 +161,6 @@ export async function lockPersonForDelete(tx: DbHandle, organizationId: string, 
   }
   await lockPersonOutreachTx(tx as Tx, organizationId, [personId]);
   await setLockTimeout(tx, HELD_LOCK_TIMEOUT);
-}
-
-/** Step 3 of a contact delete: the person's `contact_policies` row `FOR UPDATE`. A person without a row is not marked. */
-export async function lockContactPolicy(tx: DbHandle, organizationId: string, personId: string): Promise<{ doNotContact: boolean }> {
-  const [row] = await tx
-    .select({ doNotContact: contactPolicies.doNotContact })
-    .from(contactPolicies)
-    .where(and(eq(contactPolicies.organizationId, organizationId), eq(contactPolicies.personId, personId)))
-    .for("update");
-  return { doNotContact: row?.doNotContact ?? false };
 }
 
 export interface PersonHandlingCounts {

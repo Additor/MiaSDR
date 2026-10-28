@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { recordAudit } from "@/platform/db/audit";
 import { suppressionList } from "@/platform/db/schema";
+import { removeSettingsSuppression } from "@/contexts/people/infrastructure/reachability";
 import type { SuppressionListStore, SuppressionReason, SuppressionRow } from "../application/suppression-list";
 
 const columns = { id: suppressionList.id, email: suppressionList.email, reason: suppressionList.reason, note: suppressionList.note, addedInSettings: suppressionList.addedInSettings, createdAt: suppressionList.createdAt };
@@ -35,7 +36,7 @@ export const drizzleSuppressionListStore: SuppressionListStore = {
   },
 
   async remove(organizationId, id) {
-    await db.delete(suppressionList).where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.id, id), eq(suppressionList.addedInSettings, true)));
+    await removeSettingsSuppression(db, organizationId, id);
   },
 
   async audit(entry) {

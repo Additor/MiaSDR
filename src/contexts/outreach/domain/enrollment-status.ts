@@ -1,3 +1,5 @@
+import { SUPPRESSION_REASONS } from "@/contexts/people/domain/reachability";
+
 /** Enrollment statuses. Mirrors the `enrollments_status_ck` check in the schema. */
 export const ENROLLMENT_STATUSES = ["pending", "active", "replied", "completed", "bounced", "suppressed", "failed", "cancelled", "removed"] as const;
 export type EnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number];
@@ -43,7 +45,7 @@ export interface EnrollmentOutcome {
  * The suppression reasons (`bounced`, `unsubscribed`, `complaint`, `manual`) are the reasons of `suppression_list`.
  * Conversations ends the person's follow-up runs for the same halt and keeps its own run reason for it.
  */
-export const OUTREACH_HALTS = ["replied", "bounced", "unsubscribed", "complaint", "manual", "do_not_contact", "converted"] as const;
+export const OUTREACH_HALTS = ["replied", ...SUPPRESSION_REASONS, "do_not_contact", "converted"] as const;
 export type OutreachHalt = (typeof OUTREACH_HALTS)[number];
 
 const HALT_STATUS: Record<OutreachHalt, EnrollmentOutcomeStatus> = {

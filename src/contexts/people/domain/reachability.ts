@@ -2,11 +2,23 @@ import { humanizeToken } from "@/shared/humanize";
 
 /*
  * Reachability: which channels can reach a person, lead or contact. It is its own state and never part of the lead
- * status. Do not contact (`contact_policies`, owned by conversations) blocks every channel. A suppressed address
- * (`suppression_list`, owned by outreach) blocks email only: LinkedIn stays open, as the send guards already decide. A
- * channel the person has no value for is missing. The read model (`infrastructure/drizzle-reachability.ts`) fills it for a
- * page of person ids, and every list and record page reads it there.
+ * status. Do not contact (`contact_policies`) blocks every channel. A suppressed address (`suppression_list`) blocks
+ * email only: LinkedIn stays open, as the send guards already decide. A channel the person has no value for is missing.
+ * The people context owns both tables and writes them in `infrastructure/reachability.ts`; the contexts above decide
+ * when (a stop request, a bounce, an unsubscribe) and run their own follow-through (outreach ends enrollments,
+ * conversations ends runs and retires drafts). The read model there fills a page of person ids, and every list and
+ * record page reads it.
  */
+
+/** Why an address sits on the suppression list. Mirrors `suppression_reason_ck`. */
+export const SUPPRESSION_REASONS = ["unsubscribed", "bounced", "manual", "complaint"] as const;
+export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
+
+/** The form an address takes on the suppression list, and the form every lookup compares with. */
+export const suppressionKey = (email: string): string => email.trim().toLowerCase();
+
+/** The note on the suppression row a person marked do not contact leaves behind when they are deleted. */
+export const DELETED_WHILE_MARKED_NOTE = "Deleted while marked do not contact.";
 
 export interface Reachability {
   /** Null when the person is not marked do not contact. */
@@ -50,12 +62,12 @@ export function reachability(facts: ReachFacts): Reachability {
   };
 }
 
-/** Why an address sits on the suppression list. The stored values come from a check constraint, so the map covers all of them. */
-const SUPPRESSION_REASON: Record<string, string> = {
+/** The label of each suppression reason. */
+const SUPPRESSION_REASON: Record<SuppressionReason, string> = {
   unsubscribed: "Unsubscribed",
   bounced: "Bounced",
   manual: "Added by hand",
   complaint: "Spam complaint",
 };
 
-export const suppressionReasonLabel = (reason: string): string => SUPPRESSION_REASON[reason] ?? humanizeToken(reason);
+export const suppressionReasonLabel = (reason: string): string => SUPPRESSION_REASON[reason as SuppressionReason] ?? humanizeToken(reason);
