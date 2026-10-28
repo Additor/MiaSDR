@@ -110,3 +110,14 @@ export interface InboundStore {
   /** Dead-lettered messages of this mailbox since `since`. */
   countDeadLetters(mailbox: SyncMailbox, since: Date): Promise<number>;
 }
+
+/**
+ * The person's timeline, which conversations owns (`events`). Outreach records an enrollment change a person made there,
+ * inside its own transaction. `src/composition` wires conversations' `appendPersonEvent`, so outreach never imports it.
+ */
+export interface PersonTimeline {
+  append(
+    tx: DbTx,
+    event: { organizationId: string; personId: string; eventType: string; actorType: "human" | "system"; actorUserId?: string | null; fromData?: unknown; toData?: unknown },
+  ): Promise<void>;
+}

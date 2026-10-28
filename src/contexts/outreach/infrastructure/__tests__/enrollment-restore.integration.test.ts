@@ -67,8 +67,8 @@ describeDb("restore of removed enrollments", () => {
   beforeAll(async () => {
     uc = await import("../../application/enrollment-restore");
     ({ drizzleEnrollmentAdminStore: admin } = await import("../drizzle-enrollment-admin"));
-    const { enrollmentRestoreDeps } = await import("../restore-composition");
-    restoreDeps = enrollmentRestoreDeps();
+    const { enrollmentRestore } = await import("@/composition/inbox-filing");
+    restoreDeps = enrollmentRestore();
   });
 
   afterAll(async () => {

@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db, type DbHandle } from "@/platform/db/client";
-import { campaignEnrollments, campaigns, events, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
+import { campaignEnrollments, campaigns, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
 import type { EnrollmentRestoreStore, RestoreRefused } from "../application/enrollment-restore";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { RESTORE_REFUSAL_TEXT, decideRestore, restoredProgress } from "../domain/enrollment-restore";
@@ -9,6 +9,7 @@ import { notContactSql } from "./contact-guard";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import type { PersonTimeline } from "../application/inbound-ports";
 
 const uuidList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 /** Facts about the people of the named enrollments, read inside the restore transaction. */
@@ -58,7 +59,8 @@ async function personFacts(tx: DbHandle, organizationId: string, campaignId: str
   };
 }
 
-export const drizzleEnrollmentRestoreStore: EnrollmentRestoreStore = {
+/** The restore store. `timeline` records `enrollment.restored` on the person's timeline in the restore's transaction. */
+export const createEnrollmentRestoreStore = (timeline: PersonTimeline): EnrollmentRestoreStore => ({
   async restore(input) {
     const { organizationId, campaignId, channel, enrollmentIds, actorUserId, now } = input;
     return db.transaction(async (tx) => {
@@ -168,7 +170,7 @@ export const drizzleEnrollmentRestoreStore: EnrollmentRestoreStore = {
             .where(and(eq(linkedinEnrollmentDetails.enrollmentId, e.id), eq(linkedinEnrollmentDetails.connectionState, "none")));
         }
         restored += 1;
-        await tx.insert(events).values({
+        await timeline.append(tx, {
           organizationId,
           personId: e.personId,
           eventType: "enrollment.restored",
@@ -189,4 +191,4 @@ export const drizzleEnrollmentRestoreStore: EnrollmentRestoreStore = {
       return { restored, refused, notFound: enrollmentIds.length - found.length };
     });
   },
-};
+});
