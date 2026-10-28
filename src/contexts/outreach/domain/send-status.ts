@@ -26,6 +26,9 @@ export const SEND_UNRESOLVED: readonly SendStatus[] = ["sending", "unknown"];
 
 export const SEND_FINAL: readonly SendStatus[] = ["sent", "failed"];
 
+/** Sends that reached or may have reached the provider. They count against the daily and weekly limits; a failed one used no quota. */
+export const SEND_COUNTED: readonly SendStatus[] = ["sending", "sent", "unknown"];
+
 export function canMoveSend(from: SendStatus, to: SendStatus): boolean {
   return SEND_FROM[to].includes(from);
 }

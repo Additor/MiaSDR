@@ -8,6 +8,7 @@ import { campaignEnrollments, campaigns, companies, entityColumns, mailboxes, pe
 import { STEPS_EDITABLE, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type StepInput } from "../domain/campaign";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../domain/working-hours";
 import { buildVariables } from "../domain/variables";
+import type { EnrollmentStatus } from "../domain/enrollment-status";
 import { enrollmentVariableColumns, personVariableColumns } from "./enrollment-variables";
 import { UNCONFIRMED_AFTER_MINUTES } from "../application/campaign-management";
 import { insertSkippingContacts, notContactSql } from "./contact-guard";
@@ -21,7 +22,8 @@ import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from ".
 export const archiveCondition = (filter: ArchiveFilter): SQL | undefined =>
   filter === "hide" ? isNull(campaigns.archivedAt) : filter === "only" ? isNotNull(campaigns.archivedAt) : undefined;
 
-const STOPPED = ["replied", "bounced", "suppressed", "failed", "cancelled", "removed"];
+/** Every outcome but completion: the campaign row counts these as stopped, replies included. */
+const STOPPED: readonly EnrollmentStatus[] = ["replied", "bounced", "suppressed", "failed", "cancelled", "removed"];
 
 /**
  * Enrolls specific people into an email campaign. Skips people without an address and contacts; suppression and

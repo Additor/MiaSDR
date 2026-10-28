@@ -33,7 +33,7 @@ import {
 import { readSendPause } from "../../domain/send-pause";
 import { canonicalProfileUrl, isMemberReference, normalizePublicSlug } from "../domain/linkedin-identity";
 import { messageBlock } from "../domain/linkedin-limits";
-import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
 import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns } from "../../infrastructure/enrollment-variables";
 import { countMessagesToday } from "./drizzle-linkedin-account-store";
@@ -42,7 +42,6 @@ import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 
 type Tx = DbTx;
 
-const COUNTED = ["sending", "sent", "unknown"];
 const UNRESOLVED = [...SEND_UNRESOLVED];
 /** Statuses an engine write may still change. Anything else (replied, suppressed, removed) stays as it is. */
 const LIVE = [...LIVE_ENROLLMENT_STATUSES];
@@ -293,7 +292,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           week: sql<number>`count(*)::int`,
         })
         .from(sends)
-        .where(and(eq(sends.linkedinAccountId, account.id), eq(sends.stepNumber, 1), eq(sends.channel, "linkedin"), inArray(sends.status, COUNTED), sql`${sends.claimedAt} >= ${weekAgo}::timestamptz`));
+        .where(and(eq(sends.linkedinAccountId, account.id), eq(sends.stepNumber, 1), eq(sends.channel, "linkedin"), inArray(sends.status, SEND_COUNTED), sql`${sends.claimedAt} >= ${weekAgo}::timestamptz`));
       const limit = dailyInviteLimit({ dailyInviteLimit: account.dailyInviteLimit, isPremium: account.isPremium }, rules);
       if (!inviteBlock({ today, week }, limit, rules.invitesPerWeek)) {
         const invitation = await claimSend("invitation", pickMinutes(rules.inviteGapMinutes, options.random), async (exclude) =>

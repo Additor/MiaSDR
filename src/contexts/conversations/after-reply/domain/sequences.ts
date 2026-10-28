@@ -81,8 +81,13 @@ export const stepsEqual = (a: readonly StepInput[], b: readonly StepInput[]) => 
 
 // Run and step-run state machines ---------------------------------------------------------------------
 
-export type RunStatus = "active" | "paused" | "interrupted" | "completed" | "cancelled";
-export type StepRunStatus = "scheduled" | "drafting" | "awaiting_review" | "sent" | "skipped" | "cancelled" | "failed";
+/** The statuses of each table. The schema's CHECK constraints are built from these lists. */
+export const SEQUENCE_STATUSES = ["active", "archived"] as const;
+export const SEQUENCE_RUN_STATUSES = ["active", "interrupted", "paused", "completed", "cancelled"] as const;
+export const STEP_RUN_STATUSES = ["scheduled", "drafting", "awaiting_review", "sent", "skipped", "cancelled", "failed"] as const;
+export type SequenceStatus = (typeof SEQUENCE_STATUSES)[number];
+export type RunStatus = (typeof SEQUENCE_RUN_STATUSES)[number];
+export type StepRunStatus = (typeof STEP_RUN_STATUSES)[number];
 
 const RUN_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
   active: ["paused", "interrupted", "completed", "cancelled"],

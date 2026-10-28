@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
+import type { Lifecycle } from "../domain/lead-filter";
 
 /**
  * One `people` row per human across all channels. Importing creates or
@@ -109,7 +110,7 @@ export const people = pgTable(
      * `lead` or `contact`. Add contact inserts a contact; a lead becomes one when a deal is created from it or someone makes it a
      * contact, and never goes back (trigger `people_lifecycle_trg`).
      */
-    lifecycle: text("lifecycle").notNull().default("lead"),
+    lifecycle: text("lifecycle").$type<Lifecycle>().notNull().default("lead"),
     /** Set once, when the person became a contact. */
     convertedAt: tstz("converted_at"),
     /** The idempotency key of the Add contact request that created the person; nothing else writes it. */

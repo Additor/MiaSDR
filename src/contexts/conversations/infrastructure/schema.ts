@@ -19,7 +19,8 @@ import { members } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
-import { DRAFT_STATUSES } from "../domain/draft-status";
+import { DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
+import type { AttemptStatus } from "../domain/send-attempt-status";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
 import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
 import { inList } from "@/platform/db/sql-values";
@@ -465,7 +466,7 @@ export const drafts = pgTable(
     editedBodyHtml: text("edited_body_html"),
     /** CC recipients the human chose for this reply (lowercased addresses from lead_ccs). Empty by default. */
     cc: text("cc").array().notNull().default(sql`'{}'::text[]`),
-    status: text("status").notNull().default("generating"),
+    status: text("status").$type<DraftStatus>().notNull().default("generating"),
     provider: text("provider"),
     model: text("model"),
     request: jsonb("request").$type<unknown>(),
@@ -501,7 +502,7 @@ export const sendAttempts = pgTable(
     organizationId: orgId(),
     draftId: uuid("draft_id").notNull(),
     idempotencyKey: text("idempotency_key").notNull().unique(),
-    status: text("status").notNull().default("prepared"),
+    status: text("status").$type<AttemptStatus>().notNull().default("prepared"),
     actorUserId: uuid("actor_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),

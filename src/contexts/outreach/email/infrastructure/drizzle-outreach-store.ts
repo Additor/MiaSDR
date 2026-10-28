@@ -16,7 +16,7 @@ import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { readSendPause } from "../../domain/send-pause";
 import { mailboxBlock } from "../../domain/send-policy";
-import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
@@ -27,7 +27,6 @@ type Tx = DbTx;
 /** Enrollment statuses a send may still change. Every later status was set on purpose and must survive a late send result. */
 const LIVE_STATUSES = [...LIVE_ENROLLMENT_STATUSES];
 
-const COUNTED_STATUSES = ["sending", "sent", "unknown"];
 
 /** Rows that still hold a provider-side question. */
 const UNRESOLVED = [...SEND_UNRESOLVED];
@@ -100,7 +99,7 @@ export const drizzleOutreachStore: OutreachStore = {
             eq(sends.mailboxId, mailbox.id),
             // Test sends (rate limited by their own partial index) do not use the campaign daily limit.
             eq(sends.kind, "campaign"),
-            inArray(sends.status, COUNTED_STATUSES),
+            inArray(sends.status, SEND_COUNTED),
             sql`${sends.claimedAt} >= ${startOfLocalDay(options.now, workingHours.timeZone).toISOString()}::timestamptz`,
           ),
         );

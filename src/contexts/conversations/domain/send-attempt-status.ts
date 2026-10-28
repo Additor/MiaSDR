@@ -27,3 +27,6 @@ export const ATTEMPT_FINAL: readonly AttemptStatus[] = ["sent", "reconciled", "f
 export function canMoveAttempt(from: AttemptStatus, to: AttemptStatus): boolean {
   return ATTEMPT_FROM[to].includes(from);
 }
+
+/** Attempts that sent or may have sent. A definite refusal used no quota. */
+export const ATTEMPT_COUNTED: readonly AttemptStatus[] = ["sending", "sent", "delivery_uncertain", "reconciled"];

@@ -4,7 +4,7 @@ import { channelSettings, contactPolicies, conversations, drafts, events, linked
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import type { AttemptRow } from "../application/reply-ports";
-import { ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
+import { ATTEMPT_COUNTED, ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
 import { replyBlock, replyGapSeconds, utcDayStart } from "../domain/linkedin-reply";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
@@ -13,8 +13,6 @@ import { draftCanBecome, draftIn } from "./reply-store-shared";
 type Tx = DbTx;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Attempts that sent or may have sent. A definite refusal used no quota. */
-const COUNTED = ["sending", "sent", "delivery_uncertain", "reconciled"];
 
 /** What the approval snapshot stores in `send_attempts.request` for a LinkedIn reply. */
 interface Snapshot {
@@ -60,7 +58,7 @@ async function usage(tx: Tx | typeof db, accountId: string, now: Date) {
   const [replies] = await tx
     .select({ n: sql<number>`count(*)::int`, last: sql<Date | null>`max(${sendAttempts.createdAt})` })
     .from(sendAttempts)
-    .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.accountRef, accountId), inArray(sendAttempts.status, COUNTED), sql`${sendAttempts.createdAt} >= ${dayStart}::timestamptz`));
+    .where(and(eq(sendAttempts.provider, "linkedin"), eq(sendAttempts.accountRef, accountId), inArray(sendAttempts.status, ATTEMPT_COUNTED), sql`${sendAttempts.createdAt} >= ${dayStart}::timestamptz`));
   const [sequence] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(sends)

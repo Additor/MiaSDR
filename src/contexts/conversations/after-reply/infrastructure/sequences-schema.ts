@@ -4,6 +4,7 @@ import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { conversations, drafts, messages, records, replyTypes } from "../../infrastructure/schema";
 import { inList } from "@/platform/db/sql-values";
+import { SEQUENCE_RUN_STATUSES, SEQUENCE_STATUSES, STEP_RUN_STATUSES, type RunStatus, type SequenceStatus, type StepRunStatus } from "../domain/sequences";
 
 /**
  * Follow-up sequences. A sequence has versions; a run pins the version it
@@ -19,9 +20,6 @@ import { inList } from "@/platform/db/sql-values";
  * with the versions and steps; the RESTRICT keys from runs block that when any run exists.
  */
 
-export const SEQUENCE_STATUSES = ["active", "archived"] as const;
-export const SEQUENCE_RUN_STATUSES = ["active", "interrupted", "paused", "completed", "cancelled"] as const;
-export const STEP_RUN_STATUSES = ["scheduled", "drafting", "awaiting_review", "sent", "skipped", "cancelled", "failed"] as const;
 
 export const sequences = pgTable(
   "sequences",
@@ -30,7 +28,7 @@ export const sequences = pgTable(
     organizationId: orgId(),
     name: text("name").notNull(),
     description: text("description"),
-    status: text("status").notNull().default("active"),
+    status: text("status").$type<SequenceStatus>().notNull().default("active"),
     /** The campaign this sequence belongs to, or null for a legacy standalone sequence. */
     campaignId: uuid("campaign_id"),
     /** When the Follow-ups after a reply setting last turned on. Only the flow save writes it. The engine's "new reply" cutoff reads it. */
@@ -113,7 +111,7 @@ export const sequenceRuns = pgTable(
     sequenceId: uuid("sequence_id").notNull(),
     sequenceVersionId: uuid("sequence_version_id").notNull(),
     replyTypeId: uuid("reply_type_id").notNull(),
-    status: text("status").notNull().default("active"),
+    status: text("status").$type<RunStatus>().notNull().default("active"),
     currentStepPosition: integer("current_step_position").notNull().default(1),
     startStepPosition: integer("start_step_position").notNull().default(1),
     startedBy: text("started_by").notNull(),
@@ -149,7 +147,7 @@ export const sequenceStepRuns = pgTable(
     organizationId: orgId(),
     sequenceRunId: uuid("sequence_run_id").notNull(),
     sequenceStepId: uuid("sequence_step_id").notNull(),
-    status: text("status").notNull().default("scheduled"),
+    status: text("status").$type<StepRunStatus>().notNull().default("scheduled"),
     dueAt: tstz("due_at").notNull(),
     draftId: uuid("draft_id"),
     sentMessageId: uuid("sent_message_id"),

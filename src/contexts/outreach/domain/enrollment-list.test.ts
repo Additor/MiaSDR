@@ -9,7 +9,7 @@ describe("enrollment filters", () => {
   it.each(CAMPAIGN_STATUSES)("places every enrollment status under exactly one filter of a %s campaign", (campaignStatus) => {
     const shown = campaignLeadTabs(campaignStatus, countsByTab([], campaignStatus), "all").concat("removed").filter((t) => t !== "all");
     for (const status of ALL_STATUSES) {
-      const tabs = shown.filter((tab) => statusesForTab(tab, campaignStatus).includes(status));
+      const tabs = shown.filter((tab) => (statusesForTab(tab, campaignStatus) as readonly string[]).includes(status));
       expect(tabs, status).toHaveLength(1);
       expect(tabOfStatus(status, campaignStatus)).toBe(tabs[0]);
     }
