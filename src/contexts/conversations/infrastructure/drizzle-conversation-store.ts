@@ -7,6 +7,7 @@ import type { InboundConversationStore, InboundEmailInput } from "../application
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
 import { staleOpenDraftsTx } from "./stale-drafts-sql";
+import { findOrCreateLeadByEmailTx } from "@/contexts/people/infrastructure/inbound-leads";
 
 export type Tx = DbTx;
 
@@ -46,32 +47,6 @@ export async function defaultReplyTypeSetId(tx: Tx, organizationId: string): Pro
     })),
   );
   return created.id;
-}
-
-/** Finds the person by email. An existing person is returned untouched. */
-async function findOrCreatePerson(tx: Tx, organizationId: string, from: { email: string; name: string | null }) {
-  const find = async () =>
-    (await tx.select({ id: people.id }).from(people).where(and(eq(people.organizationId, organizationId), sql`lower(${people.email}) = ${from.email}`)))[0]?.id;
-  const existing = await find();
-  if (existing) return { id: existing, created: false };
-
-  const [firstName, ...rest] = from.name?.split(/\s+/) ?? [];
-  const [created] = await tx
-    .insert(people)
-    .values({
-      organizationId,
-      email: from.email,
-      fullName: from.name,
-      firstName: firstName || null,
-      lastName: rest.join(" ") || null,
-      source: "inbound",
-      // An unknown sender is a lead until a person creates a deal from them.
-      lifecycle: "lead",
-    })
-    .onConflictDoNothing()
-    .returning({ id: people.id });
-  if (created) return { id: created.id, created: true };
-  return { id: (await find()) as string, created: false };
 }
 
 export async function findOrCreateRecord(tx: Tx, organizationId: string, personId: string, replyTypeSetId: string): Promise<string> {
@@ -145,7 +120,7 @@ export const drizzleConversationStore: InboundConversationStore = {
           ? (await tx.select({ id: people.id }).from(people).where(and(eq(people.id, input.personId), eq(people.organizationId, input.organizationId))))[0]
           : undefined;
         if (input.personId && !chosen) throw new Error(`Person ${input.personId} is not in organization ${input.organizationId}.`);
-        const person = chosen ? { id: chosen.id, created: false } : await findOrCreatePerson(tx, input.organizationId, input.from);
+        const person = chosen ? { id: chosen.id, created: false } : await findOrCreateLeadByEmailTx(tx, input.organizationId, input.from);
         personCreated = person.created;
         const recordId = await findOrCreateRecord(tx, input.organizationId, person.id, await defaultReplyTypeSetId(tx, input.organizationId));
         await tx

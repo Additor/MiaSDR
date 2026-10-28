@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseLinkedinRef } from "@/contexts/people/domain/linkedin-url";
-import { canonicalProfileUrl, isMemberReference, normalizePublicSlug, parseLinkedInProfileRef, resultMemberId } from "./linkedin-identity";
+import { normalizePublicSlug, parseLinkedInProfileRef, resultMemberId } from "./linkedin-identity";
 
 const ID = "ACwAAAbCdEfGhIjKlMnOp";
 
@@ -97,14 +97,3 @@ describe("resultMemberId", () => {
   });
 });
 
-describe("helpers", () => {
-  it("builds the canonical URL the people context stores", () => {
-    expect(canonicalProfileUrl("jörg-m")).toBe("https://www.linkedin.com/in/j%C3%B6rg-m/");
-  });
-  it("flags only member references as replaceable", () => {
-    expect(isMemberReference(`https://www.linkedin.com/sales/lead/${ID},X`)).toBe(true);
-    expect(isMemberReference(ID)).toBe(true);
-    expect(isMemberReference("https://www.linkedin.com/in/jane/")).toBe(false);
-    expect(isMemberReference(null)).toBe(false);
-  });
-});

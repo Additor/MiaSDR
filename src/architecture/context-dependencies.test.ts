@@ -138,6 +138,11 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "people/infrastructure/queries",
   // Reachability: the read model, and the one writer of do not contact and the suppression list.
   "people/infrastructure/reachability",
+  // LinkedIn account limits and disconnects, which conversations' replies hit as campaign sends do.
+  "outreach/linkedin/infrastructure/linkedin-account-state",
+  // People's inbound leads and LinkedIn profile write-back, which conversations and outreach call inside their transactions.
+  "people/infrastructure/inbound-leads",
+  "people/infrastructure/linkedin-profile",
   // The enrollment outcome writer and the suppression store, which conversations runs inside its own transactions.
   "outreach/infrastructure/enrollment-end",
   "outreach/infrastructure/suppression-store",

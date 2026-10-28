@@ -10,6 +10,7 @@ import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
+import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 
 type Tx = DbTx;
 
@@ -296,14 +297,11 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   },
 
   async pauseAccount(send, until) {
-    await db.update(linkedinAccounts).set({ limitReachedUntil: until }).where(eq(linkedinAccounts.id, send.accountId));
+    await pauseLinkedInAccount(db, send.accountId, until);
   },
 
   async disconnectAccount(send, error) {
-    await db
-      .update(linkedinAccounts)
-      .set({ status: "disconnected", profileData: sql`jsonb_set(coalesce(${linkedinAccounts.profileData}, '{}'::jsonb), '{lastError}', to_jsonb(${error}::text))` })
-      .where(eq(linkedinAccounts.id, send.accountId));
+    await disconnectLinkedInAccount(db, send.accountId, error);
   },
 
   async panel(organizationId, conversationId, now) {

@@ -32,7 +32,7 @@ import {
 import { sqlValues } from "@/platform/db/sql-values";
 import { readSendPause } from "../../domain/send-pause";
 import { ALREADY_CONTACTED_BY_ACCOUNT } from "../../domain/cross-campaign-notice";
-import { canonicalProfileUrl, isMemberReference, normalizePublicSlug } from "../domain/linkedin-identity";
+import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { messageBlock } from "../domain/linkedin-limits";
 import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
 import { buildVariables } from "../../domain/variables";
@@ -42,6 +42,8 @@ import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
+import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
+import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
 
 type Tx = DbTx;
 
@@ -55,39 +57,6 @@ const fromCall = inArray(sends.status, [...SEND_FROM_CALL]);
 /** The claiming worker settling its own claim: a later attempt on the same row belongs to another worker. */
 const ownClaim = (claim: { sendId: string; attempt: number }) => and(eq(sends.id, claim.sendId), fromCall, eq(sends.attempt, claim.attempt));
 const SLUG_COLLISION_REASON = "This LinkedIn profile already belongs to another lead in your organization.";
-
-function isUniqueViolation(error: unknown): boolean {
-  for (let e: unknown = error, depth = 0; e && depth < 4; depth++, e = (e as { cause?: unknown }).cause) {
-    if ((e as { code?: unknown }).code === "23505") return true;
-  }
-  return false;
-}
-
-/**
- * Sets the person's slug (and a canonical URL when the stored one is empty or a member reference) once a lookup found it.
- * A person that already has a slug is left alone. The write runs in a savepoint, so a hit on people_org_linkedin_uq
- * leaves the surrounding transaction usable.
- */
-async function writeSlugBack(tx: DbTx, organizationId: string, personId: string, slug: string): Promise<"written" | "skipped" | "collision"> {
-  const [person] = await tx
-    .select({ slug: people.linkedinSlug, url: people.linkedinUrl })
-    .from(people)
-    .where(and(eq(people.id, personId), eq(people.organizationId, organizationId)))
-    .for("update");
-  if (!person || person.slug) return "skipped";
-  try {
-    await tx.transaction(async (savepoint) => {
-      await savepoint
-        .update(people)
-        .set({ linkedinSlug: slug, ...(person.url === null || isMemberReference(person.url) ? { linkedinUrl: canonicalProfileUrl(slug) } : {}) })
-        .where(and(eq(people.id, personId), eq(people.organizationId, organizationId)));
-    });
-    return "written";
-  } catch (error) {
-    if (isUniqueViolation(error)) return "collision";
-    throw error;
-  }
-}
 
 const RESOLVE_LEASE_MINUTES = 5;
 const DAY_MS = 86_400_000;
@@ -450,15 +419,12 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   async pauseAccountForLimit(claim, until) {
     await db.transaction(async (tx) => {
       await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "limit_reached" }).where(ownClaim(claim));
-      await tx.update(linkedinAccounts).set({ limitReachedUntil: until }).where(eq(linkedinAccounts.id, claim.account.id));
+      await pauseLinkedInAccount(tx, claim.account.id, until);
     });
   },
 
   async disconnectAccount(accountId, error) {
-    await db
-      .update(linkedinAccounts)
-      .set({ status: "disconnected", profileData: sql`jsonb_set(coalesce(${linkedinAccounts.profileData}, '{}'::jsonb), '{lastError}', to_jsonb(${error}::text))` })
-      .where(eq(linkedinAccounts.id, accountId));
+    await disconnectLinkedInAccount(db, accountId, error);
   },
 
   async markResolved(claim, profile, now) {
@@ -468,7 +434,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       // A resolved public slug goes back to the person, so a Sales Navigator lead becomes a classic lead. A slug that
       // another lead of the organization already holds fails the enrollment and changes neither person (D6).
       const slug = normalizePublicSlug(profile.slug);
-      if (slug && (await writeSlugBack(tx, claim.organizationId, owner.personId, slug)) === "collision") {
+      if (slug && (await writeLinkedInSlugTx(tx, claim.organizationId, owner.personId, slug)) === "collision") {
         await tx
           .update(linkedinEnrollmentDetails)
           .set({ resolveRetryCount: MAX_RESOLVE_ATTEMPTS, resolveNextAttemptAt: null, resolveLastError: SLUG_COLLISION_REASON })
@@ -489,24 +455,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
         .where(eq(linkedinEnrollmentDetails.enrollmentId, claim.enrollmentId));
       // The provider id belongs to the account that looked it up, so the lead is pinned to it from here.
       await tx.update(campaignEnrollments).set({ linkedinAccountId: claim.account.id, updatedAt: now }).where(eq(campaignEnrollments.id, claim.enrollmentId));
-      // Fill gaps only; never overwrite what the user imported.
-      await tx
-        .update(people)
-        .set({
-          firstName: sql`coalesce(${people.firstName}, ${profile.firstName})`,
-          lastName: sql`coalesce(${people.lastName}, ${profile.lastName})`,
-          fullName: sql`coalesce(${people.fullName}, ${[profile.firstName, profile.lastName].filter(Boolean).join(" ") || null})`,
-          title: sql`coalesce(${people.title}, ${profile.headline})`,
-          profilePictureUrl: sql`coalesce(${people.profilePictureUrl}, ${profile.pictureUrl})`,
-        })
-        .where(eq(people.id, owner.personId));
-      // Keep the member id the lookup started from, so a later import of the same Sales Navigator URL finds this lead.
-      if (profile.memberId) {
-        await tx
-          .update(people)
-          .set({ raw: sql`jsonb_build_object('linkedin_member_id', ${profile.memberId}::text) || coalesce(${people.raw}, '{}'::jsonb)` })
-          .where(eq(people.id, owner.personId));
-      }
+      await fillFromLinkedInProfileTx(tx, owner.personId, profile);
       return "resolved" as const;
     });
   },
