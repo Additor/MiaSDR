@@ -144,6 +144,20 @@ export async function listPersonEvents(organizationId: string, personId: string,
  */
 
 /**
+ * Step 1 of the conversion, the order of `lockPersonRecords`: the person's records `FOR UPDATE` in id order (waiting up to 5 s,
+ * holding nothing), then the person's outreach advisory lock. Single-person ingest takes the same order. Do not contact
+ * (`setDoNotContact`) takes another: `dnc:{personId}`, its `contact_policies` row through the upsert, then the records, runs
+ * and enrollments, so it holds the policy row while it waits on the records. A contact delete locks the records first and the
+ * policy row later; when the two meet, the delete's held-lock timeout makes it give way and run once more.
+ */
+export async function lockPersonForConversion(tx: DbHandle, organizationId: string, personId: string): Promise<void> {
+  const locked = await lockPersonRecordRows(tx, organizationId, personId);
+  if (locked > 0) await setLockTimeout(tx, HELD_LOCK_TIMEOUT);
+  await lockPersonOutreachTx(tx as Tx, organizationId, [personId]);
+  await setLockTimeout(tx, HELD_LOCK_TIMEOUT);
+}
+
+/**
  * Step 1 of a contact delete: the person's records `FOR UPDATE` in id order, then the conversations of those records
  * `FOR UPDATE` in id order, then the person's outreach advisory lock. The conversation locks keep a reply from adding a
  * message between the purge's message and conversation deletes: a message insert needs `FOR KEY SHARE` on its

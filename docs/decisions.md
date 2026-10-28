@@ -647,7 +647,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 
 `convertToContact(deps, tx, { reason, guard? })` (people) is the one transition. `createDealFromLead` runs it through `ConvertLead` and inserts the deal in the same transaction, so both commit or neither does. `makeContact` runs it with `reason: "added"` and no deal. In order:
 
-1. Lock the person: the person's `records` rows `FOR UPDATE` in id order, then the person advisory lock (`lockPersonOutreachTx`). `lockPersonForConversion` in `src/platform/db/person-locks.ts` does this for code outside conversations.
+1. Lock the person: the person's `records` rows `FOR UPDATE` in id order, then the person advisory lock (`lockPersonOutreachTx`). `lockPersonForConversion` in `conversations/infrastructure/person-handling.ts`, which owns `records`, does this; `src/composition/deals.ts` passes it to the conversion.
 2. Re-read `people.lifecycle`. A contact returns `changed: false` and nothing else happens.
 3. Run the caller's `guard(tx)`. Deals passes the personal-campaign rule here, so an enrollment that committed before the locks still counts.
 4. `markConverted` sets `lifecycle` and `converted_at`.

@@ -1,6 +1,6 @@
 import { db } from "@/platform/db/client";
-import { CONVERSION_LOCK_TIMEOUT, lockPersonForConversion, setLockTimeout } from "@/platform/db/person-locks";
-import { personReplyHandling } from "@/contexts/conversations/infrastructure/person-handling";
+import { CONVERSION_LOCK_TIMEOUT, setLockTimeout } from "@/platform/db/person-locks";
+import { lockPersonForConversion, personReplyHandling } from "@/contexts/conversations/infrastructure/person-handling";
 import { drizzleMemberDirectory } from "@/contexts/tenancy/infrastructure/drizzle-member-directory";
 import { convertToContact, type ConvertDeps, type PreviewDeps } from "@/contexts/people/application/convert-to-contact";
 import { drizzleLeadLifecycle } from "@/contexts/people/infrastructure/drizzle-lead-lifecycle";

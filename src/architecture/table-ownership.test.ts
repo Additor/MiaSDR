@@ -42,7 +42,6 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "drafts", "linkedinAccounts", "mailboxes", "people"],
   "src/platform/db/columns.ts": ["organizations"],
   "src/platform/db/conversation-visibility.ts": ["conversations", "records"],
-  "src/platform/db/person-locks.ts": ["records"],
 };
 
 const ROOT = path.resolve(__dirname, "../..");
