@@ -33,10 +33,11 @@ describeDb("email rules", () => {
     }
   });
 
-  it("reads defaults, then saves the gap and zone in the shape the send engine reads", async () => {
+  it("reads defaults, then saves the gap in the shape the send engine reads and shows the organization's zone", async () => {
     const t = await org();
     expect(await uc.getEmailRules(deps(), t.actor)).toEqual({ sendGapMinutes: [18, 24], takeoverAfterHours: 24, timeZone: "UTC" });
-    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "Asia/Seoul" });
+    await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'general', ${sql.json({ timeZone: "Asia/Seoul" })})`;
+    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9 });
     expect(await uc.getEmailRules(deps(), { ...t.actor, role: "member" })).toEqual({ sendGapMinutes: [5, 9], takeoverAfterHours: 24, timeZone: "Asia/Seoul" });
     const [email] = await sql`select values from channel_settings where organization_id = ${t.id} and channel = 'email'`;
     expect(policy.emailRules(email.values).sendGapMinutes).toEqual([5, 9]);
@@ -45,33 +46,34 @@ describeDb("email rules", () => {
   it("keeps unrelated stored keys when saving", async () => {
     const t = await org();
     await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'email', ${sql.json({ other: "keep" })})`;
-    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 10, maxGapMinutes: 10, timeZone: "UTC" });
+    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 10, maxGapMinutes: 10 });
     const [email] = await sql`select values from channel_settings where organization_id = ${t.id} and channel = 'email'`;
     expect(email.values).toEqual({ other: "keep", sendGapMinutes: [10, 10] });
   });
 
   it("rejects members and invalid input without writing", async () => {
     const t = await org("member");
-    await expect(uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "UTC" })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9 })).rejects.toBeInstanceOf(ForbiddenError);
     const admin = { ...t.actor, role: "admin" };
-    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 0, maxGapMinutes: 9, timeZone: "UTC" })).rejects.toBeInstanceOf(ValidationError);
-    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 9, maxGapMinutes: 5, timeZone: "UTC" })).rejects.toBeInstanceOf(ValidationError);
-    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "Mars/Base" })).rejects.toBeInstanceOf(ValidationError);
-    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "UTC", takeoverAfterHours: 0 })).rejects.toBeInstanceOf(ValidationError);
-    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "UTC", takeoverAfterHours: 169 })).rejects.toBeInstanceOf(ValidationError);
+    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 0, maxGapMinutes: 9 })).rejects.toBeInstanceOf(ValidationError);
+    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 9, maxGapMinutes: 5 })).rejects.toBeInstanceOf(ValidationError);
+    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 5, maxGapMinutes: 9, takeoverAfterHours: 0 })).rejects.toBeInstanceOf(ValidationError);
+    await expect(uc.updateEmailRules(deps(), admin, { minGapMinutes: 5, maxGapMinutes: 9, takeoverAfterHours: 169 })).rejects.toBeInstanceOf(ValidationError);
     expect(await sql`select 1 from channel_settings where organization_id = ${t.id}`).toHaveLength(0);
   });
 
-  it("leaves the organization time zone alone when the save carries none", async () => {
+  it("leaves the organization time zone to Settings > Organization", async () => {
     const t = await org();
-    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "Asia/Seoul" });
-    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 7, maxGapMinutes: 11 });
+    await sql`insert into channel_settings (organization_id, channel, values) values (${t.id}, 'general', ${sql.json({ timeZone: "Asia/Seoul" })})`;
+    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 7, maxGapMinutes: 11, timeZone: "Europe/Berlin" } as never);
     expect(await uc.getEmailRules(deps(), t.actor)).toEqual({ sendGapMinutes: [7, 11], takeoverAfterHours: 24, timeZone: "Asia/Seoul" });
+    const [row] = await sql`select timezone from organizations where id = ${t.id}`;
+    expect(row.timezone).not.toBe("Europe/Berlin");
   });
 
   it("saves the takeover delay", async () => {
     const t = await org();
-    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9, timeZone: "UTC", takeoverAfterHours: 48 });
+    await uc.updateEmailRules(deps(), t.actor, { minGapMinutes: 5, maxGapMinutes: 9, takeoverAfterHours: 48 });
     expect((await uc.getEmailRules(deps(), t.actor)).takeoverAfterHours).toBe(48);
   });
 });

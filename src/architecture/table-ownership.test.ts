@@ -17,7 +17,7 @@ const FOREIGN_WRITES: Record<string, string[]> = {
   "src/contexts/conversations/infrastructure/drizzle-linkedin-conversation-store.ts": ["people"],
   "src/contexts/conversations/infrastructure/drizzle-linkedin-reply-store.ts": ["linkedinAccounts"],
   "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "contactPolicies", "suppression_list"],
-  "src/contexts/outreach/infrastructure/drizzle-channel-settings-store.ts": ["channelSettings", "organizations"],
+  "src/contexts/outreach/infrastructure/drizzle-channel-settings-store.ts": ["channelSettings"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["events"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["integrationAccounts", "integrationCredentials"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store.ts": ["people"],
