@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { recordAudit } from "@/platform/db/audit";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db, type DbHandle } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, events, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
 import type { EnrollmentRestoreStore, RestoreRefused } from "../application/enrollment-restore";

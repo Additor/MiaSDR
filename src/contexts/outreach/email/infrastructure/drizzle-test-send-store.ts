@@ -1,10 +1,11 @@
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { auditLog, contactPolicies, mailboxes, people, sends } from "@/platform/db/schema";
+import { contactPolicies, mailboxes, people, sends } from "@/platform/db/schema";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
 import type { TestSendStore, UncertainTestSend } from "../application/send-test-email";
 import { isSuppressed } from "@/contexts/people/infrastructure/reachability";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 
 const UNRESOLVED = [...SEND_UNRESOLVED];
 const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
@@ -88,7 +89,7 @@ export const drizzleTestSendStore: TestSendStore = {
   },
 
   async audit(entry) {
-    await db.insert(auditLog).values({
+    await recordAudit(db, {
       organizationId: entry.organizationId,
       actorUserId: entry.actorUserId,
       action: "mailbox.test_sent",

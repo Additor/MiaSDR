@@ -130,6 +130,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "integrations/infrastructure/credential-verifier",
   // The organization read (time zone, name).
   "tenancy/infrastructure/drizzle-organization-store",
+  // The audit writer: every context records its organization-level changes through it.
+  "tenancy/infrastructure/audit",
   // The member directory: assignee and owner checks and pickers.
   "tenancy/infrastructure/drizzle-member-directory",
   // The lead search predicate the enrollment lists filter with.

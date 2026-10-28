@@ -4,7 +4,7 @@ import { canonicalTimeZone } from "@/shared/time-zone";
 import { channelSettings, organizations } from "@/platform/db/schema";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "../domain/ai-cap";
 import { DEFAULT_PHONE_COUNTRY_KEY, normalizePhoneCountry } from "../domain/phone-country";
-import { recordAudit } from "@/platform/db/audit";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { isValidTimeZone } from "@/shared/time-zone";
 import type { OrganizationStore } from "../application/organization-settings";
 

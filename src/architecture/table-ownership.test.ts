@@ -20,10 +20,8 @@ const FOREIGN_WRITES: Record<string, string[]> = {
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["events"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["integrationAccounts", "integrationCredentials"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store.ts": ["people"],
-  "src/contexts/outreach/email/infrastructure/drizzle-test-send-store.ts": ["auditLog"],
   "src/contexts/tenancy/infrastructure/drizzle-member-store.ts": ["sessions"],
   "src/contexts/tenancy/infrastructure/drizzle-setup-store.ts": ["accounts", "users"],
-  "src/platform/db/audit.ts": ["auditLog"],
 };
 
 /**
@@ -42,7 +40,6 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "records"],
   "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "drafts", "linkedinAccounts", "mailboxes", "people"],
-  "src/platform/db/audit.ts": ["auditLog"],
   "src/platform/db/columns.ts": ["organizations"],
   "src/platform/db/conversation-visibility.ts": ["conversations", "records"],
   "src/platform/db/person-locks.ts": ["records"],

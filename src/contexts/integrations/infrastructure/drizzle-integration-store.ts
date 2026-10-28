@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { recordAudit } from "@/platform/db/audit";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db } from "@/platform/db/client";
 import { integrationAccounts, integrationCredentials } from "@/platform/db/schema";
 import type { IntegrationStore } from "../application/integration-management";

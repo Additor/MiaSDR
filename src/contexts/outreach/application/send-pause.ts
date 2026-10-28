@@ -1,5 +1,5 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import type { AuditSink } from "@/platform/db/audit";
+import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { ForbiddenError, type Actor } from "@/shared/errors";
 import { readSendPause, type SendPause } from "../domain/send-pause";
 import type { EmailRulesDeps } from "../email/application/email-rules";

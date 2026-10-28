@@ -3,7 +3,7 @@ import { env } from "@/shared/env";
 import type { CampaignDeps } from "../application/campaign-management";
 import type { EmailRulesDeps } from "../email/application/email-rules";
 import type { SendPauseDeps } from "../application/send-pause";
-import { auditSink } from "@/platform/db/audit";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";

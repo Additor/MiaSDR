@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { recordAudit } from "@/platform/db/audit";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { suppressionList } from "@/platform/db/schema";
 import { removeSettingsSuppression } from "@/contexts/people/infrastructure/reachability";
 import type { SuppressionListStore, SuppressionReason, SuppressionRow } from "../application/suppression-list";

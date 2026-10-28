@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { recordAudit } from "@/platform/db/audit";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { dealStages, deals } from "@/platform/db/schema";
 import { DEFAULT_DEAL_STAGES, type DealStageKind } from "../domain/stages";
 import type { DealRow, DealStage, DealStore, NewDeal, StoppedCounts } from "../application/deal-ports";

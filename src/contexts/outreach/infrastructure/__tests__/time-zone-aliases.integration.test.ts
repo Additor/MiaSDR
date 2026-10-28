@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 import type { Actor } from "@/shared/errors";
-import { auditSink as drizzleAuditSink } from "@/platform/db/audit";
+import { auditSink as drizzleAuditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { FakeLinkedInGateway } from "../../linkedin/infrastructure/fake-linkedin-gateway";
 import { FakeMailboxProvider } from "../../email/infrastructure/fake-mailbox-provider";
 

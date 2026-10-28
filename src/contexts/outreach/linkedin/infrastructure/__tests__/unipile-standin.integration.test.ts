@@ -36,7 +36,7 @@ describeDb("unipile gateway against the local stand-in", () => {
   let inboundStore: ReturnType<typeof import("../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
   let accountStore: typeof import("../drizzle-linkedin-account-store").drizzleLinkedInAccountStore;
   let connectStore: typeof import("../drizzle-linkedin-connect-store").drizzleLinkedInConnectStore;
-  let auditSink: typeof import("@/platform/db/audit").auditSink;
+  let auditSink: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
   let searchStore: typeof import("../drizzle-linkedin-search-store").drizzleLinkedInSearchStore;
   let searchEngineStore: typeof import("../drizzle-linkedin-search-store").drizzleLinkedInSearchEngineStore;
   let campaignStore: typeof import("../drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
@@ -146,7 +146,7 @@ describeDb("unipile gateway against the local stand-in", () => {
     inboundStore = (await import("../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
     ({ drizzleLinkedInAccountStore: accountStore } = await import("../drizzle-linkedin-account-store"));
     ({ drizzleLinkedInConnectStore: connectStore } = await import("../drizzle-linkedin-connect-store"));
-    ({ auditSink } = await import("@/platform/db/audit"));
+    ({ auditSink } = await import("@/contexts/tenancy/infrastructure/audit"));
     ({ drizzleLinkedInSearchStore: searchStore, drizzleLinkedInSearchEngineStore: searchEngineStore } = await import("../drizzle-linkedin-search-store"));
     ({ drizzleLinkedInCampaignStore: campaignStore } = await import("../drizzle-linkedin-campaign-store"));
     ({ searchLeadSink: sink } = await import("../search-lead-sink"));

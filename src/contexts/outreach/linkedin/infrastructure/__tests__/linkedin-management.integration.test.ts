@@ -15,7 +15,7 @@ describeDb("linkedin connection and campaigns", () => {
   let campaignsUc: typeof import("../../application/linkedin-campaigns");
   let accountStore: typeof import("../drizzle-linkedin-account-store").drizzleLinkedInAccountStore;
   let connectStore: typeof import("../drizzle-linkedin-connect-store").drizzleLinkedInConnectStore;
-  let auditSink: typeof import("@/platform/db/audit").auditSink;
+  let auditSink: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
   let campaignStore: typeof import("../drizzle-linkedin-campaign-store").drizzleLinkedInCampaignStore;
   const orgs: string[] = [];
   const users: string[] = [];
@@ -38,7 +38,7 @@ describeDb("linkedin connection and campaigns", () => {
     campaignsUc = await import("../../application/linkedin-campaigns");
     ({ drizzleLinkedInAccountStore: accountStore } = await import("../drizzle-linkedin-account-store"));
     ({ drizzleLinkedInConnectStore: connectStore } = await import("../drizzle-linkedin-connect-store"));
-    ({ auditSink } = await import("@/platform/db/audit"));
+    ({ auditSink } = await import("@/contexts/tenancy/infrastructure/audit"));
     ({ drizzleLinkedInCampaignStore: campaignStore } = await import("../drizzle-linkedin-campaign-store"));
   });
 
