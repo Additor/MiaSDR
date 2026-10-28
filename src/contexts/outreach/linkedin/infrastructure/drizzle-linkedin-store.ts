@@ -5,7 +5,6 @@ import {
   campaigns,
   channelSettings,
   companies,
-  contactPolicies,
   entityColumns,
   linkedinAccounts,
   linkedinConnections,
@@ -42,6 +41,7 @@ import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
+import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
 
@@ -383,11 +383,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     if (!enrollment || !LIVE.includes(enrollment.status as "pending" | "active")) return "enrollment_stopped";
     const [campaign] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, claim.campaignId));
     if (campaign?.status !== "active") return "campaign_inactive";
-    const [policy] = await db
-      .select({ doNotContact: contactPolicies.doNotContact })
-      .from(contactPolicies)
-      .where(and(eq(contactPolicies.organizationId, claim.organizationId), eq(contactPolicies.personId, claim.person.id)));
-    return policy?.doNotContact ? "do_not_contact" : null;
+    return (await isDoNotContact(db, claim.organizationId, claim.person.id)) ? "do_not_contact" : null;
   },
 
   async abandon(claim, reason, now) {

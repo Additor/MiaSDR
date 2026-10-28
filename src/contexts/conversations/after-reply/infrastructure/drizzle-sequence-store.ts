@@ -15,6 +15,7 @@ import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import { DEFAULT_REPLY_TYPES } from "../../domain/default-reply-types";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { detectsStopRequest } from "../../domain/stop-request";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 interface StepRow {
   id: string;
@@ -280,8 +281,8 @@ export async function loadStartOn(
              (select m.body_text from messages m join conversations mc on mc.id = m.conversation_id
                where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id and ${publicConversationSql("mc")}) as latest_body,
              p.lifecycle = 'contact' as contact,
-             exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.organization_id = r.organization_id and cp.do_not_contact) as dnc,
-             exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)) as suppressed
+             ${doNotContactSql("p")} as dnc,
+             ${suppressedSql("p")} as suppressed
       from records r
       join people p on p.id = r.person_id and p.organization_id = r.organization_id
       left join reply_types s on s.id = r.reply_type_id

@@ -3,7 +3,7 @@ import type { DbHandle } from "@/platform/db/client";
 import { CONTACT_DELETE_STATEMENT_TIMEOUT, type ContactDeleteStore, type ContactForDelete } from "../application/contact-delete";
 import { stampCompaniesLeftByContacts } from "./company-domain-store";
 import { rowsOf } from "@/platform/db/sql-values";
-import { deleteDoNotContactTx, isSuppressed, lockDoNotContactTx, suppressDoNotContactAddressesTx } from "./reachability";
+import { deleteDoNotContactTx, doNotContactSql, isSuppressed, lockDoNotContactTx, suppressDoNotContactAddressesTx, suppressedSql } from "./reachability";
 
 /*
  * The leads side of a contact delete ("Contacts and Companies CRUD" in docs/decisions.md):
@@ -42,8 +42,8 @@ async function personOf(tx: DbHandle, organizationId: string, personId: string, 
   const [row] = rowsOf<PersonRow>(
     await tx.execute(sql`
       select p.id, p.full_name, p.email, p.linkedin_url, p.linkedin_slug, p.lifecycle, p.company_id,
-        coalesce((select cp.do_not_contact from contact_policies cp where cp.organization_id = p.organization_id and cp.person_id = p.id), false) as do_not_contact,
-        exists (select 1 from suppression_list s where s.organization_id = p.organization_id and p.email is not null and s.email = lower(p.email)) as suppressed
+        ${doNotContactSql("p")} as do_not_contact,
+        ${suppressedSql("p")} as suppressed
       from people p
       where p.organization_id = ${organizationId} and p.id = ${personId}::uuid
       ${lock ? sql`for update of p` : sql``}`),

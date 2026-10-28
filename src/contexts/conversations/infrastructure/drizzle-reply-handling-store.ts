@@ -21,7 +21,6 @@ import {
   records,
   sendAttempts,
   replyTypes,
-  suppressionList,
   users,
 } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
@@ -45,7 +44,7 @@ import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { draftCanBecome } from "./reply-store-shared";
 import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
-import { writeDoNotContactTx } from "@/contexts/people/infrastructure/reachability";
+import { isSuppressed, writeDoNotContactTx } from "@/contexts/people/infrastructure/reachability";
 import { rowsOf } from "@/platform/db/sql-values";
 
 const personName = (p: { fullName: string | null; firstName: string | null }) => p.fullName ?? p.firstName;
@@ -165,9 +164,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.personId, person.id), eq(campaigns.type, "regular")))
         .orderBy(desc(campaignEnrollments.createdAt)),
       db.select().from(contactPolicies).where(and(eq(contactPolicies.personId, person.id), eq(contactPolicies.organizationId, organizationId))),
-      person.email
-        ? db.select({ id: suppressionList.id }).from(suppressionList).where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.email, person.email.toLowerCase())))
-        : Promise.resolve([]),
+      isSuppressed(db, organizationId, person.email),
     ]);
 
     const attempts = draftRows.length
@@ -254,7 +251,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         company: head.company,
       },
       policy: policy[0] ? { doNotContact: policy[0].doNotContact, reason: policy[0].reason, source: policy[0].source, setAt: policy[0].setAt, clearedAt: policy[0].clearedAt } : null,
-      suppressed: suppressed.length > 0,
+      suppressed,
       conversations: convs,
       replyTypePicks: replyTypePickEntries,
       drafts: draftRows.map(

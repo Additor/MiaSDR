@@ -5,12 +5,10 @@ import {
   campaigns,
   channelSettings,
   companies,
-  contactPolicies,
   entityColumns,
   mailboxes,
   people,
   sends,
-  suppressionList,
 } from "@/platform/db/schema";
 import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend } from "../application/ports";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
@@ -22,6 +20,7 @@ import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
+import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
 
@@ -221,17 +220,8 @@ export const drizzleOutreachStore: OutreachStore = {
     const [campaign] = await db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, claim.campaignId));
     if (campaign?.status !== "active") return "campaign_inactive";
 
-    const [suppressed] = await db
-      .select({ id: suppressionList.id })
-      .from(suppressionList)
-      .where(and(eq(suppressionList.organizationId, claim.organizationId), eq(suppressionList.email, claim.person.email.toLowerCase())));
-    if (suppressed) return "suppressed";
-
-    const [policy] = await db
-      .select({ doNotContact: contactPolicies.doNotContact })
-      .from(contactPolicies)
-      .where(and(eq(contactPolicies.organizationId, claim.organizationId), eq(contactPolicies.personId, claim.person.id)));
-    return policy?.doNotContact ? "do_not_contact" : null;
+    if (await isSuppressed(db, claim.organizationId, claim.person.email)) return "suppressed";
+    return (await isDoNotContact(db, claim.organizationId, claim.person.id)) ? "do_not_contact" : null;
   },
 
   async abandon(claim, reason, now) {

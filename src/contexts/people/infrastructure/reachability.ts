@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { contactPolicies, people, suppressionList } from "@/platform/db/schema";
 import { DELETED_WHILE_MARKED_NOTE, reachability, suppressionKey, type Reachability, type ReadReachability, type SuppressionReason } from "../domain/reachability";
@@ -8,6 +8,36 @@ import { DELETED_WHILE_MARKED_NOTE, reachability, suppressionKey, type Reachabil
  * above call these functions inside their own transactions and run their own follow-through: outreach ends the
  * enrollments of a suppressed address, conversations ends runs and retires drafts for do not contact.
  */
+
+const ALIAS = /^[a-z_][a-z0-9_]*$/;
+const aliasOf = (person: string): string => {
+  if (!ALIAS.test(person)) throw new Error(`Not a table alias: ${person}`);
+  return person;
+};
+
+/**
+ * SQL that is true when the `people` row named `person` in the enclosing query (its alias, or `people`) is marked do not
+ * contact. Every list, queue and run check that asks reads it here.
+ */
+export const doNotContactSql = (person: string): SQL => {
+  const p = aliasOf(person);
+  return sql.raw(`exists (select 1 from contact_policies reach_cp where reach_cp.person_id = ${p}.id and reach_cp.organization_id = ${p}.organization_id and reach_cp.do_not_contact)`);
+};
+
+/** SQL that is true when the address of the `people` row named `person` sits on its organization's suppression list. */
+export const suppressedSql = (person: string): SQL => {
+  const p = aliasOf(person);
+  return sql.raw(`exists (select 1 from suppression_list reach_sl where reach_sl.organization_id = ${p}.organization_id and reach_sl.email = lower(${p}.email))`);
+};
+
+/** Whether the person is marked do not contact. The send guards ask it right before a provider call. */
+export async function isDoNotContact(handle: DbHandle, organizationId: string, personId: string): Promise<boolean> {
+  const [row] = await handle
+    .select({ doNotContact: contactPolicies.doNotContact })
+    .from(contactPolicies)
+    .where(and(eq(contactPolicies.organizationId, organizationId), eq(contactPolicies.personId, personId)));
+  return row?.doNotContact ?? false;
+}
 
 /**
  * The reachability of a page of person ids, keyed by person id, in one query scoped to the organization: the person's

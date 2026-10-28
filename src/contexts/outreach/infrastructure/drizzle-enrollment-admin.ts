@@ -6,6 +6,7 @@ import { REMOVED_STATUS, canRemoveEnrollment } from "../domain/enrollment-status
 import { endEnrollmentsTx } from "./enrollment-end";
 import { profileUrlFor } from "../linkedin/domain/linkedin";
 import { insertSkippingContacts, notContactSql } from "./contact-guard";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 const CHUNK = 500;
 
@@ -20,9 +21,9 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
   async enrollPicked(organizationId, campaignId, channel, personIds, handle) {
     const ids = [...new Set(personIds)];
     return inTransaction(handle, async (tx) => {
+      const suppressed = sql<boolean>`${suppressedSql("people")}`;
+      const dnc = sql<boolean>`${doNotContactSql("people")}`;
       // Qualified by hand: a single-table select renders bare column names, which a subquery would bind to its own table.
-      const suppressed = sql<boolean>`exists (select 1 from suppression_list s where s.organization_id = people.organization_id and s.email = lower(people.email))`;
-      const dnc = sql<boolean>`exists (select 1 from contact_policies cp where cp.person_id = people.id and cp.organization_id = people.organization_id and cp.do_not_contact)`;
       const already = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status <> 'removed')`;
       const removed = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status = 'removed')`;
       const contact = sql<boolean>`not ${notContactSql}`;

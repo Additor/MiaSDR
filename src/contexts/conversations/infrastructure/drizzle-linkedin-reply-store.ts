@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { channelSettings, contactPolicies, conversations, drafts, events, linkedinAccounts, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
+import { channelSettings, conversations, drafts, events, linkedinAccounts, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import type { AttemptRow } from "../application/reply-ports";
@@ -9,6 +9,7 @@ import { replyBlock, replyGapSeconds, utcDayStart } from "../domain/linkedin-rep
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
+import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
 
@@ -251,8 +252,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   },
 
   async checkBlockers(send, now) {
-    const [dnc] = await db.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, send.personId));
-    if (dnc?.d) return { reason: "do_not_contact", message: "This person is marked do not contact. The reply was not sent." };
+    if (await isDoNotContact(db, send.organizationId, send.personId)) return { reason: "do_not_contact", message: "This person is marked do not contact. The reply was not sent." };
     const [account] = await db.select().from(linkedinAccounts).where(eq(linkedinAccounts.id, send.accountId));
     // Pause and connection state only: the cap and the gap were applied by the claim.
     const block = account ? replyBlock(now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: Number.MAX_SAFE_INTEGER }, { usedToday: 0, lastAttemptAt: null, gapSeconds: 0 }) : { reason: "not_connected" as const, message: "This LinkedIn account no longer exists." };
@@ -326,7 +326,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
     if (head.channel !== "linkedin") return null;
 
     const [account] = UUID.test(head.accountRef) ? await db.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, head.accountRef), eq(linkedinAccounts.organizationId, organizationId))) : [];
-    const [dnc] = await db.select({ d: contactPolicies.doNotContact }).from(contactPolicies).where(eq(contactPolicies.personId, head.personId));
+    const dnc = await isDoNotContact(db, organizationId, head.personId);
     const used = account ? await usage(db, account.id, now) : { usedToday: 0, lastAttemptAt: null };
     const block = account ? replyBlock(now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: 0 }) : null;
     // The gap is a few seconds and clears by itself, so the panel does not show it.
@@ -346,7 +346,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       recipient: head.name ?? head.firstName,
       accountLabel: account?.name ?? account?.username ?? "LinkedIn account",
       issue,
-      doNotContact: dnc?.d === true,
+      doNotContact: dnc,
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,
       draft: draft

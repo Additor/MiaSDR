@@ -12,6 +12,7 @@ import { knowledgeFor } from "../../infrastructure/thread-context";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 const PENDING_DRAFTS = sqlValues(PENDING_DRAFT_STATUSES);
 
@@ -51,7 +52,7 @@ const toCandidate = (r: FactsRow): InterruptCandidate => ({
 const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
   select r.id as run_id, r.organization_id, r.record_id, r.trigger_message_id, r.reply_type_id as run_reply_type_id,
          rec.latest_inbound_message_id, rec.reply_type_id, rec.group_key, s.key as sub_key, s.follow_ups, rec.workflow_state,
-         coalesce((select cp.do_not_contact from contact_policies cp where cp.person_id = rec.person_id and cp.organization_id = r.organization_id), false) as dnc,
+         ${doNotContactSql("p")} as dnc,
          (select sl.reason from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email)
            order by case sl.reason when 'complaint' then 0 when 'unsubscribed' then 1 when 'bounced' then 2 else 3 end limit 1) as suppression,
          p.lifecycle = 'contact' as contact,
@@ -94,8 +95,8 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and p.lifecycle <> 'contact'
           and exists (select 1 from reply_type_picks cl where cl.message_id = r.latest_inbound_message_id and cl.expected_context_version = r.context_version and cl.status in ('auto_applied', 'accepted', 'overridden'))
           and not exists (select 1 from sequence_runs sr where sr.record_id = r.id and (sr.trigger_message_id = r.latest_inbound_message_id or sr.status in ('active', 'paused')))
-          and not exists (select 1 from contact_policies cp where cp.person_id = r.person_id and cp.do_not_contact)
-          and not exists (select 1 from suppression_list sl where sl.organization_id = r.organization_id and sl.email = lower(p.email))
+          and not ${doNotContactSql("p")}
+          and not ${suppressedSql("p")}
           and (not ((r.last_outbound_at is not null and r.last_inbound_at is not null and r.last_outbound_at >= r.last_inbound_at) or not ${startReplyDraftSql("r", "s")})
                or (select count(*) from sequence_steps st where st.sequence_version_id = pick.version_id) >= 2)
         order by r.last_inbound_at desc nulls last

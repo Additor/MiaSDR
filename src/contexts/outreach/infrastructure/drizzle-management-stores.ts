@@ -17,6 +17,7 @@ import { filteredScope, sentCount, tabCounts } from "./enrollment-list-sql";
 import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 /** SQL condition for an archive filter on `campaigns`. */
 export const archiveCondition = (filter: ArchiveFilter): SQL | undefined =>
@@ -205,8 +206,8 @@ export const drizzleCampaignStore: CampaignStore = {
     const matching = and(eq(people.organizationId, organizationId), search);
 
     return inTransaction(handle, async (tx) => {
-      const suppressed = sql`exists (select 1 from suppression_list s where s.organization_id = ${people.organizationId} and s.email = lower(${people.email}))`;
-      const dnc = sql`exists (select 1 from contact_policies cp where cp.person_id = ${people.id} and cp.organization_id = ${people.organizationId} and cp.do_not_contact)`;
+      const suppressed = suppressedSql("people");
+      const dnc = doNotContactSql("people");
       const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
 
       const [skipped] = await tx

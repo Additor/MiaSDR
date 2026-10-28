@@ -8,6 +8,7 @@ import { RESTORE_REFUSAL_TEXT, decideRestore, restoredProgress } from "../domain
 import { notContactSql } from "./contact-guard";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
+import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 const uuidList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 /** Facts about the people of the named enrollments, read inside the restore transaction. */
@@ -24,14 +25,14 @@ async function personFacts(tx: DbHandle, organizationId: string, campaignId: str
         and r.person_id in (${uuidList(personIds)})
     `),
     tx.execute(sql`
-      select cp.person_id as "personId" from contact_policies cp
-      where cp.organization_id = ${organizationId} and cp.do_not_contact and cp.person_id in (${uuidList(personIds)})
+      select p.id as "personId" from people p
+      where p.organization_id = ${organizationId} and p.id in (${uuidList(personIds)}) and ${doNotContactSql("p")}
     `),
     channel === "email"
       ? tx.execute(sql`
           select p.id as "personId" from people p
           where p.organization_id = ${organizationId} and p.id in (${uuidList(personIds)})
-            and exists (select 1 from suppression_list s where s.organization_id = p.organization_id and s.email = lower(p.email))
+            and ${suppressedSql("p")}
         `)
       : Promise.resolve([]),
     tx
