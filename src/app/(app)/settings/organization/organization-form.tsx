@@ -5,7 +5,9 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { SettingsSection } from "../settings-section";
 import { TimeZoneSelect } from "../time-zone-select";
@@ -23,26 +25,27 @@ export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: 
   const saved = { name: org.name, timeZone: org.timeZone, country: org.defaultPhoneCountry ?? "" };
   const [values, setValues] = useState(saved);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   const dirty = values.name.trim() !== saved.name || values.timeZone !== saved.timeZone || values.country !== saved.country;
   useLeaveGuard(dirty);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-    const result = await callApi("/api/settings/organization", "PATCH", {
+    const result = await run("save", async () => {
+      setError(null);
+      return runApiAction(callApi("/api/settings/organization", "PATCH", {
       ...(canRename ? { name: values.name } : {}),
       timeZone: values.timeZone,
       defaultPhoneCountry: values.country || null,
+    }), { refresh: () => router.refresh() });
     });
-    setPending(false);
+    if (!result) return;
     if (!result.ok) {
       setError(result.error);
       return;
     }
     toast.success("Organization saved.");
-    router.refresh();
   }
 
   return (

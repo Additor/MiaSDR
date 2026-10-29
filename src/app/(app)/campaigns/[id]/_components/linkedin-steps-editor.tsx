@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { cn } from "@/components/ui/utils";
 import { CampaignSection } from "./campaign-section";
 import { MergeFieldPicker, UnresolvedList, useFieldInsert, useMergeFields, type UnresolvedToken } from "./merge-field-picker";
@@ -42,7 +44,8 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
   const router = useRouter();
   const [steps, setSteps] = useState<LinkedInEditableStep[]>(initial);
   const [selected, setSelected] = useState(1);
-  const [saving, setSaving] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const saving = isBusy("save");
   const [issues, setIssues] = useState<Array<{ step?: number | null; message: string }>>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -62,8 +65,9 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
   useEffect(() => {
     if (!current) return;
     const handle = setTimeout(async () => {
-      const result = await callApi<Preview>(`/api/linkedin/campaigns/${id}/preview`, "POST", { step: current.stepNumber, steps });
-      setPreview(result.data);
+      // A preview reads; it changes nothing, so it reloads nothing.
+      const result = await runApiAction(callApi<Preview>(`/api/linkedin/campaigns/${id}/preview`, "POST", { step: current.stepNumber, steps }));
+      setPreview(result.ok ? result.data : null);
       setPreviewError(result.ok ? null : result.error);
     }, 400);
     return () => clearTimeout(handle);
@@ -73,19 +77,17 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
     setSteps((all) => all.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   }
 
-  async function save() {
-    setSaving(true);
-    setIssues([]);
-    const result = await callApi(`/api/linkedin/campaigns/${id}`, "PATCH", { steps });
-    setSaving(false);
-    if (!result.ok) {
-      setIssues(result.issues);
-      toast.error(result.error ?? "Could not save.");
-      return;
-    }
-    toast.success("Steps saved.");
-    router.refresh();
-  }
+  const save = () =>
+    run("save", async () => {
+      setIssues([]);
+      const result = await runApiAction(callApi(`/api/linkedin/campaigns/${id}`, "PATCH", { steps }), { refresh: () => router.refresh() });
+      if (!result.ok) {
+        setIssues(result.issues);
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Steps saved.");
+    });
 
   return (
     <div className="grid min-w-0 lg:grid-cols-2 lg:gap-section">
@@ -181,7 +183,7 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
             >
               <PlusIcon /> Add message
             </Button>
-            <Button onClick={save} disabled={!dirty || saving}>
+            <Button onClick={() => void save()} disabled={!dirty || saving}>
               {saving ? "Saving…" : "Save steps"}
             </Button>
           </div>

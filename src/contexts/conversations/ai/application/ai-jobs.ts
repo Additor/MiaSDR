@@ -126,7 +126,9 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
     response: { usage: result.usage ?? null },
     citations: draftCitations(ctx),
   });
-  // Another worker claimed the job after this lease ran out; its run writes the draft.
+  // Another worker claimed the job after this lease ran out; its run writes the draft. A person marked reply handling done
+  // while the AI wrote: the job completes with nothing written.
+  if (written === "handling_closed") return written;
   return written ? "drafted" : "claim_lost";
 }
 

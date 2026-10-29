@@ -83,7 +83,7 @@ describeDb("company delete", () => {
     const acme = await f.company("Acme");
     await app.deleteCompany(deps, f.member, acme);
     const leads = await import("../../application/lead-management");
-    const leadDeps = (await import("../composition")).leadDeps();
+    const leadDeps = (await import("@/composition/leads")).leadDeps();
     const p = await f.person();
     await leads.updateLead(leadDeps, f.member, p, { companyDomain: `acme-${f.tag}.test` });
     const [row] = await kit.sql`select c.id, c.domain from people p join companies c on c.id = p.company_id where p.id = ${p}`;

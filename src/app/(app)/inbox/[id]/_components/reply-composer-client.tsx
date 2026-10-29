@@ -42,6 +42,8 @@ export function ReplyComposer({
   const [cc, setCc] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A reason the reply cannot be written turns every field off, so nobody types text that cannot be saved.
+  const blocked = disabledReason !== null;
 
   async function create() {
     setBusy(true);
@@ -59,11 +61,11 @@ export function ReplyComposer({
       <p className="heading-item">{title}</p>
       <Field>
         <FieldLabel htmlFor="compose-subject">Subject</FieldLabel>
-        <Input id="compose-subject" value={subject} maxLength={MANUAL_SUBJECT_MAX} onChange={(e) => setSubject(e.target.value)} />
+        <Input id="compose-subject" value={subject} maxLength={MANUAL_SUBJECT_MAX} onChange={(e) => setSubject(e.target.value)} disabled={blocked} />
       </Field>
       <Field>
         <FieldLabel htmlFor="compose-body">Message</FieldLabel>
-        <Textarea id="compose-body" className="min-h-48" value={body} maxLength={MANUAL_BODY_MAX} onChange={(e) => setBody(e.target.value)} />
+        <Textarea id="compose-body" className="min-h-48" value={body} maxLength={MANUAL_BODY_MAX} onChange={(e) => setBody(e.target.value)} disabled={blocked} />
       </Field>
       {knownCcs.length > 0 && (
         // A plain fieldset with its legend as a label, no box, as in the draft editor.
@@ -77,7 +79,7 @@ export function ReplyComposer({
                 id={`compose-cc-${known.email}`}
                 value={known.email}
                 checked={cc.includes(known.email)}
-                disabled={known.blocked !== null}
+                disabled={blocked || known.blocked !== null}
                 onCheckedChange={(checked) => setCc((current) => (checked === true ? [...current, known.email] : current.filter((c) => c !== known.email)))}
               />
               <FieldLabel htmlFor={`compose-cc-${known.email}`} className="font-normal">

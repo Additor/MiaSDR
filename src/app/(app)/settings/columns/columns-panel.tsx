@@ -6,7 +6,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
 import { Tabs } from "@/components/shell/tabs";
@@ -28,6 +30,8 @@ interface Column {
 const TITLES: Record<Entity, string> = { people: "Person fields", companies: "Company fields" };
 /** Where the fields of each type show, in the order set here. */
 const SHOWN_ON: Record<Entity, string> = { people: "the lead and contact forms", companies: "the company form" };
+
+const LIST_BUSY = "Another change to these fields is still saving. Try again in a moment.";
 
 export function ColumnsPanel({ canManage, initial }: { canManage: boolean; initial: Record<Entity, Column[]> }) {
   return (
@@ -53,42 +57,41 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
   const [archiving, setArchiving] = useState<Column | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  // The list is one ordered set: an order write sends every id, and each change reloads the list, so all changes share one key.
+  const { isBusy, run } = useApiAction<"list">();
+  const pending = isBusy("list");
+  const refresh = () => router.refresh();
   const active = columns.filter((c) => !c.archivedAt);
   const archived = columns.filter((c) => c.archivedAt);
 
-  async function run(call: Promise<{ ok: boolean; error: string | null }>, done?: string) {
-    setPending(true);
-    const result = await call;
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return false;
-    }
-    setError(null);
-    if (done) toast.success(done);
-    router.refresh();
-    return true;
-  }
+  /** Sends one change and shows a refusal in the line under the list. True when it went through. */
+  const change = (url: string, method: "POST" | "PUT" | "PATCH", body: unknown, done?: string) =>
+    run("list", async () => {
+      const result = await runApiAction(callApi(url, method, body), { refresh });
+      setError(result.ok ? null : result.error);
+      if (result.ok && done) toast.success(done);
+      return result.ok;
+    });
 
-  /** For a ConfirmDialog: a failure throws, so the dialog stays open and shows the message. */
-  async function runOrThrow(call: Promise<{ ok: boolean; error: string | null }>, done: string) {
-    const result = await call;
-    if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
-    setError(null);
-    toast.success(done);
-    router.refresh();
+  /** For a ConfirmDialog: runs under the list's key, and a refusal throws, so the dialog stays open and shows it. */
+  async function confirmed(url: string, method: "PATCH" | "DELETE", body: unknown, done: string) {
+    const ran = await run("list", async () => {
+      setError(null);
+      toastOrThrow(await runApiAction(callApi(url, method, body), { refresh }), done);
+      return true;
+    });
+    if (ran === null) throw new Error(LIST_BUSY);
   }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    if (await run(callApi("/api/leads/columns", "POST", { entity, name }), "Field added.")) setName("");
+    if (await change("/api/leads/columns", "POST", { entity, name }, "Field added.")) setName("");
   }
 
   async function rename(event: React.FormEvent, id: string) {
     event.preventDefault();
     if (draft.trim() === "") return;
-    if (await run(callApi(`/api/leads/columns/${id}`, "PATCH", { name: draft.trim() }), "Field renamed.")) setEditingId(null);
+    if (await change(`/api/leads/columns/${id}`, "PATCH", { name: draft.trim() }, "Field renamed.")) setEditingId(null);
   }
 
   function move(index: number, delta: number) {
@@ -96,7 +99,7 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
     const target = index + delta;
     if (target < 0 || target >= ids.length) return;
     [ids[index], ids[target]] = [ids[target], ids[index]];
-    void run(callApi("/api/leads/columns", "PUT", { entity, ids }));
+    void change("/api/leads/columns", "PUT", { entity, ids });
   }
 
   return (
@@ -187,7 +190,7 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
                 <span className="text-sm text-muted-foreground">{formatCount(column.usedBy)} with a value</span>
                 {canManage && (
                   <span className="ml-auto flex gap-1">
-                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(callApi(`/api/leads/columns/${column.id}`, "PATCH", { archived: false }), `${column.name} restored.`)}>
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => void change(`/api/leads/columns/${column.id}`, "PATCH", { archived: false }, `${column.name} restored.`)}>
                       Restore
                     </Button>
                     <Button size="sm" variant="ghost" disabled={pending} onClick={() => setDeleting(column)}>
@@ -207,7 +210,8 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
         description={`It leaves ${SHOWN_ON[entity]}. Its values stay on ${archiving?.usedBy ?? 0} ${entity === "people" ? "people" : "companies"}, and you can restore it later.`}
         confirmLabel="Archive field"
         pendingLabel="Archiving…"
-        onConfirm={() => archiving && runOrThrow(callApi(`/api/leads/columns/${archiving.id}`, "PATCH", { archived: true }), `${archiving.name} archived.`)}
+        confirmDisabled={pending}
+        onConfirm={() => archiving && confirmed(`/api/leads/columns/${archiving.id}`, "PATCH", { archived: true }, `${archiving.name} archived.`)}
       />
       <ConfirmDialog
         open={deleting !== null}
@@ -217,8 +221,9 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
         confirmLabel="Delete field"
         cancelLabel="Keep field"
         pendingLabel="Deleting…"
+        confirmDisabled={pending}
         destructive
-        onConfirm={() => deleting && runOrThrow(callApi(`/api/leads/columns/${deleting.id}`, "DELETE"), `${deleting.name} deleted.`)}
+        onConfirm={() => deleting && confirmed(`/api/leads/columns/${deleting.id}`, "DELETE", undefined, `${deleting.name} deleted.`)}
       />
     </div>
   );

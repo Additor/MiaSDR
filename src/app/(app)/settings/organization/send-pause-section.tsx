@@ -3,11 +3,12 @@
 import { PauseCircleIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow } from "@/app/_lib/use-api-action";
 import { SettingsSection } from "../settings-section";
 
 interface Pause {
@@ -21,10 +22,7 @@ export function SendPauseSection({ pause, canManage }: { pause: Pause | null; ca
   const [confirming, setConfirming] = useState(false);
 
   async function change(paused: boolean) {
-    const result = await callApi("/api/settings/sending-pause", "PUT", { paused });
-    if (!result.ok) throw new Error(result.error ?? "Could not change the pause.");
-    toast.success(paused ? "Sending paused." : "Sending resumed.");
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi("/api/settings/sending-pause", "PUT", { paused }), { refresh: () => router.refresh() }), paused ? "Sending paused." : "Sending resumed.");
   }
 
   return (

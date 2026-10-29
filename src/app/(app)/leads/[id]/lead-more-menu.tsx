@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { deleteConfirmation, type DeleteQualification } from "@/contexts/people/application/lead-delete-terms";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { AddLeadToCampaign } from "../_components/add-to-campaign";
 import { MakeContactDialog } from "./make-contact-dialog";
@@ -38,9 +39,8 @@ export function LeadMoreMenu({
   const [contactOpen, setContactOpen] = useState(false);
 
   async function remove() {
-    const result = await callApi(`/api/leads/${id}`, "DELETE");
-    // ConfirmDialog shows the thrown message and keeps the dialog open.
-    if (!result.ok) throw new Error(result.error ?? "The lead could not be deleted. Try again.");
+    // ConfirmDialog shows the thrown message and keeps the dialog open. A success leaves the page, so nothing reloads it first.
+    orThrow(await runApiAction(callApi(`/api/leads/${id}`, "DELETE")));
     toast.success(`Deleted ${name}.`);
     router.push(returnTo);
     router.refresh();

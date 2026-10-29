@@ -12,7 +12,9 @@ import { CUSTOM_LABEL_MAX, describeCustomLabels } from "@/contexts/people/domain
 import { confirmLabel, RESULT_EXAMPLES, summaryChangesAnything, type ImportSummary, type SkipGroup } from "@/contexts/people/domain/import-summary";
 import type { ImportReport } from "@/contexts/people/application/import-leads";
 import { cn } from "@/components/ui/utils";
-import { callApi, type ApiResult } from "@/app/_lib/api-client";
+import { runApiAction, type ActionFailure } from "@/app/_lib/api-action";
+import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
 import { TARGETS, TARGET_GROUPS, customLabelOf, describeCustom, mappingError, selectValue, type Mapping } from "./mapping";
 import { useMediaQuery } from "@/components/hooks/use-media-query";
@@ -25,12 +27,10 @@ interface Preview {
   suggestedMapping: Mapping;
 }
 
-type Busy = "reading" | "checking" | "importing" | null;
-
 const NETWORK_ERROR = "MiaSDR could not be reached. Check your connection and try again.";
 
 /** The refusal's sentence, or the network line when no answer came. */
-const failure = (result: ApiResult<unknown>, fallback: string) => (result.status === 0 ? NETWORK_ERROR : (result.error ?? fallback));
+const failure = (result: ActionFailure) => (result.status === 0 ? NETWORK_ERROR : result.error);
 
 const SKIP_LABELS: Record<SkipGroup["kind"], string> = {
   invalid_email: "Skipped, the email is not valid",
@@ -49,7 +49,9 @@ export function ImportWizard() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Mapping>({});
   const [country, setCountry] = useState("");
-  const [busy, setBusy] = useState<Busy>(null);
+  // Reading, checking and importing use the same file and mapping, so they share one key; the tag names the step.
+  const { run, isBusy, busyTag } = useApiAction<"file">();
+  const anyBusy = isBusy("file");
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -68,15 +70,15 @@ export function ImportWizard() {
     setError(null);
     setStep(1);
     if (!chosen) return;
-    setBusy("reading");
     const body = new FormData();
     body.set("file", chosen);
-    const result = await callApi<Preview>("/api/leads/import/preview", "POST", body);
-    setBusy(null);
-    if (!result.ok || !result.data) return setError(failure(result, "The file could not be read."));
-    setPreview(result.data);
-    setMapping(result.data.suggestedMapping);
-    setStep(2);
+    await run("file", async () => {
+      const result = await runApiAction(callApi<Preview>("/api/leads/import/preview", "POST", body), { expectData: true });
+      if (!result.ok) return setError(failure(result));
+      setPreview(result.data);
+      setMapping(result.data.suggestedMapping);
+      setStep(2);
+    }, "reading");
   }
 
   /** A change to the mapping or the country makes the last summary wrong, so it goes. */
@@ -103,22 +105,23 @@ export function ImportWizard() {
 
   async function review() {
     if (!file || !preview) return;
-    setBusy("checking");
-    setError(null);
-    const result = await callApi<ImportSummary>("/api/leads/import/summary", "POST", importBody());
-    setBusy(null);
-    if (!result.ok || !result.data) return setError(failure(result, "The file could not be checked."));
-    setSummary(result.data);
+    await run("file", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<ImportSummary>("/api/leads/import/summary", "POST", importBody()), { expectData: true });
+      if (!result.ok) return setError(failure(result));
+      setSummary(result.data);
+    }, "checking");
   }
 
   async function runImport() {
     if (!file || !preview) return;
-    setBusy("importing");
-    setError(null);
-    const result = await callApi<ImportReport>("/api/leads/import", "POST", importBody());
-    setBusy(null);
-    if (!result.ok || !result.data) return setError(failure(result, "The import failed."));
-    setReport(result.data);
+    await run("file", async () => {
+      setError(null);
+      // The report replaces the wizard and links to the leads, so nothing reloads here.
+      const result = await runApiAction(callApi<ImportReport>("/api/leads/import", "POST", importBody()), { expectData: true });
+      if (!result.ok) return setError(failure(result));
+      setReport(result.data);
+    }, "importing");
   }
 
   function reset() {
@@ -126,7 +129,6 @@ export function ImportWizard() {
     setPreview(null);
     setMapping({});
     setCountry("");
-    setBusy(null);
     setSummary(null);
     setReport(null);
     setError(null);
@@ -163,11 +165,11 @@ export function ImportWizard() {
               aria-label="Choose a CSV or XLSX file"
               accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={onFile}
-              disabled={busy !== null}
+              disabled={anyBusy}
               touch
               className="max-sm:file:h-8"
             />
-            {busy === "reading" && (
+            {busyTag("file") === "reading" && (
               <p role="status" className="text-sm text-muted-foreground">
                 Reading the file…
               </p>
@@ -188,7 +190,7 @@ export function ImportWizard() {
             <Link href="/leads" className={cn(buttonVariants({ variant: "ghost", touch: true }), buttonClass)}>
               Cancel
             </Link>
-            <Button touch className={buttonClass} onClick={() => setStep(2)} disabled={!preview || busy !== null}>
+            <Button touch className={buttonClass} onClick={() => setStep(2)} disabled={!preview || anyBusy}>
               Continue
             </Button>
           </div>
@@ -274,19 +276,19 @@ export function ImportWizard() {
             {summary && <SummaryPanel summary={summary} panelRef={summaryRef} />}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" touch className={buttonClass} onClick={() => setStep(1)} disabled={busy !== null}>
+            <Button variant="outline" touch className={buttonClass} onClick={() => setStep(1)} disabled={anyBusy}>
               Back
             </Button>
             <Link href="/leads" className={cn(buttonVariants({ variant: "ghost", touch: true }), buttonClass)}>
               Cancel
             </Link>
             {summary ? (
-              <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={runImport} disabled={busy !== null || Boolean(blocking) || !summaryChangesAnything(summary)}>
-                {busy === "importing" ? "Importing…" : confirmLabel(summary)}
+              <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={() => void runImport()} disabled={anyBusy || Boolean(blocking) || !summaryChangesAnything(summary)}>
+                {busyTag("file") === "importing" ? "Importing…" : confirmLabel(summary)}
               </Button>
             ) : (
-              <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={review} disabled={busy !== null || Boolean(blocking) || preview.totalRows === 0}>
-                {busy === "checking" ? "Checking…" : "Review import"}
+              <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={() => void review()} disabled={anyBusy || Boolean(blocking) || preview.totalRows === 0}>
+                {busyTag("file") === "checking" ? "Checking…" : "Review import"}
               </Button>
             )}
           </div>

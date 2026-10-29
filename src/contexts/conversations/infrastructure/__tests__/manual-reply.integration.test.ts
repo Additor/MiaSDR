@@ -182,7 +182,7 @@ describeDb("manual email replies (no AI)", () => {
       citations: [],
     });
     const created = await compose(f);
-    expect(await one("select status from drafts where id = $1", [ai.id])).toMatchObject({ status: "stale" });
+    expect(await one("select status from drafts where id = $1", [(ai as { id: string }).id])).toMatchObject({ status: "stale" });
     expect((await mgmt.getReplyPanel(f.replyDeps, f.actor, f.conversationId))!.draft?.id).toBe(created.draftId);
   });
 
@@ -261,9 +261,25 @@ describeDb("manual email replies (no AI)", () => {
     const f = await fixture();
     const created = await compose(f);
     await sql`update drafts set status = 'sending' where id = ${created.draftId}`;
-    await expect(compose(f)).rejects.toThrow(/being sent/);
+    await expect(compose(f)).rejects.toThrow("A reply is already being sent in this thread.");
+    await sql`update drafts set status = 'delivery_uncertain' where id = ${created.draftId}`;
+    await expect(compose(f)).rejects.toThrow("An earlier reply in this thread has an unconfirmed outcome. Check the mailbox and mark what you found first.");
     await sql`update drafts set status = 'awaiting_review' where id = ${created.draftId}`;
     await sql`update conversations set status = 'closed' where id = ${f.conversationId}`;
-    await expect(compose(f)).rejects.toThrow(/closed/);
+    await expect(compose(f)).rejects.toThrow("This conversation is closed.");
+  });
+
+  it("checks for a reply in flight on the conversation, not on the record's other conversations", async () => {
+    const f = await fixture();
+    // A LinkedIn reply of the same person, sending in its own chat (docs/decisions.md, "Reply send rules").
+    const [chat] = await sql`
+      insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id)
+      select organization_id, record_id, 'linkedin', ${crypto.randomUUID()}, ${"chat-" + f.tag} from conversations where id = ${f.conversationId} returning id`;
+    await sql`
+      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, edited_body_text, status, provider)
+      select organization_id, record_id, id, 1, 'linkedin', 'On its way', 'sending', 'human' from conversations where id = ${chat.id}`;
+    const created = await compose(f);
+    expect(await one("select status, conversation_id from drafts where id = $1", [created.draftId])).toMatchObject({ status: "awaiting_review", conversation_id: f.conversationId });
+    await expect(mgmt.createManualDraft(f.replyDeps, f.actor, chat.id, { subject: "Hi", bodyText: "x" })).rejects.toThrow("This is not an email conversation.");
   });
 });

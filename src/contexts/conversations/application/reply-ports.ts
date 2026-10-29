@@ -186,6 +186,8 @@ export interface PanelData {
   suppressed: boolean;
   doNotContact: boolean;
   mailboxIssue: string | null;
+  /** Why no reply can be written here at all: reply handling marked done, or the conversation closed. Null when open. */
+  closed: string | null;
   /** The latest inbound message already has an answer sent after it. */
   answered: boolean;
   /** CC addresses seen on this lead's inbound mail, newest first. Offered as optional CC on a reply. */
@@ -197,9 +199,11 @@ export interface ReplyStore {
   panel(organizationId: string, conversationId: string): Promise<PanelData | null>;
   /** Null when the conversation does not exist. */
   draftContext(organizationId: string, conversationId: string): Promise<DraftContext | null>;
-  draftContextForDraft(organizationId: string, draftId: string): Promise<(DraftContext & { draft: DraftRow }) | null>;
+  /** With the record's `workflowState`, so Regenerate refuses reply handling marked done. */
+  draftContextForDraft(organizationId: string, draftId: string): Promise<(DraftContext & { draft: DraftRow; workflowState: string }) | null>;
   /** Writes an AI draft. `stale` is true when the record's version moved past the draft's, so it went in stale. */
-  insertDraft(draft: NewDraft & { feedback?: string | null }): Promise<{ id: string; stale: boolean }>;
+  /** `handling_closed`, with nothing written, when reply handling is marked done (`insertDraftTx`). */
+  insertDraft(draft: NewDraft & { feedback?: string | null }): Promise<{ id: string; stale: boolean } | "handling_closed">;
   getDraft(organizationId: string, draftId: string): Promise<DraftRow | null>;
   /**
    * A draft a person typed (source `manual`), written in `awaiting_review` for the record's current context version.
@@ -258,7 +262,7 @@ export interface AiJobWorkerStore {
   /** Stale, with nothing written, when the job no longer holds its claim. */
   finishClassification(input: FinishClassification): Promise<{ status: "auto_applied" | "proposed" | "stale" }>;
   /** The draft job's draft, written as `ReplyStore.insertDraft` writes one. Null, with nothing written, when the job no longer holds its claim. */
-  insertDraft(job: ClaimedJob, draft: NewDraft): Promise<{ id: string; stale: boolean } | null>;
+  insertDraft(job: ClaimedJob, draft: NewDraft): Promise<{ id: string; stale: boolean } | "handling_closed" | null>;
 }
 
 /** The AI queue outside a claim: enqueueing, the failed and skipped lists, requeue, and the job handlers' reads. */

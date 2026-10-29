@@ -45,6 +45,8 @@ export interface LinkedInReplyPanel {
   accountLabel: string;
   /** Why a reply cannot go out right now, in words for the person. */
   issue: string | null;
+  /** A person marked reply handling done: no reply goes out and no draft is written until Reopen. */
+  markedDone: boolean;
   doNotContact: boolean;
   usedToday: number;
   dailyLimit: number;
@@ -57,9 +59,10 @@ export interface LinkedInReplyPanel {
 
 export interface LinkedInReplyStore {
   /**
-   * One transaction: locks the conversation and the account, replays a known idempotency key, refuses a second reply
-   * while one is in flight, applies pause, daily cap and gap, writes the draft and the ledger row (the claim).
-   * Throws ConflictError (with details.retryAfterSeconds for the gap) when the reply cannot start.
+   * One transaction: locks the conversation and the account, replays a known idempotency key, applies the reply send
+   * rules (`domain/reply-send.ts`): open reply handling, a writable chat, one reply in flight, a current draft, the text
+   * as typed (trimmed here), then pause, daily cap and gap. Writes the draft and the ledger row (the claim). Throws
+   * ConflictError (with details.retryAfterSeconds for the gap), or ValidationError for empty or oversized text.
    * With `draft`, the person approves that draft at that revision (its text replaced by `text`): 404 when it is not a
    * LinkedIn draft of this conversation, 409 when it is no longer `awaiting_review`, was edited since, or was written
    * before a newer message arrived (it turns `stale`). Without `draft` the text goes out as a typed reply.

@@ -12,7 +12,7 @@ import {
   type ReplyTypeGroup,
 } from "../domain/reply-handling";
 import { SYSTEM_ROLE_REASONS, isTypeChangePath, typeChangeOutcome, validateTypeRules, type TypeChangeOutcome } from "../domain/reply-type";
-import type { ReplyHandlingStore, IdentityExceptionRow, RecordDetail, UndoReplyTypePickResult } from "./reply-handling-ports";
+import type { ReplyHandlingStore, IdentityExceptionIntake, IdentityExceptionRow, RecordDetail, UndoReplyTypePickResult } from "./reply-handling-ports";
 import type { InboundLinkedInInput } from "./linkedin-ports";
 import type { InboundEmailInput, IngestResult, InboxStore, ThreadMessage } from "./ports";
 import { resolveUncertainSend, type ReplyDeps } from "./reply-management";
@@ -365,11 +365,11 @@ export type IdentityPayload = z.infer<typeof identityPayloadSchema>;
  * Parks an inbound message whose sender cannot be matched to a lead, for a person to review.
  * Called by ingest paths; safe to call twice for the same provider event.
  */
-export async function quarantineInbound(deps: ReplyHandlingDeps, input: { organizationId: string; sourceEventKey: string; identityValue: string | null; reason: string; payload: IdentityPayload }) {
+export async function quarantineInbound(deps: { exceptions: IdentityExceptionIntake }, input: { organizationId: string; sourceEventKey: string; identityValue: string | null; reason: string; payload: IdentityPayload }) {
   const payload = identityPayloadSchema.parse(input.payload);
   const reason = input.reason.trim();
   if (reason === "" || input.sourceEventKey.trim() === "") throw new ValidationError("A quarantined message needs a reason and a source event key.");
-  return deps.store.insertIdentityException({
+  return deps.exceptions.insertIdentityException({
     organizationId: input.organizationId,
     channel: payload.kind,
     accountRef: payload.message.accountRef,

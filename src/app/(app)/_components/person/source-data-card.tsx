@@ -5,7 +5,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { RecordDisclosure } from "../record/record-header";
 import { countOf } from "@/shared/format-number";
 
@@ -84,23 +86,19 @@ export function SourceDataCard({ person, company, companyName }: { person: Entry
 function MapForm({ rawKey, onDone }: { rawKey: string; onDone: () => void }) {
   const router = useRouter();
   const [name, setName] = useState(rawKey.slice(0, 100));
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"map">();
+  const pending = isBusy("map");
   const [error, setError] = useState<string | null>(null);
 
-  async function submit() {
-    setPending(true);
-    setError(null);
-    const result = await callApi<{ name: string; updated: number }>("/api/leads/raw/map", "POST", { rawKey, name });
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    const updated = result.data?.updated ?? 0;
-    toast.success(`${countOf(updated, "lead")} updated in "${result.data?.name ?? name}".`);
-    onDone();
-    router.refresh();
-  }
+  const submit = () =>
+    run("map", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<{ name: string; updated: number }>("/api/leads/raw/map", "POST", { rawKey, name }), { refresh: () => router.refresh() });
+      if (!result.ok) return setError(result.error);
+      const updated = result.data?.updated ?? 0;
+      toast.success(`${countOf(updated, "lead")} updated in "${result.data?.name ?? name}".`);
+      onDone();
+    });
 
   return (
     <form
@@ -112,7 +110,7 @@ function MapForm({ rawKey, onDone }: { rawKey: string; onDone: () => void }) {
     >
       <Input aria-label="Custom field name" value={name} onChange={(event) => setName(event.target.value)} maxLength={100} className="max-w-64" />
       <Button type="submit" size="sm" disabled={pending || name.trim() === ""}>
-        Create and fill field
+        {pending ? "Filling…" : "Create and fill field"}
       </Button>
       <span className="text-xs text-muted-foreground">Fills every lead that has this column and no value yet.</span>
       {error && (

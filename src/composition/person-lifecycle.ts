@@ -3,6 +3,7 @@ import { purgePersonHandling } from "@/contexts/conversations/infrastructure/per
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
 import { conversionDeps, dealsDeps } from "@/composition/deals";
+import { leadDeleteStore, leadRepository } from "@/composition/leads";
 import { dealCountsOfPerson, dealTitleParts, deleteClosedDealsOfPerson, lockDealsOfPerson } from "@/contexts/deals/infrastructure/person-deals";
 import { addContact, type AddContactDeps, type AddContactInput, type AddContactResult } from "@/contexts/people/application/add-contact";
 import type { CompanyLifecycleDeps, CompanyMergePreviewDeps } from "@/contexts/people/application/company-lifecycle";
@@ -12,7 +13,6 @@ import type { MakeContactDeps } from "@/contexts/people/application/make-contact
 import { drizzleCompanyLifecycleStore } from "@/contexts/people/infrastructure/drizzle-company-lifecycle-store";
 import { drizzleContactDeleteStore } from "@/contexts/people/infrastructure/drizzle-contact-delete-store";
 import { drizzleContactStore, personTransaction } from "@/contexts/people/infrastructure/drizzle-contact-store";
-import { drizzleLeadDeleteStore, drizzleLeadRepository } from "@/contexts/people/infrastructure/drizzle-lead-repository";
 import { drizzleLeadsAudit } from "@/contexts/people/infrastructure/drizzle-leads-audit";
 import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
 import {
@@ -98,8 +98,8 @@ export const contactDeleteDeps: ContactDeleteDeps = {
 
 /** Lead delete and its check: people's rows, outreach's enrollments and sends, conversations' history, in one lock order. */
 export const leadDeleteDeps: LeadDeleteDeps = {
-  leads: drizzleLeadRepository,
-  people: drizzleLeadDeleteStore,
+  leads: leadRepository,
+  people: leadDeleteStore,
   outreach: { lockEnrollments: lockEnrollmentsOfPeopleTx, blockers: leadOutreachBlockers, purge: purgeUnsentEnrollments },
   handling: { peopleWithHistory },
   transaction: personTransaction,

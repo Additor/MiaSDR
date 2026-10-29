@@ -31,7 +31,9 @@ import {
   type StepIssue,
 } from "../_lib/after-reply-form";
 import { countOf } from "@/shared/format-number";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 
 interface SaveResponse {
   stoppedRuns?: number;
@@ -54,11 +56,12 @@ class SaveError extends Error {
 }
 
 async function putAfterReply(campaignId: string, body: unknown): Promise<SaveResponse> {
-  const result = await callApi<SaveResponse>(`/api/campaigns/${campaignId}/after-reply`, "PUT", body);
+  // The caller reloads the page after a save; a refusal leaves the form as it is.
+  const result = await runApiAction(callApi<SaveResponse>(`/api/campaigns/${campaignId}/after-reply`, "PUT", body));
   if (result.ok) return result.data ?? {};
   if (result.code === "runs_in_progress") throw new RunsInProgressError(typeof result.details?.count === "number" ? result.details.count : 0);
   throw new SaveError(
-    result.error ?? "Something went wrong. Try again.",
+    result.error,
     result.issues.map((i) => ({ step: i.step ?? null, message: i.message })),
   );
 }
@@ -93,7 +96,8 @@ export function AfterReplyEditor({
   /** The wait as typed, per step. It lives beside the unit so the field always shows what the person entered in the unit they picked. */
   const [amounts, setAmounts] = useState<string[]>(() => saved.steps.map((s) => String(splitDelay(s.delayMinutes).amount)));
   const [tagText, setTagText] = useState<string[]>(() => saved.steps.map((s) => s.knowledgeTags.join(", ")));
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<StepIssue[]>([]);
   /** The number of follow-ups the person is asked to stop, or null while no confirmation is open. */
@@ -166,18 +170,15 @@ export function AfterReplyEditor({
       setConfirmStop(inProgress);
       return;
     }
-    setPending(true);
-    try {
-      await submit(false);
-    } catch (e) {
-      if (e instanceof RunsInProgressError) setConfirmStop(e.count);
-      else if (e instanceof SaveError) {
-        setError(e.message);
-        setIssues(e.issues);
-      } else setError("Something went wrong. Try again.");
-    } finally {
-      setPending(false);
-    }
+    await run("save", () =>
+      submit(false).catch((e: unknown) => {
+        if (e instanceof RunsInProgressError) setConfirmStop(e.count);
+        else if (e instanceof SaveError) {
+          setError(e.message);
+          setIssues(e.issues);
+        } else setError("Something went wrong. Try again.");
+      }),
+    );
   }
 
   return (

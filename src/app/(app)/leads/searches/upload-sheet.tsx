@@ -11,6 +11,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { countOf, formatCount } from "@/shared/format-number";
 import type { UploadBatchReport } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 
 export interface UploadSheetConfig {
@@ -41,10 +42,11 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
     if (accountIds.length > 0) body.set("accountIds", JSON.stringify(accountIds));
     setError(null);
     setIssues([]);
-    const result = await callApi<UploadBatchReport>("/api/linkedin/search-batches", "POST", body);
-    if (!result.ok || !result.data) {
+    // A success opens the new batch, so nothing reloads this page.
+    const result = await runApiAction(callApi<UploadBatchReport>("/api/linkedin/search-batches", "POST", body), { expectData: true });
+    if (!result.ok) {
       // The refusal and its reasons render in the body, and the dialog stays open.
-      setError(result.error ?? "The upload failed. Check the file and try again.");
+      setError(result.error);
       setIssues(result.issues.map((i) => i.message));
       return false;
     }

@@ -7,6 +7,8 @@
  * editor exists per thread page.
  */
 
+import type { ActionFailure } from "@/app/_lib/api-action";
+
 type Save = () => Promise<string | null>;
 
 let current: Save | null = null;
@@ -28,11 +30,11 @@ export async function saveDraftEdits(): Promise<string | null> {
 export const unsavedEditsError = (reason: string) => `Your draft edits were not saved, so nothing changed. ${reason}`;
 
 /**
- * Saves the edits, then runs a step that retires the open draft. A failed save stops before the step and answers with the
- * refusal in the shape of `callApi`, so the caller shows it like any other error.
+ * Saves the edits, then runs a step that retires the open draft (a `runApiAction` call). A failed save stops before the
+ * step and answers with the refusal as an action failure, so the caller shows it like any other refusal.
  */
-export async function afterSavingEdits<T extends { ok: boolean; error: string | null }>(step: () => Promise<T>, save: () => Promise<string | null> = saveDraftEdits): Promise<T | { ok: false; status: 0; error: string; code: null; data: null; details: null }> {
+export async function afterSavingEdits<T extends { ok: boolean }>(step: () => Promise<T>, save: () => Promise<string | null> = saveDraftEdits): Promise<T | ActionFailure> {
   const unsaved = await save();
-  if (unsaved) return { ok: false, status: 0, error: unsavedEditsError(unsaved), code: null, data: null, details: null };
+  if (unsaved) return { ok: false, status: 0, error: unsavedEditsError(unsaved), code: null, issues: [], details: null };
   return step();
 }

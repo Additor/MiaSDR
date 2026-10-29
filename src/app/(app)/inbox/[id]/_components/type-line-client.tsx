@@ -7,7 +7,9 @@ import { useId, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type { HoldReason } from "@/contexts/conversations/domain/reply-type";
+import { runApiAction, type ActionResult } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import type { NextInQueue } from "../_lib/next-queue";
 import { replyTypeSourceTip } from "../../labels";
@@ -50,27 +52,28 @@ export function TypeLineClient(props: TypeLineProps) {
   const router = useRouter();
   const whyId = useId();
   const [whyOpen, setWhyOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { isBusy, run } = useApiAction<"decide">();
+  const busy = isBusy("decide");
   const [error, setError] = useState<string | null>(null);
   const [settled, setSettled] = useState<{ key: string; text: string } | null>(null);
   const lead = props.draftAwaits ? "outline" : "default";
   const key = decisionKey(decision);
   const view = decisionView(key, settled);
 
-  async function decide(call: () => Promise<{ ok: boolean; error: string | null; code: string | null }>, done: string) {
-    if (busy || !key) return;
-    setBusy(true);
-    setError(null);
-    const result = await call();
-    setBusy(false);
-    if (!result.ok) {
-      // Accepting a held stop request would only change the type: the server sends the person to Stop contacting.
-      if (result.code === "stop_review") return openStopContacting();
-      return setError(result.error);
-    }
-    setSettled({ key, text: done });
-    router.refresh();
-  }
+  /** Sends the decision on the AI's pick. */
+  const decide = (send: () => Promise<ActionResult<unknown>>, done: string) =>
+    run("decide", async () => {
+      if (!key) return;
+      setError(null);
+      const result = await send();
+      if (!result.ok) {
+        // Accepting a held stop request would only change the type: the server sends the person to Stop contacting.
+        if (result.code === "stop_review") return openStopContacting();
+        return setError(result.error);
+      }
+      setSettled({ key, text: done });
+      router.refresh();
+    });
 
   const changeType = (variant: "link" | "outline" | "default") =>
     !props.closed && (
@@ -168,12 +171,12 @@ export function TypeLineClient(props: TypeLineProps) {
                 touch
                 disabled={busy}
                 // Accept retires the open draft, so the editor's unsaved edits are saved first.
-                onClick={() => decide(() => afterSavingEdits(() => callApi(`/api/inbox/${props.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion })), "AI pick accepted.")}
+                onClick={() => void decide(() => afterSavingEdits(() => runApiAction(callApi(`/api/inbox/${props.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion }))), "AI pick accepted.")}
               >
                 {busy ? "Accepting…" : decision.holdReason === "protected_customer" ? "Accept and unlock" : "Accept"}
               </Button>
             ) : decision.kind === "archived" ? null : (
-              <Button size="sm" variant={lead} touch disabled={busy} onClick={() => decide(() => callApi(`/api/reply-type-picks/${decision.pickId}/acknowledge`, "POST"), LOOKS_RIGHT_DONE)}>
+              <Button size="sm" variant={lead} touch disabled={busy} onClick={() => void decide(() => runApiAction(callApi(`/api/reply-type-picks/${decision.pickId}/acknowledge`, "POST")), LOOKS_RIGHT_DONE)}>
                 {busy ? "Saving…" : "Looks right"}
               </Button>
             )}

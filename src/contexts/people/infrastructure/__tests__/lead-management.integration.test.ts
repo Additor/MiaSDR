@@ -53,7 +53,7 @@ describeDb("lead management", () => {
 
   beforeAll(async () => {
     uc = await import("../../application/lead-management");
-    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("../composition")).leadDeps() };
+    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("@/composition/leads")).leadDeps() };
   });
 
   afterAll(async () => {
@@ -360,7 +360,7 @@ describeDb("lead management", () => {
   describe("list", () => {
     it("honours the page size and flags do-not-contact", async () => {
       const { id: o } = await org();
-      const { listLeads } = await import("../queries");
+      const { listLeads } = await import("@/composition/leads");
       await sql`insert into people (organization_id, email, full_name) select ${o}, 'p' || g || '@list.com', 'P ' || g from generate_series(1, 60) g`;
       const first = await listLeads(o, { pageSize: 25 });
       expect(first.rows).toHaveLength(25);

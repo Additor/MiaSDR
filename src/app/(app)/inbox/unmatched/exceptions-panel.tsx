@@ -11,7 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { RadioGroup } from "@/components/ui/radio-group";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 
 interface Row {
@@ -83,7 +85,9 @@ function PersonPicker({ row }: { row: Row }) {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [chosen, setChosen] = useState<Candidate | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  // File and Ignore settle the same message, so they share one key; the tag says which runs.
+  const { isBusy, busyTag, run } = useApiAction<"settle">();
+  const pending = isBusy("settle");
 
   async function search(event: React.FormEvent) {
     event.preventDefault();
@@ -93,15 +97,17 @@ function PersonPicker({ row }: { row: Row }) {
     setCandidates(result.data.rows);
   }
 
-  async function submit(body: { status: "resolved"; personId: string } | { status: "ignored" }) {
-    setPending(true);
-    setError(null);
-    const result = await callApi(`/api/identity-exceptions/${row.id}`, "PATCH", body);
-    setPending(false);
-    if (!result.ok) return setError(result.error);
-    toast.success(body.status === "resolved" ? `Message filed under ${chosen ? (chosen.name ?? chosen.email ?? "the person") : "the person"}.` : "Message ignored.");
-    router.refresh();
-  }
+  const submit = (body: { status: "resolved"; personId: string } | { status: "ignored" }) =>
+    run(
+      "settle",
+      async () => {
+        setError(null);
+        const result = await runApiAction(callApi(`/api/identity-exceptions/${row.id}`, "PATCH", body), { refresh: () => router.refresh() });
+        if (!result.ok) return setError(result.error);
+        toast.success(body.status === "resolved" ? `Message filed under ${chosen ? (chosen.name ?? chosen.email ?? "the person") : "the person"}.` : "Message ignored.");
+      },
+      body.status,
+    );
 
   return (
     <>
@@ -136,11 +142,11 @@ function PersonPicker({ row }: { row: Row }) {
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" touch disabled={pending || !chosen} onClick={() => chosen && submit({ status: "resolved", personId: chosen.personId })}>
-          File under {chosen ? (chosen.name ?? chosen.email) : "the chosen person"}
+        <Button size="sm" touch disabled={pending || !chosen} onClick={() => chosen && void submit({ status: "resolved", personId: chosen.personId })}>
+          {busyTag("settle") === "resolved" ? "Filing…" : `File under ${chosen ? (chosen.name ?? chosen.email) : "the chosen person"}`}
         </Button>
-        <Button size="sm" variant="ghost" touch disabled={pending} onClick={() => submit({ status: "ignored" })}>
-          Ignore
+        <Button size="sm" variant="ghost" touch disabled={pending} onClick={() => void submit({ status: "ignored" })}>
+          {busyTag("settle") === "ignored" ? "Ignoring…" : "Ignore"}
         </Button>
       </div>
     </>

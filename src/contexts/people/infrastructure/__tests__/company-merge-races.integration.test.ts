@@ -91,7 +91,7 @@ describeDb("company merge races", () => {
       await tx`delete from companies where id = ${acme}`;
     });
     const leads = await import("../../application/lead-management");
-    const leadDeps = (await import("../composition")).leadDeps();
+    const leadDeps = (await import("@/composition/leads")).leadDeps();
     const p = await f.person();
     const saving = settle(leads.updateLead(leadDeps, f.member, p, { companyDomain: domain }));
     await waitForLockWaiters(kit.sql, 1);

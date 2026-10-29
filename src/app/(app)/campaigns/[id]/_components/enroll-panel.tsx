@@ -6,7 +6,9 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
 import { ENROLL_BATCH_LIMIT, ENROLL_CONFIRM_FROM, enrollNeedsConfirmation } from "@/contexts/outreach/domain/campaign-view";
 import type { CrossCampaignNotices } from "@/contexts/outreach/application/cross-campaign-notices";
@@ -71,7 +73,8 @@ export function LeadsSection({ id, count, disabled, channel = "email", children 
 export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; disabled: boolean; channel?: "email" | "linkedin" }) {
   const linkedin = channel === "linkedin";
   const router = useRouter();
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"check">();
+  const pending = isBusy("check");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   /** The dry run that waits for a yes: the search it counted and what it found. */
@@ -79,36 +82,21 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
   const url = `${linkedin ? "/api/linkedin" : "/api"}/campaigns/${id}/enroll`;
 
   async function enroll(query: string) {
-    const response = await callApi<Result>(url, "POST", query ? { query } : {});
-    if (!response.ok || !response.data) throw new Error(response.error ?? "Could not add the leads. Try again.");
-    setResult(response.data);
-    router.refresh();
+    setResult(orThrow(await runApiAction(callApi<Result>(url, "POST", query ? { query } : {}), { refresh: () => router.refresh(), expectData: true })));
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-    setResult(null);
     const query = String(new FormData(event.currentTarget).get("query") ?? "").trim();
-    // Count first: an empty search or a large match asks before it enrolls anyone.
-    const dry = await callApi<Result>(url, "POST", { ...(query ? { query } : {}), dryRun: true });
-    if (!dry.ok || !dry.data) {
-      setPending(false);
-      setError(dry.error);
-      return;
-    }
-    if (enrollNeedsConfirmation({ query, wouldAdd: dry.data.wouldAdd ?? 0 })) {
-      setPending(false);
-      setReview({ query, found: dry.data });
-      return;
-    }
-    try {
-      await enroll(query);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not add the leads. Try again.");
-    }
-    setPending(false);
+    void run("check", async () => {
+      setError(null);
+      setResult(null);
+      // Count first: an empty search or a large match asks before it enrolls anyone.
+      const dry = await runApiAction(callApi<Result>(url, "POST", { ...(query ? { query } : {}), dryRun: true }), { expectData: true });
+      if (!dry.ok) return setError(dry.error);
+      if (enrollNeedsConfirmation({ query, wouldAdd: dry.data.wouldAdd ?? 0 })) return setReview({ query, found: dry.data });
+      await enroll(query).catch((e: unknown) => setError(e instanceof Error ? e.message : "Could not add the leads. Try again."));
+    });
   }
 
   const summary = result ? skippedSummary(result, linkedin) : null;

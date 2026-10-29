@@ -12,11 +12,11 @@ import { checkLeadDelete } from "@/contexts/people/application/lead-delete-check
 import { getLead } from "@/contexts/people/application/lead-management";
 import { telHref } from "@/contexts/people/domain/lead-contact-links";
 import { sourceLabel } from "@/contexts/people/domain/lead-labels";
-import { leadDeps } from "@/contexts/people/infrastructure/composition";
+import { leadDeps, readLeadNeighbors, type LeadNeighbors } from "@/composition/leads";
 import { leadDeleteDeps } from "@/composition/person-lifecycle";
-import { readLeadNeighbors, type LeadNeighbors } from "@/contexts/people/infrastructure/composition";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
-import { leadActivityDeps, crossCampaignNotices } from "@/contexts/outreach/infrastructure/composition";
+import { crossCampaignNotices } from "@/contexts/outreach/infrastructure/composition";
+import { leadActivityDeps } from "@/composition/leads";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { AddLeadToCampaign } from "../_components/add-to-campaign";

@@ -1,10 +1,12 @@
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
-import { rowsOf, sqlValues } from "@/platform/db/sql-values";
+import { drafts, events, people, records } from "@/platform/db/schema";
+import { sqlValues } from "@/platform/db/sql-values";
 import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
-import { OPEN_STEP_STATUSES, RUN_FROM, runReasonOfHalt, STEP_FROM, type RunStatus, type StepRunStatus } from "../domain/sequences";
+import { ACTIVE_RUN_STATUSES, OPEN_STEP_STATUSES, RUN_FROM, runReasonOfHalt, STEP_FROM, type RunStatus, type StepRunStatus } from "../domain/sequences";
+import { sequenceRuns, sequenceStepRuns } from "./sequences-schema";
 import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports";
 
 /**
@@ -15,22 +17,39 @@ import type { FollowUpStop } from "@/contexts/outreach/application/inbound-ports
  * layer, reaches `interruptEmailRunsTx` through its `FollowUpStop` port, which src/composition wires to this module.
  * The conversations core reaches Follow-ups after a reply through this module and, to restart a run, `createRunOn` and
  * `loadStartOn` in drizzle-sequence-store.ts. Every other file here depends on the core, not the other way.
+ *
+ * The run files write `records` in raw SQL: those writes leave `records.updated_at` alone, which a Drizzle update stamps
+ * through `$onUpdate`. Their own tables they write with the query builder.
  */
 
 export type Tx = DbTx;
 
 export type StopFinal = "interrupted" | "cancelled";
 
-const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 /** Draft statuses a person has not acted on. A run that ends retires them; a send in flight is left alone. */
 export const RETIRABLE_DRAFTS = sqlValues(RETIRABLE_DRAFT_STATUSES);
 export const OPEN_STEPS = sqlValues(OPEN_STEP_STATUSES);
 
-/** `status in (...)`: the statuses a run may become `to` from (`RUN_FROM`). Every run status UPDATE adds it. */
-export const runMayBecome = (to: RunStatus) => sql`status in ${sqlValues(RUN_FROM[to])}`;
-/** `status in (...)`: the statuses a step run may become `to` from (`STEP_FROM`). Every step status UPDATE adds it. */
-export const stepMayBecome = (to: StepRunStatus) => sql`status in ${sqlValues(STEP_FROM[to])}`;
+/**
+ * The statuses a run may become `to` from (`RUN_FROM`). Every update that writes `sequence_runs.status` filters with it
+ * (status-guards.test.ts).
+ */
+export const runMayBecome = (to: RunStatus) => inArray(sequenceRuns.status, [...RUN_FROM[to]]);
+/**
+ * The statuses a step run may become `to` from (`STEP_FROM`). Every update that writes `sequence_step_runs.status`
+ * filters with it or with a narrower status check (status-guards.test.ts). The claim's lease takeover in `takeDueStep`
+ * moves `drafting` to `drafting`, the one move outside the table.
+ */
+export const stepMayBecome = (to: StepRunStatus) => inArray(sequenceStepRuns.status, [...STEP_FROM[to]]);
 
+/** Locks the record row: the first lock of every run write, which takes record, then run, then step run. */
+export const lockRecordTx = (tx: Tx, organizationId: string, recordId: string) =>
+  tx.select({ id: records.id }).from(records).where(and(eq(records.id, recordId), eq(records.organizationId, organizationId))).for("no key update");
+
+/**
+ * Writes an event of the record. It stays raw SQL: it copies the person and context version from the record row, and
+ * stores an absent `from` or `to` as JSON `null`, where a Drizzle insert writes SQL NULL.
+ */
 export async function recordEvent(
   tx: Tx,
   input: { organizationId: string; recordId: string; type: string; actorUserId: string | null; from?: unknown; to?: unknown; meta?: Record<string, unknown> },
@@ -55,28 +74,42 @@ type EndRunInput = { organizationId: string; runId: string; final: StopFinal; re
 
 /** `endRunTx` that also reports how many drafts the same statement retired, or null when the run was already over. */
 export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ draftsRetired: number } | null> {
+  const ofRun = and(eq(sequenceRuns.id, input.runId), eq(sequenceRuns.organizationId, input.organizationId));
   // Lock order everywhere is record, then run. A worker holding the run waits for the record, so taking the run first here could deadlock.
-  const [peek] = rowsOf<{ record_id: string }>(await tx.execute(sql`select record_id from sequence_runs where id = ${input.runId} and organization_id = ${input.organizationId}`));
+  const [peek] = await tx.select({ recordId: sequenceRuns.recordId }).from(sequenceRuns).where(ofRun);
   if (!peek) return null;
-  await tx.execute(sql`select id from records where id = ${peek.record_id} and organization_id = ${input.organizationId} for update`);
-  const [run] = rowsOf<{ id: string; record_id: string; status: string }>(
-    await tx.execute(sql`select id, record_id, status from sequence_runs where id = ${input.runId} and organization_id = ${input.organizationId} for update`),
-  );
-  if (!run || (run.status !== "active" && run.status !== "paused")) return null;
-  const retired = rowsOf<{ id: string }>(await tx.execute(sql`
-    update drafts set status = 'stale', error = 'The follow-up sequence ended.', updated_at = ${ts(input.now)}
-    where organization_id = ${input.organizationId} and status in ${RETIRABLE_DRAFTS}
-      and (id in (select draft_id from sequence_step_runs where sequence_run_id = ${input.runId} and draft_id is not null and status in ${OPEN_STEPS})
-           or request->>'sequenceRunId' = ${input.runId})
-    returning id`));
-  await tx.execute(sql`
-    update sequence_step_runs set status = 'cancelled', claim_token = null, updated_at = ${ts(input.now)}
-    where sequence_run_id = ${input.runId} and organization_id = ${input.organizationId} and ${stepMayBecome("cancelled")}`);
-  await tx.execute(sql`update sequence_runs set status = ${input.final}, updated_at = ${ts(input.now)} where id = ${input.runId} and ${runMayBecome(input.final)}`);
-  await tx.execute(sql`update records set next_action_at = null where id = ${run.record_id} and organization_id = ${input.organizationId} and workflow_state = 'waiting'`);
+  await lockRecordTx(tx, input.organizationId, peek.recordId);
+  const [run] = await tx.select({ recordId: sequenceRuns.recordId, status: sequenceRuns.status }).from(sequenceRuns).where(ofRun).for("update");
+  if (!run || !ACTIVE_RUN_STATUSES.includes(run.status)) return null;
+  const retired = await tx
+    .update(drafts)
+    .set({ status: "stale", error: "The follow-up sequence ended.", updatedAt: input.now })
+    .where(
+      and(
+        eq(drafts.organizationId, input.organizationId),
+        inArray(drafts.status, [...RETIRABLE_DRAFT_STATUSES]),
+        or(
+          inArray(
+            drafts.id,
+            tx
+              .select({ id: sequenceStepRuns.draftId })
+              .from(sequenceStepRuns)
+              .where(and(eq(sequenceStepRuns.sequenceRunId, input.runId), isNotNull(sequenceStepRuns.draftId), inArray(sequenceStepRuns.status, [...OPEN_STEP_STATUSES]))),
+          ),
+          sql`${drafts.request}->>'sequenceRunId' = ${input.runId}`,
+        ),
+      ),
+    )
+    .returning({ id: drafts.id });
+  await tx
+    .update(sequenceStepRuns)
+    .set({ status: "cancelled", claimToken: null, updatedAt: input.now })
+    .where(and(eq(sequenceStepRuns.sequenceRunId, input.runId), eq(sequenceStepRuns.organizationId, input.organizationId), stepMayBecome("cancelled")));
+  await tx.update(sequenceRuns).set({ status: input.final, updatedAt: input.now }).where(and(eq(sequenceRuns.id, input.runId), runMayBecome(input.final)));
+  await tx.execute(sql`update records set next_action_at = null where id = ${run.recordId} and organization_id = ${input.organizationId} and workflow_state = 'waiting'`);
   await recordEvent(tx, {
     organizationId: input.organizationId,
-    recordId: run.record_id,
+    recordId: run.recordId,
     type: input.final === "interrupted" ? "sequence.interrupted" : "sequence.cancelled",
     actorUserId: input.actorUserId ?? null,
     from: { sequenceRunId: input.runId, status: run.status },
@@ -97,39 +130,41 @@ async function interruptRuns(tx: Tx, organizationId: string, runIds: string[], r
  * subcategory, so a sequence assigned to a terminal subcategory is not cancelled by its own start.
  */
 export async function interruptRecordRunsTx(tx: Tx, organizationId: string, recordId: string, reason: string, now: Date, exceptReplyTypeId?: string): Promise<number> {
-  const runs = rowsOf<{ id: string }>(
-    await tx.execute(sql`
-      select id from sequence_runs
-      where organization_id = ${organizationId} and record_id = ${recordId} and status in ('active', 'paused')
-        ${exceptReplyTypeId ? sql`and reply_type_id <> ${exceptReplyTypeId}` : sql``}
-      order by id`),
-  );
+  const runs = await tx
+    .select({ id: sequenceRuns.id })
+    .from(sequenceRuns)
+    .where(
+      and(
+        eq(sequenceRuns.organizationId, organizationId),
+        eq(sequenceRuns.recordId, recordId),
+        inArray(sequenceRuns.status, [...ACTIVE_RUN_STATUSES]),
+        exceptReplyTypeId ? ne(sequenceRuns.replyTypeId, exceptReplyTypeId) : undefined,
+      ),
+    )
+    .orderBy(sequenceRuns.id);
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
 }
+
+/** The ids of the live runs whose record matches `where`, in id order. Every join stays inside the organization. */
+const liveRunsOf = (tx: Tx, organizationId: string, where: SQL) =>
+  tx
+    .select({ id: sequenceRuns.id })
+    .from(sequenceRuns)
+    .innerJoin(records, and(eq(records.id, sequenceRuns.recordId), eq(records.organizationId, sequenceRuns.organizationId)))
+    .innerJoin(people, and(eq(people.id, records.personId), eq(people.organizationId, sequenceRuns.organizationId)))
+    .where(and(eq(sequenceRuns.organizationId, organizationId), inArray(sequenceRuns.status, [...ACTIVE_RUN_STATUSES]), where))
+    .orderBy(sequenceRuns.id);
 
 /** Ends the runs of every record of the given people. */
 export async function interruptPersonRunsTx(tx: Tx, organizationId: string, personIds: string[], reason: string, now: Date): Promise<number> {
   if (personIds.length === 0) return 0;
-  const ids = sql.join(personIds.map((id) => sql`${id}::uuid`), sql`, `);
-  const runs = rowsOf<{ id: string }>(
-    await tx.execute(sql`
-      select r.id from sequence_runs r join records rec on rec.id = r.record_id and rec.organization_id = r.organization_id
-      where r.organization_id = ${organizationId} and rec.person_id in (${ids}) and r.status in ('active', 'paused')
-      order by r.id`),
-  );
+  const runs = await liveRunsOf(tx, organizationId, inArray(records.personId, personIds));
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
 }
 
 /** Ends the runs of every person in the organization with this address (case-insensitive). */
 export async function interruptEmailRunsTx(tx: Tx, organizationId: string, email: string, reason: string, now: Date): Promise<number> {
-  const runs = rowsOf<{ id: string }>(
-    await tx.execute(sql`
-      select r.id from sequence_runs r
-      join records rec on rec.id = r.record_id and rec.organization_id = r.organization_id
-      join people p on p.id = rec.person_id and p.organization_id = r.organization_id
-      where r.organization_id = ${organizationId} and lower(p.email) = ${email.trim().toLowerCase()} and r.status in ('active', 'paused')
-      order by r.id`),
-  );
+  const runs = await liveRunsOf(tx, organizationId, sql`lower(${people.email}) = ${email.trim().toLowerCase()}`);
   return interruptRuns(tx, organizationId, runs.map((r) => r.id), reason, now);
 }
 
@@ -151,14 +186,12 @@ export async function stopPersonOutreachOnReplyTx(
   input: { organizationId: string; personId: string; senderEmail?: string | null; channel: "email" | "linkedin"; now: Date },
 ): Promise<ReplyStopResult> {
   const sender = input.senderEmail?.trim().toLowerCase() || null;
-  const people = rowsOf<{ id: string }>(
-    await tx.execute(sql`
-      select id from people
-      where organization_id = ${input.organizationId}
-        and (id = ${input.personId}::uuid ${sender ? sql`or lower(email) = ${sender}` : sql``})
-      order by id`),
-  );
-  const personIds = people.map((p) => p.id);
+  const found = await tx
+    .select({ id: people.id })
+    .from(people)
+    .where(and(eq(people.organizationId, input.organizationId), or(eq(people.id, input.personId), sender ? sql`lower(${people.email}) = ${sender}` : undefined)))
+    .orderBy(people.id);
+  const personIds = found.map((p) => p.id);
   if (personIds.length === 0) return { enrollmentsStopped: 0, runsEnded: 0 };
   // Same lock as a restore of a removed lead (drizzle-enrollment-restore): one of the two commits first and the other sees it.
   await lockPersonOutreachTx(tx, input.organizationId, personIds);
@@ -168,11 +201,14 @@ export async function stopPersonOutreachOnReplyTx(
 
   for (const personId of new Set(stopped.map((e) => e.personId))) {
     const own = stopped.filter((e) => e.personId === personId);
-    await tx.execute(sql`
-      insert into events (organization_id, person_id, event_type, actor_type, to_data, meta)
-      values (${input.organizationId}, ${personId}::uuid, 'outreach.stopped_by_reply', 'system',
-              ${JSON.stringify({ status: "replied" })}::jsonb,
-              ${JSON.stringify({ replyChannel: input.channel, enrollmentIds: own.map((e) => e.id), channels: [...new Set(own.map((e) => e.channel))] })}::jsonb)`);
+    await tx.insert(events).values({
+      organizationId: input.organizationId,
+      personId,
+      eventType: "outreach.stopped_by_reply",
+      actorType: "system",
+      toData: { status: "replied" },
+      meta: { replyChannel: input.channel, enrollmentIds: own.map((e) => e.id), channels: [...new Set(own.map((e) => e.channel))] },
+    });
   }
   return { enrollmentsStopped: stopped.length, runsEnded };
 }

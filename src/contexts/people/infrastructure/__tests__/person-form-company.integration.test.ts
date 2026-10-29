@@ -17,7 +17,7 @@ describeDb("person form company", () => {
   beforeAll(async () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
     uc = await import("../../application/lead-management");
-    deps = (await import("../composition")).leadDeps();
+    deps = (await import("@/composition/leads")).leadDeps();
   }, 60_000);
 
   afterAll(async () => {

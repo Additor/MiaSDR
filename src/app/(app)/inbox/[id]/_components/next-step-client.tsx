@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { dayFromToday, DueField, useBrowserZone } from "@/app/(app)/_components/person/tasks-panel";
 import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 import type { NextInQueue } from "../_lib/next-queue";
@@ -47,7 +49,8 @@ export function NextStepClient(props: NextStepProps) {
   const [stopOpen, setStopOpen] = useState(false);
   const [decided, setDecided] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"reopen">();
+  const pending = isBusy("reopen");
   const canStop = !props.doNotContact;
 
   useEffect(() => {
@@ -71,16 +74,14 @@ export function NextStepClient(props: NextStepProps) {
     router.refresh();
   }
 
-  async function reopen() {
-    setPending(true);
-    setError(null);
-    const result = await callApi(`/api/records/${recordId}/reopen`, "POST");
-    setPending(false);
-    if (!result.ok) return setError(result.error ?? "Reply handling did not reopen. Try again.");
-    setDecided(null);
-    toast.success("Reopened.");
-    router.refresh();
-  }
+  const reopen = () =>
+    run("reopen", async () => {
+      setError(null);
+      const result = await runApiAction(callApi(`/api/records/${recordId}/reopen`, "POST"), { refresh: () => router.refresh() });
+      if (!result.ok) return setError(result.error);
+      setDecided(null);
+      toast.success("Reopened.");
+    });
 
   const toggle = (next: "follow" | "done") => {
     setError(null);
@@ -164,17 +165,19 @@ function FollowUpForm({ recordId, firstName, currentUserId, onCancel, onDone }: 
   const [name, setName] = useState(`Follow up with ${firstName}`);
   const [dueDay, setDueDay] = useState(() => dayFromToday(1));
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"add">();
+  const pending = isBusy("add");
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
     if (name.trim() === "") return setError("Name the task first.");
-    setPending(true);
-    setError(null);
-    const result = await callApi(`/api/records/${recordId}/tasks`, "POST", { name, dueDay: dueDay || null, timeZone: zone ?? "UTC", assigneeId: currentUserId });
-    setPending(false);
-    if (!result.ok) return setError(result.error ?? "The reminder was not added. Try again.");
-    onDone("Reminder added.");
+    void run("add", async () => {
+      setError(null);
+      // `onDone` reloads the page after a success.
+      const result = await runApiAction(callApi(`/api/records/${recordId}/tasks`, "POST", { name, dueDay: dueDay || null, timeZone: zone ?? "UTC", assigneeId: currentUserId }));
+      if (!result.ok) return setError(result.error);
+      onDone("Reminder added.");
+    });
   }
 
   return (
@@ -207,23 +210,22 @@ function FollowUpForm({ recordId, firstName, currentUserId, onCancel, onDone }: 
 function DoneForm({ recordId, personName, typeName, onCancel, onDone }: { recordId: string; personName: string; typeName: string | null; onCancel: () => void; onDone: (message: string) => void }) {
   const [reason, setReason] = useState(typeName ?? "");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"close">();
+  const pending = isBusy("close");
   const fieldId = `done-reason-${recordId}`;
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
     if (reason.trim() === "") return setError("Say why no reply is needed.");
-    setPending(true);
-    setError(null);
-    const unsaved = await saveDraftEdits();
-    if (unsaved) {
-      setPending(false);
-      return setError(unsavedEditsError(unsaved));
-    }
-    const result = await callApi(`/api/records/${recordId}/close`, "POST", { reason: reason.trim() });
-    setPending(false);
-    if (!result.ok) return setError(result.error ?? "Reply handling did not close. Try again.");
-    onDone(`Marked done for ${personName}.`);
+    void run("close", async () => {
+      setError(null);
+      const unsaved = await saveDraftEdits();
+      if (unsaved) return setError(unsavedEditsError(unsaved));
+      // `onDone` reloads the page after a success.
+      const result = await runApiAction(callApi(`/api/records/${recordId}/close`, "POST", { reason: reason.trim() }));
+      if (!result.ok) return setError(result.error);
+      onDone(`Marked done for ${personName}.`);
+    });
   }
 
   return (

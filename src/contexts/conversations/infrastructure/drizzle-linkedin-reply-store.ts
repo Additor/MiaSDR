@@ -13,12 +13,10 @@ import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
+import { isUuid } from "@/shared/uuid";
+import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 type Tx = DbTx;
-
-const IN_FLIGHT_SENDING = "A reply is already being sent in this chat.";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** What the approval snapshot stores in `send_attempts.request` for a LinkedIn reply. */
 interface Snapshot {
@@ -138,7 +136,8 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
 export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   async begin(input) {
     const result = await db.transaction(async (tx) => {
-      // The conversation row serializes every reply to one chat: double clicks, two tabs, two workers.
+      // The conversation row serializes every reply to one chat: double clicks, two tabs, two workers. FOR UPDATE, as on
+      // email, holds back an ingest's message insert (docs/database.md, "Lock modes").
       const [conv] = await tx
         .select({ id: conversations.id, recordId: conversations.recordId, channel: conversations.channel, status: conversations.status, accountRef: conversations.accountRef, chat: conversations.providerThreadId })
         .from(conversations)
@@ -156,23 +155,19 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         return { kind: "replay" as const, attempt: toAttempt(existing.attempt) };
       }
 
-      if (conv.channel !== "linkedin") throw new ConflictError("This is not a LinkedIn conversation.");
-      if (conv.status !== "active") throw new ConflictError("This conversation is closed.");
-      if (!conv.chat) throw new ConflictError("There is no LinkedIn chat for this conversation yet.");
-      if (!UUID.test(conv.accountRef)) throw new ConflictError("No LinkedIn account is connected for this conversation.");
+      // The checks run in the order of docs/decisions.md, "Reply send rules".
+      const [record] = await tx.select({ personId: records.personId, workflowState: records.workflowState, version: records.contextVersion }).from(records).where(eq(records.id, conv.recordId));
+      checkRecordOpen(record, "linkedin");
+      checkThreadWritable(conv, "linkedin");
+      // checkThreadWritable refused a conversation without one.
+      const chat = conv.chat as string;
 
       const [inFlight] = await tx
         .select({ id: drafts.id, status: drafts.status })
         .from(drafts)
         .where(and(eq(drafts.conversationId, conv.id), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
-      // The draft being approved is the one in flight: the status refusal names it, as on email.
-      if (inFlight && inFlight.id === input.draft?.id.toLowerCase()) throw new ConflictError(`This draft is ${inFlight.status.replace(/_/g, " ")} and cannot be sent.`);
-      if (inFlight) {
-        throw new ConflictError(inFlight.status === "sending" ? IN_FLIGHT_SENDING : "An earlier reply in this chat has an unconfirmed outcome. Check LinkedIn and mark what you found first.");
-      }
-
-      const [record] = await tx.select({ personId: records.personId, version: records.contextVersion }).from(records).where(eq(records.id, conv.recordId));
+      checkNoneInFlight(inFlight, input.draft?.id ?? null, "linkedin");
 
       // A draft the person approves must still be the current one: not edited, not replaced, not older than the last message.
       let target: typeof drafts.$inferSelect | null = null;
@@ -183,21 +178,19 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
           .where(and(eq(drafts.id, input.draft.id), eq(drafts.organizationId, input.organizationId), eq(drafts.conversationId, conv.id), eq(drafts.channel, "linkedin")))
           .for("update");
         if (!row) throw new NotFoundError("Draft not found");
-        if (row.status === "stale") throw new ConflictError("A newer message arrived after this draft was written. Review the thread and regenerate the draft.");
-        if (row.status !== "awaiting_review") throw new ConflictError(`This draft is ${row.status.replace(/_/g, " ")} and cannot be sent.`);
-        if (row.revision !== input.draft.revision) throw new ConflictError("The draft changed since you reviewed it. Reload and approve the current text.");
-        if (row.expectedContextVersion !== record.version) {
-          await tx.update(drafts).set({ status: "stale", error: "A newer message arrived after this draft was written." }).where(and(eq(drafts.id, row.id), eq(drafts.status, "awaiting_review")));
-          return { kind: "stale" as const };
+        const outdated = checkDraftCurrent(row, { revision: input.draft.revision, contextVersion: record.version }, "linkedin");
+        if (outdated) {
+          await tx.update(drafts).set({ status: "stale", error: outdated }).where(and(eq(drafts.id, row.id), eq(drafts.status, "awaiting_review")));
+          return { kind: "stale" as const, reason: outdated };
         }
         target = row;
       }
+      const text = checkReplyText(input.text, "linkedin");
 
       const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, conv.accountRef), eq(linkedinAccounts.organizationId, input.organizationId))).for("update");
-      if (!account) throw new ConflictError("No LinkedIn account is connected for this conversation.");
+      if (!account) throw replyRefusal("no_account", "linkedin");
       const used = await usage(tx, account.id, input.now);
-      const block = replyBlock(input.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: await gapFor(tx, input.organizationId) });
-      if (block) throw new ConflictError(block.message, { code: block.reason, ...("retryAfterSeconds" in block ? { retryAfterSeconds: block.retryAfterSeconds } : {}) });
+      checkAccountReady(replyBlock(input.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: await gapFor(tx, input.organizationId) }));
 
       // A refused earlier attempt left its text in an open draft. The new text replaces it.
       const [open] = target
@@ -212,7 +205,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       let draftId: string;
       let revision: number;
       if (open) {
-        const [updated] = await tx.update(drafts).set({ editedBodyText: input.text, revision: open.revision + 1, error: null, expectedContextVersion: record.version }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
+        const [updated] = await tx.update(drafts).set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: record.version }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
         draftId = open.id;
         revision = updated.revision;
       } else {
@@ -224,7 +217,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
             conversationId: conv.id,
             expectedContextVersion: record.version,
             channel: "linkedin",
-            editedBodyText: input.text,
+            editedBodyText: text,
             status: "awaiting_review",
             provider: "human",
             request: { manual: true, createdBy: input.actorUserId },
@@ -236,8 +229,8 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
 
       const snapshot: Snapshot = {
         channel: "linkedin",
-        text: input.text,
-        chat: conv.chat,
+        text,
+        chat,
         accountId: account.id,
         providerAccountId: account.providerAccountId,
         conversationId: conv.id,
@@ -257,7 +250,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       if (violatedConstraint(error, "23505") === "drafts_one_in_flight_uq") throw new ConflictError("Another reply in this chat started sending first. Reload the chat.");
       throw error;
     });
-    if (result.kind === "stale") throw new ConflictError("A newer message arrived after this draft was written. Review the thread and regenerate the draft.");
+    if (result.kind === "stale") throw staleDraftRefusal(result.reason, "linkedin");
     if (result.kind === "replay") return result;
     return { kind: "started", send: contextFor(result.attempt) };
   },
@@ -322,6 +315,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         status: conversations.status,
         accountRef: conversations.accountRef,
         chat: conversations.providerThreadId,
+        workflowState: records.workflowState,
         personId: people.id,
         name: people.fullName,
         firstName: people.firstName,
@@ -333,12 +327,20 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
     if (!head) return null;
     if (head.channel !== "linkedin") return null;
 
-    const [account] = UUID.test(head.accountRef) ? await db.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, head.accountRef), eq(linkedinAccounts.organizationId, organizationId))) : [];
+    const [account] = isUuid(head.accountRef) ? await db.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, head.accountRef), eq(linkedinAccounts.organizationId, organizationId))) : [];
     const dnc = await isDoNotContact(db, organizationId, head.personId);
     const used = account ? await usage(db, account.id, now) : { usedToday: 0, lastAttemptAt: null };
     const block = account ? replyBlock(now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: 0 }) : null;
     // The gap is a few seconds and clears by itself, so the panel does not show it.
-    const issue = !account ? "No LinkedIn account is connected for this chat." : head.status !== "active" ? "This conversation is closed." : !head.chat ? "There is no LinkedIn chat for this conversation yet." : (block?.message ?? null);
+    const issue = !account
+      ? "No LinkedIn account is connected for this chat."
+      : head.workflowState === "closed"
+        ? REPLY_REFUSALS.handling_closed.text()
+        : head.status !== "active"
+          ? REPLY_REFUSALS.conversation_closed.text()
+          : !head.chat
+            ? REPLY_REFUSALS.no_chat.text()
+            : (block?.message ?? null);
 
     // The newest draft that was not discarded. A stale one stays visible, flagged, until a person replaces or discards it;
     // a sent one is history and shows nothing.
@@ -354,6 +356,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       recipient: head.name ?? head.firstName,
       accountLabel: account?.name ?? account?.username ?? "LinkedIn account",
       issue,
+      markedDone: head.workflowState === "closed",
       doNotContact: dnc,
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,

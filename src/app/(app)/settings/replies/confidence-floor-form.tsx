@@ -5,7 +5,9 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { SettingsSection } from "../settings-section";
 
@@ -15,19 +17,20 @@ export function ConfidenceFloorForm({ confidenceFloor, canManage }: { confidence
   const saved = String(Math.round(confidenceFloor * 1000) / 10);
   const [percent, setPercent] = useState(saved);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   const dirty = Number(percent) !== Number(saved);
   useLeaveGuard(dirty);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-    const result = await callApi("/api/settings/replies", "PATCH", { autoApplyConfidence: Number(percent) / 100 });
-    setPending(false);
+    const result = await run("save", async () => {
+      setError(null);
+      return runApiAction(callApi("/api/settings/replies", "PATCH", { autoApplyConfidence: Number(percent) / 100 }), { refresh: () => router.refresh() });
+    });
+    if (!result) return;
     if (!result.ok) return setError(result.error);
     toast.success("Confidence floor saved.");
-    router.refresh();
   }
 
   return (

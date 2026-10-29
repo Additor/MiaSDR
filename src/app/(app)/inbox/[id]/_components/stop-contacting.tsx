@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { DNC_REASON_REQUIRED } from "@/app/(app)/_components/person/dnc-control";
 import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
@@ -62,11 +63,7 @@ export function useStopScope(target: StopTarget) {
 
   /** Stops contact as chosen and says what happened. Call `ready` first; throws when the server refuses. */
   async function stop(): Promise<string> {
-    const result =
-      scope === "everywhere"
-        ? await callApi(`/api/people/${target.personId}/dnc`, "POST", { enabled: true, reason: reason.trim() })
-        : await callApi(`/api/inbox/${target.conversationId}/suppress`, "POST");
-    if (!result.ok) throw new Error(result.error ?? "Contact did not stop. Try again.");
+    orThrow(await runApiAction(scope === "everywhere" ? callApi(`/api/people/${target.personId}/dnc`, "POST", { enabled: true, reason: reason.trim() }) : callApi(`/api/inbox/${target.conversationId}/suppress`, "POST")));
     return scope === "everywhere" ? `Marked ${target.personName} do not contact.` : `Added ${target.email} to the suppression list.`;
   }
 

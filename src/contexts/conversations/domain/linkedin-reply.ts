@@ -11,14 +11,6 @@ export const DEFAULT_REPLY_GAP_SECONDS = 8;
 export const MIN_REPLY_GAP_SECONDS = 0;
 export const MAX_REPLY_GAP_SECONDS = 600;
 
-/** Normalizes line endings and trims. Returns the text or the reason it cannot be sent. */
-export function checkReplyText(raw: string): { ok: true; text: string } | { ok: false; error: string } {
-  const text = raw.replace(/\r\n/g, "\n").trim();
-  if (text === "") return { ok: false, error: "The reply cannot be empty." };
-  if (text.length > MAX_LINKEDIN_REPLY) return { ok: false, error: `The reply is longer than ${MAX_LINKEDIN_REPLY} characters.` };
-  return { ok: true, text };
-}
-
 /** The per-organization pause between replies from `channel_settings.linkedin.replyGapSeconds`. Out-of-bound values fall back to the default. */
 export function replyGapSeconds(stored: Record<string, unknown> | null | undefined): number {
   const raw = stored?.replyGapSeconds;

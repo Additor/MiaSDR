@@ -7,6 +7,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES, formatMinor } from "@/contexts/deals/domain/money";
 import { cn } from "@/components/ui/utils";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { NO_OWNER, type DealMemberOption } from "../../_components/deal-form";
 import { EditableFact, InlineForm, NotSet, type EditorProps, type SaveResult } from "@/app/(app)/_components/record/inline-field";
@@ -36,13 +37,17 @@ export function DealSummaryFields({ deal, members, currentUserId }: { deal: Summ
   const router = useRouter();
 
   async function save(body: Record<string, unknown>): Promise<SaveResult> {
-    const result = await callApi(`/api/deals/${deal.id}`, "PATCH", { expectedVersion: deal.version, ...body });
+    // The row refreshes the page after a save, so only a stale version reloads it here.
+    const result = await runApiAction(callApi(`/api/deals/${deal.id}`, "PATCH", { expectedVersion: deal.version, ...body }), {
+      onConflict: {
+        stale_version: () => {
+          router.refresh();
+          return STALE;
+        },
+      },
+    });
     if (result.ok) return null;
-    if (result.code === "stale_version") {
-      router.refresh();
-      return STALE;
-    }
-    return result.issues[0]?.message ?? result.error ?? "Could not save the deal. Try again.";
+    return result.issues[0]?.message ?? result.error;
   }
 
   const ownerItems = [

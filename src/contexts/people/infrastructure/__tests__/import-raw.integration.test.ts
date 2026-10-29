@@ -70,7 +70,7 @@ describeDb("import raw preservation", () => {
     ({ drizzleLeadStore: store } = await import("../drizzle-lead-store"));
     ({ backfillLinkedinUrls: backfill } = await import("../backfill-linkedin-urls"));
     uc = await import("../../application/lead-management");
-    deps = (await import("../composition")).leadDeps();
+    deps = (await import("@/composition/leads")).leadDeps();
 
     const s = Math.random().toString(36).slice(2, 8);
     [{ id: orgA }] = await sql`insert into organizations (name, slug) values ('A', ${"ra-" + s}) returning id`;

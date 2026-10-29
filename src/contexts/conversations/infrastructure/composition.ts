@@ -19,15 +19,9 @@ export { drizzleUnreadStore as unreadStore } from "./drizzle-unread-store";
 
 export const inboxDeps = (): InboxDeps => ({ store: drizzleInboxStore, now: () => new Date(), timeZone: organizationTimeZone });
 
-/** Quarantining never replays, so the replay ports stay unwired here. */
-const noReplay = {
-  email: () => Promise.reject(new Error("quarantine does not replay")),
-  linkedin: () => Promise.reject(new Error("quarantine does not replay")),
-};
-
 /** Parks a message no person can be found for. Reviewed at /inbox/unmatched. */
 const quarantine: QuarantineInbound = (input) =>
-  quarantineInbound({ store: drizzleReplyHandlingStore, inbox: drizzleInboxStore, now: () => new Date(), replay: noReplay }, input);
+  quarantineInbound({ exceptions: drizzleReplyHandlingStore }, input);
 
 /** Files one received email in the master inbox, or parks it for review. Production callers use this one. */
 export const receiveInbound = (input: InboundEmailInput): Promise<IngestOutcome> => ingestInboundEmail({ store: drizzleConversationStore, quarantine }, input);

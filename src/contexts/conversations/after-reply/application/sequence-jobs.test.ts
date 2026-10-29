@@ -64,7 +64,7 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
           ]
         : [],
     startCandidates: async () => [],
-    settleDrafts: async () => 0,
+    settleDrafts: async () => ({ settled: 0, deferred: 0 }),
     claimDue: async () => (claimed ? null : ((claimed = true), claim)),
     interruptFactsFor: async () => ({
       run: { triggerMessageId: "msg", replyTypeId: "sub" },

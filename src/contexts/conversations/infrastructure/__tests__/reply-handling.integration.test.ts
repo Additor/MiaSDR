@@ -326,7 +326,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
         response: {},
         citations: [],
       });
-      expect((await sql`select status from drafts where id = ${late.id}`)[0].status).toBe("stale");
+      expect((await sql`select status from drafts where id = ${(late as { id: string }).id}`)[0].status).toBe("stale");
       expect((await sql`select status from drafts where id = ${manual}`)[0].status).toBe("awaiting_review");
     });
 
@@ -521,7 +521,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await replies.closeRecord(deps, f.actor, l.recordId, { reason: "Went with a competitor" });
       expect(await rec(l.recordId)).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
       const demo = await sub(f, "demo_request");
-      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version })).rejects.toThrow(/closed/);
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version })).rejects.toThrow(/marked done/);
     });
 
     it("reopens a closed record once", async () => {
@@ -654,8 +654,8 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const f = await fixture();
       const target = await lead(f);
       const payload = payloadFor(f);
-      const first = await replies.quarantineInbound(deps, { organizationId: f.org, sourceEventKey: "gmail:q1", identityValue: "colleague", reason: "Sender does not match the lead", payload });
-      const again = await replies.quarantineInbound(deps, { organizationId: f.org, sourceEventKey: "gmail:q1", identityValue: "colleague", reason: "Sender does not match the lead", payload });
+      const first = await replies.quarantineInbound({ exceptions: deps.store }, { organizationId: f.org, sourceEventKey: "gmail:q1", identityValue: "colleague", reason: "Sender does not match the lead", payload });
+      const again = await replies.quarantineInbound({ exceptions: deps.store }, { organizationId: f.org, sourceEventKey: "gmail:q1", identityValue: "colleague", reason: "Sender does not match the lead", payload });
       expect(again).toMatchObject({ id: first.id, created: false });
       expect(await replies.listIdentityExceptions(deps, f.actor)).toHaveLength(1);
 
@@ -735,7 +735,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       const f = await fixture();
       const g = await fixture();
       const target = await lead(g);
-      const q = await replies.quarantineInbound(deps, { organizationId: f.org, sourceEventKey: "gmail:q2", identityValue: null, reason: "Unknown sender", payload: payloadFor(f) });
+      const q = await replies.quarantineInbound({ exceptions: deps.store }, { organizationId: f.org, sourceEventKey: "gmail:q2", identityValue: null, reason: "Unknown sender", payload: payloadFor(f) });
       await expect(replies.resolveIdentityException(deps, g.actor, q.id, { personId: target.personId })).rejects.toThrow(NotFoundError);
       await expect(replies.ignoreIdentityException(deps, g.actor, q.id)).rejects.toThrow(NotFoundError);
       expect(await replies.listIdentityExceptions(deps, g.actor)).toHaveLength(0);

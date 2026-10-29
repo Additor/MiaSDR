@@ -1,8 +1,9 @@
-import { sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
-import { dueAfter } from "../domain/sequences";
+import { records, replyTypes } from "@/platform/db/schema";
+import { dueAfter, type StepRunStatus } from "../domain/sequences";
 import { interruptRecordRunsTx, recordEvent, runMayBecome, type Tx } from "./sequence-stop";
-import { rowsOf } from "@/platform/db/sql-values";
+import { sequenceRuns, sequenceSteps, sequenceStepRuns } from "./sequences-schema";
 import type { FollowUpsOutcome, FollowUpsRule } from "../../domain/reply-type";
 
 export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
@@ -11,34 +12,55 @@ export const ts = (date: Date) => sql`${date.toISOString()}::timestamptz`;
 export const asDate = (value: Date | string): Date => (value instanceof Date ? value : new Date(value));
 export const asDateOrNull = (value: Date | string | null): Date | null => (value === null ? null : asDate(value));
 
-/** The organization's zone, read inside the run's transaction. */
-export const zoneOfTx = (tx: Tx, organizationId: string): Promise<string> => organizationTimeZone(organizationId, tx);
+/**
+ * The steps `advanceRunTx` may schedule next. A `scheduled` step keeps its status and takes the new due time; a
+ * `failed` one goes back to `scheduled`, a move `STEP_FROM` allows. Both the pick and the write filter on it.
+ */
+const SCHEDULABLE: readonly StepRunStatus[] = ["scheduled", "failed"];
+
+/**
+ * The step `advanceRunTx` picked moved off `scheduled` and `failed` before its write. The caller's transaction must roll
+ * back, the settled step's own write included, so the run never stays on a step it handled with nothing scheduled next.
+ */
+export class StepMovedError extends Error {
+  constructor(readonly runId: string) {
+    super("The next follow-up step changed while the run advanced.");
+    this.name = "StepMovedError";
+  }
+}
 
 /**
  * After a step is sent or skipped: the next open step comes due its own delay after `from`, or the run completes.
  * The caller holds the run's lock.
  */
 export async function advanceRunTx(tx: Tx, input: { organizationId: string; runId: string; afterPosition: number; from: Date; now: Date }): Promise<{ next: number | null }> {
-  const [run] = rowsOf<{ record_id: string; status: string }>(await tx.execute(sql`select record_id, status from sequence_runs where id = ${input.runId} for update`));
+  const [run] = await tx.select({ recordId: sequenceRuns.recordId, status: sequenceRuns.status }).from(sequenceRuns).where(eq(sequenceRuns.id, input.runId)).for("update");
   // A stop that committed while this transaction waited for the lock wins: nothing is rescheduled or completed.
   if (!run || run.status !== "active") return { next: null };
-  const [next] = rowsOf<{ id: string; position: number; delay_minutes: number }>(
-    await tx.execute(sql`
-      select sr.id, st.position, st.delay_minutes
-      from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id
-      where sr.sequence_run_id = ${input.runId} and sr.status in ('scheduled', 'failed') and st.position > ${input.afterPosition}
-      order by st.position limit 1`),
-  );
+  const [next] = await tx
+    .select({ id: sequenceStepRuns.id, position: sequenceSteps.position, delayMinutes: sequenceSteps.delayMinutes })
+    .from(sequenceStepRuns)
+    .innerJoin(sequenceSteps, eq(sequenceSteps.id, sequenceStepRuns.sequenceStepId))
+    .where(and(eq(sequenceStepRuns.sequenceRunId, input.runId), inArray(sequenceStepRuns.status, [...SCHEDULABLE]), gt(sequenceSteps.position, input.afterPosition)))
+    .orderBy(asc(sequenceSteps.position))
+    .limit(1);
   if (!next) {
-    await tx.execute(sql`update sequence_runs set status = 'completed', updated_at = ${ts(input.now)} where id = ${input.runId} and ${runMayBecome("completed")}`);
-    await tx.execute(sql`update records set next_action_at = null, workflow_state = case when workflow_state = 'waiting' then 'idle' else workflow_state end where id = ${run.record_id} and organization_id = ${input.organizationId}`);
-    await recordEvent(tx, { organizationId: input.organizationId, recordId: run.record_id, type: "sequence.completed", actorUserId: null, to: { sequenceRunId: input.runId } });
+    await tx.update(sequenceRuns).set({ status: "completed", updatedAt: input.now }).where(and(eq(sequenceRuns.id, input.runId), runMayBecome("completed")));
+    await tx.execute(sql`update records set next_action_at = null, workflow_state = case when workflow_state = 'waiting' then 'idle' else workflow_state end where id = ${run.recordId} and organization_id = ${input.organizationId}`);
+    await recordEvent(tx, { organizationId: input.organizationId, recordId: run.recordId, type: "sequence.completed", actorUserId: null, to: { sequenceRunId: input.runId } });
     return { next: null };
   }
-  const due = dueAfter(input.from, next.delay_minutes, await zoneOfTx(tx, input.organizationId));
-  await tx.execute(sql`update sequence_step_runs set due_at = ${ts(due)}, status = 'scheduled', updated_at = ${ts(input.now)} where id = ${next.id}`);
-  await tx.execute(sql`update sequence_runs set current_step_position = ${next.position}, updated_at = ${ts(input.now)} where id = ${input.runId}`);
-  await tx.execute(sql`update records set next_action_at = ${ts(due)} where id = ${run.record_id} and organization_id = ${input.organizationId} and workflow_state in ('waiting', 'idle')`);
+  const due = dueAfter(input.from, next.delayMinutes, await organizationTimeZone(input.organizationId, tx));
+  const moved = await tx
+    .update(sequenceStepRuns)
+    .set({ status: "scheduled", dueAt: due, updatedAt: input.now })
+    .where(and(eq(sequenceStepRuns.id, next.id), inArray(sequenceStepRuns.status, [...SCHEDULABLE])))
+    .returning({ id: sequenceStepRuns.id });
+  // A writer moved the step off `scheduled` and `failed` after the pick. Neither completing the run nor moving its
+  // position would be true, so the throw rolls back the caller's whole transaction (`StepMovedError`).
+  if (moved.length === 0) throw new StepMovedError(input.runId);
+  await tx.update(sequenceRuns).set({ currentStepPosition: next.position, updatedAt: input.now }).where(eq(sequenceRuns.id, input.runId));
+  await tx.execute(sql`update records set next_action_at = ${ts(due)} where id = ${run.recordId} and organization_id = ${input.organizationId} and workflow_state in ('waiting', 'idle')`);
   return { next: next.position };
 }
 
@@ -65,10 +87,10 @@ export async function interruptOnTerminalStageTx(
 
 /** The Follow-ups rule of the record's current reply type, or null when the record has none. */
 async function currentFollowUpsTx(tx: Tx, organizationId: string, recordId: string): Promise<FollowUpsRule | null> {
-  const [row] = rowsOf<{ follow_ups: FollowUpsRule }>(
-    await tx.execute(sql`
-      select rt.follow_ups from records r join reply_types rt on rt.id = r.reply_type_id and rt.organization_id = r.organization_id
-      where r.id = ${recordId} and r.organization_id = ${organizationId}`),
-  );
-  return row?.follow_ups ?? null;
+  const [row] = await tx
+    .select({ followUps: replyTypes.followUps })
+    .from(records)
+    .innerJoin(replyTypes, and(eq(replyTypes.id, records.replyTypeId), eq(replyTypes.organizationId, records.organizationId)))
+    .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId)));
+  return row?.followUps ?? null;
 }

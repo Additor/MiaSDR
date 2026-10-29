@@ -6,7 +6,7 @@ import { layerOf, sourceFiles } from "./context-layers";
 /**
  * Table ownership. Each table belongs to the context whose `infrastructure/schema.ts` declares it, and only that
  * context writes it. A context may read the tables of lower layers in a join; it reads a higher layer's tables only
- * through that context's read model. The two lists below hold what the code did when the rule arrived. They may only
+ * through that context's read model, or from `src/read-models`, which reads any context's tables and writes none. The two lists below hold what the code did when the rule arrived. They may only
  * shrink: an entry that no longer matches fails the suite, so remove it when you fix the code behind it.
  */
 
@@ -20,10 +20,7 @@ const FOREIGN_WRITES: Record<string, string[]> = {};
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "conversations", "records", "sends"],
-  "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["conversations", "messages", "records"],
-  "src/contexts/outreach/infrastructure/drizzle-lead-statuses.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["conversations"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
@@ -35,6 +32,9 @@ const UPWARD_READS: Record<string, string[]> = {
 
 const ROOT = path.resolve(__dirname, "../..");
 const SRC = path.join(ROOT, "src");
+
+/** `src/read-models`: reads across contexts, and no writes. Every table has another owner, so any write it makes is foreign. */
+const READ_MODELS = "read-models";
 
 /** The schema files of each owner, under src. A table belongs to the owner whose file declares it; `platform` owns the job runtime's tables. */
 const SCHEMA_FILES: Record<string, string[]> = {
@@ -49,7 +49,7 @@ const SCHEMA_FILES: Record<string, string[]> = {
   deals: ["contexts/deals/infrastructure/schema.ts"],
 };
 
-/** The owner a source file writes as: its context, or `platform`, which sits below every context. */
+/** The owner a source file writes as: its context, `platform`, which sits below every context, or `read-models`, which owns no table. */
 const ownerOf = (file: string) => {
   const [tier, context] = path.relative(SRC, file).split(path.sep);
   return tier === "contexts" ? context : tier;
@@ -75,7 +75,8 @@ function owners(): { byBinding: Map<string, string>; bySqlName: Map<string, stri
 /** Tables of other contexts that `source` inserts into, updates or deletes from, by Drizzle call or raw SQL. */
 export function foreignWrites(own: string, source: string, table: ReturnType<typeof owners>): string[] {
   const found = new Set<string>();
-  for (const m of source.matchAll(/\.(?:insert|update|delete)\((\w+)\)/g)) {
+  // `insert(people)`, `delete( people )` and `update(schema.people)` alike: spaces and a namespace import do not hide a write.
+  for (const m of source.matchAll(/\.(?:insert|update|delete)\(\s*(?:\w+\.)?(\w+)\s*\)/g)) {
     const owner = table.byBinding.get(m[1]);
     if (owner && owner !== own) found.add(m[1]);
   }
@@ -92,6 +93,8 @@ export function foreignWrites(own: string, source: string, table: ReturnType<typ
  * Raw names count under their Drizzle binding.
  */
 export function upwardReads(own: string, source: string, table: ReturnType<typeof owners>): string[] {
+  // Read models sit above every context to join their tables for one screen, so any read is in reach.
+  if (own === READ_MODELS) return [];
   const lists = [...source.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["'][^"']*schema["']/g)].map((m) => m[1]);
   const imported = lists.flatMap((list) => list.split(",")).map((n) => n.trim().replace(/^type\s+/, "").split(" as ")[0]).filter(Boolean);
   const raw = [...source.matchAll(/sql(?:<[^`]*?>)?`([^`]*)`/g)].flatMap((t) => [...t[1].matchAll(/(?<!delete\s+)\b(?:from|join)\s+"?(\w+)"?/gi)].map((m) => table.bindingOf.get(m[1]) ?? ""));
@@ -102,11 +105,11 @@ export function upwardReads(own: string, source: string, table: ReturnType<typeo
   }))].sort();
 }
 
-/** `{ file: tables }` over every context and platform source file, files with no finding left out. */
+/** `{ file: tables }` over every context, platform and read model source file, files with no finding left out. */
 function scan(find: (own: string, source: string, table: ReturnType<typeof owners>) => string[]): Record<string, string[]> {
   const table = owners();
   const out: Record<string, string[]> = {};
-  for (const file of [...sourceFiles(path.join(SRC, "contexts")), ...sourceFiles(path.join(SRC, "platform"))]) {
+  for (const file of [...sourceFiles(path.join(SRC, "contexts")), ...sourceFiles(path.join(SRC, "platform")), ...sourceFiles(path.join(SRC, READ_MODELS))]) {
     const own = ownerOf(file);
     const hits = find(own, readFileSync(file, "utf8"), table);
     if (hits.length > 0) out[path.relative(ROOT, file).split(path.sep).join("/")] = hits;
@@ -140,5 +143,19 @@ describe("table ownership", () => {
     expect(foreignWrites("people", source, table)).toEqual(["campaign_enrollments"]);
     expect(foreignWrites("outreach", source, table)).toEqual(["people"]);
     expect(upwardReads("people", source, table)).toEqual(["conversations", "drafts", "mailboxes", "records", "sends", "sequenceRuns"]);
+  });
+
+  it("lets a read model read any table and write none", () => {
+    const table = owners();
+    const source = [
+      'import { campaignEnrollments, messages, people } from "@/platform/db/schema";',
+      "await db.select().from(people).innerJoin(campaignEnrollments, on);",
+      "await db.update(people).set({ name });",
+      "await tx.execute(sql`delete from messages where id = ${id}`);",
+      "await db.insert(schema.campaigns).values(row);",
+      "await db.delete( records ).where(match);",
+    ].join("\n");
+    expect(upwardReads(READ_MODELS, source, table)).toEqual([]);
+    expect(foreignWrites(READ_MODELS, source, table)).toEqual(["campaigns", "messages", "people", "records"]);
   });
 });

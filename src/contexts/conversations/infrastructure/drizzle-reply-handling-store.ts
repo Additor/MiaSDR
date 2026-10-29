@@ -38,6 +38,7 @@ import type {
 } from "../application/reply-handling-ports";
 import { byGroupThenOrder, checkReplyTypeChange, lockBeforePick, type ReplyTypeGroup } from "../domain/reply-handling";
 import { afterPersonDecision, afterReopen, afterTypeChange, type WorkflowState } from "../domain/workflow-state";
+import { MARKED_DONE } from "../domain/reply-send";
 import { holdReasonOf, typeRulesOf, type TypeRules } from "../domain/reply-type";
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
@@ -68,13 +69,17 @@ async function settingsOf(replyTypeSetId: string): Promise<ReplyHandlingSettings
   };
 }
 
-/** Locks a record a person may see. A record whose conversations are all private answers 404, as a foreign id does. */
+/**
+ * Locks a record a person may see. A record whose conversations are all private answers 404, as a foreign id does.
+ * No key update: a writer lock that lets a draft insert's foreign key check (a key share) through (docs/database.md,
+ * "Lock modes").
+ */
 async function lockRecord(tx: Tx, organizationId: string, recordId: string) {
   const [row] = await tx
     .select()
     .from(records)
     .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId), visibleRecordSql("records")))
-    .for("update");
+    .for("no key update");
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;
 }
@@ -459,7 +464,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       }
 
 
-      const owned = await tx.select().from(records).where(and(eq(records.personId, input.personId), eq(records.organizationId, input.organizationId))).for("update");
+      const owned = await tx.select().from(records).where(and(eq(records.personId, input.personId), eq(records.organizationId, input.organizationId))).for("no key update");
       const recordIds = owned.map((r) => r.id);
       for (const record of owned) {
         const version = record.contextVersion + 1;
@@ -500,9 +505,13 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     await db.transaction(async (tx) => {
       const record = await lockRecord(tx, input.organizationId, input.recordId);
       if (record.workflowState === "closed") throw new ConflictError("Reply handling is already closed.");
+      // A reply send holds its conversation FOR UPDATE from before it reads the workflow state to its commit. The share lock
+      // waits for one in progress, so the close lands after it, and a send that starts later reads the close
+      // (docs/decisions.md, "Reply send rules"). Sends refuse a private conversation, so the lock leaves those out.
+      await tx.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.recordId, record.id), publicConversation)).for("share");
       const version = record.contextVersion + 1;
       await tx.update(records).set({ workflowState: "closed", closedReason: input.reason, nextActionAt: null, contextVersion: version }).where(eq(records.id, record.id));
-      await retireOpenDrafts(tx, [record.id], "A person closed reply handling after this draft was written.");
+      await retireOpenDrafts(tx, [record.id], MARKED_DONE);
       await interruptRecordRunsTx(tx, input.organizationId, record.id, "record_closed", input.now);
       await tx.insert(events).values({
         organizationId: input.organizationId,

@@ -181,7 +181,7 @@ describeDb("one in-flight email reply per conversation", () => {
     // With the chat locked elsewhere, the refusal still comes at once: the email path takes no lock on it.
     await sql.begin(async (tx) => {
       await tx`select id from conversations where id = ${chat.id} for update`;
-      await expect(mgmt.approveAndSendDraft(f.replyDeps, f.actor, linkedin.id, { revision: 1, idempotencyKey: sendKey() })).rejects.toThrow("Replies can only be sent on email conversations.");
+      await expect(mgmt.approveAndSendDraft(f.replyDeps, f.actor, linkedin.id, { revision: 1, idempotencyKey: sendKey() })).rejects.toThrow("This is not an email conversation.");
     });
   });
 

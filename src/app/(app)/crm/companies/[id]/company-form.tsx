@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { countOf } from "@/shared/format-number";
 import { Time } from "@/components/shell/time";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { AddField } from "@/app/(app)/_components/person/person-details";
 import { EditableFact, NotSet, type SaveResult } from "@/app/(app)/_components/record/inline-field";
@@ -118,7 +119,7 @@ export function CompanyDetails({
 
 /** PATCH one change to the company. Leaves every field the body does not name as it is. */
 async function saveCompany(id: string, body: Record<string, unknown>): Promise<SaveResult> {
-  const result = await callApi(`/api/companies/${id}`, "PATCH", body);
-  if (result.ok) return null;
-  return result.issues[0]?.message ?? result.error ?? "Could not save.";
+  // The row refreshes the page after a save.
+  const result = await runApiAction(callApi(`/api/companies/${id}`, "PATCH", body));
+  return result.ok ? null : (result.issues[0]?.message ?? result.error);
 }

@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FieldError, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 
 export interface Note {
   id: string;
@@ -34,40 +36,38 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
   const base = target.recordId !== undefined ? `/api/records/${target.recordId}/notes` : `/api/people/${target.personId}/notes`;
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"add" | "save">();
+  const refresh = () => router.refresh();
   const [editing, setEditing] = useState<{ id: string; title: string; body: string } | null>(null);
   // The target stays set while the dialog closes, so its title does not change mid-animation.
   const [deleting, setDeleting] = useState<Note | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  async function add(event: React.FormEvent) {
+  function add(event: React.FormEvent) {
     event.preventDefault();
     if (body.trim() === "") return setError("Write the note first.");
-    setPending(true);
-    setError(null);
-    const result = await callApi(base, "POST", { title: null, body });
-    setPending(false);
-    if (!result.ok) return setError(result.error);
-    setBody("");
-    toast.success("Note added.");
-    router.refresh();
+    void run("add", async () => {
+      setError(null);
+      const result = await runApiAction(callApi(base, "POST", { title: null, body }), { refresh });
+      if (!result.ok) return setError(result.error);
+      setBody("");
+      toast.success("Note added.");
+    });
   }
 
   async function remove(id: string) {
-    const result = await callApi(`${base}/${id}`, "DELETE");
-    if (!result.ok) throw new Error(result.error ?? "Could not delete the note. Try again.");
-    toast.success("Note deleted.");
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`${base}/${id}`, "DELETE"), { refresh }), "Note deleted.");
   }
 
-  async function save() {
+  function save() {
     if (!editing) return;
-    const result = await callApi(`${base}/${editing.id}`, "PATCH", { title: editing.title.trim() || null, body: editing.body });
-    if (!result.ok) return setError(result.error);
-    setError(null);
-    setEditing(null);
-    toast.success("Note saved.");
-    router.refresh();
+    void run("save", async () => {
+      const result = await runApiAction(callApi(`${base}/${editing.id}`, "PATCH", { title: editing.title.trim() || null, body: editing.body }), { refresh });
+      if (!result.ok) return setError(result.error);
+      setError(null);
+      setEditing(null);
+      toast.success("Note saved.");
+    });
   }
 
   const content = (
@@ -89,8 +89,8 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
         />
         <FieldError>{error}</FieldError>
         <div>
-          <Button type="submit" size="sm" variant="outline" disabled={pending} touch>
-            Add note
+          <Button type="submit" size="sm" variant="outline" disabled={isBusy("add")} touch>
+            {isBusy("add") ? "Adding…" : "Add note"}
           </Button>
         </div>
       </form>
@@ -104,8 +104,8 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
                   <Input aria-label="Note title" value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} maxLength={200} placeholder="Title (optional)" />
                   <Textarea aria-label="Note text" value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} maxLength={10_000} />
                   <div className="flex gap-2">
-                    <Button type="button" size="sm" onClick={save} disabled={editing.body.trim() === ""} touch>
-                      Save
+                    <Button type="button" size="sm" onClick={save} disabled={isBusy("save") || editing.body.trim() === ""} touch>
+                      {isBusy("save") ? "Saving…" : "Save"}
                     </Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)} touch>
                       Cancel

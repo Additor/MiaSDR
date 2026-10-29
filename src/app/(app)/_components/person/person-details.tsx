@@ -10,6 +10,7 @@ import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
 import { EditableFact, Fact, InlineForm, NotSet, type EditorProps, type SaveResult } from "../record/inline-field";
@@ -120,10 +121,8 @@ export function PersonDetails({
 
 /** PATCH one change to the person. Leaves every field the body does not name as it is. */
 async function savePerson(id: string, body: Record<string, unknown>, person: string): Promise<SaveResult> {
-  const result = await callApi(`/api/leads/${id}`, "PATCH", body);
-  if (result.ok) return null;
-  if (result.code === "try_again") return apiMessage("try_again", person);
-  return result.issues[0]?.message ?? result.error ?? "Could not save.";
+  const result = await runApiAction(callApi(`/api/leads/${id}`, "PATCH", body), { onConflict: { try_again: () => apiMessage("try_again", person) } });
+  return result.ok ? null : (result.issues[0]?.message ?? result.error);
 }
 
 function CompanyValue({ values, href }: { values: LeadFormValues; href: string | null }) {

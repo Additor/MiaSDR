@@ -6,7 +6,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import type { DncResult } from "@/contexts/conversations/application/reply-handling-ports";
 
 
@@ -35,7 +37,9 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
   const router = useRouter();
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  // Marking and clearing change the same flag, so they share one key.
+  const { isBusy, run } = useApiAction<"dnc">();
+  const pending = isBusy("dnc");
   const [open, setOpen] = useState(false);
   const fieldId = `dnc-reason-${personId}`;
   const reasonRef = useRef<HTMLInputElement>(null);
@@ -64,19 +68,21 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
 
   async function submit(enabled: boolean) {
     if (enabled && reason.trim() === "") return setError(DNC_REASON_REQUIRED);
-    setPending(true);
-    setError(null);
-    const result = await callApi<DncResult>(`/api/people/${personId}/dnc`, "POST", { enabled, reason: enabled ? reason : null });
-    setPending(false);
-    if (!result.ok || !result.data) return setError(result.error);
-    setReason("");
-    setOpen(false);
-    toast.success(
-      enabled
-        ? `Marked do not contact. ${result.data.enrollmentsStopped} campaign enrollment${result.data.enrollmentsStopped === 1 ? "" : "s"} stopped, ${result.data.draftsRetired} draft${result.data.draftsRetired === 1 ? "" : "s"} retired.`
-        : "Cleared do not contact.",
-    );
-    router.refresh();
+    await run("dnc", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<DncResult>(`/api/people/${personId}/dnc`, "POST", { enabled, reason: enabled ? reason : null }), {
+        refresh: () => router.refresh(),
+        expectData: true,
+      });
+      if (!result.ok) return setError(result.error);
+      setReason("");
+      setOpen(false);
+      toast.success(
+        enabled
+          ? `Marked do not contact. ${result.data.enrollmentsStopped} campaign enrollment${result.data.enrollmentsStopped === 1 ? "" : "s"} stopped, ${result.data.draftsRetired} draft${result.data.draftsRetired === 1 ? "" : "s"} retired.`
+          : "Cleared do not contact.",
+      );
+    });
   }
 
   function onSubmit(event: FormEvent) {
@@ -97,7 +103,7 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
           <p className="text-sm">Campaigns can add this person again.</p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={pending} touch onClick={() => void submit(false)}>
-              Confirm clear
+              {pending ? "Clearing…" : "Confirm clear"}
             </Button>
             <Button size="sm" variant="ghost" disabled={pending} touch onClick={() => setOpen(false)}>
               Keep do not contact
@@ -133,7 +139,7 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
           </Field>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" size="sm" variant="destructive" disabled={pending} touch>
-              Confirm do not contact
+              {pending ? "Marking…" : "Confirm do not contact"}
             </Button>
             <Button
               type="button"

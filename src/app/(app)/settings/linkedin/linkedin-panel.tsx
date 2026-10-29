@@ -14,7 +14,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, toastResult, useApiAction } from "@/app/_lib/use-api-action";
 import { formatCount } from "@/shared/format-number";
 import { formatDateTime } from "@/shared/format-time";
 import { syncLine, type StoredSyncStatus } from "./sync-status";
@@ -71,13 +73,15 @@ interface WebhookSetup {
 export function LinkedInPanel({ state, canManage, zones }: { state: State | null; canManage: boolean; zones: string[] }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
   const [linking, setLinking] = useState<string | null>(null);
   const params = useSearchParams();
   const returned = useRef(false);
   const [setup, setSetup] = useState<WebhookSetup | null>(null);
   const [editingCredentials, setEditingCredentials] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const { isBusy, run } = useApiAction<"connect" | "link" | "sync" | "webhooks" | "setup">();
+  const pending = isBusy("connect");
+  const refresh = () => router.refresh();
 
   // Back from the Unipile wizard: pull the new account in at once, then drop the query so a reload does not repeat it.
   useEffect(() => {
@@ -86,9 +90,9 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
     returned.current = true;
     (async () => {
       if (outcome === "success") {
-        const result = await callApi("/api/linkedin/sync", "POST");
+        const result = await runApiAction(callApi("/api/linkedin/sync", "POST"));
         if (result.ok) toast.success("LinkedIn account connected.");
-        else toast.error(result.error ?? "Connected, but the account list could not be refreshed. Choose Sync accounts.");
+        else toast.error(`Connected, but the account list could not be refreshed. Choose Sync accounts. ${result.error}`);
       } else {
         toast.error("LinkedIn did not connect the account. Start again from Connect a LinkedIn account.");
       }
@@ -99,50 +103,44 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
 
   if (!canManage || !state) return <AdminNotice action="connect or change LinkedIn" replacesPage />;
 
-  async function connect(event: FormEvent<HTMLFormElement>) {
+  function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    setPending(true);
-    setError(null);
-    const result = await callApi<ConnectResult>("/api/linkedin", "POST", { dsn: data.get("dsn"), apiKey: data.get("apiKey") });
-    setPending(false);
-    if (!result.ok || !result.data) {
-      setError(result.error);
-      return;
-    }
-    form.reset();
-    setEditingCredentials(false);
-    const message = `Connected. ${result.data.accounts} LinkedIn account(s) found. ${result.data.webhooks.detail}`;
-    if (result.data.webhooks.status === "registered") toast.success(message);
-    else toast.warning(message);
-    router.refresh();
+    void run("connect", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<ConnectResult>("/api/linkedin", "POST", { dsn: data.get("dsn"), apiKey: data.get("apiKey") }), { refresh, expectData: true });
+      if (!result.ok) return setError(result.error);
+      form.reset();
+      setEditingCredentials(false);
+      const message = `Connected. ${result.data.accounts} LinkedIn account(s) found. ${result.data.webhooks.detail}`;
+      if (result.data.webhooks.status === "registered") toast.success(message);
+      else toast.warning(message);
+    });
   }
 
-  async function act(label: string, run: () => Promise<{ ok: boolean; error: string | null }>) {
-    const result = await run();
-    if (!result.ok) toast.error(result.error ?? `${label} failed.`);
-    else toast.success(`${label}.`);
-    router.refresh();
-  }
+  /**
+   * One full-page navigation to Unipile's wizard. Unipile advises against an iframe. One link opens at a time: `linking`
+   * names the account whose button reads "Opening Unipile…" until the page leaves.
+   */
+  const startHostedAuth = (accountId: string | null) =>
+    run("link", async () => {
+      setLinking(accountId ?? "new");
+      const result = await runApiAction(callApi<{ url: string }>("/api/linkedin/accounts/hosted-auth", "POST", accountId ? { accountId } : {}), { expectData: true });
+      if (!result.ok) {
+        setLinking(null);
+        toast.error(result.error);
+        return;
+      }
+      window.location.assign(result.data.url);
+    });
 
-  /** One full-page navigation to Unipile's wizard. Unipile advises against an iframe. */
-  async function startHostedAuth(accountId: string | null) {
-    setLinking(accountId ?? "new");
-    const result = await callApi<{ url: string }>("/api/linkedin/accounts/hosted-auth", "POST", accountId ? { accountId } : {});
-    if (!result.ok || !result.data) {
-      setLinking(null);
-      toast.error(result.error ?? "Could not create the connection link.");
-      return;
-    }
-    window.location.assign(result.data.url);
-  }
-
-  async function revealSetup() {
-    const result = await callApi<WebhookSetup>("/api/linkedin/webhooks/setup", "POST");
-    if (!result.ok || !result.data) toast.error(result.error ?? "Could not load the webhook setup.");
-    else setSetup(result.data);
-  }
+  const revealSetup = () =>
+    run("setup", async () => {
+      const result = await runApiAction(callApi<WebhookSetup>("/api/linkedin/webhooks/setup", "POST"), { expectData: true });
+      if (result.ok) setSetup(result.data);
+      else toast.error(result.error);
+    });
 
   async function copy(text: string, label: string) {
     try {
@@ -153,13 +151,15 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
     }
   }
 
-  async function registerWebhooks() {
-    const result = await callApi<ConnectResult["webhooks"]>("/api/linkedin/webhooks", "POST");
-    if (!result.ok || !result.data) toast.error(result.error ?? "Webhooks failed.");
-    else if (result.data.status === "registered") toast.success(result.data.detail);
-    else toast.warning(result.data.detail);
-    router.refresh();
-  }
+  const registerWebhooks = () =>
+    run("webhooks", async () => {
+      // A refusal can still have changed the stored webhook state, so the page reloads either way.
+      const result = await runApiAction(callApi<ConnectResult["webhooks"]>("/api/linkedin/webhooks", "POST"), { expectData: true });
+      refresh();
+      if (!result.ok) toast.error(result.error);
+      else if (result.data.status === "registered") toast.success(result.data.detail);
+      else toast.warning(result.data.detail);
+    });
 
   return (
     <div>
@@ -209,15 +209,19 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
             )}
             {state.connected && !editingCredentials && (
               <>
-                <Button type="button" onClick={() => startHostedAuth(null)} disabled={linking !== null}>
+                <Button type="button" onClick={() => void startHostedAuth(null)} disabled={linking !== null}>
                   {linking === "new" ? "Opening Unipile…" : "Connect a LinkedIn account"}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<Button type="button" variant="ghost" />}>More</DropdownMenuTrigger>
                   <DropdownMenuContent className="w-auto min-w-48">
                     <DropdownMenuItem onClick={() => setEditingCredentials(true)}>Edit credentials</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => act("Accounts synced", () => callApi("/api/linkedin/sync", "POST"))}>Sync accounts</DropdownMenuItem>
-                    <DropdownMenuItem onClick={registerWebhooks}>Register webhooks</DropdownMenuItem>
+                    <DropdownMenuItem disabled={isBusy("sync")} onClick={() => void run("sync", async () => toastResult(await runApiAction(callApi("/api/linkedin/sync", "POST"), { refresh }), "Accounts synced."))}>
+                      {isBusy("sync") ? "Syncing…" : "Sync accounts"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={isBusy("webhooks")} onClick={() => void registerWebhooks()}>
+                      {isBusy("webhooks") ? "Registering…" : "Register webhooks"}
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onClick={() => setConfirmDisconnect(true)}>
                       Disconnect
@@ -271,8 +275,8 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
                 </FieldGroup>
               ) : (
                 <div>
-                  <Button type="button" variant="outline" onClick={revealSetup}>
-                    Show setup values
+                  <Button type="button" variant="outline" disabled={isBusy("setup")} onClick={() => void revealSetup()}>
+                    {isBusy("setup") ? "Loading…" : "Show setup values"}
                   </Button>
                 </div>
               )}
@@ -308,7 +312,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
           ) : (
             <ul className={RULED_LIST}>
               {state.accounts.map((account) => (
-                <AccountRow key={account.id} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} reconnecting={linking === account.id} onReconnect={() => startHostedAuth(account.id)} onChanged={() => router.refresh()} />
+                <AccountRow key={account.id} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} reconnecting={linking === account.id} linkOpening={linking !== null} onReconnect={() => void startHostedAuth(account.id)} onChanged={() => router.refresh()} />
               ))}
             </ul>
           )}
@@ -325,7 +329,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
         cancelLabel="Stay connected"
         pendingLabel="Disconnecting…"
         destructive
-        onConfirm={() => act("Disconnected", () => callApi("/api/linkedin", "DELETE"))}
+        onConfirm={async () => toastOrThrow(await runApiAction(callApi("/api/linkedin", "DELETE"), { refresh }), "Disconnected.")}
       />
     </div>
   );
@@ -366,6 +370,7 @@ function AccountRow({
   limits,
   zones,
   reconnecting,
+  linkOpening,
   onReconnect,
   onChanged,
 }: {
@@ -373,6 +378,8 @@ function AccountRow({
   limits: State["limits"];
   zones: string[];
   reconnecting: boolean;
+  /** True while any connection link opens; one opens at a time. */
+  linkOpening: boolean;
   onReconnect: () => void;
   onChanged: () => void;
 }) {
@@ -380,7 +387,8 @@ function AccountRow({
   const saved = { invites: String(account.dailyInviteLimit), messages: String(account.dailyMessageLimit), premium: account.isPremium, hours: hoursDraft(account.workingHours, orgTimeZone) };
   const [values, setValues] = useState(saved);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const saving = isBusy("save");
   const dirty = Number(values.invites) !== account.dailyInviteLimit || Number(values.messages) !== account.dailyMessageLimit || values.premium !== account.isPremium || !sameHours(values.hours, saved.hours);
   useLeaveGuard(dirty);
 
@@ -390,22 +398,17 @@ function AccountRow({
   const messageWarning = Number.isInteger(messageNumber) && messageNumber >= MESSAGE_LIMIT_RULE.min && messageNumber <= MESSAGE_LIMIT_RULE.max ? messageLimitWarning(messageNumber) : null;
   const name = account.name ?? account.username ?? "LinkedIn account";
 
-  async function save(event: FormEvent<HTMLFormElement>) {
+  function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (values.hours.days.length === 0) return setError("Pick at least one sending day.");
-    setSaving(true);
-    setError(null);
-    const result = await callApi<{ warnings: string[] }>(`/api/linkedin/accounts/${account.id}`, "PATCH", {
-      dailyInviteLimit: inviteNumber,
-      dailyMessageLimit: messageNumber,
-      isPremium: values.premium,
-      workingHours: toStoredHours(values.hours),
+    void run("save", async () => {
+      setError(null);
+      const body = { dailyInviteLimit: inviteNumber, dailyMessageLimit: messageNumber, isPremium: values.premium, workingHours: toStoredHours(values.hours) };
+      const result = await runApiAction(callApi<{ warnings: string[] }>(`/api/linkedin/accounts/${account.id}`, "PATCH", body), { refresh: onChanged });
+      if (!result.ok) return setError(result.error);
+      toast.success(`${name} saved.`);
+      for (const warning of result.data?.warnings ?? []) toast.warning(warning);
     });
-    setSaving(false);
-    if (!result.ok) return setError(result.error ?? "Could not save the account.");
-    toast.success(`${name} saved.`);
-    for (const warning of result.data?.warnings ?? []) toast.warning(warning);
-    onChanged();
   }
 
   return (
@@ -427,7 +430,7 @@ function AccountRow({
           </p>
         </div>
         {account.status !== "connected" && (
-          <Button variant="ghost" size="sm" onClick={onReconnect} disabled={reconnecting}>
+          <Button variant="ghost" size="sm" onClick={onReconnect} disabled={linkOpening}>
             {reconnecting ? "Opening Unipile…" : "Reconnect"}
           </Button>
         )}

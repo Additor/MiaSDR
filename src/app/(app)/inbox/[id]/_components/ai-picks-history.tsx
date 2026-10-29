@@ -8,7 +8,9 @@ import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { TypeRules } from "@/contexts/conversations/domain/reply-type";
 import { afterSavingEdits } from "../_lib/draft-edits";
@@ -61,28 +63,37 @@ const UNDO_TIP = "Puts back the type from before the AI's pick. Open drafts reti
 export function AiPicksHistory({ entries, currentConversationId }: { entries: Entry[]; currentConversationId?: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  // Every decision here touches the thread's one open draft, and Undo saves its edits at the draft's revision, so all
+  // picks share one key; the tag names the pick and the action that runs.
+  const { isBusy, busyTag, run } = useApiAction<"pick">();
+  const pickBusy = () => isBusy("pick");
 
-  async function looksRight(id: string) {
-    setBusy(id);
-    setError(null);
-    const result = await callApi(`/api/reply-type-picks/${id}/acknowledge`, "POST");
-    setBusy(null);
-    if (!result.ok) return setError(result.error);
-    toast.success(LOOKS_RIGHT_DONE);
-    router.refresh();
-  }
+  const looksRight = (id: string) =>
+    run(
+      "pick",
+      async () => {
+        setError(null);
+        const result = await runApiAction(callApi(`/api/reply-type-picks/${id}/acknowledge`, "POST"), { refresh: () => router.refresh() });
+        if (!result.ok) return setError(result.error);
+        toast.success(LOOKS_RIGHT_DONE);
+      },
+      `looks:${id}`,
+    );
 
-  async function undo(id: string) {
-    setBusy(id);
-    setError(null);
-    // Undo retires the open draft, so the editor's unsaved edits are saved first.
-    const result = await afterSavingEdits(() => callApi<{ draftsRetired: number; runEnded: boolean; draftJobCancelled: boolean }>(`/api/reply-type-picks/${id}/undo`, "POST"));
-    setBusy(null);
-    if (!result.ok || !result.data) return setError(result.error);
-    toast.success(undoMessage(result.data));
-    router.refresh();
-  }
+  const undo = (id: string) =>
+    run(
+      "pick",
+      async () => {
+        setError(null);
+        // Undo retires the open draft, so the editor's unsaved edits are saved first.
+        const result = await afterSavingEdits(() =>
+          runApiAction(callApi<{ draftsRetired: number; runEnded: boolean; draftJobCancelled: boolean }>(`/api/reply-type-picks/${id}/undo`, "POST"), { refresh: () => router.refresh(), expectData: true }),
+        );
+        if (!result.ok) return setError(result.error);
+        toast.success(undoMessage(result.data));
+      },
+      `undo:${id}`,
+    );
 
   return (
     <div className="grid gap-2" data-testid="ai-picks">
@@ -118,14 +129,14 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
                     </Link>
                   )}
                   {canLookRight && (
-                    <Button size="xs" variant="outline" touch disabled={busy !== null} onClick={() => looksRight(e.id)}>
-                      Looks right
+                    <Button size="xs" variant="outline" touch disabled={pickBusy()} onClick={() => void looksRight(e.id)}>
+                      {busyTag("pick") === `looks:${e.id}` ? "Saving…" : "Looks right"}
                     </Button>
                   )}
                   {e.canUndo && (
                     <Tooltip>
-                      <TooltipTrigger delay={150} render={<Button size="xs" variant="outline" touch disabled={busy !== null} aria-describedby="undo-tip" onClick={() => undo(e.id)} />}>
-                        Undo
+                      <TooltipTrigger delay={150} render={<Button size="xs" variant="outline" touch disabled={pickBusy()} aria-describedby="undo-tip" onClick={() => void undo(e.id)} />}>
+                        {busyTag("pick") === `undo:${e.id}` ? "Undoing…" : "Undo"}
                       </TooltipTrigger>
                       <TooltipContent className="block max-w-72 text-left leading-relaxed">{UNDO_TIP}</TooltipContent>
                     </Tooltip>

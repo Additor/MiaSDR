@@ -14,6 +14,9 @@ export interface SequenceDeps {
   now: () => Date;
 }
 
+/** The deps of a use case that needs only some of the store's methods, so a test fakes those alone. */
+type DepsWith<K extends keyof RunStore> = { runs: Pick<RunStore, K>; now: () => Date };
+
 // Starting runs ---------------------------------------------------------------------------------------
 
 export interface StartRunInput {
@@ -58,7 +61,7 @@ export type StartOutcome = { started: { runId: string; created: boolean } } | { 
  * SQL cannot: the conversation belongs to the record, and every step belongs to the pinned version. A run already
  * started for the same message and version is returned as is.
  */
-export async function attemptRun(deps: { runs: Pick<RunStore, "loadStart" | "createRun">; now: () => Date }, input: StartRunInput): Promise<StartOutcome> {
+export async function attemptRun(deps: DepsWith<"loadStart" | "createRun">, input: StartRunInput): Promise<StartOutcome> {
   const facts = await deps.runs.loadStart(input.organizationId, input.recordId, { conversationId: input.conversationId });
   if (!facts) throw new NotFoundError("Reply handling not found");
   const { record } = facts;
@@ -95,7 +98,7 @@ export async function attemptRun(deps: { runs: Pick<RunStore, "loadStart" | "cre
 }
 
 /** Starts a run, or returns null when nothing applies. */
-export async function startRun(deps: { runs: Pick<RunStore, "loadStart" | "createRun">; now: () => Date }, input: StartRunInput): Promise<{ runId: string; created: boolean } | null> {
+export async function startRun(deps: DepsWith<"loadStart" | "createRun">, input: StartRunInput): Promise<{ runId: string; created: boolean } | null> {
   const outcome = await attemptRun(deps, input);
   return "started" in outcome ? outcome.started : null;
 }
@@ -116,7 +119,7 @@ export interface RecordAfterReply extends Omit<RecordSequenceState, "run"> {
     | null;
 }
 
-export async function getRecordSequence(deps: SequenceDeps, actor: Actor, recordId: string): Promise<RecordAfterReply> {
+export async function getRecordSequence(deps: DepsWith<"recordState" | "loadStart">, actor: Actor, recordId: string): Promise<RecordAfterReply> {
   // The two reads do not depend on each other, so they run together. A missing record fails the first and empties the second.
   const [state, facts] = await Promise.all([deps.runs.recordState(actor.organizationId, recordId), deps.runs.loadStart(actor.organizationId, recordId, {})]);
   if (!state) throw new NotFoundError("Reply handling not found");
@@ -141,7 +144,7 @@ export async function getRecordSequence(deps: SequenceDeps, actor: Actor, record
  * A person restarts the follow-ups: a run starts now from the flow of the campaign that most recently emailed this
  * person, replacing the current one. A reply a person already sent by hand skips the reply step.
  */
-export async function restartSequenceRun(deps: SequenceDeps, actor: Actor, recordId: string, input: { conversationId?: string } = {}) {
+export async function restartSequenceRun(deps: DepsWith<"loadStart" | "createRun">, actor: Actor, recordId: string, input: { conversationId?: string } = {}) {
   const outcome = await attemptRun(deps, { organizationId: actor.organizationId, recordId, conversationId: input.conversationId, source: "human_override", actorUserId: actor.userId, restart: true });
   if ("blocked" in outcome) throw new ConflictError(outcome.blocked, { code: "restart_blocked" });
   return outcome.started;
@@ -151,12 +154,8 @@ const event = (actor: Actor, recordId: string) => ({ organizationId: actor.organ
 
 export const pauseSequenceRun = (deps: SequenceDeps, actor: Actor, recordId: string) => deps.runs.pause(event(actor, recordId), deps.now());
 
-export async function resumeSequenceRun(deps: SequenceDeps, actor: Actor, recordId: string) {
-  await deps.runs.resume(event(actor, recordId), deps.now(), await deps.runs.timeZone(actor.organizationId));
-}
+export const resumeSequenceRun = (deps: SequenceDeps, actor: Actor, recordId: string) => deps.runs.resume(event(actor, recordId), deps.now());
 
 export const cancelSequenceRun = (deps: SequenceDeps, actor: Actor, recordId: string) => deps.runs.cancel(event(actor, recordId), "manual", deps.now());
 
-export async function skipSequenceStep(deps: SequenceDeps, actor: Actor, recordId: string) {
-  return deps.runs.skipStep(event(actor, recordId), deps.now(), await deps.runs.timeZone(actor.organizationId));
-}
+export const skipSequenceStep = (deps: SequenceDeps, actor: Actor, recordId: string) => deps.runs.skipStep(event(actor, recordId), deps.now());

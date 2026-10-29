@@ -215,7 +215,7 @@ export function lockBeforePick(response: unknown, previousGroupKey: string | nul
 export function checkReplyTypeChange({ before, target, expectedContextVersion, confirmUnlock }: ReplyTypeChangeCheck): { replyTypeLocked: boolean } {
   if (!isReplyTypeGroup(target.groupKey)) throw new ValidationError("Choose one of the four groups.");
   if (before.contextVersion !== expectedContextVersion) throw new ConflictError("Reply handling changed since you opened it. Reload and try again.");
-  if (before.workflowState === "closed") throw new ConflictError("Reply handling is closed. Reopen it before you change the type.");
+  if (before.workflowState === "closed") throw new ConflictError("Reply handling is marked done. Reopen it before you change the type.");
   if (before.groupKey === target.groupKey && before.replyTypeId === target.replyTypeId) throw new ConflictError("The reply already has this type.");
   const leavesLockedGroup = before.replyTypeLocked && target.groupKey !== before.groupKey;
   if (leavesLockedGroup && !confirmUnlock) {
