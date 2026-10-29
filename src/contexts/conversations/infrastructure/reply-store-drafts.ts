@@ -3,7 +3,7 @@ import { db, type DbTx } from "@/platform/db/client";
 import { conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports";
-import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS } from "../domain/reply-send";
+import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, HANDLING_CLOSED, REPLY_REFUSALS } from "../domain/reply-send";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
@@ -11,11 +11,13 @@ import { canMoveDraft, IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES, type Dra
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type AiDraft = NewDraft & { feedback?: string | null };
-type WrittenDraft = { id: string; stale: boolean };
+type WrittenDraft = { id: string; stale: boolean } | typeof HANDLING_CLOSED;
 
 /**
  * Writes an AI draft in `tx` (`ReplyStore.insertDraft`). `held` runs once the record is locked: the AI worker passes its
  * claim check there, so the record lock comes before the job row lock, and a false answer writes nothing and returns null.
+ * Reply handling marked done writes nothing and returns `HANDLING_CLOSED`, for every writer: a person's request, the
+ * draft job and the sequence engine (docs/decisions.md, "Reply send rules").
  */
 export async function insertDraftTx(tx: DbTx, input: AiDraft): Promise<WrittenDraft>;
 export async function insertDraftTx(tx: DbTx, input: AiDraft, held: (tx: DbTx) => Promise<boolean>): Promise<WrittenDraft | null>;
@@ -23,7 +25,7 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
   // A writer that read its context before the version moved (an undo, a type change, a new reply) wrote for a context
   // that no longer holds. Its draft goes in as stale and leaves the record's open drafts alone.
   const [record] = await tx
-    .select({ version: records.contextVersion })
+    .select({ version: records.contextVersion, workflowState: records.workflowState })
     .from(records)
     .where(and(eq(records.id, input.recordId), eq(records.organizationId, input.organizationId)))
     // No key update, so a reply send that holds the conversation and inserts its own draft passes (docs/database.md,
@@ -31,6 +33,7 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
     .for("no key update");
   if (!record) throw new NotFoundError("Reply handling not found");
   if (held && !(await held(tx))) return null;
+  if (record.workflowState === "closed") return HANDLING_CLOSED;
   if (record.version !== input.expectedContextVersion) {
     const [stale] = await tx
         .insert(drafts)
@@ -137,6 +140,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
     const suppressed = await isSuppressed(db, organizationId, head.email);
     const dnc = await isDoNotContact(db, organizationId, head.personId);
     const mailbox = await mailboxFor(organizationId, head.accountRef);
+    // Why no reply can be written here at all, the sentence the send refuses with.
+    const closed = head.state === "closed" ? REPLY_REFUSALS.handling_closed.text() : head.status !== "active" ? REPLY_REFUSALS.conversation_closed.text() : null;
 
     const [newest] = await db
       .select({ subject: messages.subject })
@@ -157,16 +162,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       taxonomy: taxonomyRows.map(({ key, name, groupKey }) => ({ key, name, groupKey })),
       suppressed,
       doNotContact: dnc,
-      mailboxIssue: !mailbox
-        ? "No mailbox is connected for this thread."
-        : mailbox.status !== "connected"
-          ? `The mailbox ${mailbox.emailAddress} is ${mailbox.status}.`
-          : head.state === "closed"
-            ? REPLY_REFUSALS.handling_closed.text()
-            : head.status !== "active"
-              ? REPLY_REFUSALS.conversation_closed.text()
-              : null,
-      closed: head.state === "closed" ? REPLY_REFUSALS.handling_closed.text() : head.status !== "active" ? REPLY_REFUSALS.conversation_closed.text() : null,
+      mailboxIssue: !mailbox ? "No mailbox is connected for this thread." : mailbox.status !== "connected" ? `The mailbox ${mailbox.emailAddress} is ${mailbox.status}.` : closed,
+      closed,
       answered: Boolean(head.lastOut && head.lastIn && head.lastOut >= head.lastIn),
       knownCcs: await knownCcsFor(organizationId, head.personId),
     };
@@ -178,7 +175,9 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
     const draft = await this.getDraft(organizationId, draftId);
     if (!draft) return null;
     const ctx = await buildDraftContext(organizationId, draft.conversationId);
-    return ctx ? { ...ctx, draft } : null;
+    if (!ctx) return null;
+    const [record] = await db.select({ workflowState: records.workflowState }).from(records).where(eq(records.id, ctx.recordId));
+    return { ...ctx, draft, workflowState: record.workflowState };
   },
 
   async insertDraft(input) {
@@ -280,12 +279,13 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       if (!row) throw new NotFoundError("Draft not found");
       if (row.status !== "awaiting_review") throw new ConflictError(`A draft that is ${row.status.replace(/_/g, " ")} can no longer be edited.`);
       if (row.revision !== input.expectedRevision) throw new ConflictError("The draft changed since you opened it. Reload and review it again.");
-      // A LinkedIn message has no subject and no CC, and the platform caps its length.
+      // A LinkedIn message has no subject and no CC. The text rule of the send, so an edit saves what the send would take:
+      // trimmed, not empty, within the channel's limit.
       const linkedin = row.channel === "linkedin";
-      if (linkedin) checkReplyText(input.bodyText, "linkedin");
+      const bodyText = checkReplyText(input.bodyText, linkedin ? "linkedin" : "email");
       const [updated] = await tx
         .update(drafts)
-        .set({ editedBodyText: input.bodyText, subject: linkedin ? null : (input.subject ?? row.subject), ...(input.cc && !linkedin ? { cc: input.cc } : {}), revision: row.revision + 1, error: null })
+        .set({ editedBodyText: bodyText, subject: linkedin ? null : (input.subject ?? row.subject), ...(input.cc && !linkedin ? { cc: input.cc } : {}), revision: row.revision + 1, error: null })
         .where(eq(drafts.id, draftId))
         .returning();
       return toDraftRow(updated);

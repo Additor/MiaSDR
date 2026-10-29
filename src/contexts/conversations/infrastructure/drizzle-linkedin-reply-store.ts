@@ -13,11 +13,10 @@ import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
+import { isUuid } from "@/shared/uuid";
 import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 type Tx = DbTx;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** What the approval snapshot stores in `send_attempts.request` for a LinkedIn reply. */
 interface Snapshot {
@@ -328,7 +327,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
     if (!head) return null;
     if (head.channel !== "linkedin") return null;
 
-    const [account] = UUID.test(head.accountRef) ? await db.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, head.accountRef), eq(linkedinAccounts.organizationId, organizationId))) : [];
+    const [account] = isUuid(head.accountRef) ? await db.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, head.accountRef), eq(linkedinAccounts.organizationId, organizationId))) : [];
     const dnc = await isDoNotContact(db, organizationId, head.personId);
     const used = account ? await usage(db, account.id, now) : { usedToday: 0, lastAttemptAt: null };
     const block = account ? replyBlock(now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: 0 }) : null;

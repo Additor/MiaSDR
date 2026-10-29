@@ -1,5 +1,5 @@
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { checkManualReply, MANUAL_BODY_MAX, MANUAL_SUBJECT_MAX } from "../domain/manual-reply";
+import { checkManualReply, MANUAL_SUBJECT_MAX } from "../domain/manual-reply";
 import { normalizeSubject } from "../domain/subject";
 import { validateReplyCc, MAX_REPLY_CC, type ReplyCcError } from "../domain/lead-cc";
 import { AiError } from "@/contexts/ai/domain/ai-error";
@@ -9,7 +9,7 @@ import type { ReplyAiResolver } from "../ai/application/ai-ports";
 import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
 import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext } from "./reply-ports";
 import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
-import { checkNoneInFlight, checkRecordOpen } from "../domain/reply-send";
+import { checkNoneInFlight, checkRecordOpen, replyRefusal } from "../domain/reply-send";
 
 /**
  * Human actions on drafts. Permissions: any member of the organization may edit, regenerate, discard,
@@ -88,6 +88,7 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
           response: { usage: result.usage ?? null },
           citations: draftCitations(ctx),
         }),
+        ctx.channel,
       ),
     };
   } catch (error) {
@@ -95,8 +96,12 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
   }
 }
 
-/** A draft a person asked for that went in stale reads as a conflict: it cannot be sent, and the thread needs a reload. */
-function personDraftId(written: { id: string; stale: boolean }): string {
+/**
+ * A draft a person asked for that went in stale reads as a conflict: it cannot be sent, and the thread needs a reload. One
+ * refused because reply handling was marked done while the AI wrote answers as the check before it would.
+ */
+function personDraftId(written: { id: string; stale: boolean } | "handling_closed", channel: "email" | "linkedin"): string {
+  if (written === "handling_closed") throw replyRefusal("handling_closed", channel);
   if (written.stale) throw new ConflictError("The thread changed while the draft was written.");
   return written.id;
 }
@@ -114,8 +119,7 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
   if (!["awaiting_review", "failed", "stale"].includes(ctx.draft.status)) {
     throw new ConflictError(`A draft that is ${ctx.draft.status.replace(/_/g, " ")} cannot be regenerated.`);
   }
-  const panel = await deps.store.panel(actor.organizationId, ctx.conversationId);
-  if (panel) checkRecordOpen(panel, ctx.channel);
+  checkRecordOpen(ctx, ctx.channel);
   const note = input.note?.trim().slice(0, 2000) || null;
   try {
     const result = await produceDraft(provider, ctx, { feedback: note, previousDraft: ctx.draft.editedBodyText ?? ctx.draft.aiBodyText });
@@ -138,6 +142,7 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
           regeneratesDraftId: draftId,
           feedback: note,
         }),
+        ctx.channel,
       ),
     };
   } catch (error) {
@@ -204,9 +209,8 @@ export async function createManualDraft(
 
 export async function editDraft(deps: ReplyDeps, actor: Actor, draftId: string, input: { revision: number; subject?: string | null; bodyText: string; cc?: string[] }) {
   assertId(draftId, "Draft");
-  const bodyText = input.bodyText.replace(/\r\n/g, "\n").trim();
-  if (bodyText === "") throw new ValidationError("The reply cannot be empty.");
-  if (bodyText.length > MANUAL_BODY_MAX) throw new ValidationError(`The reply is longer than ${MANUAL_BODY_MAX} characters.`);
+  // The store applies the send's text rule (`checkReplyText`) on both channels.
+  const bodyText = input.bodyText;
   const subject = input.subject === undefined || input.subject === null ? null : normalizeSubject(input.subject, MANUAL_SUBJECT_MAX + 1);
   if (subject !== null && (subject === "" || subject.length > MANUAL_SUBJECT_MAX)) throw new ValidationError(`The subject must be 1 to ${MANUAL_SUBJECT_MAX} characters.`);
   const cc = input.cc === undefined ? undefined : await checkCc(deps, actor, { draftId }, input.cc);

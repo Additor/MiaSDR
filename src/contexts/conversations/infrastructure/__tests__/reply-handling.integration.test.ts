@@ -326,7 +326,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
         response: {},
         citations: [],
       });
-      expect((await sql`select status from drafts where id = ${late.id}`)[0].status).toBe("stale");
+      expect((await sql`select status from drafts where id = ${(late as { id: string }).id}`)[0].status).toBe("stale");
       expect((await sql`select status from drafts where id = ${manual}`)[0].status).toBe("awaiting_review");
     });
 

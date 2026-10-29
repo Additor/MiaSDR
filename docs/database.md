@@ -58,7 +58,7 @@ A row lock that serializes writers on `records` or `conversations` takes `FOR NO
 - A contact delete locks the person's records and conversations `FOR UPDATE` (`lockPersonForDelete`), because it deletes them.
 - A reply send locks its conversation `FOR UPDATE` on both channels. It holds back an ingest's message insert, whose transaction would go on to retire drafts and update the conversation, a cycle with the send's draft lock.
 
-Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its public conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`).
+One order for the conflicting locks: the record before its conversations. Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its public conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). A LinkedIn message that makes a chat private locks the record before it updates the conversation, since the detach that follows writes the record; updating the conversation first deadlocked with a close (`reply-send-refusals.integration.test.ts`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes records, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
 ## Append-only tables
 

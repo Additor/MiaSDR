@@ -50,7 +50,7 @@ describeDb("CC on a reply", () => {
     };
     const ingested = await composition.ingestInbound(input);
     const [record] = await sql`select id, context_version from records where organization_id = ${org}`;
-    const { id: draftId } = await store.insertDraft({
+    const { id: draftId } = (await store.insertDraft({
       organizationId: org,
       recordId: record.id,
       conversationId: ingested.conversationId,
@@ -63,7 +63,7 @@ describeDb("CC on a reply", () => {
       request: {},
       response: {},
       citations: [],
-    });
+    })) as { id: string };
     return { org, actor, deps, address, lead, draftId, conversationId: ingested.conversationId, personId: ingested.personId };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;

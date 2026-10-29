@@ -1,6 +1,7 @@
 import { aiIsOn, aiOffMessage, type AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { isUuid } from "@/shared/uuid";
 import { REPLY_PAUSE_HOURS } from "../domain/linkedin-reply";
 import { LinkedInReplyError, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore } from "./linkedin-reply-ports";
 import type { AttemptRow } from "./reply-ports";
@@ -18,7 +19,6 @@ export interface LinkedInReplyDeps {
   aiStatus?: (organizationId: string) => Promise<AiStatus>;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
 
 export type LinkedInReplyResult =
@@ -46,7 +46,7 @@ function replay(attempt: AttemptRow): LinkedInReplyResult {
 export type LinkedInReplyPanelView = LinkedInReplyPanel & { canGenerate: boolean; aiOff: string | null };
 
 export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Actor, conversationId: string): Promise<LinkedInReplyPanelView | null> {
-  if (!UUID.test(conversationId)) throw new NotFoundError("Conversation not found");
+  if (!isUuid(conversationId)) throw new NotFoundError("Conversation not found");
   const panel = await deps.store.panel(actor.organizationId, conversationId, deps.now());
   if (!panel) return null;
   const status: AiStatus = deps.aiStatus ? await deps.aiStatus(actor.organizationId) : { state: "no_key" };
@@ -59,11 +59,11 @@ export async function sendLinkedInReply(
   conversationId: string,
   input: { text: string; idempotencyKey: string; draftId?: string; revision?: number },
 ): Promise<LinkedInReplyResult> {
-  if (!UUID.test(conversationId)) throw new NotFoundError("Conversation not found");
+  if (!isUuid(conversationId)) throw new NotFoundError("Conversation not found");
   const key = input.idempotencyKey.trim();
   if (key.length < 8 || key.length > 200) throw new ValidationError("An idempotency key of 8 to 200 characters is required.");
   if (input.draftId !== undefined) {
-    if (!UUID.test(input.draftId)) throw new NotFoundError("Draft not found");
+    if (!isUuid(input.draftId)) throw new NotFoundError("Draft not found");
     if (!Number.isInteger(input.revision) || (input.revision as number) < 1) throw new ValidationError("The draft revision is missing. Reload and try again.");
   }
 

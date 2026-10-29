@@ -182,7 +182,7 @@ describeDb("manual email replies (no AI)", () => {
       citations: [],
     });
     const created = await compose(f);
-    expect(await one("select status from drafts where id = $1", [ai.id])).toMatchObject({ status: "stale" });
+    expect(await one("select status from drafts where id = $1", [(ai as { id: string }).id])).toMatchObject({ status: "stale" });
     expect((await mgmt.getReplyPanel(f.replyDeps, f.actor, f.conversationId))!.draft?.id).toBe(created.draftId);
   });
 

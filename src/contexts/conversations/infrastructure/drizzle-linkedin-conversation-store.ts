@@ -84,6 +84,9 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
       }
       // A reply of a personal-campaign lead makes the thread private for good, even when a public thread existed before.
       if (input.privateCampaignId && !conversation.privateCampaignId) {
+        // The record before the conversation, the order every writer of both takes (docs/database.md, "Lock modes"); the
+        // detach below writes the record.
+        await tx.select({ id: records.id }).from(records).where(eq(records.id, conversation.recordId)).for("no key update");
         await tx.update(conversations).set({ privateCampaignId: input.privateCampaignId }).where(eq(conversations.id, conversation.id));
         conversation = { ...conversation, privateCampaignId: input.privateCampaignId };
         // The thread already moved the shared record while it was public. Undo that in this transaction.
