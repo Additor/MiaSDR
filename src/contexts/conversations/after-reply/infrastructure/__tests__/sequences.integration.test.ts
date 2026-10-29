@@ -620,7 +620,14 @@ describeDb("Follow-ups after a reply flows", () => {
       const { loadStartOn } = await import("../drizzle-sequence-store");
       const { db } = await import("@/platform/db/client");
       let queries = 0;
-      const counting = { execute: (query: Parameters<typeof db.execute>[0]) => (queries++, db.execute(query)) } as unknown as typeof db;
+      // Each raw `execute` and each Drizzle `select` sends one query.
+      const counting = new Proxy(db, {
+        get: (target, key, receiver) => {
+          const value = Reflect.get(target, key, receiver);
+          if (key !== "execute" && key !== "select") return value;
+          return (...args: unknown[]) => (queries++, (value as (...a: unknown[]) => unknown).apply(target, args));
+        },
+      });
       const facts = await loadStartOn(counting, f.org, record, {});
       expect(queries, "record and conversation, owner with flow and version, steps, zone").toBeLessThanOrEqual(4);
       expect(await loadStartOn(db, f.org, record, { conversationId: conversation })).toEqual(facts);

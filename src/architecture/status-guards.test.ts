@@ -6,9 +6,11 @@ import { sourceFiles } from "./context-layers";
 /**
  * Status columns with a transition table in a domain module. Every statement that sets one of them names the source
  * statuses it moves from, so a late or concurrent writer changes nothing. A Drizzle update needs a guard helper or an
- * `eq`/`inArray` on the status column in the same statement; a raw SQL update needs `status in` or `status =`.
+ * `eq`/`inArray` on the status column in the same statement; a raw SQL update needs `status in` or `status =`. A rule
+ * with `inWhere` reads the guard from the WHERE clause only, so the status the SET writes does not count as its guard,
+ * and its raw pattern also finds a SET that writes `status` after other columns (`set due_at = ..., status = ...`).
  */
-const GUARDED: Array<{ table: string; drizzle: RegExp; raw: RegExp; guard: RegExp }> = [
+const GUARDED: Array<{ table: string; drizzle: RegExp; raw: RegExp; guard: RegExp; inWhere?: boolean }> = [
   {
     table: "drafts",
     drizzle: /\.update\(drafts\)/g,
@@ -26,6 +28,20 @@ const GUARDED: Array<{ table: string; drizzle: RegExp; raw: RegExp; guard: RegEx
     drizzle: /\.update\(campaignEnrollments\)/g,
     raw: /update campaign_enrollments( e)? set status/g,
     guard: /(eq|inArray)\(campaignEnrollments\.status|status in \$\{|status = '/,
+  },
+  {
+    table: "sequence_runs",
+    drizzle: /\.update\(sequenceRuns\)/g,
+    raw: /update (?:sequence_runs|\$\{sequenceRuns\})(?: \w+)? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,
+    guard: /runMayBecome\(|(eq|inArray)\(sequenceRuns\.status|status\}? in \$\{|status\}? = '/,
+    inWhere: true,
+  },
+  {
+    table: "sequence_step_runs",
+    drizzle: /\.update\(sequenceStepRuns\)/g,
+    raw: /update (?:sequence_step_runs|\$\{sequenceStepRuns\})(?: \w+)? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,
+    guard: /stepMayBecome\(|heldStep\(|(eq|inArray)\(sequenceStepRuns\.status|status\}? in \$\{|status\}? = '/,
+    inWhere: true,
   },
 ];
 
@@ -54,7 +70,9 @@ describe("status guards", () => {
           for (const match of source.matchAll(pattern)) {
             const statement = statementAt(source, match.index);
             const setsStatus = pattern === rule.raw || /\.set\(\{[^}]*\bstatus:/.test(statement);
-            if (setsStatus && !rule.guard.test(statement)) {
+            const where = statement.search(/\.where\(|\bwhere\b/);
+            const guarded = rule.guard.test(rule.inWhere ? (where < 0 ? "" : statement.slice(where)) : statement);
+            if (setsStatus && !guarded) {
               unguarded.push(`${path.relative(ROOT, file)}:${source.slice(0, match.index).split("\n").length}`);
             }
           }

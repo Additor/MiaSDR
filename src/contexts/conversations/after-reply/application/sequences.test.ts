@@ -49,7 +49,7 @@ function store(f: StartFacts | null) {
       created.push(run);
       return { runId: "run1", created: true };
     },
-  } as unknown as RunStore;
+  } satisfies Pick<RunStore, "loadStart" | "createRun">;
   return { runs, created, deps: { runs, now: () => NOW } };
 }
 
@@ -230,24 +230,24 @@ describe("getRecordSequence", () => {
   });
 
   it("adds wording for the status, the starter and the reason a run ended", async () => {
-    const runs = { loadStart: async () => facts(), recordState: async () => ({ recordId: "rec1", campaign: { id: "c1", name: "Autumn", mode: "ai_drafts" as const }, run: run("interrupted", "after_reply_off", "human_override") }) } as unknown as RunStore;
+    const runs = { loadStart: async () => facts(), recordState: async () => ({ recordId: "rec1", campaign: { id: "c1", name: "Autumn", mode: "ai_drafts" as const }, run: run("interrupted", "after_reply_off", "human_override") }) } satisfies Pick<RunStore, "recordState" | "loadStart">;
     const state = await getRecordSequence({ runs, now: () => NOW }, actor, "rec1");
     expect(state.campaign).toEqual({ id: "c1", name: "Autumn", mode: "ai_drafts" });
     expect(state.run).toMatchObject({ statusLabel: "Stopped", startedByLabel: "Restarted by a person", endedReasonLabel: "Follow-ups turned off for this campaign" });
   });
 
   it("leaves the ended reason empty while the run goes on, and handles a record without a run", async () => {
-    const running = { loadStart: async () => facts(), recordState: async () => ({ recordId: "rec1", campaign: null, run: run("active", null, "ai_assignment") }) } as unknown as RunStore;
+    const running = { loadStart: async () => facts(), recordState: async () => ({ recordId: "rec1", campaign: null, run: run("active", null, "ai_assignment") }) } satisfies Pick<RunStore, "recordState" | "loadStart">;
     expect((await getRecordSequence({ runs: running, now: () => NOW }, actor, "rec1")).run).toMatchObject({ statusLabel: "Running", startedByLabel: "Automatic", endedReasonLabel: null });
-    const none = { loadStart: async () => facts(), recordState: async () => ({ recordId: "rec1", campaign: null, run: null }) } as unknown as RunStore;
+    const none = { loadStart: async () => facts(), recordState: async () => ({ recordId: "rec1", campaign: null, run: null }) } satisfies Pick<RunStore, "recordState" | "loadStart">;
     expect((await getRecordSequence({ runs: none, now: () => NOW }, actor, "rec1")).run).toBeNull();
   });
 
   it("tells the page whether Restart can run and why not", async () => {
     const state = { recordId: "rec1", campaign: { id: "camp", name: "Autumn", mode: "ai_drafts" as const }, run: null };
-    const ok = { loadStart: async () => facts(), recordState: async () => state } as unknown as RunStore;
+    const ok = { loadStart: async () => facts(), recordState: async () => state } satisfies Pick<RunStore, "recordState" | "loadStart">;
     expect(await getRecordSequence({ runs: ok, now: () => NOW }, actor, "rec1")).toMatchObject({ canRestart: true, restartBlockedReason: null });
-    const paused = { loadStart: async () => facts({ owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "paused", archived: false }, selection: null }), recordState: async () => state } as unknown as RunStore;
+    const paused = { loadStart: async () => facts({ owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "paused", archived: false }, selection: null }), recordState: async () => state } satisfies Pick<RunStore, "recordState" | "loadStart">;
     expect(await getRecordSequence({ runs: paused, now: () => NOW }, actor, "rec1")).toMatchObject({ canRestart: false, restartBlockedReason: "The campaign Autumn is paused. Resume it to restart follow-ups." });
   });
 
@@ -257,13 +257,13 @@ describe("getRecordSequence", () => {
     const runs = {
       recordState: async () => (log.push("enter recordState"), await Promise.resolve(), log.push("exit recordState"), state),
       loadStart: async () => (log.push("enter loadStart"), await Promise.resolve(), log.push("exit loadStart"), facts()),
-    } as unknown as RunStore;
+    } satisfies Pick<RunStore, "recordState" | "loadStart">;
     await getRecordSequence({ runs, now: () => NOW }, actor, "rec1");
     expect(log.slice(0, 2)).toEqual(["enter recordState", "enter loadStart"]);
   });
 
   it("answers 404 for a record the organization does not have", async () => {
-    const runs = { recordState: async () => null, loadStart: async () => null } as unknown as RunStore;
+    const runs = { recordState: async () => null, loadStart: async () => null } satisfies Pick<RunStore, "recordState" | "loadStart">;
     await expect(getRecordSequence({ runs, now: () => NOW }, actor, "rec9")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
