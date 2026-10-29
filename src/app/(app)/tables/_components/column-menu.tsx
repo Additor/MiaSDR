@@ -65,7 +65,7 @@ export function ColumnMenu({ column, index, count, sort, pinned = false, pinCoun
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`Column menu for ${column.name}`}
-        className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-ring"
       >
         <ChevronDownIcon className="size-3.5" />
       </DropdownMenuTrigger>

@@ -27,7 +27,7 @@ export function LeadStatusToken({ status, compact = false, className }: { status
   const Icon = ICONS[status.state];
   const label = LEAD_STATE_LABELS[status.state];
   const classes = cn(
-    "inline-flex w-fit shrink-0 items-center gap-1.5 rounded-md border bg-background font-medium whitespace-nowrap text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:shrink-0 [&>svg]:text-muted-foreground",
+    "inline-flex w-fit shrink-0 items-center gap-1.5 rounded-md border bg-background font-medium whitespace-nowrap text-foreground focus-ring [&>svg]:shrink-0 [&>svg]:text-muted-foreground",
     compact ? "h-6 px-1.5 text-xs [&>svg]:size-3.5" : "h-7 px-2 text-sm [&>svg]:size-4",
     className,
   );

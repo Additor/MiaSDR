@@ -50,7 +50,7 @@ export function Tabs({ tabs, label, countTone = "alert" }: { tabs: TabItem[]; la
               onClick={() => setActive(tab.id)}
               onKeyDown={(e) => onKeyDown(e, index)}
               className={cn(
-                "-mb-px flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9",
+                "-mb-px flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm focus-ring md:min-h-9",
                 selected ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >

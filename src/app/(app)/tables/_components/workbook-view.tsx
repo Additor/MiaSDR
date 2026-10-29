@@ -275,7 +275,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                     aria-controls="table-panel"
                     tabIndex={selected ? 0 : -1}
                     title="Double-click or press F2 to rename"
-                    className="rounded-t-md px-3 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:py-3"
+                    className="rounded-t-md px-3 py-1.5 focus-ring max-sm:py-3"
                     onClick={() => select(tab.id)}
                     onDoubleClick={() => setEditingTab(tab.id)}
                     onKeyDown={(e) => {
@@ -306,7 +306,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                     aria-label={`Actions for ${tab.name}`}
                     // Shown on the open tab; on the others it waits for hover or focus, and a touch screen offers it on the open tab only.
                     className={cn(
-                      "mr-1 flex items-center justify-center rounded p-0.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:size-11",
+                      "mr-1 flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-ring max-sm:size-11",
                       editing && "hidden",
                       !selected && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:hidden",
                     )}

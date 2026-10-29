@@ -282,7 +282,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                           {error && <p className="text-destructive">{error}</p>}
                           {r.response !== null && r.response !== undefined && (
                             <details>
-                              <summary className="w-fit cursor-pointer rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:py-2">Response</summary>
+                              <summary className="w-fit cursor-pointer rounded-sm text-xs text-muted-foreground hover:text-foreground focus-ring max-sm:py-2">Response</summary>
                               <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted/40 p-2 font-mono text-xs break-words whitespace-pre-wrap">{pretty(r.response)}</pre>
                             </details>
                           )}

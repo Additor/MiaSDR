@@ -235,7 +235,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
         </form>
         {state.connected && (
           <details className="group border-t pt-group">
-            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">Manual webhook setup</summary>
+            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium focus-ring">Manual webhook setup</summary>
             <div className="grid gap-3 pt-2 text-sm">
               <p className="text-muted-foreground">Use this when automatic registration is skipped or blocked. Create the webhooks in the Unipile dashboard with the URL below and the secret in a custom header.</p>
               {state.webhooks?.hooks.map((hook) => (
@@ -287,7 +287,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
 
         {state.links.length > 0 && (
           <details className="border-t pt-group">
-            <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium focus-ring">
               Recent connection links <span className="font-normal text-muted-foreground">({state.links.length})</span>
             </summary>
             <div className="grid gap-1 pt-2 text-sm">

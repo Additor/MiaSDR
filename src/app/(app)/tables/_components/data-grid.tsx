@@ -383,7 +383,7 @@ export function DataGrid(props: Props) {
       aria-multiselectable
       aria-activedescendant={activeId}
       tabIndex={0}
-      className="relative min-h-0 flex-1 overflow-auto rounded-lg border bg-background outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+      className="relative min-h-0 flex-1 overflow-auto rounded-lg border bg-background focus-ring"
       onScroll={(e) => {
         const top = e.currentTarget.scrollTop;
         setScroll((s) => (s.top === top ? s : { ...s, top }));
@@ -522,7 +522,7 @@ function ResizeHandle({ label, width, onResize }: { label: string; width: number
       aria-valuemin={MIN_COL_W}
       aria-valuemax={MAX_COL_W}
       tabIndex={0}
-      className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none outline-none hover:bg-primary/40 focus-visible:bg-primary/40 focus-visible:ring-2 focus-visible:ring-ring"
+      className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-primary/40 focus-visible:bg-primary/40 focus-ring"
       onKeyDown={(e) => {
         const step = e.shiftKey ? 50 : 10;
         const next = e.key === "ArrowLeft" ? width - step : e.key === "ArrowRight" ? width + step : e.key === "Home" ? MIN_COL_W : e.key === "End" ? MAX_COL_W : null;

@@ -97,7 +97,7 @@ export function CompanyDetails({
         </p>
         {staleFields.length > 0 && (
           <details data-testid="company-other-values">
-            <summary className="w-fit cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:py-3">
+            <summary className="w-fit cursor-pointer rounded-sm hover:text-foreground focus-ring max-sm:py-3">
               {staleFields.length === 1 ? "1 value" : `${staleFields.length} values`} from removed fields
             </summary>
             <dl className="mt-2 grid gap-1 text-sm">

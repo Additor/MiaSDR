@@ -68,14 +68,14 @@ function SetupBlock({ links }: { links: SetupLink[] }) {
         <h2 id="settings-setup" className="text-base font-semibold">
           Set up sending
         </h2>
-        <Link href="/onboarding" className="text-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring">
+        <Link href="/onboarding" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-ring">
           Open setup guide
         </Link>
       </div>
       <ol className="divide-y rounded-lg border">
         {links.map((link, index) => (
           <li key={link.id}>
-            <Link href={link.href} className="flex min-h-14 items-center gap-3 px-3 py-3 outline-none first:rounded-t-lg last:rounded-b-lg hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">
+            <Link href={link.href} className="flex min-h-14 items-center gap-3 px-3 py-3 first:rounded-t-lg last:rounded-b-lg hover:bg-muted/50 focus-ring">
               <span aria-hidden className="w-4 shrink-0 text-sm text-muted-foreground tabular-nums">
                 {index + 1}
               </span>
@@ -94,7 +94,7 @@ function SetupBlock({ links }: { links: SetupLink[] }) {
 function Row({ href, title, summary, attention }: { href: string; title: string; summary: string; attention: AttentionMap[string] }) {
   return (
     <li>
-      <Link href={href} className="flex min-h-14 items-center justify-between gap-4 px-3 py-3 outline-none first:rounded-t-lg last:rounded-b-lg hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring">
+      <Link href={href} className="flex min-h-14 items-center justify-between gap-4 px-3 py-3 first:rounded-t-lg last:rounded-b-lg hover:bg-muted/50 focus-ring">
         <span className="grid gap-0.5">
           <span className="text-sm font-medium">{title}</span>
           <span className="text-sm text-muted-foreground">{summary}</span>

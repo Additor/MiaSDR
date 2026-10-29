@@ -133,7 +133,7 @@ async function Companies({ searchParams }: { searchParams: PageProps<"/crm/compa
                             href={linkedin}
                             target="_blank"
                             rel="noreferrer noopener"
-                            className="relative z-10 -my-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:-my-2 max-sm:size-11"
+                            className="relative z-10 -my-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-ring max-sm:-my-2 max-sm:size-11"
                             aria-label={`LinkedIn page of ${name} (opens in a new tab)`}
                             title="LinkedIn page"
                           >

@@ -196,7 +196,7 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
               {/* A contact who was in no campaign and got no sends has no history to open. */}
               {(enrollments.length > 0 || sends.length > 0) && (
                 <details data-testid="outreach-history" className="group border-t py-section">
-                  <summary className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11">
+                  <summary className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md select-none focus-ring max-sm:min-h-11">
                     <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
                     <h2 className="text-sm font-semibold">Outreach history</h2>
                     <span className="text-sm text-muted-foreground tabular-nums">{outreachCount}</span>

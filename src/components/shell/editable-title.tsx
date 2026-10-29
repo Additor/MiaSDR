@@ -172,7 +172,7 @@ export function EditableTitle({ value, label, onSave, as: Tag = "h1", className 
                 setEditing(true);
               }
             }}
-            className="group/title -ml-1.5 inline-flex h-7 max-w-full min-w-0 cursor-text items-center gap-1.5 rounded-md px-1.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
+            className="group/title -ml-1.5 inline-flex h-7 max-w-full min-w-0 cursor-text items-center gap-1.5 rounded-md px-1.5 hover:bg-muted focus-ring max-sm:h-11"
           >
             <span className="truncate">{value}</span>
             <PencilIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 group-focus-visible/title:opacity-100 [@media(hover:none)]:opacity-100" />

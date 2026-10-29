@@ -234,7 +234,7 @@ function DeleteContactDialog({
                     {reach.unmarked.before}
                     <button
                       type="button"
-                      className="text-foreground underline underline-offset-4 hover:no-underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      className="text-foreground underline underline-offset-4 hover:no-underline focus-visible:rounded-sm focus-ring"
                       onClick={() => {
                         onOpenChange(false);
                         openDncControl(personId);

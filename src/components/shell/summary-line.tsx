@@ -1,8 +1,10 @@
+import { InfoTip } from "./info-tip";
+
 export interface SummaryItem {
   label: string;
   /** Pre-formatted text, such as "120" or "14 (11.7%)". */
   value: string | number;
-  /** Shown as a tooltip on the pair. */
+  /** Explains the pair on an info mark after the value (a tooltip on hover and focus, a popover on a tap). */
   hint?: string;
 }
 
@@ -15,9 +17,14 @@ export function SummaryLine({ items, className }: { items: SummaryItem[]; classN
   return (
     <dl className={`flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums${className ? ` ${className}` : ""}`}>
       {items.map((item) => (
-        <div key={item.label} title={item.hint} className="flex items-baseline gap-1.5">
+        <div key={item.label} className="flex items-baseline gap-1.5">
           <dt className="text-muted-foreground">{item.label}</dt>
           <dd className="font-medium">{item.value}</dd>
+          {item.hint && (
+            <dd className="self-center">
+              <InfoTip label={`About ${item.label}`}>{item.hint}</InfoTip>
+            </dd>
+          )}
         </div>
       ))}
     </dl>

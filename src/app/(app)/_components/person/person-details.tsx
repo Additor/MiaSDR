@@ -150,7 +150,7 @@ function CompanyValue({ values, href }: { values: LeadFormValues; href: string |
 function PersonOrigin({ facts }: { facts: PersonFacts }) {
   return (
     <StateTip
-      trigger={<span tabIndex={0} aria-label="When this person was added and changed" className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:size-11" data-testid="person-origin" />}
+      trigger={<span tabIndex={0} aria-label="When this person was added and changed" className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-ring max-sm:size-11" data-testid="person-origin" />}
       tip={
         <TipLines
           lines={[

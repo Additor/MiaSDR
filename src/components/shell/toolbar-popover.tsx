@@ -60,11 +60,12 @@ export function ToolbarPopover({
         setOpen(next);
       }}
     >
-      <PopoverTrigger render={<Button type="button" variant="outline" size="sm" className="max-sm:h-11 max-sm:px-4" data-testid={testId} />}>
+      <PopoverTrigger render={<Button type="button" variant="outline" size="sm" touch data-testid={testId} />}>
         <Icon aria-hidden />
         <span className={cn(compact && "max-sm:sr-only")}>{label}</span>
         {count > 0 && (
-          <span className="rounded-full bg-primary px-1.5 text-xs leading-5 font-medium text-primary-foreground tabular-nums">
+          // A muted number, as on the scope segments: the chips under the toolbar name what is in use.
+          <span className="text-muted-foreground tabular-nums">
             {count}
             <span className="sr-only"> in use</span>
           </span>
@@ -88,7 +89,7 @@ export function ToolbarPopover({
 /** The scrolling part of the popup. Sections inside it stack with a hairline between them. */
 export function ToolbarPopoverBody({ children, ref }: { children: ReactNode; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div ref={ref} className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain p-3 max-sm:p-4">
+    <div ref={ref} className="grid min-h-0 flex-1 content-start gap-inset overflow-y-auto overscroll-contain p-3 max-sm:p-4">
       {children}
     </div>
   );

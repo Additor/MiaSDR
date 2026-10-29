@@ -8,7 +8,7 @@ import { DoNotContactTip, SuppressedTip } from "./reach-icons";
 import { StateTip } from "./state-tip";
 
 const linkClasses =
-  "inline-flex min-h-6 items-center gap-1.5 rounded-sm text-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11";
+  "inline-flex min-h-6 items-center gap-1.5 rounded-sm text-sm underline-offset-4 hover:underline focus-ring max-sm:min-h-11";
 const textClasses = "inline-flex min-h-6 items-center gap-1.5 text-sm";
 
 /**

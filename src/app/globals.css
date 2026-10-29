@@ -291,6 +291,18 @@
   font-weight: 600;
 }
 
+/*
+ * Focus on a target without a border of its own: a link, a chip, a summary, an info mark. A 2px ring-colored outline
+ * that follows the radius. Controls with a border (inputs, buttons) keep the primitives' border and halo instead.
+ */
+@utility focus-ring {
+  outline: none;
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+}
+
 /* The name of an item in a list or a group inside a section: body size at medium weight. */
 @utility heading-item {
   font-size: var(--text-sm);
