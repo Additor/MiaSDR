@@ -259,15 +259,6 @@ export const drizzleGridRunStore: GridRunStore = {
     }
   },
 
-  async updateColumn(organizationId, tableId, columnId, patch) {
-    const set: Partial<typeof gridColumns.$inferInsert> = { updatedAt: new Date() };
-    if (patch.config !== undefined) set.config = patch.config;
-    if (patch.dependsOn !== undefined) set.dependsOn = patch.dependsOn;
-    if (patch.autoRun !== undefined) set.autoRun = patch.autoRun;
-    const [row] = await db.update(gridColumns).set(set).where(and(eq(gridColumns.organizationId, organizationId), eq(gridColumns.tableId, tableId), eq(gridColumns.id, columnId))).returning();
-    return row ? toColumn(row) : null;
-  },
-
   async enqueue(organizationId, tableId, targets, options) {
     if (targets.length === 0) return 0;
     return db.transaction((tx) => enqueueIn(tx, organizationId, tableId, targets, options));

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { EngineDeps } from "../../application/send-next-email";
 import { FakeMailboxProvider } from "../fake-mailbox-provider";
+import { MAX_SEND_ATTEMPTS } from "../../../domain/send-policy";
 
 const ALL_DAY = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ start: "00:00", end: "23:59" }]]));
 const STEPS = [
@@ -259,6 +260,73 @@ describeDb("email send engine", () => {
     advance(24 * 60);
     expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
     expect(provider.delivered).toHaveLength(0);
+  });
+
+  // Migration 0004 took the cap out of the sends trigger, so these two tests are what holds it.
+  describe("the attempt cap", () => {
+    it("is three attempts", () => {
+      expect(MAX_SEND_ATTEMPTS).toBe(3);
+    });
+
+    it("calls the provider at most MAX_SEND_ATTEMPTS times for one step, then ends the enrollment failed", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      let calls = 0;
+      provider.behavior = () => {
+        calls += 1;
+        return "refuse";
+      };
+      const d = deps(provider);
+
+      for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+        expect(await send.sendNextEmail(d, f.mailboxIds[0])).toEqual({ kind: "failed", retry: attempt < MAX_SEND_ATTEMPTS });
+        expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt, error: "Recipient address rejected" });
+        advance(24 * 60);
+      }
+      expect(calls).toBe(MAX_SEND_ATTEMPTS);
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: Recipient address rejected", next_send_at: null, current_step: 0 });
+
+      // A provider that would now accept is never asked again.
+      provider.behavior = () => {
+        calls += 1;
+        return "ok";
+      };
+      for (let i = 0; i < 3; i++) {
+        expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
+        advance(24 * 60);
+      }
+      expect(calls).toBe(MAX_SEND_ATTEMPTS);
+      expect(await sendRows(f.enrollmentIds[0])).toHaveLength(1);
+      expect(provider.delivered).toHaveLength(0);
+    });
+
+    it("counts a lost send the reconciler proves absent as an attempt toward the same cap", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      const d = deps(provider);
+
+      // Attempt 1 is lost and comes back as not sent after the grace period.
+      provider.behavior = () => "timeout-lost";
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("unknown");
+      advance(11);
+      await send.reconcileUncertainSends(d);
+      advance(30);
+      expect(await send.reconcileUncertainSends(d)).toMatchObject({ retryable: 1 });
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt: 1 });
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "pending" });
+
+      // The rest are refused. Only MAX_SEND_ATTEMPTS - 1 more calls happen.
+      provider.behavior = () => "refuse";
+      for (let attempt = 2; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+        advance(60);
+        expect(await send.sendNextEmail(d, f.mailboxIds[0])).toEqual({ kind: "failed", retry: attempt < MAX_SEND_ATTEMPTS });
+      }
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: Recipient address rejected" });
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt: MAX_SEND_ATTEMPTS });
+      provider.behavior = () => "ok";
+      advance(24 * 60);
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
+    });
   });
 
   it("never retries an uncertain send by itself, and settles it from the mailbox when it was delivered", async () => {
