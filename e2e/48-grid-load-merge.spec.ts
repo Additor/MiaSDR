@@ -23,10 +23,10 @@ test.describe("grid load merge", () => {
     await page.goto(`/tables/${workbookId}`);
     await expect(page.getByRole("gridcell", { name: "Company: Acme" })).toBeVisible();
 
-    // The changes feed stays silent, so only the table load and the edit response bring rows in.
+    // The changes feed stays silent, so the table load and the edit response are the two sources of rows.
     await page.route("**/api/grid/tables/*/changes*", (route) => route.fulfill({ json: { rows: [], cursor: "0", hasMore: false, total: 2, activeJobs: 0 } }));
 
-    // The search load reads the table before the edit saves and answers only after the edit response came back.
+    // The search load reads the table before the edit saves and answers after the edit response came back.
     const loadRead = gate();
     const releaseLoad = gate();
     await page.route(

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { countOf, formatCount } from "@/shared/format-number";
-import { gridRequest, gridUrl } from "../_lib/data/client";
+import { gridRequest, gridUrl, type GridResponse } from "../_lib/data/client";
 import { buildRunBody, centsCapIsInert, DEFAULT_FIRST_N, estimateByProvider, estimateHeadline, retrySummary, runSummary, stopSummary, type RunEstimate, type RunScope } from "../_lib/data/run-request";
 import type { GridColumn, JobCounts } from "../_lib/data/types";
 
@@ -30,11 +30,12 @@ interface DialogProps {
   /** The table has never run: open on the first rows, so the first spend is a small test. */
   firstRun?: boolean;
   onClose: () => void;
-  onStarted: () => void;
+  /** Queues the run once queued edits have landed, and reloads the table. */
+  run: (body: Record<string, unknown>) => Promise<GridResponse<RunReport>>;
 }
 
 /** Choose what to run: rows, whether to skip filled cells, and how much a run may cost. */
-export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firstRun, onClose, onStarted }: DialogProps) {
+export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firstRun, onClose, run }: DialogProps) {
   const [scope, setScope] = useState<RunScope>(initialFirstN !== undefined ? "first" : selectedRowIds.length > 0 ? "selected" : firstRun ? "first" : "all");
   const [firstN, setFirstN] = useState(String(initialFirstN ?? DEFAULT_FIRST_N));
   const [onlyEmpty, setOnlyEmpty] = useState(true);
@@ -69,13 +70,12 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
     if ("error" in built) return setError(built.error);
     setBusy(true);
     setError(null);
-    const res = await gridRequest<RunReport>(gridUrl.sub(tableId, "run"), "POST", built.body);
+    const res = await run(built.body);
     if (!res.ok || !res.data) {
       setBusy(false);
       return setError(res.error);
     }
     toast.success(runSummary(res.data));
-    onStarted();
     onClose();
   }
 
@@ -183,6 +183,7 @@ export function RunProgress({
   activeJobs,
   columnKey,
   onChanged,
+  onRetry,
   onShowFailed,
 }: {
   tableId: string;
@@ -190,6 +191,8 @@ export function RunProgress({
   activeJobs: number;
   columnKey?: string;
   onChanged: () => void;
+  /** Queues the failed cells again once queued edits have landed, and reloads the table. */
+  onRetry: (columnKey?: string) => Promise<GridResponse<{ retried: number }>>;
   /** Filters the grid to the rows whose run failed. */
   onShowFailed?: () => void;
 }) {
@@ -211,11 +214,10 @@ export function RunProgress({
   }
   async function retry() {
     setBusy(true);
-    const res = await gridRequest<{ retried: number }>(gridUrl.sub(tableId, "run/retry"), "POST", columnKey ? { columnKey } : {});
+    const res = await onRetry(columnKey);
     setBusy(false);
     if (!res.ok) toast.error(res.error ?? "Could not retry.");
     else toast.success(retrySummary(res.data?.retried ?? 0));
-    onChanged();
   }
 
   return (

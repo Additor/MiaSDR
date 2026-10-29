@@ -238,10 +238,11 @@ export async function recalculateColumn(deps: Deps, actor: Actor, tableId: strin
 export async function dedupeColumn(deps: Deps, actor: Actor, tableId: string, columnId: string) {
   const table = await deps.structure.getTable(actor.organizationId, tableId);
   if (!table) throw new NotFoundError("Table not found");
-  const deleted = await deps.rows.deleteDuplicates(actor.organizationId, tableId, columnId, (rows, column) => duplicateRowIds(rows, column.key));
-  if (deleted === null) throw new NotFoundError("Column not found");
-  if (deleted > 0) await refreshAfterSourceWrite(deps, actor.organizationId, table);
-  return { deleted };
+  const rowIds = await deps.rows.deleteDuplicates(actor.organizationId, tableId, columnId, (rows, column) => duplicateRowIds(rows, column.key));
+  if (rowIds === null) throw new NotFoundError("Column not found");
+  if (rowIds.length > 0) await refreshAfterSourceWrite(deps, actor.organizationId, table);
+  // The ids let the client drop queued edits and undo cells of the removed rows.
+  return { deleted: rowIds.length, rowIds };
 }
 
 /** Splits a text column into new text columns to its right. The original stays, so nothing is lost. */

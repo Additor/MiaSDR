@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { countOf } from "@/shared/format-number";
 import { FILTER_OPERATORS, type FilterOperator, type TableView } from "@/contexts/grid/domain/view-query";
-import { gridRequest, gridUrl } from "../_lib/data/client";
+import { gridRequest, gridUrl, type GridResponse } from "../_lib/data/client";
 import { EDITABLE_TYPE_OPTIONS, selectOptions, typeLabel } from "../_lib/view/format";
 import type { GridColumn } from "../_lib/data/types";
 import { RUN_FILLED_TYPES } from "../_lib/edit/filter-edit";
@@ -29,10 +29,12 @@ interface Props {
   /** Reload the table after a structural change. */
   onChanged: () => Promise<void>;
   saveView: (view: TableView) => Promise<boolean>;
+  /** Removes duplicate rows through the grid hook, which settles queued edits and forgets the removed rows. */
+  dedupe: (columnId: string) => Promise<GridResponse<{ deleted: number }>>;
 }
 
 /** The small dialogs behind the column menu. Each one sends one request and reloads the table. */
-export function ColumnDialogs({ tableId, columns, view, request, onClose, onChanged, saveView }: Props) {
+export function ColumnDialogs({ tableId, columns, view, request, onClose, onChanged, saveView, dedupe }: Props) {
   if (!request) return null;
   const common = { tableId, onClose, onChanged };
   const { action } = request;
@@ -48,7 +50,7 @@ export function ColumnDialogs({ tableId, columns, view, request, onClose, onChan
     case "delete":
       return <DeleteDialog {...common} column={column} />;
     case "dedupe":
-      return <DedupeDialog {...common} column={column} />;
+      return <DedupeDialog column={column} dedupe={dedupe} onClose={onClose} />;
     case "textToColumns":
       return <SplitDialog {...common} column={column} />;
     case "filter":
@@ -200,13 +202,14 @@ function DeleteDialog({ tableId, column, onClose, onChanged }: Shared & { column
   );
 }
 
-function DedupeDialog({ tableId, column, onClose, onChanged }: Shared & { column: GridColumn }) {
-  const { busy, error, run } = useRequest(onClose, onChanged);
+function DedupeDialog({ column, dedupe, onClose }: { column: GridColumn; dedupe: Props["dedupe"]; onClose: () => void }) {
+  // The hook reloads the table, so this dialog does not call onChanged.
+  const { busy, error, run } = useRequest(onClose, async () => {});
   const submit = () =>
     run(
-      () => gridRequest<{ deleted?: number }>(`${gridUrl.sub(tableId, "columns")}/${column.id}/dedupe`, "POST"),
+      () => dedupe(column.id),
       (data) => {
-        const n = data.deleted ?? 0;
+        const n = data.deleted;
         toast.success(n === 0 ? "No duplicates found." : `Removed ${countOf(n, "duplicate row")}.`);
       },
     );

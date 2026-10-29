@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addPending, applyConflictRows, buildBatches, cellId, clearPending, conflictItems, dropPendingRows, mergeRows, overlayPending, type PendingMap } from "./optimistic";
+import { addPending, applyConflictRows, buildBatches, cellId, clearPending, conflictItems, dropPendingRows, mergeRows, requeueEdits, overlayPending, type PendingMap } from "./optimistic";
 import type { GridRow } from "../data/types";
 
 const row = (id: string, version: number, cells: Record<string, unknown> = {}, position = 0): GridRow => ({ id, position, cells, cellMeta: {}, version });
@@ -99,6 +99,18 @@ describe("dropPendingRows", () => {
     const left = dropPendingRows(pending, ["r1"]);
     expect(left.dropped.map((e) => e.columnKey)).toEqual(["a", "b"]);
     expect([...left.pending.keys()]).toEqual([cellId("r2", "a")]);
+  });
+});
+
+describe("requeueEdits", () => {
+  it("puts held edits back unless the cell was edited again meanwhile", () => {
+    let pending: PendingMap = addPending(new Map(), { rowId: "r1", columnKey: "a", value: "held" }, row("r1", 1), "act-1");
+    pending = addPending(pending, { rowId: "r1", columnKey: "b", value: "held" }, row("r1", 1), "act-1");
+    const { dropped } = dropPendingRows(pending, ["r1"]);
+    const later = addPending(new Map(), { rowId: "r1", columnKey: "a", value: "later" }, row("r1", 2), "act-2");
+    const back = requeueEdits(later, dropped);
+    expect(back.get(cellId("r1", "a"))).toMatchObject({ value: "later", actionId: "act-2" });
+    expect(back.get(cellId("r1", "b"))).toMatchObject({ value: "held", baseVersion: 1, actionId: "act-1" });
   });
 });
 

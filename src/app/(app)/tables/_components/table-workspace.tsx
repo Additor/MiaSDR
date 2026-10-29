@@ -143,11 +143,10 @@ export function TableWorkspace({ tableId }: Props) {
   async function runCell(column: GridColumn, rowId: string) {
     const source = runCellSource(column, columns);
     if (!source) return void toast.message(`${column.name} is not an AI or enrichment column, so there is nothing to run.`, { id: "grid-run-cell" });
-    const res = await gridRequest<{ queued: number }>(gridUrl.sub(tableId, "run"), "POST", cellRunBody(source.key, rowId));
+    const res = await grid.runCells(cellRunBody(source.key, rowId));
     if (!res.ok) return void toast.error(res.error ?? "Could not run the cell.", { id: "grid-run-cell" });
     if ((res.data?.queued ?? 0) === 0) toast.message(`Nothing to run. The inputs of ${source.name} are empty in this row.`, { id: "grid-run-cell" });
     else toast.success(`Running ${source.name} for this row.`, { id: "grid-run-cell" });
-    void grid.reload();
   }
 
   /** A "(copy)" next to the column. A data column brings its values; a formula column is recalculated by the server. */
@@ -340,6 +339,7 @@ export function TableWorkspace({ tableId }: Props) {
           </>
         }
         onJobsChanged={() => void grid.reload()}
+        onRetryFailed={grid.retryFailed}
         onShowFailed={() => void grid.saveView(withRunFailures(view, columns.filter((c) => c.type === "enrichment" || c.type === "waterfall" || c.type === "ai").map((c) => c.key)))}
       />
 
@@ -438,10 +438,10 @@ export function TableWorkspace({ tableId }: Props) {
           }}
         />
       )}
-      {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} onStarted={() => void grid.reload()} />}
+      {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} run={grid.runCells} />}
       {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} allRows={dialog.allRows} onClose={closeDialog} />}
       {dialog?.kind === "column" && (
-        <ColumnDialogs tableId={tableId} columns={columns} view={view} request={dialog.request} onClose={closeDialog} onChanged={grid.reload} saveView={grid.saveView} />
+        <ColumnDialogs tableId={tableId} columns={columns} view={view} request={dialog.request} onClose={closeDialog} onChanged={grid.reload} saveView={grid.saveView} dedupe={grid.dedupeColumn} />
       )}
       {dialog?.kind === "details" && detailsRow && detailsColumn && <CellDrawer
           tableId={tableId}

@@ -114,7 +114,7 @@ describeDb("grid lock order", () => {
     const freeColumns = await sql`select id from grid_columns where id = ${columnId} for update skip locked`;
     const freeRows = await sql`select id from grid_rows where table_id = ${tableId} for update skip locked`;
     await hold.release();
-    expect(await run).toBe(1);
+    expect(await run).toHaveLength(1);
     expect(freeColumns).toHaveLength(1);
     expect(freeRows).toHaveLength(2);
   });

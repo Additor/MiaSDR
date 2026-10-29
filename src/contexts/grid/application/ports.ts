@@ -298,8 +298,8 @@ export interface RowStore {
    * match its filters and search in its sort order, the same order `list` gives.
    */
   scan(organizationId: string, tableId: string, input: { batch: number; query?: GridQuery; columns?: ColumnRef[] }): AsyncIterable<RowRecord[]>;
-  /** Removes `ids`, locking the rows first. Used by dedupe, which decides the ids from a locked read. */
-  deleteDuplicates(organizationId: string, tableId: string, columnId: string, pick: (rows: Array<{ id: string; cells: Record<string, unknown> }>, column: ColumnRecord) => string[]): Promise<number | null>;
+  /** Removes `ids`, locking the rows first, and returns the ids it removed. Used by dedupe, which decides the ids from a locked read. */
+  deleteDuplicates(organizationId: string, tableId: string, columnId: string, pick: (rows: Array<{ id: string; cells: Record<string, unknown> }>, column: ColumnRecord) => string[]): Promise<string[] | null>;
 }
 
 export interface FormulaStore {
