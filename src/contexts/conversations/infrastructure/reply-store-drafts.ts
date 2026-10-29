@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
@@ -7,7 +7,7 @@ import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
-import { canMoveDraft, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
+import { canMoveDraft, IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type AiDraft = NewDraft & { feedback?: string | null };
@@ -218,7 +218,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       const inFlight = await tx
         .select({ id: drafts.id })
         .from(drafts)
-        .where(and(eq(drafts.recordId, head.recordId), inArray(drafts.status, ["sending", "delivery_uncertain"])))
+        .where(and(eq(drafts.recordId, head.recordId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       if (inFlight.length > 0) throw new ConflictError("A reply is being sent for this thread.");
 

@@ -10,9 +10,12 @@ import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
+import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 
 type Tx = DbTx;
+
+const IN_FLIGHT_SENDING = "A reply is already being sent in this chat.";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -163,7 +166,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         .where(and(eq(drafts.conversationId, conv.id), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       if (inFlight) {
-        throw new ConflictError(inFlight.status === "sending" ? "A reply is already being sent in this chat." : "An earlier reply in this chat has an unconfirmed outcome. Check LinkedIn and mark what you found first.");
+        throw new ConflictError(inFlight.status === "sending" ? IN_FLIGHT_SENDING : "An earlier reply in this chat has an unconfirmed outcome. Check LinkedIn and mark what you found first.");
       }
 
       const [record] = await tx.select({ personId: records.personId, version: records.contextVersion }).from(records).where(eq(records.id, conv.recordId));
@@ -246,6 +249,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         .returning();
       await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draftId), draftCanBecome("sending")));
       return { kind: "started" as const, attempt };
+    }).catch((error: unknown) => {
+      // A writer that skipped the conversation lock put another draft of the chat in flight first.
+      if (violatedConstraint(error, "23505") === "drafts_one_in_flight_uq") throw new ConflictError("Another reply in this chat started sending first. Reload the chat.");
+      throw error;
     });
     if (result.kind === "stale") throw new ConflictError("A newer message arrived after this draft was written. Review the thread and regenerate the draft.");
     if (result.kind === "replay") return result;
