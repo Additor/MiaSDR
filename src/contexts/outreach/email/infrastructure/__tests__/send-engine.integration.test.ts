@@ -348,7 +348,7 @@ describeDb("email send engine", () => {
       advance(60);
       const third = await store.claimNext({ mailboxId: f.mailboxIds[0], now: current, pickGapMinutes: () => 18, takeoverAfterHours: () => 24, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) });
       expect(third).toMatchObject({ sendId: stale.sendId, attempt: 3 });
-      await store.resolveUncertainAsNotSent(stale, current, 15, MAX_SEND_ATTEMPTS);
+      await store.resolveUncertainAsNotSent(stale, current, 15, MAX_SEND_ATTEMPTS, "not_found");
       await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", threadId: "stale" }, current);
       expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sending", attempt: 3 });
 
@@ -357,6 +357,22 @@ describeDb("email send engine", () => {
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
       advance(24 * 60);
       expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
+    });
+
+    it("names the interruption when claims that stopped before the provider use up the cap", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      const d = deps(provider);
+      for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+        // The worker dies after the claim, before it renders the message.
+        expect(await store.claimNext({ mailboxId: f.mailboxIds[0], now: current, pickGapMinutes: () => 18, takeoverAfterHours: () => 24, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) })).toMatchObject({ attempt });
+        advance(11);
+        expect(await send.reconcileUncertainSends(d)).toMatchObject({ retryable: 1 });
+        expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt, error: "The send stopped before it reached the provider." });
+        advance(60);
+      }
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: The send stopped before it reached the provider." });
+      expect(provider.delivered).toHaveLength(0);
     });
 
     it("counts a lost send the reconciler proves absent as an attempt toward the same cap", async () => {

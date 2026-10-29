@@ -30,6 +30,7 @@ import {
   resolveRetryMinutes,
 } from "../domain/linkedin";
 import { sqlValues } from "@/platform/db/sql-values";
+import { INTERRUPTED_BEFORE_PROVIDER } from "../../domain/send-policy";
 import { readSendPause } from "../../domain/send-pause";
 import { ALREADY_CONTACTED_BY_ACCOUNT } from "../../domain/cross-campaign-notice";
 import { normalizePublicSlug } from "../domain/linkedin-identity";
@@ -518,15 +519,16 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     });
   },
 
-  async resolveUncertainAsNotSent(send, now, retryAfterMinutes, maxAttempts) {
+  async resolveUncertainAsNotSent(send, now, retryAfterMinutes, maxAttempts, cause) {
+    const reason = cause === "interrupted" ? INTERRUPTED_BEFORE_PROVIDER : "Not found at LinkedIn.";
     await db.transaction(async (tx) => {
       const updated = await tx
         .update(sends)
-        .set({ status: "failed", error: "Not found at LinkedIn after the grace period." })
+        .set({ status: "failed", error: cause === "interrupted" ? INTERRUPTED_BEFORE_PROVIDER : "Not found at LinkedIn after the grace period." })
         .where(readAttempt(send, "failed"))
         .returning({ attempt: sends.attempt });
       if (updated.length === 0) return;
-      await scheduleRetry(tx, send.enrollmentId, updated[0].attempt, now, retryAfterMinutes, maxAttempts, "Not found at LinkedIn.", false);
+      await scheduleRetry(tx, send.enrollmentId, updated[0].attempt, now, retryAfterMinutes, maxAttempts, reason, false);
     });
   },
 

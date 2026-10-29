@@ -1,3 +1,4 @@
+import type { NotSentCause } from "../../domain/send-policy";
 import type { WorkingHours } from "../../domain/working-hours";
 import type { LinkedInInboundEvent } from "../domain/linkedin";
 import type { Clock } from "../../application/clock";
@@ -230,7 +231,7 @@ export interface LinkedInOutreachStore {
 
   listUncertain(olderThan: Date, limit: number): Promise<UncertainLinkedInSend[]>;
   resolveUncertainAsSent(send: UncertainLinkedInSend, sent: { providerMessageId: string | null; accepted: boolean }, now: Date): Promise<void>;
-  resolveUncertainAsNotSent(send: UncertainLinkedInSend, now: Date, retryAfterMinutes: number, maxAttempts: number): Promise<void>;
+  resolveUncertainAsNotSent(send: UncertainLinkedInSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;
   /** Invitations nobody accepted after the expiry: end the sequence. Returns how many. */
   expireUnacceptedInvitations(before: Date, now: Date): Promise<number>;
 }

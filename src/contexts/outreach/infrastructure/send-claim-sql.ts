@@ -9,8 +9,8 @@ import { endEnrollmentsTx } from "./enrollment-end";
 /**
  * The claim rules the email and LinkedIn send engines share. The enrollment owns the attempt cap: `scheduleRetry`
  * ends it at the cap, and a claim picks only live enrollments, so no claim query compares an attempt number.
- * `sends.attempt` counts the claims that may have reached the provider. A claim released before the provider call
- * gives its attempt back.
+ * `sends.attempt` counts the claims that set out to call the provider. A check that stops a claim before the call
+ * gives its attempt back; a crash before the call still counts it, so the cap also bounds a crash that repeats.
  */
 
 /** A store or reconciler moving a send to `to`, from the statuses `SEND_FROM` allows. */

@@ -1,3 +1,4 @@
+import type { NotSentCause } from "../../domain/send-policy";
 import type { WorkingHours } from "../../domain/working-hours";
 import type { PriorSend } from "../domain/threading";
 import type { MailboxDomainPolicy } from "./mailbox-management";
@@ -164,7 +165,7 @@ export interface OutreachStore {
   listUncertain(olderThan: Date, limit: number): Promise<UncertainSend[]>;
   resolveUncertainAsSent(send: UncertainSend, sent: SentEmail, now: Date): Promise<void>;
   /** Not in the mailbox after the grace period: make the step retryable. */
-  resolveUncertainAsNotSent(send: UncertainSend, now: Date, retryAfterMinutes: number, maxAttempts: number): Promise<void>;
+  resolveUncertainAsNotSent(send: UncertainSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;
 }
 
 export interface UncertainSend {
