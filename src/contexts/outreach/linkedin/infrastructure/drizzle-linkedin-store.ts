@@ -41,7 +41,7 @@ import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
-import { canSend, giveBackAttempt, ownClaim, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
+import { giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
@@ -506,7 +506,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const updated = await tx
         .update(sends)
         .set({ status: "sent", providerMessageId: sent.providerMessageId, sentAt: now, error: null })
-        .where(and(eq(sends.id, send.sendId), canSend("sent")))
+        .where(readAttempt(send, "sent"))
         .returning({ id: sends.id });
       if (updated.length === 0) return;
       if (send.stepNumber === 1) {
@@ -523,10 +523,10 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
       const updated = await tx
         .update(sends)
         .set({ status: "failed", error: "Not found at LinkedIn after the grace period." })
-        .where(and(eq(sends.id, send.sendId), canSend("failed")))
-        .returning({ id: sends.id });
+        .where(readAttempt(send, "failed"))
+        .returning({ attempt: sends.attempt });
       if (updated.length === 0) return;
-      await scheduleRetry(tx, send.enrollmentId, send.attempt, now, retryAfterMinutes, maxAttempts, "Not found at LinkedIn.", false);
+      await scheduleRetry(tx, send.enrollmentId, updated[0].attempt, now, retryAfterMinutes, maxAttempts, "Not found at LinkedIn.", false);
     });
   },
 

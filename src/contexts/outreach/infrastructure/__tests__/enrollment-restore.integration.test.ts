@@ -489,6 +489,39 @@ describeDb("restore of removed enrollments", () => {
       expect(await store.claimNext(options(later))).toMatchObject({ enrollmentId: e, stepNumber: 1, attempt: 1 });
     });
 
+    it("gets one more attempt past the cap when a person removed it while the last attempt was in flight and restores it", async () => {
+      const { drizzleOutreachStore: store } = await import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store");
+      const { MAX_SEND_ATTEMPTS } = await import("@/contexts/outreach/domain/send-policy");
+      const f = await fixture("email");
+      const c = await f.campaign("Mail");
+      const e = await f.enroll(c, await f.person("Removed At The Cap"), { status: "pending" });
+      const [{ id: mailbox }] = await sql`
+        insert into mailboxes (organization_id, email_address, display_name, status, working_hours)
+        values (${f.org}, ${`cap-${f.tag}@corp.test`}, 'Sender', 'connected', ${sql.json(ALL_DAY)}) returning id`;
+      const at = (hours: number) => new Date(NOW.getTime() + hours * 3_600_000);
+      const claimAt = (now: Date) => store.claimNext({ mailboxId: mailbox, now, pickGapMinutes: () => 18, takeoverAfterHours: () => 24, defaultWorkingHours: () => ALL_DAY });
+
+      for (let attempt = 1; attempt < MAX_SEND_ATTEMPTS; attempt++) {
+        const claim = await claimAt(at(attempt));
+        expect(claim).toMatchObject({ enrollmentId: e, attempt });
+        await store.markFailed(claim!, "Recipient address rejected", at(attempt), 15, MAX_SEND_ATTEMPTS);
+      }
+      // The last attempt is in flight when a person removes the lead, so its failure cannot end the enrollment.
+      const last = await claimAt(at(MAX_SEND_ATTEMPTS));
+      expect(last).toMatchObject({ attempt: MAX_SEND_ATTEMPTS });
+      expect(await admin.removeEnrollments(f.org, c, "email", [e], at(MAX_SEND_ATTEMPTS))).toMatchObject({ removed: 1 });
+      await store.markFailed(last!, "Recipient address rejected", at(MAX_SEND_ATTEMPTS), 15, MAX_SEND_ATTEMPTS);
+      expect((await row(e)).status).toBe("removed");
+
+      // The restore is a request to try again: one more claim, and its failure ends the enrollment.
+      expect(await restore(f, c, [e], "email")).toMatchObject({ restored: 1 });
+      const extra = await claimAt(at(MAX_SEND_ATTEMPTS + 2));
+      expect(extra).toMatchObject({ enrollmentId: e, stepNumber: 1, attempt: MAX_SEND_ATTEMPTS + 1 });
+      await store.markFailed(extra!, "Recipient address rejected", at(MAX_SEND_ATTEMPTS + 2), 15, MAX_SEND_ATTEMPTS);
+      expect((await row(e)).status).toBe("failed");
+      expect(await claimAt(at(MAX_SEND_ATTEMPTS + 30))).toBeNull();
+    });
+
     it("gets its attempt back on LinkedIn, so the restored lead is invited on the next tick", async () => {
       const { drizzleLinkedInStore: store } = await import("@/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store");
       const f = await fixture("linkedin");

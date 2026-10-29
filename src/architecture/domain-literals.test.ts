@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { SEND_STATUSES } from "@/contexts/outreach/domain/send-status";
 import { sourceFiles } from "./context-layers";
 
 /**
@@ -36,15 +37,46 @@ const CAP_ALLOWED: Record<string, string> = {
   "src/contexts/outreach/infrastructure/contact-guard.ts: attempt >= 2": "A loop counter: an enrollment insert that raced a person becoming a contact retries twice without that person.",
 };
 
-/** A raw SQL `in` list or a Drizzle `inArray` over the sends status column, written out instead of taken from send-status.ts. */
-const STATUS_SET_LITERALS = [/\bs\.status\s+in\s*\(\s*'/g, /\bsends\.status\s+in\s*\(\s*'/g, /inArray\(sends\.status,\s*\[\s*["']/g];
+/** A status filter over the sends table written out: raw SQL on `sends` or `${sends.status}`, or a Drizzle helper on `sends.status`. */
+const SENDS_STATUS_LITERALS = [
+  /\bsends\.status\s+(?:not\s+)?in\s*\(\s*'/g,
+  /\$\{sends\.status\}\s+(?:not\s+)?in\s*\(\s*'/g,
+  /(?:inArray|notInArray)\(sends\.status,\s*\[\s*["']/g,
+];
+
+/**
+ * A literal list of two or more statuses, each one a send status, on any alias (`s.status in ('sent', 'unknown')`,
+ * `inArray(x.status, ["sending", "sent"])`). Lists that mix in other tables' statuses (drafts, send attempts) pass.
+ */
+const ANY_STATUS_LIST = [/\b\w+\.status\}?\s+(?:not\s+)?in\s*\(([^)]*)\)/g, /(?:inArray|notInArray)\(\w+\.status,\s*\[([^\]]*)\]/g];
+
+function sendStatusLists(skip: (file: string) => boolean): string[] {
+  const found: string[] = [];
+  for (const file of files) {
+    if (skip(rel(file))) continue;
+    const source = readFileSync(file, "utf8");
+    for (const pattern of ANY_STATUS_LIST) {
+      for (const match of source.matchAll(pattern)) {
+        const items = [...match[1].matchAll(/["']([a-z_]+)["']/g)].map((m) => m[1]);
+        if (items.length >= 2 && items.every((item) => (SEND_STATUSES as readonly string[]).includes(item))) found.push(`${rel(file)}: ${match[0]}`);
+      }
+    }
+  }
+  return found.sort();
+}
+
+const definedHere = (file: string) => file === "src/contexts/outreach/domain/send-status.ts";
 
 describe("domain literals", () => {
   it("keeps the send attempt cap in send-policy.ts alone", () => {
     expect(hits(CAP_LITERALS)).toEqual(Object.keys(CAP_ALLOWED).sort());
   });
 
-  it("names every set of send statuses in send-status.ts", () => {
-    expect(hits(STATUS_SET_LITERALS, (file) => file === "src/contexts/outreach/domain/send-status.ts")).toEqual([]);
+  it("filters the sends status column only through the named sets of send-status.ts", () => {
+    expect(hits(SENDS_STATUS_LITERALS, definedHere)).toEqual([]);
+  });
+
+  it("writes out no list of send statuses under any alias", () => {
+    expect(sendStatusLists(definedHere)).toEqual([]);
   });
 });

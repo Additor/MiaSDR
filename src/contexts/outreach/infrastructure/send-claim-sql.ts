@@ -20,6 +20,13 @@ export const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[t
 export const ownClaim = (claim: { sendId: string; attempt: number }) =>
   and(eq(sends.id, claim.sendId), inArray(sends.status, [...SEND_FROM_CALL]), eq(sends.attempt, claim.attempt));
 
+/**
+ * A reconciler or a person settling the row it read earlier: the same attempt, still in a status that may move to `to`.
+ * A later claim of the same step has a higher attempt, so a stale result matches nothing and changes nothing.
+ */
+export const readAttempt = (send: { sendId: string; attempt: number }, to: SendStatus) =>
+  and(eq(sends.id, send.sendId), eq(sends.attempt, send.attempt), canSend(to));
+
 /** Raw SQL over enrollments aliased `e`: the step already has a send in flight, unresolved or sent. A failed one may go again. */
 export const stepTaken = (stepNumber: SQL) =>
   sql`exists (select 1 from sends s where s.enrollment_id = e.id and s.step_number = ${stepNumber} and s.status in ${sqlValues(SEND_COUNTED)})`;

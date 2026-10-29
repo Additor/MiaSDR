@@ -668,6 +668,39 @@ describeDb("linkedin engine", () => {
       expect(calls).toBe(4);
     });
 
+    it("ignores a stale reconciler result that lands on a later attempt of the same invitation", async () => {
+      const f = await fixture();
+      const gateway = new FakeLinkedInGateway();
+      let calls = 0;
+      gateway.inviteBehavior = () => (++calls === 1 ? { refuse: "rejected" } : "timeout-lost");
+      expect((await act(gateway, f)).kind).toBe("resolved");
+      advance(24 * 60);
+      expect((await act(gateway, f)).kind).toBe("failed");
+      advance(24 * 60);
+      expect((await act(gateway, f)).kind).toBe("unknown");
+
+      // Two reconciler passes read attempt 2. The first settles it as not sent; the second stalls.
+      advance(11);
+      const stale = (await store.listUncertain(current, 500)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
+      expect(stale).toMatchObject({ attempt: 2 });
+      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS);
+
+      // Attempt 3 is claimed and in flight when the stale results land. Neither changes it.
+      advance(60);
+      const third = await store.claimNext({ accountId: f.account, now: current, random: () => 0, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) });
+      expect(third).toMatchObject({ kind: "invitation", sendId: stale.sendId, attempt: 3 });
+      if (third?.kind !== "invitation") throw new Error("expected an invitation claim");
+      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS);
+      await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", accepted: false }, current);
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sending", attempt: 3 });
+
+      // Attempt 3's own failure ends the enrollment at the cap, and no fourth claim follows.
+      await store.markFailed(third, "Fake refusal: rejected", current, 0, MAX_SEND_ATTEMPTS, false);
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
+      advance(24 * 60);
+      expect((await act(gateway, f)).kind).toBe("idle");
+    });
+
     it("asks LinkedIn at most MAX_SEND_ATTEMPTS times for a follow-up message, then ends the enrollment failed", async () => {
       const f = await fixture();
       const gateway = new FakeLinkedInGateway();

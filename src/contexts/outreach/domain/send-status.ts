@@ -30,10 +30,10 @@ export const SEND_FINAL: readonly SendStatus[] = ["sent", "failed"];
 /** Sends that reached or may have reached the provider. They count against the daily and weekly limits; a failed one used no quota. */
 export const SEND_COUNTED: readonly SendStatus[] = ["sending", "sent", "unknown"];
 
-/** Sends past the provider call: delivered, possibly delivered, or failed. Daily analytics count these and leave the calls in flight out. */
+/** Sends past the provider call: delivered, with an outcome nobody confirmed, or failed. Daily analytics count these and leave the calls in flight out. */
 export const SEND_OUTCOMES: readonly SendStatus[] = ["sent", "unknown", "failed"];
 
-/** Sends a restored lead counts as progress: delivered, or possibly delivered and never retried. A call still in flight may yet fail. */
+/** Sends a restored lead counts as progress: delivered, or `unknown` (it may have gone out, so the engine never retries it). A call still in flight may yet fail. */
 export const SEND_PROGRESS: readonly SendStatus[] = ["sent", "unknown"];
 
 export function canMoveSend(from: SendStatus, to: SendStatus): boolean {

@@ -19,7 +19,7 @@ const GUARDED: Array<{ table: string; drizzle: RegExp; raw: RegExp; guard: RegEx
     table: "sends",
     drizzle: /\.update\(sends\)/g,
     raw: /update sends( s)? set status/g,
-    guard: /canSend\(|ownClaim\(|fromCall|(eq|inArray)\(sends\.status|status in \$\{|status = '/,
+    guard: /canSend\(|ownClaim\(|readAttempt\(|fromCall|(eq|inArray)\(sends\.status|status in \$\{|status = '/,
   },
   {
     table: "campaign_enrollments",

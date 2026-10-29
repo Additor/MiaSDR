@@ -20,7 +20,7 @@ import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
-import { canSend, giveBackAttempt, ownClaim, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
+import { giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
@@ -295,7 +295,7 @@ export const drizzleOutreachStore: OutreachStore = {
       const updated = await tx
         .update(sends)
         .set({ status: "sent", providerMessageId: sent.providerMessageId, threadId: sent.threadId, sentAt: now, error: null })
-        .where(and(eq(sends.id, send.sendId), canSend("sent")))
+        .where(readAttempt(send, "sent"))
         .returning({ id: sends.id, mailboxId: sends.mailboxId });
       if (updated.length === 0) return;
       await advanceEnrollment(tx, send.enrollmentId, send.stepNumber, send.nextStepWaitDays, now, updated[0].mailboxId);
@@ -307,10 +307,10 @@ export const drizzleOutreachStore: OutreachStore = {
       const updated = await tx
         .update(sends)
         .set({ status: "failed", error: "Not found in the mailbox after the grace period." })
-        .where(and(eq(sends.id, send.sendId), canSend("failed")))
-        .returning({ id: sends.id });
+        .where(readAttempt(send, "failed"))
+        .returning({ attempt: sends.attempt });
       if (updated.length === 0) return;
-      await scheduleRetry(tx, send.enrollmentId, send.attempt, now, retryAfterMinutes, maxAttempts, "Not found in the mailbox.");
+      await scheduleRetry(tx, send.enrollmentId, updated[0].attempt, now, retryAfterMinutes, maxAttempts, "Not found in the mailbox.");
     });
   },
 };
@@ -464,16 +464,21 @@ export async function resolveUnknownEmailSend(input: {
     const enrollmentId = row.enrollmentId as string;
     const stepNumber = row.stepNumber as number;
 
+    const read = { sendId: input.sendId, attempt: row.attempt };
     if (input.outcome === "delivered") {
-      await tx
+      const moved = await tx
         .update(sends)
         .set({ status: "sent", sentAt: input.now, error: `Confirmed delivered by a person (user ${input.actorUserId}) after checking the Sent folder.` })
-        .where(and(eq(sends.id, input.sendId), canSend("sent")));
+        .where(readAttempt(read, "sent"))
+        .returning({ id: sends.id });
+      if (moved.length === 0) return "not_unknown";
       await advanceEnrollment(tx, enrollmentId, stepNumber, row.steps[stepNumber]?.waitDays ?? null, input.now, row.mailboxId);
     } else {
       const error = `Marked not delivered by a person (user ${input.actorUserId}) after checking the Sent folder.`;
-      await tx.update(sends).set({ status: "failed", error }).where(and(eq(sends.id, input.sendId), canSend("failed")));
-      await scheduleRetry(tx, enrollmentId, row.attempt, input.now, input.retryDelayMinutes(row.attempt), input.maxAttempts, "Not delivered, confirmed by a person.");
+      const moved = await tx.update(sends).set({ status: "failed", error }).where(readAttempt(read, "failed")).returning({ attempt: sends.attempt });
+      if (moved.length === 0) return "not_unknown";
+      const attempt = moved[0].attempt;
+      await scheduleRetry(tx, enrollmentId, attempt, input.now, input.retryDelayMinutes(attempt), input.maxAttempts, "Not delivered, confirmed by a person.");
     }
     return "resolved";
   });
