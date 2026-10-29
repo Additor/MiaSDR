@@ -7,8 +7,8 @@ import { SEARCH_LEASE_SECONDS, allowedFrom, searchDay, searchQuotaLeft, statusAf
 
 type Tx = DbTx;
 
-const CLAIMABLE = ["queued", "running", "paused_limit"];
-const LIVE = ["running", "paused"];
+const CLAIMABLE: SearchStatus[] = ["queued", "running", "paused_limit"];
+const LIVE: SearchStatus[] = ["running", "paused"];
 const CHUNK = 200;
 
 const q = linkedinSearchQueries;
@@ -160,7 +160,7 @@ interface Candidate {
   id: string;
   organization_id: string;
   url: string;
-  status: string;
+  status: SearchStatus;
   cursor: string | null;
   current_account_id: string | null;
   leads_fetched: number;

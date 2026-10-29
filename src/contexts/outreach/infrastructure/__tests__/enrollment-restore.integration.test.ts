@@ -463,4 +463,54 @@ describeDb("restore of removed enrollments", () => {
       expect(new Date((await row(e)).next_send_at).getTime()).toBe(NOW.getTime());
     });
   });
+
+  describe("a lead removed between the claim and the send", () => {
+    const ALL_DAY = { timeZone: "UTC", days: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ start: "00:00", end: "23:59" }]])) };
+    const later = new Date(NOW.getTime() + 30 * 60_000);
+
+    it("gets its attempt back on email, so the restored lead sends the same step on the next tick", async () => {
+      const { drizzleOutreachStore: store } = await import("@/contexts/outreach/email/infrastructure/drizzle-outreach-store");
+      const f = await fixture("email");
+      const c = await f.campaign("Mail");
+      const e = await f.enroll(c, await f.person("Removed Mid Send"), { status: "pending" });
+      const [{ id: mailbox }] = await sql`
+        insert into mailboxes (organization_id, email_address, display_name, status, working_hours)
+        values (${f.org}, ${`sender-${f.tag}@corp.test`}, 'Sender', 'connected', ${sql.json(ALL_DAY)}) returning id`;
+      const options = (now: Date) => ({ mailboxId: mailbox, now, pickGapMinutes: () => 18, takeoverAfterHours: () => 24, defaultWorkingHours: () => ALL_DAY });
+
+      const claim = await store.claimNext(options(NOW));
+      expect(claim).toMatchObject({ enrollmentId: e, stepNumber: 1, attempt: 1 });
+      expect(await admin.removeEnrollments(f.org, c, "email", [e], NOW)).toMatchObject({ removed: 1 });
+      expect(await store.checkBlockers(claim!)).toBe("enrollment_stopped");
+      await store.abandon(claim!, "enrollment_stopped", NOW);
+      expect((await sql`select status, attempt from sends where enrollment_id = ${e}`)[0]).toEqual({ status: "failed", attempt: 0 });
+
+      expect(await restore(f, c, [e], "email")).toMatchObject({ restored: 1 });
+      expect(await store.claimNext(options(later))).toMatchObject({ enrollmentId: e, stepNumber: 1, attempt: 1 });
+    });
+
+    it("gets its attempt back on LinkedIn, so the restored lead is invited on the next tick", async () => {
+      const { drizzleLinkedInStore: store } = await import("@/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-store");
+      const f = await fixture("linkedin");
+      const c = await f.campaign("Main");
+      const e = await f.enroll(c, await f.person("Removed Mid Invite"), { status: "pending" });
+      const [{ id: account }] = await sql`
+        insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, username, status, working_hours)
+        values (${f.org}, ${"acct-" + f.tag}, ${"ACo-owner-" + f.tag}, ${"owner-" + f.tag}, 'connected', ${sql.json(ALL_DAY)}) returning id`;
+      await sql`update campaign_enrollments set linkedin_account_id = ${account} where id = ${e}`;
+      await sql`update linkedin_enrollment_details set provider_id = ${"ACo-lead-" + f.tag} where enrollment_id = ${e}`;
+      const options = (now: Date) => ({ accountId: account, now, random: () => 0, defaultWorkingHours: () => ALL_DAY });
+
+      const claim = await store.claimNext(options(NOW));
+      expect(claim).toMatchObject({ kind: "invitation", enrollmentId: e, stepNumber: 1, attempt: 1 });
+      if (claim?.kind !== "invitation") throw new Error("expected an invitation claim");
+      expect(await admin.removeEnrollments(f.org, c, "linkedin", [e], NOW)).toMatchObject({ removed: 1 });
+      expect(await store.checkBlockers(claim)).toBe("enrollment_stopped");
+      await store.abandon(claim, "enrollment_stopped", NOW);
+      expect((await sql`select status, attempt from sends where enrollment_id = ${e}`)[0]).toEqual({ status: "failed", attempt: 0 });
+
+      expect(await restore(f, c, [e])).toMatchObject({ restored: 1 });
+      expect(await store.claimNext(options(later))).toMatchObject({ kind: "invitation", enrollmentId: e, stepNumber: 1, attempt: 1 });
+    });
+  });
 });

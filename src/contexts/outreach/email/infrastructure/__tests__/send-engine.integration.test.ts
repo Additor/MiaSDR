@@ -300,6 +300,27 @@ describeDb("email send engine", () => {
       expect(provider.delivered).toHaveLength(0);
     });
 
+    it("takes the cap from the enrollment's retry decision, so a cap of four allows four calls", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      let calls = 0;
+      provider.behavior = () => {
+        calls += 1;
+        return "refuse";
+      };
+      const four: typeof store = { ...store, markFailed: (claim, error, now, retry) => store.markFailed(claim, error, now, retry, 4) };
+      const d = { ...deps(provider), store: four };
+
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("failed");
+        expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt });
+        advance(24 * 60);
+      }
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: Recipient address rejected" });
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
+      expect(calls).toBe(4);
+    });
+
     it("counts a lost send the reconciler proves absent as an attempt toward the same cap", async () => {
       const f = await fixture();
       const provider = new FakeMailboxProvider();
@@ -460,8 +481,9 @@ describeDb("email send engine", () => {
       expect(await store.checkBlockers(claim)).toBe("enrollment_stopped");
       await store.abandon(claim, "enrollment_stopped", current);
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied", stop_reason: "replied" });
+      // Nothing reached the provider, so the claim gives its attempt back.
       const [row] = await sendRows(f.enrollmentIds[0]);
-      expect(row).toMatchObject({ status: "failed", attempt: 3 });
+      expect(row).toMatchObject({ status: "failed", attempt: 0 });
     });
 
     it("blocks the send after an unsubscribe and keeps the suppressed status", async () => {

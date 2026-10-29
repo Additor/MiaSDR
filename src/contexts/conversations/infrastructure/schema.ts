@@ -24,6 +24,7 @@ import type { AttemptStatus } from "../domain/send-attempt-status";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
 import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
 import { inList } from "@/platform/db/sql-values";
+import { AI_JOB_STATUSES, type AiJobStatus } from "../ai/domain/ai-job-status";
 
 /**
  * Conversations: replies from every channel land in one model keyed on
@@ -580,7 +581,7 @@ export const aiJobs = pgTable(
     id: pk(),
     organizationId: orgId(),
     kind: text("kind").notNull(),
-    status: text("status").notNull().default("queued"),
+    status: text("status").$type<AiJobStatus>().notNull().default("queued"),
     /** message for classification, classification for initial_draft. Polymorphic by design, so no FK. */
     entityType: text("entity_type").notNull(),
     entityId: uuid("entity_id").notNull(),
@@ -603,7 +604,7 @@ export const aiJobs = pgTable(
   (t) => [
     unique("ai_jobs_entity_uq").on(t.kind, t.entityType, t.entityId),
     check("ai_jobs_kind_ck", inList(t.kind, AI_JOB_KINDS)),
-    check("ai_jobs_status_ck", inList(t.status, ["queued", "running", "succeeded", "failed", "skipped"])),
+    check("ai_jobs_status_ck", inList(t.status, AI_JOB_STATUSES)),
     check(
       "ai_jobs_kind_entity_ck",
       sql`(${t.kind} = 'classification' and ${t.entityType} = 'message') or (${t.kind} = 'initial_draft' and ${t.entityType} = 'classification')`,

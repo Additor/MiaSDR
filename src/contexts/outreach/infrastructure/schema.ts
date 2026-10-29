@@ -17,7 +17,8 @@ import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { ENROLLMENT_STATUSES, type EnrollmentStatus } from "../domain/enrollment-status";
 import type { CampaignStatus } from "../domain/campaign";
-import type { SendStatus } from "../domain/send-status";
+import { SEND_STATUSES, type SendStatus } from "../domain/send-status";
+import { SEARCH_STATUSES, type SearchStatus } from "../linkedin/domain/linkedin-search";
 import { inList } from "@/platform/db/sql-values";
 
 /**
@@ -317,7 +318,7 @@ export const sends = pgTable(
     ),
     // Test-send rate limit: count of a mailbox's recent test rows.
     index("sends_mailbox_test_idx").on(t.mailboxId, t.claimedAt).where(sql`${t.kind} = 'test'`),
-    check("sends_status_ck", sql`${t.status} in ('sending', 'sent', 'failed', 'unknown')`),
+    check("sends_status_ck", inList(t.status, SEND_STATUSES)),
     index("sends_mailbox_day_idx").on(t.mailboxId, t.claimedAt),
     index("sends_linkedin_day_idx").on(t.linkedinAccountId, t.claimedAt),
     // Organization-wide reads: the analytics read model, the unconfirmed sends count, the lead delete guard.
@@ -396,7 +397,7 @@ export const linkedinSearchQueries = pgTable(
     sourceRow: integer("source_row"),
     /** Manual reruns of a failed query. */
     rerunCount: integer("rerun_count").notNull().default(0),
-    status: text("status").notNull().default("queued"),
+    status: text("status").$type<SearchStatus>().notNull().default("queued"),
     cursor: text("cursor"),
     totalCount: integer("total_count"),
     leadsFetched: integer("leads_fetched").notNull().default(0),
@@ -426,10 +427,7 @@ export const linkedinSearchQueries = pgTable(
     // The migration writes `ON DELETE SET NULL (target_campaign_id)`.
     foreignKey({ name: "linkedin_search_queries_target_campaign_fk", columns: [t.targetCampaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }).onDelete("set null"),
     unique("linkedin_search_queries_id_org_uq").on(t.id, t.organizationId),
-    check(
-      "linkedin_search_queries_status_ck",
-      sql`${t.status} in ('queued', 'running', 'paused', 'paused_limit', 'completed', 'failed', 'cancelled')`,
-    ),
+    check("linkedin_search_queries_status_ck", inList(t.status, SEARCH_STATUSES)),
     index("linkedin_search_queries_claim_idx").on(t.status, t.leaseUntil),
     // Dedupe within a batch; the application normalizes the URL first.
     uniqueIndex("linkedin_search_queries_batch_url_uq").on(t.batchId, t.url),

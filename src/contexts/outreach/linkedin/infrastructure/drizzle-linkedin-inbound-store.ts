@@ -7,6 +7,8 @@ import type { InboundResult, LedgerEvent, LinkedInInboundStore } from "../applic
 import { MAX_EVENT_ATTEMPTS, linkedinSlug, type LinkedInInboundEvent } from "../domain/linkedin";
 import { applyAcceptance } from "./drizzle-linkedin-store";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { SEND_COUNTED } from "../../domain/send-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 type Tx = DbTx;
 
@@ -40,7 +42,7 @@ async function waitingForAcceptance(tx: Tx, organizationId: string, accountId: s
         sql`${linkedinEnrollmentDetails.connectionState} <> 'connected'`,
         inArray(campaignEnrollments.status, [...LIVE_ENROLLMENT_STATUSES]),
         // Only invitations that went out (or may have) can be accepted.
-        sql`(${linkedinEnrollmentDetails.connectionState} = 'request_sent' or exists (select 1 from sends s where s.enrollment_id = ${campaignEnrollments.id} and s.step_number = 1 and s.status in ('sending', 'unknown', 'sent')))`,
+        sql`(${linkedinEnrollmentDetails.connectionState} = 'request_sent' or exists (select 1 from sends s where s.enrollment_id = ${campaignEnrollments.id} and s.step_number = 1 and s.status in ${sqlValues(SEND_COUNTED)}))`,
       ),
     );
 }

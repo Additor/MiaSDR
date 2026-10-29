@@ -2,13 +2,13 @@ import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { contactPolicies, mailboxes, people, sends } from "@/platform/db/schema";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
-import { SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { SEND_FROM_CALL, SEND_UNRESOLVED } from "../../domain/send-status";
+import { canSend } from "../../infrastructure/send-claim-sql";
 import type { TestSendStore, UncertainTestSend } from "../application/send-test-email";
 import { isSuppressed } from "@/contexts/people/infrastructure/reachability";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 
 const UNRESOLVED = [...SEND_UNRESOLVED];
-const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
 /** The claiming worker settling its own row. */
 const fromCall = inArray(sends.status, [...SEND_FROM_CALL]);
 const TEST = eq(sends.kind, "test");
@@ -119,8 +119,10 @@ export const drizzleTestSendStore: TestSendStore = {
 
   async settle(sendId, outcome) {
     if (outcome.status === "sent") {
-      const where = and(eq(sends.id, sendId), TEST, canSend("sent"));
-      await db.update(sends).set({ status: "sent", providerMessageId: outcome.sent.providerMessageId, threadId: outcome.sent.threadId, sentAt: outcome.now, error: null }).where(where);
+      await db
+        .update(sends)
+        .set({ status: "sent", providerMessageId: outcome.sent.providerMessageId, threadId: outcome.sent.threadId, sentAt: outcome.now, error: null })
+        .where(and(eq(sends.id, sendId), TEST, canSend("sent")));
     } else {
       await db.update(sends).set({ status: "failed", error: outcome.error }).where(and(eq(sends.id, sendId), TEST, canSend("failed")));
     }

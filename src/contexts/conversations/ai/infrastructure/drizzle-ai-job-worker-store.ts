@@ -14,6 +14,7 @@ import { decideReplyType, typeRulesOf, type ReplyTypeFacts } from "../../domain/
 import { followUpModeFactsTx } from "../../infrastructure/follow-up-mode-facts";
 import { insertDraftTx } from "../../infrastructure/reply-store-drafts";
 import type { Tx } from "../../after-reply/infrastructure/sequence-stop";
+import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 
 /**
  * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: the
@@ -105,7 +106,7 @@ const senderKnown = (m: string) => sql.raw(`(
   or exists (select 1 from messages o join conversations oc on oc.id = o.conversation_id join conversations mc on mc.record_id = oc.record_id
              where mc.id = ${m}.conversation_id and o.organization_id = ${m}.organization_id and o.direction = 'outbound' and ${publicConversationText("oc")})
   or exists (select 1 from sends s join campaign_enrollments e on e.id = s.enrollment_id join people p on p.id = e.person_id
-             where s.organization_id = ${m}.organization_id and s.status in ('sending', 'sent', 'unknown') and lower(p.email) = lower(${m}.from_address))
+             where s.organization_id = ${m}.organization_id and s.status in (${SEND_COUNTED.map((status) => `'${status}'`).join(", ")}) and lower(p.email) = lower(${m}.from_address))
 )`);
 
 /** The AI worker's claim and every method that ends it or writes its result. Each one filters with `heldBy`. */

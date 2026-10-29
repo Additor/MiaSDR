@@ -14,12 +14,13 @@ import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { readSendPause } from "../../domain/send-pause";
 import { mailboxBlock } from "../../domain/send-policy";
-import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
-import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
+import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
+import { canSend, giveBackAttempt, ownClaim, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
@@ -30,11 +31,6 @@ const LIVE_STATUSES = [...LIVE_ENROLLMENT_STATUSES];
 
 /** Rows that still hold a provider-side question. */
 const UNRESOLVED = [...SEND_UNRESOLVED];
-const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
-/** The claiming worker settling its own row. */
-const fromCall = inArray(sends.status, [...SEND_FROM_CALL]);
-/** The claiming worker settling its own claim: a later attempt on the same row belongs to another worker. */
-const ownClaim = (claim: { sendId: string; attempt: number }) => and(eq(sends.id, claim.sendId), fromCall, eq(sends.attempt, claim.attempt));
 
 interface CandidateRow {
   id: string;
@@ -163,11 +159,7 @@ export const drizzleOutreachStore: OutreachStore = {
               not exists (select 1 from campaign_senders s where s.campaign_id = c.id)
               or exists (select 1 from campaign_senders s where s.campaign_id = c.id and s.mailbox_id = ${mailbox.id})
             )
-            and not exists (
-              select 1 from sends s
-              where s.enrollment_id = e.id and s.step_number = e.current_step + 1
-                and (s.status in ('sending', 'unknown', 'sent') or (s.status = 'failed' and s.attempt >= 3))
-            )
+            and not ${stepTaken(sql`e.current_step + 1`)}
             ${exclude}
           order by (e.status = 'active') desc, e.next_send_at asc nulls last, e.current_step desc, e.created_at asc
           limit 1
@@ -177,14 +169,14 @@ export const drizzleOutreachStore: OutreachStore = {
         if (!candidate) return null;
 
         stepNumber = candidate.current_step + 1;
-        // Insert is the claim. A failed attempt below the cap is re-claimed in the same statement.
+        // Insert is the claim. A failed send of a live enrollment is re-claimed in the same statement: `scheduleRetry` ended the enrollment at the cap.
         const claimed = await tx.execute(sql`
           insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id, taken_over_from_mailbox_id, attempt, claimed_at)
           values (${candidate.organization_id}, ${candidate.id}, ${stepNumber}, 'email', 'sending', ${mailbox.id}, ${candidate.taken_over_from}::uuid, 1, ${nowIso}::timestamptz)
           on conflict (enrollment_id, step_number) do update
             set status = 'sending', attempt = sends.attempt + 1, claimed_at = excluded.claimed_at,
                 mailbox_id = excluded.mailbox_id, taken_over_from_mailbox_id = excluded.taken_over_from_mailbox_id, error = null, rfc_message_id = null
-            where sends.status = 'failed' and sends.attempt < 3
+            where ${reclaimGuard}
           returning id, attempt
         `);
         claimRow = (claimed as unknown as Array<{ id: string; attempt: number }>)[0];
@@ -226,18 +218,11 @@ export const drizzleOutreachStore: OutreachStore = {
 
   async abandon(claim, reason, now) {
     await db.transaction(async (tx) => {
-      if (reason === "campaign_inactive") {
-        // A paused campaign must not burn an attempt: give the attempt back and leave the enrollment as it was.
-        await tx
-          .update(sends)
-          .set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: reason })
-          .where(ownClaim(claim));
-        return;
-      }
-      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: reason }).where(ownClaim(claim)).returning({ id: sends.id });
+      // Nothing reached the provider, so no abandon uses an attempt. A lead restored after a removal sends this step again.
+      const moved = await giveBackAttempt(tx, claim, reason);
       if (moved.length === 0) return;
-      // A stopped enrollment keeps the status that stopped it (replied, bounced, ...).
-      if (reason === "enrollment_stopped") return;
+      // A paused campaign leaves the enrollment as it was. A stopped enrollment keeps the status that stopped it (replied, bounced, ...).
+      if (reason === "campaign_inactive" || reason === "enrollment_stopped") return;
       await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), { status: "suppressed", reason }, now);
     });
   },
@@ -344,17 +329,6 @@ async function advanceEnrollment(tx: Tx, enrollmentId: string, stepNumber: numbe
     // Never move backwards: a reconciliation that lands late must not undo a newer step.
     // Compare and set on the status: a reply or unsubscribe that landed meanwhile stays.
     .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES), sql`${campaignEnrollments.currentStep} < ${stepNumber}`));
-}
-
-async function scheduleRetry(tx: Tx, enrollmentId: string, attempt: number, now: Date, retryAfterMinutes: number, maxAttempts: number, error: string) {
-  if (attempt >= maxAttempts) {
-    await endEnrollmentsTx(tx, eq(campaignEnrollments.id, enrollmentId), failedOutcome("send_failed", error), now);
-    return;
-  }
-  await tx
-    .update(campaignEnrollments)
-    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000), updatedAt: now })
-    .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE_STATUSES)));
 }
 
 async function buildClaim(

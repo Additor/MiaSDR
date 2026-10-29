@@ -34,13 +34,14 @@ import { readSendPause } from "../../domain/send-pause";
 import { ALREADY_CONTACTED_BY_ACCOUNT } from "../../domain/cross-campaign-notice";
 import { normalizePublicSlug } from "../domain/linkedin-identity";
 import { messageBlock } from "../domain/linkedin-limits";
-import { SEND_COUNTED, SEND_FROM, SEND_FROM_CALL, SEND_UNRESOLVED, type SendStatus } from "../../domain/send-status";
+import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns } from "../../infrastructure/enrollment-variables";
 import { countMessagesToday } from "./drizzle-linkedin-account-store";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { failedOutcome, LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
+import { canSend, giveBackAttempt, ownClaim, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 import { fillFromLinkedInProfileTx, writeLinkedInSlugTx } from "@/contexts/people/infrastructure/linkedin-profile";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "./linkedin-account-state";
@@ -51,11 +52,6 @@ const UNRESOLVED = [...SEND_UNRESOLVED];
 /** Statuses an engine write may still change. Anything else (replied, suppressed, removed) stays as it is. */
 const LIVE = [...LIVE_ENROLLMENT_STATUSES];
 
-const canSend = (to: SendStatus) => inArray(sends.status, [...SEND_FROM[to]]);
-/** The claiming worker settling its own row. */
-const fromCall = inArray(sends.status, [...SEND_FROM_CALL]);
-/** The claiming worker settling its own claim: a later attempt on the same row belongs to another worker. */
-const ownClaim = (claim: { sendId: string; attempt: number }) => and(eq(sends.id, claim.sendId), fromCall, eq(sends.attempt, claim.attempt));
 const SLUG_COLLISION_REASON = "This LinkedIn profile already belongs to another lead in your organization.";
 
 const RESOLVE_LEASE_MINUTES = 5;
@@ -106,17 +102,6 @@ async function rememberChat(tx: Tx, organizationId: string, accountId: string, p
       target: [linkedinConnections.providerId, linkedinConnections.linkedinAccountId],
       set: { chatId: sql`coalesce(${linkedinConnections.chatId}, excluded.chat_id)` },
     });
-}
-
-async function scheduleRetry(tx: Tx, enrollmentId: string, attempt: number, now: Date, retryAfterMinutes: number, maxAttempts: number, error: string, fatal: boolean) {
-  if (fatal || attempt >= maxAttempts) {
-    await endEnrollmentsTx(tx, eq(campaignEnrollments.id, enrollmentId), failedOutcome("send_failed", error), now);
-    return;
-  }
-  await tx
-    .update(campaignEnrollments)
-    .set({ nextSendAt: new Date(now.getTime() + retryAfterMinutes * 60_000), updatedAt: now })
-    .where(and(eq(campaignEnrollments.id, enrollmentId), inArray(campaignEnrollments.status, LIVE)));
 }
 
 /** After a delivered message step: advance, or finish when it was the last one. Never moves backwards. */
@@ -219,7 +204,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
             on conflict (enrollment_id, step_number) do update
               set status = 'sending', attempt = sends.attempt + 1, claimed_at = excluded.claimed_at,
                   linkedin_account_id = excluded.linkedin_account_id, error = null, rfc_message_id = null
-              where sends.status = 'failed' and sends.attempt < 3
+              where ${reclaimGuard}
             returning id, attempt
           `);
           const row = (claimed as unknown as Array<{ id: string; attempt: number }>)[0];
@@ -248,10 +233,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
             and c.status = 'active' and e.current_step >= 1 and jsonb_array_length(c.steps) > e.current_step
             and ${senderListed(account.id)}
             and e.next_send_at is not null and e.next_send_at <= ${nowIso}::timestamptz
-            and not exists (
-              select 1 from sends s where s.enrollment_id = e.id and s.step_number = e.current_step + 1
-                and (s.status in ('sending', 'unknown', 'sent') or (s.status = 'failed' and s.attempt >= 3))
-            )
+            and not ${stepTaken(sql`e.current_step + 1`)}
             ${exclude}
           order by e.next_send_at asc
           limit 1
@@ -283,10 +265,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
               and c.status = 'active' and jsonb_array_length(c.steps) >= 1
               and ${senderListed(account.id)}
               and (e.next_send_at is null or e.next_send_at <= ${nowIso}::timestamptz)
-              and not exists (
-                select 1 from sends s where s.enrollment_id = e.id and s.step_number = 1
-                  and (s.status in ('sending', 'unknown', 'sent') or (s.status = 'failed' and s.attempt >= 3))
-              )
+              and not ${stepTaken(sql`1`)}
               ${exclude}
             order by c.created_at asc, e.created_at asc
             limit 1
@@ -357,12 +336,10 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
   async abandon(claim, reason, now) {
     await db.transaction(async (tx) => {
-      if (reason === "campaign_inactive") {
-        await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: reason }).where(ownClaim(claim));
-        return;
-      }
-      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: reason }).where(ownClaim(claim)).returning({ id: sends.id });
-      if (moved.length === 0) return;
+      // Nothing reached LinkedIn, so no abandon uses an attempt. A lead restored after a removal sends this step again.
+      const moved = await giveBackAttempt(tx, claim, reason);
+      // A paused campaign leaves the enrollment as it was. A stopped enrollment keeps the status that stopped it.
+      if (moved.length === 0 || reason === "campaign_inactive" || reason === "enrollment_stopped") return;
       await endEnrollmentsTx(tx, eq(campaignEnrollments.id, claim.enrollmentId), { status: "suppressed", reason }, now);
     });
   },
@@ -391,7 +368,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
     await db.transaction(async (tx) => {
       const moved = await tx
         .update(sends)
-        .set({ status: "failed", error, ...(fatal ? { attempt: maxAttempts } : {}) })
+        .set({ status: "failed", error })
         .where(ownClaim(claim))
         .returning({ id: sends.id });
       if (moved.length === 0) return;
@@ -404,12 +381,13 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
   },
 
   async release(claim) {
-    await db.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "released" }).where(ownClaim(claim));
+    await giveBackAttempt(db, claim, "released");
   },
 
   async markAlreadyConnected(claim, now) {
     await db.transaction(async (tx) => {
-      const moved = await tx.update(sends).set({ status: "failed", attempt: 3, error: "already_connected" }).where(ownClaim(claim)).returning({ id: sends.id });
+      // No invitation went out and none is needed: the acceptance moves the enrollment past step 1, so no claim picks this send again.
+      const moved = await giveBackAttempt(tx, claim, "already_connected");
       if (moved.length === 0) return;
       await applyAcceptance(tx, claim.enrollmentId, claim.nextStep?.waitDays ?? null, now);
       await tx.update(campaignEnrollments).set({ linkedinAccountId: claim.account.id, updatedAt: now }).where(eq(campaignEnrollments.id, claim.enrollmentId));
@@ -418,7 +396,7 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
 
   async pauseAccountForLimit(claim, until) {
     await db.transaction(async (tx) => {
-      await tx.update(sends).set({ status: "failed", attempt: sql`greatest(${sends.attempt} - 1, 0)`, error: "limit_reached" }).where(ownClaim(claim));
+      await giveBackAttempt(tx, claim, "limit_reached");
       await pauseLinkedInAccount(tx, claim.account.id, until);
     });
   },

@@ -3,7 +3,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { db, type DbHandle } from "@/platform/db/client";
 import type { Actor } from "@/shared/errors";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
-import { SEND_COUNTED } from "../domain/send-status";
+import { SEND_COUNTED, SEND_UNRESOLVED } from "../domain/send-status";
 import { rowsOf, sqlValues, uuidList } from "@/platform/db/sql-values";
 
 /*
@@ -92,7 +92,7 @@ export async function personOutreachBlockers(tx: DbHandle, actor: Actor, personI
     await tx.execute(sql`
       select
         exists (
-          select 1 from sends s where s.organization_id = ${org} and s.enrollment_id in ${enrollments} and s.status in ('sending', 'unknown')
+          select 1 from sends s where s.organization_id = ${org} and s.enrollment_id in ${enrollments} and s.status in ${sqlValues(SEND_UNRESOLVED)}
         ) as in_flight,
         (select max(s.claimed_at) from sends s
           where s.organization_id = ${org} and s.kind = 'campaign' and s.enrollment_id in ${enrollments}
