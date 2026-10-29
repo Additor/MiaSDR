@@ -6,12 +6,12 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, ComboboxCollection, ComboboxContent, ComboboxEmpty, ComboboxGroup, ComboboxInput, ComboboxItem, ComboboxLabel, ComboboxList } from "@/components/ui/combobox";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { CUSTOMER_GROUP, REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { callApi } from "@/app/_lib/api-client";
 import { submitSteps } from "../_lib/change-type";
 import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
@@ -89,9 +89,6 @@ export function ChangeTypeButton({
   const [unlock, setUnlock] = useState(false);
   const [why, setWhy] = useState<"reply" | "offThread">(conversationId ? "reply" : "offThread");
   const [outcomes, setOutcomes] = useState<Outcomes | null>(null);
-  const [pending, setPending] = useState<"change" | "stop" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const running = useRef(false);
   // The type this dialog already changed to. A retry after a failed stop only stops.
   const changedTo = useRef<string | null>(null);
   const stopScope = useStopScope(stop);
@@ -128,7 +125,6 @@ export function ChangeTypeButton({
   }, [open, recordId, contextVersion, path]);
 
   function change(next: boolean) {
-    if (pending) return;
     setOpen(next);
     if (next) return;
     setTarget(null);
@@ -136,7 +132,6 @@ export function ChangeTypeButton({
     setUnlock(false);
     setWhy(conversationId ? "reply" : "offThread");
     setOutcomes(null);
-    setError(null);
     changedTo.current = null;
     stopScope.reset();
   }
@@ -154,12 +149,13 @@ export function ChangeTypeButton({
     if (!result.ok) throw new Error(result.error ?? "The reply type did not change. Try again.");
   }
 
-  async function submit(mode: "change" | "stop") {
-    if (!chosen || running.current) return;
-    if (mode === "stop" && !stopScope.ready()) return;
-    running.current = true;
-    setPending(mode);
-    setError(null);
+  /**
+   * Runs inside `ConfirmDialog`, which guards against a second press, shows the pending label and the thrown message, and
+   * closes when this resolves. A stop scope that is not filled in yet resolves `false`, so the dialog stays open.
+   */
+  async function submit(mode: "change" | "stop"): Promise<boolean | void> {
+    if (!chosen) return false;
+    if (mode === "stop" && !stopScope.ready()) return false;
     const steps = submitSteps(changedTo.current, chosen.id, mode);
     try {
       if (steps.change) {
@@ -177,15 +173,10 @@ export function ChangeTypeButton({
       } else {
         toast.success(changedText);
       }
-      running.current = false;
-      setPending(null);
-      change(false);
       router.refresh();
     } catch (e) {
-      running.current = false;
-      setPending(null);
-      setError(e instanceof Error ? e.message : "Something went wrong.");
       if (changedTo.current) router.refresh();
+      throw e;
     }
   }
 
@@ -202,13 +193,19 @@ export function ChangeTypeButton({
       >
         Change type
       </Button>
-      <Dialog open={open} onOpenChange={change}>
-        <DialogContent showCloseButton={!pending} className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-md">
-          <DialogHeader className="shrink-0">
-            <DialogTitle>Change the reply type of {personName}</DialogTitle>
-            <DialogDescription>{correcting ? "Your pick for the last reply replaces the AI's." : "The AI's pick for the last reply stays. The type changes because of something that happened elsewhere."}</DialogDescription>
-          </DialogHeader>
-          <div className="-mx-4 -my-1 grid min-h-0 gap-4 overflow-y-auto px-4 py-1">
+      <ConfirmDialog
+        open={open}
+        onOpenChange={change}
+        className="sm:max-w-md"
+        title={`Change the reply type of ${personName}`}
+        description={correcting ? "Your pick for the last reply replaces the AI's." : "The AI's pick for the last reply stays. The type changes because of something that happened elsewhere."}
+        confirmLabel={asksStop ? "Stop contacting" : "Change type"}
+        pendingLabel={asksStop ? "Stopping…" : "Changing…"}
+        destructive={asksStop}
+        confirmDisabled={!ready}
+        secondary={asksStop ? { label: "Only change the type", pendingLabel: "Changing…", disabled: !ready, onConfirm: () => submit("change") } : undefined}
+        onConfirm={() => submit(asksStop ? "stop" : "change")}
+      >
             <FieldGroup>
               {correcting && aiReading && (
                 <p className="text-sm text-muted-foreground" data-testid="ai-reading">
@@ -299,33 +296,7 @@ export function ChangeTypeButton({
                 </Field>
               )}
             </FieldGroup>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-          </div>
-          <DialogFooter className="shrink-0">
-            <Button variant="outline" disabled={pending !== null} onClick={() => change(false)}>
-              Cancel
-            </Button>
-            {asksStop ? (
-              <>
-                <Button variant="outline" disabled={pending !== null || !ready} onClick={() => void submit("change")}>
-                  {pending === "change" ? "Changing…" : "Only change the type"}
-                </Button>
-                <Button variant="destructive" disabled={pending !== null || !ready} onClick={() => void submit("stop")}>
-                  {pending === "stop" ? "Stopping…" : "Stop contacting"}
-                </Button>
-              </>
-            ) : (
-              <Button disabled={pending !== null || !ready} onClick={() => void submit("change")}>
-                {pending === "change" ? "Changing…" : "Change type"}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ConfirmDialog>
     </>
   );
 }
