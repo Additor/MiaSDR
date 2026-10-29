@@ -23,6 +23,7 @@ describeDb("AI columns: output types, editing and placement", () => {
     adapters: typeof import("../enrichment-adapters");
     pstore: typeof import("../enrichment-provider-store");
     rstore: typeof import("../enrichment-run-store");
+    wstore: typeof import("../enrichment-worker-store");
     crypto: typeof import("@/contexts/integrations/infrastructure/credential-crypto");
     columnsUc: typeof import("../../../application/column-management");
     structure: typeof import("../../../application/structure-management");
@@ -38,7 +39,7 @@ describeDb("AI columns: output types, editing and placement", () => {
       runDeps: { store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters, now: () => new Date() },
       columnDeps: { store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters },
       worker: (over: Partial<import("../../application/enrichment-worker").WorkerDeps> = {}) =>
-        m.worker.createGridRunJob({ store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters, cipher, ai: aiOff, now: () => new Date(), workerId: "w1", leaseMs: 300_000, concurrency: 4, callTimeoutMs: 5000, ...over }),
+        m.worker.createGridRunJob({ store: m.wstore.drizzleGridWorkerStore, providers: m.pstore.drizzleProviderStore, adapters, cipher, ai: aiOff, now: () => new Date(), workerId: "w1", leaseMs: 300_000, concurrency: 4, callTimeoutMs: 5000, ...over }),
     };
   }
 
@@ -77,6 +78,7 @@ describeDb("AI columns: output types, editing and placement", () => {
       adapters: await import("../enrichment-adapters"),
       pstore: await import("../enrichment-provider-store"),
       rstore: await import("../enrichment-run-store"),
+      wstore: await import("../enrichment-worker-store"),
       crypto: await import("@/contexts/integrations/infrastructure/credential-crypto"),
       columnsUc: await import("../../../application/column-management"),
       structure: await import("../../../application/structure-management"),

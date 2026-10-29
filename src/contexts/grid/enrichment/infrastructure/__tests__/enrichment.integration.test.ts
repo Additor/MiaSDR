@@ -26,6 +26,7 @@ describeDb("grid enrichment runs", () => {
     adapters: typeof import("../enrichment-adapters");
     pstore: typeof import("../enrichment-provider-store");
     rstore: typeof import("../enrichment-run-store");
+    wstore: typeof import("../enrichment-worker-store");
     crypto: typeof import("@/contexts/integrations/infrastructure/credential-crypto");
     rate: typeof import("../../domain/enrichment-rate-limit");
     fakeAi: typeof import("../../../infrastructure/fake-grid-ai");
@@ -41,7 +42,7 @@ describeDb("grid enrichment runs", () => {
     const runDeps = { store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters, now: () => new Date() };
     const columnDeps = { store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters };
     const worker = (workerId: string, over: Partial<import("../../application/enrichment-worker").WorkerDeps> = {}) => ({
-      store: m.rstore.drizzleGridRunStore,
+      store: m.wstore.drizzleGridWorkerStore,
       providers: m.pstore.drizzleProviderStore,
       adapters,
       cipher,
@@ -98,6 +99,7 @@ describeDb("grid enrichment runs", () => {
       adapters: await import("../enrichment-adapters"),
       pstore: await import("../enrichment-provider-store"),
       rstore: await import("../enrichment-run-store"),
+      wstore: await import("../enrichment-worker-store"),
       crypto: await import("@/contexts/integrations/infrastructure/credential-crypto"),
       rate: await import("../../domain/enrichment-rate-limit"),
       fakeAi: await import("../../../infrastructure/fake-grid-ai"),
@@ -904,7 +906,7 @@ describeDb("grid enrichment runs", () => {
     await addFake(d, actor);
     await findColumn(d, actor, table);
     await m.run.requestRun(d.runDeps, actor, table);
-    const store = m.rstore.drizzleGridRunStore;
+    const store = m.wstore.drizzleGridWorkerStore;
     const t0 = new Date();
     const [stale] = await store.claim(t0, 60_000, 5, "w1");
     expect(stale.attempts).toBe(1);
@@ -925,7 +927,7 @@ describeDb("grid enrichment runs", () => {
     await addFake(d, actor);
     await findColumn(d, actor, table);
     await m.run.requestRun(d.runDeps, actor, table);
-    const store = m.rstore.drizzleGridRunStore;
+    const store = m.wstore.drizzleGridWorkerStore;
     const [job] = await store.claim(new Date(), 60_000, 5, "w1");
     expect((await cells(rows[0])).cell_meta.findEmail.status).toBe("running");
     // Metadata only: the write carries no cell values.
@@ -950,7 +952,7 @@ describeDb("grid enrichment runs", () => {
     await findColumn(d, actor, table);
     await m.run.requestRun(d.runDeps, actor, table);
     await sql`update grid_jobs set status = 'running', locked_at = now() - interval '1 hour', attempts = max_attempts where table_id = ${table}`;
-    expect(await m.rstore.drizzleGridRunStore.claim(new Date(), 60_000, 5, "w1")).toEqual([]);
+    expect(await m.wstore.drizzleGridWorkerStore.claim(new Date(), 60_000, 5, "w1")).toEqual([]);
     expect(await jobs(table)).toEqual({ failed: 1 });
     expect((await cells(rows[0])).cell_meta.findEmail).toMatchObject({ status: "error" });
   });

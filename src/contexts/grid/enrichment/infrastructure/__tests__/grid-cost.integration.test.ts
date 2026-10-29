@@ -25,13 +25,15 @@ describeDb("grid auto-run caps and output sanitizing", () => {
     adapters: typeof import("../enrichment-adapters");
     pstore: typeof import("../enrichment-provider-store");
     rstore: typeof import("../enrichment-run-store");
+    wstore: typeof import("../enrichment-worker-store");
     composition: typeof import("../../../infrastructure/composition");
     crypto: typeof import("@/contexts/integrations/infrastructure/credential-crypto");
   };
 
   const fake = () => new m.adapters.FakeEnrichmentProvider();
 
-  function deps(f: ReturnType<typeof fake>, store = m.rstore.drizzleGridRunStore) {
+  function deps(f: ReturnType<typeof fake>, workerStore = m.wstore.drizzleGridWorkerStore) {
+    const store = m.rstore.drizzleGridRunStore;
     const urlPolicy = { allowedHosts: ["api.vendor.test"] };
     const adapters = m.adapters.createAdapterRegistry({ policy: urlPolicy, net: { resolve: async () => ["93.184.216.34"] }, fake: f });
     const cipher = { encrypt: (p: string) => m.crypto.encryptCredential(p, "x".repeat(40)), decrypt: (e: string) => m.crypto.decryptCredential(e, "x".repeat(40)) };
@@ -40,7 +42,7 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       runDeps: { store, providers: m.pstore.drizzleProviderStore, adapters, now: () => new Date() },
       columnDeps: { store, providers: m.pstore.drizzleProviderStore, adapters },
       worker: (workerId: string, over: Partial<import("../../application/enrichment-worker").WorkerDeps> = {}) => ({
-        store,
+        store: workerStore,
         providers: m.pstore.drizzleProviderStore,
         adapters,
         cipher,
@@ -88,6 +90,7 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       adapters: await import("../enrichment-adapters"),
       pstore: await import("../enrichment-provider-store"),
       rstore: await import("../enrichment-run-store"),
+      wstore: await import("../enrichment-worker-store"),
       composition: await import("../../../infrastructure/composition"),
       crypto: await import("@/contexts/integrations/infrastructure/credential-crypto"),
     };
@@ -152,11 +155,11 @@ describeDb("grid auto-run caps and output sanitizing", () => {
       await m.columns.createEnrichmentColumns(d.columnDeps, actor, table, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
       await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position, auto_run)
         values (${org}, ${table}, 'opener', 'opener', 'ai', ${sql.json({ prompt: "Hi {{email}}", outputs: [{ key: "line", type: "text" }], outputColumns: {} } as never)}, ${["email"]}, 50, true)`;
-      const store = m.rstore.drizzleGridRunStore;
-      await store.enqueue(org, table, [{ rowId: rows[0], columnKey: "findEmail" }], { priority: 0, now: new Date() });
-      const [job] = await store.claim(new Date(), 60_000, 5, "w1");
+      const worker = m.wstore.drizzleGridWorkerStore;
+      await m.rstore.drizzleGridRunStore.enqueue(org, table, [{ rowId: rows[0], columnKey: "findEmail" }], { priority: 0, now: new Date() });
+      const [job] = await worker.claim(new Date(), 60_000, 5, "w1");
       // The dependent costs more than the cascade cap, so it waits for a person.
-      const ok = await store.succeed(job, { cells: { email: "a@acme.com" }, meta: { findEmail: { status: "success" } } }, [], { centsByColumn: { opener: 600 } });
+      const ok = await worker.succeed(job, { cells: { email: "a@acme.com" }, meta: { findEmail: { status: "success" } } }, [], { centsByColumn: { opener: 600 } });
       expect(ok).toBe(true);
       expect(await jobsOf(table)).toEqual({ succeeded: 1 });
       expect((await rowOf(rows[0])).cell_meta.opener).toMatchObject({ status: "skipped: cap" });
@@ -180,7 +183,7 @@ describeDb("grid auto-run caps and output sanitizing", () => {
         select ${big.org}, ${big.table}, id, 'x', 'queued', now() - interval '1 hour' from grid_rows where table_id = ${big.table}`;
       await sql`insert into grid_jobs (organization_id, table_id, row_id, column_key, status, run_after)
         select ${small.org}, ${small.table}, id, 'x', 'queued', now() - interval '1 minute' from grid_rows where table_id = ${small.table}`;
-      const store = m.rstore.drizzleGridRunStore;
+      const store = m.wstore.drizzleGridWorkerStore;
       const first = await store.claim(new Date(), 60_000, 6, "w1");
       const second = await store.claim(new Date(), 60_000, 6, "w2");
       const third = await store.claim(new Date(), 60_000, 40, "w3");
@@ -238,7 +241,7 @@ describeDb("grid auto-run caps and output sanitizing", () => {
 
     it("ends a cell in a terminal error when the save fails after a paid call, and never calls the provider again", async () => {
       const { actor, table, rows, f } = await setup();
-      const base = m.rstore.drizzleGridRunStore;
+      const base = m.wstore.drizzleGridWorkerStore;
       let saves = 0;
       const broken = {
         ...base,
