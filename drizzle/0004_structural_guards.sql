@@ -28,9 +28,11 @@ ALTER TABLE "inbound_events" ADD COLUMN "claim_token" uuid;--> statement-breakpo
 ALTER TABLE "ai_jobs" ADD COLUMN "claim_token" uuid;--> statement-breakpoint
 ALTER TABLE "sequence_step_runs" ADD COLUMN "claim_token" uuid;--> statement-breakpoint
 
--- ---- An enrollment keeps its sends: a delete removes them first, through the guard below.
+-- ---- An enrollment keeps its sends: a delete removes them first, through the guard below. NOT VALID skips a scan of
+-- sends under the lock the drop takes: every row already matched the same key under the old constraint, and Postgres
+-- checks new rows either way.
 ALTER TABLE "sends" DROP CONSTRAINT "sends_enrollment_id_organization_id_campaign_enrollments_id_organization_id_fk";--> statement-breakpoint
-ALTER TABLE "sends" ADD CONSTRAINT "sends_enrollment_id_organization_id_campaign_enrollments_id_organization_id_fk" FOREIGN KEY ("enrollment_id","organization_id") REFERENCES "public"."campaign_enrollments"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sends" ADD CONSTRAINT "sends_enrollment_id_organization_id_campaign_enrollments_id_organization_id_fk" FOREIGN KEY ("enrollment_id","organization_id") REFERENCES "public"."campaign_enrollments"("id","organization_id") ON DELETE no action ON UPDATE no action NOT VALID;--> statement-breakpoint
 
 -- ---- A send in flight (sending) or unresolved (unknown) stays. Deleting the organization cascades past the guard.
 CREATE FUNCTION public.sends_reject_unsettled_delete() RETURNS trigger

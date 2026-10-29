@@ -102,9 +102,11 @@ export interface ReplaySummary {
 export async function replayFailedLinkedInWebhooks(deps: LinkedInOperationsDeps, actor: Actor): Promise<ReplaySummary> {
   requireAdmin(actor);
   const now = deps.now();
+  // Rows stuck in `processing` at the cap turn failed first, so this requeue picks them up in the same press.
+  const stopped = await deps.inbound.store.failStoppedAtCap(now, actor.organizationId);
   const requeued = await deps.store.requeueFailedWebhooks(actor.organizationId, now, REPLAY_BATCH);
   const report = await replayLinkedInEvents(deps.inbound, REPLAY_BATCH, actor.organizationId);
-  const summary: ReplaySummary = { requeued, ...report };
+  const summary: ReplaySummary = { requeued, ...report, stopped: stopped + report.stopped };
   await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "linkedin.webhooks_replayed", meta: { ...summary } });
   await deps.store.recordManualRun({ organizationId: actor.organizationId, job: "linkedin.replay-webhooks", now, error: summary.failed > 0 ? `${summary.failed} delivery(ies) failed again.` : null });
   return summary;

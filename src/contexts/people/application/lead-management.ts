@@ -167,12 +167,23 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
     outcome.deleted += part.deleted;
     outcome.blocked.push(...part.blocked);
   };
+  /** A run of one lead that rolled back: busy is `try_again`, a foreign key violation `linked_records`. */
+  const keep = async (id: string, error: unknown) => {
+    if (isBusy(error)) add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "try_again") });
+    else if (sqlState(error) === "23503") add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "linked_records") });
+    else throw error;
+  };
   for (let i = 0; i < ids.length; i += LEAD_DELETE_BATCH) {
     const part = ids.slice(i, i + LEAD_DELETE_BATCH);
     try {
       add(await deleteBatch(deps, actor, part));
     } catch (error) {
       if (!isBusy(error) && sqlState(error) !== "23503") throw error;
+      // A batch of one lead already ran alone: a second run would only repeat its waits.
+      if (part.length === 1) {
+        await keep(part[0], error);
+        continue;
+      }
       // A busy batch (one held row, a lock timeout twice, the statement timeout) or a foreign key violation runs again one
       // lead at a time, so the others still go. A 23503 is the last guard: before the batch held its locks, a send claim or
       // a new record could commit between the checks and the delete; under the locks no known writer can, so it catches
@@ -181,9 +192,7 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
         try {
           add(await deleteBatch(deps, actor, [id]));
         } catch (single) {
-          if (isBusy(single)) add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "try_again") });
-          else if (sqlState(single) === "23503") add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "linked_records") });
-          else throw single;
+          await keep(id, single);
         }
       }
     }

@@ -15,7 +15,7 @@ import {
   suppressionList,
 } from "@/platform/db/schema";
 import { HELD_LOCK_TIMEOUT, lockPeopleOutreachTx, setLockTimeout } from "@/platform/db/person-locks";
-import { rowsOf } from "@/platform/db/sql-values";
+import { rowsOf, uuidList } from "@/platform/db/sql-values";
 import { TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import { LEAD_DELETE_STATEMENT_TIMEOUT } from "../application/lead-management";
@@ -377,11 +377,10 @@ export const drizzleLeadRepository: LeadRepository = {
 /** The people of the organization among `ids`, in id order, `FOR UPDATE` when `lock` is set. */
 async function peopleForDelete(tx: DbHandle, organizationId: string, ids: readonly string[], lock: boolean): Promise<LeadForDelete[]> {
   if (ids.length === 0) return [];
-  const list = sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
   const rows = rowsOf<{ id: string; full_name: string | null; email: string | null; lifecycle: string }>(
     await tx.execute(sql`
       select p.id, p.full_name, p.email, p.lifecycle from people p
-      where p.organization_id = ${organizationId} and p.id in (${list})
+      where p.organization_id = ${organizationId} and p.id in ${uuidList(ids)}
       order by p.id ${lock ? sql`for update of p` : sql``}`),
   );
   return rows.map((row) => ({ id: row.id, name: displayName({ fullName: row.full_name, email: row.email }), contact: row.lifecycle === "contact" }));

@@ -9,7 +9,7 @@ import type { Actor } from "@/shared/errors";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
 import type { PersonChannel, PersonEventInput, PersonEventView, PersonReplyHandling, PersonRunStop } from "../application/person-ports";
 import { publicConversation, publicConversationSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
-import { rowsOf } from "@/platform/db/sql-values";
+import { rowsOf, uuidList } from "@/platform/db/sql-values";
 
 /**
  * Callee-owned functions for turning a lead into a contact. The people context runs the conversion and calls these in
@@ -273,12 +273,12 @@ export async function personHandlingBlockers(tx: DbHandle, actor: Actor, personI
  */
 export async function peopleWithHistory(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<Set<string>> {
   if (personIds.length === 0) return new Set();
-  const ids = sql.join(personIds.map((id) => sql`${id}::uuid`), sql`, `);
+  const ids = uuidList(personIds);
   const rows = rowsOf<{ person_id: string }>(
     await tx.execute(sql`
-      select r.person_id from records r where r.organization_id = ${organizationId} and r.person_id in (${ids})
+      select r.person_id from records r where r.organization_id = ${organizationId} and r.person_id in ${ids}
       union
-      select e.person_id from events e where e.organization_id = ${organizationId} and e.person_id in (${ids})`),
+      select e.person_id from events e where e.organization_id = ${organizationId} and e.person_id in ${ids}`),
   );
   return new Set(rows.map((row) => row.person_id));
 }

@@ -4,7 +4,7 @@ import { db, type DbHandle } from "@/platform/db/client";
 import type { Actor } from "@/shared/errors";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 import { SEND_COUNTED } from "../domain/send-status";
-import { rowsOf, sqlValues } from "@/platform/db/sql-values";
+import { rowsOf, sqlValues, uuidList } from "@/platform/db/sql-values";
 
 /*
  * Callee-owned functions for deleting people ("Delete" and "Contact delete" in docs/decisions.md). The people use cases
@@ -33,9 +33,6 @@ export type PersonOutreachBlocker =
   | { reason: "recent_send"; until: Date }
   | { reason: "recent_invite"; until: Date }
   | { reason: "personal_campaign_sends" };
-
-/** The ids as a uuid `in` list of bound parameters. */
-const uuidList = (ids: readonly string[]) => sql`(${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})`;
 
 const enrollmentsOf = (organizationId: string, personId: string) =>
   sql`(select e.id from campaign_enrollments e where e.organization_id = ${organizationId} and e.person_id = ${personId}::uuid)`;

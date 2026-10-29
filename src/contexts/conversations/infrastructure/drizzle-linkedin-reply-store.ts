@@ -161,10 +161,12 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       if (!UUID.test(conv.accountRef)) throw new ConflictError("No LinkedIn account is connected for this conversation.");
 
       const [inFlight] = await tx
-        .select({ status: drafts.status })
+        .select({ id: drafts.id, status: drafts.status })
         .from(drafts)
         .where(and(eq(drafts.conversationId, conv.id), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
+      // The draft being approved is the one in flight: the status refusal names it, as on email.
+      if (inFlight && inFlight.id === input.draft?.id.toLowerCase()) throw new ConflictError(`This draft is ${inFlight.status.replace(/_/g, " ")} and cannot be sent.`);
       if (inFlight) {
         throw new ConflictError(inFlight.status === "sending" ? IN_FLIGHT_SENDING : "An earlier reply in this chat has an unconfirmed outcome. Check LinkedIn and mark what you found first.");
       }

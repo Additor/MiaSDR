@@ -323,6 +323,15 @@ describeDb("LinkedIn reply send refusals", () => {
       expect(await count("send_attempts", f.org)).toBe(0);
     });
 
+    it("answers 409 with the draft's own status when the draft being sent is the one in flight", async () => {
+      const f = await fixture();
+      const sending = await draftFor(f, "sending");
+      expect(await refusal(send(f, sending))).toEqual({ status: 409, error: "This draft is sending and cannot be sent." });
+      await sql`update drafts set status = 'delivery_uncertain' where id = ${sending.draftId}`;
+      expect(await refusal(send(f, { ...sending, draftId: sending.draftId.toUpperCase() }))).toEqual({ status: 409, error: "This draft is delivery uncertain and cannot be sent." });
+      expect(await count("send_attempts", f.org)).toBe(0);
+    });
+
     it("answers 409 for a revision other than the current one", async () => {
       const f = await fixture();
       const draft = await draftFor(f);

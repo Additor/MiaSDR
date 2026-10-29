@@ -22,7 +22,8 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
     const result = await db.transaction(async (tx) => {
       // Lock order as for LinkedIn: the conversation, then the draft. Ingest takes the conversation's key share with its
       // message insert before it retires drafts, so a draft locked first would deadlock with it.
-      const [seen] = await tx.select({ conversationId: drafts.conversationId, channel: drafts.channel }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
+      // `seen.id` is the stored id. The request may spell the uuid in uppercase, so the comparisons below use this one.
+      const [seen] = await tx.select({ id: drafts.id, conversationId: drafts.conversationId, channel: drafts.channel }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
       if (!seen) throw new NotFoundError("Draft not found");
       // Refused before the lock, so the email path never locks a LinkedIn conversation.
       if (seen.channel !== "email") throw new ConflictError(NOT_EMAIL);
@@ -30,7 +31,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
 
       const [existing] = await tx.select().from(sendAttempts).where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
       if (existing) {
-        if (existing.draftId !== input.draftId || existing.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another draft.");
+        if (existing.draftId !== seen.id || existing.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing) };
       }
 
@@ -42,7 +43,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
         .where(and(eq(drafts.conversationId, seen.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       // The draft being approved is the one in flight: the status refusal names it.
-      if (inFlight?.id === input.draftId) throw new ConflictError(statusRefusal(inFlight.status));
+      if (inFlight?.id === seen.id) throw new ConflictError(statusRefusal(inFlight.status));
       if (inFlight) throw new ConflictError(inFlight.status === "sending" ? IN_FLIGHT_SENDING : "An earlier reply in this thread has an unconfirmed outcome. Check the mailbox and mark what you found first.");
 
       const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId))).for("update");
@@ -205,6 +206,8 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       if (!seen) throw new NotFoundError("Draft not found");
       const [attempt] = await tx.select().from(sendAttempts).where(and(eq(sendAttempts.draftId, seen.id), eq(sendAttempts.status, "delivery_uncertain"))).for("update");
       const [draft] = await tx.select().from(drafts).where(eq(drafts.id, seen.id)).for("update");
+      // A contact delete can remove the draft between the read above and this lock.
+      if (!draft) throw new NotFoundError("Draft not found");
       if (draft.status !== "delivery_uncertain") throw new ConflictError("Only a send with an uncertain outcome can be resolved.");
       if (!attempt) throw new ConflictError("No uncertain send was found for this draft.");
       if (input.outcome === "delivered") {

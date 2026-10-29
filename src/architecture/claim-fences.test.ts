@@ -18,7 +18,7 @@ const sources = [...sourceFiles(path.join(ROOT, "src/contexts")), ...sourceFiles
 
 /**
  * Queues that still claim without a token. Shrink-only: a queue leaves this list when its claim writes `claim_token` and
- * its settles filter with `heldBy`. Sequences move in WP-7a.
+ * its settles filter with `heldBy`.
  */
 const NOT_YET_FENCED: Record<string, string> = {
   "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#claimDue": "Sequence step runs (`drafting`).",

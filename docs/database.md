@@ -46,7 +46,7 @@ The trigger allows one exit: a `failed` send may move back to `sending` when the
 
 ## Claims and drafts in flight
 
-`ai_jobs`, `sequence_step_runs` and `inbound_events` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it, so a worker that lost its claim changes nothing. Rows from before migration 0004 hold null.
+`ai_jobs`, `sequence_step_runs` and `inbound_events` carry a nullable `claim_token`. On `ai_jobs` and `inbound_events` a worker writes a new token on each claim, and a settle filters on it, so a worker that lost its claim changes nothing. The sequence engine does not write the token yet (`NOT_YET_FENCED` in `src/architecture/claim-fences.test.ts`), so `sequence_step_runs.claim_token` stays null. Rows from before migration 0004 hold null.
 
 `drafts_one_in_flight_uq` holds at most one draft per conversation in `sending` or `delivery_uncertain` (`IN_FLIGHT_DRAFT_STATUSES`). A second one raises SQLSTATE 23505. Migration 0004 stops with the ids when a conversation already holds two: only a send attempt settles an in-flight draft, so the migration leaves them for a person.
 

@@ -81,6 +81,8 @@ A run that hits the timeout logs `Migration failed: canceling statement due to l
 
 ## Upgrade to migration 0004
 
+Migration 0004 holds an exclusive lock on `sends` while it swaps the foreign key to `campaign_enrollments`, and briefly locks `ai_jobs`, `inbound_events` and `sequence_step_runs` to add a column. The swap adds the key `NOT VALID`, so it does not scan `sends`: the old key already held every row, and Postgres checks every new row. Those locks last until the whole migration commits, so stop every old instance first, as for any migration.
+
 Migration 0004 builds the unique index `drafts_one_in_flight_uq` on `drafts` inside the migration transaction, which blocks writes to `drafts` until the build ends. On a large install, build it first with `CREATE UNIQUE INDEX CONCURRENTLY drafts_one_in_flight_uq ON drafts (conversation_id) WHERE status in ('sending', 'delivery_uncertain')`, and the migration skips it.
 
 The migration stops with `conversations hold more than one draft in flight` and the conversation and draft ids when a conversation holds two such drafts. Settle each pair on its Inbox thread, then start the app again.
