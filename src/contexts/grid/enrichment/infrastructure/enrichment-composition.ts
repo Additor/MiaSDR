@@ -16,6 +16,7 @@ import type { UrlPolicy } from "../domain/enrichment-url-policy";
 import { createAdapterRegistry, FakeEnrichmentProvider } from "./enrichment-adapters";
 import { drizzleProviderStore } from "./enrichment-provider-store";
 import { drizzleGridRunStore } from "./enrichment-run-store";
+import { drizzleGridWorkerStore } from "./enrichment-worker-store";
 import { createEnrichmentVerifier } from "./vendors";
 
 const globalForGrid = globalThis as unknown as { __miasdrFakeGridProvider?: FakeEnrichmentProvider };
@@ -73,7 +74,7 @@ export function gridColumnDeps(): ColumnDeps {
 
 export function gridWorkerDeps(overrides: Partial<WorkerDeps> = {}): WorkerDeps {
   return {
-    store: drizzleGridRunStore,
+    store: drizzleGridWorkerStore,
     providers: drizzleProviderStore,
     adapters: gridAdapters(),
     cipher: gridCipher,

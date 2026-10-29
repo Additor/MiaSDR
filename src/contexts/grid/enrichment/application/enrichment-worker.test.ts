@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LocalRateGate } from "../domain/enrichment-rate-limit";
 import { MAX_JOBS_PER_TICK } from "../domain/enrichment-run-limits";
-import type { CellJob, GridRunStore } from "./enrichment-ports";
+import type { CellJob } from "./enrichment-ports";
 import { createGridRunJob, type WorkerDeps } from "./enrichment-worker";
 
 /**
@@ -115,6 +115,12 @@ class MemoryStore {
   async skip() {
     return true;
   }
+  async recentCalls(): Promise<number[]> {
+    return [];
+  }
+  async reusableAnswer() {
+    return null;
+  }
 }
 
 function setup(options: { concurrency?: number; latency?: (cell: string) => number; block?: (cell: string) => Promise<void> | undefined } = {}) {
@@ -133,7 +139,7 @@ function setup(options: { concurrency?: number; latency?: (cell: string) => numb
   };
   const gate = new LocalRateGate();
   const deps = (workerId: string): WorkerDeps => ({
-    store: store as unknown as GridRunStore,
+    store,
     providers: {} as never,
     adapters: {} as never,
     cipher: {} as never,

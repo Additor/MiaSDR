@@ -232,7 +232,7 @@ export const gridJobs = pgTable(
     check("grid_jobs_lock_ck", sql`${t.status} <> 'running' or ${t.lockedAt} is not null`),
     index("grid_jobs_claim_idx").on(t.status, t.runAfter, t.priority),
     index("grid_jobs_table_status_idx").on(t.tableId, t.status),
-    // pendingIn() counts live jobs per organization before every run and cascade (enrichment-run-store.ts).
+    // pendingIn() counts live jobs per organization before every run and cascade (enrichment-store-shared.ts).
     index("grid_jobs_org_status_idx").on(t.organizationId, t.status),
   ],
 );

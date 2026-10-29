@@ -290,6 +290,19 @@ export interface GridRunStore {
   /** Marks cells the auto-run caps held back (`status: "skipped: cap"`). A cell with a live job is left alone. Returns the cells marked. */
   markSkipped(organizationId: string, tableId: string, cells: Array<{ rowId: string; columnKey: string }>, now: Date): Promise<number>;
 
+  /** The columns that call this provider, with their table, and the cells of those columns still waiting to run. */
+  providerImpact(organizationId: string, providerKey: string): Promise<ProviderImpact>;
+  /** Per-provider totals of this organization's ledger since `since`, for the provider list. */
+  providerUsage(organizationId: string, since: Date): Promise<ProviderUsage[]>;
+
+  cellRuns(organizationId: string, tableId: string, rowId: string, columnKey: string, limit: number): Promise<CellRunView[]>;
+}
+
+/**
+ * What the `grid.run` worker reads and writes: the claim, the reads one cell's run needs, and the finishers fenced by the
+ * lease. Queue management (enqueue, cancel, retry) stays on GridRunStore, so a change to the lease touches this port only.
+ */
+export interface GridWorkerStore {
   /**
    * Claims up to `limit` due jobs across organizations. A running job whose lease expired is taken over.
    * `sweepExhausted` (default true) also fails jobs that used all attempts; the worker asks for it once per pass.
@@ -299,10 +312,6 @@ export interface GridRunStore {
   loadCell(job: CellJob): Promise<{ column: ColumnRow; columns: ColumnRow[]; cells: Record<string, unknown>; tableAutoRun: boolean } | null>;
   /** Call times (epoch ms) of this provider's calls since `since`, for the rate limit. Reused answers are not calls. */
   recentCalls(organizationId: string, providerKey: string, since: Date): Promise<number[]>;
-  /** The columns that call this provider, with their table, and the cells of those columns still waiting to run. */
-  providerImpact(organizationId: string, providerKey: string): Promise<ProviderImpact>;
-  /** Per-provider totals of this organization's ledger since `since`, for the provider list. */
-  providerUsage(organizationId: string, since: Date): Promise<ProviderUsage[]>;
   /** The newest stored answer to the same lookup since `since`, in this organization, or null. */
   reusableAnswer(organizationId: string, lookupKey: string, since: Date): Promise<{ id: string; createdAt: Date; outcome: "hit" | "miss"; answer: ReusableAnswer } | null>;
 
@@ -313,8 +322,6 @@ export interface GridRunStore {
   fail(job: CellJob, error: string, runs: LedgerRun[], state?: RetryState): Promise<boolean>;
   /** The cell had nothing to work with. The job ends and the cell returns to idle. */
   skip(job: CellJob, reason: string): Promise<boolean>;
-
-  cellRuns(organizationId: string, tableId: string, rowId: string, columnKey: string, limit: number): Promise<CellRunView[]>;
 }
 
 /** A failed AI answer. A transient one retries; a permanent one (AI is off, the provider refused) fails the cell with its message. */

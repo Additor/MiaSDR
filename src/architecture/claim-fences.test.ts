@@ -22,7 +22,7 @@ const sources = [...sourceFiles(path.join(ROOT, "src/contexts")), ...sourceFiles
  */
 const NOT_YET_FENCED: Record<string, string> = {
   "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#claimDue": "Sequence step runs (`drafting`).",
-  "src/contexts/grid/enrichment/infrastructure/enrichment-run-store.ts#claim": "Grid enrichment jobs.",
+  "src/contexts/grid/enrichment/infrastructure/enrichment-worker-store.ts#claim": "Grid enrichment jobs.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-search-store.ts#claimPage": "LinkedIn searches.",
   "src/platform/jobs/slots.ts#claimSlot": "Scheduler job runs (`job_runs`).",
 };
