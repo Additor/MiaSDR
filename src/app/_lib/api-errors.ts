@@ -14,6 +14,7 @@ export const STATUS_CODES = {
   409: "conflict",
   413: "payload_too_large",
   422: "validation",
+  500: "server_error",
 } as const;
 
 export type ErrorStatus = keyof typeof STATUS_CODES;

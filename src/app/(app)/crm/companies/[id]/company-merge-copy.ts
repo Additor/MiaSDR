@@ -2,23 +2,9 @@
  * Wording of the company merge and delete dialogs ("Contacts and Companies CRUD" in docs/decisions.md). Pure, so the
  * dialogs and `company-merge-copy.test.ts` read the same lines. A company is named by its name, else its domain.
  */
+import type { CompanyMergePreview } from "@/contexts/people/application/company-lifecycle";
 
-export interface MergeSide {
-  id: string;
-  name: string | null;
-  domain: string;
-  version: number;
-  people: number;
-}
-
-export interface MergePreview {
-  kept: MergeSide;
-  other: MergeSide;
-  moves: { contacts: number; leads: number; openDeals: number; deals: number; leadsInRunningCampaigns: number };
-  fieldConflicts: Array<{ key: string; name: string; kept: string; other: string }>;
-  filledFields: Array<{ key: string; name: string; value: string }>;
-  aliasDomains: string[];
-}
+export type MergePreview = CompanyMergePreview;
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 

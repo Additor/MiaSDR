@@ -46,15 +46,15 @@ describe("callApi", () => {
   it("says its own words for the codes it owns and the server's words for the rest", async () => {
     vi.stubGlobal("fetch", answer(409, { error: "Another change to this person is in progress. Try again in a moment.", code: "try_again" }));
     expect(await callApi("/api/x", "POST", {})).toMatchObject({ error: "MiaSDR is saving another change. Try again in a moment.", code: "try_again" });
+    // A code the screen handles with its own sentence still carries the server's words and data.
     vi.stubGlobal("fetch", answer(409, { error: "Someone changed this deal since you opened it. Reload it and try again.", code: "stale_version", version: 4 }));
-    expect(await callApi("/api/x", "PATCH", {})).toMatchObject({ error: "Someone changed this since you opened it. Reload the page and try again.", code: "stale_version", details: { version: 4 } });
+    expect(await callApi("/api/x", "PATCH", {})).toMatchObject({ error: "Someone changed this deal since you opened it. Reload it and try again.", code: "stale_version", details: { version: 4 } });
     // The server's sentence carries data the browser does not have.
     vi.stubGlobal("fetch", answer(409, { error: "The stage holds 3 deals. Move them first.", code: "stage_in_use" }));
     expect(await callApi("/api/x", "DELETE")).toMatchObject({ error: "The stage holds 3 deals. Move them first.", code: "stage_in_use" });
     vi.stubGlobal("fetch", answer(404, { error: "Lead not found", code: "not_found" }));
     expect(await callApi("/api/x", "GET")).toMatchObject({ error: "Lead not found", code: "not_found" });
     expect(apiMessage("try_again", "Ada Lovelace")).toBe("MiaSDR is saving another change to Ada Lovelace. Try again in a moment.");
-    expect(apiMessage("stale_version", "this deal")).toBe("Someone changed this deal since you opened it. Reload the page and try again.");
   });
 });
 

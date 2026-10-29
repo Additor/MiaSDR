@@ -7,12 +7,12 @@ import type { ApiErrorCode } from "./api-errors";
 /**
  * The codes whose words the browser owns (docs/decisions.md, "API errors and contract types"). For these `callApi`
  * answers its own sentence; a screen that knows who or what the refusal is about passes a subject through `apiMessage`.
+ * A screen with a more specific next step, such as a deal page that reloads itself on `stale_version`, says its own.
  * Every other code shows the server's `error`, which can carry data the browser cannot rebuild (`${count} deals`).
  */
 const CLIENT_MESSAGES = {
   unauthenticated: () => "Your session expired. Sign in again.",
   try_again: (subject?: string) => `MiaSDR is saving another change${subject ? ` to ${subject}` : ""}. Try again in a moment.`,
-  stale_version: (subject?: string) => `Someone changed ${subject ?? "this"} since you opened it. Reload the page and try again.`,
 } satisfies Record<string, (subject?: string) => string>;
 
 export type ClientCode = keyof typeof CLIENT_MESSAGES;
