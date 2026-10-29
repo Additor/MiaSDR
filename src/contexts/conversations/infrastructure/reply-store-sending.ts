@@ -9,19 +9,38 @@ import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toAttempt, type Snapshot, mailboxFor, sendContextFor, settleSent, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
+import { violatedConstraint } from "@/platform/db/errors";
+
+const IN_FLIGHT_SENDING = "A reply is already being sent in this thread.";
 
 /** Sending an approved draft and settling the outcome: claim, blockers, sent, failed, uncertain, and the reconcile pass. */
 export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | "markSent" | "markFailed" | "markUncertain" | "listUnsettled" | "resolveUncertain"> = {
   async beginSend(input): Promise<BeginSend> {
     const result = await db.transaction(async (tx) => {
-      const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId))).for("update");
-      if (!draft) throw new NotFoundError("Draft not found");
+      // Lock order as for LinkedIn: the conversation, then the draft. Ingest takes the conversation's key share with its
+      // message insert before it retires drafts, so a draft locked first would deadlock with it.
+      const [seen] = await tx.select({ conversationId: drafts.conversationId }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
+      if (!seen) throw new NotFoundError("Draft not found");
+      await tx.select({ id: conversations.id }).from(conversations).where(eq(conversations.id, seen.conversationId)).for("update");
 
       const [existing] = await tx.select().from(sendAttempts).where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
       if (existing) {
-        if (existing.draftId !== draft.id || existing.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another draft.");
+        if (existing.draftId !== input.draftId || existing.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing) };
       }
+
+      // One reply of a thread in flight at a time, the rule `drafts_one_in_flight_uq` holds. Checked before the draft lock,
+      // so an approval never waits on a draft whose send is settling.
+      const [inFlight] = await tx
+        .select({ status: drafts.status })
+        .from(drafts)
+        .where(and(eq(drafts.conversationId, seen.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
+        .limit(1);
+      if (inFlight) throw new ConflictError(inFlight.status === "sending" ? IN_FLIGHT_SENDING : "An earlier reply in this thread has an unconfirmed outcome. Check the mailbox and mark what you found first.");
+
+      const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId))).for("update");
+      if (!draft) throw new NotFoundError("Draft not found");
+      if (draft.conversationId !== seen.conversationId) throw new ConflictError("The draft changed since you reviewed it. Reload and approve the current text.");
       if (draft.status !== "awaiting_review") throw new ConflictError(`This draft is ${draft.status.replace(/_/g, " ")} and cannot be sent.`);
       if (draft.revision !== input.expectedRevision) throw new ConflictError("The draft changed since you reviewed it. Reload and approve the current text.");
 
@@ -106,6 +125,10 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
         .returning();
       await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draft.id), draftCanBecome("sending")));
       return { kind: "started" as const, attempt, snapshot };
+    }).catch((error: unknown) => {
+      // A writer that skipped the conversation lock put another draft of the thread in flight first.
+      if (violatedConstraint(error, "23505") === "drafts_one_in_flight_uq") throw new ConflictError(IN_FLIGHT_SENDING);
+      throw error;
     });
 
     if (result.kind === "stale") throw new ConflictError("A newer message arrived after this draft was written. Review the thread and regenerate the draft.");
