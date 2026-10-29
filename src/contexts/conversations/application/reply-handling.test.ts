@@ -14,7 +14,7 @@ import {
   type ReplyHandlingDeps,
   type IdentityPayload,
 } from "./reply-handling";
-import type { ReplyHandlingStore, IdentityExceptionRow, ReplyTypeRow } from "./reply-handling-ports";
+import type { ReplyHandlingStore, IdentityExceptionIntake, IdentityExceptionRow, NewIdentityException, ReplyTypeRow } from "./reply-handling-ports";
 import { DEFAULT_TYPE_RULES, STOP_REQUEST_RULES, SYSTEM_ROLE_REASONS } from "../domain/reply-type";
 import type { ReplyDeps } from "./reply-management";
 
@@ -47,7 +47,6 @@ function fakeStore(over: Partial<ReplyHandlingStore> & { subs?: ReplyTypeRow[]; 
     getIdentityException: async (org: string, eid: string) => exceptions.find((e) => e.id === eid && org === ORG) ?? null,
     personForReplay: async (org: string, pid: string) => (org === ORG && pid === id(7) ? { id: pid, email: "lead@acme.test" } : null),
     closeIdentityException: async (input: unknown) => (record("closeIdentityException", input), true),
-    insertIdentityException: async (input: unknown) => (record("insertIdentityException", input), { id: id(60), created: true }),
     draftIdForAttempt: async (_org: string, aid: string) => (aid === id(8) ? id(9) : null),
     ...over,
   } as unknown as ReplyHandlingStore;
@@ -234,9 +233,10 @@ describe("identity exceptions", () => {
   });
 
   it("quarantines a message under the channel and account of its payload", async () => {
-    const { store, calls } = fakeStore();
-    await quarantineInbound(deps(store).d, { organizationId: ORG, sourceEventKey: " gmail:m1 ", identityValue: "colleague@acme.test", reason: "Sender does not match the lead", payload: email });
-    expect(calls.insertIdentityException[0]).toMatchObject({ organizationId: ORG, channel: "email", accountRef: "me@corp.test", sourceEventKey: "gmail:m1" });
-    await expect(quarantineInbound(deps(store).d, { organizationId: ORG, sourceEventKey: "k", identityValue: null, reason: " ", payload: email })).rejects.toThrow(ValidationError);
+    const inserted: NewIdentityException[] = [];
+    const exceptions: IdentityExceptionIntake = { insertIdentityException: async (input) => (inserted.push(input), { id: id(60), created: true }) };
+    await quarantineInbound({ exceptions }, { organizationId: ORG, sourceEventKey: " gmail:m1 ", identityValue: "colleague@acme.test", reason: "Sender does not match the lead", payload: email });
+    expect(inserted[0]).toMatchObject({ organizationId: ORG, channel: "email", accountRef: "me@corp.test", sourceEventKey: "gmail:m1" });
+    await expect(quarantineInbound({ exceptions }, { organizationId: ORG, sourceEventKey: "k", identityValue: null, reason: " ", payload: email })).rejects.toThrow(ValidationError);
   });
 });
