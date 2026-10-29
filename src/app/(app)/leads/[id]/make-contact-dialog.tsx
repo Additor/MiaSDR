@@ -52,7 +52,7 @@ export function MakeContactDialog({ personId, name, open, onOpenChange: setOpen 
       done();
       return;
     }
-    if (result.code === "not_found") throw new Error(`${name} no longer exists.`);
+    if (result.status === 404) throw new Error(`${name} no longer exists.`);
     if (result.code === "try_again") throw new Error(apiMessage("try_again", name));
     // `personal_campaign` carries PERSONAL_CAMPAIGN_MESSAGE; other refusals carry their own sentence.
     throw new Error(result.error ?? "Could not make this lead a contact. Try again.");

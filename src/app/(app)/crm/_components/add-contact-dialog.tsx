@@ -233,7 +233,7 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
     if (result.code === "try_again") throw new Error(apiMessage("try_again", label));
     if (result.code === "personal_campaign") throw new Error(PERSONAL_CAMPAIGN_MESSAGE);
     // A 404 answers "Lead not found"; the dialog names the person instead.
-    if (result.code === "not_found") throw new Error(`${upperFirst(label)} no longer exists.`);
+    if (result.status === 404) throw new Error(`${upperFirst(label)} no longer exists.`);
     throw new Error(result.error ?? "Could not make the lead a contact. Try again.");
   }
 
