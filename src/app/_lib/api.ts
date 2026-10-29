@@ -15,9 +15,11 @@ function isInvalidUuid(error: unknown): boolean {
   return code?.code === "22P02" || code?.cause?.code === "22P02";
 }
 
-async function answer(run: () => Promise<unknown>, status: number): Promise<NextResponse> {
+/** A `Response` from `run` (a CSV file, a redirect) goes out as it is; any other value is the JSON body. */
+async function answer(run: () => Promise<unknown>, status: number): Promise<Response> {
   try {
     const result = await run();
+    if (result instanceof Response) return result;
     return result === undefined ? new NextResponse(null, { status: 204 }) : NextResponse.json(result, { status });
   } catch (error) {
     if (error instanceof NotFoundError) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -34,7 +36,7 @@ async function answer(run: () => Promise<unknown>, status: number): Promise<Next
 }
 
 /** Wraps a route handler: resolves the session and turns application errors into JSON responses. */
-export async function withActor(run: (actor: Actor, ctx: OrgContext) => Promise<unknown>, status = 200): Promise<NextResponse> {
+export async function withActor(run: (actor: Actor, ctx: OrgContext) => Promise<unknown>, status = 200): Promise<Response> {
   // Every handler reads the session and the database. Without this a GET that takes no request is prerendered at build time.
   await connection();
   const ctx = await apiOrgContext();
@@ -43,7 +45,7 @@ export async function withActor(run: (actor: Actor, ctx: OrgContext) => Promise<
 }
 
 /** `withActor` for routes that work without an organization (a signed-in user with none can still create one). */
-export async function withUser(run: (user: SessionUser) => Promise<unknown>, status = 200): Promise<NextResponse> {
+export async function withUser(run: (user: SessionUser) => Promise<unknown>, status = 200): Promise<Response> {
   await connection();
   const user = await apiUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -54,7 +56,7 @@ export async function withUser(run: (user: SessionUser) => Promise<unknown>, sta
  * `withActor` for admin-only handlers. The role check runs before `run`, so a member who sends a malformed body gets 403, not 400.
  * The application functions keep their own check; this one only fixes the order.
  */
-export function withAdmin(forbiddenMessage: string, run: (actor: Actor, ctx: OrgContext) => Promise<unknown>, status = 200): Promise<NextResponse> {
+export function withAdmin(forbiddenMessage: string, run: (actor: Actor, ctx: OrgContext) => Promise<unknown>, status = 200): Promise<Response> {
   return withActor(async (actor, ctx) => {
     if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError(forbiddenMessage);
     return run(actor, ctx);

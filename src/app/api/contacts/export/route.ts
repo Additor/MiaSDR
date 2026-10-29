@@ -45,21 +45,11 @@ async function csv(actor: Actor, scope: Scope): Promise<Response> {
   });
 }
 
-/** Runs the export under `withActor`, which answers 401 and the application errors as JSON. */
-async function exported(build: (actor: Actor) => Promise<Scope>): Promise<Response> {
-  let file: Response | null = null;
-  const answer = await withActor(async (actor) => {
-    file = await csv(actor, await build(actor));
-    return undefined;
-  });
-  return file ?? answer;
-}
-
 /** The contacts that match the list filter (`q`, `owner`, `stage`), as Export CSV on the Contacts list. */
 export function GET(request: Request) {
-  return exported(async () => {
+  return withActor((actor) => {
     const { q, owner, stage } = Object.fromEntries(new URL(request.url).searchParams);
-    return { filter: { q, owner, stage } };
+    return csv(actor, { filter: { q, owner, stage } });
   });
 }
 
@@ -67,9 +57,9 @@ const idsSchema = z.object({ ids: z.array(z.string().max(64)).min(1).max(50_000)
 
 /** Export selected: up to 5,000 contact ids. 413 above that. Ids of leads or of another organization export nothing. */
 export function POST(request: Request) {
-  return exported(async () => {
+  return withActor(async (actor) => {
     const { ids } = idsSchema.parse(await request.json());
     if (ids.length > MAX_MATCHING_IDS) throw new PayloadTooLargeError(`Export up to ${MAX_MATCHING_IDS.toLocaleString("en-US")} contacts at a time.`);
-    return { ids };
+    return csv(actor, { ids });
   });
 }
