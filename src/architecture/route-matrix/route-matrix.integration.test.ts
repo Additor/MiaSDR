@@ -254,6 +254,25 @@ describeDb("route matrix", () => {
     expect(problems).toEqual([]);
   });
 
+  it("file routes answer the file their callback returns, not that Response serialized as JSON", async () => {
+    // `answer()` in src/app/_lib/api.ts passes a Response from `run` through. Before that it answered `{}` as JSON.
+    const targets: Array<[string, HttpMethod, Parameters<typeof callRoute>[2]]> = [
+      ["contacts/export/route.ts", "GET", {}],
+      ["analytics/[view]/route.ts", "GET", { params: { view: "campaigns" }, query: { format: "csv" } }],
+      ["grid/tables/[tableId]/export/route.ts", "POST", { params: await idsOf("grid/tables/[tableId]/export", world.orgA.id, true), json: {} }],
+    ];
+    const problems: string[] = [];
+    for (const [file, method, options] of targets) {
+      const result = await callRoute(file, method, { ...options, as: world.admin });
+      const type = result.headers.get("content-type") ?? "";
+      const disposition = result.headers.get("content-disposition") ?? "";
+      if (result.status !== 200 || !type.startsWith("text/csv") || !/^attachment; filename=".+\.csv"$/.test(disposition) || result.text.trim() === "{}") {
+        problems.push(`${method} ${file}: ${describeStatus(result)} content-type=${type}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
   it("list and read endpoints show nothing of the other organization", async () => {
     const markers = [world.orgB.id, world.orgB.slug, world.other.email, world.other.userId];
     for (const [cacheKey, row] of rowCache) if (cacheKey.includes(world.orgB.id) && row) markers.push(String(row.id));
