@@ -22,8 +22,8 @@ describe("runApiAction", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
     const refresh = vi.fn();
     const expected = await runApiAction(callApi<{ id: string }>("/api/x", "POST", {}), { refresh, expectData: true });
-    expect(expected).toMatchObject({ ok: false, status: 204, error: "MiaSDR saved the change but sent back nothing to show. Reload the page.", code: null });
-    // The change went through, so the page reloads.
+    expect(expected).toMatchObject({ ok: false, status: 204, error: "The server sent back nothing to show. Reload the page and try again.", code: null });
+    // The server answered 2xx, so a change may have gone through and the page reloads.
     expect(refresh).toHaveBeenCalledOnce();
   });
 

@@ -31,6 +31,8 @@ const TITLES: Record<Entity, string> = { people: "Person fields", companies: "Co
 /** Where the fields of each type show, in the order set here. */
 const SHOWN_ON: Record<Entity, string> = { people: "the lead and contact forms", companies: "the company form" };
 
+const LIST_BUSY = "Another change to these fields is still saving. Try again in a moment.";
+
 export function ColumnsPanel({ canManage, initial }: { canManage: boolean; initial: Record<Entity, Column[]> }) {
   return (
     <div className="max-w-3xl">
@@ -71,10 +73,14 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
       return result.ok;
     });
 
-  /** For a ConfirmDialog: a refusal throws, so the dialog stays open and shows it. */
+  /** For a ConfirmDialog: runs under the list's key, and a refusal throws, so the dialog stays open and shows it. */
   async function confirmed(url: string, method: "PATCH" | "DELETE", body: unknown, done: string) {
-    setError(null);
-    toastOrThrow(await runApiAction(callApi(url, method, body), { refresh }), done);
+    const ran = await run("list", async () => {
+      setError(null);
+      toastOrThrow(await runApiAction(callApi(url, method, body), { refresh }), done);
+      return true;
+    });
+    if (ran === null) throw new Error(LIST_BUSY);
   }
 
   async function add(e: React.FormEvent) {
@@ -204,6 +210,7 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
         description={`It leaves ${SHOWN_ON[entity]}. Its values stay on ${archiving?.usedBy ?? 0} ${entity === "people" ? "people" : "companies"}, and you can restore it later.`}
         confirmLabel="Archive field"
         pendingLabel="Archiving…"
+        confirmDisabled={pending}
         onConfirm={() => archiving && confirmed(`/api/leads/columns/${archiving.id}`, "PATCH", { archived: true }, `${archiving.name} archived.`)}
       />
       <ConfirmDialog
@@ -214,6 +221,7 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
         confirmLabel="Delete field"
         cancelLabel="Keep field"
         pendingLabel="Deleting…"
+        confirmDisabled={pending}
         destructive
         onConfirm={() => deleting && confirmed(`/api/leads/columns/${deleting.id}`, "DELETE", undefined, `${deleting.name} deleted.`)}
       />

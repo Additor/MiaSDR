@@ -27,8 +27,6 @@ interface Preview {
   suggestedMapping: Mapping;
 }
 
-type Step = "reading" | "checking" | "importing";
-
 const NETWORK_ERROR = "MiaSDR could not be reached. Check your connection and try again.";
 
 /** The refusal's sentence, or the network line when no answer came. */
@@ -51,8 +49,9 @@ export function ImportWizard() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Mapping>({});
   const [country, setCountry] = useState("");
-  // Reading, checking and importing use the same file and mapping, so every control waits for any of them (`anyBusy`).
-  const { run, isBusy, anyBusy } = useApiAction<Step>();
+  // Reading, checking and importing use the same file and mapping, so they share one key; the tag names the step.
+  const { run, isBusy, busyTag } = useApiAction<"file">();
+  const anyBusy = isBusy("file");
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -73,13 +72,13 @@ export function ImportWizard() {
     if (!chosen) return;
     const body = new FormData();
     body.set("file", chosen);
-    await run("reading", async () => {
+    await run("file", async () => {
       const result = await runApiAction(callApi<Preview>("/api/leads/import/preview", "POST", body), { expectData: true });
       if (!result.ok) return setError(failure(result));
       setPreview(result.data);
       setMapping(result.data.suggestedMapping);
       setStep(2);
-    });
+    }, "reading");
   }
 
   /** A change to the mapping or the country makes the last summary wrong, so it goes. */
@@ -106,23 +105,23 @@ export function ImportWizard() {
 
   async function review() {
     if (!file || !preview) return;
-    await run("checking", async () => {
+    await run("file", async () => {
       setError(null);
       const result = await runApiAction(callApi<ImportSummary>("/api/leads/import/summary", "POST", importBody()), { expectData: true });
       if (!result.ok) return setError(failure(result));
       setSummary(result.data);
-    });
+    }, "checking");
   }
 
   async function runImport() {
     if (!file || !preview) return;
-    await run("importing", async () => {
+    await run("file", async () => {
       setError(null);
       // The report replaces the wizard and links to the leads, so nothing reloads here.
       const result = await runApiAction(callApi<ImportReport>("/api/leads/import", "POST", importBody()), { expectData: true });
       if (!result.ok) return setError(failure(result));
       setReport(result.data);
-    });
+    }, "importing");
   }
 
   function reset() {
@@ -170,7 +169,7 @@ export function ImportWizard() {
               touch
               className="max-sm:file:h-8"
             />
-            {isBusy("reading") && (
+            {busyTag("file") === "reading" && (
               <p role="status" className="text-sm text-muted-foreground">
                 Reading the file…
               </p>
@@ -285,11 +284,11 @@ export function ImportWizard() {
             </Link>
             {summary ? (
               <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={() => void runImport()} disabled={anyBusy || Boolean(blocking) || !summaryChangesAnything(summary)}>
-                {isBusy("importing") ? "Importing…" : confirmLabel(summary)}
+                {busyTag("file") === "importing" ? "Importing…" : confirmLabel(summary)}
               </Button>
             ) : (
               <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={() => void review()} disabled={anyBusy || Boolean(blocking) || preview.totalRows === 0}>
-                {isBusy("checking") ? "Checking…" : "Review import"}
+                {busyTag("file") === "checking" ? "Checking…" : "Review import"}
               </Button>
             )}
           </div>

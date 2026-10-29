@@ -68,7 +68,7 @@ interface Reply {
 export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; capacity: CapacityCardData; canManage: boolean }) {
   const router = useRouter();
   // Each search runs its own actions; the header's "Run again" has its own key.
-  const { run, isBusy } = useApiAction();
+  const { run, isBusy, busyTag } = useApiAction();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const timeZone = useOrgTimeZone();
   const [danger, setDanger] = useState<Danger | null>(null);
@@ -95,13 +95,17 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
   /** The server's sentence with the first few per-field problems, for a refusal shown in a dialog. */
   const refusal = (failure: ActionFailure) => [failure.error, ...failure.issues.slice(0, 5).map((i) => i.message)].join(" ");
 
-  /** Queues failed searches again: the whole batch from the header (`key` "rerun"), one search from its row. */
+  /** Queues failed searches again: the whole batch from the header (key "rerun"), one search from its row (its key). */
   const rerun = (key: string, ids?: string[]) =>
-    run(key, async () => {
-      const result = await runApiAction(callApi<{ rerun: number }>(`/api/linkedin/search-batches/${batch.id}/rerun`, "POST", ids ? { ids } : {}), { refresh });
-      if (!result.ok) toast.error(result.error);
-      else toast.success(result.data?.rerun ? `${searches(result.data.rerun)} queued again.` : "No failed searches to queue.");
-    });
+    run(
+      key,
+      async () => {
+        const result = await runApiAction(callApi<{ rerun: number }>(`/api/linkedin/search-batches/${batch.id}/rerun`, "POST", ids ? { ids } : {}), { refresh });
+        if (!result.ok) toast.error(result.error);
+        else toast.success(result.data?.rerun ? `${searches(result.data.rerun)} queued again.` : "No failed searches to queue.");
+      },
+      "rerun",
+    );
 
   /** The confirmed "Run now" and "Run selected". A failure throws, so ConfirmDialog keeps the dialog open and shows the message. */
   async function confirmRun() {
@@ -112,24 +116,32 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
   }
 
   const runOne = (id: string) =>
-    run(`${id}:run`, async () => {
-      const result = await runApiAction(callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", { ids: [id] }), { refresh });
-      if (!result.ok) toast.error(result.error);
-      else toast.success(result.data?.queued ? "The search is ready to run. Its account still reads within its daily limit." : "That search is not paused or queued.");
-    });
+    run(
+      `row:${id}`,
+      async () => {
+        const result = await runApiAction(callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", { ids: [id] }), { refresh });
+        if (!result.ok) toast.error(result.error);
+        else toast.success(result.data?.queued ? "The search is ready to run. Its account still reads within its daily limit." : "That search is not paused or queued.");
+      },
+      "run",
+    );
 
   const act = (id: string, action: SearchAction) =>
-    run(`${id}:${action}`, async () => {
-      const result = await runApiAction(callApi(`/api/linkedin/searches/${id}/action`, "POST", { action }), { refresh });
-      if (!result.ok) toast.error(result.error);
-    });
+    run(
+      `row:${id}`,
+      async () => {
+        const result = await runApiAction(callApi(`/api/linkedin/searches/${id}/action`, "POST", { action }), { refresh });
+        if (!result.ok) toast.error(result.error);
+      },
+      action,
+    );
 
-  /** The row action that runs for a search, if one does. The row disables its controls while it runs. */
-  const rowBusy = (id: string) => ROW_ACTION_IDS.find((action) => isBusy(`${id}:${action}`)) ?? null;
+  /** The row action that runs for a search, if one does. Every action of a search shares its key, so its controls wait. */
+  const rowBusy = (id: string) => (isBusy(`row:${id}`) ? (busyTag(`row:${id}`) as BatchRowActionId) : null);
 
   function onRowAction(item: Item, action: BatchRowActionId) {
     if (action === "run") void runOne(item.id);
-    else if (action === "rerun") void rerun(`${item.id}:rerun`, [item.id]);
+    else if (action === "rerun") void rerun(`row:${item.id}`, [item.id]);
     else if (action === "cancel") setDanger({ kind: "cancel", id: item.id, name: itemName(item) });
     else if (action === "remove") setDanger({ kind: "remove", ids: [item.id] });
     else void act(item.id, action);
@@ -165,8 +177,18 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
       if (!result.ok) throw new Error(refusal(result));
       if (result.data) toast.success(`Deleted ${countOf(result.data.resultsRemoved, "stored result")} of ${searches(result.data.searches)}.`);
     } else if (danger.kind === "cancel") {
-      const result = await runApiAction(callApi(`/api/linkedin/searches/${danger.id}/action`, "POST", { action: "cancel" }), options);
-      if (!result.ok) throw new Error(refusal(result));
+      // Stop runs under the search's key, so its row buttons wait for it.
+      const id = danger.id;
+      const ran = await run(
+        `row:${id}`,
+        async () => {
+          const result = await runApiAction(callApi(`/api/linkedin/searches/${id}/action`, "POST", { action: "cancel" }), options);
+          if (!result.ok) throw new Error(refusal(result));
+          return true;
+        },
+        "cancel",
+      );
+      if (ran === null) throw new Error("This search is still saving a change. Try again in a moment.");
     } else {
       const result = await runApiAction(callApi<Reply>(`/api/linkedin/search-batches/${batch.id}`, "DELETE"), options);
       if (!result.ok) throw new Error(refusal(result));
@@ -435,9 +457,7 @@ function InLeads({ item: i }: { item: Item }) {
 }
 
 /** One or two buttons for the row's status and a menu for the rest. The status-to-actions rule lives in the domain. */
-/** The row actions that send a request at once; Stop and Remove ask first in a dialog. */
-const ROW_ACTION_IDS: BatchRowActionId[] = ["run", "pause", "resume", "rerun"];
-const ROW_PENDING: Partial<Record<BatchRowActionId, string>> = { run: "Starting…", pause: "Pausing…", resume: "Resuming…", rerun: "Queuing…" };
+const ROW_PENDING: Partial<Record<BatchRowActionId, string>> = { run: "Starting…", pause: "Pausing…", resume: "Resuming…", rerun: "Queuing…", cancel: "Stopping…" };
 
 /** `busy` names the action that runs for this search; every control of the row waits for it. */
 function RowActions({

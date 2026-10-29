@@ -85,8 +85,9 @@ function PersonPicker({ row }: { row: Row }) {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [chosen, setChosen] = useState<Candidate | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // File and Ignore settle the same message, so each waits for the other.
-  const { isBusy, anyBusy: pending, run } = useApiAction<"resolved" | "ignored">();
+  // File and Ignore settle the same message, so they share one key; the tag says which runs.
+  const { isBusy, busyTag, run } = useApiAction<"settle">();
+  const pending = isBusy("settle");
 
   async function search(event: React.FormEvent) {
     event.preventDefault();
@@ -97,12 +98,16 @@ function PersonPicker({ row }: { row: Row }) {
   }
 
   const submit = (body: { status: "resolved"; personId: string } | { status: "ignored" }) =>
-    run(body.status, async () => {
-      setError(null);
-      const result = await runApiAction(callApi(`/api/identity-exceptions/${row.id}`, "PATCH", body), { refresh: () => router.refresh() });
-      if (!result.ok) return setError(result.error);
-      toast.success(body.status === "resolved" ? `Message filed under ${chosen ? (chosen.name ?? chosen.email ?? "the person") : "the person"}.` : "Message ignored.");
-    });
+    run(
+      "settle",
+      async () => {
+        setError(null);
+        const result = await runApiAction(callApi(`/api/identity-exceptions/${row.id}`, "PATCH", body), { refresh: () => router.refresh() });
+        if (!result.ok) return setError(result.error);
+        toast.success(body.status === "resolved" ? `Message filed under ${chosen ? (chosen.name ?? chosen.email ?? "the person") : "the person"}.` : "Message ignored.");
+      },
+      body.status,
+    );
 
   return (
     <>
@@ -138,10 +143,10 @@ function PersonPicker({ row }: { row: Row }) {
       )}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" touch disabled={pending || !chosen} onClick={() => chosen && void submit({ status: "resolved", personId: chosen.personId })}>
-          {isBusy("resolved") ? "Filing…" : `File under ${chosen ? (chosen.name ?? chosen.email) : "the chosen person"}`}
+          {busyTag("settle") === "resolved" ? "Filing…" : `File under ${chosen ? (chosen.name ?? chosen.email) : "the chosen person"}`}
         </Button>
         <Button size="sm" variant="ghost" touch disabled={pending} onClick={() => void submit({ status: "ignored" })}>
-          {isBusy("ignored") ? "Ignoring…" : "Ignore"}
+          {busyTag("settle") === "ignored" ? "Ignoring…" : "Ignore"}
         </Button>
       </div>
     </>

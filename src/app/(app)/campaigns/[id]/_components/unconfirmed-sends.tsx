@@ -32,22 +32,33 @@ export interface UnconfirmedRow {
  */
 export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { campaignId: string; total: number; rows: UnconfirmedRow[]; canResolve: boolean }) {
   const router = useRouter();
-  const { isBusy, run } = useApiAction();
-  // The row whose "It was not delivered" is waiting for the Sent-folder confirmation, and the checkbox state.
-  const [confirming, setConfirming] = useState<string | null>(null);
-  const [checked, setChecked] = useState(false);
+  // Both answers of one send share its key; the tag says which runs. Other sends run on their own.
+  const { isBusy, busyTag, run } = useApiAction();
+  // Per send: whose "It was not delivered" waits for the Sent-folder confirmation, and whose box is checked.
+  const [confirming, setConfirming] = useState<ReadonlySet<string>>(() => new Set());
+  const [checked, setChecked] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (set: ReadonlySet<string>, id: string, on: boolean) => {
+    const next = new Set(set);
+    if (on) next.add(id);
+    else next.delete(id);
+    return next;
+  };
 
   const resolve = (sendId: string, outcome: "delivered" | "not_delivered") =>
-    run(sendId, async () => {
-      const body = { outcome, ...(outcome === "not_delivered" ? { checkedSentFolder: checked } : {}) };
-      const result = await runApiAction(callApi(`/api/campaigns/${campaignId}/sends/${sendId}/resolve`, "POST", body));
-      // Someone else may have answered for this send, so the list reloads either way.
-      router.refresh();
-      if (!result.ok) return void toast.error(result.error);
-      setConfirming(null);
-      setChecked(false);
-      toast.success(outcome === "delivered" ? "Recorded as delivered. The lead moves to the next step." : "Recorded as not delivered. The step will be sent again.");
-    });
+    run(
+      sendId,
+      async () => {
+        const body = { outcome, ...(outcome === "not_delivered" ? { checkedSentFolder: checked.has(sendId) } : {}) };
+        const result = await runApiAction(callApi(`/api/campaigns/${campaignId}/sends/${sendId}/resolve`, "POST", body));
+        // Someone else may have answered for this send, so the list reloads either way.
+        router.refresh();
+        if (!result.ok) return void toast.error(result.error);
+        setConfirming((cur) => toggle(cur, sendId, false));
+        setChecked((cur) => toggle(cur, sendId, false));
+        toast.success(outcome === "delivered" ? "Recorded as delivered. The lead moves to the next step." : "Recorded as not delivered. The step will be sent again.");
+      },
+      outcome,
+    );
 
   return (
     <CampaignSection
@@ -95,31 +106,31 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
                     <div className="grid gap-2">
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" disabled={isBusy(row.sendId)} onClick={() => void resolve(row.sendId, "delivered")}>
-                          It was delivered
+                          {busyTag(row.sendId) === "delivered" ? "Saving…" : "It was delivered"}
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={isBusy(row.sendId)}
                           onClick={() => {
-                            setConfirming(confirming === row.sendId ? null : row.sendId);
-                            setChecked(false);
+                            setConfirming((cur) => toggle(cur, row.sendId, !cur.has(row.sendId)));
+                            setChecked((cur) => toggle(cur, row.sendId, false));
                           }}
                         >
                           It was not delivered
                         </Button>
                       </div>
-                      {confirming === row.sendId && (
+                      {confirming.has(row.sendId) && (
                         <div className="grid gap-2 text-xs">
                           <p>MiaSDR will send this step again. If the email is in the Sent folder, the lead gets a duplicate.</p>
                           <Field orientation="horizontal">
-                            <Checkbox id={`sent-folder-${row.sendId}`} checked={checked} onCheckedChange={(c) => setChecked(c === true)} />
+                            <Checkbox id={`sent-folder-${row.sendId}`} checked={checked.has(row.sendId)} onCheckedChange={(c) => setChecked((cur) => toggle(cur, row.sendId, c === true))} />
                             <FieldLabel htmlFor={`sent-folder-${row.sendId}`} className="text-xs font-normal">
                               I looked in the Sent folder
                             </FieldLabel>
                           </Field>
-                          <Button size="sm" variant="destructive" disabled={!checked || isBusy(row.sendId)} onClick={() => void resolve(row.sendId, "not_delivered")}>
-                            Send this step again
+                          <Button size="sm" variant="destructive" disabled={!checked.has(row.sendId) || isBusy(row.sendId)} onClick={() => void resolve(row.sendId, "not_delivered")}>
+                            {busyTag(row.sendId) === "not_delivered" ? "Saving…" : "Send this step again"}
                           </Button>
                         </div>
                       )}

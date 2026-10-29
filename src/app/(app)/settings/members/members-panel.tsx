@@ -76,9 +76,9 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
   // Admins cannot grant or touch the owner role, so the menu hides it for them.
   const grantable = ROLES.filter((r) => actorIsOwner || r.value !== "owner");
 
-  // Each invitation runs on its own; Resend and Revoke of one invitation wait for each other.
-  const { isBusy, run } = useApiAction();
-  const inviteBusy = (id: string) => isBusy(`resend:${id}`) || isBusy(`revoke:${id}`);
+  // Each invitation runs on its own. Resend and Revoke of one invitation share its key; the tag says which runs.
+  const { isBusy, busyTag, run } = useApiAction();
+  const inviteBusy = (id: string) => isBusy(`invitation:${id}`);
   const pending = isBusy("invite");
   const refresh = () => router.refresh();
 
@@ -229,20 +229,23 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
                         size="sm"
                         disabled={inviteBusy(inv.id)}
                         onClick={() =>
-                          void run(`resend:${inv.id}`, async () =>
-                            toastResult(await runApiAction(callApi("/api/members", "POST", { email: inv.email, role: primaryRole(inv.role) }), { refresh }), emailConfigured ? "Invitation sent again." : "New link created."),
+                          void run(
+                            `invitation:${inv.id}`,
+                            async () =>
+                              toastResult(await runApiAction(callApi("/api/members", "POST", { email: inv.email, role: primaryRole(inv.role) }), { refresh }), emailConfigured ? "Invitation sent again." : "New link created."),
+                            "resend",
                           )
                         }
                       >
-                        {isBusy(`resend:${inv.id}`) ? (emailConfigured ? "Resending…" : "Creating…") : emailConfigured ? "Resend" : "New link"}
+                        {busyTag(`invitation:${inv.id}`) === "resend" ? (emailConfigured ? "Resending…" : "Creating…") : emailConfigured ? "Resend" : "New link"}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         disabled={inviteBusy(inv.id)}
-                        onClick={() => void run(`revoke:${inv.id}`, async () => toastResult(await runApiAction(callApi(`/api/invitations/${inv.id}`, "DELETE"), { refresh }), "Invitation revoked."))}
+                        onClick={() => void run(`invitation:${inv.id}`, async () => toastResult(await runApiAction(callApi(`/api/invitations/${inv.id}`, "DELETE"), { refresh }), "Invitation revoked."), "revoke")}
                       >
-                        {isBusy(`revoke:${inv.id}`) ? "Revoking…" : "Revoke"}
+                        {busyTag(`invitation:${inv.id}`) === "revoke" ? "Revoking…" : "Revoke"}
                       </Button>
                     </span>
                   </div>

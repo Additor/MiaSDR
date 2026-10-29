@@ -63,28 +63,37 @@ const UNDO_TIP = "Puts back the type from before the AI's pick. Open drafts reti
 export function AiPicksHistory({ entries, currentConversationId }: { entries: Entry[]; currentConversationId?: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  // Looks right and Undo of one pick wait for each other; other picks run on their own.
-  const { isBusy, run } = useApiAction();
-  const pickBusy = (id: string) => isBusy(`looks:${id}`) || isBusy(`undo:${id}`);
+  // Every decision here touches the thread's one open draft, and Undo saves its edits at the draft's revision, so all
+  // picks share one key; the tag names the pick and the action that runs.
+  const { isBusy, busyTag, run } = useApiAction<"pick">();
+  const pickBusy = () => isBusy("pick");
 
   const looksRight = (id: string) =>
-    run(`looks:${id}`, async () => {
-      setError(null);
-      const result = await runApiAction(callApi(`/api/reply-type-picks/${id}/acknowledge`, "POST"), { refresh: () => router.refresh() });
-      if (!result.ok) return setError(result.error);
-      toast.success(LOOKS_RIGHT_DONE);
-    });
+    run(
+      "pick",
+      async () => {
+        setError(null);
+        const result = await runApiAction(callApi(`/api/reply-type-picks/${id}/acknowledge`, "POST"), { refresh: () => router.refresh() });
+        if (!result.ok) return setError(result.error);
+        toast.success(LOOKS_RIGHT_DONE);
+      },
+      `looks:${id}`,
+    );
 
   const undo = (id: string) =>
-    run(`undo:${id}`, async () => {
-      setError(null);
-      // Undo retires the open draft, so the editor's unsaved edits are saved first.
-      const result = await afterSavingEdits(() =>
-        runApiAction(callApi<{ draftsRetired: number; runEnded: boolean; draftJobCancelled: boolean }>(`/api/reply-type-picks/${id}/undo`, "POST"), { refresh: () => router.refresh(), expectData: true }),
-      );
-      if (!result.ok) return setError(result.error);
-      toast.success(undoMessage(result.data));
-    });
+    run(
+      "pick",
+      async () => {
+        setError(null);
+        // Undo retires the open draft, so the editor's unsaved edits are saved first.
+        const result = await afterSavingEdits(() =>
+          runApiAction(callApi<{ draftsRetired: number; runEnded: boolean; draftJobCancelled: boolean }>(`/api/reply-type-picks/${id}/undo`, "POST"), { refresh: () => router.refresh(), expectData: true }),
+        );
+        if (!result.ok) return setError(result.error);
+        toast.success(undoMessage(result.data));
+      },
+      `undo:${id}`,
+    );
 
   return (
     <div className="grid gap-2" data-testid="ai-picks">
@@ -120,14 +129,14 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
                     </Link>
                   )}
                   {canLookRight && (
-                    <Button size="xs" variant="outline" touch disabled={pickBusy(e.id)} onClick={() => void looksRight(e.id)}>
-                      {isBusy(`looks:${e.id}`) ? "Saving…" : "Looks right"}
+                    <Button size="xs" variant="outline" touch disabled={pickBusy()} onClick={() => void looksRight(e.id)}>
+                      {busyTag("pick") === `looks:${e.id}` ? "Saving…" : "Looks right"}
                     </Button>
                   )}
                   {e.canUndo && (
                     <Tooltip>
-                      <TooltipTrigger delay={150} render={<Button size="xs" variant="outline" touch disabled={pickBusy(e.id)} aria-describedby="undo-tip" onClick={() => void undo(e.id)} />}>
-                        {isBusy(`undo:${e.id}`) ? "Undoing…" : "Undo"}
+                      <TooltipTrigger delay={150} render={<Button size="xs" variant="outline" touch disabled={pickBusy()} aria-describedby="undo-tip" onClick={() => void undo(e.id)} />}>
+                        {busyTag("pick") === `undo:${e.id}` ? "Undoing…" : "Undo"}
                       </TooltipTrigger>
                       <TooltipContent className="block max-w-72 text-left leading-relaxed">{UNDO_TIP}</TooltipContent>
                     </Tooltip>

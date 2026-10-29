@@ -72,7 +72,7 @@ export function MailboxList({
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const { isBusy, run } = useApiAction();
+  const { isBusy, busyTag, run } = useApiAction();
   const pending = isBusy("connect");
   const refresh = () => router.refresh();
 
@@ -189,13 +189,13 @@ export function MailboxList({
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={isBusy(`test:${mailbox.id}`)}
-                      onClick={() => void run(`test:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."))}
+                      disabled={isBusy(`mailbox:${mailbox.id}`)}
+                      onClick={() => void run(`mailbox:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."), "test")}
                     >
-                      {isBusy(`test:${mailbox.id}`) ? "Checking…" : "Recheck connection"}
+                      {busyTag(`mailbox:${mailbox.id}`) === "test" ? "Checking…" : "Recheck connection"}
                     </Button>
                     <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} refresh={refresh} />
-                    <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} busy={isBusy(`enable:${mailbox.id}`)} run={run} refresh={refresh} />
+                    <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} busy={isBusy(`mailbox:${mailbox.id}`)} run={run} refresh={refresh} />
                   </div>
                 )}
               </li>
@@ -222,12 +222,24 @@ function MailboxMenu({
 }: {
   mailbox: Mailbox;
   takeoverAfterHours: number;
-  /** True while this mailbox's Enable runs. */
+  /** True while Recheck or Enable of this mailbox runs; both change its status, so they share the mailbox's key. */
   busy: boolean;
   run: ReturnType<typeof useApiAction>["run"];
   refresh: () => void;
 }) {
   const [dialog, setDialog] = useState<MailboxDialog>(null);
+  /** A dialog's change runs under the mailbox's key too, so Recheck and Enable wait for it. */
+  const confirmed = async (work: () => Promise<void>, tag: string) => {
+    const ran = await run(
+      `mailbox:${mailbox.id}`,
+      async () => {
+        await work();
+        return true;
+      },
+      tag,
+    );
+    if (ran === null) throw new Error("Another change to this mailbox is still saving. Try again in a moment.");
+  };
   const setEnabled = (enabled: boolean) => runApiAction(callApi(`/api/mailboxes/${mailbox.id}/enabled`, "POST", { enabled }), { refresh });
 
   const warning = mailbox.waitingLeads > 0 ? waitingWarning(mailbox.waitingLeads, takeoverAfterHours) : null;
@@ -241,7 +253,7 @@ function MailboxMenu({
         <DropdownMenuContent align="end" className="w-auto min-w-44">
           {mailbox.status === "connected" && <DropdownMenuItem onClick={() => setDialog("test")}>Send test email</DropdownMenuItem>}
           {mailbox.status === "disabled" ? (
-            <DropdownMenuItem disabled={busy} onClick={() => void run(`enable:${mailbox.id}`, async () => toastResult(await setEnabled(true), "Enabled."))}>
+            <DropdownMenuItem disabled={busy} onClick={() => void run(`mailbox:${mailbox.id}`, async () => toastResult(await setEnabled(true), "Enabled."), "enable")}>
               Enable
             </DropdownMenuItem>
           ) : (
@@ -261,7 +273,8 @@ function MailboxMenu({
         description={warning ?? NO_WAITING_LEADS}
         confirmLabel="Disable"
         pendingLabel="Disabling…"
-        onConfirm={async () => toastOrThrow(await setEnabled(false), "Disabled.")}
+        confirmDisabled={busy}
+        onConfirm={() => confirmed(async () => toastOrThrow(await setEnabled(false), "Disabled."), "disable")}
       />
       {mailbox.waitingLeads > 0 ? (
         <ConfirmDialog
@@ -271,7 +284,8 @@ function MailboxMenu({
           description="A mailbox with leads in a sequence cannot be removed. Disable it instead, or finish those sequences first."
           confirmLabel="Disable instead"
           pendingLabel="Disabling…"
-          onConfirm={async () => toastOrThrow(await setEnabled(false), "Disabled.")}
+          confirmDisabled={busy}
+        onConfirm={() => confirmed(async () => toastOrThrow(await setEnabled(false), "Disabled."), "disable")}
         >
           {warning && <p className="text-sm text-muted-foreground">{warning}</p>}
         </ConfirmDialog>
@@ -285,7 +299,8 @@ function MailboxMenu({
           cancelLabel="Keep mailbox"
           pendingLabel="Removing…"
           destructive
-          onConfirm={async () => toastOrThrow(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}`, "DELETE"), { refresh }), "Removed.")}
+          confirmDisabled={busy}
+          onConfirm={() => confirmed(async () => toastOrThrow(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}`, "DELETE"), { refresh }), "Removed."), "remove")}
         />
       )}
     </>
