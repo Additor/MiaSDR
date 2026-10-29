@@ -54,10 +54,13 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 | `ForbiddenError` | 403 |
 | `ConflictError` (its `details` merge into the body; clients branch on `details.code`) | 409 |
 | `PayloadTooLargeError` | 413 |
-| `ValidationError` (message plus `issues`) | 422 |
+| `ValidationError` (message plus `issues`), and its subclasses `CsvError` (`platform/files/csv.ts`, an unreadable upload) and `ImportInputError` (`people/application/import-leads.ts`, no rows, too many rows, a broken mapping) | 422 |
 | `ZodError`, `SyntaxError` from `request.json()` | 400 |
 
+- Every protected handler goes through a wrapper. `src/architecture/route-wrappers.test.ts` fails when a handler listed in the route matrix calls `apiOrgContext`, `apiUser` or `getSession` itself. Its shrink-only list holds one handler, `GET invitations/[id]`: the view depends on the session's email, which `withUser` does not hand over.
+- A `Response` that `run` returns (a CSV file, a stream) goes out unchanged. Any other value is the JSON body, and `undefined` is 204.
 - Handlers parse the body inside the wrapper's callback, so a malformed body answers 400 instead of 500.
+- The lead import routes (`/api/leads/import`, `preview`, `summary`) moved into `withActor` and answer 422 where they answered 400: an unreadable file, an import the file or mapping cannot make, a missing file and a missing or invalid mapping. A file over 5 MB still answers 413. A 409 now merges the `ConflictError` details into the body, as every other route does; before, the import answered `{ error }` only. The import wizard reads only `error`, so it shows the same message.
 - Use cases keep their own `requireAdmin` checks for callers that skip the routes, such as jobs and tests.
 - A role string can hold several roles, comma separated. `isOwnerOrAdmin` in `tenancy/domain/roles.ts` reads it.
 

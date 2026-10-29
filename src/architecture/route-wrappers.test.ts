@@ -17,13 +17,6 @@ const SESSION_READERS = new Set(["apiOrgContext", "apiUser", "getSession", "requ
 /** Handlers that still read the session themselves, as `METHOD route-key`, each with its reason. Shrink only. */
 const READS_SESSION_ITSELF: Record<string, string> = {
   "GET invitations/[id]": "The accept-invitation page's data, for a signed-in user who usually has no organization yet. The view depends on the session's email, which `withUser` does not hand over (`SessionUser` carries no email), so it reads the Better Auth session itself.",
-  "GET leads/export": "Not moved yet.",
-  "POST leads/import": "Not moved yet.",
-  "POST leads/import/preview": "Not moved yet.",
-  "POST leads/import/summary": "Not moved yet.",
-  "GET leads/import/sample": "Not moved yet.",
-  "GET linkedin/search-batches/[id]/results": "Not moved yet.",
-  "GET linkedin/search-batches/template": "Not moved yet.",
 };
 
 /** The exported handler a top-level statement declares (`export function GET`, `export const GET = ...`), if any. */
