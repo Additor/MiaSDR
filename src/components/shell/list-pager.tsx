@@ -20,7 +20,7 @@ export function ListPager({ total, page, pageCount, noun, hrefFor, size }: { tot
       </div>
     );
   }
-  const link = cn(buttonVariants({ variant: "ghost", size: "sm" }), "max-sm:h-11 max-sm:px-4");
+  const link = buttonVariants({ variant: "ghost", size: "sm", touch: true });
   const off = cn(link, "pointer-events-none opacity-50");
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground tabular-nums">

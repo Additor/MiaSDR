@@ -108,10 +108,10 @@ export function ToolbarPopoverFooter({ onReset, onApply, busy = false, error }: 
         </p>
       )}
       <div className="flex items-center justify-between gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={onReset} disabled={busy} className="max-sm:h-11 max-sm:px-4">
+        <Button type="button" variant="ghost" size="sm" onClick={onReset} disabled={busy} touch>
           Reset
         </Button>
-        <Button type={onApply ? "button" : "submit"} size="sm" onClick={onApply} disabled={busy} className="max-sm:h-11 max-sm:px-4">
+        <Button type={onApply ? "button" : "submit"} size="sm" onClick={onApply} disabled={busy} touch>
           {busy ? "Applying…" : "Apply"}
         </Button>
       </div>

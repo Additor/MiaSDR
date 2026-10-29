@@ -12,7 +12,7 @@ export function SearchField({ label, defaultValue, placeholder, name = "q", maxL
     <>
       <label className={cn("relative block min-w-48 max-w-md flex-1", className)}>
         <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input name={name} type="search" aria-label={label} defaultValue={defaultValue} placeholder={placeholder} maxLength={maxLength} className="pl-8 max-sm:h-11" />
+        <Input name={name} type="search" aria-label={label} defaultValue={defaultValue} placeholder={placeholder} maxLength={maxLength} className="pl-8" touch />
       </label>
       <button type="submit" className="sr-only">
         Search
