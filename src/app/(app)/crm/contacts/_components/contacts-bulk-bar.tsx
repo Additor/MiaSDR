@@ -29,6 +29,13 @@ export function ContactsBulkBar({ total, pageIds, query }: { total: number; page
   const { selectedIds: ids, select, clear } = useSelection();
   const [busy, setBusy] = useState<"gathering" | "exporting" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // An error speaks about the selection it failed on. Once the selection empties (Clear, Esc, a finished bulk step), it
+  // goes too, so ticking rows later never brings back an old failure.
+  const [hadSelection, setHadSelection] = useState(ids.length > 0);
+  if (hadSelection !== ids.length > 0) {
+    setHadSelection(ids.length > 0);
+    if (ids.length === 0) setError(null);
+  }
   const bar = useRef<HTMLDivElement>(null);
   useBarScrollPadding(bar, ids.length > 0);
   // The ids the do not contact dialog works on, fixed when it opens.

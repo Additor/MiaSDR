@@ -115,6 +115,13 @@ export function LeadsTableView(props: {
   const [pending, setPending] = useState<Pending>(null);
   const [gathering, setGathering] = useState(false);
   const [gatherError, setGatherError] = useState<string | null>(null);
+  // An error speaks about the selection it failed on. Once the selection empties (Clear, Esc, a finished bulk step), it
+  // goes too, so ticking rows later never brings back an old failure.
+  const [hadSelection, setHadSelection] = useState(ids.length > 0);
+  if (hadSelection !== ids.length > 0) {
+    setHadSelection(ids.length > 0);
+    if (ids.length === 0) setGatherError(null);
+  }
   // The ids the Create deals dialog works on, fixed when it opens: the dialog reloads its preview for a new array.
   const [dealIds, setDealIds] = useState<string[] | null>(null);
   const lifecycle = lifecycleOf(filter);
