@@ -273,7 +273,6 @@ export interface GridRunStore {
    * Throws ConflictError when a new key is taken.
    */
   changeColumns(organizationId: string, tableId: string, plan: (context: ColumnChangeContext) => Promise<ColumnChange> | ColumnChange): Promise<{ inserted: ColumnRow[]; updated: ColumnRow[] } | null>;
-  updateColumn(organizationId: string, tableId: string, columnId: string, patch: { config?: Record<string, unknown>; dependsOn?: string[]; autoRun?: boolean }): Promise<ColumnRow | null>;
 
   /** One job per (row, column). A job that is queued again goes back to `queued`; a running one is left alone. Returns the cells queued. */
   /**

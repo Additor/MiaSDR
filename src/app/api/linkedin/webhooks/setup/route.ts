@@ -8,7 +8,7 @@ import { withAdmin } from "@/app/_lib/api";
  * A POST, so a link, a prefetch or a crawler cannot trigger the reveal. There is no GET handler: Next answers 405.
  */
 export async function POST() {
-  let response: NextResponse;
+  let response: Response;
   try {
     response = await withAdmin("Only an owner or admin can view the webhook setup.", (actor) => getLinkedInWebhookSetup(linkedinManagementDeps(), actor));
   } catch {

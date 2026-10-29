@@ -1,8 +1,10 @@
 import { parse } from "csv-parse/sync";
+import { ValidationError } from "@/shared/errors";
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
-export class CsvError extends Error {}
+/** A file that cannot be read as a sheet of leads. A `ValidationError`, so a route wrapper answers 422 with the message. */
+export class CsvError extends ValidationError {}
 
 export interface ParsedCsv {
   headers: string[];
