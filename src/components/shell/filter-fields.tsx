@@ -14,7 +14,7 @@ const ROW_LABEL = "text-sm text-muted-foreground";
 export function FilterSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="stack-group not-first:border-t not-first:pt-inset">
-      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      <h3 className="heading-item text-muted-foreground">{title}</h3>
       {children}
     </section>
   );
