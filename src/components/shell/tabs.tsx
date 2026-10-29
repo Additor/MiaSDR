@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/components/ui/utils";
+import { Count } from "./section";
 
 export interface TabItem {
   id: string;
@@ -56,7 +57,7 @@ export function Tabs({ tabs, label, countTone = "alert" }: { tabs: TabItem[]; la
             >
               {tab.label}
               {tab.count ? (
-                <span className={cn("text-xs tabular-nums", countTone === "alert" ? "font-semibold text-sidebar-count" : "text-muted-foreground")}>{tab.count}</span>
+                <Count value={tab.count} tone={countTone === "alert" ? "waiting" : "neutral"} className="text-xs" />
               ) : null}
             </button>
           );
