@@ -54,7 +54,6 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
   function ticker(f: Fx, ai: InstanceType<typeof FakeAi>) {
     const deps = {
       jobs: jobStore,
-      replies: undefined as never,
       ai: replyAiResolverOf(async (o: string) => (o === f.org ? ai : null)),
       now: () => new Date(),
       workerId: "kg-test",
@@ -62,7 +61,6 @@ describeDb("knowledge tags, default subcategory guidance and the unknown-sender 
       notConfiguredDelayMs: 60_000,
     };
     return async () => {
-      deps.replies = (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore as never;
       const [tick] = aiJobsApp.createAiJobs(deps) as [Job];
       return tick.run({ deadline: Date.now() + 120_000, now: () => new Date() });
     };

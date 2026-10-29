@@ -6,6 +6,8 @@ import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 import { createCampaign, FLOW_STEPS, recordSentEmail } from "../after-reply-test-kit";
 import type { Job } from "@/platform/jobs/types";
 import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
+import { AiError } from "@/contexts/ai/domain/ai-error";
+import { draftRetryDelayMs, MAX_DRAFT_ATTEMPTS } from "../../domain/sequences";
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
 
@@ -48,7 +50,7 @@ describeDb("Follow-ups after a reply flows", () => {
     const state = { offsetMs: 0 };
     const clock = () => new Date(Date.now() + state.offsetMs);
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
-    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const seqTickFor = (workerId: string) =>
       (seqJobsApp.createSequenceJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId, leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job])[0];
     const seqTick = seqTickFor("w1");
@@ -1499,6 +1501,90 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await one("select status, draft_id from sequence_step_runs where id = $1", [created.request.sequenceStepRunId])).toMatchObject({ status: "awaiting_review", draft_id: created.id });
       expect(await count("drafts", f.org)).toBe(2);
       void run;
+    });
+  });
+
+  describe("a drafting failure", () => {
+    /** A run whose reply went out and whose step 2 is due now. The AI has not drafted step 2 yet. */
+    async function dueStep2() {
+      const { f, run } = await withRun();
+      const first = await one("select id from drafts where organization_id = $1", [f.org]);
+      await approve(f, first.id);
+      await f.seqRun();
+      f.state.offsetMs += 3 * DAY;
+      const stepRunId = (await one("select sr.id from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = 2", [run.id])).id as string;
+      return { f, run, stepRunId };
+    }
+    it("tries three times, waiting one minute and then two between attempts", () => {
+      expect(MAX_DRAFT_ATTEMPTS).toBe(3);
+      expect(draftRetryDelayMs(1)).toBe(60_000);
+      expect(draftRetryDelayMs(2)).toBe(120_000);
+    });
+
+    const stepRun = async (id: string) => one("select status, attempt_count, last_error, due_at, updated_at, draft_id from sequence_step_runs where id = $1", [id]);
+
+    it("reschedules a transient failure with backoff and fails the step on the last attempt", async () => {
+      const { f, run, stepRunId } = await dueStep2();
+      f.ai.failWith = new AiError("The model is overloaded.", "transient");
+
+      for (let attempt = 1; attempt < MAX_DRAFT_ATTEMPTS; attempt++) {
+        expect((await f.seqRun()).detail).toMatchObject({ retry: 1 });
+        const row = await stepRun(stepRunId);
+        expect(row).toMatchObject({ status: "scheduled", attempt_count: attempt, last_error: "The model is overloaded.", draft_id: null });
+        // The retry waits draftRetryDelayMs from the failure: one minute, then two.
+        const wait = row.due_at.getTime() - row.updated_at.getTime();
+        expect(wait).toBeGreaterThanOrEqual(draftRetryDelayMs(attempt) - 5);
+        expect(wait).toBeLessThan(draftRetryDelayMs(attempt) + 1000);
+        // Not due yet: the next tick claims nothing.
+        const calls = f.ai.draftCalls;
+        await f.seqRun();
+        expect(f.ai.draftCalls).toBe(calls);
+        f.state.offsetMs += draftRetryDelayMs(attempt) + 1000;
+      }
+
+      expect((await f.seqRun()).detail).toMatchObject({ failed: 1 });
+      expect(await stepRun(stepRunId)).toMatchObject({ status: "failed", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: "The model is overloaded.", draft_id: null });
+      // A failed step holds the run where it is. Later ticks do not claim it again.
+      expect(await one("select status, current_step_position from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "active", current_step_position: 2 });
+      const calls = f.ai.draftCalls;
+      f.state.offsetMs += DAY;
+      await f.seqRun();
+      expect(f.ai.draftCalls).toBe(calls);
+      expect(await count("drafts", f.org, `request->>'stepPosition' = '2'`)).toBe(0);
+    });
+
+    it("fails the step on the first attempt for a permanent error", async () => {
+      const { f, stepRunId } = await dueStep2();
+      f.ai.failWith = new AiError("The API key was rejected.", "permanent");
+      expect((await f.seqRun()).detail).toMatchObject({ failed: 1 });
+      expect(await stepRun(stepRunId)).toMatchObject({ status: "failed", attempt_count: 1, last_error: "The API key was rejected." });
+    });
+
+    // claimDue sweeps every organization, so these drive it through a tick: steps of other files' organizations are released untouched.
+    it("fails a step left drafting past its lease once it used every attempt, and takes over one with attempts left", async () => {
+      const { f, stepRunId } = await dueStep2();
+      const leaseMs = seqJobsApp.SEQUENCE_LEASE_MS;
+      await sql`update sequence_step_runs set status = 'drafting', attempt_count = ${MAX_DRAFT_ATTEMPTS}, updated_at = ${new Date(f.clock().getTime() - leaseMs - 60_000)} where id = ${stepRunId}`;
+      const calls = f.ai.draftCalls;
+      await f.seqRun();
+      expect(await stepRun(stepRunId)).toMatchObject({ status: "failed", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: "Drafting did not finish.", draft_id: null });
+      expect(f.ai.draftCalls).toBe(calls);
+
+      // One attempt short of the cap: the claim takes the step over, counts the attempt and drafts it.
+      const other = await dueStep2();
+      await sql`update sequence_step_runs set status = 'drafting', attempt_count = ${MAX_DRAFT_ATTEMPTS - 1}, updated_at = ${new Date(other.f.clock().getTime() - leaseMs - 60_000)} where id = ${other.stepRunId}`;
+      expect((await other.f.seqRun()).detail).toMatchObject({ drafted: 1 });
+      expect(await stepRun(other.stepRunId)).toMatchObject({ status: "awaiting_review", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: null });
+    });
+
+    it("leaves a step at the cap alone while it is drafting inside its lease", async () => {
+      const { f, stepRunId } = await dueStep2();
+      const leaseMs = seqJobsApp.SEQUENCE_LEASE_MS;
+      await sql`update sequence_step_runs set status = 'drafting', attempt_count = ${MAX_DRAFT_ATTEMPTS}, updated_at = ${new Date(f.clock().getTime() - leaseMs + 60_000)} where id = ${stepRunId}`;
+      const calls = f.ai.draftCalls;
+      await f.seqRun();
+      expect(await stepRun(stepRunId)).toMatchObject({ status: "drafting", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: null });
+      expect(f.ai.draftCalls).toBe(calls);
     });
   });
 

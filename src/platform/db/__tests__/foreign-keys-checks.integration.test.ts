@@ -152,6 +152,7 @@ describeDb("foreign keys and checks", () => {
 
     it("deleting an enrollment nulls the connection's enrollment_id", async () => {
       const w = await world();
+      await sql`delete from sends where enrollment_id = ${w.enrollment}`;
       await sql`delete from campaign_enrollments where id = ${w.enrollment}`;
       const [c] = await sql`select organization_id, enrollment_id from linkedin_connections where id = ${w.connection}`;
       expect(c).toMatchObject({ organization_id: w.org, enrollment_id: null });
@@ -159,6 +160,7 @@ describeDb("foreign keys and checks", () => {
 
     it("deleting an enrollment nulls the deal's source_enrollment_id and keeps the deal", async () => {
       const w = await world();
+      await sql`delete from sends where enrollment_id = ${w.enrollment}`;
       await sql`delete from campaign_enrollments where id = ${w.enrollment}`;
       const [d] = await sql`select organization_id, source_enrollment_id, person_id from deals where id = ${w.deal}`;
       expect(d).toMatchObject({ organization_id: w.org, source_enrollment_id: null, person_id: w.contact });
@@ -172,6 +174,7 @@ describeDb("foreign keys and checks", () => {
 
     it("deleting a campaign nulls the import run's destination", async () => {
       const w = await world();
+      await sql`delete from sends where enrollment_id = ${w.enrollment}`;
       await sql`delete from campaigns where id = ${w.campaign}`;
       const [r] = await sql`select organization_id, destination_campaign_id from import_runs where id = ${w.importRun}`;
       expect(r).toMatchObject({ organization_id: w.org, destination_campaign_id: null });
@@ -180,6 +183,7 @@ describeDb("foreign keys and checks", () => {
     it("deleting a campaign nulls the search batch's target campaign", async () => {
       const w = await world();
       await sql`update linkedin_search_batches set target_campaign_id = ${w.campaign} where id = ${w.searchBatch}`;
+      await sql`delete from sends where enrollment_id = ${w.enrollment}`;
       await sql`delete from campaigns where id = ${w.campaign}`;
       const [b] = await sql`select organization_id, target_campaign_id from linkedin_search_batches where id = ${w.searchBatch}`;
       expect(b).toEqual({ organization_id: w.org, target_campaign_id: null });
@@ -225,6 +229,35 @@ describeDb("foreign keys and checks", () => {
       });
       expect((await sql`select latest_inbound_message_id as m from records where id = ${w.record}`)[0].m).toBeNull();
       expect((await sql`select reply_for_message_id as m from drafts where id = ${w.draft}`)[0].m).toBeNull();
+    });
+
+    it("an enrollment keeps its sends: deleting it fails until the sends go", async () => {
+      const w = await world();
+      await expect(sql`delete from campaign_enrollments where id = ${w.enrollment}`).rejects.toMatchObject({ code: "23503" });
+      await sql`delete from sends where enrollment_id = ${w.enrollment}`;
+      await sql`delete from campaign_enrollments where id = ${w.enrollment}`;
+      expect((await sql`select count(*)::int as n from campaign_enrollments where id = ${w.enrollment}`)[0].n).toBe(0);
+    });
+
+    it("a send in flight or unresolved cannot be deleted, a settled one can", async () => {
+      const w = await world();
+      for (const status of ["sending", "unknown"]) {
+        const [{ id }] = await sql`
+          insert into sends (organization_id, enrollment_id, step_number, channel, linkedin_account_id, status)
+          values (${w.org}, ${w.enrollment}, ${status === "sending" ? 3 : 4}, 'linkedin', ${w.linkedinAccount}, ${status}) returning id`;
+        await expect(sql`delete from sends where id = ${id}`).rejects.toThrow(/cannot be deleted until it settles/);
+      }
+      await sql`delete from sends where id = ${w.sendEmail}`;
+      expect((await sql`select count(*)::int as n from sends where id = ${w.sendEmail}`)[0].n).toBe(0);
+    });
+
+    it("deleting the organization removes a send in flight with it", async () => {
+      const w = await world();
+      await sql`
+        insert into sends (organization_id, enrollment_id, step_number, channel, linkedin_account_id)
+        values (${w.org}, ${w.enrollment}, 3, 'linkedin', ${w.linkedinAccount})`;
+      await sql`delete from organizations where id = ${w.org}`;
+      expect((await sql`select count(*)::int as n from sends where organization_id = ${w.org}`)[0].n).toBe(0);
     });
 
     it("a LinkedIn account with sends cannot be deleted, one with only a search pointer can", async () => {

@@ -8,7 +8,7 @@ describeDb("lead management", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
   let uc: typeof import("../../application/lead-management");
-  let deps: import("../../application/lead-ports").LeadDeps;
+  let deps: import("../../application/lead-ports").LeadDeps & import("../../application/lead-ports").LeadDeleteDeps;
   const orgs: string[] = [];
   const users: string[] = [];
 
@@ -53,7 +53,7 @@ describeDb("lead management", () => {
 
   beforeAll(async () => {
     uc = await import("../../application/lead-management");
-    deps = (await import("../composition")).leadDeps();
+    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("../composition")).leadDeps() };
   });
 
   afterAll(async () => {
@@ -157,7 +157,7 @@ describeDb("lead management", () => {
 
       const { checkLeadDelete } = await import("../../application/lead-delete-check");
       expect((await checkLeadDelete(deps, actor, bare)).canDelete).toBe(false);
-      expect(await deps.leads.deleteBlock(o, bare)).toBe("linked_records");
+      expect(await uc.leadDeleteBlockOf(deps, actor, bare)).toBe("linked_records");
 
       // The filter delete only sees leads: the contact is not in its count, and the use case refuses any other lifecycle.
       const again = await person(o, "lead2@acme.com", { name: "Another Lead" });
@@ -259,7 +259,7 @@ describeDb("lead management", () => {
       expect(result).toEqual({ deleted: 0, blocked: [expect.objectContaining({ id: p, reason: "linked_records" })] });
       expect(await sql`select 1 from people where id = ${p}`).toHaveLength(1);
       // The delete falls back to the foreign key, but the check before it has only the rule to go on.
-      expect(await deps.leads.deleteBlock(o, p)).toBe("linked_records");
+      expect(await uc.leadDeleteBlockOf(deps, actor, p)).toBe("linked_records");
     });
 
     it("keeps a do-not-contact address on the suppression list after deleting the lead", async () => {

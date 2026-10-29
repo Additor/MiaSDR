@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { MAX_DELETE_IDS, deleteLeads } from "@/contexts/people/application/lead-management";
+import { MAX_DELETE_IDS, deleteLeads, summarizeDelete } from "@/contexts/people/application/lead-management";
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
-import { leadDeps } from "@/contexts/people/infrastructure/composition";
+import { leadDeleteDeps } from "@/composition/person-lifecycle";
 import { withActor } from "@/app/_lib/api";
 
 /** Every `LeadFilter` key the list sends except `ids`, which belong to the other branch. */
@@ -39,8 +39,8 @@ export async function POST(request: Request) {
   return withActor(async (actor) => {
     const body = schema.parse(await request.json());
     if ("ids" in body) {
-      const outcome = await deleteLeads(leadDeps(), actor, { ids: body.ids });
-      return { deleted: outcome.deleted, blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
+      const outcome = await deleteLeads(leadDeleteDeps, actor, { ids: body.ids });
+      return { ...summarizeDelete(outcome), blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
     }
     // The same parser as the URL, so a value that does not parse is dropped here too and cannot widen or skip a condition.
     const f = body.filter ?? {};
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       to: f.createdTo,
       category: f.category,
     };
-    const outcome = await deleteLeads(leadDeps(), actor, { filter: parseLeadFilter((key) => raw[key]), confirmCount: body.confirmCount });
-    return { deleted: outcome.deleted, blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
+    const outcome = await deleteLeads(leadDeleteDeps, actor, { filter: parseLeadFilter((key) => raw[key]), confirmCount: body.confirmCount });
+    return { ...summarizeDelete(outcome), blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
   });
 }

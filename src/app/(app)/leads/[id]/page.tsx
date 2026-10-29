@@ -13,6 +13,7 @@ import { getLead } from "@/contexts/people/application/lead-management";
 import { telHref } from "@/contexts/people/domain/lead-contact-links";
 import { sourceLabel } from "@/contexts/people/domain/lead-labels";
 import { leadDeps } from "@/contexts/people/infrastructure/composition";
+import { leadDeleteDeps } from "@/composition/person-lifecycle";
 import { readLeadNeighbors, type LeadNeighbors } from "@/contexts/people/infrastructure/composition";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { leadActivityDeps, crossCampaignNotices } from "@/contexts/outreach/infrastructure/composition";
@@ -88,7 +89,7 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
     Object.entries(raw ?? {}).map(([key, value]) => ({ key, value: typeof value === "string" ? value : JSON.stringify(value) }));
   const title = person.fullName ?? person.email ?? "Lead";
   const doNotContact = policy?.doNotContact ?? false;
-  const qualification = await checkLeadDelete(leadDeps(), actor, person.id);
+  const qualification = await checkLeadDelete(leadDeleteDeps, actor, person.id);
   const listHref = backToListHref(context);
   const prevHref = context ? neighborHref(nearby?.prevId ?? null, context) : null;
   const nextHref = context ? neighborHref(nearby?.nextId ?? null, context) : null;

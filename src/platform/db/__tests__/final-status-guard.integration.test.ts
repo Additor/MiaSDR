@@ -75,7 +75,7 @@ describeDb("final status guard", () => {
       });
     }
 
-    // `failed` is final except for the bounded re-claim, so the exits that stay closed are every final -> other pair but that one.
+    // `failed` is final except for the re-claim as the next attempt, so the exits that stay closed are every final -> other pair but that one.
     for (const from of SEND_FINAL) {
       for (const to of SEND_STATUSES.filter((s) => s !== from)) {
         if (from === "failed" && to === "sending") continue;
@@ -87,17 +87,15 @@ describeDb("final status guard", () => {
       }
     }
 
-    it("lets a failed send be re-claimed while attempt < 3, and only then", async () => {
-      for (const attempt of [1, 2]) {
+    // The enrollment owns the attempt cap; the trigger holds only the step of one.
+    it("lets a failed send be re-claimed as its next attempt, and only so", async () => {
+      for (const attempt of [1, 2, 3, 7]) {
         const id = await insertSend("failed");
         await sql`update sends set attempt = ${attempt} where id = ${id}`;
         await reclaim(id);
         const [row] = await sql`select status, attempt from sends where id = ${id}`;
         expect([row.status, row.attempt]).toEqual(["sending", attempt + 1]);
       }
-      const capped = await insertSend("failed");
-      await sql`update sends set attempt = 3 where id = ${capped}`;
-      await expect(reclaim(capped)).rejects.toThrow(/is final and cannot change/);
       const noCount = await insertSend("failed");
       await expect(sql`update sends set status = 'sending' where id = ${noCount}`).rejects.toThrow(/is final and cannot change/);
       // The re-claim raises attempt by exactly one: a jump from 1 to 3 skips an attempt and stays closed.

@@ -78,12 +78,13 @@ export async function seedWorld(sql: Sql): Promise<World> {
   const linkedinAccount = await one(sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id) values (${org}, ${"pa-" + tag}, ${"li-" + tag}) returning id`);
   const campaign = await one(sql`insert into campaigns (organization_id, channel, name) values (${org}, 'email', 'c') returning id`);
   const enrollment = await one(sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel) values (${org}, ${campaign}, ${person}, 'email') returning id`);
+  // Settled sends: a send in flight or unresolved cannot be deleted, and a delete test removes these first.
   const sendEmail = await one(sql`
-    insert into sends (organization_id, enrollment_id, step_number, channel, mailbox_id, taken_over_from_mailbox_id)
-    values (${org}, ${enrollment}, 1, 'email', ${mailbox}, ${mailbox2}) returning id`);
+    insert into sends (organization_id, enrollment_id, step_number, channel, mailbox_id, taken_over_from_mailbox_id, status)
+    values (${org}, ${enrollment}, 1, 'email', ${mailbox}, ${mailbox2}, 'failed') returning id`);
   const sendLinkedin = await one(sql`
-    insert into sends (organization_id, enrollment_id, step_number, channel, linkedin_account_id)
-    values (${org}, ${enrollment}, 2, 'linkedin', ${linkedinAccount}) returning id`);
+    insert into sends (organization_id, enrollment_id, step_number, channel, linkedin_account_id, status)
+    values (${org}, ${enrollment}, 2, 'linkedin', ${linkedinAccount}, 'failed') returning id`);
   const connection = await one(sql`
     insert into linkedin_connections (organization_id, linkedin_account_id, provider_id, enrollment_id)
     values (${org}, ${linkedinAccount}, ${"pid-" + tag}, ${enrollment}) returning id`);

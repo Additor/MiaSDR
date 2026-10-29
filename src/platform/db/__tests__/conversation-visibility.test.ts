@@ -42,6 +42,7 @@ const MESSAGE_EXEMPT: Record<string, string> = {
   "src/test-support/route-client.ts": "Test seeder, not application code (see the conversations exemption above).",
   "src/contexts/analytics/infrastructure/drizzle-analytics-read-model.ts": "Reply counts. Aggregates, scoped per campaign by `private_campaign_id`; no message content leaves it.",
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-store.ts": "Auto-reply and thread lookups feed the AI loaders, whose conversation reads carry the guard; the message-only lookups here return ids and flags.",
+  "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-worker-store.ts": "Split out of drizzle-ai-job-store.ts. The daily cap (`skipOverCap`) joins the job's message to count senders; it returns flags and a count.",
   "src/contexts/conversations/infrastructure/person-handling.ts": "Contact delete: `personHandlingBlockers` looks for a running AI job on any message of the person, private threads included, and returns a boolean.",
   "src/contexts/conversations/infrastructure/person-purge.ts": "Contact delete: `purgePersonHandling` deletes every message of the person's conversations and reads nothing back.",
 };

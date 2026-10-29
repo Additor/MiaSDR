@@ -1,6 +1,6 @@
 import type { DbHandle } from "@/platform/db/client";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import type { Actor } from "@/shared/errors";
+import { ValidationError, type Actor } from "@/shared/errors";
 import { buildImportSummary, RESULT_EXAMPLES, type ImportSummary } from "../domain/import-summary";
 import {
   buildCandidates,
@@ -88,7 +88,8 @@ export interface ImportPreviewResult {
 
 export { remapCustomKeys };
 
-export class ImportInputError extends Error {}
+/** An import the file or mapping cannot make: no rows, too many rows, a broken mapping. Answers 422. */
+export class ImportInputError extends ValidationError {}
 
 
 export interface ImportCommand {

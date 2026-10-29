@@ -1,10 +1,11 @@
 import type { Actor } from "@/shared/errors";
-import { BLOCK_MESSAGES, sendViewer } from "./lead-management";
-import type { LeadDeps } from "./lead-ports";
+import { BLOCK_MESSAGES, leadDeleteBlockOf } from "./lead-management";
+import type { LeadDeleteDeps } from "./lead-ports";
 
 /*
  * Whether one lead can be deleted, said before the click. The rules are the ones the delete itself applies
- * (`findBlocked` in the repository), so the page and the server cannot disagree; the server still has the last word.
+ * (`leadDeleteBlock` in the person delete policy, over the same ports), so the page and the server cannot disagree; the
+ * server still has the last word.
  */
 
 export interface DeleteQualification {
@@ -40,7 +41,6 @@ export function deleteConfirmation(qualification: DeleteQualification): string {
   return `${qualification.summary} ${qualification.detail} ${DELETE_EFFECT} ${DELETE_PROTECTED}`;
 }
 
-export async function checkLeadDelete(deps: LeadDeps, actor: Actor, id: string): Promise<DeleteQualification> {
-  const reason = await deps.leads.deleteBlock(actor.organizationId, id, sendViewer(actor));
-  return deleteQualification(reason);
+export async function checkLeadDelete(deps: LeadDeleteDeps, actor: Actor, id: string): Promise<DeleteQualification> {
+  return deleteQualification(await leadDeleteBlockOf(deps, actor, id));
 }

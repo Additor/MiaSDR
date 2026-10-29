@@ -11,19 +11,19 @@ import { NotFoundError } from "@/shared/errors";
 export async function GET(request: Request, ctx: RouteContext<"/api/analytics/[view]">) {
   const { view } = await ctx.params;
   const params = new URL(request.url).searchParams;
-  const response = await withActor(async (actor) => {
+  return withActor(async (actor) => {
     if (!isAnalyticsView(view)) throw new NotFoundError(`Unknown analytics view: ${view}`);
-    return getAnalytics(analyticsDeps(), actor, view, {
+    const result = await getAnalytics(analyticsDeps(), actor, view, {
       from: params.get("from"),
       to: params.get("to"),
       campaignId: params.get("campaignId"),
       linkedinAccountId: params.get("linkedinAccountId"),
       excludeArchived: params.get("excludeArchived") === "1",
     });
-  });
-  if (!response.ok || params.get("format") !== "csv") return response;
-  const { filename, csv } = reportCsv(await response.json());
-  return new Response(csv, {
-    headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" },
+    if (params.get("format") !== "csv") return result;
+    const { filename, csv } = reportCsv(result);
+    return new Response(csv, {
+      headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${filename}"`, "cache-control": "no-store" },
+    });
   });
 }

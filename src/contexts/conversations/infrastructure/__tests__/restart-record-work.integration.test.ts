@@ -58,7 +58,7 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
     const state = { offsetMs: 0 };
     const clock = () => new Date(Date.now() + state.offsetMs);
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
-    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const [seqTick] = seqJobsApp.createSequenceJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(() => mailbox), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
@@ -492,12 +492,12 @@ describeDb("restart record work: stage move, correction, stale drafts", () => {
       const { f, r, version } = await withRun({ flow: false });
       // The pick's draft job is running in another worker, which read the old version.
       const job = await one("select id, entity_id from ai_jobs where organization_id = $1 and kind = 'initial_draft'", [f.org]);
-      await sql`update ai_jobs set status = 'running', attempts = 1, locked_at = now(), locked_by = 'other', completed_at = null where id = ${job.id}`;
+      const [held] = await sql`update ai_jobs set status = 'running', attempts = 1, locked_at = now(), locked_by = 'other', completed_at = null, claim_token = gen_random_uuid() where id = ${job.id} returning claim_token`;
 
       const result = await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "meeting_requested", expectedContextVersion: version });
       expect(result.draftQueued).toBe(true);
       // The other worker finishes: its draft is stale, and the job goes back to the queue for the new version.
-      await stores.jobs.complete({ id: job.id, organizationId: f.org, kind: "initial_draft", entityId: job.entity_id, attempts: 1, maxAttempts: 3 }, f.clock());
+      await stores.jobs.complete({ id: job.id, organizationId: f.org, kind: "initial_draft", entityId: job.entity_id, attempts: 1, maxAttempts: 3, claimToken: held.claim_token }, f.clock());
       expect(await one("select status from ai_jobs where id = $1", [job.id])).toMatchObject({ status: "queued" });
       await f.aiRun();
       expect(await one("select expected_context_version from drafts where organization_id = $1 and status = 'awaiting_review'", [f.org])).toMatchObject({ expected_context_version: version + 1 });

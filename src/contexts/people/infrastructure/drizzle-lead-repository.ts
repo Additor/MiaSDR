@@ -1,7 +1,7 @@
 import { sqlState, violatedConstraint } from "@/platform/db/errors";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { publicConversation } from "@/platform/db/conversation-visibility";
-import { db, type DbTx } from "@/platform/db/client";
+import { db, type DbHandle } from "@/platform/db/client";
 import {
   campaignEnrollments,
   campaigns,
@@ -9,15 +9,17 @@ import {
   contactPolicies,
   conversations,
   entityColumns,
-  events,
   people,
   records,
   sends,
   suppressionList,
 } from "@/platform/db/schema";
+import { HELD_LOCK_TIMEOUT, lockPeopleOutreachTx, setLockTimeout } from "@/platform/db/person-locks";
+import { rowsOf, uuidList } from "@/platform/db/sql-values";
 import { TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
-import type { BlockReason, DeleteOutcome, ExportRow, LeadFilter, LeadRepository, SendViewer } from "../application/lead-ports";
+import { LEAD_DELETE_STATEMENT_TIMEOUT } from "../application/lead-management";
+import type { ExportRow, LeadDeleteStore, LeadFilter, LeadForDelete, LeadRepository, SendViewer } from "../application/lead-ports";
 import { renameOnCompanyPage } from "../domain/company-domain";
 import { customColumnKey } from "../domain/normalize";
 import { MAX_CUSTOM_VALUE_LENGTH, type LeadEditPlan } from "../domain/lead-edit";
@@ -27,25 +29,17 @@ import { leadFilterCondition } from "./queries";
 import { resolvePeopleColumns } from "./resolve-custom-columns";
 
 /*
- * The detail and delete checks read outreach and conversation tables
- * (campaign_enrollments, sends, records, events, conversations) through the shared schema
- * barrel. That is a read-only join, kept in this one module so the rest of the
- * people context does not know those tables exist.
+ * The lead detail reads outreach and conversation tables (campaign_enrollments, sends, records, conversations) through the
+ * shared schema barrel. That is a read-only join, kept in this one module so the rest of the people context does not know
+ * those tables exist. The lead delete reads and writes only people's tables here; outreach and conversations answer for
+ * theirs through the ports `src/composition/person-lifecycle.ts` wires.
  */
 
-const CHUNK = 500;
 const EXPORT_BATCH = 1000;
 
-type Tx = DbTx;
 
 function filterWhere(organizationId: string, filter: LeadFilter) {
   return and(eq(people.organizationId, organizationId), leadFilterCondition(filter));
-}
-
-function chunked<T>(items: T[], size = CHUNK): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
 }
 
 async function activeColumns(organizationId: string) {
@@ -64,104 +58,6 @@ function visibleCampaign(viewer: SendViewer | undefined) {
   if (!viewer) return sql`${campaigns.type} = 'regular'`;
   if (viewer.seesAllPersonal) return sql`true`;
   return sql`(${campaigns.type} = 'regular' or coalesce(${campaigns.createdBy} = ${viewer.userId}, false))`;
-}
-
-/** Which of these people may not be deleted, and why. First matching reason wins. The viewer only names the send reason. */
-async function findBlocked(organizationId: string, ids: string[], viewer?: SendViewer): Promise<Map<string, BlockReason>> {
-  const blocked = new Map<string, BlockReason>();
-  const add = (rows: Array<{ personId: string }>, reason: BlockReason) => {
-    for (const row of rows) if (!blocked.has(row.personId)) blocked.set(row.personId, reason);
-  };
-
-  const sent = await db
-    .select({ personId: campaignEnrollments.personId, visible: sql<boolean>`bool_or(${viewer ? visibleCampaign(viewer) : sql`true`})` })
-    .from(sends)
-    .innerJoin(campaignEnrollments, and(eq(campaignEnrollments.id, sends.enrollmentId), eq(campaignEnrollments.organizationId, sends.organizationId)))
-    .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-    .where(and(eq(sends.organizationId, organizationId), inArray(campaignEnrollments.personId, ids), inArray(sends.status, ["sent", "unknown", "sending"])))
-    .groupBy(campaignEnrollments.personId);
-  // Sends the viewer cannot see in the send history get their own reason, so the page does not contradict "Nothing sent".
-  add(sent.filter((row) => row.visible), "has_sends");
-  add(sent.filter((row) => !row.visible), "has_hidden_sends");
-  add(
-    await db
-      .selectDistinct({ personId: campaignEnrollments.personId })
-      .from(campaignEnrollments)
-      .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-      .where(
-        and(
-          eq(campaignEnrollments.organizationId, organizationId),
-          inArray(campaignEnrollments.personId, ids),
-          inArray(campaignEnrollments.status, ["pending", "active"]),
-          inArray(campaigns.status, ["active", "paused"]),
-        ),
-      ),
-    "in_active_campaign",
-  );
-  add(
-    await db
-      .selectDistinct({ personId: records.personId })
-      .from(records)
-      .where(and(eq(records.organizationId, organizationId), inArray(records.personId, ids))),
-    "linked_records",
-  );
-  add(
-    await db
-      .selectDistinct({ personId: events.personId })
-      .from(events)
-      .where(and(eq(events.organizationId, organizationId), inArray(events.personId, ids))),
-    "linked_records",
-  );
-  // A contact always has events (the conversion writes one), so the query above already holds it. A contact inserted without
-  // history (a test, support SQL) stays undeletable too: a contact is never deleted.
-  add(
-    await db
-      .select({ personId: people.id })
-      .from(people)
-      .where(and(eq(people.organizationId, organizationId), inArray(people.id, ids), sql`${people.lifecycle} = 'contact'`)),
-    "linked_records",
-  );
-  return blocked;
-}
-
-/** Deletes people no rule blocks. A person marked do-not-contact leaves their address on the suppression list. */
-async function deleteBatch(organizationId: string, ids: string[]): Promise<number> {
-  return db.transaction(async (tx: Tx) => {
-    await suppressDoNotContactAddressesTx(tx, organizationId, ids);
-    await deleteDoNotContactTx(tx, organizationId, ids);
-    // Left here only when no send was ever made, so nothing is lost with them.
-    await tx.delete(campaignEnrollments).where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, ids)));
-    const removed = await tx.delete(people).where(and(eq(people.organizationId, organizationId), inArray(people.id, ids))).returning({ id: people.id });
-    return removed.length;
-  });
-}
-
-async function deletePeople(organizationId: string, rows: Array<{ id: string; name: string | null }>, viewer?: SendViewer): Promise<DeleteOutcome> {
-  const outcome: DeleteOutcome = { deleted: 0, blocked: [] };
-  for (const part of chunked(rows)) {
-    const blocked = await findBlocked(organizationId, part.map((r) => r.id), viewer);
-    for (const row of part) {
-      const reason = blocked.get(row.id);
-      if (reason) outcome.blocked.push({ id: row.id, name: row.name, reason });
-    }
-    const deletable = part.filter((r) => !blocked.has(r.id));
-    if (deletable.length === 0) continue;
-    try {
-      outcome.deleted += await deleteBatch(organizationId, deletable.map((r) => r.id));
-    } catch (error) {
-      if (sqlState(error) !== "23503") throw error;
-      // Some table this context does not know points at one of them. Find which, one by one.
-      for (const row of deletable) {
-        try {
-          outcome.deleted += await deleteBatch(organizationId, [row.id]);
-        } catch (single) {
-          if (sqlState(single) !== "23503") throw single;
-          outcome.blocked.push({ id: row.id, name: row.name, reason: "linked_records" });
-        }
-      }
-    }
-  }
-  return outcome;
 }
 
 const displayName = (p: { fullName: string | null; email: string | null }) => p.fullName ?? p.email;
@@ -394,35 +290,6 @@ export const drizzleLeadRepository: LeadRepository = {
     return rows.map((r) => r.id);
   },
 
-  async deleteBlock(organizationId, id, viewer) {
-    return (await findBlocked(organizationId, [id], viewer)).get(id) ?? null;
-  },
-
-  async deleteByIds(organizationId, ids, viewer) {
-    const rows: Array<{ id: string; name: string | null }> = [];
-    for (const part of chunked(ids, 1000)) {
-      const found = await db
-        .select({ id: people.id, fullName: people.fullName, email: people.email })
-        .from(people)
-        .where(and(eq(people.organizationId, organizationId), inArray(people.id, part)));
-      rows.push(...found.map((p) => ({ id: p.id, name: displayName(p) })));
-    }
-    return deletePeople(organizationId, rows, viewer);
-  },
-
-  async deleteByFilter(organizationId, filter, viewer) {
-    const found = await db
-      .select({ id: people.id, fullName: people.fullName, email: people.email })
-      .from(people)
-      .leftJoin(companies, eq(companies.id, people.companyId))
-      .where(filterWhere(organizationId, filter));
-    return deletePeople(
-      organizationId,
-      found.map((p) => ({ id: p.id, name: displayName(p) })),
-      viewer,
-    );
-  },
-
   customColumns: activeColumns,
 
   async ensureCustomColumn(organizationId, name, options = {}) {
@@ -504,6 +371,42 @@ export const drizzleLeadRepository: LeadRepository = {
       const last = rows[rows.length - 1];
       cursor = { createdAt: last.createdAtText, id: last.id };
     }
+  },
+};
+
+/** The people of the organization among `ids`, in id order, `FOR UPDATE` when `lock` is set. */
+async function peopleForDelete(tx: DbHandle, organizationId: string, ids: readonly string[], lock: boolean): Promise<LeadForDelete[]> {
+  if (ids.length === 0) return [];
+  const rows = rowsOf<{ id: string; full_name: string | null; email: string | null; lifecycle: string }>(
+    await tx.execute(sql`
+      select p.id, p.full_name, p.email, p.lifecycle from people p
+      where p.organization_id = ${organizationId} and p.id in ${uuidList(ids)}
+      order by p.id ${lock ? sql`for update of p` : sql``}`),
+  );
+  return rows.map((row) => ({ id: row.id, name: displayName({ fullName: row.full_name, email: row.email }), contact: row.lifecycle === "contact" }));
+}
+
+/** The people side of the lead delete ("Delete" in docs/decisions.md). Every statement filters by organization. */
+export const drizzleLeadDeleteStore: LeadDeleteStore = {
+  async idsMatching(organizationId, filter) {
+    const rows = await db.select({ id: people.id }).from(people).leftJoin(companies, eq(companies.id, people.companyId)).where(filterWhere(organizationId, filter));
+    return rows.map((row) => row.id);
+  },
+  limitStatements: async (tx) => {
+    await tx.execute(sql.raw(`set local statement_timeout = '${LEAD_DELETE_STATEMENT_TIMEOUT}'`));
+  },
+  read: (tx, organizationId, ids) => peopleForDelete(tx, organizationId, ids, false),
+  async lock(tx, organizationId, ids) {
+    await lockPeopleOutreachTx(tx, organizationId, ids);
+    await setLockTimeout(tx, HELD_LOCK_TIMEOUT);
+    return peopleForDelete(tx, organizationId, ids, true);
+  },
+  keepSuppressed: (tx, organizationId, ids) => suppressDoNotContactAddressesTx(tx, organizationId, ids),
+  async deletePeople(tx, organizationId, ids) {
+    if (ids.length === 0) return 0;
+    await deleteDoNotContactTx(tx, organizationId, ids);
+    const removed = await tx.delete(people).where(and(eq(people.organizationId, organizationId), inArray(people.id, [...ids]))).returning({ id: people.id });
+    return removed.length;
   },
 };
 

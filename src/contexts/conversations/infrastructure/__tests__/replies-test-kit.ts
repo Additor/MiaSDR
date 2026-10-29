@@ -56,7 +56,6 @@ export function useReplyKit() {
     const clock = () => new Date(Date.now() + state.offsetMs);
     const jobDeps = {
       jobs: stores.jobs,
-      replies: stores.replies,
       // Only this fixture's organization has AI, so jobs for rows other tests left behind are released untouched.
       ai: replyAiResolverOf(async (o: string) => (o === org ? ai : null)),
       now: clock,

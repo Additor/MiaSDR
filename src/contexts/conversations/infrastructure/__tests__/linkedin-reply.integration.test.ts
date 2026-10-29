@@ -4,7 +4,7 @@ import type { LinkedInReplyDeps } from "../../application/linkedin-reply";
 import type { LinkedInReplySender } from "../../application/linkedin-reply-ports";
 import type { FakeLinkedInGateway } from "@/contexts/outreach/linkedin/infrastructure/fake-linkedin-gateway";
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
-import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
+import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
 
 describeDb("LinkedIn conversation replies", () => {
   useTestEnv();
@@ -267,6 +267,25 @@ describeDb("LinkedIn conversation replies", () => {
     expect(await one("select status from send_attempts where organization_id = $1", [f.org])).toMatchObject({ status: "failed" });
     const panel = await app.getLinkedInReplyPanel(f.deps, f.actor, f.conversationId);
     expect(panel?.doNotContact).toBe(true);
+  });
+
+  it("answers 409 when drafts_one_in_flight_uq refuses a second reply of the chat", async () => {
+    const f = await fixture();
+    const [{ id: draftId }] = await sql`
+      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, edited_body_text, status, provider)
+      select organization_id, record_id, id, 1, 'linkedin', 'Elsewhere', 'failed', 'human' from conversations where id = ${f.conversationId} returning id`;
+    let reply!: Promise<unknown>;
+    await sql.begin(async (tx) => {
+      // A writer that skips the conversation lock: the claim's check cannot see its uncommitted row, so the index refuses.
+      await tx`update drafts set status = 'sending' where id = ${draftId}`;
+      reply = send(f, "Second");
+      reply.catch(() => undefined);
+      await waitForLockWaiters(sql, 1, 10_000, "%update%drafts%");
+    });
+    await expect(reply).rejects.toBeInstanceOf(ConflictError);
+    await expect(reply).rejects.toThrow("Another reply in this chat started sending first. Reload the chat.");
+    expect(f.fake.messages).toHaveLength(0);
+    expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("rejects empty text and an oversized message before any claim", async () => {

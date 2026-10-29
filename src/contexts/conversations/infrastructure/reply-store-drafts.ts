@@ -1,14 +1,93 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { db, type DbTx } from "@/platform/db/client";
 import { conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
-import type { PanelData, ReplyStore } from "../application/reply-ports";
+import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports";
 import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
-import { canMoveDraft, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
+import { canMoveDraft, IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
+
+type AiDraft = NewDraft & { feedback?: string | null };
+type WrittenDraft = { id: string; stale: boolean };
+
+/**
+ * Writes an AI draft in `tx` (`ReplyStore.insertDraft`). `held` runs once the record is locked: the AI worker passes its
+ * claim check there, so the record lock comes before the job row lock, and a false answer writes nothing and returns null.
+ */
+export async function insertDraftTx(tx: DbTx, input: AiDraft): Promise<WrittenDraft>;
+export async function insertDraftTx(tx: DbTx, input: AiDraft, held: (tx: DbTx) => Promise<boolean>): Promise<WrittenDraft | null>;
+export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) => Promise<boolean>): Promise<WrittenDraft | null> {
+  // A writer that read its context before the version moved (an undo, a type change, a new reply) wrote for a context
+  // that no longer holds. Its draft goes in as stale and leaves the record's open drafts alone.
+  const [record] = await tx
+    .select({ version: records.contextVersion })
+    .from(records)
+    .where(and(eq(records.id, input.recordId), eq(records.organizationId, input.organizationId)))
+    .for("update");
+  if (!record) throw new NotFoundError("Reply handling not found");
+  if (held && !(await held(tx))) return null;
+  if (record.version !== input.expectedContextVersion) {
+    const [stale] = await tx
+        .insert(drafts)
+        .values({
+          organizationId: input.organizationId,
+          recordId: input.recordId,
+          conversationId: input.conversationId,
+          replyForMessageId: input.replyForMessageId,
+          expectedContextVersion: input.expectedContextVersion,
+          channel: input.channel ?? "email",
+          subject: input.channel === "linkedin" ? null : input.subject,
+          aiBodyText: input.bodyText,
+          status: "stale",
+          error: "The reply handling changed while the AI wrote this draft.",
+          provider: input.provider,
+          model: input.model,
+          request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
+          response: input.response,
+        })
+        .returning({ id: drafts.id });
+    return { id: stale.id, stale: true };
+  }
+  const [created] = await tx
+    .insert(drafts)
+    .values({
+      organizationId: input.organizationId,
+      recordId: input.recordId,
+      conversationId: input.conversationId,
+      replyForMessageId: input.replyForMessageId,
+      expectedContextVersion: input.expectedContextVersion,
+      channel: input.channel ?? "email",
+      subject: input.channel === "linkedin" ? null : input.subject,
+      aiBodyText: input.bodyText,
+      status: "awaiting_review",
+      provider: input.provider,
+      model: input.model,
+      request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
+      response: input.response,
+    })
+    .returning({ id: drafts.id });
+  if (input.regeneratesDraftId) {
+    await tx
+      .update(drafts)
+      .set({ status: "discarded" })
+      .where(and(eq(drafts.id, input.regeneratesDraftId), eq(drafts.organizationId, input.organizationId), draftCanBecome("discarded")));
+  }
+  // One reviewable draft per record and channel: older open ones are superseded.
+  await tx
+    .update(drafts)
+    .set({ status: "stale" })
+    .where(and(eq(drafts.recordId, input.recordId), eq(drafts.channel, input.channel ?? "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
+  if (input.citations.length > 0) {
+    await tx
+      .insert(draftKnowledgeCitations)
+      .values(input.citations.map((c, rank) => ({ organizationId: input.organizationId, draftId: created.id, documentVersionId: c.documentVersionId, excerptHash: excerptHash(c.excerpt), excerpt: c.excerpt, rank: String(rank) })))
+      .onConflictDoNothing();
+  }
+  return { id: created.id, stale: false };
+}
 
 /** The reply panel and the draft lifecycle: load, write, edit, discard, and the CC and blocked-address checks. */
 export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "draftContextForDraft" | "insertDraft" | "getDraft" | "ccContext" | "ccContextForConversation" | "createManualDraft" | "blockedAddresses" | "updateDraft" | "discardDraft"> = {
@@ -92,74 +171,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
   },
 
   async insertDraft(input) {
-    return db.transaction(async (tx) => {
-      // A writer that read its context before the version moved (an undo, a type change, a new reply) wrote for a context
-      // that no longer holds. Its draft goes in as stale and leaves the record's open drafts alone.
-      const [record] = await tx
-        .select({ version: records.contextVersion })
-        .from(records)
-        .where(and(eq(records.id, input.recordId), eq(records.organizationId, input.organizationId)))
-        .for("update");
-      if (!record) throw new NotFoundError("Reply handling not found");
-      if (record.version !== input.expectedContextVersion) {
-        const [stale] = await tx
-            .insert(drafts)
-            .values({
-              organizationId: input.organizationId,
-              recordId: input.recordId,
-              conversationId: input.conversationId,
-              replyForMessageId: input.replyForMessageId,
-              expectedContextVersion: input.expectedContextVersion,
-              channel: input.channel ?? "email",
-              subject: input.channel === "linkedin" ? null : input.subject,
-              aiBodyText: input.bodyText,
-              status: "stale",
-              error: "The reply handling changed while the AI wrote this draft.",
-              provider: input.provider,
-              model: input.model,
-              request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
-              response: input.response,
-            })
-            .returning({ id: drafts.id });
-        return { id: stale.id, stale: true };
-      }
-      const [created] = await tx
-        .insert(drafts)
-        .values({
-          organizationId: input.organizationId,
-          recordId: input.recordId,
-          conversationId: input.conversationId,
-          replyForMessageId: input.replyForMessageId,
-          expectedContextVersion: input.expectedContextVersion,
-          channel: input.channel ?? "email",
-          subject: input.channel === "linkedin" ? null : input.subject,
-          aiBodyText: input.bodyText,
-          status: "awaiting_review",
-          provider: input.provider,
-          model: input.model,
-          request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
-          response: input.response,
-        })
-        .returning({ id: drafts.id });
-      if (input.regeneratesDraftId) {
-        await tx
-          .update(drafts)
-          .set({ status: "discarded" })
-          .where(and(eq(drafts.id, input.regeneratesDraftId), eq(drafts.organizationId, input.organizationId), draftCanBecome("discarded")));
-      }
-      // One reviewable draft per record and channel: older open ones are superseded.
-      await tx
-        .update(drafts)
-        .set({ status: "stale" })
-        .where(and(eq(drafts.recordId, input.recordId), eq(drafts.channel, input.channel ?? "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
-      if (input.citations.length > 0) {
-        await tx
-          .insert(draftKnowledgeCitations)
-          .values(input.citations.map((c, rank) => ({ organizationId: input.organizationId, draftId: created.id, documentVersionId: c.documentVersionId, excerptHash: excerptHash(c.excerpt), excerpt: c.excerpt, rank: String(rank) })))
-          .onConflictDoNothing();
-      }
-      return { id: created.id, stale: false };
-    });
+    return db.transaction((tx) => insertDraftTx(tx, input));
   },
 
   async getDraft(organizationId, draftId) {
@@ -206,7 +218,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       const inFlight = await tx
         .select({ id: drafts.id })
         .from(drafts)
-        .where(and(eq(drafts.recordId, head.recordId), inArray(drafts.status, ["sending", "delivery_uncertain"])))
+        .where(and(eq(drafts.recordId, head.recordId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       if (inFlight.length > 0) throw new ConflictError("A reply is being sent for this thread.");
 

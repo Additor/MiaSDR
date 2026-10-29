@@ -54,10 +54,13 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 | `ForbiddenError` | 403 |
 | `ConflictError` (its `details` merge into the body; clients branch on `details.code`) | 409 |
 | `PayloadTooLargeError` | 413 |
-| `ValidationError` (message plus `issues`) | 422 |
+| `ValidationError` (message plus `issues`), and its subclasses `CsvError` (`platform/files/csv.ts`, an unreadable upload) and `ImportInputError` (`people/application/import-leads.ts`, no rows, too many rows, a broken mapping) | 422 |
 | `ZodError`, `SyntaxError` from `request.json()` | 400 |
 
+- Every protected handler goes through a wrapper. `src/architecture/route-wrappers.test.ts` checks imports: no file under `src/app/api` or `src/app/_lib`, and no `route.ts` elsewhere in `src/app`, imports the Better Auth module or reaches `identity/infrastructure/session.ts` other than through `_lib/api.ts`, at any depth. Its shrink-only list names four files with reasons: `invitations/[id]` (the GET view depends on the session's email, which `withUser` does not hand over), Better Auth's `auth/[...all]` handler, and the two legacy redirects under `(legacy)/crm`, which send a browser without a session to a fallback page instead of answering 401 JSON.
+- A `Response` that `run` returns (a CSV file, a stream) goes out unchanged. Any other value is the JSON body, and `undefined` is 204.
 - Handlers parse the body inside the wrapper's callback, so a malformed body answers 400 instead of 500.
+- The lead import routes (`/api/leads/import`, `preview`, `summary`) moved into `withActor` and answer 422 where they answered 400: an unreadable file, an import the file or mapping cannot make, a missing file and a missing or invalid mapping. A file over 5 MB still answers 413. A 409 now merges the `ConflictError` details into the body, as every other route does; before, the import answered `{ error }` only. The import wizard reads only `error`, so it shows the same message.
 - Use cases keep their own `requireAdmin` checks for callers that skip the routes, such as jobs and tests.
 - A role string can hold several roles, comma separated. `isOwnerOrAdmin` in `tenancy/domain/roles.ts` reads it.
 
@@ -251,13 +254,29 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### Delete
 
-- A lead is refused, never cascaded, when any of these holds:
-  - a `sends` row with status `sending`, `sent` or `unknown` (`has_hidden_sends` when the send sits in another member's personal campaign);
-  - a `pending` or `active` enrollment in an active or paused campaign;
-  - a reply-handling `records` row or an `events` row;
-  - `lifecycle = 'contact'` (contacts have their own delete).
-- The refusal names the reason and points to do not contact. A deletable lead goes with its contact policy and its unsent enrollments. Each batch is one transaction. A foreign key from a table the people context does not know (`23503`) reruns the batch one lead at a time and reports that lead as `linked_records`.
+- A lead is refused, never cascaded, when any of these holds (`leadDeleteBlock` in `people/domain/person-delete-policy.ts`, first match wins):
+  - a `sends` row with status `sending`, `sent` or `unknown` (`has_sends`; `has_hidden_sends` when every such send sits in another member's personal campaign);
+  - a `pending` or `active` enrollment in an active or paused campaign the actor can see (`in_active_campaign`);
+  - a reply-handling `records` row or an `events` row, or `lifecycle = 'contact'` (contacts have their own delete) (`linked_records`);
+  - for a member, an enrollment in a personal campaign another member created, sent or not (`personal_campaign_sends`). Its creator, an owner or an admin passes this rule.
+- The reasons that hold for every actor rank before `personal_campaign_sends`, so the person a member asks to delete the lead meets no other reason. A running campaign the member cannot see counts as `personal_campaign_sends`, since the member cannot cancel its enrollment.
+- A lead whose sends all failed is deleted with those sends. The recent-send windows of a contact delete do not apply to leads.
+- The refusal names the reason and points to do not contact. A bulk delete answers `summarizeDelete`: a count and a line per reason, the ids of the leads kept as `try_again` (a second delete can remove them, and the toast offers it), and whether do not contact applies to the rest. A deletable lead goes with its contact policy and its unsent enrollments.
 - Deleting a person marked do not contact first copies the address to `suppression_list` (reason `manual`), so a later import cannot revive it. Setting do not contact writes history events, so a lead marked through the product counts as having history afterwards.
+
+#### Lead delete order
+
+`deleteLeads` (by ids or by filter) splits the people into batches of 500. Each batch runs in `personTransaction` with `retryOnce` and a 30 s statement timeout, in this order:
+
+1. The outreach advisory lock of every person in the batch, in one statement (`lockPeopleOutreachTx`, the sort order of `lockPersonOutreachTx`). The reply stop takes this lock before the enrollments it stops and the event it writes, so the delete takes it first too.
+2. The held-lock timeout (300 ms).
+3. The `people` rows `FOR UPDATE` in id order. Ids of another organization or of a gone person drop out.
+4. Their enrollments `FOR UPDATE` in id order (`lockEnrollmentsOfPeopleTx`). A send claim selects its enrollment `FOR UPDATE SKIP LOCKED`, so it skips these until the batch commits; a claim that already holds one makes the batch wait and then shows in the blockers.
+5. The blockers: `leadOutreachBlockers` (outreach) and `peopleWithHistory` (conversations), ranked by the policy.
+6. `suppressDoNotContactAddressesTx`, then `purgeUnsentEnrollments` (the failed sends, then the enrollments; `sends` points at enrollments with NO ACTION), then the `contact_policies` rows and the `people` rows.
+
+A batch that fails on a lock twice or past the statement timeout rolls back and runs again one lead at a time, so one held row keeps back only its own lead, which comes back as `try_again`. A foreign key violation (`23503`) runs the batch again the same way and reports a lead that fails alone as `linked_records`. Before the locks, that fallback caught a send claim or a record that committed between the check and the delete; under the locks it is the last guard. The advisory keys use the lowercase id, so an id a request sends in uppercase shares the lock of the reply stop, the restore and the conversion. LinkedIn `claimNext` ends enrollments with a plain `UPDATE` (`endEnrollmentsTx`) and can meet the delete in a lock cycle; the delete's 300 ms wait makes it give way and retry. `src/composition/person-lifecycle.ts` wires the ports (`leadDeleteDeps`). Every batch runs the same statements whatever its size.
+
 - The lead page states the outcome before the click with the same rules (`checkLeadDelete`).
 
 ## Email outreach
@@ -532,12 +551,13 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 - A draft a person asks for (Write draft, Regenerate) that `insertDraft` stores stale, because the record's version moved while the AI wrote, answers 409 "The thread changed while the draft was written." The jobs keep writing such drafts stale without an error.
 - **Manual replies.** `POST /api/inbox/[id]/draft` with `{ subject, bodyText, cc? }` writes a draft (`provider = "manual"`) that still goes through `approveAndSendDraft`. Subject 1 to 998, body 1 to 100,000 characters; AI bodies cap at 20,000. No AI key needed.
 - **Send.** The use case checks status `awaiting_review`, the revision the person saw and `context_version`. It writes the `send_attempts` row (unique idempotency key, snapshot of subject, text, recipient, CC and headers) before the provider call, then re-checks suppression, do not contact, CCs and mailbox state. The recipient comes from the person, never from the request. Mail reuses the outreach path: own Message-ID, `In-Reply-To`, `References`, Gmail thread id, signature, `List-Unsubscribe`.
-- **Outcomes.** Definite refusal: attempt `failed`, draft back to `awaiting_review`. Unknown: attempt and draft `delivery_uncertain`, never resent. `conversations.reply-reconcile` settles a found message as `reconciled` after 10 minutes; a `sending` attempt with no outcome after 30 minutes turns uncertain. A person resolves uncertainty with "Confirm delivered" or "Not delivered" and a required note. After a send the record moves to `waiting`.
+- **One reply in flight.** A conversation holds at most one draft in `sending` or `delivery_uncertain` (`IN_FLIGHT_DRAFT_STATUSES`), on both channels; the partial unique index `drafts_one_in_flight_uq` enforces it. Email approval and the LinkedIn claim share one lock order: the conversation `FOR UPDATE`, then the draft. Email approval refuses a draft of another channel before it takes any lock. Email ingest takes the conversation's key share with its message insert and then retires drafts, so an approval that locked the draft first would deadlock with it. Both refuse with 409 while another reply of the thread is in flight ("A reply is already being sent in this thread." or "An earlier reply in this thread has an unconfirmed outcome. ...", "chat" on LinkedIn), checked before the draft lock. A draft that is itself in flight gets its status refusal instead ("This draft is sending and cannot be sent."). A `drafts_one_in_flight_uq` violation, which only a writer that skips the conversation lock can cause, answers 409 "Another reply in this thread started sending first. Reload the thread." ("chat" on LinkedIn). Writing a manual draft checks in-flight drafts across the whole record, a wider scope than the send check.
+- **Outcomes.** Definite refusal: attempt `failed`, draft back to `awaiting_review`. Unknown: attempt and draft `delivery_uncertain`, never resent. `conversations.reply-reconcile` settles a found message as `reconciled` after 10 minutes; a `sending` attempt with no outcome after 30 minutes turns uncertain. A person resolves uncertainty with "Confirm delivered" or "Not delivered" and a required note. Resolving locks the attempt, then the draft, the order the reconcilers' settle takes. After a send the record moves to `waiting`.
 
 ### LinkedIn replies
 
 - A typed reply is a `drafts` row (`channel = 'linkedin'`, null subject) plus a `send_attempts` row (`provider = 'linkedin'`). Pressing Send is the approval. `POST /api/inbox/[id]/linkedin-reply` takes optional `draftId` and `revision` to send an AI draft with the person's edits.
-- The claim locks the conversation, then the account, refuses while a reply of the chat is `sending` or `delivery_uncertain`, and applies `replyBlock`: account connected, not paused, under the daily message cap, outside the reply gap. A refusal answers 409 with `code` (`not_connected`, `paused`, `daily_cap`, `too_fast`) and writes nothing. Working hours do not apply.
+- The claim locks the conversation, then the target draft and the account, refuses while a reply of the chat is `sending` or `delivery_uncertain`, and applies `replyBlock`: account connected, not paused, under the daily message cap, outside the reply gap. A refusal answers 409 with `code` (`not_connected`, `paused`, `daily_cap`, `too_fast`) and writes nothing. Working hours do not apply.
 - AI drafts for LinkedIn have no subject and at most 8,000 characters (`MAX_LINKEDIN_REPLY`). The email approve route refuses a LinkedIn draft.
 - `conversations.linkedin-reply-reconcile` searches the chat by text after 10 minutes; missing after 30 minutes turns uncertain. It never sends.
 
@@ -548,7 +568,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### Send status tables
 
-Store queries compare and set on the previous status; the final status triggers reject any change out of a final status (SQLSTATE 23514). The one exception is the engines' re-claim `failed -> sending` with the attempt raised by one while below 3.
+Store queries compare and set on the previous status; the final status triggers reject any change out of a final status (SQLSTATE 23514). The one exception is the engines' re-claim `failed -> sending` with the attempt raised by one. The engine stops below its attempt limit; the trigger holds only the step of one.
 
 `sends` (campaign and test; `sent` and `failed` are final):
 
@@ -639,7 +659,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 - `src/contexts/deals` owns `deals` and `deal_stages`. Its one cross-context write port is `ConvertLead`. `deals/infrastructure/crm-read.ts` is the read model of the CRM screens: read-only SQL over `people`, `companies`, `deals`, `deal_stages` and `events`, with a test that pins the columns it reads.
 - The people context owns `people`, `companies` and reachability (`contact_policies`, `suppression_list`): `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`people/infrastructure/people-directory.ts`).
 - Outreach owns `stopPersonEnrollmentsTx`, `liveEnrollmentSummary`, `latestRepliedEnrollment`, `enrollmentSources` (`drizzle-conversion-outreach.ts`), `notContactSql` and the delete side in `person-outreach.ts`.
-- Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
+- Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `peopleWithHistory`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
 - The people context imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
 - `src/composition/deals.ts` is the composition root of the conversion and the deal use cases.
 - "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-types` and `/api/settings/replies`.
@@ -755,7 +775,7 @@ A contact without an open deal can be deleted (`deleteContact`, `DELETE /api/con
 1. `lockPersonForDelete`: the person's records `FOR UPDATE` in id order, their conversations `FOR UPDATE` in id order (a message insert needs `FOR KEY SHARE` on its conversation, so no reply lands mid-purge), then the person advisory lock. After the first lock the wait drops to 300 ms.
 2. The `people` row `FOR UPDATE`. A gone person answers 404, a lead 409 `not_a_contact`.
 3. The `contact_policies` row `FOR UPDATE` (people's `lockDoNotContact`).
-4. Every deal of the person `FOR UPDATE`.
+4. Every deal of the person `FOR UPDATE`, then the person's enrollments `FOR UPDATE` in id order (`lockEnrollmentsOfPeopleTx`), so no send claim lands between the blockers and the purge.
 5. Blockers answer 409 `contact_blocked { blockers }`: `open_deals` (named and linked in the dialog), `send_in_flight`, `recent_send` (a campaign send under 24 hours old, which today's mailbox limit counts), `recent_invite` (a LinkedIn invitation under 7 days old, which the weekly cap counts), `ai_job_running`, and `private_conversation` or `personal_campaign_sends` when another member's personal campaign holds the person and the actor is not its creator, an owner or an admin.
 6. The counts must equal the counts the dialog showed, else 409 `counts_changed { counts }`.
 7. `keepEmailSuppressed` (people): a person marked do not contact gets a `manual` suppression row, so the address stays Email suppressed. A lead delete applies the same rule (`suppressDoNotContactAddressesTx`).

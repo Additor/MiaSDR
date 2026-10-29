@@ -154,6 +154,8 @@ export const sequenceStepRuns = pgTable(
     attemptCount: integer("attempt_count").notNull().default(0),
     lastError: text("last_error"),
     expectedContextVersion: integer("expected_context_version").notNull(),
+    /** The token of the claim that holds the row, new on each claim. A settle that no longer holds it changes nothing. */
+    claimToken: uuid("claim_token"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -9,7 +9,7 @@ import type { Actor } from "@/shared/errors";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
 import type { PersonChannel, PersonEventInput, PersonEventView, PersonReplyHandling, PersonRunStop } from "../application/person-ports";
 import { publicConversation, publicConversationSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
-import { rowsOf } from "@/platform/db/sql-values";
+import { rowsOf, uuidList } from "@/platform/db/sql-values";
 
 /**
  * Callee-owned functions for turning a lead into a contact. The people context runs the conversion and calls these in
@@ -264,6 +264,23 @@ export async function personHandlingBlockers(tx: DbHandle, actor: Actor, personI
   if (row.ai_job_running) blockers.push({ reason: "ai_job_running" });
   if (row.private_conversation) blockers.push({ reason: "private_conversation" });
   return blockers;
+}
+
+/**
+ * The lead delete's history rule, for a batch in one statement: the people among `personIds` with a reply-handling record or
+ * an event. A lead with either stays (`linked_records`). The caller holds the people rows `FOR UPDATE`, so a record or event
+ * insert, which needs `FOR KEY SHARE` on its person, either committed before this read or waits for the delete.
+ */
+export async function peopleWithHistory(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<Set<string>> {
+  if (personIds.length === 0) return new Set();
+  const ids = uuidList(personIds);
+  const rows = rowsOf<{ person_id: string }>(
+    await tx.execute(sql`
+      select r.person_id from records r where r.organization_id = ${organizationId} and r.person_id in ${ids}
+      union
+      select e.person_id from events e where e.organization_id = ${organizationId} and e.person_id in ${ids}`),
+  );
+  return new Set(rows.map((row) => row.person_id));
 }
 
 export const personReplyHandling: PersonReplyHandling ={ lockPersonRecords, lockPersonRecordRows, interruptPersonRuns, previewPersonRunStop, appendPersonEvent, activeConversationOfPerson, listPersonEvents };
