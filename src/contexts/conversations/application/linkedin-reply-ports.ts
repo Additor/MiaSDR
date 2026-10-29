@@ -45,6 +45,8 @@ export interface LinkedInReplyPanel {
   accountLabel: string;
   /** Why a reply cannot go out right now, in words for the person. */
   issue: string | null;
+  /** A person marked reply handling done: no reply goes out and no draft is written until Reopen. */
+  markedDone: boolean;
   doNotContact: boolean;
   usedToday: number;
   dailyLimit: number;

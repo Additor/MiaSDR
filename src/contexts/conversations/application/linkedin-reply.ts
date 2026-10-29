@@ -50,7 +50,7 @@ export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Acto
   const panel = await deps.store.panel(actor.organizationId, conversationId, deps.now());
   if (!panel) return null;
   const status: AiStatus = deps.aiStatus ? await deps.aiStatus(actor.organizationId) : { state: "no_key" };
-  return { ...panel, canGenerate: aiIsOn(status), aiOff: aiOffMessage(status, isOwnerOrAdmin(actor.role) ? "admin" : "member") };
+  return { ...panel, canGenerate: aiIsOn(status) && !panel.markedDone, aiOff: aiOffMessage(status, isOwnerOrAdmin(actor.role) ? "admin" : "member") };
 }
 
 export async function sendLinkedInReply(

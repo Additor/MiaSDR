@@ -164,8 +164,9 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
                 Drafting…
               </p>
             )}
-            {stale && <p className="text-sm">This draft may be out of date: a newer message arrived after it was written. Regenerate or discard it.</p>}
-            {!draft && !panel.canGenerate && panel.aiOff && !panel.doNotContact && <p className="text-sm text-muted-foreground">{panel.aiOff} Until then, write the message yourself below.</p>}
+            {/* The stale reason the server stored, as the email panel shows it. */}
+            {stale && <p className="text-sm">{draft?.error ?? "This draft may be out of date: a newer message arrived after it was written."} Regenerate or discard it.</p>}
+            {!draft && !panel.canGenerate && panel.aiOff && !panel.doNotContact && !panel.markedDone && <p className="text-sm text-muted-foreground">{panel.aiOff} Until then, write the message yourself below.</p>}
             {!draft && panel.canGenerate && !panel.doNotContact && drafting && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="no-draft">
                 <Spinner />

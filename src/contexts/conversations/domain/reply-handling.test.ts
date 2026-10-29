@@ -35,7 +35,7 @@ describe("type change rules", () => {
 
   it("rejects a stale version, a closed record and a no-op", () => {
     expect(() => checkReplyTypeChange({ before, target: { groupKey: "other", replyTypeId: null, systemRole: null }, expectedContextVersion: 2, confirmUnlock: false })).toThrow(ConflictError);
-    expect(() => checkReplyTypeChange({ before: { ...before, workflowState: "closed" }, target: { groupKey: "other", replyTypeId: null, systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/closed/);
+    expect(() => checkReplyTypeChange({ before: { ...before, workflowState: "closed" }, target: { groupKey: "other", replyTypeId: null, systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/marked done/);
     expect(() => checkReplyTypeChange({ before, target: { groupKey: "interested", replyTypeId: "s1", systemRole: null }, expectedContextVersion: 3, confirmUnlock: false })).toThrow(/already/);
   });
 

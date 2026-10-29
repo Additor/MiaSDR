@@ -164,6 +164,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
             : head.status !== "active"
               ? REPLY_REFUSALS.conversation_closed.text()
               : null,
+      closed: head.state === "closed" ? REPLY_REFUSALS.handling_closed.text() : head.status !== "active" ? REPLY_REFUSALS.conversation_closed.text() : null,
       answered: Boolean(head.lastOut && head.lastIn && head.lastOut >= head.lastIn),
       knownCcs: await knownCcsFor(organizationId, head.personId),
     };

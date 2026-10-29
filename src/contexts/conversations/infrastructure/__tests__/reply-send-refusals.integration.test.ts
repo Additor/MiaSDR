@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundLinkedInInput } from "../../application/linkedin-ports";
 import type { LinkedInReplyDeps } from "../../application/linkedin-reply";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
+import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
 import { useReplyKit, type ReplyFixture, type ReplyModules } from "./replies-test-kit";
 
 /**
@@ -160,10 +160,10 @@ describeDb("Email reply send refusals", () => {
       const f = await fixture();
       const { draft, recordId } = await withDraft(f);
       await handling.closeRecord(handlingDeps, f.actor, recordId, { reason: "Went with a competitor" });
-      expect(await one("select status, error from drafts where id = $1", [draft.id])).toMatchObject({ status: "stale", error: "A person closed reply handling after this draft was written." });
+      expect(await one("select status, error from drafts where id = $1", [draft.id])).toMatchObject({ status: "stale", error: "A person marked reply handling done after this draft was written." });
       expect(await refusal(approve(f, draft))).toEqual(CLOSED);
       await handling.reopenRecord(handlingDeps, f.actor, recordId);
-      expect(await refusal(approve(f, draft))).toEqual({ status: 409, error: "A person closed reply handling after this draft was written. Review the thread and regenerate the draft." });
+      expect(await refusal(approve(f, draft))).toEqual({ status: 409, error: "A person marked reply handling done after this draft was written. Review the thread and regenerate the draft." });
       expect(await count("send_attempts", f.org)).toBe(0);
     });
 
@@ -182,8 +182,11 @@ describeDb("Email reply send refusals", () => {
       expect(mailbox.delivered.length).toBe(before);
       expect(await count("send_attempts", f.org)).toBe(0);
       expect(await one("select workflow_state, closed_reason from records where id = $1", [recordId])).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
-      // The panel turns Approve and send off with the same sentence.
-      expect((await panel(f, r.conversationId)).mailboxIssue).toBe(CLOSED.error);
+      // The panel says so in place of the composer and offers no AI draft; asked anyway, the AI writes none.
+      expect(await panel(f, r.conversationId)).toMatchObject({ mailboxIssue: CLOSED.error, closed: CLOSED.error, canGenerate: false });
+      expect(await refusal(mgmt.requestDraft(f.replyDeps, f.actor, r.conversationId))).toEqual(CLOSED);
+      expect(await refusal(mgmt.regenerateDraft(f.replyDeps, f.actor, late.id, {}))).toEqual(CLOSED);
+      expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
   });
 });
@@ -383,11 +386,33 @@ describeDb("LinkedIn reply send refusals", () => {
       const f = await fixture();
       const draft = await draftFor(f);
       await handling.closeRecord(handlingDeps, f.actor, f.recordId, { reason: "Not a fit" });
-      expect(await one("select status, error from drafts where id = $1", [draft.draftId])).toMatchObject({ status: "stale", error: "A person closed reply handling after this draft was written." });
+      expect(await one("select status, error from drafts where id = $1", [draft.draftId])).toMatchObject({ status: "stale", error: "A person marked reply handling done after this draft was written." });
       expect(await refusal(send(f, draft))).toEqual(CLOSED);
       await handling.reopenRecord(handlingDeps, f.actor, f.recordId);
-      expect(await refusal(send(f, draft))).toEqual({ status: 409, error: "A person closed reply handling after this draft was written. Review the thread and regenerate the draft." });
+      expect(await refusal(send(f, draft))).toEqual({ status: 409, error: "A person marked reply handling done after this draft was written. Review the thread and regenerate the draft." });
       expect(await count("send_attempts", f.org)).toBe(0);
+    });
+
+    it("lands a close after a typed reply that already read reply handling open, and refuses the next one", async () => {
+      // The send holds the conversation and has read the workflow state; it waits here on the account lock. Its new draft
+      // is not visible to the close, so only the conversation lock can order the two.
+      const f = await fixture();
+      let reply!: Promise<unknown>;
+      let close!: Promise<unknown>;
+      await sql.begin(async (tx) => {
+        await tx`select id from linkedin_accounts where id = ${f.account} for update`;
+        reply = send(f, { text: "Sent before the close." });
+        reply.catch(() => undefined);
+        await waitForLockWaiters(sql, 1, 10_000, "%linkedin_accounts%");
+        close = handling.closeRecord(handlingDeps, f.actor, f.recordId, { reason: "Not a fit" });
+        close.catch(() => undefined);
+        await waitForLockWaiters(sql, 1, 10_000, "%conversations%for share%");
+      });
+      expect(await reply).toMatchObject({ status: "sent" });
+      await close;
+      expect(f.fake.messages.map((m) => m.text)).toEqual(["Sent before the close."]);
+      expect(await one("select workflow_state from records where id = $1", [f.recordId])).toMatchObject({ workflow_state: "closed" });
+      expect(await refusal(send(f, { text: "And one more." }))).toEqual(CLOSED);
     });
 
     it("refuses typed text with no draft, says so on the panel, and the record stays closed", async () => {
@@ -396,7 +421,9 @@ describeDb("LinkedIn reply send refusals", () => {
       expect(await refusal(send(f, { text: "One last note." }))).toEqual(CLOSED);
       expect(f.fake.messages).toEqual([]);
       expect(await count("send_attempts", f.org)).toBe(0);
-      expect((await app.getLinkedInReplyPanel(f.deps, f.actor, f.conversationId))?.issue).toBe(CLOSED.error);
+      // AI is on for the organization, and the panel still offers no draft.
+      const withAi = { ...f.deps, aiStatus: async () => ({ state: "demo" as const }) };
+      expect(await app.getLinkedInReplyPanel(withAi, f.actor, f.conversationId)).toMatchObject({ issue: CLOSED.error, markedDone: true, canGenerate: false });
       expect(await one("select workflow_state, closed_reason from records where id = $1", [f.recordId])).toMatchObject({ workflow_state: "closed", closed_reason: "Not a fit" });
     });
   });

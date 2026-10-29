@@ -356,6 +356,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       recipient: head.name ?? head.firstName,
       accountLabel: account?.name ?? account?.username ?? "LinkedIn account",
       issue,
+      markedDone: head.workflowState === "closed",
       doNotContact: dnc,
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,

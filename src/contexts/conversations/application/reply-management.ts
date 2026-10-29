@@ -9,6 +9,7 @@ import type { ReplyAiResolver } from "../ai/application/ai-ports";
 import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
 import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext } from "./reply-ports";
 import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
+import { checkNoneInFlight, checkRecordOpen } from "../domain/reply-send";
 
 /**
  * Human actions on drafts. Permissions: any member of the organization may edit, regenerate, discard,
@@ -49,7 +50,7 @@ export async function getReplyPanel(deps: ReplyDeps, actor: Actor, conversationI
   if (panel.channel !== "email") return null;
   const status = await deps.ai.status(actor.organizationId);
   const aiConfigured = aiIsOn(status);
-  return { ...panel, aiConfigured, aiOff: aiOffMessage(status, readerOf(actor)), canManageAi: isOwnerOrAdmin(actor.role), canGenerate: aiConfigured && panel.recipient !== null };
+  return { ...panel, aiConfigured, aiOff: aiOffMessage(status, readerOf(actor)), canManageAi: isOwnerOrAdmin(actor.role), canGenerate: aiConfigured && panel.recipient !== null && panel.workflowState !== "closed" };
 }
 
 async function requireProvider(deps: ReplyDeps, actor: Actor) {
@@ -65,10 +66,9 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
   const ctx = await deps.store.draftContext(actor.organizationId, conversationId);
   if (!ctx) throw new NotFoundError("Conversation not found");
   const panel = await deps.store.panel(actor.organizationId, conversationId);
+  if (panel) checkRecordOpen(panel, ctx.channel);
   if (panel?.draft && UNSENT_DRAFT_STATUSES.includes(panel.draft.status)) throw new ConflictError("This thread already has a draft. Edit or regenerate it.");
-  if (panel?.draft && IN_FLIGHT_DRAFT_STATUSES.includes(panel.draft.status)) {
-    throw new ConflictError("A reply is being sent for this thread.");
-  }
+  checkNoneInFlight(panel?.draft && IN_FLIGHT_DRAFT_STATUSES.includes(panel.draft.status) ? panel.draft : null, null, ctx.channel);
   try {
     const result = await produceDraft(provider, ctx);
     return {
@@ -114,6 +114,8 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
   if (!["awaiting_review", "failed", "stale"].includes(ctx.draft.status)) {
     throw new ConflictError(`A draft that is ${ctx.draft.status.replace(/_/g, " ")} cannot be regenerated.`);
   }
+  const panel = await deps.store.panel(actor.organizationId, ctx.conversationId);
+  if (panel) checkRecordOpen(panel, ctx.channel);
   const note = input.note?.trim().slice(0, 2000) || null;
   try {
     const result = await produceDraft(provider, ctx, { feedback: note, previousDraft: ctx.draft.editedBodyText ?? ctx.draft.aiBodyText });

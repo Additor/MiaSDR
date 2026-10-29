@@ -59,7 +59,7 @@ export function replyRefusal(reason: ReplyRefusalReason, channel: ReplyChannel, 
   return new row.error(row.text(channel, detail));
 }
 
-/** A person closed reply handling (`records.workflow_state = 'closed'`). Reopen, or a new inbound message, opens it again. */
+/** A person marked reply handling done (`records.workflow_state = 'closed'`). Reopen, or a new inbound message, opens it again. */
 export function checkRecordOpen(record: { workflowState: string }, channel: ReplyChannel): void {
   if (record.workflowState === "closed") throw replyRefusal("handling_closed", channel);
 }
@@ -111,8 +111,12 @@ export function checkDraftCurrent(
   return draft.expectedContextVersion === expected.contextVersion ? null : NEWER_MESSAGE;
 }
 
-/** Why a send found its draft written for an older context version. */
+/**
+ * The reasons a draft goes stale on a reply send rule, stored in `drafts.error` and named again by its refusal. Why a send
+ * found its draft written for an older context version, and why marking reply handling done retired it.
+ */
 export const NEWER_MESSAGE = "A newer message arrived after this draft was written.";
+export const MARKED_DONE = "A person marked reply handling done after this draft was written.";
 
 export const staleDraftRefusal = (reason: string, channel: ReplyChannel) => replyRefusal("draft_stale", channel, { staleReason: reason });
 

@@ -521,7 +521,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await replies.closeRecord(deps, f.actor, l.recordId, { reason: "Went with a competitor" });
       expect(await rec(l.recordId)).toMatchObject({ workflow_state: "closed", closed_reason: "Went with a competitor" });
       const demo = await sub(f, "demo_request");
-      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version })).rejects.toThrow(/closed/);
+      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version })).rejects.toThrow(/marked done/);
     });
 
     it("reopens a closed record once", async () => {
