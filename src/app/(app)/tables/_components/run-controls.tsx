@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { countOf, formatCount } from "@/shared/format-number";
-import { gridUrl, type GridResponse } from "../_lib/data/client";
+import { gridRequest, gridUrl, type GridResponse } from "../_lib/data/client";
 import { useCellRequest } from "../_lib/data/cell-request";
 import { buildRunBody, centsCapIsInert, DEFAULT_FIRST_N, estimateByProvider, estimateHeadline, retrySummary, runSummary, stopSummary, type RunEstimate, type RunScope } from "../_lib/data/run-request";
 import type { GridColumn, JobCounts } from "../_lib/data/types";
@@ -198,7 +198,6 @@ export function RunProgress({
   /** Filters the grid to the rows whose run failed. */
   onShowFailed?: () => void;
 }) {
-  const cellRequest = useCellRequest();
   const [busy, setBusy] = useState(false);
   if (!jobs) return null;
   const pending = jobs.queued + jobs.running + jobs.waiting;
@@ -209,7 +208,8 @@ export function RunProgress({
 
   async function stop() {
     setBusy(true);
-    const res = await cellRequest<{ cancelled: number }>(gridUrl.sub(tableId, "run"), "DELETE");
+    // Stop goes out at once: waiting for queued edits, or refusing for a held conflict, would keep a paid run going.
+    const res = await gridRequest<{ cancelled: number }>(gridUrl.sub(tableId, "run"), "DELETE");
     setBusy(false);
     if (!res.ok) toast.error(res.error ?? "Could not stop the run.");
     else toast.success(stopSummary(res.data?.cancelled ?? 0));

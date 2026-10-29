@@ -270,7 +270,7 @@ describeDb("grid core", () => {
       const after = await rowsOf(actor, tableId);
       expect(after.map((r) => r.cells.full ?? null)).toEqual(["Ada Lovelace", "Grace Hopper Murray", null]);
       const removed = before.filter((r) => !after.some((a) => a.id === r.id)).map((r) => r.id);
-      expect(result).toEqual({ deleted: 1, rowIds: removed });
+      expect(result).toEqual({ deleted: 1, rowIds: removed, truncated: false });
     });
   });
 

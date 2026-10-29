@@ -222,10 +222,11 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
   }
 
   async function exportCsv(onlySelected: boolean) {
-    // The file holds stored cells, so queued edits land first.
-    if (!(await grid.settle())) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
+    // Busy first, so a second click while queued edits land does not download twice.
     setBusy(true);
     try {
+      // The file holds stored cells, so queued edits land first.
+      if (!(await grid.settle())) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
       const response = await fetch(gridUrl.sub(tableId, "export"), {
         method: "POST",
         headers: { "content-type": "application/json" },
