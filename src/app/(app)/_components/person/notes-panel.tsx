@@ -36,7 +36,7 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
   const base = target.recordId !== undefined ? `/api/records/${target.recordId}/notes` : `/api/people/${target.personId}/notes`;
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const { busy, run } = useApiAction<"add" | "save">();
+  const { isBusy, run } = useApiAction<"add" | "save">();
   const refresh = () => router.refresh();
   const [editing, setEditing] = useState<{ id: string; title: string; body: string } | null>(null);
   // The target stays set while the dialog closes, so its title does not change mid-animation.
@@ -89,8 +89,8 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
         />
         <FieldError>{error}</FieldError>
         <div>
-          <Button type="submit" size="sm" variant="outline" disabled={busy !== null} touch>
-            {busy === "add" ? "Adding…" : "Add note"}
+          <Button type="submit" size="sm" variant="outline" disabled={isBusy("add")} touch>
+            {isBusy("add") ? "Adding…" : "Add note"}
           </Button>
         </div>
       </form>
@@ -104,8 +104,8 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
                   <Input aria-label="Note title" value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} maxLength={200} placeholder="Title (optional)" />
                   <Textarea aria-label="Note text" value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} maxLength={10_000} />
                   <div className="flex gap-2">
-                    <Button type="button" size="sm" onClick={save} disabled={busy !== null || editing.body.trim() === ""} touch>
-                      {busy === "save" ? "Saving…" : "Save"}
+                    <Button type="button" size="sm" onClick={save} disabled={isBusy("save") || editing.body.trim() === ""} touch>
+                      {isBusy("save") ? "Saving…" : "Save"}
                     </Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)} touch>
                       Cancel

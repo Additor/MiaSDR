@@ -12,8 +12,8 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { runApiAction } from "@/app/_lib/api-action";
-import { toastOrThrow } from "@/app/_lib/use-api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { AiModelCard } from "./ai-model-card";
 import { EnrichmentProviders } from "./enrichment-providers";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
@@ -44,7 +44,8 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
   const router = useRouter();
   const [providerKey, setProviderKey] = useState(providers[0]?.key ?? "");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   const [removing, setRemoving] = useState<Account | null>(null);
   const provider = providers.find((p) => p.key === providerKey);
   const items = providers.map((p) => ({ value: p.key, label: p.label }));
@@ -62,17 +63,17 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
     const form = event.currentTarget;
     const data = new FormData(form);
     const values = Object.fromEntries(provider.fields.map((f) => [f.name, String(data.get(f.name) ?? "")]));
-    setPending(true);
-    setError(null);
-    const result = await callApi("/api/integrations", "POST", { providerKey, values });
-    setPending(false);
+    const result = await run("save", async () => {
+      setError(null);
+      return runApiAction(callApi("/api/integrations", "POST", { providerKey, values }), { refresh: () => router.refresh() });
+    });
+    if (!result) return;
     if (!result.ok) {
       setError(result.error);
       return;
     }
     form.reset();
     toast.success(connected.has(providerKey) ? "Key replaced." : "Key saved.");
-    router.refresh();
   }
 
   /** Points the key form at `key` and puts the cursor in its first field, for the AI model card's "Replace key". */

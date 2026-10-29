@@ -3,26 +3,22 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 
 /** Marks the thread read when it opens. The button stays for the case where that call failed. */
 export function MarkRead({ id, unread }: { id: string; unread: number }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"read">();
   const attempted = useRef(false);
 
-  async function mark() {
-    setPending(true);
-    const result = await callApi(`/api/inbox/${id}/read`, "POST");
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setError(null);
-    router.refresh();
-  }
+  const mark = () =>
+    run("read", async () => {
+      const result = await runApiAction(callApi(`/api/inbox/${id}/read`, "POST"), { refresh: () => router.refresh() });
+      setError(result.ok ? null : result.error);
+    });
 
   useEffect(() => {
     if (unread === 0 || attempted.current) return;
@@ -39,8 +35,8 @@ export function MarkRead({ id, unread }: { id: string; unread: number }) {
           {error}
         </span>
       )}
-      <Button variant="outline" size="sm" onClick={mark} disabled={pending}>
-        Mark as read
+      <Button variant="outline" size="sm" onClick={() => void mark()} disabled={isBusy("read")}>
+        {isBusy("read") ? "Marking…" : "Mark as read"}
       </Button>
     </div>
   );

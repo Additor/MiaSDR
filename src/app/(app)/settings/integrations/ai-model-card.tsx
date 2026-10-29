@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { SettingsSection } from "../settings-section";
 import { ModelCombobox } from "./model-combobox";
 
@@ -82,7 +84,8 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
   const [view, setView] = useState<ModelView | null>(null);
   const [choice, setChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   /** The provider whose models are loading after a switch in the picker. */
   const [loading, setLoading] = useState<string | null>(null);
   // Each request takes a ticket; only the latest one may update the card, so a slow earlier answer cannot win.
@@ -123,20 +126,20 @@ export function AiModelCard({ onReplaceKey }: { onReplaceKey?: (connection: stri
 
   async function save() {
     if (!view?.connection) return;
-    setPending(true);
-    setError(null);
-    // A provider load still in flight would describe the card from before the save, so it no longer applies.
-    latest.current++;
-    setLoading(null);
-    const result = await callApi<ModelView>("/api/integrations/ai-model", "PUT", { connection: view.connection, model: choice === DEFAULT_VALUE ? null : choice });
-    setPending(false);
-    if (!result.ok || !result.data) {
+    const result = await run("save", async () => {
+      setError(null);
+      // A provider load still in flight would describe the card from before the save, so it no longer applies.
+      latest.current++;
+      setLoading(null);
+      // The Connected list below is server-rendered, so the refresh moves "Runs AI" and the removal warning with the switch.
+      return runApiAction(callApi<ModelView>("/api/integrations/ai-model", "PUT", { connection: view.connection, model: choice === DEFAULT_VALUE ? null : choice }), { refresh: () => router.refresh(), expectData: true });
+    });
+    if (!result) return;
+    if (!result.ok) {
       setError(result.error);
       return;
     }
     apply(result.data);
-    // The Connected list below is server-rendered: refresh it so "Runs AI" and the removal warning follow the switch.
-    router.refresh();
     const running = result.data.status;
     const label = view.connections.find((c) => c.key === view.connection)?.label ?? "this provider";
     if (running.state !== "on") toast.success("Model saved.");

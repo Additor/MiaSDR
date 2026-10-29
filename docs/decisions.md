@@ -77,13 +77,14 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 
 ### Change actions
 
-- A screen sends a change through `runApiAction(callApi(...), { refresh, onConflict })` (`src/app/_lib/api-action.ts`). It returns a success with `data` or a failure with one sentence in `error`, and never throws.
-- `refresh` (the page's `router.refresh`) runs after a success and after a 404 or 409, since those say the page shows something the server no longer holds. A 401, a refused input and an unanswered call leave the page alone, so the person keeps what they typed.
-- `onConflict` maps a 409 code to the screen's own step. A handler that returns a sentence replaces `error`; the deal pages use it for `stale_version`, a person screen for `try_again` with the person named.
+- A screen sends a change through `runApiAction(callApi(...), { refresh, onConflict, expectData })` (`src/app/_lib/api-action.ts`). It returns a success with `data` or a failure with one sentence in `error`, and never throws.
+- A success carries `data: T | null`, since a change can answer 204. A screen that reads the answer passes `expectData: true`; a success without a body then comes back as a failure saying the change saved and the page needs a reload.
+- `refresh` (the page's `router.refresh`) runs after a success and after a 404 or 409, since those say the page shows something the server no longer holds. A 401, a refused input and an unanswered call leave the page alone, so the person keeps what they typed. A screen whose success navigates away passes no `refresh` and reloads from `onConflict` when a conflict needs it.
+- `onConflict` maps a 409 code to the screen's own step. A handler that returns a sentence replaces `error`: the deal pages use it for `stale_version`, the person and company screens for `try_again` with the name, setup for `already_set_up`.
 - A ConfirmDialog's `onConfirm` passes the result through `orThrow`, or `toastOrThrow` with a success toast (`src/app/_lib/use-api-action.ts`). A refusal rejects, and the dialog stays open with the reason.
-- `useApiAction()` holds a screen's busy state: `run(key, work)` marks `key` busy and drops a second call while one runs, with a ref, so a double click sends one request. Buttons read `busy` to disable themselves and show their pending label. `toastResult` shows the outcome of an action outside a dialog.
-- `runApiAction` has unit tests; the hook has none, since vitest runs in node without a DOM. The settings, organization, deal, contact and company e2e specs cover the screens.
-- The flows that show an error per row (the Actions queue) and Tables (`gridRequest`) keep their own handling.
+- `useApiAction()` holds a screen's busy state per key: `run(key, work)` marks `key` busy and drops a repeat of the same key while it runs, with a ref, so a double click sends one request and other rows keep working. `isBusy(key)` disables and labels the control; actions that would conflict (a list's order and its members, a campaign's status changes) share one key, with a comment saying why. `toastResult` shows the outcome of an action outside a dialog.
+- `src/architecture/change-actions.test.ts` holds the rule: in a `"use client"` file, a `callApi` with any method but a literal `"GET"` is the first argument of `runApiAction`. Its shrink-only list names the files that keep their own handling: the Actions queue, which shows a refusal per row, and the reply send, reply draft and after-reply controls of a thread. Tables sends its requests through `gridRequest` and `cellRequest`.
+- `runApiAction` has unit tests; the hook has none, since vitest runs in node without a DOM. The e2e specs of each screen cover the wiring.
 
 ### Route matrix
 

@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import {
   CREATE_CHUNK,
@@ -120,12 +121,13 @@ export function CreateDealDialog({ open, onOpenChange, mode, person, members, cu
     key.current = "";
     if (mode !== "lead") return;
     let live = true;
-    void callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: [person.id] }).then((result) => {
+    // A read sent as POST: nothing changes, so nothing reloads.
+    void runApiAction(callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: [person.id] }), { expectData: true }).then((result) => {
       if (!live) return;
-      if (result.ok && result.data) {
+      if (result.ok) {
         setPreview(result.data);
         if (result.data.alreadyContacts > 0) setAlready({ dealId: null });
-      } else setPreviewError(result.error ?? "Could not check what this changes. Try again.");
+      } else setPreviewError(result.error);
     });
     return () => {
       live = false;
@@ -147,16 +149,17 @@ export function CreateDealDialog({ open, onOpenChange, mode, person, members, cu
   async function create(): Promise<boolean> {
     key.current ||= newIdempotencyKey();
     const fields = { ...dealRequestFields(form, true), idempotencyKey: key.current };
-    const result =
-      mode === "lead"
-        ? await callApi<{ dealId: string }>(`/api/leads/${person.id}/convert`, "POST", fields)
-        : await callApi<{ dealId: string }>("/api/deals", "POST", { ...fields, personId: person.id });
-    if (!result.ok || !result.data) {
+    // A success opens the deal or hands it to `onCreated`, so nothing reloads here.
+    const result = await runApiAction(
+      mode === "lead" ? callApi<{ dealId: string }>(`/api/leads/${person.id}/convert`, "POST", fields) : callApi<{ dealId: string }>("/api/deals", "POST", { ...fields, personId: person.id }),
+      { expectData: true },
+    );
+    if (!result.ok) {
       if (result.code === "already_converted") {
         setAlready({ dealId: typeof result.details?.dealId === "string" ? result.details.dealId : null });
         return false;
       }
-      throw new Error(result.error ?? "Could not create the deal. Try again.");
+      throw new Error(result.error);
     }
     toast.success(mode === "lead" ? `Created deal. ${name} is a contact now.` : "Created deal.");
     if (onCreated) onCreated(result.data.dealId);
@@ -255,9 +258,9 @@ export function CreateDealsBulkDialog({ open, onOpenChange, ids, members, curren
     void (async () => {
       const parts: ConvertPreview[] = [];
       for (const chunk of chunks(ids, PREVIEW_CHUNK)) {
-        const result = await callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: chunk });
+        const result = await runApiAction(callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: chunk }), { expectData: true });
         if (!live) return;
-        if (!result.ok || !result.data) return setPreviewError(result.error ?? "Could not check what this changes. Try again.");
+        if (!result.ok) return setPreviewError(result.error);
         parts.push(result.data);
       }
       setPreview(sumPreviews(parts));
@@ -284,12 +287,13 @@ export function CreateDealsBulkDialog({ open, onOpenChange, ids, members, curren
     const reports: BulkReport[] = [];
     setProgress({ done: 0, total: ids.length });
     for (const chunk of parts) {
-      const result = await callApi<BulkReport>("/api/leads/convert", "POST", { ids: chunk, ...fields });
-      if (!result.ok || !result.data) {
+      // The page reloads once, after the last chunk or the first refusal.
+      const result = await runApiAction(callApi<BulkReport>("/api/leads/convert", "POST", { ids: chunk, ...fields }), { expectData: true });
+      if (!result.ok) {
         const merged = mergeReports(reports);
         setReport(merged);
         router.refresh();
-        throw new Error(`${result.error ?? "Something went wrong."} ${merged.created.length > 0 ? `${bulkReportText(merged)} ` : ""}Try again for the rest; people who already have a deal are skipped.`);
+        throw new Error(`${result.error} ${merged.created.length > 0 ? `${bulkReportText(merged)} ` : ""}Try again for the rest; people who already have a deal are skipped.`);
       }
       reports.push(result.data);
       setProgress((p) => ({ ...p, done: p.done + chunk.length }));
@@ -298,8 +302,8 @@ export function CreateDealsBulkDialog({ open, onOpenChange, ids, members, curren
     // One more pass for the ids a chunk could not finish (a lock or its time budget). Whatever is still left is reported.
     const again = retryableIds(merged);
     for (const chunk of chunks(again, CREATE_CHUNK)) {
-      const result = await callApi<BulkReport>("/api/leads/convert", "POST", { ids: chunk, ...fields });
-      if (!result.ok || !result.data) break;
+      const result = await runApiAction(callApi<BulkReport>("/api/leads/convert", "POST", { ids: chunk, ...fields }), { expectData: true });
+      if (!result.ok) break;
       merged = applyRetry(merged, result.data);
     }
     setReport(merged);

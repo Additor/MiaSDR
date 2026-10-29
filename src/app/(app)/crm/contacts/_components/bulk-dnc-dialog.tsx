@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { DNC_CONSEQUENCE, DNC_REASON_REQUIRED } from "@/app/(app)/_components/person/dnc-control";
 import { chunks } from "@/app/(app)/_components/chunks";
@@ -42,14 +43,15 @@ export function BulkDncDialog({ open, ids, onClose }: { open: boolean; ids: read
     const reports: DncReport[] = [];
     setProgress({ done: 0, total: ids.length });
     for (const chunk of chunks(ids, DNC_CHUNK)) {
-      const result = await callApi<DncReport>("/api/people/dnc", "POST", { ids: chunk, reason });
-      if (!result.ok || !result.data) {
+      // The bar reloads the list when the dialog closes, so no chunk reloads it.
+      const result = await runApiAction(callApi<DncReport>("/api/people/dnc", "POST", { ids: chunk, reason }), { expectData: true });
+      if (!result.ok) {
         if (reports.length > 0) {
           const merged = mergeDncReports(reports);
           setReport(merged);
-          throw new Error(`${result.error ?? "Something went wrong."} ${dncReportText(merged)} Try again for the rest; people already marked are skipped.`);
+          throw new Error(`${result.error} ${dncReportText(merged)} Try again for the rest; people already marked are skipped.`);
         }
-        throw new Error(result.error ?? "Something went wrong. Try again.");
+        throw new Error(result.error);
       }
       reports.push(result.data);
       setProgress((p) => ({ ...p, done: p.done + chunk.length }));

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { runApiAction } from "@/app/_lib/api-action";
 import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { permanenceText, singleEffectsText, type ConvertPreview } from "../../crm/_components/deal-effects";
 
@@ -30,10 +31,11 @@ export function MakeContactDialog({ personId, name, open, onOpenChange: setOpen 
   useEffect(() => {
     if (!open) return;
     let live = true;
-    void callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: [personId] }).then((result) => {
+    // A read sent as POST: nothing changes, so nothing reloads.
+    void runApiAction(callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: [personId] }), { expectData: true }).then((result) => {
       if (!live) return;
-      if (result.ok && result.data) setPreview(result.data);
-      else setPreviewError(result.error ?? "Could not check what this changes. Try again.");
+      if (result.ok) setPreview(result.data);
+      else setPreviewError(result.error);
     });
     return () => {
       live = false;
@@ -46,16 +48,16 @@ export function MakeContactDialog({ personId, name, open, onOpenChange: setOpen 
   };
 
   async function make() {
-    const result = await callApi(`/api/leads/${personId}/make-contact`, "POST", {});
+    // A success opens the contact page, so nothing reloads this one first.
+    const result = await runApiAction(callApi(`/api/leads/${personId}/make-contact`, "POST", {}), { onConflict: { try_again: () => apiMessage("try_again", name) } });
     if (result.ok || result.code === "already_converted") {
       toast.success(`${name} is a contact now.`);
       done();
       return;
     }
     if (result.status === 404) throw new Error(`${name} no longer exists.`);
-    if (result.code === "try_again") throw new Error(apiMessage("try_again", name));
     // `personal_campaign` carries PERSONAL_CAMPAIGN_MESSAGE; other refusals carry their own sentence.
-    throw new Error(result.error ?? "Could not make this lead a contact. Try again.");
+    throw new Error(result.error);
   }
 
   let description: string;

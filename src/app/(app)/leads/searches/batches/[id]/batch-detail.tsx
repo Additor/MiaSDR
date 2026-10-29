@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { batchRowActions, hasActiveSearch, searchNotice, searchStatusLabel, type BatchRowActionId, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
 import { runNowConfirmation, searchableLeft } from "@/contexts/outreach/linkedin/domain/linkedin-search-capacity";
-import { runApiAction } from "@/app/_lib/api-action";
+import { orThrow, runApiAction, type ActionFailure } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
@@ -67,8 +67,8 @@ interface Reply {
 
 export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; capacity: CapacityCardData; canManage: boolean }) {
   const router = useRouter();
-  // A row action from the menu runs once; a second pick while it runs sends nothing.
-  const { run: rowAction } = useApiAction();
+  // Each search runs its own actions; the header's "Run again" has its own key.
+  const { run, isBusy } = useApiAction();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const timeZone = useOrgTimeZone();
   const [danger, setDanger] = useState<Danger | null>(null);
@@ -90,39 +90,46 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     setPasted("");
   }
 
-  async function rerun(ids?: string[]) {
-    const result = await callApi<{ rerun: number }>(`/api/linkedin/search-batches/${batch.id}/rerun`, "POST", ids ? { ids } : {});
-    if (!result.ok) toast.error(result.error ?? "Could not queue the searches again. Try again.");
-    else toast.success(result.data?.rerun ? `${searches(result.data.rerun)} queued again.` : "No failed searches to queue.");
-    router.refresh();
-  }
+  const refresh = () => router.refresh();
+
+  /** The server's sentence with the first few per-field problems, for a refusal shown in a dialog. */
+  const refusal = (failure: ActionFailure) => [failure.error, ...failure.issues.slice(0, 5).map((i) => i.message)].join(" ");
+
+  /** Queues failed searches again: the whole batch from the header (`key` "rerun"), one search from its row. */
+  const rerun = (key: string, ids?: string[]) =>
+    run(key, async () => {
+      const result = await runApiAction(callApi<{ rerun: number }>(`/api/linkedin/search-batches/${batch.id}/rerun`, "POST", ids ? { ids } : {}), { refresh });
+      if (!result.ok) toast.error(result.error);
+      else toast.success(result.data?.rerun ? `${searches(result.data.rerun)} queued again.` : "No failed searches to queue.");
+    });
 
   /** The confirmed "Run now" and "Run selected". A failure throws, so ConfirmDialog keeps the dialog open and shows the message. */
   async function confirmRun() {
     if (!runAsk) return;
-    const result = await callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", runAsk.ids ? { ids: runAsk.ids } : {});
-    if (!result.ok) throw new Error(result.error ?? "Could not run the searches. Try again.");
-    toast.success(result.data?.queued ? `${formatCount(result.data.queued)} ${result.data.queued === 1 ? "search is" : "searches are"} ready to run. Each account still reads within its daily limit.` : "No paused or queued searches to run.");
+    const data = orThrow(await runApiAction(callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", runAsk.ids ? { ids: runAsk.ids } : {}), { refresh }));
+    toast.success(data?.queued ? `${formatCount(data.queued)} ${data.queued === 1 ? "search is" : "searches are"} ready to run. Each account still reads within its daily limit.` : "No paused or queued searches to run.");
     setSelected(new Set());
-    router.refresh();
   }
 
   const runOne = (id: string) =>
-    rowAction(id, async () => {
-      const result = await runApiAction(callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", { ids: [id] }), { refresh: () => router.refresh() });
+    run(`${id}:run`, async () => {
+      const result = await runApiAction(callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", { ids: [id] }), { refresh });
       if (!result.ok) toast.error(result.error);
-      else toast.success(result.data.queued ? "The search is ready to run. Its account still reads within its daily limit." : "That search is not paused or queued.");
+      else toast.success(result.data?.queued ? "The search is ready to run. Its account still reads within its daily limit." : "That search is not paused or queued.");
     });
 
   const act = (id: string, action: SearchAction) =>
-    rowAction(id, async () => {
-      const result = await runApiAction(callApi(`/api/linkedin/searches/${id}/action`, "POST", { action }), { refresh: () => router.refresh() });
+    run(`${id}:${action}`, async () => {
+      const result = await runApiAction(callApi(`/api/linkedin/searches/${id}/action`, "POST", { action }), { refresh });
       if (!result.ok) toast.error(result.error);
     });
 
+  /** The row action that runs for a search, if one does. The row disables its controls while it runs. */
+  const rowBusy = (id: string) => ROW_ACTION_IDS.find((action) => isBusy(`${id}:${action}`)) ?? null;
+
   function onRowAction(item: Item, action: BatchRowActionId) {
     if (action === "run") void runOne(item.id);
-    else if (action === "rerun") void rerun([item.id]);
+    else if (action === "rerun") void rerun(`${item.id}:rerun`, [item.id]);
     else if (action === "cancel") setDanger({ kind: "cancel", id: item.id, name: itemName(item) });
     else if (action === "remove") setDanger({ kind: "remove", ids: [item.id] });
     else void act(item.id, action);
@@ -130,8 +137,11 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
 
   /** Queues the pasted URLs. A failure throws, so ConfirmDialog keeps the dialog open and shows the message. */
   async function addSearches() {
-    const result = await callApi<{ added: number; alreadyInBatch: number; alreadyQueued: number; duplicatesInList: number; rejectedCount: number }>(`/api/linkedin/search-batches/${batch.id}/queries`, "POST", { urls: pasted.split(/\r?\n/) });
-    if (!result.ok) throw new Error([result.error, ...result.issues.slice(0, 5).map((i) => i.message)].filter(Boolean).join(" ") || "Could not queue the searches. Try again.");
+    const result = await runApiAction(
+      callApi<{ added: number; alreadyInBatch: number; alreadyQueued: number; duplicatesInList: number; rejectedCount: number }>(`/api/linkedin/search-batches/${batch.id}/queries`, "POST", { urls: pasted.split(/\r?\n/) }),
+      { refresh },
+    );
+    if (!result.ok) throw new Error(refusal(result));
     if (result.data) {
       const d = result.data;
       const skipped = [d.rejectedCount && `${d.rejectedCount} refused`, d.duplicatesInList && `${d.duplicatesInList} repeated`, d.alreadyInBatch && `${d.alreadyInBatch} already in the batch`, d.alreadyQueued && `${d.alreadyQueued} already queued`].filter(Boolean);
@@ -139,29 +149,31 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     }
     setPasted("");
     setSelected(new Set());
-    router.refresh();
   }
 
   /** Runs the confirmed action. A failure throws, so ConfirmDialog keeps the dialog open and shows the message. */
   async function confirmDanger() {
     if (!danger) return;
-    let result;
+    // A deleted batch leaves the page, so only the other actions reload it on success.
+    const options = danger.kind === "batch" ? {} : { refresh };
     if (danger.kind === "remove") {
-      result = await callApi<{ removed: number; resultsRemoved: number }>(`/api/linkedin/search-batches/${batch.id}/queries`, "DELETE", { ids: danger.ids });
-      if (result.ok && result.data) toast.success(`Removed ${searches(result.data.removed)} and ${countOf(result.data.resultsRemoved, "stored result")}.`);
+      const result = await runApiAction(callApi<{ removed: number; resultsRemoved: number }>(`/api/linkedin/search-batches/${batch.id}/queries`, "DELETE", { ids: danger.ids }), options);
+      if (!result.ok) throw new Error(refusal(result));
+      if (result.data) toast.success(`Removed ${searches(result.data.removed)} and ${countOf(result.data.resultsRemoved, "stored result")}.`);
     } else if (danger.kind === "results") {
-      result = await callApi<{ searches: number; resultsRemoved: number }>(`/api/linkedin/search-batches/${batch.id}/leads`, "DELETE", danger.ids ? { ids: danger.ids } : { all: true });
-      if (result.ok && result.data) toast.success(`Deleted ${countOf(result.data.resultsRemoved, "stored result")} of ${searches(result.data.searches)}.`);
+      const result = await runApiAction(callApi<{ searches: number; resultsRemoved: number }>(`/api/linkedin/search-batches/${batch.id}/leads`, "DELETE", danger.ids ? { ids: danger.ids } : { all: true }), options);
+      if (!result.ok) throw new Error(refusal(result));
+      if (result.data) toast.success(`Deleted ${countOf(result.data.resultsRemoved, "stored result")} of ${searches(result.data.searches)}.`);
     } else if (danger.kind === "cancel") {
-      result = await callApi(`/api/linkedin/searches/${danger.id}/action`, "POST", { action: "cancel" });
+      const result = await runApiAction(callApi(`/api/linkedin/searches/${danger.id}/action`, "POST", { action: "cancel" }), options);
+      if (!result.ok) throw new Error(refusal(result));
     } else {
-      result = await callApi<Reply>(`/api/linkedin/search-batches/${batch.id}`, "DELETE");
-      if (result.ok) toast.success("Batch deleted.");
+      const result = await runApiAction(callApi<Reply>(`/api/linkedin/search-batches/${batch.id}`, "DELETE"), options);
+      if (!result.ok) throw new Error(refusal(result));
+      toast.success("Batch deleted.");
     }
-    if (!result.ok) throw new Error([result.error, ...result.issues.slice(0, 5).map((i) => i.message)].filter(Boolean).join(" "));
     setSelected(new Set());
     if (danger.kind === "batch") router.push("/leads/searches/batches");
-    else router.refresh();
   }
 
   const toggle = (id: string, on: boolean) =>
@@ -192,8 +204,8 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
             Run now
           </Button>
           {failed > 0 && (
-            <Button variant="outline" touch onClick={() => rerun()}>
-              Rerun {formatCount(failed)} failed
+            <Button variant="outline" touch disabled={isBusy("rerun")} onClick={() => void rerun("rerun")}>
+              {isBusy("rerun") ? "Queuing…" : `Rerun ${formatCount(failed)} failed`}
             </Button>
           )}
         </div>
@@ -309,7 +321,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
                   <InLeads item={i} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <RowActions item={i} canRemove={canManage} onAction={onRowAction} className="justify-end" />
+                  <RowActions item={i} canRemove={canManage} busy={rowBusy(i.id)} onAction={onRowAction} className="justify-end" />
                 </TableCell>
               </TableRow>
             ))}
@@ -340,7 +352,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
               <p className="text-sm tabular-nums text-muted-foreground">
                 Found {formatCount(i.found)} / {formatCount(i.maxResults)}. In leads <InLeads item={i} />.
               </p>
-              <RowActions item={i} canRemove={canManage} onAction={onRowAction} />
+              <RowActions item={i} canRemove={canManage} busy={rowBusy(i.id)} onAction={onRowAction} />
             </li>
           ))}
         </ul>
@@ -423,20 +435,37 @@ function InLeads({ item: i }: { item: Item }) {
 }
 
 /** One or two buttons for the row's status and a menu for the rest. The status-to-actions rule lives in the domain. */
-function RowActions({ item, canRemove, onAction, className }: { item: Item; canRemove: boolean; onAction: (item: Item, action: BatchRowActionId) => void; className?: string }) {
+/** The row actions that send a request at once; Stop and Remove ask first in a dialog. */
+const ROW_ACTION_IDS: BatchRowActionId[] = ["run", "pause", "resume", "rerun"];
+const ROW_PENDING: Partial<Record<BatchRowActionId, string>> = { run: "Starting…", pause: "Pausing…", resume: "Resuming…", rerun: "Queuing…" };
+
+/** `busy` names the action that runs for this search; every control of the row waits for it. */
+function RowActions({
+  item,
+  canRemove,
+  busy,
+  onAction,
+  className,
+}: {
+  item: Item;
+  canRemove: boolean;
+  busy: BatchRowActionId | null;
+  onAction: (item: Item, action: BatchRowActionId) => void;
+  className?: string;
+}) {
   const { buttons, menu } = batchRowActions(item.status as SearchStatus, { canRemove });
   if (buttons.length === 0 && menu.length === 0) return null;
   const firstDestructive = menu.findIndex((a) => a.id === "cancel" || a.id === "remove");
   return (
     <div className={cn("flex flex-wrap gap-1", className)}>
       {buttons.map((a) => (
-        <Button key={a.id} size="sm" variant="outline" touch aria-label={`${a.label} ${itemName(item)}`} onClick={() => onAction(item, a.id)}>
-          {a.label}
+        <Button key={a.id} size="sm" variant="outline" touch disabled={busy !== null} aria-label={`${a.label} ${itemName(item)}`} onClick={() => onAction(item, a.id)}>
+          {busy === a.id ? (ROW_PENDING[a.id] ?? a.label) : a.label}
         </Button>
       ))}
       {menu.length > 0 && (
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button size="sm" variant="ghost" touch aria-label={`More actions for ${itemName(item)}`} />}>
+          <DropdownMenuTrigger render={<Button size="sm" variant="ghost" touch disabled={busy !== null} aria-label={`More actions for ${itemName(item)}`} />}>
             More
             <ChevronDownIcon aria-hidden />
           </DropdownMenuTrigger>

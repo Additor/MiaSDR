@@ -3,6 +3,7 @@
 import { EllipsisIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { DatePicker } from "@/components/shell/date-picker";
 import { Button } from "@/components/ui/button";
@@ -238,7 +239,7 @@ function DeleteDealDialog({ deal, returnPath, open, onOpenChange }: { deal: Deal
   const router = useRouter();
 
   async function remove() {
-    // A success leaves the page, so only a stale version reloads it.
+    // A success and a 404 leave the page, so only a stale version reloads it.
     const result = await runApiAction(callApi(`/api/deals/${deal.id}?expectedVersion=${deal.version}`, "DELETE"), {
       onConflict: {
         stale_version: () => {
@@ -247,7 +248,9 @@ function DeleteDealDialog({ deal, returnPath, open, onOpenChange }: { deal: Deal
         },
       },
     });
-    toastOrThrow(result, `Deleted ${deal.title}.`);
+    // A 404 means someone deleted the deal first: the person wanted it gone, so the dialog leaves the same way.
+    if (!result.ok && result.status === 404) toast.success(`${deal.title} was already deleted.`);
+    else toastOrThrow(result, `Deleted ${deal.title}.`);
     // Replace, so Back does not land on a deal that no longer exists.
     router.replace(returnPath);
   }

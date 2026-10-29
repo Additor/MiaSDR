@@ -72,26 +72,21 @@ export function MailboxList({
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction();
+  const pending = isBusy("connect");
+  const refresh = () => router.refresh();
 
-  async function connect(event: FormEvent<HTMLFormElement>) {
+  function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    setPending(true);
-    setError(null);
-    const result = await callApi("/api/mailboxes", "POST", { emailAddress: data.get("emailAddress"), displayName: data.get("displayName") || undefined });
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    form.reset();
-    router.refresh();
+    void run("connect", async () => {
+      setError(null);
+      const result = await runApiAction(callApi("/api/mailboxes", "POST", { emailAddress: data.get("emailAddress"), displayName: data.get("displayName") || undefined }), { refresh });
+      if (!result.ok) return setError(result.error);
+      form.reset();
+    });
   }
-
-  const { busy, run } = useApiAction();
-  const refresh = () => router.refresh();
 
   return (
     <div>
@@ -194,13 +189,13 @@ export function MailboxList({
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={busy !== null}
+                      disabled={isBusy(`test:${mailbox.id}`)}
                       onClick={() => void run(`test:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."))}
                     >
-                      {busy === `test:${mailbox.id}` ? "Checking…" : "Recheck connection"}
+                      {isBusy(`test:${mailbox.id}`) ? "Checking…" : "Recheck connection"}
                     </Button>
                     <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} refresh={refresh} />
-                    <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} busy={busy !== null} run={run} refresh={refresh} />
+                    <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} busy={isBusy(`enable:${mailbox.id}`)} run={run} refresh={refresh} />
                   </div>
                 )}
               </li>
@@ -227,7 +222,7 @@ function MailboxMenu({
 }: {
   mailbox: Mailbox;
   takeoverAfterHours: number;
-  /** True while another action of the list runs. */
+  /** True while this mailbox's Enable runs. */
   busy: boolean;
   run: ReturnType<typeof useApiAction>["run"];
   refresh: () => void;

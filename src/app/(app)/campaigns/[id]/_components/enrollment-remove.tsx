@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { runApiAction } from "@/app/_lib/api-action";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { canRemoveEnrollment } from "@/contexts/outreach/domain/enrollment-status";
@@ -41,10 +41,6 @@ interface RemoveResult {
   notFound: number;
 }
 
-async function removeIds(channel: Channel, campaignId: string, ids: string[]): Promise<RemoveResult | string> {
-  const result = await callApi<RemoveResult>(`${base(channel, campaignId)}/remove`, "POST", { ids });
-  return result.ok && result.data ? result.data : (result.error ?? "Could not remove the leads.");
-}
 
 /** Title, consequence and button of the remove dialog, for one named lead or a count of them. */
 function removeCopy(count: number, name?: string | null) {
@@ -90,13 +86,11 @@ export function EnrollmentSelectionProvider({ channel, campaignId, children }: {
   );
 
   async function confirm() {
-    const result = await removeIds(channel, campaignId, [...selected]);
-    if (typeof result === "string") throw new Error(result);
+    const result = orThrow(await runApiAction(callApi<RemoveResult>(`${base(channel, campaignId)}/remove`, "POST", { ids: [...selected] }), { refresh: () => router.refresh(), expectData: true }));
     setSelected(new Set());
     toast.success(
       `Removed ${countOf(result.removed, "lead")}.${result.alreadyRemoved > 0 ? ` ${formatCount(result.alreadyRemoved)} were already removed.` : ""}${result.skippedFinal > 0 ? ` ${formatCount(result.skippedFinal)} kept their final status (replied, bounced, unsubscribed, completed, failed or cancelled).` : ""}`,
     );
-    router.refresh();
   }
 
   return (
@@ -141,12 +135,12 @@ interface RestoreResult {
 function RestoreRowButton({ id, name }: { id: string; name: string | null }) {
   const router = useRouter();
   const { channel, campaignId } = useSelection();
-  const { busy: running, run } = useApiAction<"restore">();
-  const busy = running !== null;
+  const { isBusy, run } = useApiAction<"restore">();
+  const busy = isBusy("restore");
 
   const restore = () =>
     run("restore", async () => {
-      const result = await runApiAction(callApi<RestoreResult>(`${base(channel, campaignId)}/restore`, "POST", { ids: [id] }), { refresh: () => router.refresh() });
+      const result = await runApiAction(callApi<RestoreResult>(`${base(channel, campaignId)}/restore`, "POST", { ids: [id] }), { refresh: () => router.refresh(), expectData: true });
       if (!result.ok) return void toast.error(result.error);
       const refusal = result.data.refused[0];
       if (refusal) toast.error(`${name ?? "This lead"} stays removed. ${refusal.message}${refusal.detail ? ` Other campaign: ${refusal.detail}.` : ""}`);

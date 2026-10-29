@@ -3,25 +3,28 @@ import { toast } from "sonner";
 import { orThrow, type ActionResult } from "./api-action";
 
 /**
- * The busy state of a screen's change actions (docs/decisions.md, "Change actions"). `run(key, work)` marks `key` busy until
- * `work` settles and drops a second call while one runs, so a double click or a second row's button sends nothing. Two
- * clicks land before the busy render, so the guard is a ref. A dropped call resolves to null.
+ * The busy state of a screen's change actions (docs/decisions.md, "Change actions"). `run(key, work)` marks `key` busy
+ * until `work` settles and drops a repeat of the same key while it runs, so a double click sends one request; other keys
+ * run side by side. A key names what the action changes (`revoke:<id>`); actions that would conflict share one key.
+ * Two clicks land before the busy render, so the guard is a ref. A dropped call resolves to null. `isBusy(key)` disables
+ * and labels the control; `anyBusy` is for a control that must wait for every action of the screen.
  */
 export function useApiAction<K extends string = string>() {
-  const [busy, setBusy] = useState<K | null>(null);
-  const running = useRef(false);
+  const running = useRef(new Set<K>());
+  const [busy, setBusy] = useState<ReadonlySet<K>>(() => new Set());
   const run = useCallback(async <T>(key: K, work: () => Promise<T>): Promise<T | null> => {
-    if (running.current) return null;
-    running.current = true;
-    setBusy(key);
+    if (running.current.has(key)) return null;
+    running.current.add(key);
+    setBusy(new Set(running.current));
     try {
       return await work();
     } finally {
-      running.current = false;
-      setBusy(null);
+      running.current.delete(key);
+      setBusy(new Set(running.current));
     }
   }, []);
-  return { busy, run };
+  const isBusy = useCallback((key: K) => busy.has(key), [busy]);
+  return { run, isBusy, anyBusy: busy.size > 0 };
 }
 
 /** The outcome of an action outside a dialog, as a toast: `success` when it went through, the failure's sentence when not. */

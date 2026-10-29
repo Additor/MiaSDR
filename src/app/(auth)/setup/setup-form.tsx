@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 
 export function SetupForm() {
@@ -22,16 +23,11 @@ export function SetupForm() {
     const email = String(form.get("email"));
     const password = String(form.get("password"));
 
-    const result = await callApi("/api/setup", "POST", {
-      name: form.get("name"),
-      email,
-      password,
-      organizationName: form.get("organizationName"),
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    });
+    const body = { name: form.get("name"), email, password, organizationName: form.get("organizationName"), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+    const result = await runApiAction(callApi("/api/setup", "POST", body), { onConflict: { already_set_up: () => "This instance is already set up. Sign in instead." } });
     if (!result.ok) {
       setPending(false);
-      setError(result.code === "already_set_up" ? "This instance is already set up. Sign in instead." : (result.error ?? "Check the details and try again."));
+      setError(result.error);
       return;
     }
     const { error } = await authClient.signIn.email({ email, password });

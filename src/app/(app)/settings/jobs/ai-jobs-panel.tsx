@@ -66,13 +66,13 @@ function nextStep(job: FailedAiJob, timeZone: string): string {
 export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total: number; rows: FailedAiJob[] }; skipped: { total: number; rows: SkippedAiJob[] }; tickFailures: TickFailure[] }) {
   const router = useRouter();
   const timeZone = useOrgTimeZone();
-  const { busy, run } = useApiAction();
+  const { isBusy, run } = useApiAction();
   const [windowIndex, setWindowIndex] = useState(1);
   const [confirmingBulk, setConfirmingBulk] = useState(false);
 
   /** Requeues and says how many went back. A refusal throws: the bulk dialog stays open with it, a row's button shows it as a toast. */
   async function requeue(url: string, body?: unknown) {
-    const result = await runApiAction(callApi<{ requeued: number; more: boolean }>(url, "POST", body));
+    const result = await runApiAction(callApi<{ requeued: number; more: boolean }>(url, "POST", body), { expectData: true });
     // A refusal can follow a job that changed state since the page loaded, so the list reloads either way.
     router.refresh();
     const data = orThrow(result);
@@ -109,8 +109,8 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" disabled={busy !== null} onClick={() => setConfirmingBulk(true)}>
-              {busy === "since" ? "Requeueing…" : "Requeue failed jobs"}
+            <Button variant="outline" disabled={isBusy("since")} onClick={() => setConfirmingBulk(true)}>
+              {isBusy("since") ? "Requeueing…" : "Requeue failed jobs"}
             </Button>
             <ConfirmDialog
               open={confirmingBulk}
@@ -133,8 +133,8 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                     failed <Time value={job.failedAt} /> after {countOf(job.attempts, "attempt")}
                     {job.manualRequeues > 0 ? `, requeued by hand ${countOf(job.manualRequeues, "time")}` : ""}
                   </span>
-                  <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void requeueRow(job.id)}>
-                    {busy === job.id ? "Requeueing…" : "Requeue"}
+                  <Button size="sm" variant="ghost" disabled={isBusy(job.id)} onClick={() => void requeueRow(job.id)}>
+                    {isBusy(job.id) ? "Requeueing…" : "Requeue"}
                   </Button>
                 </div>
                 <p className="text-destructive">{job.lastError}</p>
@@ -162,8 +162,8 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                   <span className="font-medium">{KIND_LABEL[job.kind]}</span>
                   <span className="text-muted-foreground">skipped <Time value={job.skippedAt} />, reason {job.reason}</span>
                   {isRequeueableSkip({ status: "skipped", skipReason: job.reason }) && (
-                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void requeueRow(job.id)}>
-                      {busy === job.id ? "Requeueing…" : "Requeue"}
+                    <Button size="sm" variant="ghost" disabled={isBusy(job.id)} onClick={() => void requeueRow(job.id)}>
+                      {isBusy(job.id) ? "Requeueing…" : "Requeue"}
                     </Button>
                   )}
                 </div>

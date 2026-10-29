@@ -4,22 +4,21 @@ import { StarIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 
 /** Stars or unstars one stored message. The Important view of the inbox lists conversations with a starred message. */
 export function ImportantStar({ messageId, important }: { messageId: string; important: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"star">();
 
-  async function toggle() {
-    setPending(true);
-    const result = await callApi(`/api/inbox/messages/${messageId}/important`, "POST", { important: !important });
-    setPending(false);
-    if (!result.ok) return setError(result.error);
-    setError(null);
-    router.refresh();
-  }
+  const toggle = () =>
+    run("star", async () => {
+      const result = await runApiAction(callApi(`/api/inbox/messages/${messageId}/important`, "POST", { important: !important }), { refresh: () => router.refresh() });
+      setError(result.ok ? null : result.error);
+    });
 
   return (
     <span className="inline-flex items-center gap-1">
@@ -32,8 +31,8 @@ export function ImportantStar({ messageId, important }: { messageId: string; imp
         type="button"
         size="xs"
         variant={important ? "secondary" : "ghost"}
-        onClick={toggle}
-        disabled={pending}
+        onClick={() => void toggle()}
+        disabled={isBusy("star")}
         aria-pressed={important}
         aria-label={important ? "Remove important mark" : "Mark as important"}
         touch

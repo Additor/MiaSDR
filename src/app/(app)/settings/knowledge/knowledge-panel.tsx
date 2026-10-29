@@ -60,7 +60,7 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
   const [dialog, setDialog] = useState<{ editing: Doc | null } | null>(null);
   const [draft, setDraft] = useState<Draft>(draftOf(null));
   const [toggleError, setToggleError] = useState<string | null>(null);
-  const { busy, run } = useApiAction();
+  const { isBusy, run } = useApiAction();
   const refresh = () => router.refresh();
 
   function open(doc: Doc | null) {
@@ -128,8 +128,8 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
                     <Button size="sm" variant="ghost" onClick={() => open(doc)} aria-label={`Edit ${doc.title}`}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void toggle(doc)}>
-                      {busy === doc.id ? (doc.active ? "Archiving…" : "Restoring…") : doc.active ? "Archive" : "Restore"}
+                    <Button size="sm" variant="ghost" disabled={isBusy(doc.id)} onClick={() => void toggle(doc)}>
+                      {isBusy(doc.id) ? (doc.active ? "Archiving…" : "Restoring…") : doc.active ? "Archive" : "Restore"}
                     </Button>
                   </div>
                 )}

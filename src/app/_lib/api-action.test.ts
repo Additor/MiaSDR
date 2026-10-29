@@ -16,6 +16,17 @@ describe("runApiAction", () => {
     expect(orThrow(result)).toEqual({ id: "a" });
   });
 
+  it("answers null data for a change without a body, and a failure when the screen expects data", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    expect(await runApiAction(callApi("/api/x", "DELETE"))).toEqual({ ok: true, status: 204, data: null });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    const refresh = vi.fn();
+    const expected = await runApiAction(callApi<{ id: string }>("/api/x", "POST", {}), { refresh, expectData: true });
+    expect(expected).toMatchObject({ ok: false, status: 204, error: "MiaSDR saved the change but sent back nothing to show. Reload the page.", code: null });
+    // The change went through, so the page reloads.
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it("returns the server's sentence for a refused input and keeps the page as it is", async () => {
     vi.stubGlobal("fetch", answer(422, { error: "Invalid input", code: "validation", issues: [{ message: "name: too long" }] }));
     const refresh = vi.fn();

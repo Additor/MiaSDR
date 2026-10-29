@@ -72,7 +72,7 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
   const [draft, setDraft] = useState<Draft>(draftOf(null));
   const [confirming, setConfirming] = useState<{ type: ReplyTypeItem; action: "archive" | "delete" } | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
-  const { busy, run } = useApiAction();
+  const { isBusy, run } = useApiAction();
   const refresh = () => router.refresh();
   // Where the AI sends a reply that would have fit an archived type: the catch-all of the Other group, when it is active.
   const fallback = replyTypes.find((t) => t.key === CATCH_ALL_TYPE_KEY && t.active)?.name ?? null;
@@ -92,8 +92,8 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
       classificationGuidance: draft.guidance.trim() || null,
       ...rules,
     };
-    const call = editing ? callApi(`/api/reply-types/${editing.id}`, "PATCH", common) : callApi("/api/reply-types", "POST", { ...common, groupKey: draft.groupKey });
-    toastOrThrow(await runApiAction(call, { refresh }), editing ? `${draft.name} saved.` : `${draft.name} added.`);
+    const result = await runApiAction(editing ? callApi(`/api/reply-types/${editing.id}`, "PATCH", common) : callApi("/api/reply-types", "POST", { ...common, groupKey: draft.groupKey }), { refresh });
+    toastOrThrow(result, editing ? `${draft.name} saved.` : `${draft.name} added.`);
   }
 
   /** Archive and restore. A failure throws so the confirmation dialog can show it; Restore has no dialog and reports below the list. */
@@ -162,8 +162,8 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
                             </Button>
                             {/* A system-role type can be neither archived nor deleted. */}
                             {!t.systemRole && (
-                              <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => (t.active ? setConfirming({ type: t, action: "archive" }) : void restore(t))}>
-                                {busy === t.id ? "Restoring…" : t.active ? "Archive" : "Restore"}
+                              <Button size="sm" variant="ghost" disabled={isBusy(t.id)} onClick={() => (t.active ? setConfirming({ type: t, action: "archive" }) : void restore(t))}>
+                                {isBusy(t.id) ? "Restoring…" : t.active ? "Archive" : "Restore"}
                               </Button>
                             )}
                             {!t.systemRole && t.recordCount === 0 && t.historyCount === 0 && (

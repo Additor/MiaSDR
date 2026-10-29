@@ -64,42 +64,47 @@ export function CampaignControls({
   inProgress?: number;
 }) {
   const router = useRouter();
-  const { busy, run } = useApiAction<"direct">();
-  const pending = busy !== null;
+  // Start, Pause, Complete and Archive all change the campaign's state, so they share one key.
+  const { isBusy, run } = useApiAction<"status">();
+  const pending = isBusy("status");
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const api = channel === "linkedin" ? "/api/linkedin" : "/api";
 
-  /** Throws the server's message (and its first detail) so a dialog can show it and a button handler can toast it. */
-  async function send(url: string, method: "POST" | "DELETE", body: unknown, fallback: string) {
-    const result = await runApiAction(callApi(url, method, body));
-    if (!result.ok) throw new Error([result.error || fallback, result.issues[0]?.message].filter(Boolean).join(" "));
+  /**
+   * Throws the server's message (and its first detail) so a dialog can show it and a button handler can toast it. The
+   * page reloads after a success and after a 404 or 409, so the buttons follow the campaign's current status. A delete
+   * leaves the page, so it reloads only when refused.
+   */
+  async function send(url: string, method: "POST" | "DELETE", body?: unknown) {
+    const leaves = method === "DELETE";
+    const result = await runApiAction(callApi(url, method, body), leaves ? {} : { refresh: () => router.refresh() });
+    if (leaves && !result.ok && (result.status === 404 || result.status === 409)) router.refresh();
+    if (!result.ok) throw new Error([result.error, result.issues[0]?.message].filter(Boolean).join(" "));
     return result.data;
   }
 
   async function change(to: Target) {
-    const data = await send(`${api}/campaigns/${id}/status`, "POST", { status: to }, "Could not change the status.");
+    const data = await send(`${api}/campaigns/${id}/status`, "POST", { status: to });
     const empty = (data as { emptySubjectLeads?: number } | null)?.emptySubjectLeads ?? 0;
     const sampled = (data as { sampled?: number } | null)?.sampled ?? 0;
     toast.success(to === "active" ? "Campaign is running." : to === "paused" ? "Campaign paused. Nothing more will be sent." : "Campaign marked completed.", {
       description: empty > 0 ? `${empty} of ${sampled} sampled leads render an empty subject for step 1 and will be skipped. Fix their merge fields to send to them.` : undefined,
     });
-    router.refresh();
   }
 
   async function setArchived(next: boolean) {
-    await send(`${api}/campaigns/${id}/archive`, "POST", { archived: next }, next ? "Could not archive the campaign." : "Could not unarchive the campaign.");
+    await send(`${api}/campaigns/${id}/archive`, "POST", { archived: next });
     toast.success(next ? "Campaign archived. Find it under Archived on the campaigns page." : "Campaign unarchived.");
-    router.refresh();
   }
 
   async function remove() {
-    await send(`${api}/campaigns/${id}`, "DELETE", undefined, "Could not delete the campaign.");
+    await send(`${api}/campaigns/${id}`, "DELETE");
     toast.success("Campaign deleted.");
     router.push("/campaigns");
   }
 
   /** A button with no dialog: the failure goes to a toast. */
-  const direct = (action: () => Promise<void>) => run("direct", () => action().catch((error: unknown) => void toast.error(error instanceof Error ? error.message : "Something went wrong.")));
+  const direct = (action: () => Promise<void>) => run("status", () => action().catch((error: unknown) => void toast.error(error instanceof Error ? error.message : "Something went wrong.")));
 
   const blocked = status === "draft" && blockers.length > 0;
   const controls: Control[] = (ACTIONS[status] ?? []).map((action) => {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 
 export function UnsubscribeForm({ token, email }: { token: string; email: string }) {
@@ -10,7 +11,7 @@ export function UnsubscribeForm({ token, email }: { token: string; email: string
 
   async function confirm() {
     setState("pending");
-    const result = await callApi("/api/outreach/unsubscribe", "POST", { token });
+    const result = await runApiAction(callApi("/api/outreach/unsubscribe", "POST", { token }));
     setState(result.ok ? "done" : "error");
   }
 

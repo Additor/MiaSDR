@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { useDealStages } from "./deal-fields";
 import { stageChoices, type DealStageList, type DealStageOption } from "./deal-form";
@@ -42,16 +43,25 @@ export type MoveDealResult = { ok: true; deal: unknown; version: number | null }
 
 /**
  * Moves a deal to a stage with the version the caller read. The server refuses a stale version, so a change someone
- * made meanwhile stays. The dialog and the board's drag both move through it.
+ * made meanwhile stays. The dialog and the board's drag both move through it; the dialog passes `refresh`, the board
+ * reconciles its own cards.
  */
-export async function moveDealStage(dealId: string, stageId: string, expectedVersion: number, lostReason: string | null = null): Promise<MoveDealResult> {
-  const result = await callApi(`/api/deals/${dealId}/stage`, "POST", { stageId, expectedVersion, lostReason });
+export async function moveDealStage(dealId: string, stageId: string, expectedVersion: number, lostReason: string | null = null, refresh?: () => void): Promise<MoveDealResult> {
+  const stale = { version: null as number | null };
+  const result = await runApiAction(callApi(`/api/deals/${dealId}/stage`, "POST", { stageId, expectedVersion, lostReason }), {
+    refresh,
+    onConflict: {
+      stale_version: (failure) => {
+        if (typeof failure.details?.version === "number") stale.version = failure.details.version;
+      },
+    },
+  });
   if (result.ok) {
     const version = (result.data as { version?: unknown } | null)?.version;
     return { ok: true, deal: result.data, version: typeof version === "number" ? version : null };
   }
-  if (result.code === "stale_version" && typeof result.details?.version === "number") return { ok: false, staleVersion: result.details.version };
-  return { ok: false, error: result.error ?? "Could not move the deal. Try again." };
+  if (stale.version !== null) return { ok: false, staleVersion: stale.version };
+  return { ok: false, error: result.error };
 }
 
 /** The sentence a stale move shows on the board, where no dialog is open to hold it. */
@@ -89,19 +99,18 @@ export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenSta
 
   async function move(): Promise<boolean> {
     if (!chosen) return false;
-    const result = await moveDealStage(deal.id, chosen.value, version, chosen.kind === "lost" ? lostReason.trim() : null);
+    // The page reloads after a move and after a stale version, which keeps the dialog open on the latest one.
+    const result = await moveDealStage(deal.id, chosen.value, version, chosen.kind === "lost" ? lostReason.trim() : null, () => router.refresh());
     if (!result.ok) {
       if ("staleVersion" in result) {
         setVersion(result.staleVersion);
         setStale(true);
-        router.refresh();
         return false;
       }
       throw new Error(result.error);
     }
     toast.success(`Moved ${deal.title} to ${chosen.label}.`);
     onMoved?.(result.deal);
-    router.refresh();
     return true;
   }
 

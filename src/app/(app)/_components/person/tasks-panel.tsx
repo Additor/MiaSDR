@@ -67,8 +67,8 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
   const [dueDay, setDueDay] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUserId);
   const [error, setError] = useState<string | null>(null);
-  const { busy, run } = useApiAction<"add">();
-  const pending = busy !== null;
+  const { isBusy, run } = useApiAction<"add">();
+  const pending = isBusy("add");
   const refresh = () => router.refresh();
   // The target stays set while the dialog closes, so its title does not change mid-animation.
   const [deleting, setDeleting] = useState<TaskItem | null>(null);

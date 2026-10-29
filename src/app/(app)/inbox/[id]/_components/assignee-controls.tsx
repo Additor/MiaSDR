@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { memberItems, type MemberChoice } from "@/app/(app)/_components/member-select";
 
 const NOBODY = "__nobody__";
@@ -17,28 +18,25 @@ const NOBODY = "__nobody__";
  */
 export function AssigneeControls({ recordId, assignedTo, members, currentUserId }: { recordId: string; assignedTo: string | null; members: readonly MemberChoice[]; currentUserId: string }) {
   const router = useRouter();
-  const [pending, setPending] = useState(false);
+  // Take it and the menu both change who holds the conversation, so they share one key.
+  const { isBusy, run } = useApiAction<"assignee">();
+  const pending = isBusy("assignee");
   const items = memberItems(members, currentUserId, assignedTo, { value: NOBODY, label: "Nobody", at: "start" });
 
-  async function change(body: { action: "claim" } | { action: "assign"; assignedTo: string | null; expectedAssignedTo: string | null }) {
-    setPending(true);
-    const result = await callApi(`/api/records/${recordId}/assignee`, "POST", body);
-    setPending(false);
-    if (!result.ok) {
-      toast.error(result.error ?? "Could not change who handles this conversation.");
-      // A refusal means the holder changed under us. Reload to show who holds it now.
+  const change = (body: { action: "claim" } | { action: "assign"; assignedTo: string | null; expectedAssignedTo: string | null }) =>
+    run("assignee", async () => {
+      const result = await runApiAction(callApi(`/api/records/${recordId}/assignee`, "POST", body));
+      // A refusal means the holder changed under us, so the page reloads either way to show who holds it now.
       router.refresh();
-      return;
-    }
-    router.refresh();
-  }
+      if (!result.ok) toast.error(result.error);
+    });
 
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         {assignedTo !== currentUserId && (
-          <Button size="sm" variant="outline" disabled={pending || assignedTo !== null} onClick={() => change({ action: "claim" })} touch>
-            Take it
+          <Button size="sm" variant="outline" disabled={pending || assignedTo !== null} onClick={() => void change({ action: "claim" })} touch>
+            {pending ? "Saving…" : "Take it"}
           </Button>
         )}
         <Select

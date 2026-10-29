@@ -59,7 +59,9 @@ interface Props {
 
 export function InboundEventsPanel({ rows, total, page, pageSize, state, source, linkedinBacklog }: Props) {
   const router = useRouter();
-  const { busy, run } = useApiAction();
+  const { isBusy, run } = useApiAction();
+  // Retry and Dismiss of one row wait for each other; other rows and the replay run on their own.
+  const rowBusy = (id: string) => isBusy(`retry:${id}`) || isBusy(`dismiss:${id}`);
   const refresh = () => router.refresh();
   const pageCount = Math.max(Math.ceil(total / pageSize), 1);
 
@@ -78,7 +80,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
 
   const replay = () =>
     run("replay", async () => {
-      const result = await runApiAction(callApi<{ requeued: number; claimed: number; done: number; failed: number }>("/api/linkedin/jobs/replay-webhooks", "POST"));
+      const result = await runApiAction(callApi<{ requeued: number; claimed: number; done: number; failed: number }>("/api/linkedin/jobs/replay-webhooks", "POST"), { expectData: true });
       // A replay that stops partway has still applied some deliveries, so the page reloads either way.
       refresh();
       if (!result.ok) toast.error(result.error);
@@ -120,8 +122,8 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
             <span className="text-sm text-muted-foreground tabular-nums">
               {waiting === 0 ? "No LinkedIn delivery waits." : `LinkedIn: ${formatCount(linkedinBacklog.dead)} gave up, ${formatCount(linkedinBacklog.retrying)} retrying, ${formatCount(linkedinBacklog.queued)} queued`}
             </span>
-            <Button variant="outline" size="sm" onClick={() => void replay()} disabled={busy !== null || waiting === 0}>
-              {busy === "replay" ? "Replaying…" : "Replay LinkedIn deliveries"}
+            <Button variant="outline" size="sm" onClick={() => void replay()} disabled={isBusy("replay") || waiting === 0}>
+              {isBusy("replay") ? "Replaying…" : "Replay LinkedIn deliveries"}
             </Button>
           </div>
         )}
@@ -174,13 +176,13 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
                   <TableCell className="max-w-72 whitespace-normal break-words text-xs text-muted-foreground">{row.error ?? "No error recorded."}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
                     {(row.state === "dead" || row.state === "dismissed") && (
-                      <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => void settle(row, "retry")}>
-                        {busy === `retry:${row.id}` ? "Retrying…" : "Retry"}
+                      <Button variant="ghost" size="sm" disabled={rowBusy(row.id)} onClick={() => void settle(row, "retry")}>
+                        {isBusy(`retry:${row.id}`) ? "Retrying…" : "Retry"}
                       </Button>
                     )}{" "}
                     {row.state !== "dismissed" && (
-                      <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => void settle(row, "dismiss")}>
-                        {busy === `dismiss:${row.id}` ? "Dismissing…" : "Dismiss"}
+                      <Button variant="ghost" size="sm" disabled={rowBusy(row.id)} onClick={() => void settle(row, "dismiss")}>
+                        {isBusy(`dismiss:${row.id}`) ? "Dismissing…" : "Dismiss"}
                       </Button>
                     )}
                   </TableCell>

@@ -32,7 +32,7 @@ export interface UnconfirmedRow {
  */
 export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { campaignId: string; total: number; rows: UnconfirmedRow[]; canResolve: boolean }) {
   const router = useRouter();
-  const { busy, run } = useApiAction();
+  const { isBusy, run } = useApiAction();
   // The row whose "It was not delivered" is waiting for the Sent-folder confirmation, and the checkbox state.
   const [confirming, setConfirming] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
@@ -94,13 +94,13 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
                   <TableCell>
                     <div className="grid gap-2">
                       <div className="flex flex-wrap gap-2">
-                        <Button size="sm" disabled={busy !== null} onClick={() => void resolve(row.sendId, "delivered")}>
+                        <Button size="sm" disabled={isBusy(row.sendId)} onClick={() => void resolve(row.sendId, "delivered")}>
                           It was delivered
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={busy !== null}
+                          disabled={isBusy(row.sendId)}
                           onClick={() => {
                             setConfirming(confirming === row.sendId ? null : row.sendId);
                             setChecked(false);
@@ -118,7 +118,7 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
                               I looked in the Sent folder
                             </FieldLabel>
                           </Field>
-                          <Button size="sm" variant="destructive" disabled={!checked || busy !== null} onClick={() => void resolve(row.sendId, "not_delivered")}>
+                          <Button size="sm" variant="destructive" disabled={!checked || isBusy(row.sendId)} onClick={() => void resolve(row.sendId, "not_delivered")}>
                             Send this step again
                           </Button>
                         </div>

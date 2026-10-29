@@ -42,13 +42,21 @@ export interface ActionOptions {
 }
 
 const FALLBACK = "Something went wrong. Try again.";
+const NO_DATA = "MiaSDR saved the change but sent back nothing to show. Reload the page.";
 
-/** Awaits the call, refreshes when the page is behind, and returns the outcome. It never throws. */
-export async function runApiAction<T>(call: Promise<ApiResult<T>>, options: ActionOptions = {}): Promise<ActionResult<T>> {
+/**
+ * Awaits the call, refreshes when the page is behind, and returns the outcome. It never throws. A success carries
+ * `data: T | null`, since a change can answer 204 with no body; a screen that reads the answer passes `expectData: true`,
+ * and a success without data then comes back as a failure that says so.
+ */
+export function runApiAction<T>(call: Promise<ApiResult<T>>, options: ActionOptions & { expectData: true }): Promise<ActionResult<T>>;
+export function runApiAction<T>(call: Promise<ApiResult<T>>, options?: ActionOptions & { expectData?: false }): Promise<ActionResult<T | null>>;
+export async function runApiAction<T>(call: Promise<ApiResult<T>>, options: ActionOptions & { expectData?: boolean } = {}): Promise<ActionResult<T | null>> {
   const result = await call;
   if (result.ok) {
     options.refresh?.();
-    return { ok: true, status: result.status, data: result.data as T };
+    if (options.expectData && result.data === null) return { ok: false, status: result.status, error: NO_DATA, code: null, issues: [], details: null };
+    return { ok: true, status: result.status, data: result.data };
   }
   const failure: ActionFailure = { ok: false, status: result.status, error: result.error ?? FALLBACK, code: result.code, issues: result.issues, details: result.details };
   if (result.status === 409 && result.code) {

@@ -33,8 +33,9 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
   const router = useRouter();
   const [settings, setSettings] = useState(initial);
   const [seen, setSeen] = useState(initial);
-  const { busy, run } = useApiAction();
-  const pending = busy !== null;
+  // Each answer is the whole list and an order write sends every id, so all stage changes share one key.
+  const { isBusy, run } = useApiAction<"list">();
+  const pending = isBusy("list");
   const refresh = () => router.refresh();
   const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
@@ -51,9 +52,9 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
 
   /** Sends one change; the answer is the new list. A refusal shows in the line under the list. True when it went through. */
   const write = (url: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown, done?: string) =>
-    run(url, async () => {
+    run("list", async () => {
       setError(null);
-      const result = await runApiAction(callApi<StageSettings>(url, method, body), { refresh });
+      const result = await runApiAction(callApi<StageSettings>(url, method, body), { refresh, expectData: true });
       if (!result.ok) {
         setError(result.error);
         return false;
@@ -92,7 +93,7 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
 
   async function remove(): Promise<boolean> {
     if (!deleting?.id) return true;
-    setSettings(orThrow(await runApiAction(callApi<StageSettings>(`/api/deal-stages/${deleting.id}`, "DELETE"), { refresh })));
+    setSettings(orThrow(await runApiAction(callApi<StageSettings>(`/api/deal-stages/${deleting.id}`, "DELETE"), { refresh, expectData: true })));
     toast.success(`Deleted ${deleting.name}.`);
     return true;
   }

@@ -55,7 +55,9 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
   const router = useRouter();
   const timeZone = useOrgTimeZone();
   const [cancelling, setCancelling] = useState<Search | null>(null);
-  const { run } = useApiAction();
+  // Each search runs its own actions; its buttons wait while one runs.
+  const { run, isBusy } = useApiAction();
+  const searchBusy = (id: string) => (["pause", "resume"] as const).find((action) => isBusy(`${id}:${action}`)) ?? null;
   const refresh = () => router.refresh();
   const capacityReturns = capacityReturnText(capacity.nextReturnAt, timeZone);
 
@@ -67,7 +69,7 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
       setCancelling(search);
       return;
     }
-    await run(search.id, async () => {
+    await run(`${search.id}:${action}`, async () => {
       const result = await runApiAction(callApi(`/api/linkedin/searches/${search.id}/action`, "POST", { action }), { refresh });
       if (!result.ok) toast.error(result.error);
     });
@@ -132,7 +134,7 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
                       <Badge variant="outline">{s.variant === "sales_navigator" ? "Sales Navigator" : "LinkedIn"}</Badge>
                       <SearchUrl url={s.url} />
                     </p>
-                    <SearchActions search={s} onAct={act} className="mt-2 sm:hidden" />
+                    <SearchActions search={s} busy={searchBusy(s.id)} onAct={act} className="mt-2 sm:hidden" />
                   </TableCell>
                   <TableCell className="max-w-64 whitespace-normal">
                     <StatusBadge status={s.status} label={humanizeToken(searchStatusLabel(s.status))} />
@@ -167,7 +169,7 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
                     )}
                   </TableCell>
                   <TableCell className="hidden text-right sm:table-cell">
-                    <SearchActions search={s} onAct={act} className="justify-end" />
+                    <SearchActions search={s} busy={searchBusy(s.id)} onAct={act} className="justify-end" />
                   </TableCell>
                 </TableRow>
               );
@@ -192,12 +194,13 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
 }
 
 /** Pause, resume and cancel. Below the sm breakpoint they sit under the search name, because the Actions column scrolls out of sight. */
-function SearchActions({ search: s, onAct, className }: { search: Search; onAct: (search: Search, action: SearchAction) => void; className?: string }) {
+/** `busy` names the action that runs for this search; its buttons wait for it. */
+function SearchActions({ search: s, busy, onAct, className }: { search: Search; busy: SearchAction | null; onAct: (search: Search, action: SearchAction) => void; className?: string }) {
   return (
     <div className={cn("flex flex-wrap gap-1", className)}>
       {searchActions(s.status).map(({ action, label }) => (
-        <Button key={action} size="sm" variant={action === "cancel" ? "ghost" : "outline"} touch onClick={() => onAct(s, action)}>
-          {label}
+        <Button key={action} size="sm" variant={action === "cancel" ? "ghost" : "outline"} touch disabled={busy !== null} onClick={() => onAct(s, action)}>
+          {busy === action ? (action === "pause" ? "Pausing…" : "Resuming…") : label}
         </Button>
       ))}
     </div>
@@ -216,17 +219,11 @@ export function NewSearch({ campaigns, defaultMax, maxLimit }: { campaigns: Arra
     // The confirm button sits outside the form, so it asks the form to check its own fields.
     if (!form.current?.reportValidity()) return false;
     const data = new FormData(form.current);
-    const result = await callApi<{ id: string }>("/api/linkedin/searches", "POST", {
-      name: String(data.get("name")),
-      url: String(data.get("url")),
-      maxResults: Number(data.get("maxResults")),
-      campaignId: campaign === NO_CAMPAIGN ? null : campaign,
-    });
+    const body = { name: String(data.get("name")), url: String(data.get("url")), maxResults: Number(data.get("maxResults")), campaignId: campaign === NO_CAMPAIGN ? null : campaign };
     // ConfirmDialog shows the thrown message and keeps the dialog open.
-    if (!result.ok) throw new Error(result.error ?? "Could not create the search. Try again.");
+    orThrow(await runApiAction(callApi<{ id: string }>("/api/linkedin/searches", "POST", body), { refresh: () => router.refresh() }));
     setCampaign(NO_CAMPAIGN);
     toast.success("Search queued.");
-    router.refresh();
     return true;
   }
 

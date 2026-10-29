@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/shared/format-time";
+import { runApiAction } from "@/app/_lib/api-action";
 import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { dealHref } from "../../_components/deal-href";
 import { contactLabel } from "../../_components/labels";
@@ -145,10 +146,10 @@ function DeleteContactDialog({
 
   async function remove(): Promise<boolean | void> {
     if (!counts) return false;
-    // A 404 after a sent delete means the delete went through.
-    const result = await callApi(`/api/contacts/${personId}?${expectedQuery(counts)}`, "DELETE");
+    // A 404 after a sent delete means the delete went through. Both leave the page, so nothing reloads it first.
+    const result = await runApiAction(callApi(`/api/contacts/${personId}?${expectedQuery(counts)}`, "DELETE"), { onConflict: { try_again: () => apiMessage("try_again", name) } });
     if (result.ok || result.status === 404) return done();
-    if (result.status === 0) throw new Error(result.error ?? "Could not reach the server.");
+    if (result.status === 0) throw new Error(result.error);
     const body = result.details;
     if (result.code === "contact_blocked" && Array.isArray(body?.blockers)) {
       setStatus({ kind: "blocked", blockers: body.blockers as DeleteBlocker[] });
@@ -159,12 +160,8 @@ function DeleteContactDialog({
       setStatus({ kind: "text", text: countsChangedText(name) });
       return false;
     }
-    if (result.code === "try_again") {
-      setStatus({ kind: "text", text: apiMessage("try_again", name) });
-      return false;
-    }
     if (typeof body?.error === "string") {
-      setStatus({ kind: "text", text: result.error ?? body.error });
+      setStatus({ kind: "text", text: result.error });
       return false;
     }
     throw new Error("Could not delete this contact. Try again.");

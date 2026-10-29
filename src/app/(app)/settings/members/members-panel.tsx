@@ -70,31 +70,29 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
   const router = useRouter();
   const [role, setRole] = useState("member");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [changing, setChanging] = useState<{ member: Member; role: string } | null>(null);
   const [created, setCreated] = useState<{ email: string; link: string } | null>(null);
   // Admins cannot grant or touch the owner role, so the menu hides it for them.
   const grantable = ROLES.filter((r) => actorIsOwner || r.value !== "owner");
 
-  const { busy, run } = useApiAction();
+  // Each invitation runs on its own; Resend and Revoke of one invitation wait for each other.
+  const { isBusy, run } = useApiAction();
+  const inviteBusy = (id: string) => isBusy(`resend:${id}`) || isBusy(`revoke:${id}`);
+  const pending = isBusy("invite");
   const refresh = () => router.refresh();
 
-  async function invite(event: FormEvent<HTMLFormElement>) {
+  function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const email = String(new FormData(form).get("email"));
-    setPending(true);
-    setError(null);
-    const result = await callApi<{ id: string }>("/api/members", "POST", { email, role });
-    setPending(false);
-    if (!result.ok || !result.data) {
-      setError(result.error);
-      return;
-    }
-    form.reset();
-    setCreated({ email, link: `${appUrl}/accept-invitation/${result.data.id}` });
-    router.refresh();
+    void run("invite", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<{ id: string }>("/api/members", "POST", { email, role }), { refresh, expectData: true });
+      if (!result.ok) return setError(result.error);
+      form.reset();
+      setCreated({ email, link: `${appUrl}/accept-invitation/${result.data.id}` });
+    });
   }
 
   return (
@@ -229,22 +227,22 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
                       <Button
                         variant="ghost"
                         size="sm"
-                        disabled={busy !== null}
+                        disabled={inviteBusy(inv.id)}
                         onClick={() =>
                           void run(`resend:${inv.id}`, async () =>
                             toastResult(await runApiAction(callApi("/api/members", "POST", { email: inv.email, role: primaryRole(inv.role) }), { refresh }), emailConfigured ? "Invitation sent again." : "New link created."),
                           )
                         }
                       >
-                        {busy === `resend:${inv.id}` ? (emailConfigured ? "Resending…" : "Creating…") : emailConfigured ? "Resend" : "New link"}
+                        {isBusy(`resend:${inv.id}`) ? (emailConfigured ? "Resending…" : "Creating…") : emailConfigured ? "Resend" : "New link"}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        disabled={busy !== null}
+                        disabled={inviteBusy(inv.id)}
                         onClick={() => void run(`revoke:${inv.id}`, async () => toastResult(await runApiAction(callApi(`/api/invitations/${inv.id}`, "DELETE"), { refresh }), "Invitation revoked."))}
                       >
-                        {busy === `revoke:${inv.id}` ? "Revoking…" : "Revoke"}
+                        {isBusy(`revoke:${inv.id}`) ? "Revoking…" : "Revoke"}
                       </Button>
                     </span>
                   </div>
