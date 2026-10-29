@@ -25,7 +25,7 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
   const [record] = rowsOf<{ latest: string | null; state: string; group_key: string | null; reply_type_id: string | null; reply_type_locked: boolean; context_version: number }>(
     await tx.execute(sql`
       select latest_inbound_message_id as latest, workflow_state as state, group_key, reply_type_id, reply_type_locked, context_version
-      from records where id = ${input.recordId} and organization_id = ${input.organizationId} for update`),
+      from records where id = ${input.recordId} and organization_id = ${input.organizationId} for no key update`),
   );
   if (!record) return;
 

@@ -19,7 +19,7 @@ import { rowsOf, uuidList } from "@/platform/db/sql-values";
 const MAX_EVENTS = 500;
 
 /**
- * The person's records `FOR UPDATE` in id order, then the person's outreach advisory lock. Single-person reply ingest and
+ * The person's records `FOR NO KEY UPDATE` in id order, then the person's outreach advisory lock. Single-person reply ingest and
  * do-not-contact take the same locks in the same order. A caller passes an open transaction: the locks last until it ends.
  */
 export async function lockPersonRecords(tx: DbHandle, organizationId: string, personId: string): Promise<void> {
@@ -27,9 +27,13 @@ export async function lockPersonRecords(tx: DbHandle, organizationId: string, pe
   await lockPersonOutreachTx(tx as Tx, organizationId, [personId]);
 }
 
-/** The first half of `lockPersonRecords`: the person's records `FOR UPDATE` in id order. Returns how many it locked. */
-export async function lockPersonRecordRows(tx: DbHandle, organizationId: string, personId: string): Promise<number> {
-  const rows = await tx.select({ id: records.id }).from(records).where(and(eq(records.organizationId, organizationId), eq(records.personId, personId))).orderBy(records.id).for("update");
+/**
+ * The first half of `lockPersonRecords`: the person's records in id order. Returns how many it locked. Writers take
+ * `no key update`, which lets a draft or message insert's key share through; a contact delete takes `update`, because it
+ * deletes the rows (docs/database.md, "Lock modes").
+ */
+export async function lockPersonRecordRows(tx: DbHandle, organizationId: string, personId: string, strength: "update" | "no key update" = "no key update"): Promise<number> {
+  const rows = await tx.select({ id: records.id }).from(records).where(and(eq(records.organizationId, organizationId), eq(records.personId, personId))).orderBy(records.id).for(strength);
   return rows.length;
 }
 
@@ -144,7 +148,7 @@ export async function listPersonEvents(organizationId: string, personId: string,
  */
 
 /**
- * Step 1 of the conversion, the order of `lockPersonRecords`: the person's records `FOR UPDATE` in id order (waiting up to 5 s,
+ * Step 1 of the conversion, the order of `lockPersonRecords`: the person's records `FOR NO KEY UPDATE` in id order (waiting up to 5 s,
  * holding nothing), then the person's outreach advisory lock. Single-person ingest takes the same order. Do not contact
  * (`setDoNotContact`) takes another: `dnc:{personId}`, its `contact_policies` row through the upsert, then the records, runs
  * and enrollments, so it holds the policy row while it waits on the records. A contact delete locks the records first and the
@@ -165,7 +169,7 @@ export async function lockPersonForConversion(tx: DbHandle, organizationId: stri
  * waits at most `HELD_LOCK_TIMEOUT` for the next, so a writer with another order wins and the delete retries.
  */
 export async function lockPersonForDelete(tx: DbHandle, organizationId: string, personId: string): Promise<void> {
-  const locked = await lockPersonRecordRows(tx, organizationId, personId);
+  const locked = await lockPersonRecordRows(tx, organizationId, personId, "update");
   if (locked > 0) {
     await setLockTimeout(tx, HELD_LOCK_TIMEOUT);
     await tx.execute(sql`

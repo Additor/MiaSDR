@@ -42,7 +42,7 @@ export interface PersonEventInput {
 
 /** What the conversion writes through other contexts. All of them run in the caller's transaction. */
 export interface ConversionPorts {
-  /** Locks the person's records `FOR UPDATE` in id order, then the person advisory lock (conversations `lockPersonRecords`). */
+  /** Locks the person's records `FOR NO KEY UPDATE` in id order, then the person advisory lock (conversations `lockPersonRecords`). */
   lockPerson(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
   /** Cancels the person's pending and active enrollments with reason `converted` (outreach). */
   stopEnrollments(tx: DbHandle, input: PersonStopInput): Promise<{ stopped: number }>;

@@ -172,8 +172,14 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
     await expect(step.getByTestId("reply-handling")).toContainText("Done: Talking on the phone now.");
     await expect(line.getByRole("button", { name: "Change type" })).toHaveCount(0);
     await expect(step.getByRole("button", { name: "Done, no reply needed" })).toHaveCount(0);
+    // Done, the reply card writes nothing: one line stands in for the composer and points at Reopen.
+    const closed = page.getByTestId("reply-closed");
+    await expect(closed).toContainText("Reply handling is marked done. Reopen it to reply.");
+    await expect(page.getByTestId("reply-composer")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Write a draft" })).toHaveCount(0);
     await step.getByRole("button", { name: "Reopen" }).click();
     await expect(page.getByText("Reopened.", { exact: true })).toBeVisible();
+    await expect(closed).toHaveCount(0);
     await expect(line.getByRole("button", { name: "Change type" }).first()).toBeVisible();
   });
 

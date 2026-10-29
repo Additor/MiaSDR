@@ -233,7 +233,7 @@ const recordLock = async (tx: Tx, organizationId: string, recordId: string) => {
     .select({ id: records.id, personId: records.personId, contextVersion: records.contextVersion })
     .from(records)
     .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId)))
-    .for("update");
+    .for("no key update");
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;
 };

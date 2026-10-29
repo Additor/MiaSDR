@@ -16,7 +16,7 @@ export const drizzleAssignmentStore: AssignmentStore = {
         await tx.execute(sql`
           select r.person_id, r.assigned_to from records r
           where r.id = ${recordId} and r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
-          for update`),
+          for no key update`),
       );
       if (!row) throw new NotFoundError("Reply handling not found");
 

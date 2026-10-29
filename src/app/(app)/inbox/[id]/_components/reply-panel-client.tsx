@@ -94,7 +94,22 @@ export function ReplyPanelClient({
   );
   const composerBlocked = panel.suppressed ? "This address is on the suppression list." : panel.doNotContact ? "This person is marked do not contact." : panel.recipient === null ? "This person has no email address." : null;
   const composerSubject = panel.lastSubject ? (/^re:/i.test(panel.lastSubject) ? panel.lastSubject : `Re: ${panel.lastSubject}`) : "";
-  const composer = <ReplyComposer conversationId={panel.conversationId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
+  // Reply handling marked done, or the conversation closed: no reply can be written, so one line stands in for the composer,
+  // Write a draft, Regenerate and "Edit and send anyway". Reopen sits in Next step below.
+  const closedLine = panel.closed && (
+    <p className="text-sm" data-testid="reply-closed">
+      {panel.closed}
+      {panel.workflowState === "closed" && (
+        <>
+          {" "}
+          <a href="#next-step-title" className="underline underline-offset-4">
+            Reopen is under Next step.
+          </a>
+        </>
+      )}
+    </p>
+  );
+  const composer = closedLine || <ReplyComposer conversationId={panel.conversationId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
 
   async function run<T>(name: string, call: () => Promise<{ ok: boolean; status: number; data: T | null; error: string | null }>): Promise<T | null> {
     setBusy(name);
@@ -207,7 +222,7 @@ export function ReplyPanelClient({
               ) : (
                 <>
                   <p>{noDraft ?? "No draft yet."}</p>
-                  <div>
+                  <div hidden={Boolean(panel.closed)}>
                     {/* A decision on the type line above holds the filled button; a type that writes no draft makes this the rare step. */}
                     <Button size="sm" touch variant={decisionWaiting || noDraft ? "outline" : "default"} disabled={busy !== null || !panel.canGenerate} onClick={() => run("draft", () => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
                       {busy === "draft" ? "Writing…" : "Write a draft"}
@@ -218,7 +233,7 @@ export function ReplyPanelClient({
             </div>
           )}
           {(!draft || draft.status === "sent") &&
-            (!draft && composerFolded ? (
+            (!draft && composerFolded && !panel.closed ? (
               <div>
                 <Button size="sm" variant="ghost" onClick={() => setComposeOpen(true)} data-testid="write-yourself">
                   Write it yourself
@@ -238,7 +253,9 @@ export function ReplyPanelClient({
           {draft?.status === "stale" && (
             <div className="grid gap-3" data-testid="stale-draft">
               <p className="text-sm">{draft.error ?? "The thread or the reply type changed after this draft was written."}</p>
-              {editStale ? (
+              {closedLine ? (
+                closedLine
+              ) : editStale ? (
                 <ReplyComposer
                   conversationId={panel.conversationId}
                   defaultSubject={draft.subject ?? composerSubject}
@@ -366,21 +383,23 @@ export function ReplyPanelClient({
                 Save edits
               </Button>
             )}
-            <Button
-              // One filled button on the page: a decision on the type line keeps it, and Regenerate leads only when it is the next
-              // step. While a draft job writes the next draft it stays off, so it cannot add a second one.
-              {...regenerateControl({ status: draft.status, decisionWaiting, drafting, busy: busy !== null, aiConfigured: panel.aiConfigured })}
-              onClick={async () => {
-                if (!showRegenerate) return setShowRegenerate(true);
-                if (await run("regen", () => callApi(`/api/drafts/${draft.id}/regenerate`, "POST", { note }))) {
-                  setShowRegenerate(false);
-                  setNote("");
-                }
-              }}
-            >
-              {busy === "regen" ? "Writing…" : showRegenerate ? "Regenerate now" : "Regenerate"}
-            </Button>
-            {draft.status === "stale" && !editStale && (
+            {!panel.closed && (
+              <Button
+                // One filled button on the page: a decision on the type line keeps it, and Regenerate leads only when it is the next
+                // step. While a draft job writes the next draft it stays off, so it cannot add a second one.
+                {...regenerateControl({ status: draft.status, decisionWaiting, drafting, busy: busy !== null, aiConfigured: panel.aiConfigured })}
+                onClick={async () => {
+                  if (!showRegenerate) return setShowRegenerate(true);
+                  if (await run("regen", () => callApi(`/api/drafts/${draft.id}/regenerate`, "POST", { note }))) {
+                    setShowRegenerate(false);
+                    setNote("");
+                  }
+                }}
+              >
+                {busy === "regen" ? "Writing…" : showRegenerate ? "Regenerate now" : "Regenerate"}
+              </Button>
+            )}
+            {draft.status === "stale" && !editStale && !panel.closed && (
               <Button variant="outline" disabled={busy !== null} onClick={() => setEditStale(true)}>
                 Edit and send anyway
               </Button>

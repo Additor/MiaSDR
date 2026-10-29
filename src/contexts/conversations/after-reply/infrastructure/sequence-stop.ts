@@ -44,7 +44,7 @@ export const stepMayBecome = (to: StepRunStatus) => inArray(sequenceStepRuns.sta
 
 /** Locks the record row: the first lock of every run write, which takes record, then run, then step run. */
 export const lockRecordTx = (tx: Tx, organizationId: string, recordId: string) =>
-  tx.select({ id: records.id }).from(records).where(and(eq(records.id, recordId), eq(records.organizationId, organizationId))).for("update");
+  tx.select({ id: records.id }).from(records).where(and(eq(records.id, recordId), eq(records.organizationId, organizationId))).for("no key update");
 
 /**
  * Writes an event of the record. It stays raw SQL: it copies the person and context version from the record row, and

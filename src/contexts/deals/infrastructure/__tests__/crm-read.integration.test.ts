@@ -144,6 +144,12 @@ describeDb("crm-read against Postgres", () => {
   it("plans the Contacts list on the partial contacts index even under a generic plan", async () => {
     // A bound `lifecycle = $n` cannot match the partial index people_org_contacts_idx in a generic plan; the literal can.
     const f = await kit.organization();
+    // A realistic spread: many leads and some contacts. With a handful of rows any index of the organization costs the
+    // same, and the planner's pick says nothing about the partial index.
+    await kit.sql`
+      insert into people (organization_id, full_name, lifecycle, converted_at)
+      select ${f.org}, 'Plan ' || g, case when g % 20 = 0 then 'contact' else 'lead' end, case when g % 20 = 0 then now() end
+      from generate_series(1, 2000) g`;
     await crm.crmRead.contacts(f.org, { sort: "converted", page: 1, pageSize: 25 });
     const instance = (globalThis as unknown as { __miasdrDb: { execute: (query: SQL) => Promise<unknown> } }).__miasdrDb;
     const execute = vi.spyOn(instance, "execute");
@@ -160,6 +166,8 @@ describeDb("crm-read against Postgres", () => {
     const plan = await kit.sql.begin(async (tx) => {
       await tx`analyze people`;
       await tx`set local enable_seqscan = off`;
+      // Bitmap scans go too: the question is whether the partial index can serve the list, not which scan wins on few rows.
+      await tx`set local enable_bitmapscan = off`;
       return tx.unsafe(`explain (generic_plan, format json) ${list.sql}`);
     });
     expect(JSON.stringify(plan[0]["QUERY PLAN"])).toContain("people_org_contacts_idx");

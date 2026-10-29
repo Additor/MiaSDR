@@ -186,6 +186,8 @@ export interface PanelData {
   suppressed: boolean;
   doNotContact: boolean;
   mailboxIssue: string | null;
+  /** Why no reply can be written here at all: reply handling marked done, or the conversation closed. Null when open. */
+  closed: string | null;
   /** The latest inbound message already has an answer sent after it. */
   answered: boolean;
   /** CC addresses seen on this lead's inbound mail, newest first. Offered as optional CC on a reply. */
