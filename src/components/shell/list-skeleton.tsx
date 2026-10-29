@@ -6,14 +6,16 @@ import { cn } from "@/components/ui/utils";
  * does not jump when the list arrives. `bordered` frames the rows like the Actions groups; the Inbox table has none.
  * It is one status region, so a screen reader hears "Loading" once.
  */
-export function ListSkeleton({ rows = 6, bordered = false, label = "Loading" }: { rows?: number; bordered?: boolean; label?: string }) {
+export function ListSkeleton({ rows = 6, bordered = false, toolbar = true, label = "Loading" }: { rows?: number; bordered?: boolean; toolbar?: boolean; label?: string }) {
   return (
-    <div role="status" aria-label={label} className="grid gap-3" data-testid="list-skeleton">
-      <div className="flex gap-2">
-        <Skeleton className="h-7 w-14 rounded-full" />
-        <Skeleton className="h-7 w-16 rounded-full" />
-        <Skeleton className="h-7 w-20 rounded-full" />
-      </div>
+    <div role="status" aria-label={label} className="stack-group" data-testid="list-skeleton">
+      {/* The toolbar row: a search and a button, the parts every list toolbar has. A list without one passes `toolbar={false}`. */}
+      {toolbar && (
+        <div className="flex gap-2">
+          <Skeleton className="h-8 w-56 max-w-[60%]" />
+          <Skeleton className="h-8 w-20" />
+        </div>
+      )}
       <ul className={cn("divide-y", bordered && "rounded-lg border")}>
         {Array.from({ length: rows }, (_, index) => (
           <li key={index} className="grid gap-2 px-3 py-3 sm:py-2.5">

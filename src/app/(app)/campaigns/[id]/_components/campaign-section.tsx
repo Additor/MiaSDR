@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
-import { cn } from "@/components/ui/utils";
+import { Section } from "@/components/shell/section";
 
 /**
  * A block of the campaign page: an h2 with an optional count, description and action, then its content. Blocks are ruled
- * apart by a hairline like `RecordSection`, not boxed. The first block of a group drops its rule and top space, the last
- * its bottom space, so a group sits in the page stack without extra gaps.
+ * apart by a hairline like `RecordSection`, not boxed. The frame is the shell's `Section`.
  */
 export function CampaignSection({
   title,
@@ -32,23 +31,9 @@ export function CampaignSection({
   className?: string;
   children?: ReactNode;
 }) {
-  const Heading = level;
   return (
-    <section id={id} role={role} data-testid={testId} className={cn("stack-group min-w-0 border-t py-section first:border-t-0 first:pt-0 last:pb-0", className)}>
-      <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="stack-field min-w-0">
-          <div className="flex items-baseline gap-2">
-            <Heading className="flex items-center gap-1.5 text-sm font-semibold">
-              {icon}
-              {title}
-            </Heading>
-            {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
-          </div>
-          {description && <div className="max-w-prose text-sm text-muted-foreground">{description}</div>}
-        </div>
-        {action}
-      </div>
+    <Section title={title} icon={icon} count={count} description={description} action={action} level={level} sectionId={id} testId={testId} sectionRole={role} className={className}>
       {children}
-    </section>
+    </Section>
   );
 }

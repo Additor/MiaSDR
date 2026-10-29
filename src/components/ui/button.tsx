@@ -22,7 +22,7 @@ const buttonStyles = cva(
         default:
           "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
         icon: "size-8",
         "icon-xs":
@@ -31,10 +31,21 @@ const buttonStyles = cva(
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
       },
+      /** A control a person taps on a phone: 44px below `sm`. Dense surfaces (grid cells, toolbars that fold) leave it off. */
+      touch: {
+        true: "",
+        false: "",
+      },
     },
+    compoundVariants: [
+      // 44px on a phone. Text sizes keep their width and grow in height; icon sizes become a 44px square.
+      { touch: true, size: ["default", "xs", "sm", "lg"], className: "max-sm:h-11 max-sm:px-4" },
+      { touch: true, size: ["icon", "icon-xs", "icon-sm", "icon-lg"], className: "max-sm:size-11" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",
+      touch: false,
     },
   }
 )
@@ -49,13 +60,14 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  touch = false,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonStyles>) {
   return (
     <ButtonPrimitive
       data-slot="button"
       data-variant={variant}
-      className={buttonVariants({ variant, size, className })}
+      className={buttonVariants({ variant, size, touch, className })}
       {...props}
     />
   )

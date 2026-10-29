@@ -20,15 +20,16 @@ const badgeVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
     },
+    // Secondary is the normal state (DESIGN.md Colors). `default`, the black fill, stays for an explicit ask.
     defaultVariants: {
-      variant: "default",
+      variant: "secondary",
     },
   }
 )
 
 function Badge({
   className,
-  variant = "default",
+  variant = "secondary",
   render,
   ...props
 }: useRender.ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {

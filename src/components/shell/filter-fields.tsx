@@ -12,7 +12,7 @@ const ROW_LABEL = "text-sm text-muted-foreground";
 /** A group of rows under a small title. Sections after the first sit under a hairline. */
 export function FilterSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="grid gap-2.5 not-first:border-t not-first:pt-4">
+    <section aria-label={title} className="stack-group not-first:border-t not-first:pt-inset">
       <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
       {children}
     </section>
