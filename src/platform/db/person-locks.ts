@@ -30,7 +30,7 @@ export const setLockTimeout = (tx: DbHandle, value: string) => tx.execute(sql.ra
  * transaction-scoped and keyed on the person; several people are taken in id order so two callers cannot wait on each other.
  */
 export async function lockPersonOutreachTx(tx: DbTx, organizationId: string, personIds: string[]): Promise<void> {
-  for (const id of [...new Set(personIds)].sort()) {
+  for (const id of lockOrder(personIds)) {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${outreachLockKey(organizationId, id)}, 0))`);
   }
 }
@@ -41,7 +41,7 @@ export async function lockPersonOutreachTx(tx: DbTx, organizationId: string, per
  * array, and `with ordinality` plus `order by` pin that order. One round trip for the batch instead of one per id.
  */
 export async function lockPeopleOutreachTx(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<void> {
-  const keys = [...new Set(personIds)].sort().map((id) => outreachLockKey(organizationId, id));
+  const keys = lockOrder(personIds).map((id) => outreachLockKey(organizationId, id));
   if (keys.length === 0) return;
   await tx.execute(sql`
     select count(*) from (
@@ -50,5 +50,11 @@ export async function lockPeopleOutreachTx(tx: DbHandle, organizationId: string,
       order by k.n
     ) locked`);
 }
+
+/**
+ * The ids in lowercase, without repeats, sorted. Postgres prints a uuid in lowercase, and a request may send one in
+ * uppercase (`z.uuid()` takes both), so the key must not depend on the case the caller had.
+ */
+const lockOrder = (personIds: readonly string[]) => [...new Set(personIds.map((id) => id.toLowerCase()))].sort();
 
 const outreachLockKey = (organizationId: string, personId: string) => `person-outreach:${organizationId}:${personId}`;

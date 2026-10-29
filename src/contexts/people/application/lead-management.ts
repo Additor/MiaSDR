@@ -155,10 +155,10 @@ const blockedLead = (row: LeadForDelete, reason: BlockReason | undefined): Block
 /** A lock error twice (`try_again`) or the statement timeout (57014): the batch rolled back. */
 const isBusy = (error: unknown) => (error instanceof ConflictError && error.details?.code === "try_again") || sqlState(error) === "57014";
 
-/** The people of a batch that rolled back, as `try_again`. */
-async function busy(deps: LeadDeleteDeps, organizationId: string, ids: string[]): Promise<BlockedLead[]> {
+/** The people of a run that rolled back, with the reason they stay. */
+async function stayed(deps: LeadDeleteDeps, organizationId: string, ids: string[], reason: "try_again" | "linked_records"): Promise<BlockedLead[]> {
   const rows = await deps.transaction((tx) => deps.people.read(tx, organizationId, ids));
-  return rows.map((row) => ({ id: row.id, name: row.name, reason: "try_again" as const }));
+  return rows.map((row) => ({ id: row.id, name: row.name, reason }));
 }
 
 async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]): Promise<DeleteOutcome> {
@@ -172,20 +172,18 @@ async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]
     try {
       add(await deleteBatch(deps, actor, part));
     } catch (error) {
-      if (isBusy(error)) {
-        add({ deleted: 0, blocked: await busy(deps, actor.organizationId, part) });
-        continue;
-      }
-      if (sqlState(error) !== "23503") throw error;
-      // The last guard. Before the batch held its locks, a send claim or a new record could commit between the checks and the
-      // delete; under the locks no known writer can, so this catches only a reference no check covers. Each lead runs again
-      // alone, so the others still go, and a lead that fails alone comes back as `try_again`.
+      if (!isBusy(error) && sqlState(error) !== "23503") throw error;
+      // A busy batch (one held row, a lock timeout twice, the statement timeout) or a foreign key violation runs again one
+      // lead at a time, so the others still go. A 23503 is the last guard: before the batch held its locks, a send claim or
+      // a new record could commit between the checks and the delete; under the locks no known writer can, so it catches
+      // only a reference no check covers, and the lead stays as `linked_records`. A lead still busy alone is `try_again`.
       for (const id of part) {
         try {
           add(await deleteBatch(deps, actor, [id]));
         } catch (single) {
-          if (!isBusy(single) && sqlState(single) !== "23503") throw single;
-          add({ deleted: 0, blocked: await busy(deps, actor.organizationId, [id]) });
+          if (isBusy(single)) add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "try_again") });
+          else if (sqlState(single) === "23503") add({ deleted: 0, blocked: await stayed(deps, actor.organizationId, [id], "linked_records") });
+          else throw single;
         }
       }
     }

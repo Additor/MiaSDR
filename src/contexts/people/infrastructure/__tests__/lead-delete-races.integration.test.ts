@@ -177,7 +177,7 @@ describeDb("person delete races", () => {
     const enrollmentId = await f.enrollment(campaignId, lead, "pending");
     const holder = await holdClaim(f, enrollmentId);
     const deleting = settle(leads.deleteLeads(patientLeads(), f.owner, { ids: [lead] }));
-    await waitForLockWaiters(kit.sql, 1);
+    await waitForLockWaiters(kit.sql, 1, 10_000, "%for update of e%");
     await holder.release();
     const deleted = await deleting;
     expect(deleted.error).toBeNull();
@@ -233,7 +233,7 @@ describeDb("person delete races", () => {
       },
     };
     const deleting = settle(contacts.deleteContact(patient, f.owner, personId, { expected: expectedOf(preview) }));
-    await waitForLockWaiters(kit.sql, 1);
+    await waitForLockWaiters(kit.sql, 1, 10_000, "%for update of e%");
     await holder.release();
     const deleted = await deleting;
     expect(sqlState(deleted.error)).toBeNull();
@@ -264,7 +264,7 @@ describeDb("person delete races", () => {
     const deleting = settle(leads.deleteLeads(g.deps, f.owner, { ids: w.ids }));
     await g.paused;
     const stopping = settle(stopOnReply(f, w.replier));
-    await waitForLockWaiters(kit.sql, 1);
+    await waitForLockWaiters(kit.sql, 1, 10_000, "%pg_advisory_xact_lock%");
     g.resume();
     const [deleted, stopped] = await Promise.all([deleting, stopping]);
     expect(deleted.error).toBeNull();
@@ -284,7 +284,7 @@ describeDb("person delete races", () => {
       await tx`insert into events (organization_id, person_id, event_type, actor_type) values (${f.org}, ${w.replier}, 'outreach.stopped_by_reply', 'system')`;
     });
     const deleting = settle(leads.deleteLeads(leadDeps, f.owner, { ids: w.ids }));
-    await waitForLockWaiters(kit.sql, 1);
+    await waitForLockWaiters(kit.sql, 1, 10_000, "%pg_advisory_xact_lock%");
     await holder.release();
     const deleted = await deleting;
     expect(deleted.error).toBeNull();
@@ -304,6 +304,47 @@ describeDb("person delete races", () => {
       expect(await people(w.replier)).toBe(1);
     }
   }, 60_000);
+
+  it("refuses a member's delete of a lead sent to in a personal campaign whose creator left", async () => {
+    const f = await kit.organization();
+    const campaignId = await f.campaign({ type: "personal" });
+    // A deleted user sets `created_by` to null (ON DELETE SET NULL).
+    await kit.sql`update campaigns set created_by = null, status = 'completed' where id = ${campaignId}`;
+    const lead = await f.person();
+    const enrollmentId = await f.enrollment(campaignId, lead, "completed", "linkedin");
+    await kit.sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, sent_at) values (${f.org}, ${enrollmentId}, 1, 'linkedin', 'sent', now())`;
+    const outcome = await leads.deleteLeads(leadDeps, f.member, { ids: [lead] });
+    expect(outcome).toMatchObject({ deleted: 0, blocked: [{ id: lead, reason: "has_hidden_sends" }] });
+    expect((await leads.deleteLeads(leadDeps, f.owner, { ids: [lead] })).blocked).toMatchObject([{ id: lead, reason: "has_sends" }]);
+    expect(await sendsOf(enrollmentId)).toEqual(["sent"]);
+  }, 30_000);
+
+  it("takes the same advisory lock for an id sent in uppercase as the reply stop takes for the stored id", async () => {
+    const f = await kit.organization();
+    const lead = await f.person();
+    const holder = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select pg_advisory_xact_lock(hashtextextended(${`person-outreach:${f.org}:${lead}`}, 0))`);
+    const deleting = settle(leads.deleteLeads(leadDeps, f.owner, { ids: [lead.toUpperCase()] }));
+    await waitForLockWaiters(kit.sql, 1, 10_000, "%pg_advisory_xact_lock%");
+    expect(await people(lead)).toBe(1);
+    await holder.release();
+    const deleted = await deleting;
+    expect(deleted.error).toBeNull();
+    expect(deleted.value).toEqual({ deleted: 1, blocked: [] });
+  }, 30_000);
+
+  it("runs a busy batch again one lead at a time, so one held row keeps only its own lead", async () => {
+    const f = await kit.organization();
+    const ids = await Promise.all(Array.from({ length: 5 }, () => f.person()));
+    const held = ids[2];
+    const holder = await holdLocks(TEST_DATABASE_URL ?? "", (tx) => tx`select id from people where id = ${held} for update`);
+    try {
+      const outcome = await leads.deleteLeads(leadDeps, f.owner, { ids });
+      expect(outcome).toMatchObject({ deleted: 4, blocked: [{ id: held, reason: "try_again" }] });
+    } finally {
+      await holder.release();
+    }
+    expect(await people(held)).toBe(1);
+  }, 30_000);
 
   it("deletes a lead whose only sends failed, with those sends, and keeps a lead with a sent one", async () => {
     const f = await kit.organization();

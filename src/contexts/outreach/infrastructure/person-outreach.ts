@@ -47,7 +47,8 @@ const enrollmentsOf = (organizationId: string, personId: string) =>
 const campaignSeenBy = (actor: Actor, alias: string) => {
   if (isOwnerOrAdmin(actor.role)) return sql`true`;
   const c = sql.raw(alias);
-  return sql`(${c}.type = 'regular' or ${c}.created_by = ${actor.userId}::uuid)`;
+  // `is not distinct from`: a creator who left sets `created_by` to null, and a null here would drop every flag built on it.
+  return sql`(${c}.type = 'regular' or ${c}.created_by is not distinct from ${actor.userId}::uuid)`;
 };
 
 /**
