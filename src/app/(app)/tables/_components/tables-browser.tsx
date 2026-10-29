@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
+import { ErrorState } from "@/components/shell/error-state";
+import { ListSkeleton } from "@/components/shell/list-skeleton";
 import { ListToolbar } from "@/components/shell/list-toolbar";
 import { PageHeader } from "@/components/shell/page-header";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
@@ -13,15 +15,13 @@ import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { gridRequest, gridUrl } from "../_lib/data/client";
-import { plural } from "../_lib/view/format";
 import type { FolderSummary, WorkbookSummary } from "../_lib/data/types";
-import { ErrorText } from "./form-bits";
 import { TableImportDialog } from "./table-import-dialog";
 import { MoveDialog, type FolderNode } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
+import { countOf } from "@/shared/format-number";
 
 type Action =
   | { kind: "newFolder" }
@@ -169,16 +169,17 @@ export function TablesBrowser() {
           <LiveSearchField label="Search workbooks and folders" value={query} onChange={setQuery} />
         </ListToolbar>
 
-        {status === "loading" && <Skeleton className="h-64 w-full" />}
+        {status === "loading" && <ListSkeleton toolbar={false} />}
         {status === "error" && (
-          <div role="alert" className="grid gap-2">
-            <ErrorText>{error}</ErrorText>
-            <div>
-              <Button variant="outline" onClick={() => void load()}>
+          <ErrorState
+            title="The workbooks did not load"
+            reason={error}
+            action={
+              <Button variant="outline" touch onClick={() => void load()}>
                 Try again
               </Button>
-            </div>
-          </div>
+            }
+          />
         )}
         {status === "ready" &&
           (shownFolders.length === 0 && shownWorkbooks.length === 0 ? (
@@ -229,7 +230,7 @@ export function TablesBrowser() {
                       </RowLink>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {plural(f.folderCount, "folder")}, {plural(f.workbookCount, "workbook")}
+                      {countOf(f.folderCount, "folder")}, {countOf(f.workbookCount, "workbook")}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell" />
                     <TableCell>
@@ -251,7 +252,7 @@ export function TablesBrowser() {
                       {q && w.folderId && <p className="pl-6 text-xs text-muted-foreground">in {folderName.get(w.folderId) ?? "a folder"}</p>}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {plural(w.tableCount, "table")}, {plural(w.rowCount, "row")}
+                      {countOf(w.tableCount, "table")}, {countOf(w.rowCount, "row")}
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground sm:table-cell">
                       <Time value={w.updatedAt} dateOnly />
@@ -335,7 +336,7 @@ function LiveSearchField({ label, value, onChange }: { label: string; value: str
   return (
     <label className="relative block max-w-md min-w-48 flex-1">
       <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input type="search" aria-label={label} placeholder={label} value={value} onChange={(e) => onChange(e.target.value)} className="pl-8 max-sm:h-11" />
+      <Input type="search" aria-label={label} placeholder={label} value={value} onChange={(e) => onChange(e.target.value)} touch className="pl-8" />
     </label>
   );
 }

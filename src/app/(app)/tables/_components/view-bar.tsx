@@ -2,6 +2,7 @@
 
 import { AppliedFilters } from "@/components/shell/filter-chip";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isFilterGroup, type TableView } from "@/contexts/grid/domain/view-query";
 import { describeCondition, removeFilter, setConjunction, setSort } from "../_lib/view/view";
 
@@ -29,9 +30,12 @@ export function ViewBar({ view, nameOf, saveView, personalView, canEditDefault, 
         ]}
         extra={
           conditions.length > 1 && (
-            <Button size="xs" variant="ghost" title={`Switch to match ${conjunction === "or" ? "all" : "any"}`} onClick={() => void saveView(setConjunction(view, conjunction === "or" ? "and" : "or"))}>
-              Match {conjunction === "or" ? "any" : "all"}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger render={<Button size="xs" variant="ghost" onClick={() => void saveView(setConjunction(view, conjunction === "or" ? "and" : "or"))} />}>
+                Match {conjunction === "or" ? "any" : "all"}
+              </TooltipTrigger>
+              <TooltipContent>Switch to match {conjunction === "or" ? "all" : "any"}</TooltipContent>
+            </Tooltip>
           )
         }
         clear={{ onClick: () => void saveView({ ...view, filters: undefined, sorts: [] }) }}

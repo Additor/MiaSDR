@@ -1,9 +1,11 @@
 "use client";
 
-import { AlertCircleIcon, ArrowDownIcon, ArrowUpIcon, CircleDashedIcon, Clock3Icon, ExpandIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from "lucide-react";
+import { AlertCircleIcon, ArrowDownIcon, ArrowUpIcon, CheckIcon, CircleDashedIcon, Clock3Icon, ExpandIcon, PlayIcon, RefreshCwIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { Spinner } from "@/components/shell/spinner";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import { cn } from "@/components/ui/utils";
 import { cellStatus, columnWidth, displayValue, editorText, isEditableColumn, selectOptions, typeLabel, columnRunSummary, missingInputHint } from "../_lib/view/format";
@@ -14,6 +16,7 @@ import { boundsOf, clampPos, extendRange, headerState, inBounds, movePos, single
 import type { CellEditInput, GridColumn, GridRow } from "../_lib/data/types";
 import { rowWindow, scrollToRow } from "../_lib/view/window";
 import { CellEditor, type CommitMove } from "./cell-editor";
+import { CellTip } from "./cell-tip";
 import { ColumnMenu, type ColumnAction } from "./column-menu";
 
 /** Divider after the last pinned column. */
@@ -383,7 +386,7 @@ export function DataGrid(props: Props) {
       aria-multiselectable
       aria-activedescendant={activeId}
       tabIndex={0}
-      className="relative min-h-0 flex-1 overflow-auto rounded-lg border bg-background focus-ring"
+      className="relative isolate min-h-0 flex-1 overflow-auto rounded-lg border bg-background focus-ring"
       onScroll={(e) => {
         const top = e.currentTarget.scrollTop;
         setScroll((s) => (s.top === top ? s : { ...s, top }));
@@ -394,8 +397,8 @@ export function DataGrid(props: Props) {
       onPaste={onPaste}
     >
       <div style={{ width: GUTTER_W + offsets.total, minWidth: "100%" }}>
-        <div role="row" aria-rowindex={1} className="sticky top-0 z-20 flex border-b bg-muted/80 backdrop-blur" style={{ height: HEADER_H }}>
-          <div role="columnheader" aria-colindex={1} className="sticky left-0 z-30 flex shrink-0 items-center gap-2 border-r bg-muted px-2" style={{ width: GUTTER_W }}>
+        <div role="row" aria-rowindex={1} className="sticky top-0 z-30 flex border-b bg-muted/80 backdrop-blur" style={{ height: HEADER_H }}>
+          <div role="columnheader" aria-colindex={1} className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r bg-muted px-2" style={{ width: GUTTER_W }}>
             <Checkbox
               aria-label="Select all loaded rows"
               checked={head === "all"}
@@ -412,17 +415,20 @@ export function DataGrid(props: Props) {
                 role="columnheader"
                 aria-colindex={c + 2}
                 aria-sort={sort === "asc" ? "ascending" : sort === "desc" ? "descending" : "none"}
-                className={cn("relative flex shrink-0 items-center gap-1 border-r px-2 text-xs font-medium", c < pinnedCount && "sticky z-30 bg-muted", c === pinnedCount - 1 && PIN_EDGE)}
+                className={cn("relative flex shrink-0 items-center gap-1 border-r px-2 text-xs font-medium", c < pinnedCount && "sticky z-20 bg-muted", c === pinnedCount - 1 && PIN_EDGE)}
                 style={{ width: widthOf(column), left: c < pinnedCount ? GUTTER_W + offsets.left[c] : undefined }}
               >
-                <span className="truncate" title={`${column.name} (${typeLabel(column.type)})`}>
-                  {column.name}
-                </span>
-                <span className="min-w-0 shrink-[10] truncate text-[10px] font-normal text-muted-foreground">{typeLabel(column.type)}</span>
+                <span className="truncate">{column.name}</span>
+                <span className="min-w-0 shrink-[10] truncate text-xs font-normal text-muted-foreground">{typeLabel(column.type)}</span>
                 {props.coverage?.[column.key] !== undefined && (
-                  <span className="min-w-0 shrink-[10] truncate text-[10px] font-normal text-muted-foreground tabular-nums" title={`Filled in ${props.coverage[column.key]}% of rows, as of load`}>
-                    {props.coverage[column.key]}%
-                  </span>
+                  // One tip per column, not per cell. The screen-reader text carries what the number means.
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="min-w-0 shrink-[10] truncate text-xs font-normal text-muted-foreground tabular-nums" />}>
+                      <span aria-hidden>{props.coverage[column.key]}%</span>
+                      <span className="sr-only">Filled in {props.coverage[column.key]}% of rows</span>
+                    </TooltipTrigger>
+                    <TooltipContent>Filled in {props.coverage[column.key]}% of rows, as of load</TooltipContent>
+                  </Tooltip>
                 )}
                 {sort === "asc" && <ArrowUpIcon className="size-3 shrink-0" aria-hidden />}
                 {sort === "desc" && <ArrowDownIcon className="size-3 shrink-0" aria-hidden />}
@@ -444,7 +450,7 @@ export function DataGrid(props: Props) {
                   <div
                     role="rowheader"
                     aria-colindex={1}
-                    className={cn("sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r px-2 text-xs text-muted-foreground", selected ? "bg-accent" : "bg-background")}
+                    className={cn("sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r px-2 text-xs text-muted-foreground", selected ? "bg-accent" : "bg-background")}
                     style={{ width: GUTTER_W }}
                   >
                     <Checkbox aria-label={`Select row ${r + 1}`} checked={selected} onCheckedChange={() => {}} onClick={(e) => toggleOne(r, e.shiftKey)} />
@@ -587,6 +593,8 @@ const GridCell = memo(function GridCell(p: CellProps) {
   const hint = status.state === "idle" && (value === null || value === undefined || value === "") ? missingInputHint(column, row.cells) : null;
   const readOnly = !isEditableColumn(column);
   const type = effectiveColumnType(column);
+  // The state's reason, read with the cell. A tooltip per cell would mount thousands, so only the active cell opens one.
+  const reason = status.state === "idle" ? hint?.title : status.state === "running" ? "Running" : status.state === "waiting" ? `Waiting: ${status.message}` : status.state === "stale" ? `Stale: ${status.message}` : status.message;
   return (
     <div
       id={p.id}
@@ -595,14 +603,15 @@ const GridCell = memo(function GridCell(p: CellProps) {
       aria-selected={active || p.inRange}
       aria-readonly={readOnly || undefined}
       aria-label={`${column.name}: ${displayValue(value, column) || hint?.text.toLowerCase() || "empty"}`}
+      aria-describedby={reason ? `${p.id}-reason` : undefined}
       className={cn(
         "group/cell relative flex shrink-0 items-center overflow-hidden border-r text-sm select-none",
         type === "number" || type === "currency" ? "justify-end" : "",
         p.inRange && "bg-primary/10",
         p.inFill && "bg-primary/10 ring-1 ring-primary/40 ring-inset",
-        active && "z-[5] ring-2 ring-primary ring-inset",
+        active && "z-10 ring-2 ring-primary ring-inset",
         readOnly && !p.inRange && "bg-muted/30",
-        p.stickyLeft !== undefined && ["sticky z-[6]", readOnly ? "bg-muted" : p.inRange ? "bg-accent" : "bg-background", p.edge && PIN_EDGE],
+        p.stickyLeft !== undefined && ["sticky z-20", readOnly ? "bg-muted" : p.inRange ? "bg-accent" : "bg-background", p.edge && PIN_EDGE],
       )}
       style={{ width: p.width, left: p.stickyLeft }}
       onMouseDown={p.onMouseDown}
@@ -615,50 +624,61 @@ const GridCell = memo(function GridCell(p: CellProps) {
         </div>
       ) : (
         <div className="flex w-full min-w-0 items-center gap-1 px-2">
-          <CellContent value={value} column={column} onToggle={p.onToggle} />
-          {hint && (
-            <span className="truncate text-xs text-muted-foreground" title={hint.title}>
-              {hint.text}
+          {reason && (
+            <span id={`${p.id}-reason`} className="sr-only">
+              {reason}
             </span>
           )}
-          {status.state === "running" && <Loader2Icon className="ml-auto size-3.5 shrink-0 animate-spin text-muted-foreground" aria-label="Running" />}
+          <CellContent value={value} column={column} active={active} onToggle={p.onToggle} />
+          {hint && (
+            <CellTip active={active} tip={hint.title} className="truncate text-xs text-muted-foreground">
+              {hint.text}
+            </CellTip>
+          )}
+          {status.state === "running" && <Spinner className="ml-auto size-3.5" />}
           {status.state === "waiting" && (
-            <span className="ml-auto shrink-0" title={status.message}>
-              <Clock3Icon className="size-3.5 text-muted-foreground" aria-label={`Waiting: ${status.message}`} />
-            </span>
+            <CellTip active={active} tip={status.message} className="ml-auto shrink-0">
+              <Clock3Icon aria-hidden className="size-3.5 text-muted-foreground" />
+            </CellTip>
           )}
           {status.state === "miss" && (
-            <span className="ml-auto shrink-0" title={status.message}>
-              <CircleDashedIcon className="size-3.5 text-muted-foreground" aria-label={status.message} />
-            </span>
+            <CellTip active={active} tip={status.message} className="ml-auto shrink-0">
+              <CircleDashedIcon aria-hidden className="size-3.5 text-muted-foreground" />
+            </CellTip>
           )}
           {status.state === "skipped" && (
-            <span className="ml-auto shrink-0" title={status.message}>
-              <AlertCircleIcon className="size-3.5 text-warning" aria-label={status.message} />
-            </span>
+            <CellTip active={active} tip={status.message} className="ml-auto shrink-0">
+              <AlertCircleIcon aria-hidden className="size-3.5 text-warning" />
+            </CellTip>
           )}
           {status.state === "error" && (
-            <span className="ml-auto shrink-0" title={status.message}>
-              <AlertCircleIcon className="size-3.5 text-destructive" aria-label={status.message} />
-            </span>
+            <CellTip active={active} tip={status.message} className="ml-auto shrink-0">
+              <AlertCircleIcon aria-hidden className="size-3.5 text-destructive" />
+            </CellTip>
           )}
           {status.state === "stale" && (
-            <span className="ml-auto shrink-0" title={status.message}>
-              <RefreshCwIcon className="size-3.5 text-warning" aria-label={`Stale: ${status.message}`} />
-            </span>
+            <CellTip active={active} tip={status.message} className="ml-auto shrink-0">
+              <RefreshCwIcon aria-hidden className="size-3.5 text-warning" />
+            </CellTip>
           )}
           {active && p.onRun && (
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label="Run this cell"
-              title="Run this cell (Ctrl or Cmd+Enter)"
-              className="ml-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground sm:size-5"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={p.onRun}
-            >
-              <PlayIcon className="size-3" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Run this cell"
+                    className="ml-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground sm:size-5"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={p.onRun}
+                  />
+                }
+              >
+                <PlayIcon className="size-3" />
+              </TooltipTrigger>
+              <TooltipContent>Run this cell (Ctrl or Cmd+Enter)</TooltipContent>
+            </Tooltip>
           )}
           {active && (
             <button
@@ -678,7 +698,6 @@ const GridCell = memo(function GridCell(p: CellProps) {
         <div
           role="presentation"
           data-fill-handle
-          title="Drag down to copy"
           className="absolute right-0 bottom-0 z-10 size-2.5 cursor-crosshair touch-none border border-background bg-primary pointer-coarse:size-4"
           onPointerDown={(e) => {
             if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -693,7 +712,7 @@ const GridCell = memo(function GridCell(p: CellProps) {
   );
 });
 
-function CellContent({ value, column, onToggle }: { value: unknown; column: GridColumn; onToggle: () => void }) {
+function CellContent({ value, column, active, onToggle }: { value: unknown; column: GridColumn; active: boolean; onToggle: () => void }) {
   const type = effectiveColumnType(column);
   if (value === null || value === undefined || value === "") return null;
   const text = displayValue(value, column);
@@ -710,7 +729,7 @@ function CellContent({ value, column, onToggle }: { value: unknown; column: Grid
         onMouseDown={(e) => e.stopPropagation()}
         onClick={onToggle}
       >
-        {value === true && <span aria-hidden className="text-[10px] leading-none">✓</span>}
+        {value === true && <CheckIcon aria-hidden className="size-3.5" />}
       </button>
     );
   }
@@ -731,12 +750,21 @@ function CellContent({ value, column, onToggle }: { value: unknown; column: Grid
   }
   if ((type === "url" || type === "email") && typeof value === "string") {
     const href = type === "email" ? `mailto:${value}` : /^https?:\/\//i.test(value) ? value : null;
-    if (href)
-      return (
-        <a href={href} target={type === "url" ? "_blank" : undefined} rel="noreferrer noopener" tabIndex={-1} title="Ctrl or Cmd and click to open" className="truncate text-primary underline-offset-2 hover:underline" onMouseDown={(e) => e.preventDefault()} onClick={(e) => !(e.metaKey || e.ctrlKey) && e.preventDefault()}>
+    if (href) {
+      const link = (
+        <a href={href} target={type === "url" ? "_blank" : undefined} rel="noreferrer noopener" tabIndex={-1} className="truncate text-primary underline-offset-2 hover:underline" onMouseDown={(e) => e.preventDefault()} onClick={(e) => !(e.metaKey || e.ctrlKey) && e.preventDefault()}>
           {text}
         </a>
       );
+      // A click selects the cell, so the link opens on Ctrl or Cmd and click. Only the active cell says so, in one tip.
+      if (!active) return link;
+      return (
+        <Tooltip>
+          <TooltipTrigger render={link} />
+          <TooltipContent>Ctrl or Cmd and click to open</TooltipContent>
+        </Tooltip>
+      );
+    }
   }
   return <span className={cn("truncate", type === "number" || type === "currency" ? "tabular-nums" : "")}>{text}</span>;
 }

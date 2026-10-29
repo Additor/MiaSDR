@@ -125,8 +125,8 @@ export function ColumnMenu({ column, index, count, sort, pinned = false, pinCoun
             </DropdownMenuItem>
           )}
           {pinBlocked && (
-            <DropdownMenuItem disabled title={`${pinBlocked}. Unpin one first.`}>
-              <PinIcon /> <span className="flex min-w-0 flex-col leading-tight">Pin column<span className="text-xs text-muted-foreground">{pinBlocked}</span></span>
+            <DropdownMenuItem disabled>
+              <PinIcon /> <span className="flex min-w-0 flex-col leading-tight">Pin column<span className="text-xs text-muted-foreground">{pinBlocked}. Unpin one first.</span></span>
             </DropdownMenuItem>
           )}
           {offered("unpin") && (

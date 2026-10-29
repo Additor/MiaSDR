@@ -6,13 +6,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { countOf, formatCount } from "@/shared/format-number";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { buildRunBody, centsCapIsInert, DEFAULT_FIRST_N, estimateByProvider, estimateHeadline, retrySummary, runSummary, stopSummary, type RunEstimate, type RunScope } from "../_lib/data/run-request";
 import type { GridColumn, JobCounts } from "../_lib/data/types";
-import { ErrorText, Field } from "./form-bits";
 
 interface RunReport extends RunEstimate {
   queued: number;
@@ -85,21 +86,22 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
           <DialogTitle>{column ? `Run ${column.name}` : "Run enrichments"}</DialogTitle>
           <DialogDescription>Calls your connected providers for each row. You can stop the run at any time. Calls already in progress finish.</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
-          <fieldset className="stack-field">
-            <legend className="mb-1 text-sm font-medium">Rows</legend>
+        <FieldGroup>
+          <FieldSet>
+            <FieldLegend variant="label">Rows</FieldLegend>
             <RadioGroup value={scope} onValueChange={(v) => setScope(v as RunScope)}>
-              <div className="flex items-center gap-2">
+              <Field orientation="horizontal">
                 <RadioGroupItem value="all" id="run-scope-all" />
-                <Label htmlFor="run-scope-all" className="font-normal">
+                <FieldLabel htmlFor="run-scope-all" className="font-normal">
                   All rows (up to the limit below)
-                </Label>
-              </div>
+                </FieldLabel>
+              </Field>
+              {/* The count field sits inside the option's sentence, so this row lays itself out. */}
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <RadioGroupItem value="first" id="run-scope-first" />
-                <Label htmlFor="run-scope-first" className="font-normal">
+                <FieldLabel htmlFor="run-scope-first" className="font-normal">
                   First
-                </Label>
+                </FieldLabel>
                 <Input
                   aria-label="Number of first rows"
                   className="w-24"
@@ -115,31 +117,37 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
                 />
                 <span>rows in table order</span>
               </div>
-              <div className="flex items-center gap-2">
+              <Field orientation="horizontal">
                 <RadioGroupItem value="selected" id="run-scope-selected" disabled={selectedRowIds.length === 0} />
-                <Label htmlFor="run-scope-selected" className={`font-normal ${selectedRowIds.length === 0 ? "text-muted-foreground" : ""}`}>
-                  {selectedRowIds.length === 0 ? "Selected rows (select rows in the grid first)" : `${selectedRowIds.length.toLocaleString("en-US")} selected ${selectedRowIds.length === 1 ? "row" : "rows"}`}
-                </Label>
-              </div>
+                <FieldLabel htmlFor="run-scope-selected" className={`font-normal ${selectedRowIds.length === 0 ? "text-muted-foreground" : ""}`}>
+                  {selectedRowIds.length === 0 ? "Selected rows (select rows in the grid first)" : countOf(selectedRowIds.length, "selected row")}
+                </FieldLabel>
+              </Field>
             </RadioGroup>
-          </fieldset>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={onlyEmpty} onCheckedChange={(v) => setOnlyEmpty(v === true)} /> Skip cells that already have a value
-          </label>
-          <p className="-mt-1.5 text-xs text-muted-foreground">When you run the first rows, skipped cells do not count. The run goes on to the next row that has something to fill.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Row limit" htmlFor="run-rows" hint="Up to 10,000. A run that would cover more rows does not start. To run part of a table, choose the first rows option.">
-              <Input id="run-rows" type="number" min={1} max={10000} value={maxRows} onChange={(e) => setMaxRows(e.target.value)} />
+          </FieldSet>
+          <Field orientation="horizontal">
+            <Checkbox id="run-only-empty" checked={onlyEmpty} onCheckedChange={(v) => setOnlyEmpty(v === true)} />
+            <FieldContent>
+              <FieldLabel htmlFor="run-only-empty">Skip cells that already have a value</FieldLabel>
+              <FieldDescription>When you run the first rows, skipped cells do not count. The run goes on to the next row that has something to fill.</FieldDescription>
+            </FieldContent>
+          </Field>
+          <div className="grid gap-group sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="run-rows">Row limit</FieldLabel>
+              <Input id="run-rows" type="number" min={1} max={10000} value={maxRows} onChange={(e) => setMaxRows(e.target.value)} aria-describedby="run-rows-hint" />
+              <FieldDescription id="run-rows-hint">Up to 10,000. A run that would cover more rows does not start. To run part of a table, choose the first rows option.</FieldDescription>
             </Field>
-            <Field
-              label="Cost cap ($)"
-              htmlFor="run-cost"
-              hint={estimate && centsCapIsInert(estimate) ? "Your providers have no price, so a dollar cap cannot stop this run. Give a provider a price, or cap credits on the column." : "Optional. The run does not start if its worst case cost is above this."}
-            >
-              <Input id="run-cost" type="number" min={0} step={0.01} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} />
+            <Field>
+              <FieldLabel htmlFor="run-cost">Cost cap ($)</FieldLabel>
+              <Input id="run-cost" type="number" min={0} step={0.01} value={maxCost} onChange={(e) => setMaxCost(e.target.value)} aria-describedby="run-cost-hint" />
+              <FieldDescription id="run-cost-hint">
+                {estimate && centsCapIsInert(estimate) ? "Your providers have no price, so a dollar cap cannot stop this run. Give a provider a price, or cap credits on the column." : "Optional. The run does not start if its worst case cost is above this."}
+              </FieldDescription>
             </Field>
           </div>
-          <section aria-live="polite" aria-label="Worst case of this run" className="grid gap-1 rounded-md border bg-muted/40 p-3 text-sm">
+          {/* The worst case reads as body text under the fields: a dialog's status region draws no box. */}
+          <section aria-live="polite" aria-label="Worst case of this run" className="grid gap-1 text-sm">
             {estimate ? (
               <>
                 <p className="font-medium tabular-nums">{estimate.cells === 0 ? "Nothing to run. Inputs are empty or the cells are already filled." : estimateHeadline(estimate)}</p>
@@ -153,14 +161,14 @@ export function RunDialog({ tableId, column, selectedRowIds, initialFirstN, firs
               <p className={estimateError ? "text-destructive" : "text-muted-foreground"}>{draft === null ? "Fix the field above to see what this run costs." : (estimateError ?? "Counting what this run can cost…")}</p>
             )}
           </section>
-          <ErrorText>{error}</ErrorText>
-        </div>
+          <FieldError>{error}</FieldError>
+        </FieldGroup>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
           <Button type="button" onClick={start} disabled={busy || !!estimateError || estimate?.cells === 0 || !!estimate?.problem}>
-            <PlayIcon /> {busy ? "Queueing…" : estimate && estimate.cells > 0 ? `Run ${estimate.rows.toLocaleString("en-US")} ${estimate.rows === 1 ? "row" : "rows"}` : "Run"}
+            <PlayIcon /> {busy ? "Queueing…" : estimate && estimate.cells > 0 ? `Run ${countOf(estimate.rows, "row")}` : "Run"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -216,15 +224,20 @@ export function RunProgress({
         <div className="h-full w-full origin-left bg-primary transition-transform duration-(--duration-drawer) ease-out" style={{ transform: `scaleX(${pct / 100})` }} />
       </div>
       <span className="tabular-nums">
-        {pending > 0 ? `${pending.toLocaleString("en-US")} left` : "Done"} · {done.toLocaleString("en-US")} succeeded
+        {pending > 0 ? `${formatCount(pending)} left` : "Done"} · {formatCount(done)} succeeded
         {jobs.failed > 0 && " · "}
         {jobs.failed > 0 &&
           (onShowFailed ? (
-            <button type="button" className="font-medium text-destructive underline underline-offset-2 hover:no-underline" title="Show only the rows whose run failed" onClick={onShowFailed}>
-              {jobs.failed.toLocaleString("en-US")} failed
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                render={<button type="button" className="font-medium text-destructive underline underline-offset-2 hover:no-underline focus-ring" onClick={onShowFailed} />}
+              >
+                {formatCount(jobs.failed)} failed
+              </TooltipTrigger>
+              <TooltipContent>Show only the rows whose run failed</TooltipContent>
+            </Tooltip>
           ) : (
-            `${jobs.failed.toLocaleString("en-US")} failed`
+            `${formatCount(jobs.failed)} failed`
           ))}
       </span>
       {pending > 0 && (

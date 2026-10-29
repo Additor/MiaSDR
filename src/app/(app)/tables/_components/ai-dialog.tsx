@@ -4,6 +4,7 @@ import { FlaskConicalIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
@@ -11,7 +12,7 @@ import { gridRequest, gridUrl } from "../_lib/data/client";
 import { columnForInput } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
 import { CreateFooter, createColumn, RunTiming } from "./enrichment-dialog";
-import { Choice, ErrorText, Field } from "./form-bits";
+import { ItemSelect } from "./form-bits";
 
 interface Props {
   tableId: string;
@@ -210,9 +211,9 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
                 : "Each row is answered on your organization's AI key. Cell values go in as data, not as instructions."}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
+        <FieldGroup>
           {aiOff && (
-            <p role="status" className="rounded-lg border border-dashed p-3 text-sm">
+            <p role="status" className="text-sm">
               {aiOff}
             </p>
           )}
@@ -227,12 +228,15 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
             </div>
           )}
           {!column && (
-            <Field label="Column name" htmlFor="ai-name">
+            <Field>
+              <FieldLabel htmlFor="ai-name">Column name</FieldLabel>
               <Input id="ai-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="AI" maxLength={120} />
             </Field>
           )}
-          <Field label="Prompt" htmlFor="ai-prompt" hint="The column shows the answer to the first field. Click a column below to put it in the prompt where the cursor is.">
-            <Textarea ref={promptRef} id="ai-prompt" rows={5} value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={8000} placeholder="Write a one-line summary of what {{company}} does." />
+          <Field>
+            <FieldLabel htmlFor="ai-prompt">Prompt</FieldLabel>
+            <Textarea ref={promptRef} id="ai-prompt" rows={5} value={prompt} onChange={(e) => setPrompt(e.target.value)} maxLength={8000} placeholder="Write a one-line summary of what {{company}} does." aria-describedby="ai-prompt-hint" />
+            <FieldDescription id="ai-prompt-hint">The column shows the answer to the first field. Click a column below to put it in the prompt where the cursor is.</FieldDescription>
           </Field>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Columns</span>
@@ -243,18 +247,21 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
             ))}
           </div>
           {(!column || savedOutputs(column) !== null) && (
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Output fields</legend>
-              {outputs.map((o, i) => (
-                <div key={i} className="grid gap-2 rounded-lg border p-2 sm:grid-cols-[8rem_9rem_1fr_auto]">
-                  <Input aria-label="Field key" value={o.key} onChange={(e) => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} onBlur={() => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, key: toKey(x.key) } : x)))} />
-                  <Choice label="Field type" items={TYPES} value={o.type} onChange={(v) => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, type: v as Output["type"] } : x)))} />
-                  <Input aria-label="Field description" placeholder="What this field holds (optional)" maxLength={300} value={o.description} onChange={(e) => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
-                  <Button type="button" size="icon" variant="ghost" aria-label="Remove field" disabled={outputs.length === 1} onClick={() => setOutputs((s) => s.filter((_, j) => j !== i))}>
-                    <Trash2Icon />
-                  </Button>
-                </div>
-              ))}
+            <FieldSet className="gap-2">
+              <FieldLegend variant="label">Output fields</FieldLegend>
+              {/* One ruled list, no box per field. */}
+              <div className="divide-y">
+                {outputs.map((o, i) => (
+                  <div key={i} className="grid gap-2 py-2 first:pt-0 sm:grid-cols-[8rem_9rem_1fr_auto]">
+                    <Input aria-label="Field key" value={o.key} onChange={(e) => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} onBlur={() => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, key: toKey(x.key) } : x)))} />
+                    <ItemSelect label="Field type" items={TYPES} value={o.type} onChange={(v) => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, type: v as Output["type"] } : x)))} />
+                    <Input aria-label="Field description" placeholder="What this field holds (optional)" maxLength={300} value={o.description} onChange={(e) => setOutputs((s) => s.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
+                    <Button type="button" size="icon" variant="ghost" aria-label="Remove field" disabled={outputs.length === 1} onClick={() => setOutputs((s) => s.filter((_, j) => j !== i))}>
+                      <Trash2Icon />
+                    </Button>
+                  </div>
+                ))}
+              </div>
               {column && <p className="text-xs text-muted-foreground">A field keeps its column when its key or its column name stays. A column that has values cannot change type. A field you remove stops filling its column; delete the column from its menu.</p>}
               {!keysOk && <p className="text-xs text-destructive">Field keys start with a lowercase letter, use letters and digits, and cannot repeat.</p>}
               {outputs.length < 12 && (
@@ -264,7 +271,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
                   </Button>
                 </div>
               )}
-            </fieldset>
+            </FieldSet>
           )}
           <section aria-label="Test answer" className="grid gap-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -273,9 +280,9 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
               </Button>
               <span className="text-xs text-muted-foreground">One AI call. Nothing is saved.</span>
             </div>
-            {shownPreview?.error && <ErrorText>{shownPreview.error}</ErrorText>}
+            {shownPreview?.error && <FieldError>{shownPreview.error}</FieldError>}
             {shownPreview?.result && (
-              <dl aria-live="polite" className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-lg border p-3 text-sm">
+              <dl aria-live="polite" className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
                 {shownPreview.result.fields.map((f) => (
                   <div key={f.key} className="contents">
                     <dt className="text-muted-foreground">{f.key}</dt>
@@ -286,8 +293,8 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
             )}
           </section>
           <RunTiming autoRun={autoRun} setAutoRun={setAutoRun} delay={delay} setDelay={setDelay} />
-          <ErrorText>{error}</ErrorText>
-        </div>
+          <FieldError>{error}</FieldError>
+        </FieldGroup>
         {column ? (
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={busy}>

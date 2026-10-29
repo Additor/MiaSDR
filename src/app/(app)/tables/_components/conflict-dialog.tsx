@@ -28,11 +28,11 @@ export function ConflictDialog({ items, columns, rowNumbers, onResolve }: Props)
           <DialogTitle>Some rows changed while you edited</DialogTitle>
           <DialogDescription>Nothing was saved. The rows below now hold different values. Retry to write yours over them, or keep what is there.</DialogDescription>
         </DialogHeader>
-        <ul className="grid gap-2">
+        <ul className="divide-y border-y">
           {items.map((item) => {
             const column = byKey.get(item.columnKey);
             return (
-              <li key={`${item.rowId}:${item.columnKey}`} className="rounded-lg border p-2.5 text-sm">
+              <li key={`${item.rowId}:${item.columnKey}`} className="py-2.5 text-sm">
                 <p className="mb-1 text-xs text-muted-foreground">
                   Row {rowNumbers.get(item.rowId) ?? "?"} · {column?.name ?? item.columnKey}
                 </p>

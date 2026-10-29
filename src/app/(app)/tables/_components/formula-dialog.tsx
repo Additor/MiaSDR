@@ -5,11 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import type { GridColumn } from "../_lib/data/types";
-import { ErrorText, Field } from "./form-bits";
 
 interface Props {
   tableId: string;
@@ -106,11 +106,13 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
             Write one expression. Use {"{{columnKey}}"} to read a cell. Available: {FUNCTION_HINT}.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
-          <Field label="Column name" htmlFor="f-name">
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="f-name">Column name</FieldLabel>
             <Input id="f-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Formula" maxLength={120} />
           </Field>
-          <Field label="Expression" htmlFor="f-expr">
+          <Field>
+            <FieldLabel htmlFor="f-expr">Expression</FieldLabel>
             <Textarea ref={area} id="f-expr" rows={4} className="font-mono text-sm" spellCheck={false} value={expression} onChange={(e) => setExpression(e.target.value)} placeholder={'UPPER({{first_name}}) & " " & {{last_name}}'} />
           </Field>
           <div className="flex flex-wrap items-center gap-1.5" aria-label="Insert a column">
@@ -122,7 +124,8 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
             ))}
           </div>
 
-          <div aria-live="polite" className="rounded-lg border bg-muted/40 p-3 text-sm">
+          {/* The preview reads as body text under the expression, with no box around it. */}
+          <div aria-live="polite" className="stack-field text-sm">
             <p className="text-xs font-medium text-muted-foreground">Preview{preview.state === "ok" ? ` (row ${preview.rowNumber})` : ""}</p>
             {(preview.state === "idle" || !expression.trim()) && <p className="text-muted-foreground">Type an expression to see its result.</p>}
             {expression.trim() && preview.state === "loading" && <p className="text-muted-foreground">Evaluating…</p>}
@@ -130,25 +133,24 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
             {expression.trim() && preview.state === "error" && <p className="text-destructive">{preview.message}</p>}
           </div>
 
-          <div className="grid gap-2 rounded-lg border p-3">
-            <Field label="Describe it and let AI write the formula" htmlFor="f-ai">
-              <div className="flex gap-2">
-                <Input id="f-ai" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Full name from first and last name, in title case" maxLength={2000} onKeyDown={(e) => e.key === "Enter" && prompt.trim() && !aiBusy && (e.preventDefault(), void generate())} />
-                <Button type="button" variant="outline" disabled={!prompt.trim() || aiBusy} onClick={generate}>
-                  <SparklesIcon /> {aiBusy ? "Writing…" : "Generate"}
-                </Button>
-              </div>
-            </Field>
-            {explanation && <p className="text-xs text-muted-foreground">{explanation}</p>}
-            <ErrorText>{aiError}</ErrorText>
-          </div>
+          <Field>
+            <FieldLabel htmlFor="f-ai">Describe it and let AI write the formula</FieldLabel>
+            <div className="flex gap-2">
+              <Input id="f-ai" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Full name from first and last name, in title case" maxLength={2000} onKeyDown={(e) => e.key === "Enter" && prompt.trim() && !aiBusy && (e.preventDefault(), void generate())} />
+              <Button type="button" variant="outline" disabled={!prompt.trim() || aiBusy} onClick={generate}>
+                <SparklesIcon /> {aiBusy ? "Writing…" : "Generate"}
+              </Button>
+            </div>
+            {explanation && <FieldDescription>{explanation}</FieldDescription>}
+            <FieldError>{aiError}</FieldError>
+          </Field>
 
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={autoRun} onCheckedChange={(v) => setAutoRun(v === true)} />
-            Recalculate when the cells it reads change
-          </label>
-          <ErrorText>{error}</ErrorText>
-        </div>
+          <Field orientation="horizontal">
+            <Checkbox id="f-auto-run" checked={autoRun} onCheckedChange={(v) => setAutoRun(v === true)} />
+            <FieldLabel htmlFor="f-auto-run">Recalculate when the cells it reads change</FieldLabel>
+          </Field>
+          <FieldError>{error}</FieldError>
+        </FieldGroup>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             Cancel

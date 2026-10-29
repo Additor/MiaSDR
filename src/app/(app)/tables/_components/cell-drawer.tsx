@@ -2,6 +2,9 @@
 
 import { PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ErrorState } from "@/components/shell/error-state";
+import { Section } from "@/components/shell/section";
+import { Spinner } from "@/components/shell/spinner";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +63,8 @@ interface Details {
   run: Run | null;
 }
 
-const OUTCOME_VARIANT: Record<string, "secondary" | "destructive" | "outline"> = { hit: "secondary", miss: "outline", error: "destructive", failed: "destructive" };
+// A run outcome is a state, so it takes the secondary badge; red marks the runs that failed.
+const OUTCOME_VARIANT: Record<string, "secondary" | "destructive"> = { hit: "secondary", miss: "secondary", error: "destructive", failed: "destructive" };
 
 const pretty = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v, null, 2));
 
@@ -123,26 +127,25 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
           </SheetDescription>
         </SheetHeader>
         <div ref={body} tabIndex={-1} className="grid gap-section px-4 pb-6 text-sm outline-none">
-          <section aria-labelledby="cd-value" className="stack-group">
-            <div className="flex min-h-7 items-center justify-between gap-3">
-              <h3 id="cd-value" className="text-sm font-semibold">
-                Value
-              </h3>
-              {onRun && (
-                <Button size="sm" variant="outline" className="max-sm:h-11" onClick={onRun}>
+          <Section
+            frame="plain"
+            level="h3"
+            id="cd-value"
+            title="Value"
+            action={
+              onRun && (
+                <Button size="sm" variant="outline" touch onClick={onRun}>
                   <PlayIcon /> Run this cell
                 </Button>
-              )}
-            </div>
+              )
+            }
+          >
             <p className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2.5 [overflow-wrap:anywhere] whitespace-pre-wrap">{text || <span className="text-muted-foreground">Empty</span>}</p>
             {typeof value === "string" && shown !== value && <p className="text-xs text-muted-foreground">Stored as {value}</p>}
-          </section>
+          </Section>
 
           {(meta || latestError) && (
-            <section aria-labelledby="cd-state" className="stack-group">
-              <h3 id="cd-state" className="text-sm font-semibold">
-                Last run
-              </h3>
+            <Section frame="plain" level="h3" id="cd-state" title="Last run">
               {latestError && (
                 <p role="status" className="text-destructive">
                   {latestError}
@@ -196,7 +199,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                   )}
                 </dl>
               )}
-            </section>
+            </Section>
           )}
 
           {(() => {
@@ -204,10 +207,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
             const fields = onAddOutput ? missingFields(source, columns) : [];
             if (!source || fields.length === 0) return null;
             return (
-              <section aria-labelledby="cd-fields" className="stack-group">
-                <h3 id="cd-fields" className="text-sm font-semibold">
-                  More fields
-                </h3>
+              <Section frame="plain" level="h3" id="cd-fields" title="More fields">
                 <p className="text-muted-foreground">{source.name} also returns these. A field added as a column fills from the answers the column already has, without a new call.</p>
                 <ul className="divide-y rounded-lg border">
                   {fields.map((f) => (
@@ -216,7 +216,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                       <Button
                         size="xs"
                         variant="outline"
-                        className="max-sm:h-11"
+                        touch
                         disabled={adding !== null}
                         onClick={async () => {
                           setAdding(f.key);
@@ -229,24 +229,26 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                     </li>
                   ))}
                 </ul>
-              </section>
+              </Section>
             );
           })()}
 
-          <section aria-labelledby="cd-runs" className="stack-group">
-            <h3 id="cd-runs" className="text-sm font-semibold">
-              Run history
-            </h3>
-            {state === "loading" && <p className="text-muted-foreground">Loading…</p>}
+          <Section frame="plain" level="h3" id="cd-runs" title="Run history">
+            {state === "loading" && (
+              <p className="flex items-center gap-2 text-muted-foreground">
+                <Spinner /> Loading…
+              </p>
+            )}
             {state === "none" && <p className="text-muted-foreground">This cell was typed or imported, so it has no runs.</p>}
             {state === "failed" && (
-              <div role="alert" className="grid gap-2">
-                <p>The run history did not load.</p>
-                <div>
+              <ErrorState
+                inline
+                title="The run history did not load"
+                action={
                   <Button
                     size="sm"
                     variant="outline"
-                    className="max-sm:h-11"
+                    touch
                     onClick={() => {
                       setState("loading");
                       setAttempt((n) => n + 1);
@@ -254,8 +256,8 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                   >
                     Try again
                   </Button>
-                </div>
-              </div>
+                }
+              />
             )}
             {state === "ready" && details && (
               <>
@@ -270,7 +272,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                       return (
                         <li key={r.id} className="grid gap-1 py-2.5">
                           <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "outline"}>{RUN_OUTCOME_LABELS[r.outcome] ?? r.outcome}</Badge>
+                            <Badge variant={OUTCOME_VARIANT[r.outcome] ?? "secondary"}>{RUN_OUTCOME_LABELS[r.outcome] ?? r.outcome}</Badge>
                             {r.reused && <Badge variant="outline">Reused</Badge>}
                             {r.provider && <span>{providerName(r.provider)}</span>}
                             <Time value={r.createdAt} className="text-xs text-muted-foreground" />
@@ -293,7 +295,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
                 )}
               </>
             )}
-          </section>
+          </Section>
         </div>
       </SheetContent>
     </Sheet>

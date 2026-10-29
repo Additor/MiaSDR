@@ -4,9 +4,12 @@ import { DownloadIcon, RefreshCwIcon, PlayIcon, SendIcon, Trash2Icon, TriangleAl
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { BulkBar } from "@/components/shell/bulk-bar";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { EmptyState } from "@/components/shell/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/shell/error-state";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
+import { countOf, formatCount } from "@/shared/format-number";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { DELETE_BATCH, deleteRowsReport, deleteRowsTitle } from "../_lib/edit/delete-rows";
 import { emptySelection, pruneSelection, type RowSelection } from "../_lib/view/selection";
@@ -166,7 +169,7 @@ export function TableWorkspace({ tableId }: Props) {
     if (!res.ok) return res.error ?? "Could not add the rows.";
     await grid.reload();
     for (let i = 0, pages = pagesToReachEnd(grid.total + count, 200, 200); i < pages; i += 1) await grid.loadMore();
-    toast.success(`Added ${count.toLocaleString("en-US")} ${count === 1 ? "row" : "rows"}.`);
+    toast.success(`Added ${countOf(count, "row")}.`);
     // The grid is the one scroll container with role "grid". Wait a frame so the new rows are laid out.
     requestAnimationFrame(() => {
       const scroller = document.querySelector<HTMLElement>('[role="grid"]');
@@ -229,7 +232,7 @@ export function TableWorkspace({ tableId }: Props) {
       toast.error(res.error ?? "Could not select the rows.");
       return [];
     }
-    if (res.data.truncated) toast.message(`Selection is limited to the first ${res.data.rowIds.length.toLocaleString("en-US")} rows.`);
+    if (res.data.truncated) toast.message(`Selection is limited to the first ${formatCount(res.data.rowIds.length)} rows.`);
     return res.data.rowIds;
   }
 
@@ -277,19 +280,23 @@ export function TableWorkspace({ tableId }: Props) {
 
   if (grid.status === "loading") {
     return (
-      <div className="page stack-group" aria-busy>
-        <Skeleton className="h-9 w-full" />
-        <Skeleton className="h-[60svh] w-full" />
+      <div className="page">
+        <PageSkeleton shape="table" label="Loading the table" />
       </div>
     );
   }
   if (grid.status === "error" || !grid.table) {
     return (
-      <div className="page" role="alert">
-        <p className="mb-3 text-sm text-destructive">{grid.error ?? "Could not load the table."}</p>
-        <Button variant="outline" onClick={() => void grid.reload()}>
-          <RefreshCwIcon /> Try again
-        </Button>
+      <div className="page">
+        <ErrorState
+          title="The table did not load"
+          reason={grid.error ?? "Could not load the table."}
+          action={
+            <Button variant="outline" touch onClick={() => void grid.reload()}>
+              <RefreshCwIcon /> Try again
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -364,35 +371,35 @@ export function TableWorkspace({ tableId }: Props) {
 
       <ViewBar view={view} nameOf={nameOf} saveView={grid.saveView} personalView={grid.personalView} canEditDefault={grid.canEditDefault} onResetView={grid.resetView} onSaveDefaultView={grid.saveDefaultView} />
 
-      {hasSelection && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-primary/5 px-3 py-1.5 text-sm" role="region" aria-label="Selected rows">
-          <span>{selectedIds.length.toLocaleString("en-US")} selected</span>
-          {canSelectMore && (
-            <Button size="xs" variant="link" onClick={async () => setSelection({ ids: new Set(await selectAllMatching()), anchor: null })}>
-              Select all {grid.total.toLocaleString("en-US")} matching rows
-            </Button>
-          )}
-          <span className="ml-auto flex gap-1.5">
+      {/* In the flow above the grid, not stuck to the viewport: the workbook page already fills the viewport height. */}
+      <BulkBar
+        sticky={false}
+        count={selectedIds.length}
+        actions={
+          <>
+            {canSelectMore && (
+              <Button size="sm" variant="link" onClick={async () => setSelection({ ids: new Set(await selectAllMatching()), anchor: null })}>
+                Select all {formatCount(grid.total)} matching rows
+              </Button>
+            )}
             {runnable && (
-              <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "run", column: null })}>
+              <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "run", column: null })}>
                 <PlayIcon /> Run
               </Button>
             )}
-            <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "push", rowIds: selectedIds })}>
+            <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "push", rowIds: selectedIds })}>
               <SendIcon /> Push to campaign
             </Button>
-            <Button size="xs" variant="outline" onClick={() => void exportCsv(true)} disabled={busy}>
+            <Button size="sm" variant="outline" onClick={() => void exportCsv(true)} disabled={busy}>
               <DownloadIcon /> Export
             </Button>
-            <Button size="xs" variant="outline" onClick={() => setDialog({ kind: "deleteRows", count: selectedIds.length })}>
+            <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "deleteRows", count: selectedIds.length })}>
               <Trash2Icon /> Delete
             </Button>
-            <Button size="xs" variant="ghost" onClick={() => setSelection(emptySelection)}>
-              Clear
-            </Button>
-          </span>
-        </div>
-      )}
+          </>
+        }
+        onClear={() => setSelection(emptySelection)}
+      />
 
       {grid.stale && (
         <div className="flex flex-wrap items-center gap-2 text-sm" role="status">
@@ -471,7 +478,7 @@ export function TableWorkspace({ tableId }: Props) {
             const filled = res.data?.filled ?? 0;
             toast.success(
               filled > 0
-                ? `Added ${outputName} and filled ${filled.toLocaleString("en-US")} ${filled === 1 ? "row" : "rows"} from answers ${runner.name} already has. Rows without one fill on its next run.`
+                ? `Added ${outputName} and filled ${countOf(filled, "row")} from answers ${runner.name} already has. Rows without one fill on its next run.`
                 : `Added ${outputName}. It fills when ${runner.name} runs again.`,
             );
             await grid.reload();

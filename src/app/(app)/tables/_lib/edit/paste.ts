@@ -4,6 +4,7 @@ import { neutralizeFormula, restoreFormula } from "@/shared/csv";
 import { editorText } from "../view/format";
 import type { Bounds } from "../view/selection";
 import type { CellEditInput, GridColumn, GridRow } from "../data/types";
+import { countOf, formatCount } from "@/shared/format-number";
 
 /**
  * Parses clipboard text from a spreadsheet: tab separated, rows split on newlines, cells wrapped in double
@@ -143,7 +144,7 @@ export const PASTE_LIMITS = { rows: GRID_LIMITS.addRows, cells: GRID_LIMITS.cell
 export const GROWTH_NEEDS_TABLE_ORDER = "This view is filtered, sorted or searched, so a paste cannot add rows or columns. Clear the filter, sort and search, then paste again.";
 export const ROWS_NOT_LOADED = "That paste reaches rows that are not loaded, and this view is filtered, sorted or searched. Scroll down to load more rows, or clear the filter, sort and search.";
 
-const cellCount = (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? "cell" : "cells"}`;
+const cellCount = (n: number) => countOf(n, "cell");
 
 /**
  * The clause for cells a paste or fill left alone, told apart by why: formula columns recalculate, AI and enrichment
@@ -159,8 +160,8 @@ export function skippedCellsText(total: number, formula: number): string {
 /** The toast after a block paste: what was written and created, what was skipped and what the column type refused. */
 export function pasteSummary(outcome: { cells: number; addedRows: number; addedColumns: number; skippedRunner: number; skippedFormula: number; invalidCount: number }): string {
   const made: string[] = [];
-  if (outcome.addedRows > 0) made.push(`${outcome.addedRows.toLocaleString("en-US")} ${outcome.addedRows === 1 ? "row" : "rows"}`);
-  if (outcome.addedColumns > 0) made.push(`${outcome.addedColumns.toLocaleString("en-US")} ${outcome.addedColumns === 1 ? "column" : "columns"}`);
+  if (outcome.addedRows > 0) made.push(countOf(outcome.addedRows, "row"));
+  if (outcome.addedColumns > 0) made.push(countOf(outcome.addedColumns, "column"));
   const sentences = [`Pasted ${cellCount(outcome.cells)}${made.length > 0 ? ` and added ${made.join(" and ")}` : ""}.`];
   const skipped = skippedCellsText(outcome.skippedRunner, outcome.skippedFormula);
   if (skipped) sentences.push(skipped);
@@ -195,8 +196,8 @@ export function routePaste(matrix: readonly (readonly string[])[], target: Bound
   if (!ctx.keepsOrder) return { kind: "refuse", message: reachesRows && ctx.rows.length < ctx.total && !reachesColumns ? ROWS_NOT_LOADED : GROWTH_NEEDS_TABLE_ORDER };
   const anchor = ctx.rows[target.r0];
   if (!anchor) return { kind: "refuse", message: "Select a row to paste into." };
-  if (height > PASTE_LIMITS.rows) return { kind: "refuse", message: `Paste up to ${PASTE_LIMITS.rows.toLocaleString("en-US")} rows at a time.` };
-  if (height * width > PASTE_LIMITS.cells) return { kind: "refuse", message: `Paste up to ${PASTE_LIMITS.cells.toLocaleString("en-US")} cells at a time.` };
+  if (height > PASTE_LIMITS.rows) return { kind: "refuse", message: `Paste up to ${formatCount(PASTE_LIMITS.rows)} rows at a time.` };
+  if (height * width > PASTE_LIMITS.cells) return { kind: "refuse", message: `Paste up to ${formatCount(PASTE_LIMITS.cells)} cells at a time.` };
   const newColumns = Math.max(0, target.c0 + width - ctx.columns.length);
   if (newColumns > PASTE_LIMITS.newColumns) return { kind: "refuse", message: `A paste can add up to ${PASTE_LIMITS.newColumns} columns. Paste fewer columns.` };
   return {

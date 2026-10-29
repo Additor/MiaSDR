@@ -40,8 +40,10 @@ export function BulkBar({
 }) {
   const on = count > 0;
   return (
-    <div ref={barRef} className={cn(sticky && "sticky bottom-0 z-30 min-h-14 pb-[env(safe-area-inset-bottom)]")} data-testid={testId}>
-      <div className={cn("flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm", on && "border bg-background shadow-md ring-1 ring-foreground/5", !on && !sticky && "hidden")}>
+    // In the flow above a grid, an empty bar takes no room: the wrapper lets its child sit in the parent's stack, and the
+    // status line stays mounted off screen so the count is still announced.
+    <div ref={barRef} className={cn(sticky ? "sticky bottom-0 z-30 min-h-14 pb-[env(safe-area-inset-bottom)]" : !on && "contents")} data-testid={testId}>
+      <div className={cn("flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm", on && "border bg-background shadow-md ring-1 ring-foreground/5", !on && !sticky && "sr-only")}>
         <div role="status" className="max-md:order-1 max-md:min-h-11 max-md:flex-1 max-md:content-center md:mr-1">
           {on && (
             <>

@@ -1,4 +1,5 @@
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
+import { formatCount } from "@/shared/format-number";
 
 /** The "Add N rows" control: what the field accepts and how many pages the grid loads to reach the new rows. */
 
@@ -14,7 +15,7 @@ export function parseRowCount(text: string, max = MAX_ADD_ROWS): RowCountResult 
   if (!/^\d+$/.test(cleaned)) return { ok: false, error: "Use a whole number, such as 250." };
   const count = Number(cleaned);
   if (count < 1) return { ok: false, error: "Add at least 1 row." };
-  if (count > max) return { ok: false, error: `Add at most ${max.toLocaleString("en-US")} rows at a time.` };
+  if (count > max) return { ok: false, error: `Add at most ${formatCount(max)} rows at a time.` };
   return { ok: true, count };
 }
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { lookupCents } from "@/contexts/grid/enrichment/domain/enrichment-pricing";
 import { gridRequest } from "./client";
+import { formatCount } from "@/shared/format-number";
 
 export interface ActionInput {
   key: string;
@@ -96,7 +97,7 @@ export function impactText(kind: "off" | "disconnect", impact: ProviderImpact | 
   }
   const n = impact.columns.length;
   const cols = `${n} ${n === 1 ? "column uses" : "columns use"} it`;
-  const waiting = impact.pendingCells > 0 ? ` ${impact.pendingCells.toLocaleString("en-US")} ${impact.pendingCells === 1 ? "cell is" : "cells are"} waiting to run.` : "";
+  const waiting = impact.pendingCells > 0 ? ` ${formatCount(impact.pendingCells)} ${impact.pendingCells === 1 ? "cell is" : "cells are"} waiting to run.` : "";
   if (kind === "off") {
     if (n === 0) return "No column uses it. You can turn it back on at any time.";
     return `${cols}.${waiting} Their cells wait until you turn it back on, without using an attempt; a column that tries several providers asks the next one meanwhile.`;

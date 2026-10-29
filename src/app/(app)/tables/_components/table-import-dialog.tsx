@@ -5,10 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { countOf, formatCount } from "@/shared/format-number";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { EDITABLE_TYPE_OPTIONS } from "../_lib/view/format";
-import { Choice, ErrorText } from "./form-bits";
+import { ItemSelect } from "./form-bits";
 
 type Mapping = { headerIndex: number; action: "map"; columnKey: string } | { headerIndex: number; action: "create"; name: string; type: string } | { headerIndex: number; action: "skip" };
 
@@ -91,7 +93,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
     const res = await gridRequest<{ rowsInserted: number; columnsCreated: number }>(gridUrl.sub(tableId, "import"), "POST", form).finally(() => setBusy(false));
     if (!res.ok || !res.data) throw new Error(res.error ?? "Could not import the file.");
     const { rowsInserted, columnsCreated } = res.data;
-    toast.success(`Imported ${rowsInserted.toLocaleString("en-US")} ${rowsInserted === 1 ? "row" : "rows"}${columnsCreated > 0 ? ` and ${columnsCreated.toLocaleString("en-US")} new ${columnsCreated === 1 ? "column" : "columns"}` : ""}.`);
+    toast.success(`Imported ${countOf(rowsInserted, "row")}${columnsCreated > 0 ? ` and ${countOf(columnsCreated, "new column")}` : ""}.`);
     await onImported();
   }
 
@@ -106,7 +108,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
       onOpenChange={(open) => !open && onClose()}
       title="Import a file"
       description={`CSV or XLSX, up to 5 MB and 10,000 rows. ${initialFile ? "The rows go into a new workbook named after the file." : "Rows are added to this table."}`}
-      confirmLabel={`Import ${preview ? preview.totalRows.toLocaleString("en-US") : ""} ${preview?.totalRows === 1 ? "row" : "rows"}`}
+      confirmLabel={preview ? `Import ${countOf(preview.totalRows, "row")}` : "Import rows"}
       pendingLabel="Importing…"
       confirmDisabled={!preview || !!preview.problem || busy || duplicate || active === 0 || preview.totalRows > preview.maxRows}
       className="sm:max-w-3xl"
@@ -120,15 +122,13 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
           </Button>
           {file && <span className="text-sm text-muted-foreground">{file.name}</span>}
         </div>
-        <ErrorText>{error}</ErrorText>
+        <FieldError>{error}</FieldError>
         {busy && !preview && <p className="text-sm text-muted-foreground">Reading the file…</p>}
 
         {preview?.sheets && (
           <div className="flex flex-wrap items-center gap-2">
-            <label htmlFor="import-sheet" className="text-sm font-medium">
-              Sheet
-            </label>
-            <Choice
+            <FieldLabel htmlFor="import-sheet">Sheet</FieldLabel>
+            <ItemSelect
               id="import-sheet"
               label="Sheet to import"
               className="w-64"
@@ -136,7 +136,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
               items={preview.sheets.map((name, i) => ({ value: String(i + 1), label: name }))}
               onChange={(v) => file && Number(v) !== preview.sheet && void load(file, Number(v))}
             />
-            <span className="text-xs text-muted-foreground">{preview.sheets.length.toLocaleString("en-US")} sheets in this file</span>
+            <span className="text-xs text-muted-foreground">{countOf(preview.sheets.length, "sheet")} in this file</span>
           </div>
         )}
         {preview?.problem && (
@@ -148,7 +148,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
         {preview && !preview.problem && (
           <>
             <p className="text-sm">
-              {preview.totalRows.toLocaleString("en-US")} {preview.totalRows === 1 ? "row" : "rows"}, {preview.headers.length.toLocaleString("en-US")} {preview.headers.length === 1 ? "column" : "columns"}. Match each file column to a table column, create a new one, or skip it.
+              {countOf(preview.totalRows, "row")}, {countOf(preview.headers.length, "column")}. Match each file column to a table column, create a new one, or skip it.
             </p>
             <div className="overflow-x-auto rounded-lg border">
               <table className="w-full text-sm">
@@ -174,7 +174,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
                           ))}
                         </td>
                         <td className="p-2">
-                          <Choice
+                          <ItemSelect
                             label={`Action for ${header}`}
                             className="w-36"
                             value={m.action}
@@ -192,12 +192,12 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
                         </td>
                         <td className="p-2">
                           {m.action === "map" && (
-                            <Choice label={`Target column for ${header}`} className="w-48" value={m.columnKey} items={preview.columns.map((c) => ({ value: c.key, label: c.name }))} onChange={(k) => set(i, { ...m, columnKey: k })} />
+                            <ItemSelect label={`Target column for ${header}`} className="w-48" value={m.columnKey} items={preview.columns.map((c) => ({ value: c.key, label: c.name }))} onChange={(k) => set(i, { ...m, columnKey: k })} />
                           )}
                           {m.action === "create" && (
                             <div className="flex gap-2">
                               <Input aria-label={`Name of the new column for ${header}`} className="w-40" value={m.name} onChange={(e) => set(i, { ...m, name: e.target.value })} maxLength={120} />
-                              <Choice label={`Type for ${header}`} className="w-36" value={m.type} items={EDITABLE_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))} onChange={(t) => set(i, { ...m, type: t })} />
+                              <ItemSelect label={`Type for ${header}`} className="w-36" value={m.type} items={EDITABLE_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))} onChange={(t) => set(i, { ...m, type: t })} />
                             </div>
                           )}
                         </td>
@@ -208,7 +208,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
               </table>
             </div>
             {duplicate && <p role="alert" className="text-sm text-destructive">Two file columns map to the same table column. Change one.</p>}
-            {preview.totalRows > preview.maxRows && <p role="alert" className="text-sm text-destructive">The file has more than {preview.maxRows.toLocaleString("en-US")} rows. Split it and import in parts.</p>}
+            {preview.totalRows > preview.maxRows && <p role="alert" className="text-sm text-destructive">The file has more than {formatCount(preview.maxRows)} rows. Split it and import in parts.</p>}
           </>
         )}
       </div>

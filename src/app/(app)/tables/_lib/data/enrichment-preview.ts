@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { gridRequest, gridUrl } from "./client";
 import { credits, dollars } from "./run-request";
+import { formatCount } from "@/shared/format-number";
 
 /** What a new enrichment column would match and cost, as `POST /enrichments/preview` returns it. */
 export interface EnrichmentPreview {
@@ -15,14 +16,13 @@ export interface EnrichmentPreview {
   perCell: { cents: number; credits: number };
 }
 
-const count = (n: number) => n.toLocaleString("en-US");
 
 /** "1,842 of 2,000 rows have these inputs", or why none do. */
 export function coverageText(p: EnrichmentPreview): string {
   if (p.rows === 0) return "The table has no rows yet.";
-  const of = `${count(p.rows)}${p.more ? "+" : ""}`;
+  const of = `${formatCount(p.rows)}${p.more ? "+" : ""}`;
   if (p.ready === 0) return `None of the ${of} rows has these inputs yet.`;
-  return `${count(p.ready)} of ${of} ${p.rows === 1 ? "row has" : "rows have"} these inputs`;
+  return `${formatCount(p.ready)} of ${of} ${p.rows === 1 ? "row has" : "rows have"} these inputs`;
 }
 
 /** "A full run uses up to 1,842 credits and $18.42", from one cell's worst case times the ready rows. Null with nothing to run. */

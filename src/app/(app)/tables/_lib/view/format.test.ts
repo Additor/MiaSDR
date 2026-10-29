@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { cellResultText, cellStatus, columnRunSummary, displayValue, editorText, missingInputHint, parseEditorText, plural, runCost, selectOptions } from "./format";
+import { cellResultText, cellStatus, columnRunSummary, displayValue, editorText, missingInputHint, parseEditorText, runCost, selectOptions } from "./format";
 import type { GridColumn, GridRow } from "../data/types";
 
 const col = (type: GridColumn["type"], config: Record<string, unknown> = {}): GridColumn => ({ id: "c", tableId: "t", key: "k", name: "K", type, config, dependsOn: [], position: 0, autoRun: false });
 
 describe("format", () => {
-  it("counts a word in English", () => {
-    expect(plural(1, "filter")).toBe("1 filter");
-    expect(plural(1204, "row")).toBe("1,204 rows");
-  });
-
-
   it("formats values by type", () => {
     expect(displayValue(1234.5, col("currency", { currency: "USD" }))).toBe("$1,234.50");
     expect(displayValue(true, col("boolean"))).toBe("Yes");

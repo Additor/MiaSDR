@@ -1,19 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { CampaignStatusToken } from "@/app/(app)/campaigns/[id]/_components/campaign-status-token";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { SectionHead } from "@/components/shell/section";
 import { buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { campaignStatusLabel } from "@/contexts/outreach/domain/campaign-view";
+import { countOf, formatCount } from "@/shared/format-number";
 import { CAMPAIGN_FIELDS, type CampaignField } from "@/contexts/grid/domain/campaign-rows";
 import { VERDICT_LABELS, verifyColumns, type PassableVerdict, type PushVerdict } from "@/contexts/grid/domain/verified-push";
 import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
 import { guessFields } from "../_lib/data/push-guess";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import type { GridColumn } from "../_lib/data/types";
-import { ColumnChoice, Choice, ErrorText, Field } from "./form-bits";
+import { ColumnSelect, ItemSelect } from "./form-bits";
 
 interface Campaign {
   id: string;
@@ -129,15 +133,15 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
     return false;
   }
 
-  const campaignItems = [{ value: NEW, label: "New draft campaign" }, ...(campaigns ?? []).map((c) => ({ value: c.id, label: `${c.name} (${c.status})` }))];
+  const campaignItems = [{ value: NEW, label: "New draft campaign" }, ...(campaigns ?? []).map((c) => ({ value: c.id, label: `${c.name} (${campaignStatusLabel(c.status)})` }))];
 
   return (
     <ConfirmDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title="Push to campaign"
-      description={`${allRows ? `No rows are selected, so all ${rowIds.length.toLocaleString("en-US")} rows in this view are pushed.` : `${rowIds.length.toLocaleString("en-US")} selected ${rowIds.length === 1 ? "row" : "rows"}.`} They become leads and are enrolled. Nothing is sent now: the campaign keeps its status, and every message still waits for approval.`}
-      confirmLabel={gated && passing !== null ? `Push ${passing.toLocaleString("en-US")} of ${rowIds.length.toLocaleString("en-US")} rows` : `Push ${rowIds.length.toLocaleString("en-US")} ${rowIds.length === 1 ? "row" : "rows"}`}
+      description={`${allRows ? `No rows are selected, so all ${formatCount(rowIds.length)} rows in this view are pushed.` : `${countOf(rowIds.length, "selected row")}.`} They become leads and are enrolled. Nothing is sent now: the campaign keeps its status, and every message still waits for approval.`}
+      confirmLabel={gated && passing !== null ? `Push ${formatCount(passing)} of ${formatCount(rowIds.length)} rows` : `Push ${countOf(rowIds.length, "row")}`}
       cancelLabel={report ? "Done" : "Cancel"}
       pendingLabel="Pushing…"
       confirmDisabled={report !== null || !hasAddress || !nameOk || rowIds.length === 0 || campaigns === null || (gateOn && !!check && !checkMatches) || (gated && passing === 0)}
@@ -147,12 +151,12 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
       {report ? (
         <div role="status" className="grid gap-4">
           <p className="text-sm">
-            {report.created ? "Created a draft campaign. " : ""}Enrolled <strong>{report.enrolled}</strong> of {rowIds.length}. Leads created {report.leadsCreated}, updated {report.leadsUpdated}.
+            {report.created ? "Created a draft campaign. " : ""}Enrolled <strong>{formatCount(report.enrolled)}</strong> of {formatCount(rowIds.length)}. Leads created {formatCount(report.leadsCreated)}, updated {formatCount(report.leadsUpdated)}.
             {gated ? ` Rows the verification kept out are listed under Skipped.` : ""}
           </p>
           {report.failures.length > 0 && (
-            <div>
-              <h3 className="mb-1 text-sm font-medium">Skipped ({report.failures.length})</h3>
+            <div className="stack-group">
+              <SectionHead level="h3" title="Skipped" count={formatCount(report.failures.length)} />
               <ul className="max-h-60 overflow-auto rounded-lg border text-sm">
                 {report.failures.map((f) => (
                   <li key={f.rowId} className="flex gap-3 border-b px-3 py-1.5 last:border-b-0">
@@ -170,38 +174,41 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
           </div>
         </div>
       ) : (
-        <div className="grid gap-4">
-          <Field label="Campaign" htmlFor="push-target">
-            <Choice id="push-target" items={campaignItems} value={target} onChange={setTarget} />
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="push-target">Campaign</FieldLabel>
+            <ItemSelect id="push-target" items={campaignItems} value={target} onChange={setTarget} />
           </Field>
           {target === NEW && (
-            <Field label="New campaign name" htmlFor="push-name">
+            <Field>
+              <FieldLabel htmlFor="push-name">New campaign name</FieldLabel>
               <Input id="push-name" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={120} />
             </Field>
           )}
-          <fieldset className="grid gap-2">
-            <legend className="mb-1 text-sm font-medium">Lead fields</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
+          <FieldSet>
+            <FieldLegend variant="label">Lead fields</FieldLegend>
+            <div className="grid gap-group sm:grid-cols-2">
               {CAMPAIGN_FIELDS.map((f) => (
-                <Field key={f} label={FIELD_LABELS[f]} htmlFor={`push-f-${f}`}>
-                  <ColumnChoice id={`push-f-${f}`} value={fields[f] ?? null} none="Not mapped" onChange={(k) => setFields((s) => ({ ...s, [f]: k }))} columns={columns} />
+                <Field key={f}>
+                  <FieldLabel htmlFor={`push-f-${f}`}>{FIELD_LABELS[f]}</FieldLabel>
+                  <ColumnSelect id={`push-f-${f}`} value={fields[f] ?? null} none="Not mapped" onChange={(k) => setFields((s) => ({ ...s, [f]: k }))} columns={columns} />
                 </Field>
               ))}
             </div>
             {!hasAddress && <p className="text-xs text-destructive">Map an email or a LinkedIn URL. Rows without one are skipped.</p>}
-          </fieldset>
+          </FieldSet>
           {check && (
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Verification</legend>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={gateOn} onCheckedChange={(v) => setGateOn(v === true)} />
-                Only push addresses {check.name} marked Valid
-              </label>
+            <FieldSet>
+              <FieldLegend variant="label">Verification</FieldLegend>
+              <Field orientation="horizontal">
+                <Checkbox id="push-gate" checked={gateOn} onCheckedChange={(v) => setGateOn(v === true)} />
+                <FieldLabel htmlFor="push-gate">Only push addresses {check.name} marked Valid</FieldLabel>
+              </Field>
               {gateOn && (
-                <label className="ml-6 flex items-center gap-2 text-sm">
-                  <Checkbox checked={allowCatchAll} onCheckedChange={(v) => setAllowCatchAll(v === true)} />
-                  Also push Catch-all addresses (the domain accepts any address, so delivery is not confirmed)
-                </label>
+                <Field orientation="horizontal" className="pl-6">
+                  <Checkbox id="push-catch-all" checked={allowCatchAll} onCheckedChange={(v) => setAllowCatchAll(v === true)} />
+                  <FieldLabel htmlFor="push-catch-all">Also push Catch-all addresses (the domain accepts any address, so delivery is not confirmed)</FieldLabel>
+                </Field>
               )}
               {gateOn && !checkMatches && (
                 <p className="text-sm text-destructive">
@@ -210,33 +217,40 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
               )}
               {verdicts && (
                 <p className="text-sm text-muted-foreground tabular-nums">
-                  {gated ? `${passing} of ${rowIds.length} rows pass (${verdictList(verdicts, (v) => (allow as string[]).includes(v)) || "none"}).` : `Verdicts: ${verdictList(verdicts, () => true)}.`}
+                  {gated ? `${formatCount(passing ?? 0)} of ${formatCount(rowIds.length)} rows pass (${verdictList(verdicts, (v) => (allow as string[]).includes(v)) || "none"}).` : `Verdicts: ${verdictList(verdicts, () => true)}.`}
                   {gated && verdictList(verdicts, (v) => !(allow as string[]).includes(v)) ? ` Kept out: ${verdictList(verdicts, (v) => !(allow as string[]).includes(v))}.` : ""}
                   {!gateOn && (verdicts.invalid ?? 0) > 0 ? " Invalid addresses will bounce and hurt your mailbox's reputation." : ""}
                 </p>
               )}
-            </fieldset>
+            </FieldSet>
           )}
           {customOptions.length > 0 && (
-            <fieldset className="stack-field">
-              <legend className="mb-1 text-sm font-medium">Keep as custom fields (up to 20)</legend>
+            <FieldSet>
+              <FieldLegend variant="label">Keep as custom fields (up to 20)</FieldLegend>
               <div className="grid max-h-36 gap-1 overflow-auto sm:grid-cols-2">
                 {customOptions.map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox checked={custom.includes(c.key)} disabled={!custom.includes(c.key) && custom.length >= 20} onCheckedChange={(v) => setCustom((s) => (v === true ? [...s, c.key] : s.filter((k) => k !== c.key)))} />
-                    {c.name}
-                  </label>
+                  <Field key={c.id} orientation="horizontal">
+                    <Checkbox
+                      id={`push-custom-${c.id}`}
+                      checked={custom.includes(c.key)}
+                      disabled={!custom.includes(c.key) && custom.length >= 20}
+                      onCheckedChange={(v) => setCustom((s) => (v === true ? [...s, c.key] : s.filter((k) => k !== c.key)))}
+                    />
+                    <FieldLabel htmlFor={`push-custom-${c.id}`} className="font-normal">
+                      {c.name}
+                    </FieldLabel>
+                  </Field>
                 ))}
               </div>
-            </fieldset>
+            </FieldSet>
           )}
-          <ErrorText>{error}</ErrorText>
+          <FieldError>{error}</FieldError>
           {campaigns?.some((c) => c.status === "active") && target !== NEW && campaigns.find((c) => c.id === target)?.status === "active" && (
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline">active</Badge> This campaign is live. New enrollments follow its approval rules.
+              <CampaignStatusToken status="active" compact /> This campaign is live. New enrollments follow its approval rules.
             </p>
           )}
-        </div>
+        </FieldGroup>
       )}
     </ConfirmDialog>
   );

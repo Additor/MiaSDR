@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { countOf } from "@/shared/format-number";
 import { gridRequest, gridUrl } from "../_lib/data/client";
-import { Choice, ErrorText, Field } from "./form-bits";
+import { ItemSelect } from "./form-bits";
 
 const MAX_DESCRIPTION = 2_000;
 
@@ -25,7 +27,8 @@ export function DescriptionDialog({ tableName, initial, onSubmit, onClose }: { t
         if (problem) throw new Error(problem);
       }}
     >
-      <Field label="Description" htmlFor="table-description">
+      <Field>
+        <FieldLabel htmlFor="table-description">Description</FieldLabel>
         <Textarea id="table-description" value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={MAX_DESCRIPTION} autoFocus />
       </Field>
     </ConfirmDialog>
@@ -74,11 +77,12 @@ export function MoveTableDialog({ tableName, currentWorkbookId, onSubmit, onClos
     >
       {options && options.length === 0 && <p className="text-sm text-muted-foreground">There is no other workbook yet. Create one first.</p>}
       {options && options.length > 0 && (
-        <Field label="Destination workbook" htmlFor="move-table-dest">
-          <Choice id="move-table-dest" label="Destination workbook" items={options.map((w) => ({ value: w.id, label: `${w.name} (${w.tableCount} ${w.tableCount === 1 ? "table" : "tables"})` }))} value={dest} onChange={setDest} />
+        <Field>
+          <FieldLabel htmlFor="move-table-dest">Destination workbook</FieldLabel>
+          <ItemSelect id="move-table-dest" label="Destination workbook" items={options.map((w) => ({ value: w.id, label: `${w.name} (${countOf(w.tableCount, "table")})` }))} value={dest} onChange={setDest} />
         </Field>
       )}
-      <ErrorText>{loadError}</ErrorText>
+      <FieldError>{loadError}</FieldError>
     </ConfirmDialog>
   );
 }

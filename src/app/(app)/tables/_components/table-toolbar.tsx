@@ -1,11 +1,14 @@
 "use client";
 
-import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, Loader2Icon, PlayIcon, PlusIcon, Rows3Icon, SearchIcon, SendIcon, SigmaIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
+import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, PlayIcon, PlusIcon, Rows3Icon, SearchIcon, SendIcon, SigmaIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
+import { Spinner } from "@/components/shell/spinner";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { countOf, formatCount } from "@/shared/format-number";
 import { OUTCOMES } from "../_lib/data/outcomes";
 import type { GridColumn } from "../_lib/data/types";
 import { RunProgress } from "./run-controls";
@@ -93,12 +96,12 @@ export function TableToolbar(props: Props) {
       <div className="flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
         {props.saving && (
           <span className="flex items-center gap-1">
-            <Loader2Icon className="size-3 animate-spin" /> Saving
+            <Spinner className="size-3" /> Saving
           </span>
         )}
         <span className="tabular-nums">
-          {props.total.toLocaleString("en-US")} row{props.total === 1 ? "" : "s"}
-          {props.total !== props.unfilteredTotal ? ` of ${props.unfilteredTotal.toLocaleString("en-US")}` : ""}
+          {countOf(props.total, "row")}
+          {props.total !== props.unfilteredTotal ? ` of ${formatCount(props.unfilteredTotal)}` : ""}
         </span>
       </div>
       <RunProgress tableId={props.tableId} jobs={props.jobs} activeJobs={props.activeJobs} onChanged={props.onJobsChanged} onShowFailed={props.onShowFailed} />
@@ -106,12 +109,18 @@ export function TableToolbar(props: Props) {
       <div className="ml-auto flex items-center gap-2">
         {/* The grid answers Ctrl or Cmd+Z itself; the buttons are for a mouse, so a phone leaves them out. */}
         <div className="flex items-center max-sm:hidden">
-          <Button variant="ghost" size="icon-sm" aria-label="Undo" title="Undo (Ctrl+Z or Cmd+Z)" disabled={!props.canUndo} onClick={props.onUndo}>
-            <Undo2Icon />
-          </Button>
-          <Button variant="ghost" size="icon-sm" aria-label="Redo" title="Redo (Shift+Ctrl+Z or Shift+Cmd+Z)" disabled={!props.canRedo} onClick={props.onRedo}>
-            <Redo2Icon />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Undo" disabled={!props.canUndo} onClick={props.onUndo} />}>
+              <Undo2Icon />
+            </TooltipTrigger>
+            <TooltipContent>Undo (Ctrl+Z or Cmd+Z)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Redo" disabled={!props.canRedo} onClick={props.onRedo} />}>
+              <Redo2Icon />
+            </TooltipTrigger>
+            <TooltipContent>Redo (Shift+Ctrl+Z or Shift+Cmd+Z)</TooltipContent>
+          </Tooltip>
         </div>
 
         <DropdownMenu>
@@ -148,9 +157,12 @@ export function TableToolbar(props: Props) {
           <Button variant="outline" size="sm" onClick={props.onPush}>
             <SendIcon /> <span className="max-sm:sr-only">Push to campaign</span>
           </Button>
-          <Button variant="outline" size="icon-sm" aria-label="Export CSV" title="Export CSV" onClick={props.onExport} disabled={props.busy}>
-            <DownloadIcon />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Export CSV" onClick={props.onExport} disabled={props.busy} />}>
+              <DownloadIcon />
+            </TooltipTrigger>
+            <TooltipContent>Export CSV</TooltipContent>
+          </Tooltip>
         </ButtonGroup>
 
         <DropdownMenu>
