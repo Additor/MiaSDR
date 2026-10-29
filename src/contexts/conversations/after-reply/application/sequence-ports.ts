@@ -188,10 +188,9 @@ export interface RunStore {
   createRun(run: NewRun): Promise<{ runId: string; created: boolean }>;
   recordState(organizationId: string, recordId: string): Promise<RecordSequenceState | null>;
   pause(event: RunEvent, now: Date): Promise<void>;
-  resume(event: RunEvent, now: Date, timeZone: string): Promise<void>;
+  resume(event: RunEvent, now: Date): Promise<void>;
   cancel(event: RunEvent, reason: string, now: Date): Promise<void>;
-  skipStep(event: RunEvent, now: Date, timeZone: string): Promise<{ skipped: number; next: number | null }>;
-  timeZone(organizationId: string): Promise<string>;
+  skipStep(event: RunEvent, now: Date): Promise<{ skipped: number; next: number | null }>;
 }
 
 // Engine (the job) ------------------------------------------------------------------------------------

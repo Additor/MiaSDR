@@ -9,7 +9,7 @@ import { startRun } from "./sequences";
 
 export interface SequenceJobDeps {
   engine: SequenceEngineStore;
-  runs: RunStore;
+  runs: Pick<RunStore, "loadStart" | "createRun">;
   replies: ReplyStore;
   ai: ReplyAiResolver;
   now: () => Date;

@@ -1,46 +1,36 @@
-import { sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, max, notExists, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
+import { campaigns, drafts, people, records, replyTypes, replyTypeSets } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { AfterReplyStore, FlowRunRow, FlowState, NewRun, RecordSequenceState, RunStore, StartFacts, StepView } from "../application/sequence-ports";
 import { afterReplyFlowName, afterReplyModeOf } from "../domain/after-reply";
-import { AFTER_REPLY_OFF, assertPublishable, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
+import { ACTIVE_RUN_STATUSES, AFTER_REPLY_OFF, assertPublishable, OPEN_STEP_STATUSES, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
 import { owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
-import { advanceRunTx, asDate, asDateOrNull, ts, zoneOfTx } from "./sequence-run-tx";
+import { advanceRunTx, asDate, asDateOrNull, ts } from "./sequence-run-tx";
 import { endRunTx, recordEvent, runMayBecome, stepMayBecome, type Tx } from "./sequence-stop";
+import { sequenceRuns, sequences, sequenceSteps, sequenceStepRuns, sequenceVersions } from "./sequences-schema";
 import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
-import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
+import type { FollowUpsRule } from "../../domain/reply-type";
 import { DEFAULT_REPLY_TYPES } from "../../domain/default-reply-types";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { detectsStopRequest } from "../../domain/stop-request";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 
-interface StepRow {
-  id: string;
-  sequence_version_id: string;
-  position: number;
-  step_type: string;
-  name: string;
-  delay_minutes: number;
-  subject_template: string | null;
-  body_template: string | null;
-  ai_instructions: string;
-  knowledge_tags: string[];
-}
-
-const toStepView = (r: StepRow): StepView => ({
+const toStepView = (r: typeof sequenceSteps.$inferSelect): StepView => ({
   id: r.id,
-  sequenceVersionId: r.sequence_version_id,
+  sequenceVersionId: r.sequenceVersionId,
   position: r.position,
   stepType: stepTypeAt(r.position),
   name: r.name,
-  delayMinutes: r.delay_minutes,
-  subjectTemplate: r.subject_template,
-  bodyTemplate: r.body_template,
-  aiInstructions: r.ai_instructions,
-  knowledgeTags: r.knowledge_tags ?? [],
+  delayMinutes: r.delayMinutes,
+  subjectTemplate: r.subjectTemplate,
+  bodyTemplate: r.bodyTemplate,
+  aiInstructions: r.aiInstructions,
+  knowledgeTags: r.knowledgeTags ?? [],
 });
 
 const toInput = (s: StepView): StepInput => ({
@@ -52,49 +42,58 @@ const toInput = (s: StepView): StepInput => ({
   knowledgeTags: s.knowledgeTags,
 });
 
-const tagArray = (tags: string[]) => sql`${`{${tags.map((t) => `"${t.replace(/(["\\])/g, "\\$1")}"`).join(",")}}`}::text[]`;
-
 async function stepsOf(tx: Tx | typeof db, versionId: string): Promise<StepView[]> {
-  return rowsOf<StepRow>(
-    await tx.execute(sql`
-      select id, sequence_version_id, position, step_type, name, delay_minutes, subject_template, body_template, ai_instructions, knowledge_tags
-      from sequence_steps where sequence_version_id = ${versionId} order by position`),
-  ).map(toStepView);
+  const rows = await tx.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceVersionId, versionId)).orderBy(asc(sequenceSteps.position));
+  return rows.map(toStepView);
 }
 
 async function insertSteps(tx: Tx, organizationId: string, versionId: string, steps: readonly StepInput[]) {
-  for (const [index, s] of steps.entries()) {
-    await tx.execute(sql`
-      insert into sequence_steps (organization_id, sequence_version_id, position, step_type, name, delay_minutes, subject_template, body_template, ai_instructions, knowledge_tags)
-      values (${organizationId}, ${versionId}, ${index + 1}, ${stepTypeAt(index + 1)}, ${s.name}, ${s.delayMinutes}, ${s.subjectTemplate}, ${s.bodyTemplate}, ${s.aiInstructions}, ${tagArray(s.knowledgeTags)})`);
-  }
+  if (steps.length === 0) return;
+  await tx.insert(sequenceSteps).values(
+    steps.map((s, index) => ({
+      organizationId,
+      sequenceVersionId: versionId,
+      position: index + 1,
+      stepType: stepTypeAt(index + 1),
+      name: s.name,
+      delayMinutes: s.delayMinutes,
+      subjectTemplate: s.subjectTemplate,
+      bodyTemplate: s.bodyTemplate,
+      aiInstructions: s.aiInstructions,
+      knowledgeTags: [...s.knowledgeTags],
+    })),
+  );
 }
 
+const versionCols = { id: sequenceVersions.id, version: sequenceVersions.version };
+
 async function draftVersion(tx: Tx | typeof db, sequenceId: string) {
-  const [row] = rowsOf<{ id: string; version: number }>(await tx.execute(sql`select id, version from sequence_versions where sequence_id = ${sequenceId} and status = 'draft'`));
+  const [row] = await tx.select(versionCols).from(sequenceVersions).where(and(eq(sequenceVersions.sequenceId, sequenceId), eq(sequenceVersions.status, "draft")));
   return row ?? null;
 }
 
 async function latestPublished(tx: Tx | typeof db, sequenceId: string) {
-  const [row] = rowsOf<{ id: string; version: number }>(
-    await tx.execute(sql`select id, version from sequence_versions where sequence_id = ${sequenceId} and status = 'published' order by version desc limit 1`),
-  );
+  const [row] = await tx
+    .select(versionCols)
+    .from(sequenceVersions)
+    .where(and(eq(sequenceVersions.sequenceId, sequenceId), eq(sequenceVersions.status, "published")))
+    .orderBy(desc(sequenceVersions.version))
+    .limit(1);
   return row ?? null;
 }
 
 // The Follow-ups after a reply flow of a campaign ---------------------------------------------------------------
 
-const OPEN_STEP_RUNS = sql`('scheduled', 'drafting', 'awaiting_review', 'failed')`;
+const OPEN_STEP_RUNS = sqlValues(OPEN_STEP_STATUSES);
+const campaignCols = { id: campaigns.id, name: campaigns.name, channel: campaigns.channel, type: campaigns.type, status: campaigns.status };
+const ofCampaign = (organizationId: string, campaignId: string) => and(eq(campaigns.id, campaignId), eq(campaigns.organizationId, organizationId));
+const flowOf = (organizationId: string, campaignId: string) => and(eq(sequences.campaignId, campaignId), eq(sequences.organizationId, organizationId));
 
 export const drizzleAfterReplyStore: AfterReplyStore = {
   async state(organizationId, campaignId): Promise<FlowState | null> {
-    const [campaign] = rowsOf<{ id: string; name: string; channel: string; type: string; status: string }>(
-      await db.execute(sql`select id, name, channel, type, status from campaigns where id = ${campaignId} and organization_id = ${organizationId}`),
-    );
+    const [campaign] = await db.select(campaignCols).from(campaigns).where(ofCampaign(organizationId, campaignId));
     if (!campaign) return null;
-    const [flow] = rowsOf<{ id: string; status: "active" | "archived" }>(
-      await db.execute(sql`select id, status from sequences where campaign_id = ${campaignId} and organization_id = ${organizationId}`),
-    );
+    const [flow] = await db.select({ id: sequences.id, status: sequences.status }).from(sequences).where(flowOf(organizationId, campaignId));
     if (!flow) return { campaign, flow: null, published: null, steps: [], inProgress: [], earlierVersionCount: 0 };
     const published = await latestPublished(db, flow.id);
     const draft = published ? null : await draftVersion(db, flow.id);
@@ -146,41 +145,36 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
   // A read writes nothing. A fresh organization has no reply types until its first reply or Settings seeds the default
   // set, so the list comes from `DEFAULT_REPLY_TYPES`, with the rules and order the seed writes, keyed by type key.
   async stopReplyTypes(organizationId) {
-    const [set] = rowsOf<{ id: string }>(await db.execute(sql`select id from reply_type_sets where organization_id = ${organizationId} and is_default`));
+    const [set] = await db.select({ id: replyTypeSets.id }).from(replyTypeSets).where(and(eq(replyTypeSets.organizationId, organizationId), eq(replyTypeSets.isDefault, true)));
     if (!set) {
       return DEFAULT_REPLY_TYPES.flatMap((t, index) =>
         t.rules.followUps === "stop" ? [{ id: t.key, key: t.key, name: t.name, groupKey: t.groupKey, systemRole: t.systemRole ?? null, sortOrder: index }] : [],
       );
     }
-    const rows = rowsOf<{ id: string; key: string; name: string; group_key: string; system_role: SystemRole | null; sort_order: number }>(
-      await db.execute(sql`
-        select rt.id, rt.key, rt.name, rt.group_key, rt.system_role, rt.sort_order
-        from reply_types rt
-        where rt.organization_id = ${organizationId} and rt.reply_type_set_id = ${set.id} and rt.active and rt.follow_ups = 'stop'`),
-    );
-    return rows.map((r) => ({ id: r.id, key: r.key, name: r.name, groupKey: r.group_key, systemRole: r.system_role, sortOrder: r.sort_order }));
+    return db
+      .select({ id: replyTypes.id, key: replyTypes.key, name: replyTypes.name, groupKey: replyTypes.groupKey, systemRole: replyTypes.systemRole, sortOrder: replyTypes.sortOrder })
+      .from(replyTypes)
+      .where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, set.id), eq(replyTypes.active, true), eq(replyTypes.followUps, "stop")));
   },
 
   async save(input) {
     return db.transaction(async (tx) => {
       // The campaign row serializes saves of one campaign. Lock order is campaign, then record, then run.
-      const [campaign] = rowsOf<{ id: string; name: string }>(
-        await tx.execute(sql`select id, name from campaigns where id = ${input.campaignId} and organization_id = ${input.organizationId} for update`),
-      );
+      const [campaign] = await tx.select({ id: campaigns.id, name: campaigns.name }).from(campaigns).where(ofCampaign(input.organizationId, input.campaignId)).for("update");
       if (!campaign) throw new NotFoundError("Campaign not found");
-      let [flow] = rowsOf<{ id: string; status: string }>(
-        await tx.execute(sql`select id, status from sequences where campaign_id = ${input.campaignId} and organization_id = ${input.organizationId} for update`),
-      );
+      let [flow] = await tx.select({ id: sequences.id, status: sequences.status }).from(sequences).where(flowOf(input.organizationId, input.campaignId)).for("update");
 
       if (input.mode === "handoff") {
         if (!flow) return { stoppedRuns: 0 };
-        const runs = rowsOf<{ id: string }>(
-          await tx.execute(sql`select id from sequence_runs where sequence_id = ${flow.id} and organization_id = ${input.organizationId} and status in ('active', 'paused') order by created_at`),
-        );
+        const runs = await tx
+          .select({ id: sequenceRuns.id })
+          .from(sequenceRuns)
+          .where(and(eq(sequenceRuns.sequenceId, flow.id), eq(sequenceRuns.organizationId, input.organizationId), inArray(sequenceRuns.status, [...ACTIVE_RUN_STATUSES])))
+          .orderBy(asc(sequenceRuns.createdAt));
         if (runs.length > 0 && !input.confirmStopRuns) {
           throw new ConflictError(`${runs.length} follow-up${runs.length === 1 ? "" : "s"} in progress will stop. Confirm to switch off.`, { code: "runs_in_progress", count: runs.length });
         }
-        if (flow.status !== "archived") await tx.execute(sql`update sequences set status = 'archived', updated_at = ${ts(input.now)} where id = ${flow.id}`);
+        if (flow.status !== "archived") await tx.update(sequences).set({ status: "archived", updatedAt: input.now }).where(eq(sequences.id, flow.id));
         let stopped = 0;
         for (const run of runs) {
           if (await endRunTx(tx, { organizationId: input.organizationId, runId: run.id, final: "interrupted", reason: AFTER_REPLY_OFF, now: input.now, actorUserId: input.actorUserId })) stopped += 1;
@@ -189,11 +183,10 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
       }
 
       if (!flow) {
-        [flow] = rowsOf<{ id: string; status: string }>(
-          await tx.execute(sql`
-            insert into sequences (organization_id, name, campaign_id, after_reply_enabled_at, created_at, updated_at) values (${input.organizationId}, ${afterReplyFlowName(campaign.name)}, ${input.campaignId}, ${ts(input.now)}, ${ts(input.now)}, ${ts(input.now)})
-            returning id, status`),
-        );
+        [flow] = await tx
+          .insert(sequences)
+          .values({ organizationId: input.organizationId, name: afterReplyFlowName(campaign.name), campaignId: input.campaignId, afterReplyEnabledAt: input.now, createdAt: input.now, updatedAt: input.now })
+          .returning({ id: sequences.id, status: sequences.status });
       }
       const published = await latestPublished(tx, flow.id);
       const draft = await draftVersion(tx, flow.id);
@@ -209,18 +202,19 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
         // Only a draft is ever edited, then frozen by publishing. Runs in progress keep the version they started on.
         let target = draft;
         if (!target) {
-          const [max] = rowsOf<{ v: number }>(await tx.execute(sql`select coalesce(max(version), 0)::int as v from sequence_versions where sequence_id = ${flow.id}`));
-          [target] = rowsOf<{ id: string; version: number }>(
-            await tx.execute(sql`insert into sequence_versions (organization_id, sequence_id, version, status) values (${input.organizationId}, ${flow.id}, ${max.v + 1}, 'draft') returning id, version`),
-          );
+          const [top] = await tx.select({ v: max(sequenceVersions.version) }).from(sequenceVersions).where(eq(sequenceVersions.sequenceId, flow.id));
+          [target] = await tx
+            .insert(sequenceVersions)
+            .values({ organizationId: input.organizationId, sequenceId: flow.id, version: (top?.v ?? 0) + 1, status: "draft" })
+            .returning(versionCols);
         }
-        await tx.execute(sql`delete from sequence_steps where sequence_version_id = ${target.id} and organization_id = ${input.organizationId}`);
+        await tx.delete(sequenceSteps).where(and(eq(sequenceSteps.sequenceVersionId, target.id), eq(sequenceSteps.organizationId, input.organizationId)));
         await insertSteps(tx, input.organizationId, target.id, steps);
-        await tx.execute(sql`update sequence_versions set status = 'published', published_at = now(), updated_at = now() where id = ${target.id}`);
+        await tx.update(sequenceVersions).set({ status: "published", publishedAt: sql`now()`, updatedAt: sql`now()` }).where(eq(sequenceVersions.id, target.id));
       }
       // Only a switch from off to on moves `after_reply_enabled_at`. Editing the steps of a flow that is already on leaves it
       // alone, so the engine's cut-off for "new replies" stays at the moment the setting was turned on.
-      if (flow.status !== "active") await tx.execute(sql`update sequences set status = 'active', after_reply_enabled_at = ${ts(input.now)}, updated_at = ${ts(input.now)} where id = ${flow.id}`);
+      if (flow.status !== "active") await tx.update(sequences).set({ status: "active", afterReplyEnabledAt: input.now, updatedAt: input.now }).where(eq(sequences.id, flow.id));
       return { stoppedRuns: 0 };
     });
   },
@@ -228,16 +222,18 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
 
 /** The campaign that owns a sequence of the organization, or null for a legacy standalone sequence or an unknown id. */
 export async function campaignIdOfSequence(organizationId: string, sequenceId: string): Promise<string | null> {
-  const [row] = rowsOf<{ campaign_id: string | null }>(await db.execute(sql`select campaign_id from sequences where id = ${sequenceId} and organization_id = ${organizationId}`));
-  return row?.campaign_id ?? null;
+  const [row] = await db.select({ campaignId: sequences.campaignId }).from(sequences).where(and(eq(sequences.id, sequenceId), eq(sequences.organizationId, organizationId)));
+  return row?.campaignId ?? null;
 }
 
 // Runs ------------------------------------------------------------------------------------------------
 
 const recordLock = async (tx: Tx, organizationId: string, recordId: string) => {
-  const [row] = rowsOf<{ id: string; person_id: string; context_version: number; workflow_state: string }>(
-    await tx.execute(sql`select id, person_id, context_version, workflow_state from records where id = ${recordId} and organization_id = ${organizationId} for update`),
-  );
+  const [row] = await tx
+    .select({ id: records.id, personId: records.personId, contextVersion: records.contextVersion })
+    .from(records)
+    .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId)))
+    .for("update");
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;
 };
@@ -331,7 +327,7 @@ export async function loadStartOn(
     }
   }
   // The steps and the zone do not depend on each other.
-  const [stepViews, timeZone] = await Promise.all([stepsPending, zoneOfTx(exec as Tx, organizationId)]);
+  const [stepViews, timeZone] = await Promise.all([stepsPending, organizationTimeZone(organizationId, exec)]);
   const steps: StartFacts["steps"] = stepViews.map((x) => ({ id: x.id, sequenceVersionId: x.sequenceVersionId, position: x.position, delayMinutes: x.delayMinutes }));
 
   return {
@@ -370,32 +366,56 @@ export async function loadStartOn(
 export async function createRunOn(tx: Tx, run: NewRun): Promise<{ runId: string; created: boolean }> {
   // The flow row is the lock `save` takes for update. Taking it shared first makes a switch-off wait for this run and
   // count it, and a run that starts after the switch-off stops here instead of starting on an archived flow.
-  const [flow] = rowsOf<{ status: string }>(await tx.execute(sql`select status from sequences where id = ${run.sequenceId} and organization_id = ${run.organizationId} for share`));
+  const [flow] = await tx
+    .select({ status: sequences.status })
+    .from(sequences)
+    .where(and(eq(sequences.id, run.sequenceId), eq(sequences.organizationId, run.organizationId)))
+    .for("share");
   if (!flow || flow.status !== "active") throw new ConflictError("Follow-ups after a reply were switched off for this campaign.", { code: "flow_off" });
   const record = await recordLock(tx, run.organizationId, run.recordId);
   // A conversion holds this record's lock until it commits, so this read sees the committed lifecycle. The facts the
   // caller loaded earlier may predate it.
-  const [owner] = rowsOf<{ lifecycle: string }>(await tx.execute(sql`select lifecycle from people where id = ${record.person_id} and organization_id = ${run.organizationId}`));
+  const [owner] = await tx.select({ lifecycle: people.lifecycle }).from(people).where(and(eq(people.id, record.personId), eq(people.organizationId, run.organizationId)));
   if (owner?.lifecycle === "contact") throw new ConflictError("The person is a contact, so follow-ups do not apply.", { code: "contact" });
-  const [existing] = rowsOf<{ id: string; sequence_version_id: string; trigger_message_id: string; start_step_position: number }>(
-    await tx.execute(sql`select id, sequence_version_id, trigger_message_id, start_step_position from sequence_runs where record_id = ${run.recordId} and organization_id = ${run.organizationId} and status in ('active', 'paused') for update`),
-  );
+  const [existing] = await tx
+    .select({ id: sequenceRuns.id, sequenceVersionId: sequenceRuns.sequenceVersionId, triggerMessageId: sequenceRuns.triggerMessageId, startStepPosition: sequenceRuns.startStepPosition })
+    .from(sequenceRuns)
+    .where(and(eq(sequenceRuns.recordId, run.recordId), eq(sequenceRuns.organizationId, run.organizationId), inArray(sequenceRuns.status, [...ACTIVE_RUN_STATUSES])))
+    .for("update");
   if (existing) {
-    if (!run.restart && existing.sequence_version_id === run.sequenceVersionId && existing.trigger_message_id === run.triggerMessageId && existing.start_step_position === run.startPosition) {
+    if (!run.restart && existing.sequenceVersionId === run.sequenceVersionId && existing.triggerMessageId === run.triggerMessageId && existing.startStepPosition === run.startPosition) {
       return { runId: existing.id, created: false };
     }
     await endRunTx(tx, { organizationId: run.organizationId, runId: existing.id, final: "cancelled", reason: "replaced", now: run.now, actorUserId: run.actorUserId });
   }
-  const [created] = rowsOf<{ id: string }>(
-    await tx.execute(sql`
-      insert into sequence_runs (organization_id, record_id, conversation_id, sequence_id, sequence_version_id, reply_type_id, status, current_step_position, start_step_position, started_by, trigger_message_id, last_inbound_at_start)
-      values (${run.organizationId}, ${run.recordId}, ${run.conversationId}, ${run.sequenceId}, ${run.sequenceVersionId}, ${run.replyTypeId}, 'active', ${run.startPosition}, ${run.startPosition}, ${run.source}, ${run.triggerMessageId}, ${ts(run.lastInboundAtStart)})
-      returning id`),
-  );
-  for (const step of run.steps) {
-    await tx.execute(sql`
-      insert into sequence_step_runs (organization_id, sequence_run_id, sequence_step_id, status, due_at, expected_context_version)
-      values (${run.organizationId}, ${created.id}, ${step.stepId}, 'scheduled', ${ts(step.dueAt)}, ${record.context_version})`);
+  const [created] = await tx
+    .insert(sequenceRuns)
+    .values({
+      organizationId: run.organizationId,
+      recordId: run.recordId,
+      conversationId: run.conversationId,
+      sequenceId: run.sequenceId,
+      sequenceVersionId: run.sequenceVersionId,
+      replyTypeId: run.replyTypeId,
+      status: "active",
+      currentStepPosition: run.startPosition,
+      startStepPosition: run.startPosition,
+      startedBy: run.source,
+      triggerMessageId: run.triggerMessageId,
+      lastInboundAtStart: run.lastInboundAtStart,
+    })
+    .returning({ id: sequenceRuns.id });
+  if (run.steps.length > 0) {
+    await tx.insert(sequenceStepRuns).values(
+      run.steps.map((step) => ({
+        organizationId: run.organizationId,
+        sequenceRunId: created.id,
+        sequenceStepId: step.stepId,
+        status: "scheduled" as const,
+        dueAt: step.dueAt,
+        expectedContextVersion: record.contextVersion,
+      })),
+    );
   }
   const first = run.steps.find((s) => s.position === run.startPosition);
   if (first) await tx.execute(sql`update records set next_action_at = ${ts(first.dueAt)} where id = ${run.recordId} and organization_id = ${run.organizationId} and workflow_state in ('waiting', 'idle')`);
@@ -408,21 +428,14 @@ export async function createRunOn(tx: Tx, run: NewRun): Promise<{ runId: string;
     to: { sequenceRunId: created.id, sequenceId: run.sequenceId, sequenceVersionId: run.sequenceVersionId, startStepPosition: run.startPosition },
   });
   return { runId: created.id, created: true };
-
 }
 
 export const drizzleRunStore: RunStore = {
-  async timeZone(organizationId) {
-    return db.transaction((tx) => zoneOfTx(tx, organizationId));
-  },
-
   loadStart: (organizationId, recordId, opts) => loadStartOn(db, organizationId, recordId, opts),
   createRun: (run) => db.transaction((tx) => createRunOn(tx, run)),
 
   async recordState(organizationId, recordId): Promise<RecordSequenceState | null> {
-    const [rec] = rowsOf<{ person_id: string; last_inbound_at: Date | string | null }>(
-      await db.execute(sql`select person_id, last_inbound_at from records where id = ${recordId} and organization_id = ${organizationId}`),
-    );
+    const [rec] = await db.select({ personId: records.personId, lastInboundAt: records.lastInboundAt }).from(records).where(and(eq(records.id, recordId), eq(records.organizationId, organizationId)));
     if (!rec) return null;
     const [run] = rowsOf<{
       id: string;
@@ -447,32 +460,46 @@ export const drizzleRunStore: RunStore = {
         order by (r.status in ('active', 'paused')) desc, r.created_at desc limit 1`),
     );
     const steps = run
-      ? rowsOf<{ id: string; position: number; name: string; status: string; due_at: Date | string; draft_id: string | null; last_error: string | null }>(
-          await db.execute(sql`
-            select sr.id, st.position, st.name, sr.status, sr.due_at, sr.draft_id, sr.last_error
-            from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id
-            where sr.sequence_run_id = ${run.id} order by st.position`),
-        )
+      ? await db
+          .select({
+            id: sequenceStepRuns.id,
+            position: sequenceSteps.position,
+            name: sequenceSteps.name,
+            status: sequenceStepRuns.status,
+            dueAt: sequenceStepRuns.dueAt,
+            draftId: sequenceStepRuns.draftId,
+            lastError: sequenceStepRuns.lastError,
+          })
+          .from(sequenceStepRuns)
+          .innerJoin(sequenceSteps, eq(sequenceSteps.id, sequenceStepRuns.sequenceStepId))
+          .where(eq(sequenceStepRuns.sequenceRunId, run.id))
+          .orderBy(asc(sequenceSteps.position))
       : [];
     // The run's own campaign, else the one that most recently emailed the person.
-    const [campaign] = rowsOf<{ id: string; name: string }>(
-      run?.campaign_id
-        ? await db.execute(sql`select id, name from campaigns where id = ${run.campaign_id} and organization_id = ${organizationId}`)
-        : await db.execute(sql`
+    const [campaign] = run?.campaign_id
+      ? await db.select({ id: campaigns.id, name: campaigns.name }).from(campaigns).where(ofCampaign(organizationId, run.campaign_id))
+      : rowsOf<{ id: string; name: string }>(
+          await db.execute(sql`
             select own.id, own.name from (${owningCampaignSql({
               organizationId: sql`${organizationId}::uuid`,
-              personId: sql`${rec.person_id}::uuid`,
-              at: rec.last_inbound_at ? ts(asDate(rec.last_inbound_at)) : null,
+              personId: sql`${rec.personId}::uuid`,
+              at: rec.lastInboundAt ? ts(rec.lastInboundAt) : null,
             })}) own`),
-    );
+        );
     let mode = afterReplyModeOf(null);
     if (campaign) {
-      const [flow] = rowsOf<{ status: string; has_published: boolean }>(
-        await db.execute(sql`
-          select q.status, exists (select 1 from sequence_versions v where v.sequence_id = q.id and v.status = 'published') as has_published
-          from sequences q where q.campaign_id = ${campaign.id} and q.organization_id = ${organizationId}`),
-      );
-      mode = afterReplyModeOf(flow ? { status: flow.status, hasPublishedVersion: flow.has_published } : null);
+      const [flow] = await db
+        .select({
+          status: sequences.status,
+          // A nested builder: a single-table select writes the columns of a raw `sql` field unqualified.
+          hasPublished: sql<boolean>`exists (${db
+            .select({ one: sql`1` })
+            .from(sequenceVersions)
+            .where(and(eq(sequenceVersions.sequenceId, sequences.id), eq(sequenceVersions.status, "published")))})`,
+        })
+        .from(sequences)
+        .where(flowOf(organizationId, campaign.id));
+      mode = afterReplyModeOf(flow ? { status: flow.status, hasPublishedVersion: flow.hasPublished } : null);
     }
     return {
       recordId,
@@ -487,7 +514,7 @@ export const drizzleRunStore: RunStore = {
             startedBy: run.started_by,
             createdAt: asDate(run.created_at),
             endedReason: run.status === "interrupted" || run.status === "cancelled" ? run.ended_reason : null,
-            steps: steps.map((x) => ({ id: x.id, position: x.position, name: x.name, status: x.status as never, dueAt: asDate(x.due_at), draftId: x.draft_id, lastError: x.last_error })),
+            steps,
           }
         : null,
     };
@@ -496,21 +523,38 @@ export const drizzleRunStore: RunStore = {
   async pause(event, now) {
     await db.transaction(async (tx) => {
       await recordLock(tx, event.organizationId, event.recordId);
-      const [run] = rowsOf<{ id: string; status: "active" }>(
-        await tx.execute(sql`select id, status from sequence_runs where record_id = ${event.recordId} and organization_id = ${event.organizationId} and status = 'active' for update`),
-      );
+      const [run] = await tx
+        .select({ id: sequenceRuns.id })
+        .from(sequenceRuns)
+        .where(and(eq(sequenceRuns.recordId, event.recordId), eq(sequenceRuns.organizationId, event.organizationId), eq(sequenceRuns.status, "active")))
+        .for("update");
       if (!run) throw new ConflictError("There is no active sequence run to pause.");
       // A draft waiting for review is retired and its step goes back to scheduled, so resuming drafts it afresh. As in
       // `endRunTx`, that covers a draft a worker wrote and has not linked yet: the pause ends the worker's claim.
-      await tx.execute(sql`
-        update drafts set status = 'stale', error = 'The sequence was paused.', updated_at = ${ts(now)}
-        where organization_id = ${event.organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}
-          and (id in (select draft_id from sequence_step_runs where sequence_run_id = ${run.id} and draft_id is not null and status in ('drafting', 'awaiting_review', 'failed'))
-               or (request->>'sequenceRunId' = ${run.id} and not exists (select 1 from sequence_step_runs sr where sr.draft_id = drafts.id)))`);
-      await tx.execute(sql`
-        update sequence_step_runs set status = 'scheduled', draft_id = null, claim_token = null, updated_at = ${ts(now)}
-        where sequence_run_id = ${run.id} and organization_id = ${event.organizationId} and ${stepMayBecome("scheduled")}`);
-      await tx.execute(sql`update sequence_runs set status = 'paused', updated_at = ${ts(now)} where id = ${run.id} and ${runMayBecome("paused")}`);
+      await tx
+        .update(drafts)
+        .set({ status: "stale", error: "The sequence was paused.", updatedAt: now })
+        .where(
+          and(
+            eq(drafts.organizationId, event.organizationId),
+            inArray(drafts.status, [...RETIRABLE_DRAFT_STATUSES]),
+            or(
+              inArray(
+                drafts.id,
+                tx
+                  .select({ id: sequenceStepRuns.draftId })
+                  .from(sequenceStepRuns)
+                  .where(and(eq(sequenceStepRuns.sequenceRunId, run.id), isNotNull(sequenceStepRuns.draftId), inArray(sequenceStepRuns.status, ["drafting", "awaiting_review", "failed"]))),
+              ),
+              and(sql`${drafts.request}->>'sequenceRunId' = ${run.id}`, notExists(tx.select({ one: sql`1` }).from(sequenceStepRuns).where(eq(sequenceStepRuns.draftId, drafts.id)))),
+            ),
+          ),
+        );
+      await tx
+        .update(sequenceStepRuns)
+        .set({ status: "scheduled", draftId: null, claimToken: null, updatedAt: now })
+        .where(and(eq(sequenceStepRuns.sequenceRunId, run.id), eq(sequenceStepRuns.organizationId, event.organizationId), stepMayBecome("scheduled")));
+      await tx.update(sequenceRuns).set({ status: "paused", updatedAt: now }).where(and(eq(sequenceRuns.id, run.id), runMayBecome("paused")));
       await tx.execute(sql`update records set next_action_at = null where id = ${event.recordId} and organization_id = ${event.organizationId} and workflow_state = 'waiting'`);
       await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.paused", actorUserId: event.actorUserId, to: { sequenceRunId: run.id } });
     });
@@ -519,12 +563,19 @@ export const drizzleRunStore: RunStore = {
   async resume(event, now) {
     await db.transaction(async (tx) => {
       await recordLock(tx, event.organizationId, event.recordId);
-      const [run] = rowsOf<{ id: string }>(
-        await tx.execute(sql`select id from sequence_runs where record_id = ${event.recordId} and organization_id = ${event.organizationId} and status = 'paused' order by updated_at desc limit 1 for update`),
-      );
+      const [run] = await tx
+        .select({ id: sequenceRuns.id })
+        .from(sequenceRuns)
+        .where(and(eq(sequenceRuns.recordId, event.recordId), eq(sequenceRuns.organizationId, event.organizationId), eq(sequenceRuns.status, "paused")))
+        .orderBy(desc(sequenceRuns.updatedAt))
+        .limit(1)
+        .for("update");
       if (!run) throw new ConflictError("There is no paused sequence run to resume.");
-      await tx.execute(sql`update sequence_step_runs set due_at = greatest(due_at, ${ts(now)}), updated_at = ${ts(now)} where sequence_run_id = ${run.id} and status = 'scheduled'`);
-      await tx.execute(sql`update sequence_runs set status = 'active', updated_at = ${ts(now)} where id = ${run.id} and ${runMayBecome("active")}`);
+      await tx
+        .update(sequenceStepRuns)
+        .set({ dueAt: sql`greatest(${sequenceStepRuns.dueAt}, ${ts(now)})`, updatedAt: now })
+        .where(and(eq(sequenceStepRuns.sequenceRunId, run.id), eq(sequenceStepRuns.status, "scheduled")));
+      await tx.update(sequenceRuns).set({ status: "active", updatedAt: now }).where(and(eq(sequenceRuns.id, run.id), runMayBecome("active")));
       await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.resumed", actorUserId: event.actorUserId, to: { sequenceRunId: run.id } });
     });
   },
@@ -532,9 +583,11 @@ export const drizzleRunStore: RunStore = {
   async cancel(event, reason, now) {
     await db.transaction(async (tx) => {
       await recordLock(tx, event.organizationId, event.recordId);
-      const [run] = rowsOf<{ id: string }>(
-        await tx.execute(sql`select id from sequence_runs where record_id = ${event.recordId} and organization_id = ${event.organizationId} and status in ('active', 'paused') for update`),
-      );
+      const [run] = await tx
+        .select({ id: sequenceRuns.id })
+        .from(sequenceRuns)
+        .where(and(eq(sequenceRuns.recordId, event.recordId), eq(sequenceRuns.organizationId, event.organizationId), inArray(sequenceRuns.status, [...ACTIVE_RUN_STATUSES])))
+        .for("update");
       if (!run) throw new ConflictError("There is no sequence run to cancel.");
       await endRunTx(tx, { organizationId: event.organizationId, runId: run.id, final: "cancelled", reason, now, actorUserId: event.actorUserId });
     });
@@ -543,21 +596,29 @@ export const drizzleRunStore: RunStore = {
   async skipStep(event, now) {
     return db.transaction(async (tx) => {
       await recordLock(tx, event.organizationId, event.recordId);
-      const [run] = rowsOf<{ id: string }>(
-        await tx.execute(sql`select id from sequence_runs where record_id = ${event.recordId} and organization_id = ${event.organizationId} and status = 'active' for update`),
-      );
+      const [run] = await tx
+        .select({ id: sequenceRuns.id })
+        .from(sequenceRuns)
+        .where(and(eq(sequenceRuns.recordId, event.recordId), eq(sequenceRuns.organizationId, event.organizationId), eq(sequenceRuns.status, "active")))
+        .for("update");
       if (!run) throw new ConflictError("There is no active sequence run.");
-      const [current] = rowsOf<{ id: string; position: number; status: string; draft_id: string | null }>(
-        await tx.execute(sql`
-          select sr.id, st.position, sr.status, sr.draft_id from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id
-          where sr.sequence_run_id = ${run.id} and sr.status in ('scheduled', 'drafting', 'awaiting_review', 'failed') order by st.position limit 1 for update of sr`),
-      );
+      const [current] = await tx
+        .select({ id: sequenceStepRuns.id, position: sequenceSteps.position, status: sequenceStepRuns.status, draftId: sequenceStepRuns.draftId })
+        .from(sequenceStepRuns)
+        .innerJoin(sequenceSteps, eq(sequenceSteps.id, sequenceStepRuns.sequenceStepId))
+        .where(and(eq(sequenceStepRuns.sequenceRunId, run.id), inArray(sequenceStepRuns.status, [...OPEN_STEP_STATUSES])))
+        .orderBy(asc(sequenceSteps.position))
+        .limit(1)
+        .for("update", { of: sequenceStepRuns });
       if (!current) throw new ConflictError("There is no pending step to skip.");
       if (current.status === "drafting") throw new ConflictError("The step is being drafted. Try again in a moment.");
-      if (current.draft_id) {
-        await tx.execute(sql`update drafts set status = 'discarded', updated_at = ${ts(now)} where id = ${current.draft_id} and organization_id = ${event.organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
+      if (current.draftId) {
+        await tx
+          .update(drafts)
+          .set({ status: "discarded", updatedAt: now })
+          .where(and(eq(drafts.id, current.draftId), eq(drafts.organizationId, event.organizationId), inArray(drafts.status, [...RETIRABLE_DRAFT_STATUSES])));
       }
-      await tx.execute(sql`update sequence_step_runs set status = 'skipped', updated_at = ${ts(now)} where id = ${current.id} and ${stepMayBecome("skipped")}`);
+      await tx.update(sequenceStepRuns).set({ status: "skipped", updatedAt: now }).where(and(eq(sequenceStepRuns.id, current.id), stepMayBecome("skipped")));
       // The next step waits its own delay from now, as if the skipped message had just gone out.
       const advanced = await advanceRunTx(tx, { organizationId: event.organizationId, runId: run.id, afterPosition: current.position, from: now, now });
       await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.step_skipped", actorUserId: event.actorUserId, from: { position: current.position }, to: advanced.next ? { position: advanced.next } : { completed: true } });

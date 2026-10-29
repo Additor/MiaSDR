@@ -620,7 +620,14 @@ describeDb("Follow-ups after a reply flows", () => {
       const { loadStartOn } = await import("../drizzle-sequence-store");
       const { db } = await import("@/platform/db/client");
       let queries = 0;
-      const counting = { execute: (query: Parameters<typeof db.execute>[0]) => (queries++, db.execute(query)) } as unknown as typeof db;
+      // Each raw `execute` and each Drizzle `select` sends one query.
+      const counting = new Proxy(db, {
+        get: (target, key, receiver) => {
+          const value = Reflect.get(target, key, receiver);
+          if (key !== "execute" && key !== "select") return value;
+          return (...args: unknown[]) => (queries++, (value as (...a: unknown[]) => unknown).apply(target, args));
+        },
+      });
       const facts = await loadStartOn(counting, f.org, record, {});
       expect(queries, "record and conversation, owner with flow and version, steps, zone").toBeLessThanOrEqual(4);
       expect(await loadStartOn(db, f.org, record, { conversationId: conversation })).toEqual(facts);
@@ -1813,6 +1820,39 @@ describeDb("Follow-ups after a reply flows", () => {
       expect(await one("select status from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "cancelled" });
       expect(await count("sequence_step_runs", f.org, "status in ('scheduled', 'drafting', 'awaiting_review')")).toBe(0);
       await expect(seqApp.cancelSequenceRun(f.seqDeps, f.actor, recordId)).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it("advancing to a step another writer moved after the pick leaves the run and the record as they were", async () => {
+      const { f, run } = await withRun();
+      const { advanceRunTx } = await import("../sequence-run-tx");
+      const { db } = await import("@/platform/db/client");
+      const { sql } = await import("drizzle-orm");
+      const before = await one("select r.current_step_position, rec.next_action_at from sequence_runs r join records rec on rec.id = r.record_id where r.id = $1", [run.id]);
+      const step2 = await one(
+        "select sr.id, sr.due_at from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = 2",
+        [run.id],
+      );
+      const result = await db.transaction(async (tx) => {
+        // The zone read is the first raw statement after the pick: move step 2 to awaiting_review there.
+        let moved = false;
+        const racing = new Proxy(tx, {
+          get: (target, key, receiver) => {
+            const value = Reflect.get(target, key, receiver);
+            if (key !== "execute") return value;
+            return async (query: Parameters<typeof tx.execute>[0]) => {
+              if (!moved) {
+                moved = true;
+                await target.execute(sql`update sequence_step_runs set status = 'awaiting_review' where id = ${step2.id}`);
+              }
+              return target.execute(query);
+            };
+          },
+        });
+        return advanceRunTx(racing, { organizationId: f.org, runId: run.id, afterPosition: 1, from: f.clock(), now: f.clock() });
+      });
+      expect(result).toEqual({ next: null });
+      expect(await one("select status, due_at from sequence_step_runs where id = $1", [step2.id])).toEqual({ status: "awaiting_review", due_at: step2.due_at });
+      expect(await one("select r.current_step_position, rec.next_action_at from sequence_runs r join records rec on rec.id = r.record_id where r.id = $1", [run.id])).toEqual(before);
     });
 
     it("reads the record's campaign and run with labels", async () => {
