@@ -250,7 +250,7 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
     const retryIn = inviteRetryMinutes(send.attempt);
     if (!send.rendered) {
       // Crashed before the provider call: nothing can have been sent.
-      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_SEND_ATTEMPTS);
+      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_SEND_ATTEMPTS, "interrupted");
       report.retryable += 1;
       continue;
     }
@@ -283,7 +283,7 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
       continue;
     }
     if (now.getTime() - send.claimedAt.getTime() >= NOT_FOUND_GRACE_MINUTES * 60_000) {
-      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_SEND_ATTEMPTS);
+      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_SEND_ATTEMPTS, "not_found");
       report.retryable += 1;
     } else {
       report.stillWaiting += 1;

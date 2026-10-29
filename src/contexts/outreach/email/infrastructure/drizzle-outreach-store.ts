@@ -13,7 +13,7 @@ import {
 import type { BlockReason, ClaimOptions, OutreachStore, SendClaim, UncertainSend } from "../application/ports";
 import { mailboxPolicyViolation } from "../application/mailbox-management";
 import { readSendPause } from "../../domain/send-pause";
-import { mailboxBlock } from "../../domain/send-policy";
+import { INTERRUPTED_BEFORE_PROVIDER, mailboxBlock } from "../../domain/send-policy";
 import { SEND_COUNTED, SEND_UNRESOLVED } from "../../domain/send-status";
 import { takeoverCutoff } from "../domain/takeover";
 import { buildVariables } from "../../domain/variables";
@@ -302,15 +302,16 @@ export const drizzleOutreachStore: OutreachStore = {
     });
   },
 
-  async resolveUncertainAsNotSent(send, now, retryAfterMinutes, maxAttempts) {
+  async resolveUncertainAsNotSent(send, now, retryAfterMinutes, maxAttempts, cause) {
+    const reason = cause === "interrupted" ? INTERRUPTED_BEFORE_PROVIDER : "Not found in the mailbox.";
     await db.transaction(async (tx) => {
       const updated = await tx
         .update(sends)
-        .set({ status: "failed", error: "Not found in the mailbox after the grace period." })
+        .set({ status: "failed", error: cause === "interrupted" ? INTERRUPTED_BEFORE_PROVIDER : "Not found in the mailbox after the grace period." })
         .where(readAttempt(send, "failed"))
         .returning({ attempt: sends.attempt });
       if (updated.length === 0) return;
-      await scheduleRetry(tx, send.enrollmentId, updated[0].attempt, now, retryAfterMinutes, maxAttempts, "Not found in the mailbox.");
+      await scheduleRetry(tx, send.enrollmentId, updated[0].attempt, now, retryAfterMinutes, maxAttempts, reason);
     });
   },
 };

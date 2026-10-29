@@ -121,7 +121,7 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
     report.checked += 1;
     if (!send.rfcMessageId) {
       // Crashed before the message was rendered: nothing can have been sent.
-      await deps.store.resolveUncertainAsNotSent(send, now, retryDelayMinutes(send.attempt), MAX_SEND_ATTEMPTS);
+      await deps.store.resolveUncertainAsNotSent(send, now, retryDelayMinutes(send.attempt), MAX_SEND_ATTEMPTS, "interrupted");
       report.retryable += 1;
       continue;
     }
@@ -140,7 +140,7 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
       console.warn(`email reconcile: send ${send.sendId} stays unknown: ${found.reason}`);
       report.inconclusive += 1;
     } else if (now.getTime() - send.claimedAt.getTime() >= NOT_FOUND_GRACE_MINUTES * 60_000) {
-      await deps.store.resolveUncertainAsNotSent(send, now, retryDelayMinutes(send.attempt), MAX_SEND_ATTEMPTS);
+      await deps.store.resolveUncertainAsNotSent(send, now, retryDelayMinutes(send.attempt), MAX_SEND_ATTEMPTS, "not_found");
       report.retryable += 1;
     } else {
       report.stillWaiting += 1;

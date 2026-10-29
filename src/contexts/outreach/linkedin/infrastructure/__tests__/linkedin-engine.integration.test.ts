@@ -683,14 +683,14 @@ describeDb("linkedin engine", () => {
       advance(11);
       const stale = (await store.listUncertain(current, 500)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
       expect(stale).toMatchObject({ attempt: 2 });
-      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS);
+      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS, "not_found");
 
       // Attempt 3 is claimed and in flight when the stale results land. Neither changes it.
       advance(60);
       const third = await store.claimNext({ accountId: f.account, now: current, random: () => 0, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) });
       expect(third).toMatchObject({ kind: "invitation", sendId: stale.sendId, attempt: 3 });
       if (third?.kind !== "invitation") throw new Error("expected an invitation claim");
-      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS);
+      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS, "not_found");
       await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", accepted: false }, current);
       expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sending", attempt: 3 });
 
@@ -699,6 +699,22 @@ describeDb("linkedin engine", () => {
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
       advance(24 * 60);
       expect((await act(gateway, f)).kind).toBe("idle");
+    });
+
+    it("names the interruption when claims that stopped before LinkedIn use up the cap", async () => {
+      const f = await fixture();
+      const gateway = new FakeLinkedInGateway();
+      expect((await act(gateway, f)).kind).toBe("resolved");
+      for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+        advance(24 * 60);
+        // The worker dies after the claim, before it renders the invitation.
+        expect(await store.claimNext({ accountId: f.account, now: current, random: () => 0, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) })).toMatchObject({ kind: "invitation", attempt });
+        advance(11);
+        expect(await engine.reconcileLinkedInSends(deps(gateway))).toMatchObject({ retryable: 1 });
+        expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt, error: "The send stopped before it reached the provider." });
+      }
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: The send stopped before it reached the provider." });
+      expect(gateway.invitations).toHaveLength(0);
     });
 
     it("asks LinkedIn at most MAX_SEND_ATTEMPTS times for a follow-up message, then ends the enrollment failed", async () => {
