@@ -47,7 +47,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
     const actor: Actor = { userId: user, organizationId: org, role: "member" };
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const clock = () => new Date();
-    const [tick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "t", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [tick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "t", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const liDeps: LinkedInReplyDeps = { store: stores.li, sender: makeSender(fake), now: clock, aiStatus: resolver.status };
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(mailboxProvider), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
     const replyHandlingDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };

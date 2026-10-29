@@ -55,7 +55,6 @@ export const linkedinReplyDeps = (): LinkedInReplyDeps => ({
 export function conversationJobs(): Job[] {
   const deps = {
     jobs: drizzleAiJobStore,
-    replies: drizzleReplyStore,
     ai: replyAiResolver,
     now: () => new Date(),
     workerId: `${hostname()}:${process.pid}`,

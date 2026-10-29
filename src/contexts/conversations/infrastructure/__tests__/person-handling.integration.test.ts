@@ -41,7 +41,7 @@ describeDb("person handling for the lead-to-contact conversion", () => {
     const ai = new FakeAi();
     const clock = () => new Date();
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
-    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const [seqTick] = seqJobsApp.createSequenceJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId: "w1", leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const ctx = () => ({ deadline: Date.now() + 60_000, now: clock });
     return {

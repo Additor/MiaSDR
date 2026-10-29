@@ -102,7 +102,7 @@ export async function queuePickDraftTx(tx: Tx, input: { organizationId: string; 
     .values({ organizationId: input.organizationId, kind: "initial_draft", entityType: "classification", entityId: input.replyTypePickId, idempotencyKey: key, runAfter: sql`now() - interval '1 minute'`, payload: { humanInitiated: true } })
     .onConflictDoUpdate({
       target: [aiJobs.kind, aiJobs.entityType, aiJobs.entityId],
-      set: { status: "queued", attempts: 0, runAfter: sql`now() - interval '1 minute'`, idempotencyKey: key, payload: sql`${aiJobs.payload} || '{"humanInitiated":true}'::jsonb`, completedAt: null, failedAt: null, lastError: null, lockedAt: null, lockedBy: null },
+      set: { status: "queued", attempts: 0, runAfter: sql`now() - interval '1 minute'`, idempotencyKey: key, payload: sql`${aiJobs.payload} || '{"humanInitiated":true}'::jsonb`, completedAt: null, failedAt: null, lastError: null, lockedAt: null, lockedBy: null, claimToken: null },
       setWhere: sql`${aiJobs.status} in ('succeeded', 'failed', 'skipped')`,
     });
   const [job] = await tx

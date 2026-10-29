@@ -4,13 +4,12 @@ import { stopRequestedBy } from "../../domain/reply-type-pick-policy";
 import { normalizeSubject } from "../../domain/subject";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import type { ReplyAi, ReplyAiResolver } from "./ai-ports";
-import type { AiJobStore, ClaimedJob, DraftContext, ReplyStore } from "../../application/reply-ports";
+import type { AiJobStore, ClaimedJob, DraftContext } from "../../application/reply-ports";
 import { sweepFailedAiJobs, type AuditPort } from "./ai-job-ops";
 import type { FailureKind } from "../domain/ai-job-requeue";
 
 export interface AiJobDeps {
   jobs: AiJobStore;
-  replies: ReplyStore;
   ai: ReplyAiResolver;
   now: () => Date;
   workerId: string;
@@ -112,7 +111,7 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
   if (!ctx) return "skipped";
   if (ctx.skip) return ctx.skip;
   const result = await produceDraft(provider, ctx);
-  await deps.replies.insertDraft({
+  const written = await deps.jobs.insertDraft(job, {
     organizationId: ctx.organizationId,
     recordId: ctx.recordId,
     conversationId: ctx.conversationId,
@@ -127,7 +126,8 @@ async function draft(deps: AiJobDeps, provider: ReplyAi, job: ClaimedJob): Promi
     response: { usage: result.usage ?? null },
     citations: draftCitations(ctx),
   });
-  return "drafted";
+  // Another worker claimed the job after this lease ran out; its run writes the draft.
+  return written ? "drafted" : "claim_lost";
 }
 
 /**
