@@ -7,12 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { callApi } from "@/app/_lib/api-client";
+import type { DncResult } from "@/contexts/conversations/application/reply-handling-ports";
 
-interface DncResult {
-  changed: boolean;
-  enrollmentsStopped: number;
-  draftsRetired: number;
-}
 
 export const DNC_REASON_REQUIRED = "Type a reason to mark this person do not contact.";
 

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/app/_lib/api-client";
+import type { TestSendResult } from "@/contexts/outreach/email/application/send-test-email";
 import { formatCount } from "@/shared/format-number";
 import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
@@ -376,11 +377,6 @@ function EditMailbox({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox: Ma
       </ConfirmDialog>
     </>
   );
-}
-
-interface TestSendResult {
-  status: "sent" | "failed" | "unknown" | "blocked" | "rate_limited";
-  message: string;
 }
 
 /**

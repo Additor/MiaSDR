@@ -48,28 +48,39 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 | `withAdmin(message, run)` | Owner or admin. Throws `ForbiddenError` before `run` parses the body, so a member with a malformed body gets 403, not 400. |
 | `withUser(run)` | Signed-in user without an organization (create or switch organization). |
 
-| Error (`src/shared/errors.ts`) | Status |
-|---|---|
-| `NotFoundError`, and a Postgres `22P02` (path id that is not a UUID) | 404 |
-| `ForbiddenError` | 403 |
-| `ConflictError` (its `details` merge into the body; clients branch on `details.code`) | 409 |
-| `PayloadTooLargeError` | 413 |
-| `ValidationError` (message plus `issues`), and its subclasses `CsvError` (`platform/files/csv.ts`, an unreadable upload) and `ImportInputError` (`people/application/import-leads.ts`, no rows, too many rows, a broken mapping) | 422 |
-| `ZodError`, `SyntaxError` from `request.json()` | 400 |
+| Error (`src/shared/errors.ts`) | Status | `code` |
+|---|---|---|
+| No session (the wrappers, `invitations/[id]` GET and the proxy) | 401 | `unauthenticated` |
+| `NotFoundError`, and a Postgres `22P02` (path id that is not a UUID) | 404 | `not_found` |
+| `ForbiddenError` | 403 | `forbidden`, or the class's own `code` (`PersonalCampaignError`: `personal_campaign`) |
+| `ConflictError` (its `details` merge into the body) | 409 | `details.code`, else `conflict` |
+| `PayloadTooLargeError` | 413 | `payload_too_large` |
+| `ValidationError` (message plus `issues`), and its subclasses `CsvError` (`platform/files/csv.ts`, an unreadable upload) and `ImportInputError` (`people/application/import-leads.ts`, no rows, too many rows, a broken mapping) | 422 | `validation` |
+| `ZodError`, `SyntaxError` from `request.json()` | 400 | `bad_request` |
 
 - Every protected handler goes through a wrapper. `src/architecture/route-wrappers.test.ts` checks imports: no file under `src/app/api` or `src/app/_lib`, and no `route.ts` elsewhere in `src/app`, imports the Better Auth module or reaches `identity/infrastructure/session.ts` other than through `_lib/api.ts`, at any depth. Its shrink-only list names four files with reasons: `invitations/[id]` (the GET view depends on the session's email, which `withUser` does not hand over), Better Auth's `auth/[...all]` handler, and the two legacy redirects under `(legacy)/crm`, which send a browser without a session to a fallback page instead of answering 401 JSON.
 - A `Response` that `run` returns (a CSV file, a stream) goes out unchanged. Any other value is the JSON body, and `undefined` is 204.
 - Handlers parse the body inside the wrapper's callback, so a malformed body answers 400 instead of 500.
-- The lead import routes (`/api/leads/import`, `preview`, `summary`) moved into `withActor` and answer 422 where they answered 400: an unreadable file, an import the file or mapping cannot make, a missing file and a missing or invalid mapping. A file over 5 MB still answers 413. A 409 now merges the `ConflictError` details into the body, as every other route does; before, the import answered `{ error }` only. The import wizard reads only `error`, so it shows the same message.
+- The lead import routes (`/api/leads/import`, `preview`, `summary`) moved into `withActor` and answer 422 where they answered 400: an unreadable file, an import the file or mapping cannot make, a missing file and a missing or invalid mapping. A file over 5 MB still answers 413. A 409 now merges the `ConflictError` details into the body, as every other route does; before, the import answered `{ error }` only. The import wizard reads `error`, so it shows the same message.
 - Use cases keep their own `requireAdmin` checks for callers that skip the routes, such as jobs and tests.
 - A role string can hold several roles, comma separated. `isOwnerOrAdmin` in `tenancy/domain/roles.ts` reads it.
+
+### API errors and contract types
+
+- Every error response the browser reads has the shape `{ error, code, ...details }`, written by `apiError` in `src/app/_lib/api-errors.ts`. `error` is a sentence for a person; `code` is a stable word the browser branches on. The route wrappers, the proxy's 401, `invitations/[id]` GET (401, and 404 `not_found` next to the view's `state`), `/api/setup` (409 `already_set_up`, 400 `bad_request`), `/api/outreach/unsubscribe` (400 `invalid_link`), `/api/linkedin/webhooks/setup` (500 `server_error`) and `/api/jobs/tick` (401) all write it. The 401 says "Sign in to continue." Better Auth's own endpoints under `/api/auth` keep Better Auth's body with its upper-case `code`. Webhooks and the dev-only routes answer machines and keep their bodies.
+- A 409's use-case code survives: `try_again`, `stale_version`, `already_converted`, `company_changed` and the rest stay as the use case names them.
+- `callApi` (`src/app/_lib/api-client.ts`) returns `code` next to `error`. It owns the words of two codes: `unauthenticated` ("Your session expired. Sign in again.") and `try_again`. `apiMessage(code, subject)` gives those sentences with a person or company named. Screens with a more specific next step keep their own sentence: the deal pages and the board branch on `stale_version`, reload, and say what to check before saving or moving again. For every other code the browser shows the server's `error`, since it can carry data the browser cannot rebuild (`${count} deals`). A 401 without a body counts as `unauthenticated`. No client code compares `error` text.
+- The four auth screens that call our API (setup, sign-in, new organization, unsubscribe) go through `callApi` too. Setup and unsubscribe are public routes that never answer 401; sign-in ignores a failed organization read; on the new-organization form a 401 means the session is gone, so the session sentence fits. Better Auth calls go through `authClient`.
+- Browser code calls the API through `callApi`. `fetch` stays only in `callApi` and in the two CSV downloads (Contacts export, Tables export), which read a blob. `src/architecture/client-imports.test.ts` holds that list.
+- Client components take request and response types from the use case with `import type` (`ImportReport`, `ConvertPreview`, `BulkCreateResult`, `BulkDncResult`, `DncResult`, `ConnectResult`, `TestSendResult`, `UploadBatchReport`, `EnrichmentPreview`); no client copy of them exists. There is no shared contracts module.
+- Values the browser shares with the server (limits, refusal sentences) live in leaf `application/` modules that load nothing but `domain/` and `src/shared`: `people/application/conversion-terms.ts` (`MAX_CONVERT_PREVIEW_IDS`, `PERSONAL_CAMPAIGN_MESSAGE`), `people/application/lead-delete-terms.ts` (the lead delete sentences), `deals/application/deal-limits.ts` (`MAX_BULK_CONVERT_IDS`) and `conversations/application/dnc-limits.ts` (`MAX_BULK_DNC_IDS`). `src/architecture/client-imports.test.ts` walks the value imports of every `"use client"` file at any depth: from `src/contexts` they may reach `domain/` and leaf `application/` modules, plus identity's `auth-client.ts`; never `src/platform`, `src/composition`, other infrastructure or a database package. After `pnpm build`, `scripts/client-bundle-check.sh` checks the output: no browser chunk holds drizzle-orm or postgres code.
 
 ### Route matrix
 
 `src/architecture/route-matrix/route-matrix.integration.test.ts` calls every exported handler of every `route.ts` in process, against Postgres and real Better Auth sessions, and runs `proxy()` for every path.
 
 - Every route must appear in `ROUTES` or `PUBLIC_ROUTES` (`route-matrix-spec.ts`) with every method and path param described, or the test fails.
-- A protected handler answers 401 without a session and 403 to a member where it is admin-only, also with a malformed body. It leaves another organization's rows unchanged and unlisted. A handler whose id is a credential (`invitations/[id]` GET) carries `idIsCapability`.
+- A protected handler answers 401 `unauthenticated` without a session and 403 `forbidden` to a member where it is admin-only, also with a malformed body. A non-UUID or foreign id answers 404 `not_found`, a malformed JSON body 400 `bad_request`. It leaves another organization's rows unchanged and unlisted. A handler whose id is a credential (`invitations/[id]` GET) carries `idIsCapability`.
 - `PERMISSION_AFTER_VALIDATION` in `route-matrix-allowlist.ts` is empty, and the test keeps it empty.
 
 ### Tenant scoping in the database

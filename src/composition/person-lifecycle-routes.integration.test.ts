@@ -73,7 +73,7 @@ describeDb("person lifecycle routes", () => {
     void _dropped;
     const invalid = await callRoute("contacts/[id]/route.ts", "DELETE", { params: { id: personId }, query: missing, as: world.member });
     expect(invalid.status).toBe(422);
-    expect(invalid.body).toEqual({ error: "Send the counts the delete dialog showed.", issues: [] });
+    expect(invalid.body).toEqual({ error: "Send the counts the delete dialog showed.", issues: [], code: "validation" });
 
     const stale = await callRoute("contacts/[id]/route.ts", "DELETE", { params: { id: personId }, query: { ...query, notes: "7" }, as: world.member });
     expect(stale.status).toBe(409);
@@ -84,7 +84,7 @@ describeDb("person lifecycle routes", () => {
     expect(deleted.body).toEqual({ deleted: counts });
     const again = await callRoute("contacts/[id]/route.ts", "DELETE", { params: { id: personId }, query, as: world.member });
     expect(again.status).toBe(404);
-    expect(again.body).toEqual({ error: "This contact no longer exists." });
+    expect(again.body).toEqual({ error: "This contact no longer exists.", code: "not_found" });
 
     const leadId = await lead("Liam Lead", `liam-${tag}@routes.test`);
     const notContact = await callRoute("contacts/[id]/delete-preview/route.ts", "GET", { params: { id: leadId }, as: world.member });

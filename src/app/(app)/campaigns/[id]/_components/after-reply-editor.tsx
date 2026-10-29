@@ -31,13 +31,10 @@ import {
   type StepIssue,
 } from "../_lib/after-reply-form";
 import { countOf } from "@/shared/format-number";
+import { callApi } from "@/app/_lib/api-client";
 
 interface SaveResponse {
   stoppedRuns?: number;
-  error?: string;
-  code?: string;
-  count?: number;
-  issues?: Array<{ step?: number | null; message: string }>;
 }
 
 /** The server needs follow-ups in progress confirmed before it switches the setting off. */
@@ -57,18 +54,12 @@ class SaveError extends Error {
 }
 
 async function putAfterReply(campaignId: string, body: unknown): Promise<SaveResponse> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/campaigns/${campaignId}/after-reply`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  } catch {
-    throw new SaveError("Could not reach the server.");
-  }
-  const data = (await response.json().catch(() => null)) as SaveResponse | null;
-  if (response.ok) return data ?? {};
-  if (response.status === 409 && data?.code === "runs_in_progress") throw new RunsInProgressError(data.count ?? 0);
+  const result = await callApi<SaveResponse>(`/api/campaigns/${campaignId}/after-reply`, "PUT", body);
+  if (result.ok) return result.data ?? {};
+  if (result.code === "runs_in_progress") throw new RunsInProgressError(typeof result.details?.count === "number" ? result.details.count : 0);
   throw new SaveError(
-    data?.error ?? "Something went wrong. Try again.",
-    (data?.issues ?? []).map((i) => ({ step: i.step ?? null, message: i.message })),
+    result.error ?? "Something went wrong. Try again.",
+    result.issues.map((i) => ({ step: i.step ?? null, message: i.message })),
   );
 }
 

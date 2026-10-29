@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { apiError } from "@/app/_lib/api-errors";
 import { InvalidUnsubscribeToken, unsubscribeByToken } from "@/contexts/outreach/email/application/unsubscribe";
 import { unsubscribe } from "@/composition/inbox-filing";
 
-const INVALID = { error: "invalid or expired unsubscribe link" };
+const invalid = () => apiError(400, "This unsubscribe link is invalid or expired.", { code: "invalid_link" });
 
 /**
  * Public, no session. Two callers:
@@ -18,20 +19,20 @@ export async function POST(request: Request) {
     const type = request.headers.get("content-type") ?? "";
     if (type.includes("application/x-www-form-urlencoded")) {
       const form = new URLSearchParams(await request.text());
-      if (form.get("List-Unsubscribe") !== "One-Click") return NextResponse.json(INVALID, { status: 400 });
+      if (form.get("List-Unsubscribe") !== "One-Click") return invalid();
     }
     token = queryToken;
   } else {
     const body = await request.json().catch(() => null);
     token = typeof body?.token === "string" ? body.token : null;
   }
-  if (!token) return NextResponse.json(INVALID, { status: 400 });
+  if (!token) return invalid();
 
   try {
     const { email } = await unsubscribeByToken(unsubscribe(), token);
     return NextResponse.json({ ok: true, email });
   } catch (error) {
-    if (error instanceof InvalidUnsubscribeToken) return NextResponse.json(INVALID, { status: 400 });
+    if (error instanceof InvalidUnsubscribeToken) return invalid();
     throw error;
   }
 }

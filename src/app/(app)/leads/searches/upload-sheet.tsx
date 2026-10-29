@@ -10,20 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { countOf, formatCount } from "@/shared/format-number";
+import type { UploadBatchReport } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
+import { callApi } from "@/app/_lib/api-client";
 
 export interface UploadSheetConfig {
   accounts: Array<{ id: string; name: string }>;
   maxRows: number;
   defaultMaxResults: number;
   maxResultsLimit: number;
-}
-
-interface UploadReport {
-  id: string;
-  queued: number;
-  duplicatesInFile: number;
-  alreadyQueued: number;
-  rejectedCount: number;
 }
 
 const NO_CAMPAIGN = "none";
@@ -47,15 +41,14 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
     if (accountIds.length > 0) body.set("accountIds", JSON.stringify(accountIds));
     setError(null);
     setIssues([]);
-    const response = await fetch("/api/linkedin/search-batches", { method: "POST", body });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    const result = await callApi<UploadBatchReport>("/api/linkedin/search-batches", "POST", body);
+    if (!result.ok || !result.data) {
       // The refusal and its reasons render in the body, and the dialog stays open.
-      setError(data.error ?? "The upload failed. Check the file and try again.");
-      setIssues(Array.isArray(data.issues) ? data.issues.map((i: { message: string }) => i.message) : []);
+      setError(result.error ?? "The upload failed. Check the file and try again.");
+      setIssues(result.issues.map((i) => i.message));
       return false;
     }
-    const report = data as UploadReport;
+    const report = result.data;
     setCampaign(NO_CAMPAIGN);
     setAccountIds([]);
     const skipped = [report.rejectedCount && `${report.rejectedCount} refused`, report.duplicatesInFile && `${report.duplicatesInFile} repeated`, report.alreadyQueued && `${report.alreadyQueued} already queued`].filter(Boolean);

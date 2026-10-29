@@ -3,25 +3,17 @@
  *: one sentence per effect, and a line with a zero count is left out.
  */
 
-export interface ConvertPreview {
-  people: number;
-  alreadyContacts: number;
-  enrollments: number;
-  runs: number;
-  followUpDraftsToRetire: number;
-  skippedPersonalCampaign: number;
-}
+import type { BulkCreateResult, BulkSkipReason } from "@/contexts/deals/application/deal-create";
+import { MAX_BULK_CONVERT_IDS } from "@/contexts/deals/application/deal-limits";
+import type { ConvertPreview } from "@/contexts/people/application/convert-to-contact";
+import { MAX_CONVERT_PREVIEW_IDS } from "@/contexts/people/application/conversion-terms";
 
-export type BulkSkipReason = "already_converted" | "not_found" | "personal_campaign" | "failed" | "retryable";
+export type { ConvertPreview, BulkSkipReason };
+export type BulkReport = BulkCreateResult;
 
-export interface BulkReport {
-  created: Array<{ personId: string; dealId: string }>;
-  skipped: Array<{ personId: string; reason: BulkSkipReason }>;
-}
-
-/** The UI sends bulk creates in chunks of 200 (the server's cap), one after another, and previews in chunks of 500. */
-export const CREATE_CHUNK = 200;
-export const PREVIEW_CHUNK = 500;
+/** The UI sends bulk creates and previews in chunks of the server's caps, one after another. */
+export const CREATE_CHUNK = MAX_BULK_CONVERT_IDS;
+export const PREVIEW_CHUNK = MAX_CONVERT_PREVIEW_IDS;
 
 export const EMPTY_PREVIEW: ConvertPreview = { people: 0, alreadyContacts: 0, enrollments: 0, runs: 0, followUpDraftsToRetire: 0, skippedPersonalCampaign: 0 };
 

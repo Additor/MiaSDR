@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { retryOnce } from "@/platform/db/errors";
+import { MAX_BULK_DNC_IDS } from "./dnc-limits";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import {
@@ -157,7 +158,7 @@ function dncReason(enabled: boolean, raw: string | null | undefined): string {
   return reason;
 }
 
-export const MAX_BULK_DNC_IDS = 200;
+export { MAX_BULK_DNC_IDS };
 /** A bulk request stops starting new people after this long and reports the rest as `retryable`, as bulk deal creation does. */
 export const BULK_DNC_TIME_BUDGET_MS = 20_000;
 

@@ -14,6 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { RadioGroup } from "@/components/ui/radio-group";
+import { apiMessage, callApi } from "@/app/_lib/api-client";
 import {
   MERGE_TIMEOUT,
   companyChangedText,
@@ -22,7 +23,6 @@ import {
   deletedCompanyText,
   keepOptionLabel,
   mergePreviewLines,
-  mergeTryAgain,
   mergedText,
   noMatchText,
   type MergePreview,
@@ -83,23 +83,8 @@ interface SearchRow {
   listed: boolean;
 }
 
-interface Answer {
-  status: number;
-  body: Record<string, unknown> | null;
-}
-
-/** One API call with its status code. A request that never answers throws, so the caller can say the merge may still run. */
-async function send(url: string, method: "GET" | "POST" | "DELETE", body?: unknown, timeoutMs = 60_000): Promise<Answer> {
-  const response = await fetch(url, {
-    method,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  return { status: response.status, body: (await response.json().catch(() => null)) as Record<string, unknown> | null };
-}
-
-const errorOf = (answer: Answer, fallback: string) => (typeof answer.body?.error === "string" ? answer.body.error : fallback);
+/** One API call that gives up after a minute. A call that never answers has status 0, so the merge can say it may still run. */
+const send = <T,>(url: string, method: "GET" | "POST" | "DELETE", body?: unknown) => callApi<T>(url, method, body, { signal: AbortSignal.timeout(60_000) });
 
 /**
  * Merge in two steps of one dialog. Step 1 finds the other company (companies with leads only included, marked "Leads only") and
@@ -147,35 +132,26 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
     const q = query.trim();
     if (!q) return;
     setStatus(null);
-    try {
-      const answer = await send(`/api/companies/search?q=${encodeURIComponent(q)}&all=1`, "GET");
-      if (answer.status !== 200) return setStatus(errorOf(answer, "Could not search companies. Try again."));
-      const rows = ((answer.body?.companies as SearchRow[] | undefined) ?? []).filter((row) => row.companyId !== company.id);
-      setResults(rows);
-      setSearched(q);
-      if (picked && !rows.some((row) => row.companyId === picked.companyId)) {
-        setPicked(null);
-        setKeepId(company.id);
-      }
-    } catch {
-      setStatus("Could not reach the server.");
+    const answer = await send<{ companies: SearchRow[] }>(`/api/companies/search?q=${encodeURIComponent(q)}&all=1`, "GET");
+    if (!answer.ok) return setStatus(answer.error ?? "Could not search companies. Try again.");
+    const rows = (answer.data?.companies ?? []).filter((row) => row.companyId !== company.id);
+    setResults(rows);
+    setSearched(q);
+    if (picked && !rows.some((row) => row.companyId === picked.companyId)) {
+      setPicked(null);
+      setKeepId(company.id);
     }
   }
 
   async function loadPreview(): Promise<boolean> {
     if (!pair) return false;
-    try {
-      const answer = await send(`/api/companies/${pair.kept.companyId}/merge/preview`, "POST", { otherId: pair.other.companyId });
-      if (answer.status !== 200 || !answer.body) {
-        setStatus(errorOf(answer, "Could not preview the merge. Try again."));
-        return false;
-      }
-      setPreview(answer.body as unknown as MergePreview);
-      return true;
-    } catch {
-      setStatus("Could not reach the server.");
+    const answer = await send<MergePreview>(`/api/companies/${pair.kept.companyId}/merge/preview`, "POST", { otherId: pair.other.companyId });
+    if (!answer.ok || !answer.data) {
+      setStatus(answer.error ?? "Could not preview the merge. Try again.");
       return false;
     }
+    setPreview(answer.data);
+    return true;
   }
 
   async function toPreview(): Promise<false> {
@@ -189,33 +165,26 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
     setStatus(null);
     const kept = companyLabel(preview.kept);
     const other = companyLabel(preview.other);
-    let answer: Answer;
-    try {
-      answer = await send(`/api/companies/${preview.kept.id}/merge`, "POST", {
-        otherId: preview.other.id,
-        expected: { keptVersion: preview.kept.version, otherVersion: preview.other.version, keptPeople: preview.kept.people, otherPeople: preview.other.people },
-      });
-    } catch {
-      setStatus(MERGE_TIMEOUT);
-      return false;
-    }
-    if (answer.status === 200) {
+    const answer = await send(`/api/companies/${preview.kept.id}/merge`, "POST", {
+      otherId: preview.other.id,
+      expected: { keptVersion: preview.kept.version, otherVersion: preview.other.version, keptPeople: preview.kept.people, otherPeople: preview.other.people },
+    });
+    if (answer.ok) {
       toast.success(mergedText(other, kept));
       router.replace(`/crm/companies/${preview.kept.id}`);
       router.refresh();
       return;
     }
-    if (answer.status >= 502 && answer.status <= 504) {
+    if (answer.status === 0 || (answer.status >= 502 && answer.status <= 504)) {
       setStatus(MERGE_TIMEOUT);
       return false;
     }
-    const code = answer.body?.code;
-    if (code === "company_changed") {
-      setStatus(errorOf(answer, `${kept} changed while this was open. Check the preview again.`));
+    if (answer.code === "company_changed") {
+      setStatus(answer.error ?? `${kept} changed while this was open. Check the preview again.`);
       await loadPreview();
       return false;
     }
-    setStatus(code === "try_again" ? mergeTryAgain(kept) : errorOf(answer, "Could not merge the companies. Try again."));
+    setStatus(answer.code === "try_again" ? apiMessage("try_again", kept) : (answer.error ?? "Could not merge the companies. Try again."));
     return false;
   }
 
@@ -348,25 +317,21 @@ function DeleteCompanyDialog({ company, open, onOpenChange }: { company: Company
 
   async function remove(): Promise<false | void> {
     setStatus(null);
-    let answer: Answer;
-    try {
-      answer = await send(`/api/companies/${company.id}?expectedVersion=${company.version}`, "DELETE");
-    } catch {
-      throw new Error("Could not reach the server.");
-    }
-    if (answer.status === 200) {
+    const answer = await send(`/api/companies/${company.id}?expectedVersion=${company.version}`, "DELETE");
+    if (answer.status === 0) throw new Error("Could not reach the server.");
+    if (answer.ok) {
       toast.success(deletedCompanyText(label));
       router.replace("/crm/companies");
       router.refresh();
       return;
     }
-    if (answer.body?.code === "company_changed") {
+    if (answer.code === "company_changed") {
       setStatus(companyChangedText(label));
       // The page reads the new version and people counts.
       router.refresh();
       return false;
     }
-    setStatus(errorOf(answer, "Could not delete the company. Try again."));
+    setStatus(answer.error ?? "Could not delete the company. Try again.");
     return false;
   }
 

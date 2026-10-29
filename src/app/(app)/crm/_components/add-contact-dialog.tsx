@@ -9,8 +9,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/convert-to-contact";
-import { callApi } from "@/app/_lib/api-client";
+import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/conversion-terms";
+import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
 import { defaultTitle, newIdempotencyKey, permanenceText, singleEffectsText, type ConvertPreview } from "./deal-effects";
 import { DealFields, useDealStages } from "./deal-fields";
@@ -176,8 +176,6 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
     return titleTouched ? body : { ...body, title: null };
   }
 
-  const busyPerson = (label: string) => `MiaSDR is saving another change to ${label}. Try again in a moment.`;
-
   async function add(): Promise<boolean> {
     const body = {
       firstName: blankToNull(fields.firstName),
@@ -198,7 +196,7 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       router.push(dealId ? `/crm/deals/${dealId}` : `/crm/contacts/${personId}`);
       return true;
     }
-    const code = result.details?.code;
+    const code = result.code;
     const match = readMatch(result.details);
     if (code === "lead_exists" && match) {
       setPreview(null);
@@ -210,7 +208,7 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       setContact({ match, typed });
       return false;
     }
-    if (code === "try_again") throw new Error(busyPerson(name));
+    if (code === "try_again") throw new Error(apiMessage("try_again", name));
     throw new Error(result.error ?? "Could not add the contact. Try again.");
   }
 
@@ -225,17 +223,17 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
     if (withDeal) {
       const result = await callApi<{ dealId: string }>(`/api/leads/${match.personId}/convert`, "POST", { ...dealBody(), idempotencyKey: key });
       if (result.ok && result.data) return done(`/crm/deals/${result.data.dealId}`);
-      if (result.details?.code === "already_converted") throw new Error(`${upperFirst(label)} is already a contact.`);
-      if (result.details?.code === "try_again") throw new Error(busyPerson(label));
+      if (result.code === "already_converted") throw new Error(`${upperFirst(label)} is already a contact.`);
+      if (result.code === "try_again") throw new Error(apiMessage("try_again", label));
       throw new Error(result.error ?? "Could not create the deal. Try again.");
     }
     const result = await callApi<{ personId: string }>(`/api/leads/${match.personId}/make-contact`, "POST", {});
     // `already_converted` means someone else made the lead a contact first: the outcome stands, so open the contact.
-    if (result.ok || result.details?.code === "already_converted") return done(`/crm/contacts/${match.personId}`);
-    if (result.details?.code === "try_again") throw new Error(busyPerson(label));
-    if (result.details?.code === "personal_campaign") throw new Error(PERSONAL_CAMPAIGN_MESSAGE);
+    if (result.ok || result.code === "already_converted") return done(`/crm/contacts/${match.personId}`);
+    if (result.code === "try_again") throw new Error(apiMessage("try_again", label));
+    if (result.code === "personal_campaign") throw new Error(PERSONAL_CAMPAIGN_MESSAGE);
     // A 404 answers "Lead not found"; the dialog names the person instead.
-    if (result.error && /not found/i.test(result.error)) throw new Error(`${upperFirst(label)} no longer exists.`);
+    if (result.code === "not_found") throw new Error(`${upperFirst(label)} no longer exists.`);
     throw new Error(result.error ?? "Could not make the lead a contact. Try again.");
   }
 

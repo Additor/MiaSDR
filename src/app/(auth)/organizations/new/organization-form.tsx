@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { callApi } from "@/app/_lib/api-client";
 import { HOME } from "@/app/_lib/home";
 
 export function OrganizationForm() {
@@ -19,15 +20,10 @@ export function OrganizationForm() {
     setError(null);
     setPending(true);
     const name = String(new FormData(event.currentTarget).get("name") ?? "");
-    const response = await fetch("/api/organizations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!response.ok) {
+    const result = await callApi("/api/organizations", "POST", { name });
+    if (!result.ok) {
       setPending(false);
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(body?.error ?? "Could not create the organization. Try again.");
+      setError(result.error ?? "Could not create the organization. Try again.");
       return;
     }
     router.push(HOME);

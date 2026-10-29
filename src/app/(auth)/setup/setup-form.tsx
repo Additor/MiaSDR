@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
+import { callApi } from "@/app/_lib/api-client";
 
 export function SetupForm() {
   const router = useRouter();
@@ -21,21 +22,16 @@ export function SetupForm() {
     const email = String(form.get("email"));
     const password = String(form.get("password"));
 
-    const response = await fetch("/api/setup", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: form.get("name"),
-        email,
-        password,
-        organizationName: form.get("organizationName"),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      }),
+    const result = await callApi("/api/setup", "POST", {
+      name: form.get("name"),
+      email,
+      password,
+      organizationName: form.get("organizationName"),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
-    if (!response.ok) {
+    if (!result.ok) {
       setPending(false);
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(response.status === 409 ? "This instance is already set up. Sign in instead." : (body?.error ?? "Check the details and try again."));
+      setError(result.code === "already_set_up" ? "This instance is already set up. Sign in instead." : (result.error ?? "Check the details and try again."));
       return;
     }
     const { error } = await authClient.signIn.email({ email, password });
