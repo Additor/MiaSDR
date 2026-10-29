@@ -56,7 +56,14 @@ describe("product vocabulary", () => {
 });
 
 /** Docs that describe the screens. PRODUCT.md is guarded by its Terminology list above. */
-const SCREEN_DOCS = ["docs/decisions.md", "docs/operations.md", "DESIGN.md", "README.md", ...readdirSync(join(root, "docs/guides")).filter((f) => f.endsWith(".md")).map((f) => `docs/guides/${f}`)];
+const SCREEN_DOCS = [
+  "docs/decisions.md",
+  "docs/operations.md",
+  "DESIGN.md",
+  "README.md",
+  ...readdirSync(join(root, "docs/guides")).filter((f) => f.endsWith(".md")).map((f) => `docs/guides/${f}`),
+  ...readdirSync(join(root, "docs/design")).filter((f) => f.endsWith(".md")).map((f) => `docs/design/${f}`),
+];
 
 /**
  * Screen names the UI retired, as a doc would use them. Code names in backticks stay (`subcategoryKey`,
@@ -85,6 +92,7 @@ describe("retired screen names in the docs", () => {
   it("reads the docs that describe the screens", () => {
     expect(SCREEN_DOCS).toContain("docs/guides/how-it-works.md");
     expect(SCREEN_DOCS).toContain("DESIGN.md");
+    expect(SCREEN_DOCS).toContain("docs/design/inbox-and-actions.md");
   });
 
   it.each(SCREEN_DOCS)("%s uses no retired screen name", (file) => {
