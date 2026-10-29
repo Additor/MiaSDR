@@ -79,6 +79,12 @@ export interface SendViewer {
   seesAllPersonal: boolean;
 }
 
+/** The part of the lead detail that other contexts' tables hold: enrollments, sends, the Inbox conversation. */
+export type LeadDetailActivity = Pick<LeadDetail, "enrollments" | "conversationId" | "sends" | "hiddenSends">;
+
+/** Reads `LeadDetailActivity` for one person in the organization. `src/composition/leads.ts` passes the read model's reader. */
+export type ReadLeadDetailActivity = (organizationId: string, personId: string, viewer: SendViewer | undefined) => Promise<LeadDetailActivity>;
+
 export interface BlockedLead {
   id: string;
   name: string | null;

@@ -16,7 +16,7 @@ import { leadDeps, readLeadNeighbors, type LeadNeighbors } from "@/composition/l
 import { leadDeleteDeps } from "@/composition/person-lifecycle";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { crossCampaignNotices } from "@/contexts/outreach/infrastructure/composition";
-import { leadActivityDeps } from "@/read-models/lead-activity";
+import { leadActivityDeps } from "@/composition/leads";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
 import { AddLeadToCampaign } from "../_components/add-to-campaign";

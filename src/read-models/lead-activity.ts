@@ -1,12 +1,10 @@
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { db } from "@/platform/db/client";
-import { campaignEnrollments, campaigns, conversations, messages, people, records } from "@/platform/db/schema";
-import type { LeadActivityDeps } from "@/contexts/outreach/application/read-lead-activity";
+import { campaignEnrollments, campaigns, conversations, messages, people, records, sends } from "@/platform/db/schema";
 import type { EnrollmentStatus } from "@/contexts/outreach/domain/enrollment-status";
 import { leadStatus, type LeadEnrollmentFact, type LeadStatus, type ReadLeadStatuses } from "@/contexts/outreach/domain/lead-status";
 import type { LeadFilter } from "@/contexts/people/domain/lead-filter";
-import { readReachability } from "@/contexts/people/infrastructure/composition";
 
 /*
  * Lead activity: what a lead did across outreach and conversations, as the lead screens filter and show it ("Read models"
@@ -84,6 +82,32 @@ export function activityCondition(filter: LeadFilter): SQL | undefined {
 }
 
 /**
+ * The enrollments of these people in regular campaigns, with the campaign's name and status, newest first. The lead
+ * status and the lead detail both read them here (`enrollments_person_idx`).
+ */
+function regularEnrollments(organizationId: string, personIds: readonly string[]) {
+  return db
+    .select({
+      id: campaignEnrollments.id,
+      personId: campaignEnrollments.personId,
+      campaignId: campaigns.id,
+      campaignName: campaigns.name,
+      campaignStatus: campaigns.status,
+      channel: campaignEnrollments.channel,
+      status: campaignEnrollments.status,
+      updatedAt: campaignEnrollments.updatedAt,
+      lastSentAt: campaignEnrollments.lastSentAt,
+      nextSendAt: campaignEnrollments.nextSendAt,
+      currentStep: campaignEnrollments.currentStep,
+      stopReason: campaignEnrollments.stopReason,
+    })
+    .from(campaignEnrollments)
+    .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
+    .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, [...personIds]), eq(campaigns.type, "regular")))
+    .orderBy(desc(campaignEnrollments.createdAt));
+}
+
+/**
  * The lead status of a page of person ids, keyed by person id. The lead list and the lead page both read it, so they
  * show the same state. Two reads, each one query for the whole page and each scoped to the organization: the enrollments
  * in regular campaigns with their campaign status, and the latest sent message and the inbound flag per lead. The last
@@ -102,22 +126,7 @@ export const readLeadStatuses: ReadLeadStatuses = async (organizationId, personI
   const ids = [...new Set(personIds)];
 
   const [enrollmentRows, contactRows] = await Promise.all([
-    db
-      .select({
-        id: campaignEnrollments.id,
-        personId: campaignEnrollments.personId,
-        status: campaignEnrollments.status,
-        updatedAt: campaignEnrollments.updatedAt,
-        lastSentAt: campaignEnrollments.lastSentAt,
-        nextSendAt: campaignEnrollments.nextSendAt,
-        currentStep: campaignEnrollments.currentStep,
-        stopReason: campaignEnrollments.stopReason,
-        campaignName: campaigns.name,
-        campaignStatus: campaigns.status,
-      })
-      .from(campaignEnrollments)
-      .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-      .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, ids), eq(campaigns.type, "regular"))),
+    regularEnrollments(organizationId, ids),
     db
       .select({
         personId: records.personId,
@@ -132,10 +141,20 @@ export const readLeadStatuses: ReadLeadStatuses = async (organizationId, personI
   ]);
 
   const facts = new Map<string, LeadEnrollmentFact[]>();
-  for (const { personId, ...row } of enrollmentRows) {
-    const list = facts.get(personId) ?? [];
-    list.push(row);
-    facts.set(personId, list);
+  for (const row of enrollmentRows) {
+    const list = facts.get(row.personId) ?? [];
+    list.push({
+      id: row.id,
+      status: row.status,
+      campaignStatus: row.campaignStatus,
+      campaignName: row.campaignName,
+      updatedAt: row.updatedAt,
+      lastSentAt: row.lastSentAt,
+      nextSendAt: row.nextSendAt,
+      currentStep: row.currentStep,
+      stopReason: row.stopReason,
+    });
+    facts.set(row.personId, list);
   }
   const lastContact = new Map(contactRows.flatMap((row) => (row.lastContactAt ? [[row.personId, new Date(row.lastContactAt)] as const] : [])));
   const inbound = new Set(contactRows.filter((row) => row.hasInbound).map((row) => row.personId));
@@ -146,5 +165,83 @@ export const readLeadStatuses: ReadLeadStatuses = async (organizationId, personI
   return result;
 };
 
-/** The reads of `readLeadActivity` (`outreach/application/read-lead-activity.ts`). The lead list, the lead page and the contact page pass it. */
-export const leadActivityDeps = (): LeadActivityDeps => ({ readStatuses: readLeadStatuses, readReach: readReachability });
+/** Who reads sends: the actor, and whether they see every personal campaign (owner or admin). */
+export interface SendViewer {
+  userId: string;
+  seesAllPersonal: boolean;
+}
+
+/**
+ * A campaign the viewer may read sends of: a regular campaign, their own personal campaign, or any for an owner or admin.
+ * Without a viewer, regular campaigns only.
+ */
+function visibleCampaign(viewer: SendViewer | undefined) {
+  if (!viewer) return sql`${campaigns.type} = 'regular'`;
+  if (viewer.seesAllPersonal) return sql`true`;
+  return sql`(${campaigns.type} = 'regular' or coalesce(${campaigns.createdBy} = ${viewer.userId}, false))`;
+}
+
+/**
+ * The outreach and conversations part of one lead's detail page, scoped to the organization: the enrollments in regular
+ * campaigns, the campaign sends the viewer may see (newest claim first, at most 100), whether a personal campaign the
+ * viewer may not see sent to the lead, and the newest public conversation for the Inbox link. People's own fields come
+ * from the lead repository; `src/composition/leads.ts` joins the two.
+ */
+export async function readLeadDetailActivity(organizationId: string, personId: string, viewer: SendViewer | undefined) {
+  const campaignSends = () =>
+    db
+      .select({
+        id: sends.id,
+        campaignId: campaigns.id,
+        campaignName: campaigns.name,
+        stepNumber: sends.stepNumber,
+        channel: sends.channel,
+        status: sends.status,
+        subject: sends.subject,
+        sentAt: sends.sentAt,
+        claimedAt: sends.claimedAt,
+        error: sends.error,
+      })
+      .from(sends)
+      .innerJoin(campaignEnrollments, and(eq(campaignEnrollments.id, sends.enrollmentId), eq(campaignEnrollments.organizationId, sends.organizationId)))
+      .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)));
+  const ofPerson = and(eq(sends.organizationId, organizationId), eq(sends.kind, "campaign"), eq(campaignEnrollments.personId, personId));
+
+  const [enrollments, sendRows, [conversation], [hidden]] = await Promise.all([
+    regularEnrollments(organizationId, [personId]),
+    campaignSends().where(and(ofPerson, visibleCampaign(viewer))).orderBy(desc(sends.claimedAt)).limit(100),
+    db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .innerJoin(records, and(eq(records.id, conversations.recordId), eq(records.organizationId, conversations.organizationId)))
+      .where(and(eq(conversations.organizationId, organizationId), eq(records.personId, personId), publicConversation))
+      .orderBy(desc(conversations.updatedAt))
+      .limit(1),
+    db
+      .select({ id: sends.id })
+      .from(sends)
+      .innerJoin(campaignEnrollments, and(eq(campaignEnrollments.id, sends.enrollmentId), eq(campaignEnrollments.organizationId, sends.organizationId)))
+      .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
+      .where(and(ofPerson, sql`not ${visibleCampaign(viewer)}`))
+      .limit(1),
+  ]);
+
+  return {
+    enrollments: enrollments.map((e) => ({
+      id: e.id,
+      campaignId: e.campaignId,
+      campaignName: e.campaignName,
+      campaignStatus: e.campaignStatus,
+      channel: e.channel,
+      status: e.status,
+      currentStep: e.currentStep,
+      nextSendAt: e.nextSendAt,
+      lastSentAt: e.lastSentAt,
+      stopReason: e.stopReason,
+    })),
+    conversationId: conversation?.id ?? null,
+    // Campaign sends always carry a step number (sends_kind_shape_ck); test sends are filtered out above.
+    sends: sendRows.map((r) => ({ ...r, stepNumber: r.stepNumber as number })),
+    hiddenSends: hidden !== undefined,
+  };
+}

@@ -13,7 +13,7 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isFilterActive, leadFilterParams, parseLeadFilter, parseLeadSort } from "@/contexts/people/domain/lead-filter";
 import { listLeads } from "@/composition/leads";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
-import { leadActivityDeps } from "@/read-models/lead-activity";
+import { leadActivityDeps } from "@/composition/leads";
 import { leadFilterOptions } from "@/read-models/lead-filter-options";
 import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";

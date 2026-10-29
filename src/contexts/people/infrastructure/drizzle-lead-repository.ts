@@ -1,25 +1,13 @@
 import { sqlState, violatedConstraint } from "@/platform/db/errors";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 import { db, type DbHandle } from "@/platform/db/client";
-import {
-  campaignEnrollments,
-  campaigns,
-  companies,
-  contactPolicies,
-  conversations,
-  entityColumns,
-  people,
-  records,
-  sends,
-  suppressionList,
-} from "@/platform/db/schema";
+import { companies, contactPolicies, entityColumns, people, suppressionList } from "@/platform/db/schema";
 import { HELD_LOCK_TIMEOUT, lockPeopleOutreachTx, setLockTimeout } from "@/platform/db/person-locks";
 import { rowsOf, uuidList } from "@/platform/db/sql-values";
 import { TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import { LEAD_DELETE_STATEMENT_TIMEOUT } from "../application/lead-management";
-import type { ExportRow, LeadDeleteStore, LeadFilter, LeadForDelete, LeadRepository, SendViewer } from "../application/lead-ports";
+import type { ExportRow, LeadDeleteStore, LeadFilter, LeadForDelete, LeadRepository, ReadLeadDetailActivity } from "../application/lead-ports";
 import { renameOnCompanyPage } from "../domain/company-domain";
 import { customColumnKey } from "../domain/normalize";
 import { MAX_CUSTOM_VALUE_LENGTH, type LeadEditPlan } from "../domain/lead-edit";
@@ -29,10 +17,9 @@ import { leadFilterWhere, type ActivityCondition } from "./queries";
 import { resolvePeopleColumns } from "./resolve-custom-columns";
 
 /*
- * The lead detail reads outreach and conversation tables (campaign_enrollments, sends, records, conversations) through the
- * shared schema barrel. That is a read-only join, kept in this one module so the rest of the people context does not know
- * those tables exist. The lead delete reads and writes only people's tables here; outreach and conversations answer for
- * theirs through the ports `src/composition/person-lifecycle.ts` wires.
+ * The lead repository reads and writes only people's tables. The lead detail takes its enrollments, sends and conversation
+ * from `ReadLeadDetailActivity` ("Read models" in docs/decisions.md), and the lead delete leaves outreach and
+ * conversations to the ports `src/composition/person-lifecycle.ts` wires.
  */
 
 const EXPORT_BATCH = 1000;
@@ -45,20 +32,13 @@ async function activeColumns(organizationId: string) {
     .orderBy(asc(entityColumns.position), asc(entityColumns.name));
 }
 
-/**
- * A campaign the viewer may read sends of: a regular campaign, their own personal campaign, or any for an owner or admin.
- * Without a viewer, regular campaigns only.
- */
-function visibleCampaign(viewer: SendViewer | undefined) {
-  if (!viewer) return sql`${campaigns.type} = 'regular'`;
-  if (viewer.seesAllPersonal) return sql`true`;
-  return sql`(${campaigns.type} = 'regular' or coalesce(${campaigns.createdBy} = ${viewer.userId}, false))`;
-}
-
 const displayName = (p: { fullName: string | null; email: string | null }) => p.fullName ?? p.email;
 
-/** The lead repository. The filtered reads (count, matching ids, export) apply `activity` with people's own conditions. */
-export const createLeadRepository = (activity: ActivityCondition): LeadRepository => {
+/**
+ * The lead repository. The filtered reads (count, matching ids, export) apply `activity` with people's own conditions,
+ * and `get` joins people's fields with `detailActivity`, the enrollments, sends and conversation that other contexts hold.
+ */
+export const createLeadRepository = ({ activity, detailActivity }: { activity: ActivityCondition; detailActivity: ReadLeadDetailActivity }): LeadRepository => {
   const filterWhere = (organizationId: string, filter: LeadFilter) => leadFilterWhere(organizationId, filter, activity);
   return {
     async get(organizationId, id, viewer) {
@@ -89,7 +69,7 @@ export const createLeadRepository = (activity: ActivityCondition): LeadRepositor
         .where(and(eq(people.organizationId, organizationId), eq(people.id, id)));
       if (!person) return null;
 
-      const [customColumns, [policy], suppression, enrollments, sendRows, [conversation], [hidden]] = await Promise.all([
+      const [customColumns, [policy], suppression, outreach] = await Promise.all([
         activeColumns(organizationId),
         db
           .select({
@@ -107,56 +87,7 @@ export const createLeadRepository = (activity: ActivityCondition): LeadRepositor
               .from(suppressionList)
               .where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.email, person.email.toLowerCase())))
           : Promise.resolve([]),
-        db
-          .select({
-            id: campaignEnrollments.id,
-            campaignId: campaigns.id,
-            campaignName: campaigns.name,
-            campaignStatus: campaigns.status,
-            channel: campaignEnrollments.channel,
-            status: campaignEnrollments.status,
-            currentStep: campaignEnrollments.currentStep,
-            nextSendAt: campaignEnrollments.nextSendAt,
-            lastSentAt: campaignEnrollments.lastSentAt,
-            stopReason: campaignEnrollments.stopReason,
-          })
-          .from(campaignEnrollments)
-          .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-          .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.personId, id), eq(campaigns.type, "regular")))
-          .orderBy(desc(campaignEnrollments.createdAt)),
-        db
-          .select({
-            id: sends.id,
-            campaignId: campaigns.id,
-            campaignName: campaigns.name,
-            stepNumber: sends.stepNumber,
-            channel: sends.channel,
-            status: sends.status,
-            subject: sends.subject,
-            sentAt: sends.sentAt,
-            claimedAt: sends.claimedAt,
-            error: sends.error,
-          })
-          .from(sends)
-          .innerJoin(campaignEnrollments, and(eq(campaignEnrollments.id, sends.enrollmentId), eq(campaignEnrollments.organizationId, sends.organizationId)))
-          .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-          .where(and(eq(sends.organizationId, organizationId), eq(sends.kind, "campaign"), eq(campaignEnrollments.personId, id), visibleCampaign(viewer)))
-          .orderBy(desc(sends.claimedAt))
-          .limit(100),
-        db
-          .select({ id: conversations.id })
-          .from(conversations)
-          .innerJoin(records, and(eq(records.id, conversations.recordId), eq(records.organizationId, conversations.organizationId)))
-          .where(and(eq(conversations.organizationId, organizationId), eq(records.personId, id), publicConversation))
-          .orderBy(desc(conversations.updatedAt))
-          .limit(1),
-        db
-          .select({ id: sends.id })
-          .from(sends)
-          .innerJoin(campaignEnrollments, and(eq(campaignEnrollments.id, sends.enrollmentId), eq(campaignEnrollments.organizationId, sends.organizationId)))
-          .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-          .where(and(eq(sends.organizationId, organizationId), eq(sends.kind, "campaign"), eq(campaignEnrollments.personId, id), sql`not ${visibleCampaign(viewer)}`))
-          .limit(1),
+        detailActivity(organizationId, id, viewer),
       ]);
 
       return {
@@ -164,11 +95,10 @@ export const createLeadRepository = (activity: ActivityCondition): LeadRepositor
         customColumns,
         policy: policy ?? null,
         suppression: suppression[0] ?? null,
-        enrollments,
-        conversationId: conversation?.id ?? null,
-        // Campaign sends always carry a step number (sends_kind_shape_ck); test sends are filtered out above.
-        sends: sendRows.map((r) => ({ ...r, stepNumber: r.stepNumber as number })),
-        hiddenSends: hidden !== undefined,
+        enrollments: outreach.enrollments,
+        conversationId: outreach.conversationId,
+        sends: outreach.sends,
+        hiddenSends: outreach.hiddenSends,
       };
     },
 

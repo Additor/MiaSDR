@@ -20,7 +20,6 @@ const FOREIGN_WRITES: Record<string, string[]> = {};
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "conversations", "records", "sends"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-account-store.ts": ["drafts", "sendAttempts"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["conversations"],
