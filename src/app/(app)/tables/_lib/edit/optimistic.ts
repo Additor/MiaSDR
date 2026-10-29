@@ -181,12 +181,8 @@ export function dropPendingRows(pending: PendingMap, rowIds: Iterable<string>): 
   return { pending: next, dropped };
 }
 
-/** Puts held edits back in the queue. A cell edited again while they were held keeps the newer edit. */
-export function requeueEdits(pending: PendingMap, edits: readonly PendingEdit[]): Map<string, PendingEdit> {
-  const next = new Map(pending);
-  for (const edit of edits) {
-    const key = cellId(edit.rowId, edit.columnKey);
-    if (!next.has(key)) next.set(key, edit);
-  }
-  return next;
+/** The queued edits a save may send: all but those of rows a delete is removing. */
+export function sendablePending(pending: PendingMap, deleting: ReadonlySet<string>): PendingMap {
+  if (deleting.size === 0) return pending;
+  return new Map([...pending].filter(([, edit]) => !deleting.has(edit.rowId)));
 }
