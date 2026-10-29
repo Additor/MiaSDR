@@ -1,7 +1,7 @@
 "use client";
 
 import { DownloadIcon, RefreshCwIcon, PlayIcon, SendIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { BulkBar } from "@/components/shell/bulk-bar";
@@ -10,7 +10,8 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { ErrorState } from "@/components/shell/error-state";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { countOf, formatCount } from "@/shared/format-number";
-import { gridRequest, gridUrl } from "../_lib/data/client";
+import { gridUrl } from "../_lib/data/client";
+import { CellRequestContext, RESOLVE_CONFLICT_FIRST } from "../_lib/data/cell-request";
 import { deleteRowsReport, deleteRowsTitle } from "../_lib/edit/delete-rows";
 import { emptySelection, pruneSelection, type RowSelection } from "../_lib/view/selection";
 import { useGridTable } from "../_lib/data/use-grid-table";
@@ -54,11 +55,18 @@ type Open =
 
 interface Props {
   tableId: string;
+  /** Hands the workbook the open table's `settle`, for a request about this table sent from outside it (duplicate). */
+  onSettle?: (settle: (() => Promise<boolean>) | null) => void;
 }
 
 /** One table: toolbar, the grid and every dialog that acts on it. Remount with a new key per table. */
-export function TableWorkspace({ tableId }: Props) {
+export function TableWorkspace({ tableId, onSettle }: Props) {
   const grid = useGridTable(tableId);
+  const { settle } = grid;
+  useEffect(() => {
+    onSettle?.(settle);
+    return () => onSettle?.(null);
+  }, [onSettle, settle]);
   const [selection, setSelection] = useState<RowSelection>(emptySelection);
   const [dialog, setDialog] = useState<Open | null>(null);
   const [focusToken, setFocusToken] = useState(0);
@@ -204,7 +212,7 @@ export function TableWorkspace({ tableId }: Props) {
   async function selectAllMatching(): Promise<string[]> {
     const params = new URLSearchParams();
     if (grid.search.trim()) params.set("search", grid.search.trim());
-    const res = await gridRequest<{ rowIds: string[]; truncated: boolean }>(`${gridUrl.sub(tableId, "selection")}?${params}`, "GET");
+    const res = await grid.cellRequest<{ rowIds: string[]; truncated: boolean }>(`${gridUrl.sub(tableId, "selection")}?${params}`, "GET");
     if (!res.ok || !res.data) {
       toast.error(res.error ?? "Could not select the rows.");
       return [];
@@ -214,6 +222,8 @@ export function TableWorkspace({ tableId }: Props) {
   }
 
   async function exportCsv(onlySelected: boolean) {
+    // The file holds stored cells, so queued edits land first.
+    if (!(await grid.settle())) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
     setBusy(true);
     try {
       const response = await fetch(gridUrl.sub(tableId, "export"), {
@@ -250,7 +260,7 @@ export function TableWorkspace({ tableId }: Props) {
   }
 
   async function toggleAutoRun(next: boolean) {
-    const res = await gridRequest(gridUrl.table(tableId), "PATCH", { autoRun: next });
+    const res = await grid.cellRequest(gridUrl.table(tableId), "PATCH", { autoRun: next });
     if (!res.ok) return void toast.error(res.error ?? "Could not change auto-run.");
     grid.setTable({ autoRun: next });
   }
@@ -302,6 +312,7 @@ export function TableWorkspace({ tableId }: Props) {
   const detailsColumn = dialog?.kind === "details" ? columns.find((c) => c.key === dialog.columnKey) : undefined;
 
   return (
+    <CellRequestContext value={grid.cellRequest}>
     <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
       <TableToolbar
         tableId={tableId}
@@ -476,5 +487,6 @@ export function TableWorkspace({ tableId }: Props) {
         />
       )}
     </div>
+    </CellRequestContext>
   );
 }

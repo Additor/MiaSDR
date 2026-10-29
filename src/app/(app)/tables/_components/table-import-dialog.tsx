@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { countOf, formatCount } from "@/shared/format-number";
-import { gridRequest, gridUrl } from "../_lib/data/client";
+import { gridUrl } from "../_lib/data/client";
+import { useCellRequest } from "../_lib/data/cell-request";
 import { EDITABLE_TYPE_OPTIONS } from "../_lib/view/format";
 import { ItemSelect } from "./form-bits";
 
@@ -42,6 +43,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 /** CSV or XLSX import in two steps: upload for a preview and a suggested mapping, then confirm the mapping. A workbook with several sheets gets a sheet picker. */
 export function TableImportDialog({ tableId, onClose, onImported, initialFile }: Props) {
+  const cellRequest = useCellRequest();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [mapping, setMapping] = useState<Mapping[]>([]);
@@ -57,7 +59,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
     const form = new FormData();
     form.set("file", next);
     if (chosen > 1) form.set("sheet", String(chosen));
-    const res = await gridRequest<Preview>(gridUrl.sub(tableId, "import"), "POST", form);
+    const res = await cellRequest<Preview>(gridUrl.sub(tableId, "import"), "POST", form);
     setBusy(false);
     if (!res.ok || !res.data) return setError(res.error);
     setPreview(res.data);
@@ -90,7 +92,7 @@ export function TableImportDialog({ tableId, onClose, onImported, initialFile }:
     form.set("mapping", JSON.stringify(mapping));
     // Holds the file picker still while the rows go in.
     setBusy(true);
-    const res = await gridRequest<{ rowsInserted: number; columnsCreated: number }>(gridUrl.sub(tableId, "import"), "POST", form).finally(() => setBusy(false));
+    const res = await cellRequest<{ rowsInserted: number; columnsCreated: number }>(gridUrl.sub(tableId, "import"), "POST", form).finally(() => setBusy(false));
     if (!res.ok || !res.data) throw new Error(res.error ?? "Could not import the file.");
     const { rowsInserted, columnsCreated } = res.data;
     toast.success(`Imported ${countOf(rowsInserted, "row")}${columnsCreated > 0 ? ` and ${countOf(columnsCreated, "new column")}` : ""}.`);

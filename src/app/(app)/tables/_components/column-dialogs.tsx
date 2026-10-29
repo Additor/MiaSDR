@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { countOf } from "@/shared/format-number";
 import { FILTER_OPERATORS, type FilterOperator, type TableView } from "@/contexts/grid/domain/view-query";
-import { gridRequest, gridUrl, type GridResponse } from "../_lib/data/client";
+import { gridUrl, type GridResponse } from "../_lib/data/client";
+import { useCellRequest } from "../_lib/data/cell-request";
 import { EDITABLE_TYPE_OPTIONS, selectOptions, typeLabel } from "../_lib/view/format";
 import type { GridColumn } from "../_lib/data/types";
 import { RUN_FILLED_TYPES } from "../_lib/edit/filter-edit";
@@ -117,9 +118,10 @@ function Footer({ onClose, busy, label, onSubmit, destructive, disabled }: { onC
 }
 
 function RenameDialog({ tableId, column, onClose, onChanged }: Shared & { column: GridColumn }) {
+  const cellRequest = useCellRequest();
   const [name, setName] = useState(column.name);
   const { busy, error, run } = useRequest(onClose, onChanged);
-  const submit = () => run(() => gridRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { name }));
+  const submit = () => run(() => cellRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { name }));
   return (
     <Shell title="Rename column" onClose={onClose} footer={<Footer onClose={onClose} busy={busy} label="Rename" onSubmit={submit} disabled={!name.trim()} />}>
       <form onSubmit={(e) => (e.preventDefault(), submit())}>
@@ -134,8 +136,9 @@ function RenameDialog({ tableId, column, onClose, onChanged }: Shared & { column
 }
 
 function TypeDialog({ tableId, column, type, onClose, onChanged }: Shared & { column: GridColumn; type: string }) {
+  const cellRequest = useCellRequest();
   const { busy, error, run } = useRequest(onClose, onChanged);
-  const submit = () => run(() => gridRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { type }));
+  const submit = () => run(() => cellRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { type }));
   return (
     <Shell
       title={`Change type to ${typeLabel(type)}`}
@@ -149,6 +152,7 @@ function TypeDialog({ tableId, column, type, onClose, onChanged }: Shared & { co
 }
 
 function OptionsDialog({ tableId, column, onClose, onChanged }: Shared & { column: GridColumn }) {
+  const cellRequest = useCellRequest();
   const isSelect = column.type === "select" || column.type === "multiselect";
   const [options, setOptions] = useState(selectOptions(column).map((o) => o.value).join("\n"));
   const [currency, setCurrency] = useState(typeof column.config.currency === "string" ? column.config.currency : "USD");
@@ -157,7 +161,7 @@ function OptionsDialog({ tableId, column, onClose, onChanged }: Shared & { colum
     const config = isSelect
       ? { ...column.config, options: [...new Set(options.split("\n").map((o) => o.trim()).filter(Boolean))] }
       : { ...column.config, currency: currency.trim().toUpperCase() };
-    return run(() => gridRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { config }));
+    return run(() => cellRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { config }));
   };
   return (
     <Shell title={isSelect ? "Edit options" : "Edit currency"} onClose={onClose} footer={<Footer onClose={onClose} busy={busy} label="Save" onSubmit={submit} />}>
@@ -180,10 +184,11 @@ function OptionsDialog({ tableId, column, onClose, onChanged }: Shared & { colum
 }
 
 function DeleteDialog({ tableId, column, onClose, onChanged }: Shared & { column: GridColumn }) {
+  const cellRequest = useCellRequest();
   const hasOutputs = ["enrichment", "waterfall", "ai"].includes(column.type);
   const [withOutputs, setWithOutputs] = useState(false);
   const { busy, error, run } = useRequest(onClose, onChanged);
-  const submit = () => run(() => gridRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}${withOutputs ? "?withOutputs=1" : ""}`, "DELETE"));
+  const submit = () => run(() => cellRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}${withOutputs ? "?withOutputs=1" : ""}`, "DELETE"));
   return (
     <Shell
       title={`Delete "${column.name}"?`}
@@ -233,11 +238,12 @@ const DELIMITERS = [
 ];
 
 function SplitDialog({ tableId, column, onClose, onChanged }: Shared & { column: GridColumn }) {
+  const cellRequest = useCellRequest();
   const [delimiter, setDelimiter] = useState("comma");
   const { busy, error, run } = useRequest(onClose, onChanged);
   const submit = () =>
     run(
-      () => gridRequest<{ columnsCreated?: number; rowsUpdated?: number }>(`${gridUrl.sub(tableId, "columns")}/${column.id}/text-to-columns`, "POST", { delimiter }),
+      () => cellRequest<{ columnsCreated?: number; rowsUpdated?: number }>(`${gridUrl.sub(tableId, "columns")}/${column.id}/text-to-columns`, "POST", { delimiter }),
       (data) => toast.success(`Created ${countOf(data.columnsCreated ?? 0, "column")} from ${countOf(data.rowsUpdated ?? 0, "row")}.`),
     );
   return (
@@ -290,13 +296,14 @@ function FilterDialog({ column, view, saveView, onClose }: { column: GridColumn;
 }
 
 function AddColumnDialog({ tableId, columns, where, onClose, onChanged }: Shared & { columns: GridColumn[]; where: { afterColumnId?: string; beforeColumnId?: string } }) {
+  const cellRequest = useCellRequest();
   const [name, setName] = useState("");
   const [type, setType] = useState("text");
   const { busy, error, run } = useRequest(onClose, onChanged);
   const last = columns[columns.length - 1];
   const submit = () =>
     run(() =>
-      gridRequest(gridUrl.sub(tableId, "columns"), "POST", {
+      cellRequest(gridUrl.sub(tableId, "columns"), "POST", {
         name: name.trim() || typeLabel(type),
         type,
         afterColumnId: where.afterColumnId ?? (where.beforeColumnId ? undefined : last?.id),

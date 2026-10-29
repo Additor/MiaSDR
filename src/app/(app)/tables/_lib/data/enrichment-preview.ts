@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { gridRequest, gridUrl } from "./client";
+import { useCellRequest } from "./cell-request";
+import { gridUrl } from "./client";
 import { credits, dollars } from "./run-request";
 import { formatCount } from "@/shared/format-number";
 
@@ -41,11 +42,12 @@ export function useEnrichmentPreview(tableId: string, steps: Array<{ providerKey
   // Without a provider the dialog shows the connect step, which has no use for a preview, so nothing scans the table.
   const draft = steps.length === 0 ? null : JSON.stringify({ steps, inputs: Object.fromEntries(Object.entries(inputs).filter(([, v]) => v)) });
   const [answer, setAnswer] = useState<{ draft: string; preview: EnrichmentPreview } | null>(null);
+  const cellRequest = useCellRequest();
   useEffect(() => {
     if (draft === null) return;
     let live = true;
     const timer = setTimeout(() => {
-      void gridRequest<EnrichmentPreview>(gridUrl.sub(tableId, "enrichments/preview"), "POST", JSON.parse(draft)).then((res) => {
+      void cellRequest<EnrichmentPreview>(gridUrl.sub(tableId, "enrichments/preview"), "POST", JSON.parse(draft)).then((res) => {
         if (live && res.ok && res.data) setAnswer({ draft, preview: res.data });
       });
     }, 250);
@@ -53,6 +55,6 @@ export function useEnrichmentPreview(tableId: string, steps: Array<{ providerKey
       live = false;
       clearTimeout(timer);
     };
-  }, [draft, tableId]);
+  }, [draft, tableId, cellRequest]);
   return answer && answer.draft === draft ? answer.preview : null;
 }

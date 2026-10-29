@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { gridRequest, gridUrl } from "../_lib/data/client";
+import { gridUrl } from "../_lib/data/client";
+import { useCellRequest } from "../_lib/data/cell-request";
 import type { GridColumn } from "../_lib/data/types";
 
 interface Props {
@@ -35,6 +36,7 @@ function show(value: unknown): string {
 
 /** Creates or edits a formula column, with a live preview on one row and an AI helper that writes the expression. */
 export function FormulaDialog({ tableId, columns, column, afterColumnId, previewRowId, onClose, onSaved }: Props) {
+  const cellRequest = useCellRequest();
   const [name, setName] = useState(column?.name ?? "");
   const [expression, setExpression] = useState(typeof column?.config.expression === "string" ? column.config.expression : "");
   const [autoRun, setAutoRun] = useState(column?.autoRun ?? true);
@@ -53,12 +55,12 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
     if (!expression.trim()) return;
     const handle = setTimeout(async () => {
       setPreview({ state: "loading" });
-      const res = await gridRequest<{ value: unknown; rowNumber: number }>(gridUrl.sub(tableId, "formula-preview"), "POST", { expression, rowId: previewRowId });
+      const res = await cellRequest<{ value: unknown; rowNumber: number }>(gridUrl.sub(tableId, "formula-preview"), "POST", { expression, rowId: previewRowId });
       if (mine !== token.current) return;
       setPreview(res.ok && res.data ? { state: "ok", text: show(res.data.value), rowNumber: res.data.rowNumber } : { state: "error", message: res.error ?? "The formula could not be evaluated." });
     }, 450);
     return () => clearTimeout(handle);
-  }, [expression, tableId, previewRowId]);
+  }, [expression, tableId, previewRowId, cellRequest]);
 
   function insert(text: string) {
     const el = area.current;
@@ -75,7 +77,7 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
   async function generate() {
     setAiBusy(true);
     setAiError(null);
-    const res = await gridRequest<{ formula: string; explanation: string }>(gridUrl.sub(tableId, "formula-generate"), "POST", { prompt, currentExpression: expression.trim() || undefined });
+    const res = await cellRequest<{ formula: string; explanation: string }>(gridUrl.sub(tableId, "formula-generate"), "POST", { prompt, currentExpression: expression.trim() || undefined });
     setAiBusy(false);
     if (!res.ok || !res.data) return setAiError(res.error);
     setExpression(res.data.formula);
@@ -86,8 +88,8 @@ export function FormulaDialog({ tableId, columns, column, afterColumnId, preview
     setSaving(true);
     setError(null);
     const res = column
-      ? await gridRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { ...(name.trim() && name.trim() !== column.name ? { name: name.trim() } : {}), config: { ...column.config, expression }, autoRun })
-      : await gridRequest(gridUrl.sub(tableId, "columns"), "POST", { name: name.trim() || "Formula", type: "formula", config: { expression }, autoRun, afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id });
+      ? await cellRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { ...(name.trim() && name.trim() !== column.name ? { name: name.trim() } : {}), config: { ...column.config, expression }, autoRun })
+      : await cellRequest(gridUrl.sub(tableId, "columns"), "POST", { name: name.trim() || "Formula", type: "formula", config: { expression }, autoRun, afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id });
     if (!res.ok) {
       setError(res.error);
       setSaving(false);

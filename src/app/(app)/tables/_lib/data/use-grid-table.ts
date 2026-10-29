@@ -6,6 +6,7 @@ import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import type { TableView } from "@/contexts/grid/domain/view-query";
 import { gridRequest, gridUrl, type GridResponse } from "./client";
+import { RESOLVE_CONFLICT_FIRST, type CellRequest } from "./cell-request";
 import { addPending, applyConflictRows, buildBatches, cellId, clearPending, conflictItems, dropPendingRows, mergeRows, overlayPending, requeueEdits, splitByRows, type ConflictItem, type PendingMap } from "../edit/optimistic";
 import { mergeLoaded } from "../edit/merge-loaded";
 import { DELETE_BATCH } from "../edit/delete-rows";
@@ -16,8 +17,6 @@ import { keepsTableOrder } from "../view/view";
 import { countOf, formatCount } from "@/shared/format-number";
 
 const PAGE = 200;
-/** Why a request waits: the conflict dialog holds edits that must be retried or dropped first. */
-const RESOLVE_CONFLICT_FIRST = "Resolve the edit conflict first.";
 /** The answer of a request the hook did not send because the conflict dialog is open. */
 const refusedForConflict = <T>(): GridResponse<T> => ({ ok: false, status: 409, data: null, error: RESOLVE_CONFLICT_FIRST, failure: null });
 /** The most rows one table request returns. */
@@ -115,6 +114,14 @@ export interface GridTableState {
   saveDefaultView: () => Promise<boolean>;
   setTable: (patch: Partial<GridTable>) => void;
   refreshJobs: () => Promise<void>;
+  /**
+   * Sends a request about this table once queued edits have landed, so the server reads and writes the cells the
+   * person sees. Refuses while the conflict dialog is open. Components send every table request through it
+   * (`useCellRequest`); `src/architecture/grid-cell-requests.test.ts` holds them to it.
+   */
+  cellRequest: CellRequest;
+  /** Lets queued edits land. False when the conflict dialog holds some back. */
+  settle: () => Promise<boolean>;
   /*
    * Requests that write rows or cells, or read cells the person may be saving. Each lets queued edits reach
    * the server first and reloads the table after.
@@ -505,19 +512,29 @@ export function useGridTable(tableId: string): GridTableState {
     [settleSaves, tableId, reload, load, loadMore, putRows, putStack],
   );
 
-  /**
-   * Sends one request once queued edits have landed, then reloads, so the server and the grid both see the edits.
-   * With the conflict dialog open the held edits have not landed, so it sends nothing and answers why.
-   */
+  const settle = useCallback(async () => {
+    await settleSaves();
+    return !conflictRef.current;
+  }, [settleSaves]);
+
+  // With the conflict dialog open the held edits have not landed, so it sends nothing and answers why.
+  const cellRequest = useCallback<CellRequest>(
+    async <T,>(url: string, method: Parameters<typeof gridRequest>[1], body?: unknown) => {
+      if (!(await settle())) return refusedForConflict<T>();
+      return gridRequest<T>(url, method, body);
+    },
+    [settle],
+  );
+
+  /** `cellRequest` and a reload after, so the grid shows what the request changed. */
   const afterSaves = useCallback(
     async <T,>(url: string, method: "POST" | "PATCH", body?: unknown): Promise<GridResponse<T>> => {
-      await settleSaves();
-      if (conflictRef.current) return refusedForConflict<T>();
+      if (!(await settle())) return refusedForConflict<T>();
       const res = await gridRequest<T>(url, method, body);
       await reload();
       return res;
     },
-    [settleSaves, reload],
+    [settle, reload],
   );
 
   const addRows = useCallback((count: number) => afterSaves(gridUrl.sub(tableId, "rows"), "POST", { count }), [afterSaves, tableId]);
@@ -712,6 +729,8 @@ export function useGridTable(tableId: string): GridTableState {
     setTable,
     refreshJobs,
     addRows,
+    cellRequest,
+    settle,
     deleteRows,
     dedupeColumn,
     runCells,

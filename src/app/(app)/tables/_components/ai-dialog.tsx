@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { gridRequest, gridUrl } from "../_lib/data/client";
+import { useCellRequest } from "../_lib/data/cell-request";
 import { columnForInput } from "../_lib/data/providers";
 import { delaySecondsOf } from "../_lib/data/run-request";
 import type { GridColumn } from "../_lib/data/types";
@@ -112,6 +113,7 @@ const previewText = (v: unknown) => (v === null || v === undefined || v === "" ?
 
 /** Creates or edits an AI column. The prompt reads other columns with {{key}} and each output field becomes a column. */
 export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, onClose, onSaved }: Props) {
+  const cellRequest = useCellRequest();
   const [name, setName] = useState(column?.name ?? "");
   const [prompt, setPrompt] = useState(typeof column?.config.prompt === "string" ? column.config.prompt : "");
   const [outputs, setOutputs] = useState<Output[]>(() => savedOutputs(column) ?? [{ key: "answer", type: "text", description: "" }]);
@@ -149,7 +151,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
     setError(null);
     const delaySeconds = delaySecondsOf(delay);
     if (column) {
-      const res = await gridRequest(gridUrl.sub(tableId, "ai"), "PATCH", { columnId: column.id, prompt, autoRun, delaySeconds, outputs: fieldsBody });
+      const res = await cellRequest(gridUrl.sub(tableId, "ai"), "PATCH", { columnId: column.id, prompt, autoRun, delaySeconds, outputs: fieldsBody });
       if (!res.ok) {
         setBusy(false);
         return setError(res.error);
@@ -157,7 +159,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
       await onSaved();
       return onClose();
     }
-    const res = await createColumn(tableId, { name: name.trim() || undefined, prompt, outputs: fieldsBody, afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id, autoRun, delaySeconds }, run, "ai");
+    const res = await createColumn(cellRequest, tableId, { name: name.trim() || undefined, prompt, outputs: fieldsBody, afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id, autoRun, delaySeconds }, run, "ai");
     if (!res.ok) {
       setBusy(false);
       return setError(res.error);
@@ -168,7 +170,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
 
   async function test() {
     setTesting(true);
-    const res = await gridRequest<Preview>(`${gridUrl.sub(tableId, "ai")}/preview`, "POST", { prompt, outputs: fieldsBody, ...(firstRowId ? { rowId: firstRowId } : {}) });
+    const res = await cellRequest<Preview>(`${gridUrl.sub(tableId, "ai")}/preview`, "POST", { prompt, outputs: fieldsBody, ...(firstRowId ? { rowId: firstRowId } : {}) });
     setTesting(false);
     setPreview({ draft, result: res.ok ? res.data : null, error: res.ok ? null : res.error });
   }
