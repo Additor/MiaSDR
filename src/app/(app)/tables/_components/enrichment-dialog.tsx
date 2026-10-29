@@ -10,14 +10,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { gridRequest, gridUrl } from "../_lib/data/client";
-import { DEFAULT_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment-config";
+import { DEFAULT_REUSE_DAYS, MAX_DELAY_SECONDS, MAX_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment-config";
 import { contractAction, SETTLED_STATUSES } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { OUTCOMES, outcomeOf } from "../_lib/data/outcomes";
 import { coverageText, fullRunText, useEnrichmentPreview } from "../_lib/data/enrichment-preview";
 import { guessColumn, lookupCents, lookupPrice, usableProviders, useProviders, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
-import { centsToDollarsText, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, type RunEstimate } from "../_lib/data/run-request";
+import { centsToDollarsText, creditCap, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, toRunSettingsBody, type RunEstimate } from "../_lib/data/run-request";
 import { spendSummary, type WaterfallStep } from "../_lib/data/waterfall-steps";
 import { ColumnSelect, ItemSelect } from "./form-bits";
 import { ColumnChips, ConnectProviders, SetupRow } from "./enrichment-setup";
@@ -105,16 +105,16 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
     const inputs = Object.fromEntries(Object.entries(form.inputs).filter(([, v]) => v));
     if (JSON.stringify(inputs) !== JSON.stringify(initial.inputs)) patch.inputs = inputs;
     if (form.autoRun !== initial.autoRun) patch.autoRun = form.autoRun;
-    if (form.delay !== initial.delay) patch.delaySeconds = Math.max(0, Math.min(3600, Math.floor(Number(form.delay) || 0)));
-    if (form.reuseDays !== initial.reuseDays) patch.reuseDays = Math.max(0, Math.min(365, Math.floor(Number(form.reuseDays) || 0)));
+    const pacing = toRunSettingsBody(form);
+    if (form.delay !== initial.delay) patch.delaySeconds = pacing.delaySeconds;
+    if (form.reuseDays !== initial.reuseDays) patch.reuseDays = pacing.reuseDays;
     if (form.stopAtCatchAll !== initial.stopAtCatchAll) patch.settledStatuses = form.stopAtCatchAll ? [...SETTLED_STATUSES, "catch_all"] : null;
     if (isWaterfall) {
-      const cap = (text: string) => (text.trim() === "" ? null : Math.max(0, Number(text) || 0));
       if (form.maxCost !== initial.maxCost) {
         if (form.maxCost.trim() !== "" && dollarsToCents(form.maxCost) === null) return setError("Enter the spend cap as zero or more dollars, or leave it empty.");
         patch.maxCostCents = form.maxCost.trim() === "" ? null : dollarsToCents(form.maxCost);
       }
-      if (form.maxCredits !== initial.maxCredits) patch.maxCredits = cap(form.maxCredits);
+      if (form.maxCredits !== initial.maxCredits) patch.maxCredits = creditCap(form.maxCredits);
       if (form.waitOnLimit !== initial.waitOnLimit) patch.onRateLimit = form.waitOnLimit ? "wait" : "next";
     }
     if (Object.keys(patch).length === 1) return onClose();
@@ -159,7 +159,7 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
             </CheckField>
           </div>
         )}
-        <NumberField id="edit-reuse" label={REUSE_LABEL} hint="0 always asks the provider." max={365} value={form.reuseDays} onChange={(v) => set("reuseDays", v)} />
+        <NumberField id="edit-reuse" label={REUSE_LABEL} hint="0 always asks the provider." max={MAX_REUSE_DAYS} value={form.reuseDays} onChange={(v) => set("reuseDays", v)} />
         <RunTiming autoRun={form.autoRun} setAutoRun={(v) => set("autoRun", v)} delay={form.delay} setDelay={(v) => set("delay", v)} />
         <FieldError>{error}</FieldError>
       </FieldGroup>
@@ -181,7 +181,7 @@ export function RunTiming({ autoRun, setAutoRun, delay, setDelay }: { autoRun: b
       <CheckField checked={autoRun} onChange={setAutoRun}>
         Run automatically when its inputs change
       </CheckField>
-      <NumberField id="run-delay" label="Delay before each call (seconds)" max={3600} value={delay} onChange={setDelay} />
+      <NumberField id="run-delay" label="Delay before each call (seconds)" max={MAX_DELAY_SECONDS} value={delay} onChange={setDelay} />
     </div>
   );
 }
@@ -359,7 +359,7 @@ function SpendAndTiming(p: {
           </div>
         )}
         <RunTiming autoRun={p.autoRun} setAutoRun={p.setAutoRun} delay={p.delay} setDelay={p.setDelay} />
-        <NumberField id="reuse-days" label={REUSE_LABEL} hint="A provider answered the same lookup within this many days: the row takes that answer and you pay nothing. 0 always asks." max={365} value={p.reuseDays} onChange={p.setReuseDays} />
+        <NumberField id="reuse-days" label={REUSE_LABEL} hint="A provider answered the same lookup within this many days: the row takes that answer and you pay nothing. 0 always asks." max={MAX_REUSE_DAYS} value={p.reuseDays} onChange={p.setReuseDays} />
       </FieldGroup>
     </details>
   );
@@ -544,8 +544,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
       selectedOutputs: outputs.filter((k) => outputSpecs.some((o) => o.key === k)),
       afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id,
       autoRun,
-      delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
-      reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
+      ...toRunSettingsBody({ delay, reuseDays }),
     };
     const steps = picked.map((providerKey) => ({ providerKey, actionKey }));
     const body = waterfall
@@ -556,7 +555,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
           ...base,
           ...(stopAtCatchAll && actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
           ...(maxCost.trim() !== "" && dollarsToCents(maxCost) !== null ? { maxCostCents: dollarsToCents(maxCost) } : {}),
-          ...(maxCredits.trim() !== "" ? { maxCredits: Math.max(0, Number(maxCredits) || 0) } : {}),
+          ...(creditCap(maxCredits) !== null ? { maxCredits: creditCap(maxCredits) } : {}),
           ...(waitOnLimit ? { onRateLimit: "wait" } : {}),
         }
       : { kind: "enrichment", name: columnName, providerKey: picked[0], actionKey, ...base };
@@ -718,8 +717,7 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
       selectedOutputs: chosenOutputs,
       afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id,
       autoRun,
-      delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
-      reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
+      ...toRunSettingsBody({ delay, reuseDays }),
     };
     const res = await createColumn(tableId, body, run);
     if (!res.ok) {

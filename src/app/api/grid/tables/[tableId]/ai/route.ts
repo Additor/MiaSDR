@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createAiColumns, updateRunnableColumn } from "@/contexts/grid/enrichment/application/enrichment-columns";
-import { AI_OUTPUT_TYPES } from "@/contexts/grid/enrichment/domain/enrichment-config";
+import { AI_OUTPUT_TYPES, MAX_DELAY_SECONDS } from "@/contexts/grid/enrichment/domain/enrichment-config";
 import { gridColumnDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/app/_lib/api";
 
@@ -12,7 +12,7 @@ const post = z.object({
   outputs: z.array(output).min(1).max(12),
   afterColumnId: z.string().uuid().optional(),
   autoRun: z.boolean().optional(),
-  delaySeconds: z.number().int().min(0).max(3600).optional(),
+  delaySeconds: z.number().int().min(0).max(MAX_DELAY_SECONDS).optional(),
 });
 
 /** Adds an AI column with one output column per field. Runs with the organization's own AI key. */
@@ -28,7 +28,7 @@ const patch = z.object({
   columnId: z.string().uuid(),
   prompt: z.string().min(1).max(8000).optional(),
   autoRun: z.boolean().optional(),
-  delaySeconds: z.number().int().min(0).max(3600).optional(),
+  delaySeconds: z.number().int().min(0).max(MAX_DELAY_SECONDS).optional(),
   /** The full list of output fields. Fields that match a column by key, then by name, keep it. */
   outputs: z.array(output).min(1).max(12).optional(),
 });

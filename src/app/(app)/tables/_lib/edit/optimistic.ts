@@ -143,12 +143,15 @@ export function conflictItems(conflicts: readonly RowConflict[], pending: Pendin
   return items;
 }
 
-/** Overwrites the cached rows' cells and versions with what a 409 reported, so a retry names the current version. */
+/**
+ * Overwrites the cached rows' cells and versions with what a 409 reported, so a retry names the current version.
+ * A cached row that is newer than the report (a poll brought it after the server answered) stays, as in `mergeRows`.
+ */
 export function applyConflictRows(rows: readonly GridRow[], conflicts: readonly RowConflict[]): GridRow[] {
   const byRow = new Map(conflicts.map((c) => [c.rowId, c]));
   return rows.map((row) => {
     const c = byRow.get(row.id);
-    if (!c || c.cells === null || c.currentVersion === null) return row;
+    if (!c || c.cells === null || c.currentVersion === null || c.currentVersion <= row.version) return row;
     return { ...row, cells: c.cells, version: c.currentVersion };
   });
 }
@@ -163,4 +166,17 @@ export function clearPending(pending: PendingMap, updates: readonly CellEditInpu
     if (current && Object.is(current.value, u.value)) next.delete(key);
   }
   return next;
+}
+
+/** Takes the queued edits of rows out of the queue, for rows that were deleted. */
+export function dropPendingRows(pending: PendingMap, rowIds: Iterable<string>): { pending: Map<string, PendingEdit>; dropped: PendingEdit[] } {
+  const gone = new Set(rowIds);
+  const next = new Map(pending);
+  const dropped: PendingEdit[] = [];
+  for (const [key, edit] of pending) {
+    if (!gone.has(edit.rowId)) continue;
+    dropped.push(edit);
+    next.delete(key);
+  }
+  return { pending: next, dropped };
 }

@@ -11,7 +11,15 @@ const actionKey = z.string().regex(/^[a-z][a-z0-9_-]{0,59}$/);
 
 /** Days a vendor's answer to the same lookup may be reused instead of paying again. Unset means 30; 0 always asks. */
 export const DEFAULT_REUSE_DAYS = 30;
-const reuseDays = z.number().int().min(0).max(365).optional();
+/** The longest reuse window, in days. */
+export const MAX_REUSE_DAYS = 365;
+/** The longest pause before each provider call, in seconds. */
+export const MAX_DELAY_SECONDS = 3600;
+/** The highest per-cell spend cap, in cents, and the highest per-cell credit cap of a waterfall. */
+export const MAX_COST_CENTS = 100_000;
+export const MAX_CREDITS = 100_000;
+const reuseDays = z.number().int().min(0).max(MAX_REUSE_DAYS).optional();
+const delaySeconds = z.number().int().min(0).max(MAX_DELAY_SECONDS).optional();
 /** Verdicts that end a verification on this column, in place of valid, invalid and disposable. */
 const settledStatuses = z.array(z.enum(["valid", "invalid", "catch_all", "unknown", "disposable"])).min(1).max(5).optional();
 
@@ -22,7 +30,7 @@ export const enrichmentConfigSchema = z.strictObject({
   inputs: z.record(z.string().min(1).max(60), columnKey),
   /** Action output key to the integration_output column that receives it. */
   outputs: z.record(z.string().min(1).max(60), columnKey).default({}),
-  delaySeconds: z.number().int().min(0).max(3600).optional(),
+  delaySeconds,
   reuseDays,
   settledStatuses,
 });
@@ -34,14 +42,14 @@ export const waterfallConfigSchema = z.strictObject({
   steps: z.array(z.strictObject({ providerKey: slug, actionKey })).min(1).max(8),
   outputs: z.record(z.string().min(1).max(60), columnKey).default({}),
   /** Cents one cell may spend across all steps. A step that would pass it is skipped. */
-  maxCostCents: z.number().min(0).max(100_000).optional(),
+  maxCostCents: z.number().min(0).max(MAX_COST_CENTS).optional(),
   /** Vendor credits one cell may use across all steps. A step that would pass it is skipped. */
-  maxCredits: z.number().min(0).max(100_000).optional(),
+  maxCredits: z.number().min(0).max(MAX_CREDITS).optional(),
   /** "next" (the default) asks the next step when one is rate limited; "wait" retries the cell later so the order holds. */
   onRateLimit: z.enum(["next", "wait"]).optional(),
   reuseDays,
   settledStatuses,
-  delaySeconds: z.number().int().min(0).max(3600).optional(),
+  delaySeconds,
 });
 export type WaterfallConfig = z.infer<typeof waterfallConfigSchema>;
 
@@ -56,7 +64,7 @@ export const aiConfigSchema = z.strictObject({
     .max(12),
   /** Output field key to the ai_output column that receives it. */
   outputColumns: z.record(z.string(), columnKey),
-  delaySeconds: z.number().int().min(0).max(3600).optional(),
+  delaySeconds,
 });
 export type AiConfig = z.infer<typeof aiConfigSchema>;
 

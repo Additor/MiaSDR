@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canRedo, canUndo, columnsInvalidate, complete, discardCells, drop, EMPTY_STACK, MAX_ACTIONS, nextAction, record, restoreUpdates, settleAfter, type UndoCell } from "./undo-stack";
+import { canRedo, canUndo, columnsInvalidate, complete, discardCells, discardRows, drop, EMPTY_STACK, MAX_ACTIONS, nextAction, record, restoreUpdates, settleAfter, type UndoCell } from "./undo-stack";
 
 const cell = (rowId: string, columnKey: string, before: unknown, after: unknown): UndoCell => ({ rowId, columnKey, before, after });
 
@@ -110,6 +110,16 @@ describe("recording the server's value", () => {
     expect(stack.done[0].cells.map((c) => c.rowId)).toEqual(["r1"]);
     stack = discardCells(stack, "a1", [{ rowId: "r1", columnKey: "a" }]);
     expect(stack.done).toHaveLength(0);
+  });
+
+  it("drops the cells of deleted rows from both directions", () => {
+    let stack = record(EMPTY_STACK, "a1", [cell("r1", "a", "x", "y"), cell("r2", "a", "x", "y")]);
+    stack = record(stack, "a2", [cell("r2", "b", "x", "y")]);
+    stack = complete(stack, "undo", "a2", [{ rowId: "r2", columnKey: "b", value: "x" }]);
+    expect(stack.undone).toHaveLength(1);
+    stack = discardRows(stack, ["r2"]);
+    expect(stack.done.map((a) => a.cells.map((c) => c.rowId))).toEqual([["r1"]]);
+    expect(stack.undone).toHaveLength(0);
   });
 });
 

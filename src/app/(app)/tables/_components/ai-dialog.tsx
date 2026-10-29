@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { AiStatus } from "@/contexts/integrations/domain/ai-status";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { columnForInput } from "../_lib/data/providers";
+import { delaySecondsOf } from "../_lib/data/run-request";
 import type { GridColumn } from "../_lib/data/types";
 import { CreateFooter, createColumn, RunTiming } from "./enrichment-dialog";
 import { ItemSelect } from "./form-bits";
@@ -146,7 +147,7 @@ export function AiDialog({ tableId, columns, column, afterColumnId, firstRowId, 
   async function save(run: boolean) {
     setBusy(true);
     setError(null);
-    const delaySeconds = Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0)));
+    const delaySeconds = delaySecondsOf(delay);
     if (column) {
       const res = await gridRequest(gridUrl.sub(tableId, "ai"), "PATCH", { columnId: column.id, prompt, autoRun, delaySeconds, outputs: fieldsBody });
       if (!res.ok) {
