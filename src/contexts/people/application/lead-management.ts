@@ -1,10 +1,13 @@
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import type { DbHandle } from "@/platform/db/client";
+import { retryOnce, sqlState } from "@/platform/db/errors";
 import { csvLine, UTF8_BOM } from "@/shared/csv";
 import { canonicalProfileUrl } from "../domain/linkedin-url";
 import { isFilterActive } from "../domain/lead-filter";
 import { planLeadEdit, type LeadEditInput } from "../domain/lead-edit";
-import type { BlockReason, DeleteOutcome, LeadDeps, LeadDetail, LeadFilter, SendViewer } from "./lead-ports";
+import { leadDeleteBlock } from "../domain/person-delete-policy";
+import type { BlockedLead, BlockReason, DeleteOutcome, LeadDeleteDeps, LeadDeps, LeadDetail, LeadFilter, LeadForDelete, SendViewer } from "./lead-ports";
 
 /*
  * Permissions: any member of the organization can read, edit, delete and export
@@ -17,7 +20,9 @@ export const BLOCK_MESSAGES: Record<BlockReason, string> = {
   has_sends: "Messages were already sent to this lead. Mark it do not contact instead of deleting it.",
   has_hidden_sends: "This lead got messages in another member's personal campaign. Mark it do not contact instead of deleting it.",
   in_active_campaign: "The lead is still in a running or paused campaign. Cancel its enrollment or finish the campaign first.",
+  personal_campaign_sends: "The lead is in another member's personal campaign. Its creator, an owner or an admin can delete it, or you can mark it do not contact.",
   linked_records: "The lead has history, such as replies or conversations. Mark it do not contact instead of deleting it.",
+  try_again: "Another change to this lead was in progress. Try the delete again in a moment.",
 };
 
 /** The actor as a reader of personal-campaign sends: the campaign's creator, an owner or an admin sees them. */
@@ -71,18 +76,24 @@ export async function mapRawField(
 
 export type DeleteSelection = { ids: string[] } | { filter: LeadFilter; confirmCount: number };
 
+/** People per delete transaction. Each batch takes its locks, checks and deletes on its own, so one busy lead holds back 499 others at most. */
+export const LEAD_DELETE_BATCH = 500;
+
+/** The statement timeout of one batch. A batch past it rolls back and its leads come back as `try_again`. */
+export const LEAD_DELETE_STATEMENT_TIMEOUT = "30s";
+
 /**
  * Deletes leads that never had mail sent, are not in a running campaign and have
  * no CRM records. The rest stay and come back in `blocked` with a reason.
  * A filter delete needs the count the person confirmed, so a changed list is not deleted blind,
  * and it refuses an empty filter: "delete all matching" never means "delete everything".
  */
-export async function deleteLeads(deps: LeadDeps, actor: Actor, selection: DeleteSelection): Promise<DeleteOutcome> {
+export async function deleteLeads(deps: LeadDeleteDeps, actor: Actor, selection: DeleteSelection): Promise<DeleteOutcome> {
   if ("ids" in selection) {
     const ids = [...new Set(selection.ids)];
     if (ids.length === 0) throw new ValidationError("Select at least one lead.");
     if (ids.length > MAX_DELETE_IDS) throw new ValidationError(`Select up to ${MAX_DELETE_IDS} leads at a time, or delete by filter.`);
-    return deps.leads.deleteByIds(actor.organizationId, ids, sendViewer(actor));
+    return deleteInBatches(deps, actor, ids);
   }
   // Ids belong to the other branch; a filter delete scopes by the filter alone.
   const filter: LeadFilter = { ...selection.filter, ids: undefined };
@@ -94,7 +105,101 @@ export async function deleteLeads(deps: LeadDeps, actor: Actor, selection: Delet
     throw new ConflictError(`The list now matches ${current} leads, not ${selection.confirmCount}. Reload the page and confirm again.`);
   }
   if (current === 0) throw new ValidationError("No leads match this filter.");
-  return deps.leads.deleteByFilter(actor.organizationId, filter, sendViewer(actor));
+  return deleteInBatches(deps, actor, await deps.people.idsMatching(actor.organizationId, filter));
+}
+
+/**
+ * The reason a lead stays, from the facts of the three contexts. The viewer only picks between `has_sends` and
+ * `has_hidden_sends`, and opens `personal_campaign_sends` to the campaign's creator, an owner or an admin.
+ */
+async function verdicts(deps: LeadDeleteDeps, tx: DbHandle, actor: Actor, rows: LeadForDelete[]): Promise<Map<string, BlockReason>> {
+  const ids = rows.map((row) => row.id);
+  const outreach = await deps.outreach.blockers(tx, actor, ids);
+  const history = await deps.handling.peopleWithHistory(tx, actor.organizationId, ids);
+  const blocked = new Map<string, BlockReason>();
+  for (const row of rows) {
+    const reason = leadDeleteBlock({ contact: row.contact, history: history.has(row.id), outreach: outreach.get(row.id) ?? [] });
+    if (reason) blocked.set(row.id, reason);
+  }
+  return blocked;
+}
+
+/**
+ * One batch in one transaction, in the lock order of "Delete" in docs/decisions.md: the people's outreach advisory locks,
+ * then the people rows, then their enrollments, each in id order, then the checks, the purge and the delete. The advisory
+ * lock comes first because the reply stop takes it before the enrollments and the events it writes; the enrollment locks
+ * keep a send claim (`FOR UPDATE SKIP LOCKED`) off these enrollments until the batch commits.
+ */
+function deleteBatch(deps: LeadDeleteDeps, actor: Actor, ids: string[]): Promise<DeleteOutcome> {
+  const organizationId = actor.organizationId;
+  return retryOnce(() =>
+    deps.transaction(async (tx) => {
+      await deps.people.limitStatements(tx);
+      const rows = await deps.people.lock(tx, organizationId, ids);
+      if (rows.length === 0) return { deleted: 0, blocked: [] };
+      await deps.outreach.lockEnrollments(tx, organizationId, rows.map((row) => row.id));
+      const blocked = await verdicts(deps, tx, actor, rows);
+      const outcome: DeleteOutcome = { deleted: 0, blocked: rows.flatMap((row) => blockedLead(row, blocked.get(row.id))) };
+      const deletable = rows.filter((row) => !blocked.has(row.id)).map((row) => row.id);
+      if (deletable.length === 0) return outcome;
+      await deps.people.keepSuppressed(tx, organizationId, deletable);
+      await deps.outreach.purge(tx, organizationId, deletable);
+      outcome.deleted = await deps.people.deletePeople(tx, organizationId, deletable);
+      return outcome;
+    }),
+  );
+}
+
+const blockedLead = (row: LeadForDelete, reason: BlockReason | undefined): BlockedLead[] => (reason ? [{ id: row.id, name: row.name, reason }] : []);
+
+/** A lock error twice (`try_again`) or the statement timeout (57014): the batch rolled back. */
+const isBusy = (error: unknown) => (error instanceof ConflictError && error.details?.code === "try_again") || sqlState(error) === "57014";
+
+/** The people of a batch that rolled back, as `try_again`. */
+async function busy(deps: LeadDeleteDeps, organizationId: string, ids: string[]): Promise<BlockedLead[]> {
+  const rows = await deps.transaction((tx) => deps.people.read(tx, organizationId, ids));
+  return rows.map((row) => ({ id: row.id, name: row.name, reason: "try_again" as const }));
+}
+
+async function deleteInBatches(deps: LeadDeleteDeps, actor: Actor, ids: string[]): Promise<DeleteOutcome> {
+  const outcome: DeleteOutcome = { deleted: 0, blocked: [] };
+  const add = (part: DeleteOutcome) => {
+    outcome.deleted += part.deleted;
+    outcome.blocked.push(...part.blocked);
+  };
+  for (let i = 0; i < ids.length; i += LEAD_DELETE_BATCH) {
+    const part = ids.slice(i, i + LEAD_DELETE_BATCH);
+    try {
+      add(await deleteBatch(deps, actor, part));
+    } catch (error) {
+      if (isBusy(error)) {
+        add({ deleted: 0, blocked: await busy(deps, actor.organizationId, part) });
+        continue;
+      }
+      if (sqlState(error) !== "23503") throw error;
+      // The last guard. Before the batch held its locks, a send claim or a new record could commit between the checks and the
+      // delete; under the locks no known writer can, so this catches only a reference no check covers. Each lead runs again
+      // alone, so the others still go, and a lead that fails alone comes back as `try_again`.
+      for (const id of part) {
+        try {
+          add(await deleteBatch(deps, actor, [id]));
+        } catch (single) {
+          if (!isBusy(single) && sqlState(single) !== "23503") throw single;
+          add({ deleted: 0, blocked: await busy(deps, actor.organizationId, [id]) });
+        }
+      }
+    }
+  }
+  return outcome;
+}
+
+/** The rule that stops this lead from being deleted, or null when it qualifies. The rules of the delete, read without its locks. */
+export async function leadDeleteBlockOf(deps: LeadDeleteDeps, actor: Actor, id: string): Promise<BlockReason | null> {
+  return deps.transaction(async (tx) => {
+    const rows = await deps.people.read(tx, actor.organizationId, [id]);
+    if (rows.length === 0) return null;
+    return (await verdicts(deps, tx, actor, rows)).get(id) ?? null;
+  });
 }
 
 export function countLeads(deps: LeadDeps, actor: Actor, filter: LeadFilter): Promise<number> {

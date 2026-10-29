@@ -11,9 +11,7 @@ import { layerOf, sourceFiles } from "./context-layers";
  */
 
 /** Source files that write a table another owner declares, with those tables. Shrink only. */
-const FOREIGN_WRITES: Record<string, string[]> = {
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "sends"],
-};
+const FOREIGN_WRITES: Record<string, string[]> = {};
 
 /**
  * Source files that read a higher layer's tables, by schema import or in a raw `sql` template, with those tables.
@@ -22,7 +20,7 @@ const FOREIGN_WRITES: Record<string, string[]> = {
 const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/identity/infrastructure/session.ts": ["members", "organizations"],
   "src/contexts/identity/infrastructure/signup-facts.ts": ["invitations", "members", "organizations"],
-  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "conversations", "events", "records", "sends"],
+  "src/contexts/people/infrastructure/drizzle-lead-repository.ts": ["campaignEnrollments", "campaigns", "conversations", "records", "sends"],
   "src/contexts/people/infrastructure/queries.ts": ["campaignEnrollments", "campaigns", "conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-enrollment-restore.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/drizzle-lead-statuses.ts": ["conversations", "messages", "records"],

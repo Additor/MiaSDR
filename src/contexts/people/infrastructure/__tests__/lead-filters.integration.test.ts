@@ -10,7 +10,7 @@ describeDb("lead list filters, sort and companies", () => {
   const sql = testSql({ max: 3 });
   let uc: typeof import("../../application/lead-management");
   let q: typeof import("../queries");
-  let deps: import("../../application/lead-ports").LeadDeps;
+  let deps: import("../../application/lead-ports").LeadDeps & import("../../application/lead-ports").LeadDeleteDeps;
   const orgs: TestOrg[] = [];
 
   async function org() {
@@ -69,7 +69,7 @@ describeDb("lead list filters, sort and companies", () => {
   beforeAll(async () => {
     uc = await import("../../application/lead-management");
     q = await import("../queries");
-    deps = (await import("../composition")).leadDeps();
+    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("../composition")).leadDeps() };
   });
 
   afterAll(async () => {
