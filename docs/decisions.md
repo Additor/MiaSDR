@@ -23,6 +23,13 @@ How MiaSDR works and why, by area. Each section states what the code does today.
 - `src/app` reaches a context's infrastructure only through its composition files, which hand out wired deps, and identity's session and auth modules (`src/architecture/app-boundaries.test.ts`).
 - A table belongs to the context whose `schema.ts` declares it, and only that context writes it. Lower-layer tables may appear in a join; a higher layer's tables are read through that context's read model (`src/architecture/table-ownership.test.ts`). Both tests carry a shrink-only list of older exceptions. Read predicates that every context applies to shared tables, such as `src/platform/db/conversation-visibility.ts`, live in `src/platform/db`.
 
+### Read models
+
+- `src/read-models` holds screen reads that join the tables of several contexts. The tiers run, lowest first: `shared`, `platform`, the contexts, `read-models`, `src/composition`, then `src/app`. A read model imports contexts and platform; no context, `platform` or `shared` file imports it, and it imports neither `src/composition` nor the UI (`src/architecture/context-dependencies.test.ts`). From a context it imports only `domain/`, the schema files and the modules on a short list with reasons (`READ_MODEL_IMPORTS`, empty today); a use case or a writer such as `deleteDoNotContactTx` stays out. It reads any context's tables and writes none (`src/architecture/table-ownership.test.ts`): the write scan matches `insert`, `update` and `delete` through a namespace import and with spaces inside the parentheses.
+- `lead-activity.ts` defines the lead facts that live in outreach and conversations once: campaign membership, Replied, conversation, last contact and CRM category. `activityCondition` is the filter's half of them, `readLeadStatuses` the status's half. `readLeadDetailActivity` reads the enrollments in regular campaigns, the campaign sends the viewer may see, the hidden-sends flag and the newest public conversation for the lead and contact pages; it shares its enrollment select with `readLeadStatuses`. `lead-filter-options.ts` reads the filter dropdown values.
+- The people context keeps the conditions on its own tables and takes the activity half as a required argument: `createListLeads`, `createLeadRepository` (count, matching ids, export), `createLeadDeleteStore` (delete by filter) and `createReadLeadNeighbors`. `createLeadRepository` also takes `ReadLeadDetailActivity` and joins it with people's fields in `get`, so the people context reads only its own tables. `src/composition/leads.ts` passes `activityCondition` and `readLeadDetailActivity`, so no lead read can run without the Replied or campaign filter, and `tsc` refuses a wiring that leaves either out. Pages and routes take `leadDeps`, `listLeads`, `readLeadNeighbors` and `leadActivityDeps` (the reads of `readLeadActivity`) from there.
+- Nothing is denormalized for these reads: more than twenty paths write the facts, and a change to which campaigns count as private would need a full recompute.
+
 ## Platform
 
 ### Stack
@@ -233,6 +240,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 ### List, filters and export
 
 - `LeadFilter` (`people/domain/lead-filter.ts`) is one parser for the page URL, the export, `GET /api/leads/ids` and bulk delete. A filter with no `lifecycle` lists leads; `contact` and `all` widen it.
+- One condition serves the list, the count, "Select all matching", the export, delete by filter and the lead page's previous and next: people's own conditions plus `activityCondition` ([Read models](#read-models)). The last-contact bounds and the lead status read the same latest contact, so a lead found under a last-contact range shows a last contact on a day inside it.
 
 | Param | Meaning |
 |---|---|
@@ -254,7 +262,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 - `leadStatus()` in `outreach/domain/lead-status.ts` gives one state per lead, first match wins: replied (an inbound message in a public conversation, or a `replied` enrollment), in sequence (`active` in an active campaign), paused (`active` or `pending` in a campaign that is not active), queued (`pending` in an active campaign), finished or stopped (the newest ended enrollment is `completed`, or bounced, suppressed, failed or cancelled), new (no enrollment, or removed ones only).
 - Within a rule the newest `updated_at` wins, then the id. Personal campaigns stay out. Last contact is the later of the latest outbound message and any enrollment's `last_sent_at`, removed enrollments included.
-- `readLeadStatuses` (`outreach/infrastructure/drizzle-lead-statuses.ts`) fills a page of ids in two organization-scoped queries. The Leads list and the lead page both read it through `readLeadActivity`, so they show the same state. A contact carries no lead status.
+- `readLeadStatuses` (`src/read-models/lead-activity.ts`, see [Read models](#read-models)) fills a page of ids in two organization-scoped queries. The Leads list and the lead page both read it through `readLeadActivity`, so they show the same state. A contact carries no lead status.
 
 ### Reachability and do not contact
 
@@ -644,7 +652,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 
 - One `people` row per human. `people.lifecycle` (`lead` or `contact`) decides which screens list the person. Conversion copies nothing. A human who writes from a second address is a second row; MiaSDR has no person merge.
 - `people.converted_at` is set for a contact and null for a lead (CHECK `people_converted_at_ck`). The trigger `people_lifecycle_trg` rejects contact to lead and any change of `converted_at` once set. Conversion goes one way: deleting the last deal leaves the person a contact.
-- `leadFilterCondition` applies `lifecycle ?? 'lead'`, so every lead list, export, id selection, delete-matching and neighbor query returns leads unless the filter says `contact` or `all`. The Contacts list uses the partial index `people_org_contacts_idx`.
+- `leadFilterWhere` (`people/infrastructure/queries.ts`) applies `lifecycle ?? 'lead'`, so every lead list, export, id selection, delete-matching and neighbor query returns leads unless the filter says `contact` or `all`. The Contacts list uses the partial index `people_org_contacts_idx`.
 - Unknown inbound senders arrive as `lifecycle = 'lead'`.
 - A contact's replies still land in the Inbox and Actions and may queue an approval-gated reply draft. No follow-up run starts for a contact: the sequence store and engine filter `p.lifecycle <> 'contact'`, and `createRunOn` re-checks after the record lock.
 - The Existing customer group (reply type Customer question, key `customer`) and a Won deal stay independent. Deal stages carry no stop rule; the Follow-ups rule, the stop request type and the customer lock belong to reply types only.

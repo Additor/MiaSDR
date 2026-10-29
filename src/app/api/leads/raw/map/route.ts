@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { mapRawField } from "@/contexts/people/application/lead-management";
-import { leadDeps } from "@/contexts/people/infrastructure/composition";
+import { leadDeps } from "@/composition/leads";
 import { withActor } from "@/app/_lib/api";
 
 const schema = z.object({

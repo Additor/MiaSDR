@@ -11,14 +11,14 @@ describeDb("people.linkedin_url on every write path", () => {
   let actor: Actor;
   let uc: typeof import("../../application/lead-management");
   let found: typeof import("../../application/found-people");
-  let deps: ReturnType<typeof import("../composition").leadDeps>;
+  let deps: ReturnType<typeof import("@/composition/leads").leadDeps>;
   let foundStore: typeof import("../drizzle-found-people-store").drizzleFoundPeopleStore;
 
   beforeAll(async () => {
     uc = await import("../../application/lead-management");
     found = await import("../../application/found-people");
     foundStore = (await import("../drizzle-found-people-store")).drizzleFoundPeopleStore;
-    deps = (await import("../composition")).leadDeps();
+    deps = (await import("@/composition/leads")).leadDeps();
     const s = Math.random().toString(36).slice(2, 8);
     [{ id: org }] = await sql`insert into organizations (name, slug) values ('L', ${"lu-" + s}) returning id`;
     [{ id: user }] = await sql`insert into users (name, email) values ('U', ${s + "@lu.test"}) returning id`;

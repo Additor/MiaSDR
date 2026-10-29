@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/platform/db/client";
 import { companies, people } from "@/platform/db/schema";
 import type { LeadFilter, LeadSort } from "../domain/lead-filter";
-import { leadFilterCondition, leadSortExpression } from "./queries";
+import { leadFilterWhere, leadSortExpression, type ActivityCondition } from "./queries";
 
 export interface LeadNeighbors {
   prevId: string | null;
@@ -22,7 +22,9 @@ export interface LeadNeighbors {
  *
  * Text sorts put nulls last, so "after" includes every null and "before" excludes them unless the current value is null.
  */
-export async function readLeadNeighbors(organizationId: string, personId: string, context: { filter: LeadFilter; sort: LeadSort }): Promise<LeadNeighbors> {
+export type ReadLeadNeighbors = (organizationId: string, personId: string, context: { filter: LeadFilter; sort: LeadSort }) => Promise<LeadNeighbors>;
+
+export const createReadLeadNeighbors = (activity: ActivityCondition): ReadLeadNeighbors => async (organizationId, personId, context) => {
   const { filter, sort } = context;
   const cur = alias(people, "cur");
   const curCompany = alias(companies, "cur_company");
@@ -42,7 +44,7 @@ export async function readLeadNeighbors(organizationId: string, personId: string
       .leftJoin(companies, eq(companies.id, people.companyId))
       .innerJoin(cur, and(eq(cur.id, personId), eq(cur.organizationId, organizationId)))
       .leftJoin(curCompany, eq(curCompany.id, cur.companyId))
-      .where(and(eq(people.organizationId, organizationId), leadFilterCondition(filter), side))
+      .where(and(leadFilterWhere(organizationId, filter, activity), side))
       .orderBy(...order)
       .limit(1);
     return row?.id ?? null;
@@ -57,4 +59,4 @@ export async function readLeadNeighbors(organizationId: string, personId: string
     find(before, [sql`${a} ${reverse}${reverseNulls}`, sql`${people.id} ${reverse}`]),
   ]);
   return { prevId, nextId };
-}
+};

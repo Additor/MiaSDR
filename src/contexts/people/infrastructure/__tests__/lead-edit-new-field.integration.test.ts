@@ -14,7 +14,7 @@ describeDb("lead edit: new fields against the column registry", () => {
   let uc: typeof import("../../application/custom-columns");
   let store: import("../../application/custom-columns").CustomColumnStore;
   let updateLead: typeof import("../../application/lead-management").updateLead;
-  let leadDeps: typeof import("../composition").leadDeps;
+  let leadDeps: typeof import("@/composition/leads").leadDeps;
   const owner = (): Actor => ({ userId: world.admin.userId, organizationId: world.orgA.id, role: "owner" });
   const member = (): Actor => ({ userId: world.member.userId, organizationId: world.orgA.id, role: "member" });
 
@@ -23,7 +23,7 @@ describeDb("lead edit: new fields against the column registry", () => {
     uc = await import("../../application/custom-columns");
     store = (await import("../drizzle-custom-column-store")).drizzleCustomColumnStore;
     ({ updateLead } = await import("../../application/lead-management"));
-    ({ leadDeps } = await import("../composition"));
+    ({ leadDeps } = await import("@/composition/leads"));
   });
 
   afterAll(async () => {

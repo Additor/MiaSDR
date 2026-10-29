@@ -6,7 +6,7 @@ import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-sup
 describeDb("lead status read model", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
-  let outreach: typeof import("../drizzle-lead-statuses");
+  let reads: typeof import("../lead-activity");
   let dbClient: typeof import("@/platform/db/client");
   const orgs: string[] = [];
 
@@ -55,7 +55,7 @@ describeDb("lead status read model", () => {
   };
 
   beforeAll(async () => {
-    outreach = await import("../drizzle-lead-statuses");
+    reads = await import("../lead-activity");
     dbClient = await import("@/platform/db/client");
   });
 
@@ -70,7 +70,7 @@ describeDb("lead status read model", () => {
     const instance = (globalThis as unknown as { __miasdrDb: typeof dbClient.db }).__miasdrDb;
     return vi.spyOn(instance, "select");
   };
-  const read = (orgId: string, ids: string[]) => outreach.readLeadStatuses(orgId, ids);
+  const read = (orgId: string, ids: string[]) => reads.readLeadStatuses(orgId, ids);
 
   it("reads the deciding enrollment, a lead in two campaigns and a removed enrollment", async () => {
     const o = await org();

@@ -263,7 +263,7 @@ describeDb("custom column registry", () => {
 
     it("a member's import and map-raw refuse a label that matches an archived column, and nothing is restored or written", async () => {
       const { id, admin, member } = await org();
-      const { leadDeps } = await import("../composition");
+      const { leadDeps } = await import("@/composition/leads");
       const { mapRawField } = await import("../../application/lead-management");
       const plan = await uc.createCustomColumn(store, admin, { entity: "people", name: "Plan" });
       await uc.archiveCustomColumn(store, admin, plan.id);
@@ -293,7 +293,7 @@ describeDb("custom column registry", () => {
 
     it("map-raw reuses a renamed column and restores an archived one", async () => {
       const { id, admin } = await org();
-      const { leadDeps } = await import("../composition");
+      const { leadDeps } = await import("@/composition/leads");
       const { mapRawField } = await import("../../application/lead-management");
       const plan = await uc.createCustomColumn(store, admin, { entity: "people", name: "Plan" });
       await uc.renameCustomColumn(store, admin, plan.id, "Account Plan");
@@ -311,7 +311,7 @@ describeDb("custom column registry", () => {
   describe("the lead edit form's new fields resolve labels against the registry", () => {
     const columnsOf = async (orgId: string) => (await sql`select key, name, archived_at from entity_columns where organization_id = ${orgId} and entity = 'people' order by key`) as unknown as Array<{ key: string; name: string; archived_at: Date | null }>;
     const edit = async (admin: Actor, personId: string, newCustom: Array<{ label: string; value: string }>) => {
-      const { leadDeps } = await import("../composition");
+      const { leadDeps } = await import("@/composition/leads");
       const { updateLead } = await import("../../application/lead-management");
       await updateLead(leadDeps(), admin, personId, { newCustom });
     };

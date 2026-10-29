@@ -38,7 +38,7 @@ export function violations(file: string, source: string, forbidden: readonly str
     .map((s) => `${path.relative(ROOT, file)} -> ${s}`);
 }
 
-const CONTEXT_FORBIDDEN = ["composition"];
+const CONTEXT_FORBIDDEN = ["composition", "read-models"];
 
 /** The imports of `file` (under src/contexts/<context>) that reach a context in the same or a higher layer. */
 export function upwardImports(file: string, source: string): string[] {
@@ -53,15 +53,37 @@ export function upwardImports(file: string, source: string): string[] {
 
 /**
  * The tiers under src, lowest first: `shared` (the kernel: errors, env, time, formatting), `platform` (database client,
- * schema barrel, job runtime, files, credentials), the contexts, `composition`, then `app`. A tier imports only lower
- * tiers. `shared` imports no framework or driver either.
+ * schema barrel, job runtime, files, credentials), the contexts, `read-models` (screen reads across contexts),
+ * `composition`, then `app`. A tier imports only lower tiers. `shared` imports no framework or driver either.
  */
 const TIER_FORBIDDEN: Record<string, { paths: string[]; packages: RegExp | null }> = {
-  shared: { paths: ["contexts", "platform", "composition", "app", "components"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
-  platform: { paths: ["composition", "app", "components"], packages: null },
+  shared: { paths: ["contexts", "platform", "read-models", "composition", "app", "components"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
+  platform: { paths: ["read-models", "composition", "app", "components"], packages: null },
+  // Read models join the tables of several contexts for one screen. They read; the table ownership test fails any write.
+  "read-models": { paths: ["composition", "app", "components"], packages: null },
   // Composition wires contexts together. A query there is a rule no context owns, so tables and drivers stay out.
   composition: { paths: ["app", "components", "platform/db/schema"], packages: /^(drizzle-orm|postgres)(\/|$)/ },
 };
+
+/**
+ * Context modules a read model may import beyond `domain/` and the schema files, each with its reason. A read model
+ * reads; `application/` and the rest of `infrastructure/` hold use cases and writers (`deleteDoNotContactTx`), so a read
+ * model that needs one belongs in `src/composition` instead. Keep it short.
+ */
+const READ_MODEL_IMPORTS: Record<string, string> = {};
+
+/** The context modules `file` (under src/read-models) imports that are not `domain/`, a schema file or on `READ_MODEL_IMPORTS`. Type-only imports count. */
+export function readModelImports(file: string, source: string): string[] {
+  return specifiers(source)
+    .filter((s) => {
+      const t = target(file, s);
+      if (!t?.startsWith("contexts/")) return false;
+      if (/^contexts\/[^/]+\/(?:[^/]+\/)*domain\//.test(t)) return false;
+      if (/^contexts\/[^/]+\/(?:[^/]+\/)*infrastructure\/(?:schema|sequences-schema)$/.test(t)) return false;
+      return !(t in READ_MODEL_IMPORTS);
+    })
+    .map((s) => `${path.relative(ROOT, file)} -> ${s}`);
+}
 
 /** Platform files that import a context, as the code stood when the rule arrived. Shrink only. */
 const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
@@ -97,8 +119,36 @@ describe("tier dependencies", () => {
     expect(tierViolations("shared")).toEqual([]);
   });
 
-  it("keeps src/platform free of composition, app and UI", () => {
+  it("keeps src/platform free of read models, composition, app and UI", () => {
     expect(tierViolations("platform")).toEqual([]);
+  });
+
+  it("keeps src/read-models free of composition, app and UI", () => {
+    expect(tierViolations("read-models")).toEqual([]);
+  });
+
+  it("lets src/read-models import a context's domain and schema only, plus the short list", () => {
+    const files = sourceFiles(path.join(SRC, "read-models"));
+    expect(files.flatMap((f) => readModelImports(f, readFileSync(f, "utf8")))).toEqual([]);
+    for (const allowed of Object.keys(READ_MODEL_IMPORTS)) expect(files.some((f) => specifiers(readFileSync(f, "utf8")).some((s) => target(f, s) === allowed)), allowed).toBe(true);
+  });
+
+  it("flags a read model's import of a use case, a writer or a composition", () => {
+    const file = path.join(SRC, "read-models/example.ts");
+    const source = [
+      'import { leadStatus } from "@/contexts/outreach/domain/lead-status";',
+      'import { people } from "@/contexts/people/infrastructure/schema";',
+      'import { runs } from "../contexts/conversations/after-reply/infrastructure/sequences-schema";',
+      'import { deleteDoNotContactTx } from "@/contexts/people/infrastructure/reachability";',
+      'import type { LeadActivityDeps } from "@/contexts/outreach/application/read-lead-activity";',
+      'import { leadImportDeps } from "@/contexts/people/infrastructure/composition";',
+      'import { db } from "@/platform/db/client";',
+    ].join("\n");
+    expect(readModelImports(file, source)).toEqual([
+      "src/read-models/example.ts -> @/contexts/people/infrastructure/reachability",
+      "src/read-models/example.ts -> @/contexts/outreach/application/read-lead-activity",
+      "src/read-models/example.ts -> @/contexts/people/infrastructure/composition",
+    ]);
   });
 
   it("keeps src/composition free of app, UI, tables and drivers", () => {
@@ -227,7 +277,7 @@ describe("context dependencies", () => {
     expect(upwardImports(file, source)).toEqual(["src/contexts/outreach/infrastructure/example.ts -> @/contexts/conversations/infrastructure/composition"]);
   });
 
-  it("keeps every context free of the composition root", () => {
+  it("keeps every context free of the composition root and the read models", () => {
     const files = sourceFiles(path.join(SRC, "contexts"));
     expect(files.flatMap((f) => violations(f, readFileSync(f, "utf8"), CONTEXT_FORBIDDEN))).toEqual([]);
   });
@@ -238,6 +288,7 @@ describe("context dependencies", () => {
       'import { deals } from "@/contexts/deals/application/deals";',
       'import type { Port } from "../../outreach/application/ports";',
       'const root = await import("@/composition/person-lifecycle");',
+      'import { activityCondition } from "@/read-models/lead-activity";',
       'export * from "../../deals/domain/deal";',
       'import { ok } from "@/contexts/conversations/infrastructure/person-handling";',
       'import { sql } from "drizzle-orm";',
@@ -248,6 +299,9 @@ describe("context dependencies", () => {
       "src/contexts/people/application/example.ts -> ../../deals/domain/deal",
       "src/contexts/people/application/example.ts -> @/contexts/conversations/infrastructure/person-handling",
     ]);
-    expect(violations(file, source, CONTEXT_FORBIDDEN)).toEqual(["src/contexts/people/application/example.ts -> @/composition/person-lifecycle"]);
+    expect(violations(file, source, CONTEXT_FORBIDDEN)).toEqual([
+      "src/contexts/people/application/example.ts -> @/composition/person-lifecycle",
+      "src/contexts/people/application/example.ts -> @/read-models/lead-activity",
+    ]);
   });
 });

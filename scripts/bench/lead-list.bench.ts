@@ -11,13 +11,13 @@ const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISO
 describeDb("lead list benchmark", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
-  let outreach: typeof import("@/contexts/outreach/infrastructure/drizzle-lead-statuses");
-  let q: typeof import("@/contexts/people/infrastructure/queries");
+  let reads: typeof import("@/read-models/lead-activity");
+  let q: typeof import("@/composition/leads");
   let org: TestOrg;
 
   beforeAll(async () => {
-    outreach = await import("@/contexts/outreach/infrastructure/drizzle-lead-statuses");
-    q = await import("@/contexts/people/infrastructure/queries");
+    reads = await import("@/read-models/lead-activity");
+    q = await import("@/composition/leads");
     org = await createTestOrg(sql, "Bench");
     const o = org.organizationId;
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${o}, 'default', true) returning id`;
@@ -47,7 +47,7 @@ describeDb("lead list benchmark", () => {
   it("reads the lead status of a page and the filtered lists", async () => {
     const o = org.organizationId;
     const page = await q.listLeads(o, { pageSize: 200 });
-    const batch = await timed(() => outreach.readLeadStatuses(o, page.rows.map((r) => r.id)));
+    const batch = await timed(() => reads.readLeadStatuses(o, page.rows.map((r) => r.id)));
     expect(batch.value.size).toBe(200);
     const replied = await timed(() => q.listLeads(o, { filter: { replied: true }, pageSize: 200 }));
     const lastFrom = await timed(() => q.listLeads(o, { filter: { lastContactFrom: day(-20) }, pageSize: 200 }));
