@@ -2,7 +2,6 @@ import { z } from "zod";
 import { listLinkedInSearchBatches, uploadLinkedInSearchBatch } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
 import { MAX_BATCH_FILE_BYTES } from "@/contexts/outreach/linkedin/domain/linkedin-search-batch";
 import { linkedinSearchBatchDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { CsvError } from "@/platform/files/csv";
 import { parseSpreadsheet } from "@/platform/files/spreadsheet";
 import { PayloadTooLargeError, ValidationError } from "@/shared/errors";
 import { withActor } from "@/app/_lib/api";
@@ -39,12 +38,7 @@ export const POST = (request: Request) =>
       accountIds,
     });
 
-    let parsed;
-    try {
-      parsed = await parseSpreadsheet(Buffer.from(await file.arrayBuffer()), file.name);
-    } catch (error) {
-      if (error instanceof CsvError) throw new ValidationError(error.message);
-      throw error;
-    }
+    // A file the parser cannot read throws CsvError, a ValidationError: 422.
+    const parsed = await parseSpreadsheet(Buffer.from(await file.arrayBuffer()), file.name);
     return uploadLinkedInSearchBatch(linkedinSearchBatchDeps(), actor, { ...input, filename: file.name, headers: parsed.headers, rows: parsed.rows });
   }, 201);
