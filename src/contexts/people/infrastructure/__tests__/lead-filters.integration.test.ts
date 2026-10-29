@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Actor } from "@/shared/errors";
 import { ValidationError } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
-import type { LeadFilter, LeadSort } from "../../domain/lead-filter";
+import { DEFAULT_LEAD_SORT, type LeadFilter, type LeadSort } from "../../domain/lead-filter";
+import type { ReadLeadStatuses } from "@/contexts/outreach/domain/lead-status";
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
 describeDb("lead list filters, sort and companies", () => {
@@ -11,6 +12,8 @@ describeDb("lead list filters, sort and companies", () => {
   let uc: typeof import("../../application/lead-management");
   let q: typeof import("../queries");
   let deps: import("../../application/lead-ports").LeadDeps & import("../../application/lead-ports").LeadDeleteDeps;
+  let readLeadStatuses: ReadLeadStatuses;
+  let readLeadNeighbors: typeof import("../lead-neighbors").readLeadNeighbors;
   const orgs: TestOrg[] = [];
 
   async function org() {
@@ -70,6 +73,8 @@ describeDb("lead list filters, sort and companies", () => {
     uc = await import("../../application/lead-management");
     q = await import("../queries");
     deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("../composition")).leadDeps() };
+    ({ readLeadStatuses } = await import("@/contexts/outreach/infrastructure/drizzle-lead-statuses"));
+    ({ readLeadNeighbors } = await import("../composition"));
   });
 
   afterAll(async () => {
@@ -536,6 +541,141 @@ describeDb("lead list filters, sort and companies", () => {
       expect(await ids(o.id, { lastContactFrom: "2026-10-01" })).toEqual([cold]);
       expect(await ids(o.id, { lastContactTo: "2026-10-03" })).toEqual([cold]);
       expect(await ids(o.id, { lastContactTo: "2026-10-02" })).toEqual([]);
+    });
+  });
+
+  describe("activity reads agree", () => {
+    let n = 0;
+    const replyTypeSetOf = async (orgId: string) => {
+      const [{ id }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
+      return id as string;
+    };
+    /** One message on the person's record, in a public thread or, with `privateCampaignId`, a personal campaign's private thread. */
+    const message = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound", sentAt: string, privateCampaignId: string | null = null) => {
+      n += 1;
+      const [existing] = await sql`select id from records where organization_id = ${orgId} and person_id = ${personId}`;
+      const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id)
+        values (${orgId}, ${recordId}, 'email', ${`ar${n}`}, ${privateCampaignId}) returning id`;
+      await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
+        values (${orgId}, ${conversationId}, 'email', ${`ar${n}`}, ${direction}, ${`ar${n}-${orgId}`}, 'hello', ${sentAt})`;
+    };
+    const enrollSent = async (orgId: string, campaignId: string, personId: string, status: string, lastSentAt: string | null) => {
+      await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status, last_sent_at)
+        select ${orgId}, id, ${personId}, channel, ${status}, ${lastSentAt} from campaigns where id = ${campaignId}`;
+    };
+    const personal = async (orgId: string) => {
+      const [{ id }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${orgId}, 'linkedin', 'Private', 'active', 'personal') returning id`;
+      return id as string;
+    };
+    const lead = (orgId: string) => person(orgId, { email: `ar${++n}@x.test` });
+    const dayOf = (at: Date) => at.toISOString().slice(0, 10);
+    const shift = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+    it("puts the lead status's last contact inside the list's last-contact range on the same UTC day", async () => {
+      const o = await org();
+      const pipeline = await replyTypeSetOf(o.id);
+      const regular = await campaign(o.id, "email", "Regular");
+      const other = await campaign(o.id, "email", "Other");
+      const privateCampaign = await personal(o.id);
+      // A campaign step later than every message: the step is the last contact.
+      const stepLater = await lead(o.id);
+      await message(o.id, pipeline, stepLater, "outbound", "2026-09-01T10:00:00Z");
+      await enrollSent(o.id, regular, stepLater, "active", "2026-09-20T23:30:00Z");
+      // A removed enrollment's step went out, so it stays contact.
+      const removed = await lead(o.id);
+      await enrollSent(o.id, other, removed, "removed", "2026-08-15T00:10:00Z");
+      // A personal campaign's step is private, so the public message decides.
+      const personalStep = await lead(o.id);
+      await message(o.id, pipeline, personalStep, "outbound", "2026-06-01T08:00:00Z");
+      await enrollSent(o.id, privateCampaign, personalStep, "active", "2026-10-01T10:00:00Z");
+      // An outbound message in a private thread never counts.
+      const privateThread = await lead(o.id);
+      await message(o.id, pipeline, privateThread, "outbound", "2026-05-05T12:00:00Z");
+      await message(o.id, pipeline, privateThread, "outbound", "2026-10-05T12:00:00Z", privateCampaign);
+      const expected = new Map([
+        [stepLater, "2026-09-20"],
+        [removed, "2026-08-15"],
+        [personalStep, "2026-06-01"],
+        [privateThread, "2026-05-05"],
+      ]);
+
+      const statuses = await readLeadStatuses(o.id, [...expected.keys()]);
+      for (const [personId, day] of expected) {
+        const at = statuses.get(personId)?.lastContactAt;
+        expect(at && dayOf(at), personId).toBe(day);
+        expect(await ids(o.id, { lastContactFrom: day, lastContactTo: day }), day).toContain(personId);
+        expect(await ids(o.id, { lastContactTo: shift(day, -1) }), day).not.toContain(personId);
+        expect(await ids(o.id, { lastContactFrom: shift(day, 1) }), day).not.toContain(personId);
+      }
+    });
+
+    it("leaves a lead contacted only in private out of both the status and the range", async () => {
+      const o = await org();
+      const pipeline = await replyTypeSetOf(o.id);
+      const privateCampaign = await personal(o.id);
+      const hidden = await lead(o.id);
+      await enrollSent(o.id, privateCampaign, hidden, "active", "2026-10-01T10:00:00Z");
+      await message(o.id, pipeline, hidden, "outbound", "2026-10-02T10:00:00Z", privateCampaign);
+      expect((await readLeadStatuses(o.id, [hidden])).get(hidden)?.lastContactAt ?? null).toBeNull();
+      expect(await ids(o.id, { lastContactFrom: "2000-01-01" })).toEqual([]);
+    });
+
+    it("gives count, matching ids, export, delete by filter and previous/next the list's set for every activity filter", async () => {
+      const o = await org();
+      const pipeline = await replyTypeSetOf(o.id);
+      const c1 = await campaign(o.id, "email", "One");
+      const c2 = await campaign(o.id, "email", "Two");
+      const privateCampaign = await personal(o.id);
+      const active = await lead(o.id);
+      await enrollSent(o.id, c1, active, "active", null);
+      await message(o.id, pipeline, active, "outbound", "2026-08-10T10:00:00Z");
+      await sql`update records set group_key = 'interested', reply_type_source = 'human' where person_id = ${active}`;
+      const replied = await lead(o.id);
+      await enrollSent(o.id, c1, replied, "replied", "2026-09-05T10:00:00Z");
+      const removed = await lead(o.id);
+      await enrollSent(o.id, c2, removed, "removed", "2026-07-01T10:00:00Z");
+      const privateOnly = await lead(o.id);
+      await enrollSent(o.id, privateCampaign, privateOnly, "active", "2026-08-12T10:00:00Z");
+      await message(o.id, pipeline, privateOnly, "inbound", "2026-08-13T10:00:00Z", privateCampaign);
+      const wroteIn = await lead(o.id);
+      await message(o.id, pipeline, wroteIn, "inbound", "2026-08-20T10:00:00Z");
+      const pending = await lead(o.id);
+      await enrollSent(o.id, c2, pending, "pending", null);
+      await sql`insert into records (organization_id, person_id, reply_type_set_id, group_key, reply_type_source) values (${o.id}, ${pending}, ${pipeline}, 'customer', 'human')`;
+      await lead(o.id);
+
+      const filters: LeadFilter[] = [
+        { replied: true },
+        { replied: false },
+        { campaign: "any" },
+        { campaign: "none" },
+        { campaign: c1 },
+        { notInCampaign: c1 },
+        { hasConversation: true },
+        { hasConversation: false },
+        { lastContactFrom: "2026-08-01" },
+        { lastContactTo: "2026-08-31" },
+        { lastContactFrom: "2026-07-01", lastContactTo: "2026-08-31" },
+        { category: "interested" },
+        { category: "customer", campaign: "any" },
+        { replied: false, hasConversation: true, lastContactFrom: "2026-08-01" },
+      ];
+      for (const filter of filters) {
+        const label = JSON.stringify(filter);
+        const list = (await q.listLeads(o.id, { filter, pageSize: 200 })).rows.map((r) => r.id);
+        expect(list.length, label).toBeGreaterThan(0);
+        expect(await uc.countLeads(deps, o.actor, filter), label).toBe(list.length);
+        expect(sorted(...(await uc.listMatchingLeadIds(deps, o.actor, filter, 100)).ids), label).toEqual(sorted(...list));
+        expect(sorted(...(await deps.people.idsMatching(o.id, filter))), label).toEqual(sorted(...list));
+        const exported: string[] = [];
+        for await (const batch of deps.leads.exportBatches(o.id, filter)) exported.push(...batch.map((row) => row.email ?? ""));
+        const emailOf = new Map((await q.listLeads(o.id, { filter, pageSize: 200 })).rows.map((r) => [r.id, r.email ?? ""]));
+        expect(sorted(...exported), label).toEqual(sorted(...list.map((id) => emailOf.get(id) ?? "")));
+        for (const [i, id] of list.entries()) {
+          expect(await readLeadNeighbors(o.id, id, { filter, sort: DEFAULT_LEAD_SORT }), `${label} ${i}`).toEqual({ prevId: list[i - 1] ?? null, nextId: list[i + 1] ?? null });
+        }
+      }
     });
   });
 });
