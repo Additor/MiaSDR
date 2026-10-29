@@ -270,7 +270,8 @@
 
 /*
  * Heading roles (see "Typography" in DESIGN.md). A heading takes its role by name instead of a size and a weight picked on
- * the spot, so a record title, a Settings block and a section head keep three distinct steps above the 14px body.
+ * the spot. Four steps: the record title, a page's own sections, the subsections under them (a side panel block, a folded
+ * history, a drawer's parts), and an item's name. Each step differs from the next in size or in weight, never by a pixel.
  */
 @utility heading-record {
   font-size: var(--text-2xl);
@@ -279,15 +280,17 @@
   letter-spacing: -0.025em;
 }
 
-@utility heading-block {
+/* A section of the page itself: a Settings block, a record or campaign section, an Actions list, an analytics report. */
+@utility heading-section {
   font-size: var(--text-base);
   line-height: var(--text-base--line-height);
   font-weight: 600;
 }
 
-@utility heading-section {
-  font-size: 0.9375rem;
-  line-height: 1.375rem;
+/* A part under a section or beside it: a side panel block, a folded history, a drawer's or a dialog's part, a board column. */
+@utility heading-subsection {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
   font-weight: 600;
 }
 

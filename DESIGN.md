@@ -30,15 +30,14 @@ typography:
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: "-0.025em"
-  settings-heading:
+  section-heading:
     fontFamily: "Geist, sans-serif"
     fontSize: "1rem"
     fontWeight: 600
-  section-heading:
+  subsection-heading:
     fontFamily: "Geist, sans-serif"
-    fontSize: "0.9375rem"
+    fontSize: "0.875rem"
     fontWeight: 600
-    lineHeight: "1.375rem"
   item-heading:
     fontFamily: "Geist, sans-serif"
     fontSize: "0.875rem"
@@ -114,14 +113,14 @@ Everything is grey. Normal states use the secondary badge; a colored badge marks
 
 Geist Sans for everything, Geist Mono for code. Tables and fact lists use tabular numerals.
 
-A heading takes its role by name, a utility in `globals.css`, never a size and a weight picked on the spot. The roles keep visible steps above the 14px body.
+A heading takes its role by name, a utility in `globals.css`, never a size and a weight picked on the spot. Four steps, each apart from the next in size or in weight, never by a pixel. The step follows what the part is to the page: a page's own sections at 16px, the parts under or beside them at 14px semibold, so a side panel block or a folded history never competes with the work column.
 
 | Role | Utility | Size and weight | Where |
 |---|---|---|---|
 | Record title | `heading-record` | text-2xl, semibold, tight | The h1 of a lead, contact, company, deal or campaign page (`RecordHeader`) |
-| Block heading | `heading-block` | text-base, semibold | The h2 of a Settings block (`Section role="block"`), a step of the lead import, the sign-in cards |
-| Section heading | `heading-section` | 15px, semibold | Every section head through `Section`/`SectionHead`: record and campaign sections, side panel blocks, the Actions lists, analytics report blocks, the histories |
-| Item heading | `heading-item` | text-sm, medium | An item's name in a ruled list, a group h3 inside a section, the Inbox day labels (muted) |
+| Section heading | `heading-section` | text-base, semibold | A part of the page itself, through `Section`/`SectionHead` (an h2 by default): a Settings block, a record's or a campaign's work-column section, the thread's Next step, Follow-ups, Earlier messages and History, an Actions list, an analytics report, a step of the lead import, an error page |
+| Subsection heading | `heading-subsection` | text-sm, semibold | A part under or beside a section (`role="subsection"`, the default for an h3): a side panel block (`AsideSection`), a folded history (`AsideDisclosure`, `RecordDisclosure`), a drawer's or a dialog's part, a deal board column |
+| Item heading | `heading-item` | text-sm, medium | An item's name in a ruled list, a group inside a section, the Inbox day labels (muted) |
 | Top bar | none | text-sm; parent step muted, current step medium | `PageHeader` |
 | Body and labels | none | text-sm | Everything else; helper text in muted-foreground |
 | Meta | none | text-xs, muted | Timestamps, footnotes under a list, a grid header's type and fill rate |
@@ -191,7 +190,7 @@ Below `sm`, a control a person taps is 44px. `Button` and `buttonVariants` take 
 
 `SettingsSection` (`src/app/(app)/settings/settings-section.tsx`) is the only block on a Settings page.
 
-- Each block is the shell's `Section` with `role="block"`: a `heading-block` h2 and an optional one-line muted description, set as `stack-field`. The content follows by `stack-group`.
+- Each block is the shell's `Section`: a `heading-section` h2 and an optional one-line muted description, set as `stack-field`. The content follows by `stack-group`.
 - Blocks sit one after another with `border-t py-section`. The first block has no rule and no top padding, the last no bottom padding (`first-of-type`, `last-of-type`), so put intro text in a `div` or `p` before the first block, not between blocks.
 - A form lives inside its block and ends with its own Save button in a plain row. No card, no footer band.
 - A list of items inside a block (mailboxes, LinkedIn accounts, documents, stages, fields, invitations, jobs) is one ruled list: `RULED_LIST` (`divide-y`) with `RULED_ROW` rows. No box around the list and no box per item. An item's name is an h3 at `heading-item`.
@@ -361,7 +360,7 @@ Every confirm and form dialog builds on `ConfirmDialog` (`src/components/shell/c
 
 ### Bulk bar
 
-Leads and Contacts share the selection model (`SelectionProvider`, `src/components/shell/selection.tsx`), keyed by the list's filter so a selection survives paging and resets on a filter change. Every selection bar is `BulkBar` (`src/components/shell/bulk-bar.tsx`). On a list it sticks to the bottom edge, in the thumb zone on a phone, and while rows are ticked the page reserves the bar's height as scroll padding (`useBarScrollPadding`), so a focused row never sits under it. Above a grid or a short list (a table, a search batch, a campaign's leads) it sits in the flow with `sticky={false}` and takes no room while nothing is ticked. The bar holds the "{n} selected." line, then at most four controls: the bulk actions first, then Clear selection (Esc clears too) and More actions with "Select all {N} matching". The status line stays mounted, so a screen reader hears the count as it changes.
+Leads and Contacts share the selection model (`SelectionProvider`, `src/components/shell/selection.tsx`), keyed by the list's filter so a selection survives paging and resets on a filter change. Every selection bar is `BulkBar` (`src/components/shell/bulk-bar.tsx`). On a list it sticks to the bottom edge, in the thumb zone on a phone, and while rows are ticked the page reserves the bar's height as scroll padding (`useBarScrollPadding`), so a focused row never sits under it. Above a grid or a short list (a table, a search batch, a campaign's leads) it sits in the flow with `sticky={false}` and takes no room while nothing is ticked. The bar holds the "{n} selected." line, then at most four controls: the bulk actions first, then Clear selection (Esc clears too) and More actions with "Select all {N} matching". The status line stays mounted, so a screen reader hears the count as it changes. A failed bulk step (Select all matching, Export) puts its reason on the bar while the rows stay ticked; it leaves with the selection, so ticking rows later never shows an old failure.
 
 ### Feedback
 

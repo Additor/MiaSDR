@@ -117,7 +117,7 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
   return (
     <section id="add-leads-panel" aria-labelledby="add-leads-title" className="stack-group border-y py-section transition-[opacity,translate] duration-(--duration-menu) ease-out starting:opacity-0 motion-safe:starting:-translate-y-1">
       <div className="stack-field">
-        <h3 id="add-leads-title" className="heading-section">
+        <h3 id="add-leads-title" className="heading-subsection">
           Add leads
         </h3>
         <p className="max-w-prose text-sm text-muted-foreground">

@@ -29,7 +29,7 @@ export function Count({ value, tone = "neutral", className, testId }: { value: R
 export function SectionHead({
   title,
   level = "h2",
-  role = "section",
+  role = level === "h3" ? "subsection" : "section",
   id,
   icon,
   count,
@@ -41,8 +41,11 @@ export function SectionHead({
 }: {
   title: ReactNode;
   level?: "h2" | "h3";
-  /** `block` is the text-base head of a Settings block; `section` the head of a record, campaign or Actions section. */
-  role?: "block" | "section";
+  /**
+   * `section` heads a part of the page itself (a Settings block, a record or campaign section, an Actions list);
+   * `subsection` a part under or beside one (a side panel block, a drawer's part). An h3 is a subsection unless told.
+   */
+  role?: "section" | "subsection";
   id?: string;
   icon?: ReactNode;
   count?: ReactNode;
@@ -59,7 +62,7 @@ export function SectionHead({
       {/* The text takes the row and wraps, so an action stays on the heading row beside a long description. */}
       <div className="stack-field min-w-0 flex-1 basis-64">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <Heading id={id} className={cn("flex items-center gap-1.5", role === "block" ? "heading-block" : "heading-section")}>
+          <Heading id={id} className={cn("flex items-center gap-1.5", role === "section" ? "heading-section" : "heading-subsection")}>
             {icon}
             {title}
           </Heading>

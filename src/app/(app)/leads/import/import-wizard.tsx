@@ -177,7 +177,7 @@ export function ImportWizard() {
       {step === 1 && (
         <section className="stack-group">
           <div className="stack-field">
-            <h2 className="heading-block">1. Choose a file</h2>
+            <h2 className="heading-section">1. Choose a file</h2>
             <p className="text-sm text-muted-foreground">
               Use a CSV or Excel (.xlsx) file with column names in the first row. Each lead needs an email or a LinkedIn profile. The limit is 5 MB and 10,000 rows. CSV files can separate values with commas, semicolons or tabs. MiaSDR reads the first sheet of an Excel file and refuses files with macros.
             </p>
@@ -229,7 +229,7 @@ export function ImportWizard() {
       {step === 2 && preview && (
         <section className="stack-group">
           <div className="stack-field">
-            <h2 className="heading-block">2. Match columns</h2>
+            <h2 className="heading-section">2. Match columns</h2>
             <p className="text-sm text-muted-foreground">
               {countOf(preview.totalRows, "row")} found. Each lead needs an email or a LinkedIn profile. A full name column fills first and last name when the file has none. Columns MiaSDR does not recognize become custom fields you can use in campaigns. Choose &quot;Keep in source data only&quot; to store a column without a field.
             </p>
@@ -377,7 +377,7 @@ function SummaryPanel({ summary, panelRef }: { summary: ImportSummary; panelRef:
   return (
     <section ref={panelRef} tabIndex={-1} role="status" aria-labelledby="import-summary-title" className="stack-group border-t pt-group outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
       <div className="stack-field">
-        <h3 id="import-summary-title" className="heading-section">
+        <h3 id="import-summary-title" className="heading-subsection">
           Review before importing
         </h3>
         <p className="text-sm text-muted-foreground">
@@ -472,7 +472,7 @@ function Result({ report, onReset }: { report: Report; onReset: () => void }) {
     <div className="max-w-3xl">
       <section className="stack-group pb-section">
         <div ref={doneRef} tabIndex={-1} role="status" className="stack-field outline-none">
-          <h2 className="heading-block">Import finished</h2>
+          <h2 className="heading-section">Import finished</h2>
           <p className="text-sm text-muted-foreground">{countOf(s.totalRows, "row")} read.</p>
         </div>
         <div>
@@ -502,7 +502,7 @@ function Result({ report, onReset }: { report: Report; onReset: () => void }) {
       {issues.length > 0 && (
         <section className="stack-group border-t pt-section">
           <div className="stack-field">
-            <h2 className="heading-block">Rows to check</h2>
+            <h2 className="heading-section">Rows to check</h2>
             <p className="text-sm text-muted-foreground">Up to {RESULT_EXAMPLES} rows per kind. Row numbers count data rows, not the header.</p>
           </div>
           <div>

@@ -120,7 +120,7 @@ export function RecordSection({
 /** A section of the side panel: a title row with an optional action, then its content, padded by the inset role. */
 export function AsideSection({ title, action, testId, children }: { title: string; action?: ReactNode; testId?: string; children: ReactNode }) {
   return (
-    <Section frame="inset" title={title} action={action} testId={testId}>
+    <Section frame="inset" role="subsection" title={title} action={action} testId={testId}>
       {children}
     </Section>
   );
@@ -135,7 +135,7 @@ export function AsideDisclosure({ title, count, open = false, testId, children }
     <details className="group p-inset" open={open} data-testid={testId}>
       <summary className="-m-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md p-1 select-none focus-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
-        <h2 className="heading-section">{title}</h2>
+        <h2 className="heading-subsection">{title}</h2>
         {count !== undefined && count !== null && <Count value={count} />}
       </summary>
       <div className="stack-group mt-group">{children}</div>
@@ -152,7 +152,7 @@ export function RecordDisclosure({ title, count, open = false, testId, children 
     <details className="group border-t py-group" open={open} data-testid={testId}>
       <summary className="-mx-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md px-1 select-none focus-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
-        <h3 className="heading-section">{title}</h3>
+        <h3 className="heading-subsection">{title}</h3>
         {count !== undefined && count !== null && <Count value={count} />}
       </summary>
       <div className="stack-group mt-group">{children}</div>

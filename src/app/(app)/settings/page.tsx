@@ -39,7 +39,7 @@ async function Overview() {
       </p>
       {visibleGroups(isAdmin).map((group) => (
         <section key={group.label} aria-labelledby={`settings-${group.label}`} className="stack-group">
-          <h2 id={`settings-${group.label}`} className="heading-block px-3">
+          <h2 id={`settings-${group.label}`} className="heading-section px-3">
             {group.label}
           </h2>
           <ul className="divide-y rounded-lg border">
@@ -67,7 +67,7 @@ function SetupBlock({ links }: { links: SetupLink[] }) {
   return (
     <section aria-labelledby="settings-setup" className="stack-group">
       <div className="flex items-baseline justify-between gap-4 px-3">
-        <h2 id="settings-setup" className="heading-block">
+        <h2 id="settings-setup" className="heading-section">
           Set up sending
         </h2>
         <Link href="/onboarding" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-ring">

@@ -11,7 +11,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
   }, [error]);
   return (
     <main className="mx-auto grid min-h-svh w-full max-w-md flex-1 content-center gap-group p-6">
-      <h1 className="heading-block">Something went wrong</h1>
+      <h1 className="heading-section">Something went wrong</h1>
       <ErrorState
         inline
         title="The page failed to load."

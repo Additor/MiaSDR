@@ -13,7 +13,7 @@ import { parseSource, walk } from "./source-ast";
  * - Every timestamp is `Time`, never a raw `time` element.
  * - Lavender (`text-sidebar-count`, `bg-sidebar-primary`) marks only work that waits on a person.
  * - A feature folder never defines a component with a primitive's name (a forked `Field`).
- * - Headings take a heading role (`heading-record`, `heading-block`, `heading-section`, `heading-item`), never a size or
+ * - Headings take a heading role (`heading-record`, `heading-section`, `heading-subsection`, `heading-item`), never a size or
  *   a weight picked on the spot.
  * - z-index stays on the scale (10 raised, 20 sticky, 30 bars, 50 overlays): no arbitrary `z-[n]`.
  */

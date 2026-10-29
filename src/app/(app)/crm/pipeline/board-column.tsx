@@ -157,7 +157,7 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
     >
       <header className="grid gap-0.5 px-1">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="truncate heading-section">{column.name}</h2>
+          <h2 className="truncate heading-subsection">{column.name}</h2>
           <Count
             value={
               <>

@@ -27,7 +27,7 @@ export function SettingsSection({
   children?: ReactNode;
 }) {
   return (
-    <Section role="block" title={title} description={description} count={count} action={action} id={id} testId={testId}>
+    <Section title={title} description={description} count={count} action={action} id={id} testId={testId}>
       {children}
     </Section>
   );
