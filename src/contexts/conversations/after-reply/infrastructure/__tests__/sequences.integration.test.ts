@@ -1515,6 +1515,12 @@ describeDb("Follow-ups after a reply flows", () => {
       const stepRunId = (await one("select sr.id from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = 2", [run.id])).id as string;
       return { f, run, stepRunId };
     }
+    it("tries three times, waiting one minute and then two between attempts", () => {
+      expect(MAX_DRAFT_ATTEMPTS).toBe(3);
+      expect(draftRetryDelayMs(1)).toBe(60_000);
+      expect(draftRetryDelayMs(2)).toBe(120_000);
+    });
+
     const stepRun = async (id: string) => one("select status, attempt_count, last_error, due_at, updated_at, draft_id from sequence_step_runs where id = $1", [id]);
 
     it("reschedules a transient failure with backoff and fails the step on the last attempt", async () => {

@@ -611,6 +611,10 @@ describeDb("linkedin engine", () => {
 
   // Migration 0004 took the cap out of the sends trigger, so these two tests are what holds it.
   describe("the attempt cap", () => {
+    it("is three attempts", () => {
+      expect(MAX_INVITE_ATTEMPTS).toBe(3);
+    });
+
     it("asks LinkedIn at most MAX_INVITE_ATTEMPTS times for an invitation, then ends the enrollment failed", async () => {
       const f = await fixture();
       const gateway = new FakeLinkedInGateway();

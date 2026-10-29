@@ -264,6 +264,10 @@ describeDb("email send engine", () => {
 
   // Migration 0004 took the cap out of the sends trigger, so these two tests are what holds it.
   describe("the attempt cap", () => {
+    it("is three attempts", () => {
+      expect(MAX_SEND_ATTEMPTS).toBe(3);
+    });
+
     it("calls the provider at most MAX_SEND_ATTEMPTS times for one step, then ends the enrollment failed", async () => {
       const f = await fixture();
       const provider = new FakeMailboxProvider();

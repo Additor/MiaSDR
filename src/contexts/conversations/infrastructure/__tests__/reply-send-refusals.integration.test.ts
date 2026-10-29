@@ -14,7 +14,11 @@ import { useReplyKit, type ReplyFixture, type ReplyModules } from "./replies-tes
 
 const RANDOM_ID = "00000000-0000-4000-8000-000000000000";
 
-/** What `withActor` (src/app/_lib/api.ts) answers for the error a send throws: the status, the `error` text and any details. */
+/**
+ * What `withActor` (src/app/_lib/api.ts) answers for an error the use case throws: the status, the `error` text, and the
+ * details or issues. It maps only the use-case errors (404, 409, 422). The route's own zod parse, which answers 400
+ * "Invalid input" before the use case runs, stays out of these tests.
+ */
 async function refusal(run: Promise<unknown>): Promise<Record<string, unknown>> {
   let thrown: unknown;
   try {
@@ -24,7 +28,7 @@ async function refusal(run: Promise<unknown>): Promise<Record<string, unknown>> 
   }
   if (thrown instanceof NotFoundError) return { status: 404, error: thrown.message };
   if (thrown instanceof ConflictError) return { status: 409, error: thrown.message, ...thrown.details };
-  if (thrown instanceof ValidationError) return { status: 422, error: thrown.message };
+  if (thrown instanceof ValidationError) return { status: 422, error: thrown.message, issues: thrown.issues };
   throw new Error(thrown === undefined ? "The send was not refused." : `Unexpected error: ${String(thrown)}`);
 }
 
@@ -56,10 +60,11 @@ describeDb("Email reply send refusals", () => {
     expect(await refusal(mgmt.approveAndSendDraft(f.replyDeps, f.actor, RANDOM_ID, { revision: 1, idempotencyKey: sendKey() }))).toEqual({ status: 404, error: "Draft not found" });
   });
 
-  it("answers 422 for an idempotency key shorter than 8 characters", async () => {
+  it("answers 422 for an idempotency key shorter than 8 characters once trimmed", async () => {
     const f = await fixture();
     const { draft } = await withDraft(f);
-    expect(await refusal(approve(f, draft, "short"))).toEqual({ status: 422, error: "An idempotency key of 8 to 200 characters is required." });
+    // Long enough for the route's zod check, short after the use case trims it.
+    expect(await refusal(approve(f, draft, "   short   "))).toEqual({ status: 422, error: "An idempotency key of 8 to 200 characters is required.", issues: [] });
     expect(await count("send_attempts", f.org)).toBe(0);
   });
 
@@ -248,11 +253,14 @@ describeDb("LinkedIn reply send refusals", () => {
     const f = await fixture();
     expect(await refusal(send(f, {}, "not-a-uuid"))).toEqual({ status: 404, error: "Conversation not found" });
     expect(await refusal(send(f, {}, RANDOM_ID))).toEqual({ status: 404, error: "Conversation not found" });
+    expect(await count("send_attempts", f.org)).toBe(0);
   });
 
-  it("answers 422 for an idempotency key shorter than 8 characters", async () => {
+  it("answers 422 for an idempotency key shorter than 8 characters once trimmed", async () => {
     const f = await fixture();
-    expect(await refusal(send(f, { idempotencyKey: "short" }))).toEqual({ status: 422, error: "An idempotency key of 8 to 200 characters is required." });
+    // Long enough for the route's zod check, short after the use case trims it.
+    expect(await refusal(send(f, { idempotencyKey: "   short   " }))).toEqual({ status: 422, error: "An idempotency key of 8 to 200 characters is required.", issues: [] });
+    expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("answers 409 for a key another conversation already used", async () => {
@@ -269,18 +277,21 @@ describeDb("LinkedIn reply send refusals", () => {
     const f = await fixture();
     const email = await conversationOn(f, { channel: "email", accountRef: "me@corp.test", chat: `thread-${f.tag}` });
     expect(await refusal(send(f, {}, email))).toEqual({ status: 409, error: "This is not a LinkedIn conversation." });
+    expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("answers 409 for a closed conversation", async () => {
     const f = await fixture();
     await sql`update conversations set status = 'closed' where id = ${f.conversationId}`;
     expect(await refusal(send(f))).toEqual({ status: 409, error: "This conversation is closed." });
+    expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("answers 409 for a conversation with no LinkedIn chat yet", async () => {
     const f = await fixture();
     const noChat = await conversationOn(f, { accountRef: f.account, chat: null });
     expect(await refusal(send(f, {}, noChat))).toEqual({ status: 409, error: "There is no LinkedIn chat for this conversation yet." });
+    expect(await count("send_attempts", f.org)).toBe(0);
   });
 
   it("answers 409 when the conversation's account ref is not an account id, or names no account of the organization", async () => {
@@ -293,13 +304,14 @@ describeDb("LinkedIn reply send refusals", () => {
   });
 
   describe("with a draft", () => {
-    it("answers 404 for a draft id that is malformed or not a LinkedIn draft of this conversation, and 422 without a revision", async () => {
+    it("answers 404 for a draft id that is malformed or not a LinkedIn draft of this conversation, and 422 for revision 0", async () => {
       const f = await fixture();
       expect(await refusal(send(f, { draftId: "not-a-uuid", revision: 1 }))).toEqual({ status: 404, error: "Draft not found" });
       expect(await refusal(send(f, { draftId: RANDOM_ID, revision: 1 }))).toEqual({ status: 404, error: "Draft not found" });
       const draft = await draftFor(f);
-      expect(await refusal(send(f, { draftId: draft.draftId }))).toEqual({ status: 422, error: "The draft revision is missing. Reload and try again." });
-      expect(await refusal(send(f, { draftId: draft.draftId, revision: 0 }))).toEqual({ status: 422, error: "The draft revision is missing. Reload and try again." });
+      // A draftId without a revision never reaches the use case: the route's zod refine answers 400 first.
+      expect(await refusal(send(f, { draftId: draft.draftId, revision: 0 }))).toEqual({ status: 422, error: "The draft revision is missing. Reload and try again.", issues: [] });
+      expect(await count("send_attempts", f.org)).toBe(0);
     });
 
     it("answers 409 with the newer-message text for a stale draft, and the status text for any other settled draft", async () => {
@@ -315,6 +327,7 @@ describeDb("LinkedIn reply send refusals", () => {
       const f = await fixture();
       const draft = await draftFor(f);
       expect(await refusal(send(f, { draftId: draft.draftId, revision: draft.revision + 1 }))).toEqual({ status: 409, error: "The draft changed since you reviewed it. Reload and approve the current text." });
+      expect(await count("send_attempts", f.org)).toBe(0);
     });
 
     it("answers 409 and marks the draft stale when the record moved on after the draft was written", async () => {
