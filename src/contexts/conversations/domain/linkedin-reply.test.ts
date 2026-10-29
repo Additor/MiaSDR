@@ -1,19 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { MAX_LINKEDIN_REPLY, checkReplyText, replyBlock, replyGapSeconds, utcDayStart } from "./linkedin-reply";
+import { replyBlock, replyGapSeconds, utcDayStart } from "./linkedin-reply";
 
 const now = new Date("2026-10-15T12:00:00Z");
 const ok = { status: "connected", limitReachedUntil: null, dailyMessageLimit: 50 };
-
-describe("checkReplyText", () => {
-  it("trims and normalizes line endings", () => {
-    expect(checkReplyText("  hi\r\nthere \n")).toEqual({ ok: true, text: "hi\nthere" });
-  });
-  it("rejects empty and oversized text", () => {
-    expect(checkReplyText("  \n ")).toMatchObject({ ok: false });
-    expect(checkReplyText("x".repeat(MAX_LINKEDIN_REPLY))).toMatchObject({ ok: true });
-    expect(checkReplyText("x".repeat(MAX_LINKEDIN_REPLY + 1))).toMatchObject({ ok: false });
-  });
-});
 
 describe("replyGapSeconds", () => {
   it("uses the default for missing and out-of-bound values", () => {

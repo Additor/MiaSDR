@@ -1,9 +1,9 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
-import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
+import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports";
-import { MAX_LINKEDIN_REPLY } from "../domain/linkedin-reply";
+import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS } from "../domain/reply-send";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
@@ -155,7 +155,15 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       taxonomy: taxonomyRows.map(({ key, name, groupKey }) => ({ key, name, groupKey })),
       suppressed,
       doNotContact: dnc,
-      mailboxIssue: !mailbox ? "No mailbox is connected for this thread." : mailbox.status !== "connected" ? `The mailbox ${mailbox.emailAddress} is ${mailbox.status}.` : head.status !== "active" ? "This conversation is closed." : null,
+      mailboxIssue: !mailbox
+        ? "No mailbox is connected for this thread."
+        : mailbox.status !== "connected"
+          ? `The mailbox ${mailbox.emailAddress} is ${mailbox.status}.`
+          : head.state === "closed"
+            ? REPLY_REFUSALS.handling_closed.text()
+            : head.status !== "active"
+              ? REPLY_REFUSALS.conversation_closed.text()
+              : null,
       answered: Boolean(head.lastOut && head.lastIn && head.lastOut >= head.lastIn),
       knownCcs: await knownCcsFor(organizationId, head.personId),
     };
@@ -197,6 +205,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
           personId: records.personId,
           version: records.contextVersion,
           latest: records.latestInboundMessageId,
+          workflowState: records.workflowState,
           email: people.email,
           channel: conversations.channel,
           status: conversations.status,
@@ -205,22 +214,24 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         .innerJoin(records, eq(records.id, conversations.recordId))
         .innerJoin(people, eq(people.id, records.personId))
         .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
-        // Serializes concurrent creates and sends for the record.
+        // Serializes typed drafts with each other and with AI draft writes, which lock the record too.
         .for("update", { of: records });
       if (!head) throw new NotFoundError("Conversation not found");
-      if (head.channel !== "email") throw new ConflictError("Typed replies are only available on email conversations.");
-      if (head.status !== "active") throw new ConflictError("This conversation is closed.");
-      if (!head.email) throw new ConflictError("This person has no email address.");
+      // A typed draft is not a send, but one written where a send is refused could never go out (docs/decisions.md,
+      // "Reply send rules").
+      checkRecordOpen(head, "email");
+      checkThreadWritable(head, "email");
 
       if (await isSuppressed(tx, input.organizationId, head.email)) throw new ConflictError("This address is on the suppression list. A reply cannot be written.");
       if (await isDoNotContact(tx, input.organizationId, head.personId)) throw new ConflictError("This person is marked do not contact. A reply cannot be written.");
 
-      const inFlight = await tx
-        .select({ id: drafts.id })
+      // The send rule's unit: the conversation. A reply in flight on another conversation of the record leaves this one free.
+      const [inFlight] = await tx
+        .select({ id: drafts.id, status: drafts.status })
         .from(drafts)
-        .where(and(eq(drafts.recordId, head.recordId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
+        .where(and(eq(drafts.conversationId, input.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
-      if (inFlight.length > 0) throw new ConflictError("A reply is being sent for this thread.");
+      checkNoneInFlight(inFlight, null, "email");
 
       const [created] = await tx
         .insert(drafts)
@@ -268,7 +279,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       if (row.revision !== input.expectedRevision) throw new ConflictError("The draft changed since you opened it. Reload and review it again.");
       // A LinkedIn message has no subject and no CC, and the platform caps its length.
       const linkedin = row.channel === "linkedin";
-      if (linkedin && input.bodyText.length > MAX_LINKEDIN_REPLY) throw new ValidationError(`The reply is longer than ${MAX_LINKEDIN_REPLY} characters.`);
+      if (linkedin) checkReplyText(input.bodyText, "linkedin");
       const [updated] = await tx
         .update(drafts)
         .set({ editedBodyText: input.bodyText, subject: linkedin ? null : (input.subject ?? row.subject), ...(input.cc && !linkedin ? { cc: input.cc } : {}), revision: row.revision + 1, error: null })

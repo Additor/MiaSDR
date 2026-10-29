@@ -10,23 +10,22 @@ import { toAttempt, type Snapshot, mailboxFor, sendContextFor, settleSent, block
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
+import { checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
-const IN_FLIGHT_SENDING = "A reply is already being sent in this thread.";
 const STARTED_FIRST = "Another reply in this thread started sending first. Reload the thread.";
-const NOT_EMAIL = "Replies can only be sent on email conversations.";
-const statusRefusal = (status: string) => `This draft is ${status.replace(/_/g, " ")} and cannot be sent.`;
 
 /** Sending an approved draft and settling the outcome: claim, blockers, sent, failed, uncertain, and the reconcile pass. */
 export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | "markSent" | "markFailed" | "markUncertain" | "listUnsettled" | "resolveUncertain"> = {
   async beginSend(input): Promise<BeginSend> {
     const result = await db.transaction(async (tx) => {
       // Lock order as for LinkedIn: the conversation, then the draft. Ingest takes the conversation's key share with its
-      // message insert before it retires drafts, so a draft locked first would deadlock with it.
+      // message insert before it retires drafts, so a draft locked first would deadlock with it. The checks run in the
+      // order of docs/decisions.md, "Reply send rules".
       // `seen.id` is the stored id. The request may spell the uuid in uppercase, so the comparisons below use this one.
       const [seen] = await tx.select({ id: drafts.id, conversationId: drafts.conversationId, channel: drafts.channel }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
       if (!seen) throw new NotFoundError("Draft not found");
       // Refused before the lock, so the email path never locks a LinkedIn conversation.
-      if (seen.channel !== "email") throw new ConflictError(NOT_EMAIL);
+      if (seen.channel !== "email") throw replyRefusal("wrong_channel", "email");
       await tx.select({ id: conversations.id }).from(conversations).where(eq(conversations.id, seen.conversationId)).for("update");
 
       const [existing] = await tx.select().from(sendAttempts).where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
@@ -35,30 +34,14 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
         return { kind: "replay" as const, attempt: toAttempt(existing) };
       }
 
-      // One reply of a thread in flight at a time, the rule `drafts_one_in_flight_uq` holds. Checked before the draft lock,
-      // so an approval never waits on a draft whose send is settling.
-      const [inFlight] = await tx
-        .select({ id: drafts.id, status: drafts.status })
-        .from(drafts)
-        .where(and(eq(drafts.conversationId, seen.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
-        .limit(1);
-      // The draft being approved is the one in flight: the status refusal names it.
-      if (inFlight?.id === seen.id) throw new ConflictError(statusRefusal(inFlight.status));
-      if (inFlight) throw new ConflictError(inFlight.status === "sending" ? IN_FLIGHT_SENDING : "An earlier reply in this thread has an unconfirmed outcome. Check the mailbox and mark what you found first.");
-
-      const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId))).for("update");
-      if (!draft) throw new NotFoundError("Draft not found");
-      if (draft.conversationId !== seen.conversationId) throw new ConflictError("The draft changed since you reviewed it. Reload and approve the current text.");
-      if (draft.status !== "awaiting_review") throw new ConflictError(statusRefusal(draft.status));
-      if (draft.revision !== input.expectedRevision) throw new ConflictError("The draft changed since you reviewed it. Reload and approve the current text.");
-
       const [ctx] = await tx
         .select({
           recordId: records.id,
           personId: records.personId,
+          workflowState: records.workflowState,
           version: records.contextVersion,
           email: people.email,
-          conversationStatus: conversations.status,
+          status: conversations.status,
           channel: conversations.channel,
           accountRef: conversations.accountRef,
           threadId: conversations.providerThreadId,
@@ -66,16 +49,32 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
         .from(conversations)
         .innerJoin(records, eq(records.id, conversations.recordId))
         .innerJoin(people, eq(people.id, records.personId))
-        .where(and(eq(conversations.id, draft.conversationId), publicConversation));
-      if (!ctx || ctx.channel !== "email") throw new ConflictError(NOT_EMAIL);
-      if (ctx.version !== draft.expectedContextVersion) {
-        await tx.update(drafts).set({ status: "stale", error: "A newer message arrived after this draft was written." }).where(and(eq(drafts.id, draft.id), eq(drafts.status, "awaiting_review")));
-        return { kind: "stale" as const };
+        .where(and(eq(conversations.id, seen.conversationId), publicConversation));
+      // A private conversation answers as a foreign id does.
+      if (!ctx) throw new NotFoundError("Draft not found");
+      checkRecordOpen(ctx, "email");
+      checkThreadWritable(ctx, "email");
+
+      // One reply of a thread in flight at a time, the rule `drafts_one_in_flight_uq` holds. Checked before the draft lock,
+      // so an approval never waits on a draft whose send is settling.
+      const [inFlight] = await tx
+        .select({ id: drafts.id, status: drafts.status })
+        .from(drafts)
+        .where(and(eq(drafts.conversationId, seen.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
+        .limit(1);
+      checkNoneInFlight(inFlight, seen.id, "email");
+
+      const [draft] = await tx.select().from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId))).for("update");
+      if (!draft) throw new NotFoundError("Draft not found");
+      if (draft.conversationId !== seen.conversationId) throw replyRefusal("draft_changed", "email");
+      const outdated = checkDraftCurrent(draft, { revision: input.expectedRevision, contextVersion: ctx.version }, "email");
+      if (outdated) {
+        await tx.update(drafts).set({ status: "stale", error: outdated }).where(and(eq(drafts.id, draft.id), eq(drafts.status, "awaiting_review")));
+        return { kind: "stale" as const, reason: outdated };
       }
-      if (ctx.conversationStatus !== "active") throw new ConflictError("This conversation is closed.");
-      if (!ctx.email) throw new ConflictError("This person has no email address.");
-      const body = (draft.editedBodyText ?? draft.aiBodyText ?? "").trim();
-      if (body === "") throw new ConflictError("The draft is empty.");
+      const body = checkReplyText(draft.editedBodyText ?? draft.aiBodyText ?? "", "email");
+      // checkThreadWritable refused a conversation without one.
+      const to = ctx.email as string;
 
       // Message ids of everything already in the thread, oldest first, for In-Reply-To and References.
       const stored = await tx
@@ -104,7 +103,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       const rfcMessageId = `<${input.messageIdToken}@${domain}>`;
       const snapshot: Snapshot = {
         rfcMessageId,
-        to: ctx.email,
+        to,
         cc: draft.cc,
         subject: draft.subject?.trim() || "Re: your message",
         bodyText: body,
@@ -139,7 +138,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       throw error;
     });
 
-    if (result.kind === "stale") throw new ConflictError("A newer message arrived after this draft was written. Review the thread and regenerate the draft.");
+    if (result.kind === "stale") throw staleDraftRefusal(result.reason, "email");
     if (result.kind === "replay") return result;
     return { kind: "started", send: await sendContextFor(result.attempt) };
   },
