@@ -40,8 +40,8 @@ interface NavItem {
 
 /** Sidebar rows. A row is a place you go to; what a page shows about itself (views, filters) stays in the page. */
 const NAV: NavItem[] = [
-  { href: "/inbox", label: "Inbox", group: "Work", icon: InboxIcon },
   { href: "/actions", label: "Actions", group: "Work", icon: ListChecksIcon },
+  { href: "/inbox", label: "Inbox", group: "Work", icon: InboxIcon },
   { href: "/leads", label: "Leads", group: "Work", icon: UsersIcon },
   { href: "/campaigns", label: "Campaigns", group: "Work", icon: SendIcon },
   { href: "/crm/pipeline", label: "Pipeline", group: "CRM", icon: KanbanIcon, also: ["/crm/deals"] },
@@ -55,10 +55,13 @@ const NAV: NavItem[] = [
 /** Daily work first, then the deals that came out of it, then the data behind it, then configuration. */
 const GROUPS: NavGroup[] = ["Work", "CRM", "Insight", "Admin"];
 
-/** Counts that wait for a person, by row. */
-const COUNTED: Record<string, { unit: string; testId: string }> = {
-  "/inbox": { unit: "unread", testId: "inbox-unread" },
-  "/actions": { unit: "pending", testId: "actions-pending" },
+/**
+ * Counts beside a row. Actions holds the work that waits on a person, so its count is lavender and the rail marks it with
+ * a dot. Inbox unread is a plain muted number: the replies that need a person already count in Actions.
+ */
+const COUNTED: Record<string, { unit: string; testId: string; waiting: boolean }> = {
+  "/actions": { unit: "pending", testId: "actions-pending", waiting: true },
+  "/inbox": { unit: "unread", testId: "inbox-unread", waiting: false },
 };
 
 /** Rows are 32px on a desktop pointer and 44px in the phone sheet. */
@@ -66,6 +69,9 @@ const TOUCH = "max-md:h-11";
 
 /** A count that waits for a person: plain text in the brand hue, so it reads before the label does. */
 const BADGE = "min-w-0 justify-end px-0 font-semibold text-sidebar-count peer-hover/menu-button:text-sidebar-count peer-data-active/menu-button:text-sidebar-count";
+
+/** Any other count: plain muted text, tabular, at the label's weight. */
+const QUIET_BADGE = "min-w-0 justify-end px-0 font-normal text-muted-foreground tabular-nums";
 
 const SETUP_GUIDE = { href: "/onboarding", label: "Setup guide" } as const;
 
@@ -184,13 +190,13 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
           <span>{label}</span>
         </SidebarMenuButton>
         {counted && count > 0 && (
-          <SidebarMenuBadge data-testid={counted.testId} className={BADGE}>
+          <SidebarMenuBadge data-testid={counted.testId} className={counted.waiting ? BADGE : QUIET_BADGE}>
             {count > 99 ? "99+" : count}
             <span className="sr-only"> {counted.unit}</span>
           </SidebarMenuBadge>
         )}
         {/* The icon rail has no room for a count, so a dot says something waits and the tooltip says how many. */}
-        {counted && count > 0 && (
+        {counted?.waiting && count > 0 && (
           <span aria-hidden data-testid={`${href.slice(1)}-dot`} className="pointer-events-none absolute top-1 right-1 hidden size-2 rounded-full bg-sidebar-primary ring-1 ring-sidebar-primary-foreground/60 group-data-[collapsible=icon]:block" />
         )}
       </SidebarMenuItem>
@@ -283,7 +289,7 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
                     <RocketIcon />
                     <span>{SETUP_GUIDE.label}</span>
                   </SidebarMenuButton>
-                  {/* Open setup waits on an admin, so it takes the same lavender count and rail dot as Inbox and Actions. */}
+                  {/* Open setup waits on an admin, so it takes the same lavender count and rail dot as Actions. */}
                   {setup && (
                     <SidebarMenuBadge data-testid="setup-progress" className={BADGE}>
                       {setup.done} of {setup.total}

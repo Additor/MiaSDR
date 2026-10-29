@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { GoogleButton } from "../google-button";
+import { HOME } from "@/app/_lib/home";
 
 export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }: { invitedEmail?: string; invitationId?: string; googleEnabled?: boolean }) {
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function SignUpForm({ invitedEmail, invitationId, googleEnabled = false }
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Creating…" : "Create account"}
           </Button>
-          {googleEnabled && <GoogleButton callbackURL={invitationId ? `/accept-invitation/${invitationId}` : "/leads"} />}
+          {googleEnabled && <GoogleButton callbackURL={invitationId ? `/accept-invitation/${invitationId}` : HOME} />}
           <p className="text-sm text-muted-foreground">
             Have an account? <Link href="/sign-in" className="underline">Sign in</Link>
           </p>

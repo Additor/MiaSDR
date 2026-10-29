@@ -22,7 +22,7 @@ test.describe("organizations", () => {
     await waitForHydrated(name);
     await name.fill(secondName);
     await page.getByRole("button", { name: "Create organization" }).click();
-    await expect(page).toHaveURL(/\/leads$/);
+    await expect(page).toHaveURL(/\/actions$/);
 
     // The new organization is active and has none of the first one's leads.
     await expect(page.getByTestId("org-switcher")).toContainText(secondName);

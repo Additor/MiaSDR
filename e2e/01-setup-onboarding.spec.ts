@@ -31,7 +31,7 @@ test.describe("first-run setup and onboarding", () => {
 
     await page.getByRole("button", { name: "Hide setup guide" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Hide setup guide" }).click();
-    await expect(page).toHaveURL(/\/leads$/);
+    await expect(page).toHaveURL(/\/actions$/);
   });
 
   test("a second setup is refused once an admin exists", async ({ page, watch }) => {

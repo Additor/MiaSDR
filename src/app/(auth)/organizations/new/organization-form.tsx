@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HOME } from "@/app/_lib/home";
 
 export function OrganizationForm() {
   const router = useRouter();
@@ -29,7 +30,7 @@ export function OrganizationForm() {
       setError(body?.error ?? "Could not create the organization. Try again.");
       return;
     }
-    router.push("/leads");
+    router.push(HOME);
     router.refresh();
   }
 
@@ -55,7 +56,7 @@ export function OrganizationForm() {
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Creating…" : "Create organization"}
           </Button>
-          <Link href="/leads" className="text-sm text-muted-foreground underline">
+          <Link href={HOME} className="text-sm text-muted-foreground underline">
             Cancel
           </Link>
         </CardFooter>

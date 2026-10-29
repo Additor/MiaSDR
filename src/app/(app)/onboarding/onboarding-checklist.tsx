@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type { OnboardingView } from "@/contexts/tenancy/application/onboarding";
 import type { StepStatus } from "@/contexts/tenancy/domain/onboarding";
+import { HOME } from "@/app/_lib/home";
 
 const ICON: Record<StepStatus, React.ReactNode> = {
   done: <CheckCircle2Icon aria-hidden className="size-5 text-primary" />,
@@ -28,7 +29,7 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
   async function hide() {
     const response = await fetch("/api/onboarding/dismiss", { method: "POST" });
     if (!response.ok) throw new Error("Could not hide the setup guide. Try again.");
-    router.push("/leads");
+    router.push(HOME);
     router.refresh();
   }
 
