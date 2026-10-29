@@ -217,13 +217,7 @@ export async function readLeadDetailActivity(organizationId: string, personId: s
       .where(and(eq(conversations.organizationId, organizationId), eq(records.personId, personId), publicConversation))
       .orderBy(desc(conversations.updatedAt))
       .limit(1),
-    db
-      .select({ id: sends.id })
-      .from(sends)
-      .innerJoin(campaignEnrollments, and(eq(campaignEnrollments.id, sends.enrollmentId), eq(campaignEnrollments.organizationId, sends.organizationId)))
-      .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
-      .where(and(ofPerson, sql`not ${visibleCampaign(viewer)}`))
-      .limit(1),
+    campaignSends().where(and(ofPerson, sql`not ${visibleCampaign(viewer)}`)).limit(1),
   ]);
 
   return {
