@@ -54,6 +54,8 @@ async function process(deps: LinkedInInboundDeps, claim: LedgerEvent, organizati
 }
 
 export interface ReplayReport {
+  /** Rows whose worker stopped during the last attempt, failed so an admin can replay them. */
+  stopped: number;
   claimed: number;
   done: number;
   failed: number;
@@ -62,7 +64,7 @@ export interface ReplayReport {
 /** Re-runs failed deliveries and ones whose worker died mid-way. Handling is idempotent. */
 /** `organizationId` limits the run to one tenant's rows (an admin's replay button). The job passes none and serves everyone. */
 export async function replayLinkedInEvents(deps: LinkedInInboundDeps, limit = 50, organizationId?: string): Promise<ReplayReport> {
-  const report: ReplayReport = { claimed: 0, done: 0, failed: 0 };
+  const report: ReplayReport = { stopped: await deps.store.failStoppedAtCap(deps.clock.now(), organizationId), claimed: 0, done: 0, failed: 0 };
   for (const row of await deps.store.claimReplayable(deps.clock.now(), limit, 300, organizationId)) {
     report.claimed += 1;
     if (!row.organizationId) {

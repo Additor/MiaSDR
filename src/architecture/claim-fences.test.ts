@@ -9,8 +9,8 @@ import { claimMethodsWithoutFence, fencedTableWritesWithoutFence, leaseWritesWit
  * `heldBy` (src/platform/db/claim.ts). Three scans hold the rule:
  * (a) a statement that writes a lease status (`running`, `drafting`, `processing`) also writes `claim_token`;
  * (b) a store method that takes a claim (a type with `claimToken`, or one that holds such a type) calls `heldBy`;
- * (c) an update or delete of a fenced table (`ai_jobs`, `inbound_events`) sits in a method that calls `heldBy`, or in
- *     FENCE_EXEMPT with the reason it may write without a claim.
+ * (c) a statement that updates, deletes or upserts a fenced table (`ai_jobs`, `inbound_events`) calls `heldBy`, or
+ *     its method sits in FENCE_EXEMPT with the reason it may write without a claim.
  */
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -27,7 +27,7 @@ const NOT_YET_FENCED: Record<string, string> = {
   "src/platform/jobs/slots.ts#claimSlot": "Scheduler job runs (`job_runs`).",
 };
 
-/** Methods that update or delete a fenced table without holding a claim, and why that is right. */
+/** Methods that update, delete or upsert a fenced table without holding a claim, and why that is right. */
 const FENCE_EXEMPT: Record<string, string> = {
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-worker-store.ts#claim":
     "Takes the claim: it writes the fresh token. Its first statement is the expiry sweep, which fails jobs whose lease ran out on the last attempt and clears their token.",
@@ -42,13 +42,23 @@ const FENCE_EXEMPT: Record<string, string> = {
   "src/contexts/conversations/infrastructure/person-purge.ts#purgePersonHandling":
     "Contact purge: it deletes the person's jobs and leaves a running job with a live lease alone.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-inbound-store.ts#claimReplayable":
-    "Takes the claim: it writes the fresh token. Its first statement is the expiry sweep, which fails rows whose lease ran out on the last attempt and clears their token.",
+    "Takes the claim: it writes the fresh token.",
+  "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-inbound-store.ts#failStoppedAtCap":
+    "Expiry sweep: it fails rows whose lease ran out on the last attempt, which no worker holds any more, and clears their token.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-operations-store.ts#requeueFailedWebhooks":
     "Admin requeue. It moves failed rows only, which no claim holds, and clears the token.",
   "src/contexts/outreach/email/infrastructure/drizzle-inbound-store.ts#recordMessageGone":
     "Gmail rows of the same table. The mailbox sync writes them under its own mailbox lease; they never take a claim.",
   "src/contexts/outreach/email/infrastructure/drizzle-inbound-store.ts#clearMessageFailure":
     "Gmail rows of the same table. The mailbox sync writes them under its own mailbox lease; they never take a claim.",
+  "src/contexts/outreach/email/infrastructure/drizzle-inbound-store.ts#recordMessageFailure":
+    "Gmail rows of the same table: the upsert that counts a failed message. The mailbox sync writes them under its own mailbox lease; they never take a claim.",
+  "src/contexts/outreach/infrastructure/drizzle-inbound-review-store.ts#requestRetry":
+    "Admin retry from the inbound review. It moves dead and dismissed rows only, which no claim holds, and clears the token.",
+  "src/contexts/outreach/infrastructure/drizzle-inbound-review-store.ts#dismiss":
+    "Admin dismiss from the inbound review. It moves dead, retrying and queued rows only (status failed or pending), which no claim holds.",
+  "src/platform/jobs/prune.ts#deleteBatches":
+    "Retention prune. Its table comes from `sql.raw`, and it deletes finished rows only: done, skipped and failed inbound events, succeeded AI jobs.",
 };
 
 describe("claim fences", () => {
@@ -137,5 +147,29 @@ describe("claim fence scans catch a missing fence", () => {
        };`,
     );
     expect(fencedTableWritesWithoutFence([store])).toEqual(["fixture/store.ts#purge", "fixture/store.ts#stop"]);
+  });
+
+  it("(c) sees aliases, quoted, qualified and interpolated table names, upserts and a dynamic table, statement by statement", () => {
+    const store = sourceOf(
+      "fixture/store.ts",
+      `const p = inboundEvents;
+       export const store = {
+         async alias(id: string) { await db.update(p).set({ attempts: 0 }).where(eq(p.id, id)); },
+         async quoted() { await db.execute(sql\`update "ai_jobs" j set attempts = 0\`); },
+         async qualified() { await db.execute(sql\`delete from public.inbound_events where id = \${id}\`); },
+         async interpolated() { await db.execute(sql\`update \${aiJobs} set attempts = 0\`); },
+         async rawUpsert() { await db.execute(sql\`insert into ai_jobs (id) values (\${id}) on conflict (id) do update set attempts = 0\`); },
+         async drizzleUpsert() { await db.insert(aiJobs).values({ id }).onConflictDoUpdate({ target: aiJobs.id, set: { attempts: 0 } }); },
+         async dynamic(table: string) { await db.execute(sql\`delete from \${sql.raw(table)} where id = \${id}\`); },
+         async insertOnly() { await db.insert(aiJobs).values({ id }).onConflictDoNothing(); },
+         async mixed(job: Job) {
+           await db.update(aiJobs).set({ status: "succeeded" }).where(heldBy("ai_jobs", job));
+           await db.update(aiJobs).set({ attempts: 0 }).where(eq(aiJobs.id, job.id));
+         },
+       };`,
+    );
+    expect(fencedTableWritesWithoutFence([store])).toEqual(
+      ["alias", "drizzleUpsert", "dynamic", "interpolated", "mixed", "qualified", "quoted", "rawUpsert"].map((m) => `fixture/store.ts#${m}`),
+    );
   });
 });

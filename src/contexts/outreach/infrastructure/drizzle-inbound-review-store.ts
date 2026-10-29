@@ -135,6 +135,7 @@ export const drizzleInboundReviewStore: InboundReviewStore = {
         attempts: 0,
         nextAttemptAt: now,
         leaseUntil: null,
+        claimToken: null,
         processedAt: null,
         log: sql`${p.log} || ${entry("retry", "Retry requested.", now)}::jsonb`,
       })

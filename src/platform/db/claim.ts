@@ -19,7 +19,9 @@ export const NEW_CLAIM_TOKEN = sql`gen_random_uuid()`;
  *
  * The counter comparison covers a deploy that runs old and new workers side by side: an old worker claims without
  * writing a token, so the row keeps the previous claim's token, and only the raised counter tells the two claims apart.
- * Drop it once no worker of the old version runs.
+ * That holds while nothing resets the counter between the two claims. The case left open needs old code to reset it to
+ * 0 (its requeue, which does not clear the token) and old code to claim again with the same attempt number before the
+ * late settle lands, which is rare. Drop the comparison once no worker of the old version runs.
  */
 export function heldBy(alias: string, claim: Claim, counter = "attempts"): SQL {
   const table = sql.identifier(alias);

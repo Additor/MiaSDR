@@ -219,26 +219,68 @@ export function claimMethodsWithoutFence(sources: Source[]): { unfenced: string[
   return { unfenced: unfenced.sort(), checked: [...checked].sort() };
 }
 
-/** Rule (c): methods that update or delete a fenced table and never reach `heldBy`. */
+/** Top-level names that stand for a fenced table: the Drizzle tables and constants set to them (`const p = inboundEvents`). */
+function fencedTableNames(source: Source): Set<string> {
+  const names = new Set(FENCED_TABLES.map((t) => t.drizzle));
+  for (const statement of source.ast.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const d of statement.declarationList.declarations) {
+      if (ts.isIdentifier(d.name) && d.initializer && ts.isIdentifier(d.initializer) && names.has(d.initializer.text)) names.add(d.name.text);
+    }
+  }
+  return names;
+}
+
+/** The Drizzle table an `.insert(t)` call chain under `node` writes, when the chain ends in `.onConflictDoUpdate`. */
+function upsertTable(node: ts.CallExpression): string | null {
+  if (!ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== "onConflictDoUpdate") return null;
+  for (let n: ts.Expression = node.expression.expression; ; ) {
+    if (ts.isCallExpression(n)) {
+      if (ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "insert" && n.arguments.length === 1) return n.arguments[0].getText();
+      n = n.expression;
+    } else if (ts.isPropertyAccessExpression(n)) n = n.expression;
+    else return null;
+  }
+}
+
+/** The statement around `node`, or the expression body of an arrow function. */
+function statementOf(node: ts.Node): ts.Node {
+  for (let n: ts.Node = node; n.parent; n = n.parent) {
+    if (ts.isExpressionStatement(n) || ts.isVariableStatement(n) || ts.isReturnStatement(n)) return n;
+    if (ts.isArrowFunction(n.parent) && n.parent.body === n) return n;
+  }
+  return node;
+}
+
+/**
+ * Rule (c): statements that update, delete or upsert a fenced table without reaching `heldBy`, named by their method.
+ * The check is per statement: the fence must sit in the statement that writes (`.where(heldClaim(job))`), so a fence
+ * built in a variable before the statement does not count. Raw SQL is read for `update`, `delete from` and
+ * `insert ... on conflict do update` on the table name (also quoted, schema-qualified or interpolated), and a raw
+ * write whose table comes from `sql.raw(...)` counts too, because the scan cannot tell which table it is.
+ */
 export function fencedTableWritesWithoutFence(sources: Source[]): string[] {
   const found = new Set<string>();
-  const drizzle = new RegExp(`^(${FENCED_TABLES.map((t) => t.drizzle).join("|")})$`);
-  const raw = new RegExp(`\\b(update|delete from)\\s+(${FENCED_TABLES.map((t) => t.raw).join("|")})\\b`, "i");
+  const tables = FENCED_TABLES.map((t) => t.raw).join("|");
   for (const source of sources) {
     const helpers = fenceHelpers(source);
+    const names = fencedTableNames(source);
+    const nameList = [...names].join("|");
+    const target = `(?:(?:public\\.)?(?:"(?:${tables})"|(?:${tables})\\b)|\\$\\{(?:${nameList})\\}|\\$\\{sql\\.raw\\()`;
+    const rawWrite = new RegExp(`\\b(?:update|delete\\s+from)\\s+${target}`, "i");
+    const rawUpsert = new RegExp(`\\binsert\\s+into\\s+${target}[\\s\\S]*\\bon\\s+conflict\\b[\\s\\S]*\\bdo\\s+update\\b`, "i");
     walk(source.ast, (node) => {
-      const writes =
-        (ts.isCallExpression(node) &&
-          ts.isPropertyAccessExpression(node.expression) &&
-          ["update", "delete"].includes(node.expression.name.text) &&
-          node.arguments.length === 1 &&
-          drizzle.test(node.arguments[0].getText())) ||
-        (isSqlTemplate(node) && raw.test(node.template.getText()));
-      if (!writes) return;
-      // The method that holds the statement, or the top-level helper it sits in.
-      let owner: ts.Node | undefined = node.parent;
-      while (owner && !nameOf(owner)) owner = owner.parent;
-      if (!owner || !callsAny(owner, helpers)) found.add(ownerOf(source, node));
+      let writes = false;
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const method = node.expression.name.text;
+        if (["update", "delete"].includes(method) && node.arguments.length === 1 && names.has(node.arguments[0].getText())) writes = true;
+        const upserted = upsertTable(node);
+        if (upserted && names.has(upserted)) writes = true;
+      } else if (isSqlTemplate(node) && !(node.parent && ts.isTemplateSpan(node.parent))) {
+        const text = node.template.getText();
+        writes = rawWrite.test(text) || rawUpsert.test(text);
+      }
+      if (writes && !callsAny(statementOf(node), helpers)) found.add(ownerOf(source, node));
     });
   }
   return [...found].sort();

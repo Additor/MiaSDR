@@ -9,6 +9,7 @@ describeDb("LinkedIn inbound claim fence", () => {
   const sql = testSql({ max: 4 });
   let store: ReturnType<typeof import("../drizzle-linkedin-inbound-store").createDrizzleLinkedInInboundStore>;
   let operations: typeof import("../drizzle-linkedin-operations-store").drizzleLinkedInOperationsStore;
+  let inbound: typeof import("../../application/linkedin-inbound");
   const orgs: TestOrg[] = [];
   const LEASE_SECONDS = 300;
   const start = new Date("2026-10-14T10:00:00Z");
@@ -18,6 +19,7 @@ describeDb("LinkedIn inbound claim fence", () => {
   beforeAll(async () => {
     store = (await import("../drizzle-linkedin-inbound-store")).createDrizzleLinkedInInboundStore((await import("@/composition/inbox-filing")).inboxFiling);
     operations = (await import("../drizzle-linkedin-operations-store")).drizzleLinkedInOperationsStore;
+    inbound = await import("../../application/linkedin-inbound");
   });
 
   afterAll(async () => {
@@ -70,12 +72,24 @@ describeDb("LinkedIn inbound claim fence", () => {
   it("a processing row whose lease ran out on the last attempt turns failed, so an admin can replay it", async () => {
     const { org, claim } = await delivery();
     await sql`update inbound_events set attempts = ${MAX_EVENT_ATTEMPTS} where id = ${claim.id}`;
-    expect(await store.claimReplayable(at(1), 10, LEASE_SECONDS, org)).toEqual([]);
+    // The replay tick fails it first and reports it; no claim takes it.
+    const report = await inbound.replayLinkedInEvents({ store, clock: { now: () => at(1) }, parse: () => null }, 10, org);
+    expect(report).toEqual({ stopped: 1, claimed: 0, done: 0, failed: 0 });
     const dead = await row(claim.id);
     expect(dead).toMatchObject({ status: "failed", attempts: MAX_EVENT_ATTEMPTS, claim_token: null, lease_until: null });
     expect(dead.log.at(-1)).toMatchObject({ level: "error", message: "The worker stopped during the last attempt." });
     expect(await operations.webhookBacklog(org)).toMatchObject({ dead: 1 });
     expect(await operations.requeueFailedWebhooks(org, at(1), 10)).toBe(1);
     expect(await store.claimReplayable(at(2), 10, LEASE_SECONDS, org)).toMatchObject([{ id: claim.id, attempts: 1 }]);
+  });
+
+  it("a processing row at the cap whose lease still runs stays with its worker", async () => {
+    const { org, claim } = await delivery();
+    await sql`update inbound_events set attempts = ${MAX_EVENT_ATTEMPTS} where id = ${claim.id}`;
+    // One minute into the five minute lease.
+    const now = new Date(at(0).getTime() + 60_000);
+    expect(await store.failStoppedAtCap(now, org)).toBe(0);
+    expect(await store.claimReplayable(now, 10, LEASE_SECONDS, org)).toEqual([]);
+    expect(await row(claim.id)).toMatchObject({ status: "processing", attempts: MAX_EVENT_ATTEMPTS, claim_token: claim.claimToken });
   });
 });

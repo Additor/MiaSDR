@@ -160,18 +160,24 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
   async fail(job, error, now, failureKind = "transient") {
     const lastError = error.slice(0, 1000) || "failed";
     await db.transaction(async (tx) => {
+      // A classification failure writes a pick and an event of the record, so it locks the record before the job row,
+      // the order `finishClassification` takes them in. The other order deadlocks with a late worker's classification.
+      const [record] =
+        job.kind === "classification"
+          ? await tx
+              .select({ id: records.id, personId: records.personId, version: records.contextVersion })
+              .from(messages)
+              .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+              .innerJoin(records, eq(records.id, conversations.recordId))
+              .where(and(eq(messages.id, job.entityId), eq(messages.organizationId, job.organizationId), publicConversation))
+              .for("update", { of: records })
+          : [];
       const moved = await tx
         .update(aiJobs)
         .set({ ...endOrRerun({ status: "failed", at: now }), lastError, payload: sql`case when ${RERUN} then ${aiJobs.payload} - 'rerun' else ${failureMarks(failureKind)} end`, ...UNLOCK })
         .where(heldClaim(job))
         .returning({ id: aiJobs.id, status: aiJobs.status });
       if (moved.length === 0 || moved[0].status !== "failed" || job.kind !== "classification") return;
-      const [record] = await tx
-        .select({ id: records.id, personId: records.personId, version: records.contextVersion })
-        .from(messages)
-        .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-        .innerJoin(records, eq(records.id, conversations.recordId))
-        .where(and(eq(messages.id, job.entityId), eq(messages.organizationId, job.organizationId), publicConversation));
       if (!record) return;
       // Recorded so the panel can say why, and so the sweep does not queue the same message again.
       await tx

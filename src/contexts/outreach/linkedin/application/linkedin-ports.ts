@@ -262,9 +262,11 @@ export interface LinkedInInboundStore {
   finish(claim: LedgerEvent, status: "done" | "skipped", note: string | null, now: Date): Promise<void>;
   fail(claim: LedgerEvent, error: string, now: Date, retryAt: Date | null): Promise<void>;
   /**
-   * Failed rows due for retry, and `processing` rows whose lease expired. Claims them (attempt + 1, lease, fresh token)
-   * atomically. A `processing` row whose lease expired on its last attempt turns `failed` first, where an admin can replay it.
+   * `processing` rows whose lease expired on their last attempt: no claim takes them again, so they turn `failed`, where
+   * the backlog counts them as dead and an admin can replay them. Returns how many.
    */
+  failStoppedAtCap(now: Date, organizationId?: string): Promise<number>;
+  /** Failed rows due for retry, and `processing` rows whose lease expired. Claims them (attempt + 1, lease, fresh token) atomically. */
   claimReplayable(now: Date, limit: number, leaseSeconds: number, organizationId?: string): Promise<LedgerEvent[]>;
   /** Applies one event. Safe to run twice for the same event. */
   apply(organizationId: string, event: LinkedInInboundEvent, now: Date): Promise<{ result: InboundResult; note: string | null }>;

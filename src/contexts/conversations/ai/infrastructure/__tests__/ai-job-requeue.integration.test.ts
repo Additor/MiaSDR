@@ -347,6 +347,30 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect((await sql`select group_key, reply_type_id, workflow_state from records where id = ${ctx.recordId}`)[0]).toEqual(before);
     });
 
+    it("a reclaimed job's failure takes the record before the job row, as a late worker's classification does", async () => {
+      const { id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      const b = await claimAt(id, "classification", at(2), "worker-b");
+      const [{ record_id: recordId }] = await sql`
+        select c.record_id from messages m join conversations c on c.id = m.conversation_id where m.id = ${a.entityId}`;
+      let failing: Promise<void> | undefined;
+      // Worker a's classification, step by step: the record lock, then the job row. Worker b fails in between.
+      await sql.begin(async (tx) => {
+        await tx`select id from records where id = ${recordId} for update`;
+        failing = store.fail(b, "permanent failure", at(2), "permanent");
+        for (let i = 0; i < 100; i++) {
+          const [{ n }] = await tx`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()`;
+          if (n > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        // The failure waits on the record, so the job row is free: before the fix it held the row and this deadlocked.
+        await tx`set local lock_timeout = '2s'`;
+        await tx`select id from ai_jobs where id = ${id} for update`;
+      });
+      await failing;
+      expect(await row(id)).toMatchObject({ status: "failed", payload: expect.objectContaining({ failureKind: "permanent" }) });
+    });
+
     it("mid-deploy: an old worker claims without a token, and the new worker's late settle with its stale token matches nothing", async () => {
       const { id } = await classificationJob();
       const a = await claimAt(id, "classification", at(1), "worker-a");

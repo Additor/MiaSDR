@@ -106,17 +106,21 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
         .where(heldEvent(claim));
     },
 
-    async claimReplayable(now, limit, leaseSeconds, organizationId) {
+    async failStoppedAtCap(now, organizationId) {
       const nowIso = now.toISOString();
-      const scope = organizationId ? sql`and organization_id = ${organizationId}` : sql``;
-      // A worker that stopped during the last attempt leaves a row no claim takes again: it fails here, and the
-      // webhook backlog counts it as dead until an admin replays it.
-      await db.execute(sql`
+      const rows = await db.execute(sql`
         update inbound_events
            set status = 'failed', lease_until = null, claim_token = null, next_attempt_at = ${nowIso}::timestamptz,
                log = log || ${JSON.stringify([{ ts: nowIso, level: "error", message: "The worker stopped during the last attempt." }])}::jsonb
          where provider = 'unipile' and status = 'processing' and lease_until < ${nowIso}::timestamptz and attempts >= ${MAX_EVENT_ATTEMPTS}
-           ${scope}`);
+           ${organizationId ? sql`and organization_id = ${organizationId}` : sql``}
+        returning id`);
+      return (rows as unknown as unknown[]).length;
+    },
+
+    async claimReplayable(now, limit, leaseSeconds, organizationId) {
+      const nowIso = now.toISOString();
+      const scope = organizationId ? sql`and organization_id = ${organizationId}` : sql``;
       const rows = await db.execute(sql`
         update inbound_events ev
            set status = 'processing', attempts = ev.attempts + 1, lease_until = ${new Date(now.getTime() + leaseSeconds * 1000).toISOString()}::timestamptz,
