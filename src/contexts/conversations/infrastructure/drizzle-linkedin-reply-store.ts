@@ -251,7 +251,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       return { kind: "started" as const, attempt };
     }).catch((error: unknown) => {
       // A writer that skipped the conversation lock put another draft of the chat in flight first.
-      if (violatedConstraint(error, "23505") === "drafts_one_in_flight_uq") throw new ConflictError(IN_FLIGHT_SENDING);
+      if (violatedConstraint(error, "23505") === "drafts_one_in_flight_uq") throw new ConflictError("Another reply in this chat started sending first. Reload the chat.");
       throw error;
     });
     if (result.kind === "stale") throw new ConflictError("A newer message arrived after this draft was written. Review the thread and regenerate the draft.");

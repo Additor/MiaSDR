@@ -283,7 +283,7 @@ describeDb("LinkedIn conversation replies", () => {
       await waitForLockWaiters(sql, 1, 10_000, "%update%drafts%");
     });
     await expect(reply).rejects.toBeInstanceOf(ConflictError);
-    await expect(reply).rejects.toThrow("A reply is already being sent in this chat.");
+    await expect(reply).rejects.toThrow("Another reply in this chat started sending first. Reload the chat.");
     expect(f.fake.messages).toHaveLength(0);
     expect(await count("send_attempts", f.org)).toBe(0);
   });

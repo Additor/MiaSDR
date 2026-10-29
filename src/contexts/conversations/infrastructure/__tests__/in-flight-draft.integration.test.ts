@@ -5,6 +5,8 @@ import type { ReplyMailer } from "../../application/reply-ports";
 import { useReplyKit, type ReplyFixture, type ReplyModules } from "./replies-test-kit";
 
 const SENDING = "A reply is already being sent in this thread.";
+/** The index's refusal. The check gives SENDING or UNCERTAIN, so a test that expects those proves the check ran. */
+const STARTED_FIRST = "Another reply in this thread started sending first. Reload the thread.";
 const UNCERTAIN = "An earlier reply in this thread has an unconfirmed outcome. Check the mailbox and mark what you found first.";
 
 describeDb("one in-flight email reply per conversation", () => {
@@ -87,7 +89,8 @@ describeDb("one in-flight email reply per conversation", () => {
       return { approvals: started };
     });
 
-    // The winner waits in the mailer with its draft `sending`; the loser sees it after the lock and refuses.
+    // The winner waits in the mailer with its draft `sending`; the loser's check sees it after the lock and refuses, before
+    // its own update could meet the index.
     const loser = await Promise.race(approvals.map((p) => p.then(() => null, (e: unknown) => e)));
     expect(loser).toBeInstanceOf(ConflictError);
     expect((loser as Error).message).toBe(SENDING);
@@ -115,7 +118,7 @@ describeDb("one in-flight email reply per conversation", () => {
       // The approval waits on the conversation behind the ingest, holding nothing.
       const approval = mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: sendKey() });
       approval.catch(() => undefined);
-      await waitForLockWaiters(sql, 2, 10_000);
+      await waitForLockWaiters(sql, 1, 10_000, "%conversations%for update%");
       return { ingest, approval };
     });
 
@@ -148,9 +151,67 @@ describeDb("one in-flight email reply per conversation", () => {
       await waitForLockWaiters(sql, 1, 10_000, "%update%drafts%");
     });
     await expect(approval).rejects.toBeInstanceOf(ConflictError);
-    await expect(approval).rejects.toThrow(SENDING);
+    await expect(approval).rejects.toThrow(STARTED_FIRST);
     expect(seen.calls).toBe(0);
     expect(await count("send_attempts", f.org)).toBe(0);
     expect(await one("select status from drafts where id = $1", [third])).toMatchObject({ status: "awaiting_review" });
+  });
+
+  it("names the draft's own status when the draft being approved is the one in flight", async () => {
+    const f = await fixture();
+    const { draft } = await withDraft(f);
+    mailbox.behavior = () => "timeout-after-accept";
+    await mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: sendKey() });
+    mailbox.behavior = () => "ok";
+    await expect(mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: sendKey() })).rejects.toThrow("This draft is delivery uncertain and cannot be sent.");
+    await sql`update drafts set status = 'sending' where id = ${draft.id}`;
+    await expect(mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: sendKey() })).rejects.toThrow("This draft is sending and cannot be sent.");
+  });
+
+  it("refuses a LinkedIn draft on the email path without waiting on its conversation", async () => {
+    const f = await fixture();
+    const { r } = await withDraft(f);
+    const [chat] = await sql`
+      insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id)
+      select organization_id, record_id, 'linkedin', ${crypto.randomUUID()}, ${"chat-" + f.tag} from conversations where id = ${r.conversationId} returning id`;
+    const [linkedin] = await sql`
+      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, ai_body_text, status)
+      select organization_id, record_id, ${chat.id}, 1, 'linkedin', 'Tuesday works.', 'awaiting_review' from conversations where id = ${chat.id}
+      returning id`;
+    // With the chat locked elsewhere, the refusal still comes at once: the email path takes no lock on it.
+    await sql.begin(async (tx) => {
+      await tx`select id from conversations where id = ${chat.id} for update`;
+      await expect(mgmt.approveAndSendDraft(f.replyDeps, f.actor, linkedin.id, { revision: 1, idempotencyKey: sendKey() })).rejects.toThrow("Replies can only be sent on email conversations.");
+    });
+  });
+
+  it("resolves an uncertain send while the reconciler settles it, without a deadlock", async () => {
+    const f = await fixture();
+    const { draft } = await withDraft(f);
+    mailbox.behavior = () => "timeout-after-accept";
+    await mgmt.approveAndSendDraft(f.replyDeps, f.actor, draft.id, { revision: draft.revision, idempotencyKey: sendKey() });
+    mailbox.behavior = () => "ok";
+    f.state.offsetMs = 11 * 60_000;
+    const [attempt] = await sql`select id from send_attempts where draft_id = ${draft.id}`;
+
+    const { reconcile, resolve } = await sql.begin(async (tx) => {
+      // Both queue on the attempt: the reconciler's settle first, then the person's answer. A resolve that locked the
+      // draft before the attempt would hold what the settle needs next.
+      await tx`select id from send_attempts where id = ${attempt.id} for update`;
+      const reconcile = mgmt.reconcileReplies(f.replyDeps);
+      reconcile.catch(() => undefined);
+      await waitForLockWaiters(sql, 1, 10_000, "%send_attempts%for update%");
+      const resolve = mgmt.resolveUncertainSend(f.replyDeps, f.actor, draft.id, { outcome: "delivered", note: "Found it in Sent" });
+      resolve.catch(() => undefined);
+      await waitForLockWaiters(sql, 2, 10_000, "%send_attempts%for update%");
+      return { reconcile, resolve };
+    });
+
+    expect((await reconcile).found).toBeGreaterThanOrEqual(1);
+    // The settle committed first, so the person's answer finds nothing left to resolve.
+    await expect(resolve).rejects.toThrow("Only a send with an uncertain outcome can be resolved.");
+    expect(await one("select status from send_attempts where id = $1", [attempt.id])).toMatchObject({ status: "reconciled" });
+    expect(await one("select status from drafts where id = $1", [draft.id])).toMatchObject({ status: "sent" });
+    expect(await count("messages", f.org, "direction = 'outbound'")).toBe(1);
   });
 });
