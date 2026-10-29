@@ -6,7 +6,9 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { canRemoveEnrollment } from "@/contexts/outreach/domain/enrollment-status";
 import { BulkBar } from "@/components/shell/bulk-bar";
 import { countOf, formatCount } from "@/shared/format-number";
@@ -139,25 +141,21 @@ interface RestoreResult {
 function RestoreRowButton({ id, name }: { id: string; name: string | null }) {
   const router = useRouter();
   const { channel, campaignId } = useSelection();
-  const [busy, setBusy] = useState(false);
+  const { busy: running, run } = useApiAction<"restore">();
+  const busy = running !== null;
 
-  async function restore() {
-    setBusy(true);
-    const result = await callApi<RestoreResult>(`${base(channel, campaignId)}/restore`, "POST", { ids: [id] });
-    setBusy(false);
-    if (!result.ok || !result.data) {
-      toast.error(result.error ?? "Could not restore the lead.");
-      return;
-    }
-    const refusal = result.data.refused[0];
-    if (refusal) toast.error(`${name ?? "This lead"} stays removed. ${refusal.message}${refusal.detail ? ` Other campaign: ${refusal.detail}.` : ""}`);
-    else if (result.data.restored > 0) toast.success("Lead restored to this campaign.");
-    else toast.error("Lead not found in this campaign.");
-    router.refresh();
-  }
+  const restore = () =>
+    run("restore", async () => {
+      const result = await runApiAction(callApi<RestoreResult>(`${base(channel, campaignId)}/restore`, "POST", { ids: [id] }), { refresh: () => router.refresh() });
+      if (!result.ok) return void toast.error(result.error);
+      const refusal = result.data.refused[0];
+      if (refusal) toast.error(`${name ?? "This lead"} stays removed. ${refusal.message}${refusal.detail ? ` Other campaign: ${refusal.detail}.` : ""}`);
+      else if (result.data.restored > 0) toast.success("Lead restored to this campaign.");
+      else toast.error("Lead not found in this campaign.");
+    });
 
   return (
-    <Button size="sm" variant="ghost" onClick={restore} disabled={busy} aria-label={`Restore ${name ?? "lead"} to this campaign`}>
+    <Button size="sm" variant="ghost" onClick={() => void restore()} disabled={busy} aria-label={`Restore ${name ?? "lead"} to this campaign`}>
       {busy ? "Restoring…" : "Restore"}
     </Button>
   );
@@ -172,10 +170,7 @@ export function RemoveRowButton({ id, name, status }: { id: string; name: string
   if (!canRemoveEnrollment(status)) return null;
 
   async function confirm() {
-    const result = await callApi(`${base(channel, campaignId)}/${id}`, "DELETE");
-    if (!result.ok) throw new Error(result.error ?? "Could not remove the lead.");
-    toast.success("Lead removed from this campaign.");
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`${base(channel, campaignId)}/${id}`, "DELETE"), { refresh: () => router.refresh() }), "Lead removed from this campaign.");
   }
 
   return (

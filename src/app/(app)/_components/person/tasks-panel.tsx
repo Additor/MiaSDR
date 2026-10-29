@@ -12,7 +12,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { memberItems } from "../member-select";
 
 export interface TaskItem {
@@ -65,46 +67,40 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
   const [dueDay, setDueDay] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUserId);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { busy, run } = useApiAction<"add">();
+  const pending = busy !== null;
+  const refresh = () => router.refresh();
   // The target stays set while the dialog closes, so its title does not change mid-animation.
   const [deleting, setDeleting] = useState<TaskItem | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(!compact);
   const nameRef = useRef<HTMLInputElement>(null);
 
-  async function add(event: React.FormEvent) {
+  function add(event: React.FormEvent) {
     event.preventDefault();
     if (name.trim() === "") return setError("Name the task first.");
-    setPending(true);
-    setError(null);
-    const result = await callApi(createUrl, "POST", {
-      name,
-      dueDay: dueDay || null,
-      timeZone: zone ?? "UTC",
-      assigneeId: assigneeId || null,
+    void run("add", async () => {
+      setError(null);
+      const body = { name, dueDay: dueDay || null, timeZone: zone ?? "UTC", assigneeId: assigneeId || null };
+      const result = await runApiAction(callApi(createUrl, "POST", body), { refresh });
+      if (!result.ok) return setError(result.error);
+      setName("");
+      setDueDay("");
+      toast.success("Task added.");
+      // The form stays for the next task.
+      nameRef.current?.focus();
     });
-    setPending(false);
-    if (!result.ok) return setError(result.error);
-    setName("");
-    setDueDay("");
-    toast.success("Task added.");
-    router.refresh();
-    // The form stays for the next task.
-    nameRef.current?.focus();
   }
 
+  /** A row's checkbox or assignee. It sends the value the row shows, so a second click repeats the same change. */
   async function patch(id: string, body: Record<string, unknown>) {
     setError(null);
-    const result = await callApi(`/api/tasks/${id}`, "PATCH", body);
-    if (!result.ok) return setError(result.error);
-    router.refresh();
+    const result = await runApiAction(callApi(`/api/tasks/${id}`, "PATCH", body), { refresh });
+    if (!result.ok) setError(result.error);
   }
 
   async function remove(id: string) {
-    const result = await callApi(`/api/tasks/${id}`, "DELETE");
-    if (!result.ok) throw new Error(result.error ?? "Could not delete the task. Try again.");
-    toast.success("Task deleted.");
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`/api/tasks/${id}`, "DELETE"), { refresh }), "Task deleted.");
   }
 
   function closeForm() {

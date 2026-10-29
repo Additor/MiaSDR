@@ -8,7 +8,9 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { ResponsibleUseNote } from "@/components/shell/responsible-use-note";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { START_BLOCKERS_ID } from "./start-blockers";
 import { countOf } from "@/shared/format-number";
 
@@ -62,14 +64,15 @@ export function CampaignControls({
   inProgress?: number;
 }) {
   const router = useRouter();
-  const [pending, setPending] = useState(false);
+  const { busy, run } = useApiAction<"direct">();
+  const pending = busy !== null;
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const api = channel === "linkedin" ? "/api/linkedin" : "/api";
 
   /** Throws the server's message (and its first detail) so a dialog can show it and a button handler can toast it. */
   async function send(url: string, method: "POST" | "DELETE", body: unknown, fallback: string) {
-    const result = await callApi(url, method, body);
-    if (!result.ok) throw new Error([result.error ?? fallback, result.issues[0]?.message].filter(Boolean).join(" "));
+    const result = await runApiAction(callApi(url, method, body));
+    if (!result.ok) throw new Error([result.error || fallback, result.issues[0]?.message].filter(Boolean).join(" "));
     return result.data;
   }
 
@@ -96,16 +99,7 @@ export function CampaignControls({
   }
 
   /** A button with no dialog: the failure goes to a toast. */
-  async function direct(action: () => Promise<void>) {
-    setPending(true);
-    try {
-      await action();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong.");
-    } finally {
-      setPending(false);
-    }
-  }
+  const direct = (action: () => Promise<void>) => run("direct", () => action().catch((error: unknown) => void toast.error(error instanceof Error ? error.message : "Something went wrong.")));
 
   const blocked = status === "draft" && blockers.length > 0;
   const controls: Control[] = (ACTIONS[status] ?? []).map((action) => {

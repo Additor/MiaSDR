@@ -16,7 +16,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { describeSearch, isActiveStatus, searchActions, searchNotice, searchStatusLabel, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
 import { humanizeToken } from "@/shared/humanize";
 import { cn } from "@/components/ui/utils";
@@ -53,6 +55,8 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
   const router = useRouter();
   const timeZone = useOrgTimeZone();
   const [cancelling, setCancelling] = useState<Search | null>(null);
+  const { run } = useApiAction();
+  const refresh = () => router.refresh();
   const capacityReturns = capacityReturnText(capacity.nextReturnAt, timeZone);
 
   // Pages arrive in the background, so the list refreshes itself while a search works.
@@ -63,17 +67,16 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
       setCancelling(search);
       return;
     }
-    const result = await callApi(`/api/linkedin/searches/${search.id}/action`, "POST", { action });
-    if (!result.ok) toast.error(result.error ?? "Could not change the search. Try again.");
-    router.refresh();
+    await run(search.id, async () => {
+      const result = await runApiAction(callApi(`/api/linkedin/searches/${search.id}/action`, "POST", { action }), { refresh });
+      if (!result.ok) toast.error(result.error);
+    });
   }
 
   async function cancelSearch() {
     if (!cancelling) return;
-    const result = await callApi(`/api/linkedin/searches/${cancelling.id}/action`, "POST", { action: "cancel" });
     // ConfirmDialog shows the thrown message and keeps the dialog open.
-    if (!result.ok) throw new Error(result.error ?? "Could not cancel the search. Try again.");
-    router.refresh();
+    orThrow(await runApiAction(callApi(`/api/linkedin/searches/${cancelling.id}/action`, "POST", { action: "cancel" }), { refresh }));
   }
 
   return (

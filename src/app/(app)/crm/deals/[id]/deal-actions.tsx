@@ -3,7 +3,6 @@
 import { EllipsisIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { DatePicker } from "@/components/shell/date-picker";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,9 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES, formatMinor } from "@/contexts/deals/domain/money";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow } from "@/app/_lib/use-api-action";
 import { MoveDealStageButton } from "../../_components/move-deal-stage-dialog";
 import { NO_OWNER, type DealMemberOption, type DealStageList } from "../../_components/deal-form";
 
@@ -153,18 +154,14 @@ function EditDealDialog({
   const ready = values.title.trim() !== "" && Object.keys(body).length > 0;
 
   async function save(): Promise<boolean> {
-    const result = await callApi(`/api/deals/${deal.id}`, "PATCH", { expectedVersion: version, ...body });
-    if (!result.ok) {
-      if (result.code === "stale_version" && typeof result.details?.version === "number") {
-        setVersion(result.details.version);
-        setStale(true);
-        router.refresh();
-        return false;
-      }
-      throw new Error(result.error ?? "Could not save the deal. Try again.");
+    const result = await runApiAction(callApi(`/api/deals/${deal.id}`, "PATCH", { expectedVersion: version, ...body }), { refresh: () => router.refresh() });
+    // A stale save keeps the dialog open on the latest version, with the edits still in the fields.
+    if (!result.ok && result.code === "stale_version" && typeof result.details?.version === "number") {
+      setVersion(result.details.version);
+      setStale(true);
+      return false;
     }
-    toast.success("Deal saved.");
-    router.refresh();
+    toastOrThrow(result, "Deal saved.");
     return true;
   }
 
@@ -241,15 +238,16 @@ function DeleteDealDialog({ deal, returnPath, open, onOpenChange }: { deal: Deal
   const router = useRouter();
 
   async function remove() {
-    const result = await callApi(`/api/deals/${deal.id}?expectedVersion=${deal.version}`, "DELETE");
-    if (!result.ok) {
-      if (result.code === "stale_version") {
-        router.refresh();
-        throw new Error("Someone changed this deal since you opened it. The page now shows the latest version. Check it, then delete it again.");
-      }
-      throw new Error(result.error ?? "Could not delete the deal. Try again.");
-    }
-    toast.success(`Deleted ${deal.title}.`);
+    // A success leaves the page, so only a stale version reloads it.
+    const result = await runApiAction(callApi(`/api/deals/${deal.id}?expectedVersion=${deal.version}`, "DELETE"), {
+      onConflict: {
+        stale_version: () => {
+          router.refresh();
+          return "Someone changed this deal since you opened it. The page now shows the latest version. Check it, then delete it again.";
+        },
+      },
+    });
+    toastOrThrow(result, `Deleted ${deal.title}.`);
     // Replace, so Back does not land on a deal that no longer exists.
     router.replace(returnPath);
   }

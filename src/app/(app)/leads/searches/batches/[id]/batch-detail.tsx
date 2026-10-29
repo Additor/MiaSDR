@@ -18,7 +18,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { batchRowActions, hasActiveSearch, searchNotice, searchStatusLabel, type BatchRowActionId, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
 import { runNowConfirmation, searchableLeft } from "@/contexts/outreach/linkedin/domain/linkedin-search-capacity";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
 import { humanizeToken } from "@/shared/humanize";
 import { cn } from "@/components/ui/utils";
@@ -65,6 +67,8 @@ interface Reply {
 
 export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; capacity: CapacityCardData; canManage: boolean }) {
   const router = useRouter();
+  // A row action from the menu runs once; a second pick while it runs sends nothing.
+  const { run: rowAction } = useApiAction();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const timeZone = useOrgTimeZone();
   const [danger, setDanger] = useState<Danger | null>(null);
@@ -103,18 +107,18 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     router.refresh();
   }
 
-  async function runOne(id: string) {
-    const result = await callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", { ids: [id] });
-    if (!result.ok) toast.error(result.error ?? "Could not run the search. Try again.");
-    else toast.success(result.data?.queued ? "The search is ready to run. Its account still reads within its daily limit." : "That search is not paused or queued.");
-    router.refresh();
-  }
+  const runOne = (id: string) =>
+    rowAction(id, async () => {
+      const result = await runApiAction(callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", { ids: [id] }), { refresh: () => router.refresh() });
+      if (!result.ok) toast.error(result.error);
+      else toast.success(result.data.queued ? "The search is ready to run. Its account still reads within its daily limit." : "That search is not paused or queued.");
+    });
 
-  async function act(id: string, action: SearchAction) {
-    const result = await callApi(`/api/linkedin/searches/${id}/action`, "POST", { action });
-    if (!result.ok) toast.error(result.error ?? "Could not change the search. Try again.");
-    router.refresh();
-  }
+  const act = (id: string, action: SearchAction) =>
+    rowAction(id, async () => {
+      const result = await runApiAction(callApi(`/api/linkedin/searches/${id}/action`, "POST", { action }), { refresh: () => router.refresh() });
+      if (!result.ok) toast.error(result.error);
+    });
 
   function onRowAction(item: Item, action: BatchRowActionId) {
     if (action === "run") void runOne(item.id);
