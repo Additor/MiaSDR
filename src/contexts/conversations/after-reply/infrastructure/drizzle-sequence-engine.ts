@@ -9,7 +9,7 @@ import type { FollowUpsRule } from "../../domain/reply-type";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
 import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
-import { advanceRunTx, ts } from "./sequence-run-tx";
+import { advanceRunTx, StepMovedError, ts } from "./sequence-run-tx";
 import { endRunTx, lockRecordTx, recordEvent, stepMayBecome, type Tx } from "./sequence-stop";
 import { sequenceRuns, sequences, sequenceSteps, sequenceStepRuns } from "./sequences-schema";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
@@ -218,8 +218,10 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
       .where(and(eq(sequenceStepRuns.status, "awaiting_review"), inArray(drafts.status, ["sent", "discarded", "stale", "failed"])))
       .orderBy(asc(sequenceStepRuns.updatedAt))
       .limit(limit);
-    let changed = 0;
+    let settled = 0;
+    let deferred = 0;
     for (const row of rows) {
+      // A next step that moved under the advance rolls the settle back; the row waits for the next tick.
       const did = await db.transaction(async (tx) => {
         const ofRun = and(eq(sequenceRuns.id, row.runId), eq(sequenceRuns.organizationId, row.organizationId));
         // Lock order is record, run, step run, as in `endRunTx`. A stop that committed first leaves nothing to settle.
@@ -274,10 +276,14 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           await tx.update(sequenceStepRuns).set({ status: "failed", lastError: sr.draftError ?? "The draft failed.", updatedAt: now }).where(and(ofStep, stepMayBecome("failed")));
         }
         return true;
+      }).catch((error: unknown) => {
+        if (!(error instanceof StepMovedError)) throw error;
+        deferred += 1;
+        return false;
       });
-      if (did) changed += 1;
+      if (did) settled += 1;
     }
-    return changed;
+    return { settled, deferred };
   },
 
   async claimDue(workerId, now, leaseMs) {

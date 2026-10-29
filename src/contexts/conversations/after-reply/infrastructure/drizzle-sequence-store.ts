@@ -7,7 +7,7 @@ import { afterReplyFlowName, afterReplyModeOf } from "../domain/after-reply";
 import { ACTIVE_RUN_STATUSES, AFTER_REPLY_OFF, assertPublishable, OPEN_STEP_STATUSES, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
 import { owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
-import { advanceRunTx, asDate, asDateOrNull, ts } from "./sequence-run-tx";
+import { advanceRunTx, asDate, asDateOrNull, StepMovedError, ts } from "./sequence-run-tx";
 import { endRunTx, recordEvent, runMayBecome, stepMayBecome, type Tx } from "./sequence-stop";
 import { sequenceRuns, sequences, sequenceSteps, sequenceStepRuns, sequenceVersions } from "./sequences-schema";
 import { publicConversationSql } from "@/platform/db/conversation-visibility";
@@ -594,7 +594,7 @@ export const drizzleRunStore: RunStore = {
   },
 
   async skipStep(event, now) {
-    return db.transaction(async (tx) => {
+    const skip = db.transaction(async (tx) => {
       await recordLock(tx, event.organizationId, event.recordId);
       const [run] = await tx
         .select({ id: sequenceRuns.id })
@@ -623,6 +623,10 @@ export const drizzleRunStore: RunStore = {
       const advanced = await advanceRunTx(tx, { organizationId: event.organizationId, runId: run.id, afterPosition: current.position, from: now, now });
       await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.step_skipped", actorUserId: event.actorUserId, from: { position: current.position }, to: advanced.next ? { position: advanced.next } : { completed: true } });
       return { skipped: current.position, next: advanced.next };
+    });
+    return skip.catch((error: unknown) => {
+      if (error instanceof StepMovedError) throw new ConflictError("The follow-up sequence changed while you skipped. Reload the page and try again.", { code: "sequence_changed" });
+      throw error;
     });
   },
 };

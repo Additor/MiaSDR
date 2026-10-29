@@ -230,8 +230,11 @@ export interface SequenceEngineStore {
   /** Active and paused runs after `afterRunId`, with the facts that decide interruption. */
   interruptCandidates(afterRunId: string | null, limit: number): Promise<InterruptCandidate[]>;
   interrupt(organizationId: string, runId: string, reason: InterruptReason, now: Date): Promise<void>;
-  /** Moves step runs whose draft was sent, discarded or superseded. Returns how many changed. */
-  settleDrafts(now: Date, limit: number): Promise<number>;
+  /**
+   * Moves step runs whose draft was sent, discarded or superseded. `settled` counts the rows it moved; `deferred` the
+   * rows it left for the next tick because the step after them changed while the run advanced.
+   */
+  settleDrafts(now: Date, limit: number): Promise<{ settled: number; deferred: number }>;
   /** Takes one due step of an active run, or null. Steps drafting past the lease are taken over. */
   claimDue(workerId: string, now: Date, leaseMs: number): Promise<ClaimedStep | null>;
   /** Back to scheduled without using the attempt. Changes nothing once the claim no longer holds the step. */

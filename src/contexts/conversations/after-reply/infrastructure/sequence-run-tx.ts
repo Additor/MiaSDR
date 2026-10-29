@@ -19,6 +19,17 @@ export const asDateOrNull = (value: Date | string | null): Date | null => (value
 const SCHEDULABLE: readonly StepRunStatus[] = ["scheduled", "failed"];
 
 /**
+ * The step `advanceRunTx` picked moved off `scheduled` and `failed` before its write. The caller's transaction must roll
+ * back, the settled step's own write included, so the run never stays on a step it handled with nothing scheduled next.
+ */
+export class StepMovedError extends Error {
+  constructor(readonly runId: string) {
+    super("The next follow-up step changed while the run advanced.");
+    this.name = "StepMovedError";
+  }
+}
+
+/**
  * After a step is sent or skipped: the next open step comes due its own delay after `from`, or the run completes.
  * The caller holds the run's lock.
  */
@@ -45,10 +56,9 @@ export async function advanceRunTx(tx: Tx, input: { organizationId: string; runI
     .set({ status: "scheduled", dueAt: due, updatedAt: input.now })
     .where(and(eq(sequenceStepRuns.id, next.id), inArray(sequenceStepRuns.status, [...SCHEDULABLE])))
     .returning({ id: sequenceStepRuns.id });
-  // A writer moved the step off `scheduled` and `failed` after the pick: the run keeps its position and the record its
-  // next action, so they never point at a step this call did not schedule. The caller sees `next: null`, as for a run
-  // that ended first.
-  if (moved.length === 0) return { next: null };
+  // A writer moved the step off `scheduled` and `failed` after the pick. Neither completing the run nor moving its
+  // position would be true, so the throw rolls back the caller's whole transaction (`StepMovedError`).
+  if (moved.length === 0) throw new StepMovedError(input.runId);
   await tx.update(sequenceRuns).set({ currentStepPosition: next.position, updatedAt: input.now }).where(eq(sequenceRuns.id, input.runId));
   await tx.execute(sql`update records set next_action_at = ${ts(due)} where id = ${run.recordId} and organization_id = ${input.organizationId} and workflow_state in ('waiting', 'idle')`);
   return { next: next.position };
