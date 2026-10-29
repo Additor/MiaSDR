@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { runApiAction } from "@/app/_lib/api-action";
+import { toastOrThrow } from "@/app/_lib/use-api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { AiModelCard } from "./ai-model-card";
 import { EnrichmentProviders } from "./enrichment-providers";
@@ -89,10 +91,7 @@ export function IntegrationsPanel({ accounts, providers, aiOn }: { accounts: Acc
   }
 
   async function remove(account: Account) {
-    const result = await callApi(`/api/integrations/${account.id}`, "DELETE");
-    if (!result.ok) throw new Error(result.error ?? "Removal failed.");
-    toast.success("Integration removed.");
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`/api/integrations/${account.id}`, "DELETE"), { refresh: () => router.refresh() }), "Integration removed.");
   }
 
   return (

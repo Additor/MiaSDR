@@ -7,7 +7,9 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { FieldLabel } from "@/components/ui/field";
 import { Time, useOrgTimeZone } from "@/components/shell/time";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
 import { formatDateTime } from "@/shared/format-time";
 import { isRequeueableSkip } from "@/contexts/conversations/ai/domain/ai-job-requeue";
@@ -64,19 +66,21 @@ function nextStep(job: FailedAiJob, timeZone: string): string {
 export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total: number; rows: FailedAiJob[] }; skipped: { total: number; rows: SkippedAiJob[] }; tickFailures: TickFailure[] }) {
   const router = useRouter();
   const timeZone = useOrgTimeZone();
-  const [busy, setBusy] = useState<string | null>(null);
+  const { busy, run } = useApiAction();
   const [windowIndex, setWindowIndex] = useState(1);
   const [confirmingBulk, setConfirmingBulk] = useState(false);
 
-  async function requeue(key: string, url: string, body?: unknown) {
-    setBusy(key);
-    const result = await callApi<{ requeued: number; more: boolean }>(url, "POST", body);
-    setBusy(null);
-    if (!result.ok || !result.data) toast.error(result.error ?? "Requeue failed.");
-    else if (result.data.requeued === 0) toast.info("Nothing to requeue. The job is not failed or skipped any more.");
-    else toast.success(`Requeued ${countOf(result.data.requeued, "job")}.${result.data.more ? " More remain. Run it again." : ""}`);
+  /** Requeues and says how many went back. A refusal throws: the bulk dialog stays open with it, a row's button shows it as a toast. */
+  async function requeue(url: string, body?: unknown) {
+    const result = await runApiAction(callApi<{ requeued: number; more: boolean }>(url, "POST", body));
+    // A refusal can follow a job that changed state since the page loaded, so the list reloads either way.
     router.refresh();
+    const data = orThrow(result);
+    if (data.requeued === 0) toast.info("Nothing to requeue. The job is not failed or skipped any more.");
+    else toast.success(`Requeued ${countOf(data.requeued, "job")}.${data.more ? " More remain. Run it again." : ""}`);
   }
+
+  const requeueRow = (id: string) => run(id, () => requeue(`/api/jobs/ai/${id}/requeue`).catch((e: unknown) => void toast.error(e instanceof Error ? e.message : "Requeue failed.")));
 
   return (
     <>
@@ -114,7 +118,8 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
               title={`Requeue jobs that failed in ${WINDOWS[windowIndex].label}?`}
               description="Each reply type and draft job that failed in that time gets fresh attempts and runs again on the next ticks, which calls the AI provider again. The requeue is recorded with your name."
               confirmLabel="Requeue failed jobs"
-              onConfirm={() => void requeue("since", "/api/jobs/ai/requeue", { since: new Date(Date.now() - WINDOWS[windowIndex].ms).toISOString() })}
+              pendingLabel="Requeueing…"
+              onConfirm={() => run("since", () => requeue("/api/jobs/ai/requeue", { since: new Date(Date.now() - WINDOWS[windowIndex].ms).toISOString() }))}
             />
           </div>
         )}
@@ -128,7 +133,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                     failed <Time value={job.failedAt} /> after {countOf(job.attempts, "attempt")}
                     {job.manualRequeues > 0 ? `, requeued by hand ${countOf(job.manualRequeues, "time")}` : ""}
                   </span>
-                  <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => requeue(job.id, `/api/jobs/ai/${job.id}/requeue`)}>
+                  <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void requeueRow(job.id)}>
                     {busy === job.id ? "Requeueing…" : "Requeue"}
                   </Button>
                 </div>
@@ -157,7 +162,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                   <span className="font-medium">{KIND_LABEL[job.kind]}</span>
                   <span className="text-muted-foreground">skipped <Time value={job.skippedAt} />, reason {job.reason}</span>
                   {isRequeueableSkip({ status: "skipped", skipReason: job.reason }) && (
-                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => requeue(job.id, `/api/jobs/ai/${job.id}/requeue`)}>
+                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void requeueRow(job.id)}>
                       {busy === job.id ? "Requeueing…" : "Requeue"}
                     </Button>
                   )}

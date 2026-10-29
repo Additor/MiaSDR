@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { runApiAction } from "@/app/_lib/api-action";
+import { toastOrThrow } from "@/app/_lib/use-api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
@@ -67,10 +69,7 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
   }
 
   async function remove(row: Row) {
-    const result = await callApi(`/api/suppressions/${row.id}`, "DELETE");
-    if (!result.ok) throw new Error(result.error ?? "Could not remove the address.");
-    toast.success(`${row.email} removed.`);
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`/api/suppressions/${row.id}`, "DELETE"), { refresh: () => router.refresh() }), `${row.email} removed.`);
   }
 
   return (

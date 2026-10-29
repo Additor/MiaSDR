@@ -12,7 +12,9 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { splitTagInput } from "@/contexts/conversations/ai/domain/knowledge";
 import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
@@ -58,6 +60,8 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
   const [dialog, setDialog] = useState<{ editing: Doc | null } | null>(null);
   const [draft, setDraft] = useState<Draft>(draftOf(null));
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const { busy, run } = useApiAction();
+  const refresh = () => router.refresh();
 
   function open(doc: Doc | null) {
     setDraft(draftOf(doc));
@@ -67,19 +71,17 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
   async function save() {
     const editing = dialog?.editing ?? null;
     const body = { title: draft.title, kind: draft.kind, content: draft.content, alwaysInclude: draft.always, tags: splitTagInput(draft.tags) };
-    const result = editing ? await callApi(`/api/knowledge/${editing.id}`, "PATCH", body) : await callApi("/api/knowledge", "POST", body);
-    if (!result.ok) throw new Error(result.error ?? "Could not save the document.");
+    orThrow(await runApiAction(editing ? callApi(`/api/knowledge/${editing.id}`, "PATCH", body) : callApi("/api/knowledge", "POST", body), { refresh }));
     toast.success(editing ? `${draft.title} saved.` : `${draft.title} added.`);
-    router.refresh();
   }
 
-  async function toggle(doc: Doc) {
-    setToggleError(null);
-    const result = await callApi(`/api/knowledge/${doc.id}`, "PATCH", { active: !doc.active });
-    if (!result.ok) return setToggleError(result.error);
-    toast.success(doc.active ? `${doc.title} archived.` : `${doc.title} restored.`);
-    router.refresh();
-  }
+  const toggle = (doc: Doc) =>
+    run(doc.id, async () => {
+      setToggleError(null);
+      const result = await runApiAction(callApi(`/api/knowledge/${doc.id}`, "PATCH", { active: !doc.active }), { refresh });
+      if (!result.ok) return setToggleError(result.error);
+      toast.success(doc.active ? `${doc.title} archived.` : `${doc.title} restored.`);
+    });
 
   const editing = dialog?.editing ?? null;
   return (
@@ -126,8 +128,8 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
                     <Button size="sm" variant="ghost" onClick={() => open(doc)} aria-label={`Edit ${doc.title}`}>
                       Edit
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => void toggle(doc)}>
-                      {doc.active ? "Archive" : "Restore"}
+                    <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void toggle(doc)}>
+                      {busy === doc.id ? (doc.active ? "Archiving…" : "Restoring…") : doc.active ? "Archive" : "Restore"}
                     </Button>
                   </div>
                 )}
