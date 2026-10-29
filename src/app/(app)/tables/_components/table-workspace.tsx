@@ -1,7 +1,7 @@
 "use client";
 
 import { DownloadIcon, RefreshCwIcon, PlayIcon, SendIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { BulkBar } from "@/components/shell/bulk-bar";
@@ -10,8 +10,9 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { ErrorState } from "@/components/shell/error-state";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { countOf, formatCount } from "@/shared/format-number";
-import { gridRequest, gridUrl } from "../_lib/data/client";
-import { DELETE_BATCH, deleteRowsReport, deleteRowsTitle } from "../_lib/edit/delete-rows";
+import { gridUrl } from "../_lib/data/client";
+import { CellRequestContext, RESOLVE_CONFLICT_FIRST } from "../_lib/data/cell-request";
+import { deleteRowsReport, deleteRowsTitle } from "../_lib/edit/delete-rows";
 import { emptySelection, pruneSelection, type RowSelection } from "../_lib/view/selection";
 import { useGridTable } from "../_lib/data/use-grid-table";
 import { cellRunBody, recalcSummary, retrySummary, runCellSource } from "../_lib/data/run-request";
@@ -54,11 +55,18 @@ type Open =
 
 interface Props {
   tableId: string;
+  /** Hands the workbook the open table's `settle`, for a request about this table sent from outside it (duplicate). */
+  onSettle?: (settle: (() => Promise<boolean>) | null) => void;
 }
 
 /** One table: toolbar, the grid and every dialog that acts on it. Remount with a new key per table. */
-export function TableWorkspace({ tableId }: Props) {
+export function TableWorkspace({ tableId, onSettle }: Props) {
   const grid = useGridTable(tableId);
+  const { settle } = grid;
+  useEffect(() => {
+    onSettle?.(settle);
+    return () => onSettle?.(null);
+  }, [onSettle, settle]);
   const [selection, setSelection] = useState<RowSelection>(emptySelection);
   const [dialog, setDialog] = useState<Open | null>(null);
   const [focusToken, setFocusToken] = useState(0);
@@ -106,23 +114,20 @@ export function TableWorkspace({ tableId }: Props) {
       case "run":
         return setDialog({ kind: "run", column });
       case "retry":
-        return void gridRequest<{ retried: number }>(gridUrl.sub(tableId, "run/retry"), "POST", { columnKey: column.key }).then((res) => {
+        return void grid.retryFailed(column.key).then((res) => {
           if (!res.ok) toast.error(res.error ?? "Could not retry.");
           else toast.success(retrySummary(res.data?.retried ?? 0));
-          void grid.reload();
         });
       case "recalculate":
-        return void gridRequest<{ changedCells: number }>(`${gridUrl.sub(tableId, "columns")}/${column.id}/recalculate`, "POST").then((res) => {
+        return void grid.recalculate(column.id).then((res) => {
           if (!res.ok) toast.error(res.error ?? "Could not recalculate.");
           else toast.success(recalcSummary(column.name, res.data?.changedCells ?? 0));
-          void grid.reload();
         });
       case "move": {
         const after = action.side === "left" ? (columns[index - 2]?.id ?? null) : (columns[index + 1]?.id ?? null);
         if (action.side === "right" && !columns[index + 1]) return;
-        return void gridRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { afterColumnId: after }).then((res) => {
+        return void grid.moveColumn(column.id, after).then((res) => {
           if (!res.ok) toast.error(res.error ?? "Could not move the column.");
-          void grid.reload();
         });
       }
       // Pins are part of the member's own view, so they save through the personal view layer.
@@ -146,28 +151,25 @@ export function TableWorkspace({ tableId }: Props) {
   async function runCell(column: GridColumn, rowId: string) {
     const source = runCellSource(column, columns);
     if (!source) return void toast.message(`${column.name} is not an AI or enrichment column, so there is nothing to run.`, { id: "grid-run-cell" });
-    const res = await gridRequest<{ queued: number }>(gridUrl.sub(tableId, "run"), "POST", cellRunBody(source.key, rowId));
+    const res = await grid.runCells(cellRunBody(source.key, rowId));
     if (!res.ok) return void toast.error(res.error ?? "Could not run the cell.", { id: "grid-run-cell" });
     if ((res.data?.queued ?? 0) === 0) toast.message(`Nothing to run. The inputs of ${source.name} are empty in this row.`, { id: "grid-run-cell" });
     else toast.success(`Running ${source.name} for this row.`, { id: "grid-run-cell" });
-    void grid.reload();
   }
 
   /** A "(copy)" next to the column. A data column brings its values; a formula column is recalculated by the server. */
   async function duplicateColumn(column: GridColumn) {
     const body = duplicateColumnRequest(column);
     if (!body) return void toast.message(`${column.name} is an AI or enrichment column, so it cannot be duplicated.`);
-    const res = await gridRequest(gridUrl.sub(tableId, "columns"), "POST", body);
+    const res = await grid.duplicateColumn(body);
     if (!res.ok) toast.error(res.error ?? "Could not duplicate the column.");
     else toast.success(`Duplicated "${column.name}".`);
-    void grid.reload();
   }
 
   /** Adds `count` blank rows, loads down to the end of the table and scrolls there. Returns an error message or null. */
   async function addRows(count: number): Promise<string | null> {
-    const res = await gridRequest(gridUrl.sub(tableId, "rows"), "POST", { count });
+    const res = await grid.addRows(count);
     if (!res.ok) return res.error ?? "Could not add the rows.";
-    await grid.reload();
     for (let i = 0, pages = pagesToReachEnd(grid.total + count, 200, 200); i < pages; i += 1) await grid.loadMore();
     toast.success(`Added ${countOf(count, "row")}.`);
     // The grid is the one scroll container with role "grid". Wait a frame so the new rows are laid out.
@@ -186,31 +188,15 @@ export function TableWorkspace({ tableId }: Props) {
 
   async function addRow() {
     setBusy(true);
-    const res = await gridRequest(gridUrl.sub(tableId, "rows"), "POST", { count: 1 });
+    const res = await grid.addRows(1);
     setBusy(false);
     if (!res.ok) return void toast.error(res.error ?? "Could not add a row. Try again.");
-    await grid.reload();
   }
 
   /** Deletes the selection in batches. Throws when the first batch fails so the dialog stays open with the message. */
   async function deleteSelected() {
     setBusy(true);
-    let deleted = 0;
-    let failedFrom = -1;
-    let error: string | null = null;
-    try {
-      for (let i = 0; i < selectedIds.length; i += DELETE_BATCH) {
-        const res = await gridRequest<{ deleted: number }>(gridUrl.sub(tableId, "rows"), "DELETE", { rowIds: selectedIds.slice(i, i + DELETE_BATCH) });
-        if (!res.ok) {
-          failedFrom = i;
-          error = res.error ?? "The server did not accept the request";
-          break;
-        }
-        deleted += res.data?.deleted ?? 0;
-      }
-    } finally {
-      setBusy(false);
-    }
+    const { deleted, failedFrom, error } = await grid.deleteRows(selectedIds).finally(() => setBusy(false));
     const report = deleteRowsReport(deleted, failedFrom < 0 ? 0 : selectedIds.length - failedFrom, error);
     if (report.kind === "failed") throw new Error(report.message);
     if (report.kind === "partial") {
@@ -221,13 +207,12 @@ export function TableWorkspace({ tableId }: Props) {
       toast.success(report.message);
       setSelection(emptySelection);
     }
-    await grid.reload();
   }
 
   async function selectAllMatching(): Promise<string[]> {
     const params = new URLSearchParams();
     if (grid.search.trim()) params.set("search", grid.search.trim());
-    const res = await gridRequest<{ rowIds: string[]; truncated: boolean }>(`${gridUrl.sub(tableId, "selection")}?${params}`, "GET");
+    const res = await grid.cellRequest<{ rowIds: string[]; truncated: boolean }>(`${gridUrl.sub(tableId, "selection")}?${params}`, "GET");
     if (!res.ok || !res.data) {
       toast.error(res.error ?? "Could not select the rows.");
       return [];
@@ -237,6 +222,8 @@ export function TableWorkspace({ tableId }: Props) {
   }
 
   async function exportCsv(onlySelected: boolean) {
+    // The file holds stored cells, so queued edits land first.
+    if (!(await grid.settle())) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
     setBusy(true);
     try {
       const response = await fetch(gridUrl.sub(tableId, "export"), {
@@ -273,7 +260,7 @@ export function TableWorkspace({ tableId }: Props) {
   }
 
   async function toggleAutoRun(next: boolean) {
-    const res = await gridRequest(gridUrl.table(tableId), "PATCH", { autoRun: next });
+    const res = await grid.cellRequest(gridUrl.table(tableId), "PATCH", { autoRun: next });
     if (!res.ok) return void toast.error(res.error ?? "Could not change auto-run.");
     grid.setTable({ autoRun: next });
   }
@@ -325,6 +312,7 @@ export function TableWorkspace({ tableId }: Props) {
   const detailsColumn = dialog?.kind === "details" ? columns.find((c) => c.key === dialog.columnKey) : undefined;
 
   return (
+    <CellRequestContext value={grid.cellRequest}>
     <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
       <TableToolbar
         tableId={tableId}
@@ -362,6 +350,7 @@ export function TableWorkspace({ tableId }: Props) {
           </>
         }
         onJobsChanged={() => void grid.reload()}
+        onRetryFailed={grid.retryFailed}
         onShowFailed={() => void grid.saveView(withRunFailures(view, columns.filter((c) => c.type === "enrichment" || c.type === "waterfall" || c.type === "ai").map((c) => c.key)))}
       />
 
@@ -460,10 +449,10 @@ export function TableWorkspace({ tableId }: Props) {
           }}
         />
       )}
-      {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} onStarted={() => void grid.reload()} />}
+      {dialog?.kind === "run" && <RunDialog tableId={tableId} column={dialog.column} selectedRowIds={selectedIds} initialFirstN={dialog.firstN} firstRun={!grid.jobs || grid.jobs.queued + grid.jobs.running + grid.jobs.waiting + grid.jobs.succeeded + grid.jobs.failed === 0} onClose={closeDialog} run={grid.runCells} />}
       {dialog?.kind === "push" && <PushCampaignDialog tableId={tableId} columns={columns} rowIds={dialog.rowIds} rowNumbers={rowNumbers} allRows={dialog.allRows} onClose={closeDialog} />}
       {dialog?.kind === "column" && (
-        <ColumnDialogs tableId={tableId} columns={columns} view={view} request={dialog.request} onClose={closeDialog} onChanged={grid.reload} saveView={grid.saveView} />
+        <ColumnDialogs tableId={tableId} columns={columns} view={view} request={dialog.request} onClose={closeDialog} onChanged={grid.reload} saveView={grid.saveView} dedupe={grid.dedupeColumn} />
       )}
       {dialog?.kind === "details" && detailsRow && detailsColumn && <CellDrawer
           tableId={tableId}
@@ -473,7 +462,7 @@ export function TableWorkspace({ tableId }: Props) {
           onRun={runCellSource(detailsColumn, columns) !== null ? () => void runCell(detailsColumn, detailsRow.id) : undefined}
           columns={columns}
           onAddOutput={async (runner, outputKey, outputName) => {
-            const res = await gridRequest<{ filled?: number }>(gridUrl.sub(tableId, "enrichments"), "PATCH", { columnId: runner.id, addOutput: outputKey });
+            const res = await grid.addOutput(runner.id, outputKey);
             if (!res.ok) return void toast.error(res.error ?? "Could not add the column.");
             const filled = res.data?.filled ?? 0;
             toast.success(
@@ -481,7 +470,6 @@ export function TableWorkspace({ tableId }: Props) {
                 ? `Added ${outputName} and filled ${countOf(filled, "row")} from answers ${runner.name} already has. Rows without one fill on its next run.`
                 : `Added ${outputName}. It fills when ${runner.name} runs again.`,
             );
-            await grid.reload();
           }}
           onClose={closeDialog}
         />}
@@ -499,5 +487,6 @@ export function TableWorkspace({ tableId }: Props) {
         />
       )}
     </div>
+    </CellRequestContext>
   );
 }

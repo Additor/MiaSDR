@@ -114,3 +114,19 @@ describe("dollar amounts", () => {
     expect(centsToDollarsText(50)).toBe("0.5");
   });
 });
+
+describe("enrichment column settings", () => {
+  it("clamps the delay and the reuse window to what the server accepts", async () => {
+    const { toRunSettingsBody } = await import("./run-request");
+    expect(toRunSettingsBody({ delay: "2.7", reuseDays: "30" })).toEqual({ delaySeconds: 2, reuseDays: 30 });
+    expect(toRunSettingsBody({ delay: "99999", reuseDays: "1000" })).toEqual({ delaySeconds: 3600, reuseDays: 365 });
+    expect(toRunSettingsBody({ delay: "-4", reuseDays: "abc" })).toEqual({ delaySeconds: 0, reuseDays: 0 });
+  });
+  it("reads a credit cap within the server's range, or null when empty", async () => {
+    const { creditCap } = await import("./run-request");
+    expect(creditCap(" ")).toBeNull();
+    expect(creditCap("0.5")).toBe(0.5);
+    expect(creditCap("-3")).toBe(0);
+    expect(creditCap("250000")).toBe(100_000);
+  });
+});

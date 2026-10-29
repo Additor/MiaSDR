@@ -5,15 +5,20 @@ import { toast } from "sonner";
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
 import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
 import type { TableView } from "@/contexts/grid/domain/view-query";
-import { gridRequest, gridUrl } from "./client";
-import { addPending, applyConflictRows, buildBatches, cellId, clearPending, conflictItems, mergeRows, overlayPending, splitByRows, type ConflictItem, type PendingMap } from "../edit/optimistic";
+import { gridRequest, gridUrl, type GridResponse } from "./client";
+import { RESOLVE_CONFLICT_FIRST, type CellRequest } from "./cell-request";
+import { addPending, applyConflictRows, buildBatches, cellId, clearPending, conflictItems, dropPendingRows, mergeRows, overlayPending, requeueEdits, splitByRows, type ConflictItem, type PendingMap } from "../edit/optimistic";
+import { mergeLoaded } from "../edit/merge-loaded";
+import { DELETE_BATCH } from "../edit/delete-rows";
 import type { CellEditInput, ChangesPage, GridColumn, GridRow, GridTable, JobCounts, RowConflict, TablePage } from "./types";
-import { canRedo, canUndo, columnsInvalidate, complete, discardCells, drop, EMPTY_STACK, nextAction, record, restoreUpdates, settleAfter, type Direction, type UndoCell, type UndoStack, type WrittenCell } from "../edit/undo-stack";
+import { canRedo, canUndo, columnsInvalidate, complete, discardCells, discardRows, drop, EMPTY_STACK, nextAction, record, restoreUpdates, settleAfter, type Direction, type UndoCell, type UndoStack, type WrittenCell } from "../edit/undo-stack";
 import type { BlockPasteRequest } from "../edit/paste";
 import { keepsTableOrder } from "../view/view";
 import { countOf, formatCount } from "@/shared/format-number";
 
 const PAGE = 200;
+/** The answer of a request the hook did not send because the conflict dialog is open. */
+const refusedForConflict = <T>(): GridResponse<T> => ({ ok: false, status: 409, data: null, error: RESOLVE_CONFLICT_FIRST, failure: null });
 /** The most rows one table request returns. */
 const KEEP_CAP = GRID_LIMITS.pageSize;
 const POLL_IDLE_MS = 5_000;
@@ -61,6 +66,14 @@ export interface ConflictState {
   items: ConflictItem[];
 }
 
+/** How a row delete went: rows the server removed, and where the batches stopped when one failed. */
+export interface DeleteRowsOutcome {
+  deleted: number;
+  /** Index into the requested ids of the first batch that failed, or -1. */
+  failedFrom: number;
+  error: string | null;
+}
+
 export interface GridTableState {
   status: "loading" | "ready" | "error";
   error: string | null;
@@ -101,6 +114,31 @@ export interface GridTableState {
   saveDefaultView: () => Promise<boolean>;
   setTable: (patch: Partial<GridTable>) => void;
   refreshJobs: () => Promise<void>;
+  /**
+   * Sends a request about this table once queued edits have landed, so the server reads and writes the cells the
+   * person sees. Refuses while the conflict dialog is open. Components send every table request through it
+   * (`useCellRequest`); `src/architecture/grid-cell-requests.test.ts` holds them to it.
+   */
+  cellRequest: CellRequest;
+  /** Lets queued edits land. False when the conflict dialog holds some back. */
+  settle: () => Promise<boolean>;
+  /*
+   * Requests that write rows or cells, or read cells the person may be saving. Each lets queued edits reach
+   * the server first and reloads the table after.
+   */
+  addRows: (count: number) => Promise<GridResponse<unknown>>;
+  /** Deletes in batches, then drops queued edits and undo steps of the deleted rows. */
+  deleteRows: (rowIds: readonly string[]) => Promise<DeleteRowsOutcome>;
+  /** Removes the rows that repeat a value of the column, then drops their queued edits and undo steps. */
+  dedupeColumn: (columnId: string) => Promise<GridResponse<{ deleted: number; rowIds: string[] }>>;
+  moveColumn: (columnId: string, afterColumnId: string | null) => Promise<GridResponse<unknown>>;
+  duplicateColumn: (body: Record<string, unknown>) => Promise<GridResponse<unknown>>;
+  /** Queues failed cells again: one column's, or the whole table's without a key. */
+  retryFailed: (columnKey?: string) => Promise<GridResponse<{ retried: number }>>;
+  /** Queues the runs behind cells, such as one cell's run (`cellRunBody`). */
+  runCells: <T extends { queued: number } = { queued: number }>(body: Record<string, unknown>) => Promise<GridResponse<T>>;
+  recalculate: (columnId: string) => Promise<GridResponse<{ changedCells: number }>>;
+  addOutput: (runnerId: string, outputKey: string) => Promise<GridResponse<{ filled?: number }>>;
 }
 
 /** Loads one table, keeps it fresh by polling the changes feed, and applies cell edits optimistically. */
@@ -132,6 +170,8 @@ export function useGridTable(tableId: string): GridTableState {
   const viewRef = useRef<TableView>({});
   const searchRef = useRef("");
   const loadToken = useRef(0);
+  /** The `loadToken` of the last load that put its rows on screen. */
+  const landedToken = useRef(0);
   const flushing = useRef(false);
   const conflictRef = useRef<ConflictState | null>(null);
   const loadingMore = useRef(false);
@@ -162,12 +202,17 @@ export function useGridTable(tableId: string): GridTableState {
     });
   }, []);
 
-  /** `coverage` false skips the fill-rate scan, for a reload that only follows the search box. */
+  /**
+   * `coverage` false skips the fill-rate scan, for a reload that follows the search box. The page replaces the
+   * rows through `mergeLoaded`, so a page that read a row before an edit response came back cannot lower its version.
+   */
   const load = useCallback(async (options: { coverage: boolean; keep?: number }) => {
     const token = ++loadToken.current;
     // `keep` asks for at least that many rows (one request, at most the server's page cap), so a reload does not
     // shorten the grid under a person who scrolled down: the browser would clamp the scroll position to the new end.
-    const params = new URLSearchParams({ limit: String(Math.min(KEEP_CAP, Math.max(PAGE, options.keep ?? 0))) });
+    // It defaults to the rows loaded now.
+    const keep = options.keep ?? rowsRef.current.length;
+    const params = new URLSearchParams({ limit: String(Math.min(KEEP_CAP, Math.max(PAGE, keep))) });
     if (!options.coverage) params.set("coverage", "0");
     if (searchRef.current.trim()) params.set("search", searchRef.current.trim());
     const res = await gridRequest<TablePage>(`${gridUrl.table(tableId)}?${params}`, "GET");
@@ -179,7 +224,8 @@ export function useGridTable(tableId: string): GridTableState {
       return;
     }
     const page = res.data;
-    putRows(page.rows);
+    landedToken.current = token;
+    putRows(mergeLoaded(rowsRef.current, page.rows));
     // A deleted column or a changed type makes the recorded values wrong, so the history starts over.
     if (columnsInvalidate(columnsRef.current, page.columns)) putStack(EMPTY_STACK);
     columnsRef.current = page.columns;
@@ -234,15 +280,18 @@ export function useGridTable(tableId: string): GridTableState {
   }, [search, load]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore.current) return;
+    // While a load is on its way, the loaded rows are not the ones its offset and search would count from.
+    if (loadingMore.current || loadToken.current !== landedToken.current) return;
     const have = rowsRef.current.length;
     if (have >= totalsRef.current.total) return;
     loadingMore.current = true;
+    // A load that starts meanwhile replaces the rows this offset counted, so its answer would not line up.
+    const token = loadToken.current;
     try {
       const params = new URLSearchParams({ limit: String(PAGE), offset: String(have) });
       if (searchRef.current.trim()) params.set("search", searchRef.current.trim());
       const res = await gridRequest<TablePage>(`${gridUrl.table(tableId)}?${params}`, "GET");
-      if (!res.ok || !res.data) return;
+      if (token !== loadToken.current || token !== landedToken.current || !res.ok || !res.data) return;
       const known = new Set(rowsRef.current.map((r) => r.id));
       const fresh = res.data.rows.filter((r) => !known.has(r.id));
       if (fresh.length > 0) putRows([...rowsRef.current, ...fresh]);
@@ -321,9 +370,9 @@ export function useGridTable(tableId: string): GridTableState {
     }
     if (!wasRunning.current) return;
     wasRunning.current = false;
-    const handle = setTimeout(() => void load({ coverage: true, keep: rowsRef.current.length }), 0);
+    const handle = setTimeout(() => void reload(), 0);
     return () => clearTimeout(handle);
-  }, [activeJobs, load]);
+  }, [activeJobs, reload]);
 
   /** Takes cells out of the undo steps they belong to, for edits that will never be saved. */
   const forgetEdits = useCallback(
@@ -437,7 +486,7 @@ export function useGridTable(tableId: string): GridTableState {
     async (request: BlockPasteRequest): Promise<PasteOutcome | null> => {
       await settleSaves();
       if (conflictRef.current) {
-        toast.message("Resolve the edit conflict first.", { id: "grid-history" });
+        toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
         return null;
       }
       const res = await gridRequest<PasteResponse>(gridUrl.sub(tableId, "paste"), "POST", request);
@@ -463,6 +512,102 @@ export function useGridTable(tableId: string): GridTableState {
     [settleSaves, tableId, reload, load, loadMore, putRows, putStack],
   );
 
+  const settle = useCallback(async () => {
+    await settleSaves();
+    return !conflictRef.current;
+  }, [settleSaves]);
+
+  // With the conflict dialog open the held edits have not landed, so it sends nothing and answers why.
+  const cellRequest = useCallback<CellRequest>(
+    async <T,>(url: string, method: Parameters<typeof gridRequest>[1], body?: unknown) => {
+      if (!(await settle())) return refusedForConflict<T>();
+      return gridRequest<T>(url, method, body);
+    },
+    [settle],
+  );
+
+  /** `cellRequest` and a reload after, so the grid shows what the request changed. */
+  const afterSaves = useCallback(
+    async <T,>(url: string, method: "POST" | "PATCH", body?: unknown): Promise<GridResponse<T>> => {
+      if (!(await settle())) return refusedForConflict<T>();
+      const res = await gridRequest<T>(url, method, body);
+      await reload();
+      return res;
+    },
+    [settle, reload],
+  );
+
+  const addRows = useCallback((count: number) => afterSaves(gridUrl.sub(tableId, "rows"), "POST", { count }), [afterSaves, tableId]);
+  const moveColumn = useCallback((columnId: string, afterColumnId: string | null) => afterSaves(`${gridUrl.sub(tableId, "columns")}/${columnId}`, "PATCH", { afterColumnId }), [afterSaves, tableId]);
+  const duplicateColumn = useCallback((body: Record<string, unknown>) => afterSaves(gridUrl.sub(tableId, "columns"), "POST", body), [afterSaves, tableId]);
+  const retryFailed = useCallback((columnKey?: string) => afterSaves<{ retried: number }>(gridUrl.sub(tableId, "run/retry"), "POST", columnKey ? { columnKey } : {}), [afterSaves, tableId]);
+  // A run reads the stored inputs, so a queued input would be left out.
+  const runCells = useCallback(<T extends { queued: number } = { queued: number }>(body: Record<string, unknown>) => afterSaves<T>(gridUrl.sub(tableId, "run"), "POST", body), [afterSaves, tableId]);
+  // A formula reads the stored cells, so a queued input would be left out.
+  const recalculate = useCallback((columnId: string) => afterSaves<{ changedCells: number }>(`${gridUrl.sub(tableId, "columns")}/${columnId}/recalculate`, "POST"), [afterSaves, tableId]);
+  const addOutput = useCallback((runnerId: string, outputKey: string) => afterSaves<{ filled?: number }>(gridUrl.sub(tableId, "enrichments"), "PATCH", { columnId: runnerId, addOutput: outputKey }), [afterSaves, tableId]);
+
+  /** Drops the queued edits and undo cells of rows the server removed. */
+  const forgetRows = useCallback(
+    (rowIds: readonly string[]) => {
+      const dropped = dropPendingRows(pendingRef.current, rowIds);
+      if (dropped.dropped.length > 0) putPending(dropped.pending);
+      putStack(discardRows(stackRef.current, rowIds));
+    },
+    [putPending, putStack],
+  );
+
+  const deleteRows = useCallback(
+    async (rowIds: readonly string[]): Promise<DeleteRowsOutcome> => {
+      // Edits of the rows to delete are held back: saving them could queue a paid auto-run for a row about to go.
+      const held = dropPendingRows(pendingRef.current, rowIds);
+      if (held.dropped.length > 0) putPending(held.pending);
+      const putBack = (edits: typeof held.dropped) => {
+        if (edits.length === 0) return;
+        putPending(requeueEdits(pendingRef.current, edits));
+        void Promise.resolve().then(flush);
+      };
+      await settleSaves();
+      if (conflictRef.current) {
+        putBack(held.dropped);
+        return { deleted: 0, failedFrom: 0, error: RESOLVE_CONFLICT_FIRST };
+      }
+      let deleted = 0;
+      let failedFrom = -1;
+      let error: string | null = null;
+      for (let i = 0; i < rowIds.length; i += DELETE_BATCH) {
+        const res = await gridRequest<{ deleted: number }>(gridUrl.sub(tableId, "rows"), "DELETE", { rowIds: rowIds.slice(i, i + DELETE_BATCH) });
+        if (!res.ok) {
+          failedFrom = i;
+          error = res.error ?? "The server did not accept the request";
+          break;
+        }
+        deleted += res.data?.deleted ?? 0;
+      }
+      // An edit queued for a deleted row would come back as a conflict, and its undo step has nothing to restore.
+      const gone = failedFrom < 0 ? rowIds : rowIds.slice(0, failedFrom);
+      forgetRows(gone);
+      const kept = new Set(failedFrom < 0 ? [] : rowIds.slice(failedFrom));
+      putBack(held.dropped.filter((e) => kept.has(e.rowId)));
+      await reload();
+      return { deleted, failedFrom, error };
+    },
+    [settleSaves, tableId, reload, flush, putPending, forgetRows],
+  );
+
+  const dedupeColumn = useCallback(
+    async (columnId: string) => {
+      // Dedupe compares stored values, so queued edits land first; it names the rows it removed.
+      await settleSaves();
+      if (conflictRef.current) return refusedForConflict<{ deleted: number; rowIds: string[] }>();
+      const res = await gridRequest<{ deleted: number; rowIds: string[] }>(`${gridUrl.sub(tableId, "columns")}/${columnId}/dedupe`, "POST");
+      if (res.ok && res.data) forgetRows(res.data.rowIds);
+      await reload();
+      return res;
+    },
+    [settleSaves, tableId, reload, forgetRows],
+  );
+
   const history_ = useCallback(
     async (direction: Direction) => {
       if (historyBusy.current) return;
@@ -470,7 +615,7 @@ export function useGridTable(tableId: string): GridTableState {
       try {
         // Queued edits land first, so the values this step expects are the ones the server stored.
         await settleSaves();
-        if (conflictRef.current) return void toast.message("Resolve the edit conflict first.", { id: "grid-history" });
+        if (conflictRef.current) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
         const action = nextAction(stackRef.current, direction);
         if (!action) return;
         const written: WrittenCell[] = [];
@@ -583,5 +728,16 @@ export function useGridTable(tableId: string): GridTableState {
     saveView,
     setTable,
     refreshJobs,
+    addRows,
+    cellRequest,
+    settle,
+    deleteRows,
+    dedupeColumn,
+    runCells,
+    moveColumn,
+    duplicateColumn,
+    retryFailed,
+    recalculate,
+    addOutput,
   };
 }

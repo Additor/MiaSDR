@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/components/ui/utils";
 import { gridRequest, gridUrl } from "../_lib/data/client";
+import { RESOLVE_CONFLICT_FIRST } from "../_lib/data/cell-request";
 import { MoveDialog, type FolderNode } from "./move-dialog";
 import { DescriptionDialog, MoveTableDialog } from "./table-dialogs";
 import { TableWorkspace } from "./table-workspace";
@@ -61,6 +62,11 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
   const [deleted, setDeleted] = useState(false);
   // Rename from a tab's menu: the menu must not take focus back from the field it opened.
   const renaming = useRef(false);
+  /** The open table's `settle`, so a duplicate copies the edits still in its queue. */
+  const settleOpen = useRef<(() => Promise<boolean>) | null>(null);
+  const onSettle = useCallback((settle: (() => Promise<boolean>) | null) => {
+    settleOpen.current = settle;
+  }, []);
 
   const load = useCallback(async () => {
     const res = await gridRequest<{ workbook: Workbook; tables: TableTab[] }>(`${gridUrl.workbooks}/${workbookId}`, "GET");
@@ -158,6 +164,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
   }
 
   async function duplicate(id: string) {
+    if (id === activeId && settleOpen.current && !(await settleOpen.current())) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
     const res = await gridRequest<{ table: TableTab }>(`${gridUrl.tables}/${id}/duplicate`, "POST");
     if (!res.ok || !res.data) return void toast.error(res.error ?? "Could not duplicate the table.");
     await load();
@@ -370,7 +377,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
       )}
 
       <div id="table-panel" role="tabpanel" aria-labelledby={activeId ? `tab-${activeId}` : undefined} className="flex min-h-0 flex-1 flex-col">
-        {activeId && !deleted && <TableWorkspace key={activeId} tableId={activeId} />}
+        {activeId && !deleted && <TableWorkspace key={activeId} tableId={activeId} onSettle={onSettle} />}
       </div>
 
       {action?.kind === "moveWorkbook" && (

@@ -16,6 +16,7 @@ import { VERDICT_LABELS, verifyColumns, type PassableVerdict, type PushVerdict }
 import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
 import { guessFields } from "../_lib/data/push-guess";
 import { gridRequest, gridUrl } from "../_lib/data/client";
+import { useCellRequest } from "../_lib/data/cell-request";
 import type { GridColumn } from "../_lib/data/types";
 import { ColumnSelect, ItemSelect } from "./form-bits";
 
@@ -69,6 +70,7 @@ function verdictList(counts: Partial<Record<PushVerdict, number>>, only: (v: Pus
 }
 
 export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRows, onClose }: Props) {
+  const cellRequest = useCellRequest();
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
   const [target, setTarget] = useState<string>(NEW);
   const [newName, setNewName] = useState("");
@@ -107,13 +109,13 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
   useEffect(() => {
     if (!check) return;
     let cancelled = false;
-    void gridRequest<{ verdicts: Partial<Record<PushVerdict, number>> }>(gridUrl.sub(tableId, "campaigns"), "POST", { rowIds, preview: true, verifiedBy: { columnKey: check.key }, emailKey: mapped.email }).then((res) => {
+    void cellRequest<{ verdicts: Partial<Record<PushVerdict, number>> }>(gridUrl.sub(tableId, "campaigns"), "POST", { rowIds, preview: true, verifiedBy: { columnKey: check.key }, emailKey: mapped.email }).then((res) => {
       if (!cancelled && res.ok && res.data) setCounts({ columnKey: check.key, verdicts: res.data.verdicts });
     });
     return () => {
       cancelled = true;
     };
-  }, [check, rowIds, tableId, mapped.email]);
+  }, [check, rowIds, tableId, mapped.email, cellRequest]);
   const hasAddress = !!mapped.email || !!mapped.linkedin;
   const usedKeys = new Set(Object.values(mapped));
   const customOptions = columns.filter((c) => !usedKeys.has(c.key));
@@ -121,7 +123,7 @@ export function PushCampaignDialog({ tableId, columns, rowIds, rowNumbers, allRo
 
   // The report stays in the dialog, so the promise resolves to false and keeps it open.
   async function push() {
-    const res = await gridRequest<Report>(gridUrl.sub(tableId, "campaigns"), "POST", {
+    const res = await cellRequest<Report>(gridUrl.sub(tableId, "campaigns"), "POST", {
       rowIds,
       fields: mapped,
       customColumnKeys: custom.filter((k) => !usedKeys.has(k)),

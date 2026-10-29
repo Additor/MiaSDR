@@ -338,10 +338,10 @@ export const drizzleRowStore: RowStore = {
         .orderBy(asc(gridRows.position), asc(gridRows.id))
         .for("update");
       const ids = pick(rows, column as unknown as ColumnRecord);
-      let deleted = 0;
+      const deleted: string[] = [];
       for (const part of chunked(ids, ID_CHUNK)) {
         const removed = await tx.delete(gridRows).where(and(inTable(organizationId, tableId), inArray(gridRows.id, part))).returning({ id: gridRows.id });
-        deleted += removed.length;
+        deleted.push(...removed.map((r) => r.id));
       }
       return deleted;
     });
