@@ -75,7 +75,8 @@ function owners(): { byBinding: Map<string, string>; bySqlName: Map<string, stri
 /** Tables of other contexts that `source` inserts into, updates or deletes from, by Drizzle call or raw SQL. */
 export function foreignWrites(own: string, source: string, table: ReturnType<typeof owners>): string[] {
   const found = new Set<string>();
-  for (const m of source.matchAll(/\.(?:insert|update|delete)\((\w+)\)/g)) {
+  // `insert(people)`, `delete( people )` and `update(schema.people)` alike: spaces and a namespace import do not hide a write.
+  for (const m of source.matchAll(/\.(?:insert|update|delete)\(\s*(?:\w+\.)?(\w+)\s*\)/g)) {
     const owner = table.byBinding.get(m[1]);
     if (owner && owner !== own) found.add(m[1]);
   }
@@ -151,8 +152,10 @@ describe("table ownership", () => {
       "await db.select().from(people).innerJoin(campaignEnrollments, on);",
       "await db.update(people).set({ name });",
       "await tx.execute(sql`delete from messages where id = ${id}`);",
+      "await db.insert(schema.campaigns).values(row);",
+      "await db.delete( records ).where(match);",
     ].join("\n");
     expect(upwardReads(READ_MODELS, source, table)).toEqual([]);
-    expect(foreignWrites(READ_MODELS, source, table)).toEqual(["messages", "people"]);
+    expect(foreignWrites(READ_MODELS, source, table)).toEqual(["campaigns", "messages", "people", "records"]);
   });
 });

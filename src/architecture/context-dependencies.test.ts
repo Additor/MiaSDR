@@ -65,6 +65,26 @@ const TIER_FORBIDDEN: Record<string, { paths: string[]; packages: RegExp | null 
   composition: { paths: ["app", "components", "platform/db/schema"], packages: /^(drizzle-orm|postgres)(\/|$)/ },
 };
 
+/**
+ * Context modules a read model may import beyond `domain/` and the schema files, each with its reason. A read model
+ * reads; `application/` and the rest of `infrastructure/` hold use cases and writers (`deleteDoNotContactTx`), so a read
+ * model that needs one belongs in `src/composition` instead. Keep it short.
+ */
+const READ_MODEL_IMPORTS: Record<string, string> = {};
+
+/** The context modules `file` (under src/read-models) imports that are not `domain/`, a schema file or on `READ_MODEL_IMPORTS`. Type-only imports count. */
+export function readModelImports(file: string, source: string): string[] {
+  return specifiers(source)
+    .filter((s) => {
+      const t = target(file, s);
+      if (!t?.startsWith("contexts/")) return false;
+      if (/^contexts\/[^/]+\/(?:[^/]+\/)*domain\//.test(t)) return false;
+      if (/^contexts\/[^/]+\/(?:[^/]+\/)*infrastructure\/(?:schema|sequences-schema)$/.test(t)) return false;
+      return !(t in READ_MODEL_IMPORTS);
+    })
+    .map((s) => `${path.relative(ROOT, file)} -> ${s}`);
+}
+
 /** Platform files that import a context, as the code stood when the rule arrived. Shrink only. */
 const PLATFORM_CONTEXT_IMPORTS: Record<string, string[]> = {
   // The schema barrel: the Drizzle client and migrations see every table through it.
@@ -105,6 +125,30 @@ describe("tier dependencies", () => {
 
   it("keeps src/read-models free of composition, app and UI", () => {
     expect(tierViolations("read-models")).toEqual([]);
+  });
+
+  it("lets src/read-models import a context's domain and schema only, plus the short list", () => {
+    const files = sourceFiles(path.join(SRC, "read-models"));
+    expect(files.flatMap((f) => readModelImports(f, readFileSync(f, "utf8")))).toEqual([]);
+    for (const allowed of Object.keys(READ_MODEL_IMPORTS)) expect(files.some((f) => specifiers(readFileSync(f, "utf8")).some((s) => target(f, s) === allowed)), allowed).toBe(true);
+  });
+
+  it("flags a read model's import of a use case, a writer or a composition", () => {
+    const file = path.join(SRC, "read-models/example.ts");
+    const source = [
+      'import { leadStatus } from "@/contexts/outreach/domain/lead-status";',
+      'import { people } from "@/contexts/people/infrastructure/schema";',
+      'import { runs } from "../contexts/conversations/after-reply/infrastructure/sequences-schema";',
+      'import { deleteDoNotContactTx } from "@/contexts/people/infrastructure/reachability";',
+      'import type { LeadActivityDeps } from "@/contexts/outreach/application/read-lead-activity";',
+      'import { leadImportDeps } from "@/contexts/people/infrastructure/composition";',
+      'import { db } from "@/platform/db/client";',
+    ].join("\n");
+    expect(readModelImports(file, source)).toEqual([
+      "src/read-models/example.ts -> @/contexts/people/infrastructure/reachability",
+      "src/read-models/example.ts -> @/contexts/outreach/application/read-lead-activity",
+      "src/read-models/example.ts -> @/contexts/people/infrastructure/composition",
+    ]);
   });
 
   it("keeps src/composition free of app, UI, tables and drivers", () => {
