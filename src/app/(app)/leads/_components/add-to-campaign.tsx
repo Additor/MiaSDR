@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
 import { formatCount } from "@/shared/format-number";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { addCounts, type EnrollCounts as Counts, skipReasons, ZERO_COUNTS } from "../_lib/enroll-counts";
 
@@ -101,8 +102,9 @@ function CampaignAdder({
     setProgress(0);
     let total = { ...ZERO_COUNTS };
     for (let i = 0; i < personIds.length; i += CHUNK) {
-      const response = await callApi<Counts>(`${chosen.channel === "linkedin" ? "/api/linkedin" : "/api"}/campaigns/${chosen.id}/enroll`, "POST", { personIds: personIds.slice(i, i + CHUNK) });
-      if (!response.ok || !response.data) {
+      // The dialog reports the counts and calls `onAdded` when it closes, so no chunk reloads the page.
+      const response = await runApiAction(callApi<Counts>(`${chosen.channel === "linkedin" ? "/api/linkedin" : "/api"}/campaigns/${chosen.id}/enroll`, "POST", { personIds: personIds.slice(i, i + CHUNK) }), { expectData: true });
+      if (!response.ok) {
         setError(response.error);
         setCounts(total);
         return false;

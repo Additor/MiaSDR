@@ -14,6 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { RadioGroup } from "@/components/ui/radio-group";
+import { runApiAction, type ActionOptions } from "@/app/_lib/api-action";
 import { apiMessage, callApi } from "@/app/_lib/api-client";
 import {
   MERGE_TIMEOUT,
@@ -83,8 +84,11 @@ interface SearchRow {
   listed: boolean;
 }
 
-/** One API call that gives up after a minute. A call that never answers has status 0, so the merge can say it may still run. */
-const send = <T,>(url: string, method: "GET" | "POST" | "DELETE", body?: unknown) => callApi<T>(url, method, body, { signal: AbortSignal.timeout(60_000) });
+/** Gives up after a minute. A call that never answers has status 0, so the merge can say it may still run. */
+const timeout = () => ({ signal: AbortSignal.timeout(60_000) });
+const read = <T,>(url: string) => callApi<T>(url, "GET", undefined, timeout());
+/** A change through `runApiAction`, with the same one-minute limit. */
+const send = (url: string, method: "POST" | "DELETE", body?: unknown, options?: ActionOptions) => runApiAction(callApi(url, method, body, timeout()), options);
 
 /**
  * Merge in two steps of one dialog. Step 1 finds the other company (companies with leads only included, marked "Leads only") and
@@ -132,7 +136,7 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
     const q = query.trim();
     if (!q) return;
     setStatus(null);
-    const answer = await send<{ companies: SearchRow[] }>(`/api/companies/search?q=${encodeURIComponent(q)}&all=1`, "GET");
+    const answer = await read<{ companies: SearchRow[] }>(`/api/companies/search?q=${encodeURIComponent(q)}&all=1`);
     if (!answer.ok) return setStatus(answer.error ?? "Could not search companies. Try again.");
     const rows = (answer.data?.companies ?? []).filter((row) => row.companyId !== company.id);
     setResults(rows);
@@ -145,9 +149,10 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
 
   async function loadPreview(): Promise<boolean> {
     if (!pair) return false;
-    const answer = await send<MergePreview>(`/api/companies/${pair.kept.companyId}/merge/preview`, "POST", { otherId: pair.other.companyId });
-    if (!answer.ok || !answer.data) {
-      setStatus(answer.error ?? "Could not preview the merge. Try again.");
+    // A read sent as POST: nothing changes, so nothing reloads.
+    const answer = await runApiAction(callApi<MergePreview>(`/api/companies/${pair.kept.companyId}/merge/preview`, "POST", { otherId: pair.other.companyId }, timeout()), { expectData: true });
+    if (!answer.ok) {
+      setStatus(answer.error);
       return false;
     }
     setPreview(answer.data);
@@ -168,7 +173,7 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
     const answer = await send(`/api/companies/${preview.kept.id}/merge`, "POST", {
       otherId: preview.other.id,
       expected: { keptVersion: preview.kept.version, otherVersion: preview.other.version, keptPeople: preview.kept.people, otherPeople: preview.other.people },
-    });
+    }, { onConflict: { try_again: () => apiMessage("try_again", kept) } });
     if (answer.ok) {
       toast.success(mergedText(other, kept));
       router.replace(`/crm/companies/${preview.kept.id}`);
@@ -180,11 +185,11 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
       return false;
     }
     if (answer.code === "company_changed") {
-      setStatus(answer.error ?? `${kept} changed while this was open. Check the preview again.`);
+      setStatus(answer.error);
       await loadPreview();
       return false;
     }
-    setStatus(answer.code === "try_again" ? apiMessage("try_again", kept) : (answer.error ?? "Could not merge the companies. Try again."));
+    setStatus(answer.error);
     return false;
   }
 
@@ -317,21 +322,23 @@ function DeleteCompanyDialog({ company, open, onOpenChange }: { company: Company
 
   async function remove(): Promise<false | void> {
     setStatus(null);
-    const answer = await send(`/api/companies/${company.id}?expectedVersion=${company.version}`, "DELETE");
-    if (answer.status === 0) throw new Error("Could not reach the server.");
+    // A success leaves the page; a changed company reloads it to read the new version and people counts.
+    const answer = await send(`/api/companies/${company.id}?expectedVersion=${company.version}`, "DELETE", undefined, {
+      onConflict: {
+        company_changed: () => {
+          router.refresh();
+          return companyChangedText(label);
+        },
+      },
+    });
+    if (!answer.ok && answer.status === 0) throw new Error(answer.error);
     if (answer.ok) {
       toast.success(deletedCompanyText(label));
       router.replace("/crm/companies");
       router.refresh();
       return;
     }
-    if (answer.code === "company_changed") {
-      setStatus(companyChangedText(label));
-      // The page reads the new version and people counts.
-      router.refresh();
-      return false;
-    }
-    setStatus(answer.error ?? "Could not delete the company. Try again.");
+    setStatus(answer.error);
     return false;
   }
 

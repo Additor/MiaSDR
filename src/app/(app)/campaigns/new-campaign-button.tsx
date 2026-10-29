@@ -8,6 +8,7 @@ import { ChoiceCard } from "@/components/shell/choice-card";
 import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup } from "@/components/ui/radio-group";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { SenderPicker, type SenderOption } from "./sender-picker";
 
@@ -58,14 +59,12 @@ export function NewCampaignButton({ senders }: { senders: { email: SenderOption[
   }
 
   async function create() {
-    const result = await callApi<{ id: string }>(
-      channel === "linkedin" ? "/api/linkedin/campaigns" : "/api/campaigns",
-      "POST",
-      channel === "linkedin" ? { name, senderIds, type } : { name, senderIds },
+    const result = await runApiAction(
+      callApi<{ id: string }>(channel === "linkedin" ? "/api/linkedin/campaigns" : "/api/campaigns", "POST", channel === "linkedin" ? { name, senderIds, type } : { name, senderIds }),
+      { expectData: true },
     );
     // ConfirmDialog keeps the panel open and shows the reason when this throws.
-    if (!result.ok || !result.data) throw new Error(result.error ?? "The campaign was not created. Try again.");
-    router.push(`/campaigns/${result.data.id}`);
+    router.push(`/campaigns/${orThrow(result).id}`);
   }
 
   return (

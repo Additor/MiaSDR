@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { countOf } from "@/shared/format-number";
 import { SettingsSection } from "../settings-section";
@@ -15,10 +16,10 @@ export function DailyCounters() {
   const [confirming, setConfirming] = useState(false);
 
   async function reset() {
-    const result = await callApi<{ accounts: number; pausesCleared: number; searchCountersCleared: number }>("/api/linkedin/jobs/reset-daily-limits", "POST");
-    if (!result.ok || !result.data) throw new Error(result.error ?? "Reset failed.");
-    toast.success(`Reset ${countOf(result.data.accounts, "account")}: ${countOf(result.data.pausesCleared, "pause")} and ${countOf(result.data.searchCountersCleared, "search counter")} cleared.`);
-    router.refresh();
+    const data = orThrow(
+      await runApiAction(callApi<{ accounts: number; pausesCleared: number; searchCountersCleared: number }>("/api/linkedin/jobs/reset-daily-limits", "POST"), { refresh: () => router.refresh(), expectData: true }),
+    );
+    toast.success(`Reset ${countOf(data.accounts, "account")}: ${countOf(data.pausesCleared, "pause")} and ${countOf(data.searchCountersCleared, "search counter")} cleared.`);
   }
 
   return (

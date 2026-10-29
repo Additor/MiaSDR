@@ -22,7 +22,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LEAD_STATE_LABELS } from "@/contexts/outreach/domain/lead-status";
 import type { LeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { isFilterActive, leadFilterParams, lifecycleOf, matchingSelection, selectionExport, type LeadFilter, type LeadSort, type LeadSortKey } from "@/contexts/people/domain/lead-filter";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { formatCount } from "@/shared/format-number";
 import { CreateDealsBulkDialog } from "@/app/(app)/crm/_components/create-deal-dialog";
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
@@ -115,6 +117,7 @@ export function LeadsTableView(props: {
   const router = useRouter();
   const { selectedIds: ids, isSelected, select, clear } = useSelection();
   const [pending, setPending] = useState<Pending>(null);
+  const { run: runRetry } = useApiAction<"retry">();
   const [gathering, setGathering] = useState(false);
   const { error: gatherError, setError: setGatherError, begin } = useBulkStep(ids.length);
   // The ids the Create deals dialog works on, fixed when it opens: the dialog reloads its preview for a new array.
@@ -185,12 +188,10 @@ export function LeadsTableView(props: {
   async function confirmDelete() {
     if (!pending) return;
     const body = pending.kind === "selected" ? { ids: pending.ids } : { filter: Object.fromEntries(Object.entries({ ...filter, ids: undefined }).filter(([, v]) => v !== undefined)), confirmCount: total };
-    const result = await callApi<DeleteResult>("/api/leads/delete", "POST", body);
     // ConfirmDialog shows the thrown message and keeps the dialog open.
-    if (!result.ok || !result.data) throw new Error(result.error ?? "The leads could not be deleted. Try again.");
+    const data = orThrow(await runApiAction(callApi<DeleteResult>("/api/leads/delete", "POST", body), { refresh: () => router.refresh(), expectData: true }));
     clear();
-    announceDelete(result.data);
-    router.refresh();
+    announceDelete(data);
   }
 
   /** One line per reason the server kept leads for, and a retry of the leads that only met a concurrent change. */
@@ -214,15 +215,13 @@ export function LeadsTableView(props: {
     });
   }
 
-  async function retryDelete(ids: string[]) {
-    const result = await callApi<DeleteResult>("/api/leads/delete", "POST", { ids });
-    if (!result.ok || !result.data) {
-      toast.error(result.error ?? "The leads could not be deleted. Try again.");
-      return;
-    }
-    announceDelete(result.data);
-    router.refresh();
-  }
+  /** The toast's "Try again". A toast action cannot show a busy state, so the guard drops a second press while one runs. */
+  const retryDelete = (ids: string[]) =>
+    runRetry("retry", async () => {
+      const result = await runApiAction(callApi<DeleteResult>("/api/leads/delete", "POST", { ids }), { refresh: () => router.refresh(), expectData: true });
+      if (!result.ok) toast.error(result.error);
+      else announceDelete(result.data);
+    });
 
   return (
     <>

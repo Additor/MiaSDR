@@ -10,7 +10,9 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { StageSetting, StageSettings } from "@/contexts/deals/application/deal-stages";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { AdminNotice } from "../admin-notice";
 import { ReorderButtons } from "../settings-form";
 import { RULED_LIST, SettingsSection } from "../settings-section";
@@ -31,7 +33,10 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
   const router = useRouter();
   const [settings, setSettings] = useState(initial);
   const [seen, setSeen] = useState(initial);
-  const [pending, setPending] = useState(false);
+  // Each answer is the whole list and an order write sends every id, so all stage changes share one key.
+  const { isBusy, run } = useApiAction<"list">();
+  const pending = isBusy("list");
+  const refresh = () => router.refresh();
   const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState<StageSetting | null>(null);
@@ -45,20 +50,19 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
 
   const stages = settings.stages;
 
-  async function write(url: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown, done?: string): Promise<boolean> {
-    setPending(true);
-    setError(null);
-    const result = await callApi<StageSettings>(url, method, body);
-    setPending(false);
-    if (!result.ok || !result.data) {
-      setError(result.error ?? "Could not save the stages. Try again.");
-      return false;
-    }
-    setSettings(result.data);
-    if (done) toast.success(done);
-    router.refresh();
-    return true;
-  }
+  /** Sends one change; the answer is the new list. A refusal shows in the line under the list. True when it went through. */
+  const write = (url: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown, done?: string) =>
+    run("list", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<StageSettings>(url, method, body), { refresh, expectData: true });
+      if (!result.ok) {
+        setError(result.error);
+        return false;
+      }
+      setSettings(result.data);
+      if (done) toast.success(done);
+      return true;
+    });
 
   function move(index: number, direction: -1 | 1) {
     const other = moveTarget(stages, index, direction);
@@ -89,11 +93,8 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
 
   async function remove(): Promise<boolean> {
     if (!deleting?.id) return true;
-    const result = await callApi<StageSettings>(`/api/deal-stages/${deleting.id}`, "DELETE");
-    if (!result.ok || !result.data) throw new Error(result.error ?? "Could not delete the stage. Try again.");
-    setSettings(result.data);
+    setSettings(orThrow(await runApiAction(callApi<StageSettings>(`/api/deal-stages/${deleting.id}`, "DELETE"), { refresh, expectData: true })));
     toast.success(`Deleted ${deleting.name}.`);
-    router.refresh();
     return true;
   }
 

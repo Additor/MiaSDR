@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, companyName, useCompanyDomainLookup, type ResolvedCompany } from "@/app/(app)/_components/person/company-domain-field";
 
@@ -79,12 +80,10 @@ export function AddCompanyDialog({ open, onOpenChange }: { open: boolean; onOpen
 
   async function add(): Promise<boolean> {
     const joining = holder && !taken ? holder.company : null;
-    const result = await callApi<{ companyId: string; listed: boolean }>("/api/companies", "POST", {
-      domain: domain.trim(),
-      name: joining ? null : name.trim() || null,
-      linkedinUrl: joining ? null : linkedin.trim() || null,
-    });
-    if (result.ok && result.data) {
+    const body = { domain: domain.trim(), name: joining ? null : name.trim() || null, linkedinUrl: joining ? null : linkedin.trim() || null };
+    // A success opens the new company, so nothing reloads this page.
+    const result = await runApiAction(callApi<{ companyId: string; listed: boolean }>("/api/companies", "POST", body), { expectData: true });
+    if (result.ok) {
       toast.success(joining ? `Added ${companyName(joining)} to Companies.` : `Added ${name.trim() || typed}.`);
       router.push(`/crm/companies/${result.data.companyId}`);
       return true;
@@ -103,7 +102,7 @@ export function AddCompanyDialog({ open, onOpenChange }: { open: boolean; onOpen
       });
       return false;
     }
-    throw new Error(result.error ?? "Could not add the company. Try again.");
+    throw new Error(result.error);
   }
 
   return (

@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CUSTOMER_GROUP, REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { submitSteps } from "../_lib/change-type";
 import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
@@ -140,16 +141,13 @@ export function ChangeTypeButton({
   }
 
   async function changeType(type: TypeOption) {
-    const result = correcting
-      ? await callApi(`/api/inbox/${conversationId}/reply-type`, "POST", { replyTypeKey: type.key, expectedContextVersion: contextVersion })
-      : await callApi(`/api/records/${recordId}/reply-type`, "POST", {
-          groupKey: type.groupKey,
-          replyTypeId: type.id,
-          expectedContextVersion: contextVersion,
-          confirmUnlock: unlock,
-          note: note.trim() || null,
-        });
-    if (!result.ok) throw new Error(result.error ?? "The reply type did not change. Try again.");
+    // Closing the dialog refreshes the page once the type changed, so this call reloads nothing itself.
+    const body = { groupKey: type.groupKey, replyTypeId: type.id, expectedContextVersion: contextVersion, confirmUnlock: unlock, note: note.trim() || null };
+    orThrow(
+      await runApiAction(
+        correcting ? callApi(`/api/inbox/${conversationId}/reply-type`, "POST", { replyTypeKey: type.key, expectedContextVersion: contextVersion }) : callApi(`/api/records/${recordId}/reply-type`, "POST", body),
+      ),
+    );
   }
 
   /**

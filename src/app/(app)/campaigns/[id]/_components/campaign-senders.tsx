@@ -2,9 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastResult, useApiAction } from "@/app/_lib/use-api-action";
 import { SenderPicker, type SenderOption } from "../../sender-picker";
 import { CampaignSection } from "./campaign-section";
 
@@ -13,20 +14,15 @@ export function CampaignSenders({ id, channel, options, assigned }: { id: string
   const router = useRouter();
   const noun = channel === "linkedin" ? "LinkedIn account" : "mailbox";
   const [value, setValue] = useState(assigned);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   const dirty = value.length !== assigned.length || value.some((v) => !assigned.includes(v));
 
-  async function save() {
-    setPending(true);
-    const result = await callApi(`${channel === "linkedin" ? "/api/linkedin" : "/api"}/campaigns/${id}`, "PATCH", { senderIds: value });
-    setPending(false);
-    if (!result.ok) {
-      toast.error(result.error ?? "Could not save the senders.");
-      return;
-    }
-    toast.success(value.length === 0 ? `Sending from every connected ${noun}.` : "Senders saved.");
-    router.refresh();
-  }
+  const save = () =>
+    run("save", async () => {
+      const result = await runApiAction(callApi(`${channel === "linkedin" ? "/api/linkedin" : "/api"}/campaigns/${id}`, "PATCH", { senderIds: value }), { refresh: () => router.refresh() });
+      toastResult(result, value.length === 0 ? `Sending from every connected ${noun}.` : "Senders saved.");
+    });
 
   return (
     <CampaignSection
@@ -40,7 +36,7 @@ export function CampaignSenders({ id, channel, options, assigned }: { id: string
     >
       <SenderPicker options={options} value={value} onChange={setValue} noun={noun} disabled={pending} />
       <div>
-        <Button size="sm" onClick={save} disabled={!dirty || pending}>
+        <Button size="sm" onClick={() => void save()} disabled={!dirty || pending}>
           {pending ? "Saving…" : "Save senders"}
         </Button>
       </div>

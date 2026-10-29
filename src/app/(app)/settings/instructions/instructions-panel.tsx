@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { cn } from "@/components/ui/utils";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
@@ -65,7 +67,8 @@ function BlockList({
     setBlocks(initial);
   }
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
 
   const change = (id: string, patch: Partial<Block>) => {
     setBlocks((current) => current.map((b) => (b.id === id ? { ...b, ...patch } : b)));
@@ -78,13 +81,13 @@ function BlockList({
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-    const result = await callApi("/api/settings/replies/ai-instructions", "PUT", { [field]: blocks });
-    setPending(false);
+    const result = await run("save", async () => {
+      setError(null);
+      return runApiAction(callApi("/api/settings/replies/ai-instructions", "PUT", { [field]: blocks }), { refresh: () => router.refresh() });
+    });
+    if (!result) return;
     if (!result.ok) return setError(result.error);
     toast.success(`${title} saved.`);
-    router.refresh();
   }
 
   if (!canManage) {

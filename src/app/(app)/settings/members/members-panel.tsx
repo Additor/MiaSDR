@@ -10,7 +10,9 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, toastResult, useApiAction } from "@/app/_lib/use-api-action";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
@@ -68,43 +70,29 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
   const router = useRouter();
   const [role, setRole] = useState("member");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [changing, setChanging] = useState<{ member: Member; role: string } | null>(null);
   const [created, setCreated] = useState<{ email: string; link: string } | null>(null);
   // Admins cannot grant or touch the owner role, so the menu hides it for them.
   const grantable = ROLES.filter((r) => actorIsOwner || r.value !== "owner");
 
-  async function act(label: string, run: () => Promise<{ ok: boolean; error: string | null }>) {
-    const result = await run();
-    if (!result.ok) toast.error(result.error ?? `${label} failed.`);
-    else toast.success(`${label}.`);
-    router.refresh();
-  }
+  // Each invitation runs on its own; Resend and Revoke of one invitation wait for each other.
+  const { isBusy, run } = useApiAction();
+  const inviteBusy = (id: string) => isBusy(`resend:${id}`) || isBusy(`revoke:${id}`);
+  const pending = isBusy("invite");
+  const refresh = () => router.refresh();
 
-  /** For a ConfirmDialog: a failure throws, so the dialog stays open and shows the message. */
-  async function perform(label: string, run: () => Promise<{ ok: boolean; error: string | null }>) {
-    const result = await run();
-    if (!result.ok) throw new Error(result.error ?? `${label} failed.`);
-    toast.success(`${label}.`);
-    router.refresh();
-  }
-
-  async function invite(event: FormEvent<HTMLFormElement>) {
+  function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const email = String(new FormData(form).get("email"));
-    setPending(true);
-    setError(null);
-    const result = await callApi<{ id: string }>("/api/members", "POST", { email, role });
-    setPending(false);
-    if (!result.ok || !result.data) {
-      setError(result.error);
-      return;
-    }
-    form.reset();
-    setCreated({ email, link: `${appUrl}/accept-invitation/${result.data.id}` });
-    router.refresh();
+    void run("invite", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<{ id: string }>("/api/members", "POST", { email, role }), { refresh, expectData: true });
+      if (!result.ok) return setError(result.error);
+      form.reset();
+      setCreated({ email, link: `${appUrl}/accept-invitation/${result.data.id}` });
+    });
   }
 
   return (
@@ -236,11 +224,25 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
                     </span>
                     <span className="ml-auto flex gap-1">
                       {/* A new invitation for the same address cancels this one and starts a fresh 7 days. */}
-                      <Button variant="ghost" size="sm" onClick={() => void act(emailConfigured ? "Invitation sent again" : "New link created", () => callApi("/api/members", "POST", { email: inv.email, role: primaryRole(inv.role) }))}>
-                        {emailConfigured ? "Resend" : "New link"}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={inviteBusy(inv.id)}
+                        onClick={() =>
+                          void run(`resend:${inv.id}`, async () =>
+                            toastResult(await runApiAction(callApi("/api/members", "POST", { email: inv.email, role: primaryRole(inv.role) }), { refresh }), emailConfigured ? "Invitation sent again." : "New link created."),
+                          )
+                        }
+                      >
+                        {isBusy(`resend:${inv.id}`) ? (emailConfigured ? "Resending…" : "Creating…") : emailConfigured ? "Resend" : "New link"}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => void act("Invitation revoked", () => callApi(`/api/invitations/${inv.id}`, "DELETE"))}>
-                        Revoke
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={inviteBusy(inv.id)}
+                        onClick={() => void run(`revoke:${inv.id}`, async () => toastResult(await runApiAction(callApi(`/api/invitations/${inv.id}`, "DELETE"), { refresh }), "Invitation revoked."))}
+                      >
+                        {isBusy(`revoke:${inv.id}`) ? "Revoking…" : "Revoke"}
                       </Button>
                     </span>
                   </div>
@@ -260,7 +262,7 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
         cancelLabel="Keep member"
         pendingLabel="Removing…"
         destructive
-        onConfirm={() => removing && perform("Member removed", () => callApi(`/api/members/${removing.id}`, "DELETE"))}
+        onConfirm={async () => removing && toastOrThrow(await runApiAction(callApi(`/api/members/${removing.id}`, "DELETE"), { refresh }), "Member removed.")}
       />
       <ConfirmDialog
         open={changing !== null}
@@ -269,7 +271,7 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
         description={changing ? (ROLE_CONSEQUENCE[changing.role]?.(changing.member.name) ?? "") : ""}
         confirmLabel="Change role"
         pendingLabel="Changing…"
-        onConfirm={() => changing && perform("Role changed", () => callApi(`/api/members/${changing.member.id}`, "PATCH", { role: changing.role }))}
+        onConfirm={async () => changing && toastOrThrow(await runApiAction(callApi(`/api/members/${changing.member.id}`, "PATCH", { role: changing.role }), { refresh }), "Role changed.")}
       />
     </div>
   );

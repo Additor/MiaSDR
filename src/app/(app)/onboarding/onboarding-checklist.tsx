@@ -4,6 +4,7 @@ import { CheckCircle2Icon, CircleAlertIcon, CircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -28,8 +29,7 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
   const next = view.steps.find((step) => step.id === view.nextStepId);
 
   async function hide() {
-    const result = await callApi("/api/onboarding/dismiss", "POST");
-    if (!result.ok) throw new Error(result.error ?? "Could not hide the setup guide. Try again.");
+    orThrow(await runApiAction(callApi("/api/onboarding/dismiss", "POST")));
     router.push(HOME);
     router.refresh();
   }

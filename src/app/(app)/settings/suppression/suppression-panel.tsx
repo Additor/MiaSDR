@@ -13,7 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
@@ -35,7 +37,8 @@ const reasonLabel = (row: Row) => (row.addedInSettings ? "Added here" : REASON_L
 export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: { rows: Row[]; total: number; page: number; pageSize: number; q: string; canManage: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   const [removing, setRemoving] = useState<Row | null>(null);
   const pageCount = Math.max(Math.ceil(total / pageSize), 1);
   const href = (p: number) => {
@@ -50,11 +53,12 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    setPending(true);
-    setError(null);
-    const result = await callApi<{ added: number; alreadyListed: number; stopped: number }>("/api/suppressions", "POST", { text: String(data.get("emails") ?? ""), note: String(data.get("note") ?? "") || null });
-    setPending(false);
-    if (!result.ok || !result.data) {
+    const result = await run("save", async () => {
+      setError(null);
+      return runApiAction(callApi<{ added: number; alreadyListed: number; stopped: number }>("/api/suppressions", "POST", { text: String(data.get("emails") ?? ""), note: String(data.get("note") ?? "") || null }), { refresh: () => router.refresh(), expectData: true });
+    });
+    if (!result) return;
+    if (!result.ok) {
       setError(result.error);
       return;
     }
@@ -63,14 +67,10 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
     toast.success(
       [`${countOf(added, "address", "addresses")} added.`, alreadyListed > 0 ? `${formatCount(alreadyListed)} already on the list.` : null, stopped > 0 ? `${countOf(stopped, "sequence")} stopped.` : null].filter(Boolean).join(" "),
     );
-    router.refresh();
   }
 
   async function remove(row: Row) {
-    const result = await callApi(`/api/suppressions/${row.id}`, "DELETE");
-    if (!result.ok) throw new Error(result.error ?? "Could not remove the address.");
-    toast.success(`${row.email} removed.`);
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`/api/suppressions/${row.id}`, "DELETE"), { refresh: () => router.refresh() }), `${row.email} removed.`);
   }
 
   return (

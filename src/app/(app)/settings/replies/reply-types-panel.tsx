@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Count } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +14,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { CATCH_ALL_TYPE_KEY, REPLY_TYPE_GROUPS } from "@/contexts/conversations/domain/reply-handling";
 import { DEFAULT_TYPE_RULES, SYSTEM_ROLE_REASONS, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "@/contexts/conversations/domain/reply-type";
 import { rulesSummary } from "@/app/(app)/inbox/[id]/_lib/type-line";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { countOf, formatCount } from "@/shared/format-number";
 import { cn } from "@/components/ui/utils";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
@@ -71,6 +72,8 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
   const [draft, setDraft] = useState<Draft>(draftOf(null));
   const [confirming, setConfirming] = useState<{ type: ReplyTypeItem; action: "archive" | "delete" } | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const { isBusy, run } = useApiAction();
+  const refresh = () => router.refresh();
   // Where the AI sends a reply that would have fit an archived type: the catch-all of the Other group, when it is active.
   const fallback = replyTypes.find((t) => t.key === CATCH_ALL_TYPE_KEY && t.active)?.name ?? null;
 
@@ -89,31 +92,24 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
       classificationGuidance: draft.guidance.trim() || null,
       ...rules,
     };
-    const result = editing ? await callApi(`/api/reply-types/${editing.id}`, "PATCH", common) : await callApi("/api/reply-types", "POST", { ...common, groupKey: draft.groupKey });
-    if (!result.ok) throw new Error(result.error ?? "Could not save the reply type.");
-    toast.success(editing ? `${draft.name} saved.` : `${draft.name} added.`);
-    router.refresh();
+    const result = await runApiAction(editing ? callApi(`/api/reply-types/${editing.id}`, "PATCH", common) : callApi("/api/reply-types", "POST", { ...common, groupKey: draft.groupKey }), { refresh });
+    toastOrThrow(result, editing ? `${draft.name} saved.` : `${draft.name} added.`);
   }
 
   /** Archive and restore. A failure throws so the confirmation dialog can show it; Restore has no dialog and reports below the list. */
   async function toggle(type: ReplyTypeItem) {
-    const result = await callApi(`/api/reply-types/${type.id}`, "PATCH", { active: !type.active });
-    if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
-    toast.success(type.active ? `${type.name} archived.` : `${type.name} restored.`);
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`/api/reply-types/${type.id}`, "PATCH", { active: !type.active }), { refresh }), type.active ? `${type.name} archived.` : `${type.name} restored.`);
   }
 
   async function remove(type: ReplyTypeItem) {
-    const result = await callApi(`/api/reply-types/${type.id}`, "DELETE");
-    if (!result.ok) throw new Error(result.error ?? "Something went wrong. Try again.");
-    toast.success(`${type.name} deleted.`);
-    router.refresh();
+    toastOrThrow(await runApiAction(callApi(`/api/reply-types/${type.id}`, "DELETE"), { refresh }), `${type.name} deleted.`);
   }
 
-  function restore(type: ReplyTypeItem) {
-    setRestoreError(null);
-    toggle(type).catch((e: unknown) => setRestoreError(e instanceof Error ? e.message : "Something went wrong. Try again."));
-  }
+  const restore = (type: ReplyTypeItem) =>
+    run(type.id, async () => {
+      setRestoreError(null);
+      await toggle(type).catch((e: unknown) => setRestoreError(e instanceof Error ? e.message : "Something went wrong. Try again."));
+    });
 
   const setRules = (patch: Partial<TypeRules>) => setDraft((d) => ({ ...d, rules: { ...d.rules, ...patch } }));
   const editing = dialog?.editing ?? null;
@@ -166,8 +162,8 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
                             </Button>
                             {/* A system-role type can be neither archived nor deleted. */}
                             {!t.systemRole && (
-                              <Button size="sm" variant="ghost" onClick={() => (t.active ? setConfirming({ type: t, action: "archive" }) : restore(t))}>
-                                {t.active ? "Archive" : "Restore"}
+                              <Button size="sm" variant="ghost" disabled={isBusy(t.id)} onClick={() => (t.active ? setConfirming({ type: t, action: "archive" }) : void restore(t))}>
+                                {isBusy(t.id) ? "Restoring…" : t.active ? "Archive" : "Restore"}
                               </Button>
                             )}
                             {!t.systemRole && t.recordCount === 0 && t.historyCount === 0 && (

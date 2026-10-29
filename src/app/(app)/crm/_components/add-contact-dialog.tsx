@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/conversion-terms";
+import { runApiAction } from "@/app/_lib/api-action";
 import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
 import { defaultTitle, newIdempotencyKey, permanenceText, singleEffectsText, type ConvertPreview } from "./deal-effects";
@@ -144,10 +145,11 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
   useEffect(() => {
     if (!leadId) return;
     let live = true;
-    void callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: [leadId] }).then((result) => {
+    // A read sent as POST: nothing changes, so nothing reloads.
+    void runApiAction(callApi<ConvertPreview>("/api/leads/convert/preview", "POST", { ids: [leadId] }), { expectData: true }).then((result) => {
       if (!live) return;
-      if (result.ok && result.data) setPreview(result.data);
-      else setPreviewError(result.error ?? "Could not check what this changes. Try again.");
+      if (result.ok) setPreview(result.data);
+      else setPreviewError(result.error);
     });
     return () => {
       live = false;
@@ -189,8 +191,9 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       deal: withDeal ? dealBody() : null,
       idempotencyKey: key,
     };
-    const result = await callApi<{ personId: string; dealId?: string }>("/api/contacts", "POST", body);
-    if (result.ok && result.data) {
+    // A success opens the new record, so nothing reloads this page.
+    const result = await runApiAction(callApi<{ personId: string; dealId?: string }>("/api/contacts", "POST", body), { expectData: true });
+    if (result.ok) {
       const { personId, dealId } = result.data;
       toast.success(dealId ? `Added ${name} with a deal.` : `Added ${name}.`);
       router.push(dealId ? `/crm/deals/${dealId}` : `/crm/contacts/${personId}`);
@@ -209,7 +212,7 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       return false;
     }
     if (code === "try_again") throw new Error(apiMessage("try_again", name));
-    throw new Error(result.error ?? "Could not add the contact. Try again.");
+    throw new Error(result.error);
   }
 
   /** The lead step: Make contact, or Create deal with the box checked. Both keep the lead's saved details. */
@@ -221,20 +224,21 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       return true;
     };
     if (withDeal) {
-      const result = await callApi<{ dealId: string }>(`/api/leads/${match.personId}/convert`, "POST", { ...dealBody(), idempotencyKey: key });
-      if (result.ok && result.data) return done(`/crm/deals/${result.data.dealId}`);
-      if (result.code === "already_converted") throw new Error(`${upperFirst(label)} is already a contact.`);
-      if (result.code === "try_again") throw new Error(apiMessage("try_again", label));
-      throw new Error(result.error ?? "Could not create the deal. Try again.");
+      const result = await runApiAction(callApi<{ dealId: string }>(`/api/leads/${match.personId}/convert`, "POST", { ...dealBody(), idempotencyKey: key }), {
+        expectData: true,
+        onConflict: { already_converted: () => `${upperFirst(label)} is already a contact.`, try_again: () => apiMessage("try_again", label) },
+      });
+      if (result.ok) return done(`/crm/deals/${result.data.dealId}`);
+      throw new Error(result.error);
     }
-    const result = await callApi<{ personId: string }>(`/api/leads/${match.personId}/make-contact`, "POST", {});
+    const result = await runApiAction(callApi<{ personId: string }>(`/api/leads/${match.personId}/make-contact`, "POST", {}), {
+      onConflict: { try_again: () => apiMessage("try_again", label), personal_campaign: () => PERSONAL_CAMPAIGN_MESSAGE },
+    });
     // `already_converted` means someone else made the lead a contact first: the outcome stands, so open the contact.
     if (result.ok || result.code === "already_converted") return done(`/crm/contacts/${match.personId}`);
-    if (result.code === "try_again") throw new Error(apiMessage("try_again", label));
-    if (result.code === "personal_campaign") throw new Error(PERSONAL_CAMPAIGN_MESSAGE);
     // A 404 answers "Lead not found"; the dialog names the person instead.
     if (result.status === 404) throw new Error(`${upperFirst(label)} no longer exists.`);
-    throw new Error(result.error ?? "Could not make the lead a contact. Try again.");
+    throw new Error(result.error);
   }
 
   const dealReady = !withDeal || dealFieldsReady(dealForm, stages, true);

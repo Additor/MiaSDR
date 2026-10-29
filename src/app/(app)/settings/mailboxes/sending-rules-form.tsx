@@ -5,7 +5,9 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { useApiAction } from "@/app/_lib/use-api-action";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { SettingsSection } from "../settings-section";
 
@@ -20,22 +22,23 @@ export function SendingRulesForm({ rules, canEdit }: { rules: Rules; canEdit: bo
   const saved = { min: String(rules.sendGapMinutes[0]), max: String(rules.sendGapMinutes[1]), takeover: String(rules.takeoverAfterHours) };
   const [values, setValues] = useState(saved);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { isBusy, run } = useApiAction<"save">();
+  const pending = isBusy("save");
   const dirty = Number(values.min) !== rules.sendGapMinutes[0] || Number(values.max) !== rules.sendGapMinutes[1] || Number(values.takeover) !== rules.takeoverAfterHours;
   useLeaveGuard(dirty);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setPending(true);
-    setError(null);
-    const result = await callApi("/api/settings/email-rules", "PATCH", { minGapMinutes: Number(values.min), maxGapMinutes: Number(values.max), takeoverAfterHours: Number(values.takeover) });
-    setPending(false);
+    const result = await run("save", async () => {
+      setError(null);
+      return runApiAction(callApi("/api/settings/email-rules", "PATCH", { minGapMinutes: Number(values.min), maxGapMinutes: Number(values.max), takeoverAfterHours: Number(values.takeover) }), { refresh: () => router.refresh() });
+    });
+    if (!result) return;
     if (!result.ok) {
       setError(result.error);
       return;
     }
     toast.success("Sending rules saved.");
-    router.refresh();
   }
 
   return (
