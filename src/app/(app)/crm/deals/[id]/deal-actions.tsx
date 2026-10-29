@@ -155,7 +155,7 @@ function EditDealDialog({
   async function save(): Promise<boolean> {
     const result = await callApi(`/api/deals/${deal.id}`, "PATCH", { expectedVersion: version, ...body });
     if (!result.ok) {
-      if (result.details?.code === "stale_version" && typeof result.details.version === "number") {
+      if (result.code === "stale_version" && typeof result.details?.version === "number") {
         setVersion(result.details.version);
         setStale(true);
         router.refresh();
@@ -243,7 +243,7 @@ function DeleteDealDialog({ deal, returnPath, open, onOpenChange }: { deal: Deal
   async function remove() {
     const result = await callApi(`/api/deals/${deal.id}?expectedVersion=${deal.version}`, "DELETE");
     if (!result.ok) {
-      if (result.details?.code === "stale_version") {
+      if (result.code === "stale_version") {
         router.refresh();
         throw new Error("Someone changed this deal since you opened it. The page now shows the latest version. Check it, then delete it again.");
       }

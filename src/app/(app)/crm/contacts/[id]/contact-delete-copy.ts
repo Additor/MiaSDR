@@ -101,7 +101,6 @@ export function reachLines(preview: Pick<DeletePreview, "person" | "suppressionK
 
 export const deleteDescription = (name: string) => `This deletes ${name} and cannot be undone.`;
 export const countsChangedText = (name: string) => `${upperFirst(name)} changed while this was open. Check the new counts and confirm again.`;
-export const tryAgainText = (name: string) => `MiaSDR is saving another change to ${name}. Try again in a moment.`;
 export const goneText = (name: string) => `${upperFirst(name)} no longer exists.`;
 export const deletedText = (name: string) => `Deleted ${name}.`;
 

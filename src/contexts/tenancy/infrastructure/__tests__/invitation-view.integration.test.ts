@@ -99,7 +99,7 @@ describeDb("invitation view and decline", () => {
   it("answers 404 not-found for a canceled invitation, an unknown id and a non-uuid id", async () => {
     const canceled = await view(await invite({ status: "canceled" }), invitee);
     expect(canceled.status).toBe(404);
-    expect(canceled.body).toEqual({ state: "not-found" });
+    expect(canceled.body).toEqual({ error: "This invitation does not exist.", state: "not-found", code: "not_found" });
     expect((await view("00000000-0000-4000-8000-000000000000", invitee)).status).toBe(404);
     for (const bad of ["not-a-uuid", "x", "1; drop table invitations"]) expect((await view(bad, invitee)).status, bad).toBe(404);
   });

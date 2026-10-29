@@ -153,6 +153,15 @@ describeDb("route matrix", () => {
     return out;
   }
 
+  /** The `code` of an error body (docs/decisions.md, "API errors and contract types"), or what the body was instead. */
+  const codeOf = (r: CallResult) => {
+    try {
+      return (JSON.parse(r.text) as { code?: unknown }).code ?? `(no code: ${r.text.slice(0, 120)})`;
+    } catch {
+      return `(not JSON: ${r.text.slice(0, 120)})`;
+    }
+  };
+
   const describeStatus = (r: CallResult) => `${r.status} ${r.thrown ? `(threw: ${String(r.thrown).slice(0, 160)})` : r.text.slice(0, 160)}`;
 
   function bodyOptions(file: string, method: HttpMethod, spec: HandlerSpec) {
@@ -176,6 +185,7 @@ describeDb("route matrix", () => {
         it("answers 401 without a session", async () => {
           const result = await callRoute(file, method, { ...common, ...valid, params: Object.fromEntries(params.map((p) => [p, "x"])), as: null });
           expect(result.status, describeStatus(result)).toBe(401);
+          expect(codeOf(result)).toBe("unauthenticated");
         });
 
         if (spec.admin) {
@@ -183,6 +193,7 @@ describeDb("route matrix", () => {
             const ids = await idsOf(key, world.orgA.id);
             const result = await callRoute(file, method, { ...common, ...valid, params: ids, as: world.member });
             expect(result.status, describeStatus(result)).toBe(403);
+            expect(codeOf(result)).toBe("forbidden");
           });
 
           if (reads && !spec.form) {
@@ -202,6 +213,7 @@ describeDb("route matrix", () => {
             const ids = await idsOf(key, world.orgA.id);
             const result = await callRoute(file, method, { ...common, ...valid, params: { ...ids, [param]: idSpecValue.table ? "not-a-uuid" : "not-a-view" }, as: world.admin });
             expect(result.status, describeStatus(result)).toBe(404);
+            expect(codeOf(result)).toBe("not_found");
           });
 
           if (idSpecValue.table && !spec.idIsCapability) {
@@ -213,6 +225,7 @@ describeDb("route matrix", () => {
               for (const linked of names.slice(1)) params[linked] = foreign[linked];
               const result = await callRoute(file, method, { ...common, ...valid, params, as: world.admin });
               expect(result.status, describeStatus(result)).toBe(404);
+              expect(codeOf(result)).toBe("not_found");
             });
           }
         }
@@ -222,6 +235,7 @@ describeDb("route matrix", () => {
             const ids = await idsOf(key, world.orgA.id);
             const result = await callRoute(file, method, { ...common, params: ids, raw: "{not json", as: world.admin });
             expect(result.status, describeStatus(result)).toBe(400);
+            expect(codeOf(result)).toBe("bad_request");
           });
         }
 

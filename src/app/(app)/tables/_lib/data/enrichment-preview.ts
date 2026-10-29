@@ -4,17 +4,9 @@ import { useEffect, useState } from "react";
 import { gridRequest, gridUrl } from "./client";
 import { credits, dollars } from "./run-request";
 import { formatCount } from "@/shared/format-number";
+import type { EnrichmentPreview } from "@/contexts/grid/enrichment/application/enrichment-run";
 
-/** What a new enrichment column would match and cost, as `POST /enrichments/preview` returns it. */
-export interface EnrichmentPreview {
-  rows: number;
-  ready: number;
-  /** The table has rows past the ones the preview read. */
-  more: boolean;
-  /** The first value of each column, by column key. */
-  samples: Record<string, string>;
-  perCell: { cents: number; credits: number };
-}
+export type { EnrichmentPreview };
 
 
 /** "1,842 of 2,000 rows have these inputs", or why none do. */

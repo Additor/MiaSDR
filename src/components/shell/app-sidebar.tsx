@@ -27,6 +27,7 @@ import { SETTINGS_GROUPS } from "@/app/(app)/settings/settings-nav-config";
 import { CommandPalette, type PaletteDestination } from "./command-palette";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { HOME } from "@/app/_lib/home";
+import { callApi } from "@/app/_lib/api-client";
 
 type NavGroup = "Work" | "CRM" | "Insight" | "Admin";
 
@@ -147,14 +148,9 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
   async function switchTo(organizationId: string) {
     if (organizationId === activeId) return;
     setSwitchError(null);
-    const response = await fetch("/api/organizations/active", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ organizationId }),
-    });
-    if (!response.ok) {
-      const detail = await response.json().then((body: { error?: unknown }) => (typeof body.error === "string" ? body.error : null)).catch(() => null);
-      setSwitchError(detail ? `Could not switch organization: ${detail}` : "Could not switch organization. Try again.");
+    const result = await callApi("/api/organizations/active", "POST", { organizationId });
+    if (!result.ok) {
+      setSwitchError(result.error ? `Could not switch organization: ${result.error}` : "Could not switch organization. Try again.");
       return;
     }
     router.push(listPageOf(pathname));

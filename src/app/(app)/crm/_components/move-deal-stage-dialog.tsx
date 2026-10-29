@@ -50,7 +50,7 @@ export async function moveDealStage(dealId: string, stageId: string, expectedVer
     const version = (result.data as { version?: unknown } | null)?.version;
     return { ok: true, deal: result.data, version: typeof version === "number" ? version : null };
   }
-  if (result.details?.code === "stale_version" && typeof result.details.version === "number") return { ok: false, staleVersion: result.details.version };
+  if (result.code === "stale_version" && typeof result.details?.version === "number") return { ok: false, staleVersion: result.details.version };
   return { ok: false, error: result.error ?? "Could not move the deal. Try again." };
 }
 

@@ -7,6 +7,7 @@ import { canonicalProfileUrl } from "../domain/linkedin-url";
 import { isFilterActive } from "../domain/lead-filter";
 import { planLeadEdit, type LeadEditInput } from "../domain/lead-edit";
 import { leadDeleteBlock } from "../domain/person-delete-policy";
+import { BLOCK_MESSAGES } from "./lead-delete-terms";
 import type { BlockedLead, BlockReason, DeleteOutcome, LeadDeleteDeps, LeadDeps, LeadDetail, LeadFilter, LeadForDelete, SendViewer } from "./lead-ports";
 
 /*
@@ -16,14 +17,7 @@ import type { BlockedLead, BlockReason, DeleteOutcome, LeadDeleteDeps, LeadDeps,
 
 export const MAX_DELETE_IDS = 5000;
 
-export const BLOCK_MESSAGES: Record<BlockReason, string> = {
-  has_sends: "Messages were already sent to this lead. Mark it do not contact instead of deleting it.",
-  has_hidden_sends: "This lead got messages in another member's personal campaign. Mark it do not contact instead of deleting it.",
-  in_active_campaign: "The lead is still in a running or paused campaign. Cancel its enrollment or finish the campaign first.",
-  personal_campaign_sends: "The lead is in another member's personal campaign. Ask its creator, an owner or an admin to delete it, or mark it do not contact.",
-  linked_records: "The lead has history, such as replies or conversations. Mark it do not contact instead of deleting it.",
-  try_again: "Another change to this lead was in progress. Try the delete again in a moment.",
-};
+export { BLOCK_MESSAGES };
 
 /** One line per reason in a bulk delete's answer, for `n` leads kept. Each says why, in the order of the per-lead reasons. */
 const KEPT_LINES: Record<BlockReason, (n: number) => string> = {

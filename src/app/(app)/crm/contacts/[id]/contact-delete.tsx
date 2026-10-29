@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/shared/format-time";
+import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { dealHref } from "../../_components/deal-href";
 import { contactLabel } from "../../_components/labels";
 import { openDncControl } from "@/app/(app)/_components/person/dnc-control";
@@ -25,7 +26,6 @@ import {
   expectedQuery,
   goneText,
   reachLines,
-  tryAgainText,
   type DeleteBlocker,
   type DeleteCounts,
   type DeletePreview,
@@ -84,14 +84,6 @@ function BlockerList({ blockers, name, personId }: { blockers: DeleteBlocker[]; 
 
 type Status = { kind: "blocked"; blockers: DeleteBlocker[] } | { kind: "text"; text: string } | null;
 
-/** One answer of the API, with its status code: a 404 after a sent delete means the delete went through. */
-async function request(url: string, method: "GET" | "DELETE"): Promise<{ status: number; body: Record<string, unknown> | null }> {
-  const response = await fetch(url, { method }).catch(() => null);
-  if (!response) throw new Error("Could not reach the server.");
-  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-  return { status: response.status, body };
-}
-
 function DeleteContactDialog({
   personId,
   initialName,
@@ -126,22 +118,20 @@ function DeleteContactDialog({
   useEffect(() => {
     if (!open) return;
     let live = true;
-    request(`/api/contacts/${personId}/delete-preview`, "GET")
-      .then(({ status: code, body }) => {
-        if (!live) return;
-        if (code === 404) {
-          toast.error(goneText(initialName));
-          onOpenChange(false);
-          router.replace("/crm/contacts");
-          return;
-        }
-        if (code !== 200 || !body) return setStatus({ kind: "text", text: typeof body?.error === "string" ? body.error : "Could not read what the delete removes. Try again." });
-        const next = body as unknown as DeletePreview;
-        setPreview(next);
-        setCounts(next.counts);
-        if (next.blockers.length > 0) setStatus({ kind: "blocked", blockers: next.blockers });
-      })
-      .catch((error: unknown) => live && setStatus({ kind: "text", text: error instanceof Error ? error.message : "Could not reach the server." }));
+    void callApi<DeletePreview>(`/api/contacts/${personId}/delete-preview`, "GET").then((result) => {
+      if (!live) return;
+      if (result.code === "not_found") {
+        toast.error(goneText(initialName));
+        onOpenChange(false);
+        router.replace("/crm/contacts");
+        return;
+      }
+      if (!result.ok || !result.data) return setStatus({ kind: "text", text: result.error ?? "Could not read what the delete removes. Try again." });
+      const next = result.data;
+      setPreview(next);
+      setCounts(next.counts);
+      if (next.blockers.length > 0) setStatus({ kind: "blocked", blockers: next.blockers });
+    });
     return () => {
       live = false;
     };
@@ -155,24 +145,26 @@ function DeleteContactDialog({
 
   async function remove(): Promise<boolean | void> {
     if (!counts) return false;
-    const { status: code, body } = await request(`/api/contacts/${personId}?${expectedQuery(counts)}`, "DELETE");
-    if (code === 200 || code === 404) return done();
-    const reason = typeof body?.code === "string" ? body.code : null;
-    if (reason === "contact_blocked" && Array.isArray(body?.blockers)) {
+    // A 404 after a sent delete means the delete went through.
+    const result = await callApi(`/api/contacts/${personId}?${expectedQuery(counts)}`, "DELETE");
+    if (result.ok || result.code === "not_found") return done();
+    if (result.status === 0) throw new Error(result.error ?? "Could not reach the server.");
+    const body = result.details;
+    if (result.code === "contact_blocked" && Array.isArray(body?.blockers)) {
       setStatus({ kind: "blocked", blockers: body.blockers as DeleteBlocker[] });
       return false;
     }
-    if (reason === "counts_changed" && body?.counts) {
+    if (result.code === "counts_changed" && body?.counts) {
       setCounts(body.counts as DeleteCounts);
       setStatus({ kind: "text", text: countsChangedText(name) });
       return false;
     }
-    if (reason === "try_again") {
-      setStatus({ kind: "text", text: tryAgainText(name) });
+    if (result.code === "try_again") {
+      setStatus({ kind: "text", text: apiMessage("try_again", name) });
       return false;
     }
     if (typeof body?.error === "string") {
-      setStatus({ kind: "text", text: body.error });
+      setStatus({ kind: "text", text: result.error ?? body.error });
       return false;
     }
     throw new Error("Could not delete this contact. Try again.");

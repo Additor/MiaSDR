@@ -50,7 +50,6 @@ export function mergePreviewLines(preview: MergePreview): string[] {
 }
 
 export const MERGE_TIMEOUT = "The merge may still be running. Reload in a minute to check.";
-export const mergeTryAgain = (company: string) => `MiaSDR is saving another change to ${company}. Try again in a moment.`;
 export const mergedText = (other: string, kept: string) => `Merged ${other} into ${kept}.`;
 
 export const deleteCompanyDescription = (company: string, domain: string) =>

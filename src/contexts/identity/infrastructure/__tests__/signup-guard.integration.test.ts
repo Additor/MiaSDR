@@ -121,10 +121,10 @@ describeDb("sign-up guard on an invite-only instance", () => {
 
     const zone = await post({ ...base, timeZone: "Mars/Olympus" });
     expect(zone.status).toBe(400);
-    expect(await zone.json()).toEqual({ error: "Time zone is not a known IANA zone." });
+    expect(await zone.json()).toEqual({ error: "Time zone is not a known IANA zone.", code: "bad_request" });
 
     const password = await post({ ...base, password: "short" });
-    expect(await password.json()).toEqual({ error: "Password needs at least 8 characters." });
+    expect(await password.json()).toEqual({ error: "Password needs at least 8 characters.", code: "bad_request" });
 
     expect((await post(base)).status).toBe(409);
   });

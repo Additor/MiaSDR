@@ -40,7 +40,7 @@ describeDb("lead import routes", () => {
       const refused = await callRoute(route, "POST", { form: file(), as: world.member });
       expect(refused.status, route).toBe(409);
       expect(refused.headers.get("content-type"), route).toContain("application/json");
-      expect(refused.body, route).toEqual({ error: "A field named Plan is archived. Ask an owner or admin to restore it first." });
+      expect(refused.body, route).toEqual({ error: "A field named Plan is archived. Ask an owner or admin to restore it first.", code: "conflict" });
     }
     expect(await leads()).toBe(0);
     expect((await world.sql`select archived_at from entity_columns where organization_id = ${world.orgA.id} and key = 'x_import_plan'`)[0].archived_at).not.toBeNull();

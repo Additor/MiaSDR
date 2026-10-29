@@ -276,10 +276,10 @@ export function QueueGroup({
       c.kind === "held"
         ? item.conversationId
           ? await callApi(`/api/inbox/${item.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
-          : { ok: false, error: "Open the person to decide.", details: null }
+          : { ok: false, error: "Open the person to decide.", code: null, details: null }
         : await callApi(`/api/reply-type-picks/${c.replyTypePickId}/acknowledge`, "POST");
     if (!result.ok) {
-      const stop = result.details?.code === "stop_review" ? stopHref(item, query) : null;
+      const stop = result.code === "stop_review" ? stopHref(item, query) : null;
       if (stop) router.push(stop);
       else setRowErrors((current) => ({ ...current, [item.recordId]: result.error ?? "Could not save. Try again." }));
       return false;

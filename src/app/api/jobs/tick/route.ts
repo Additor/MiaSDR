@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { apiError } from "@/app/_lib/api-errors";
 import { tickObserver } from "@/platform/jobs/observe";
 import { registeredJobs } from "@/composition/job-registry";
 import { runTick } from "@/platform/jobs/tick";
@@ -18,7 +19,7 @@ function authorized(request: Request): boolean {
 
 async function tick(request: Request) {
   if (!authorized(request)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return apiError(401, "The cron secret is missing or wrong.");
   }
   const report = await runTick(registeredJobs());
   // The same log lines and failure records as the embedded scheduler. Observing never fails the response.

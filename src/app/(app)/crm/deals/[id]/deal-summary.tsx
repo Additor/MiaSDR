@@ -38,7 +38,7 @@ export function DealSummaryFields({ deal, members, currentUserId }: { deal: Summ
   async function save(body: Record<string, unknown>): Promise<SaveResult> {
     const result = await callApi(`/api/deals/${deal.id}`, "PATCH", { expectedVersion: deal.version, ...body });
     if (result.ok) return null;
-    if (result.details?.code === "stale_version") {
+    if (result.code === "stale_version") {
       router.refresh();
       return STALE;
     }
