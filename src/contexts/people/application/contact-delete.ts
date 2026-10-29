@@ -1,6 +1,7 @@
 import type { DbHandle } from "@/platform/db/client";
 import { retryOnce, sqlState, TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { mergeContactBlockers } from "../domain/person-delete-policy";
 import type { LeadsAudit } from "./leads-audit";
 
 /*
@@ -104,6 +105,8 @@ export interface ContactDeleteDeals {
 
 /** Outreach: `person-outreach.ts`. */
 export interface ContactDeleteOutreach {
+  /** After the deals, before the blockers: the person's enrollments `FOR UPDATE` in id order, so no send claim lands between the blockers and the purge. */
+  lockEnrollments(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<unknown>;
   counts(tx: DbHandle, actor: Actor, personId: string): Promise<{ campaigns: number; sends: number; hidden: boolean }>;
   blockers(tx: DbHandle, actor: Actor, personId: string, now: Date): Promise<Array<{ reason: "send_in_flight" | "personal_campaign_sends" } | { reason: "recent_send" | "recent_invite"; until: Date }>>;
   /** Step 12. */
@@ -170,8 +173,7 @@ const openDealsBlocker = (deals: ContactDealRef[]): ContactDeleteBlocker[] => {
 async function blockersOf(deps: ContactDeleteDeps, tx: DbHandle, actor: Actor, personId: string, deals: ContactDealRef[], now: Date): Promise<ContactDeleteBlocker[]> {
   const outreach = await deps.outreach.blockers(tx, actor, personId, now);
   const handling = await deps.handling.blockers(tx, actor, personId);
-  const all: ContactDeleteBlocker[] = [...openDealsBlocker(deals), ...outreach, ...handling];
-  return all.filter((blocker, index) => blocker.reason !== "send_in_flight" || all.findIndex((b) => b.reason === "send_in_flight") === index);
+  return mergeContactBlockers<ContactDeleteBlocker>(openDealsBlocker(deals), outreach, handling);
 }
 
 async function countsOf(deps: ContactDeleteDeps, tx: DbHandle, actor: Actor, personId: string): Promise<{ counts: ContactDeleteCounts; hidden: boolean }> {
@@ -235,7 +237,7 @@ export async function previewContactDelete(deps: ContactDeleteDeps, actor: Actor
 
 /**
  * Deletes a contact in the order of plan 4.3, under the person's locks: records and their conversations, the outreach advisory
- * lock, the people row, the do not contact row and the deals. 404 when the person is gone; 409 `not_a_contact`; 409
+ * lock, the people row, the do not contact row, the deals and the enrollments. 404 when the person is gone; 409 `not_a_contact`; 409
  * `contact_blocked { blockers }`; 409 `counts_changed { counts }` when the counts differ from what the dialog showed; 409
  * `try_again` after one retry on a lock error, or past the statement timeout.
  */
@@ -251,6 +253,7 @@ export async function deleteContact(deps: ContactDeleteDeps, actor: Actor, perso
         const person = checkPerson(await deps.people.lock(tx, organizationId, personId));
         await deps.people.lockDoNotContact(tx, organizationId, personId);
         const deals = await deps.deals.lock(tx, organizationId, personId);
+        await deps.outreach.lockEnrollments(tx, organizationId, [personId]);
         const blockers = await blockersOf(deps, tx, actor, personId, deals, deps.now?.() ?? new Date());
         if (blockers.length > 0) throw new ConflictError("This contact cannot be deleted.", { code: "contact_blocked", blockers });
 

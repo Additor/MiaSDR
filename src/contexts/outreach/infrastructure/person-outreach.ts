@@ -3,13 +3,15 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { db, type DbHandle } from "@/platform/db/client";
 import type { Actor } from "@/shared/errors";
 import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
+import { SEND_COUNTED } from "../domain/send-status";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 
 /*
- * Callee-owned functions for deleting a contact ("Contacts and Companies CRUD" in docs/decisions.md). The
- * leads use case holds the transaction and calls these after `lockPersonForDelete`, which takes the person's outreach
- * advisory lock, and the people row lock: `personOutreachBlockers` (step 5), `personOutreachCounts` (step 8) and
- * `purgePersonOutreach` (step 12). `leadsInRunningCampaigns` feeds the merge preview.
+ * Callee-owned functions for deleting people ("Delete" and "Contact delete" in docs/decisions.md). The people use cases
+ * hold the transaction and call these after the person's outreach advisory lock and the people row lock:
+ * `lockEnrollmentsOfPeopleTx` first in both modes, then for a contact `personOutreachBlockers`, `personOutreachCounts` and
+ * `purgePersonOutreach`, for a batch of leads `leadOutreachBlockers` and `purgeUnsentEnrollments`.
+ * `leadsInRunningCampaigns` feeds the merge preview.
  */
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -32,6 +34,9 @@ export type PersonOutreachBlocker =
   | { reason: "recent_invite"; until: Date }
   | { reason: "personal_campaign_sends" };
 
+/** The ids as a uuid `in` list of bound parameters. */
+const uuidList = (ids: readonly string[]) => sql`(${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})`;
+
 const enrollmentsOf = (organizationId: string, personId: string) =>
   sql`(select e.id from campaign_enrollments e where e.organization_id = ${organizationId} and e.person_id = ${personId}::uuid)`;
 
@@ -42,7 +47,8 @@ const enrollmentsOf = (organizationId: string, personId: string) =>
 const campaignSeenBy = (actor: Actor, alias: string) => {
   if (isOwnerOrAdmin(actor.role)) return sql`true`;
   const c = sql.raw(alias);
-  return sql`(${c}.type = 'regular' or ${c}.created_by = ${actor.userId}::uuid)`;
+  // `is not distinct from`: a creator who left sets `created_by` to null, and a null here would drop every flag built on it.
+  return sql`(${c}.type = 'regular' or ${c}.created_by is not distinct from ${actor.userId}::uuid)`;
 };
 
 /**
@@ -108,20 +114,84 @@ export async function personOutreachBlockers(tx: DbHandle, actor: Actor, personI
 }
 
 /**
- * Step 12 of a contact delete: removes the person's sends, then their enrollments. The enrollment delete cascades to their
- * LinkedIn details and sets `linkedin_connections.enrollment_id` to null. Campaign reports read these rows live, so they
- * drop the sends (P2). The sends trigger refuses a send in flight or unresolved, which the blockers already ruled out.
+ * The enrollments of these people `FOR UPDATE` in id order. A send claim selects its enrollment `FOR UPDATE SKIP LOCKED` and
+ * inserts the send under that lock, so while a delete holds these rows no claim takes them, and a claim that holds one makes
+ * the delete wait until it commits and then shows in the blockers. Returns how many it locked.
  */
-export async function purgePersonOutreach(tx: DbHandle, organizationId: string, personId: string): Promise<{ enrollments: number; sends: number }> {
-  const enrollments = enrollmentsOf(organizationId, personId);
-  const [row] = rowsOf<{ enrollments: number; sends: number }>(
+export async function lockEnrollmentsOfPeopleTx(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<number> {
+  if (personIds.length === 0) return 0;
+  const rows = rowsOf<{ id: string }>(
     await tx.execute(sql`
-      with gone_sends as (delete from sends where organization_id = ${organizationId} and enrollment_id in ${enrollments} returning 1),
-      gone as (delete from campaign_enrollments where organization_id = ${organizationId} and person_id = ${personId}::uuid returning 1)
-      select (select count(*) from gone)::int as enrollments, (select count(*) from gone_sends)::int as sends`),
+      select e.id from campaign_enrollments e
+      where e.organization_id = ${organizationId} and e.person_id in ${uuidList(personIds)}
+      order by e.id for update of e`),
   );
-  return row;
+  return rows.length;
 }
+
+export type LeadOutreachBlocker = "has_sends" | "has_hidden_sends" | "personal_campaign_sends" | "in_active_campaign";
+
+/**
+ * The outreach blockers of a lead delete, per person, in one statement. `has_sends`: a counted send (`sending`, `sent` or
+ * `unknown`) in a campaign the actor sees; `has_hidden_sends`: one in a campaign the actor does not see. A lead whose sends
+ * all failed has neither. `personal_campaign_sends`: for a member, an enrollment in a personal campaign another member
+ * created, sent or not. `in_active_campaign`: a `pending` or `active` enrollment in an active or paused campaign. The time
+ * windows of a contact delete do not apply: a lead with a counted send stays anyway.
+ */
+export async function leadOutreachBlockers(tx: DbHandle, actor: Actor, personIds: readonly string[]): Promise<Map<string, LeadOutreachBlocker[]>> {
+  const found = new Map<string, LeadOutreachBlocker[]>();
+  if (personIds.length === 0) return found;
+  const org = actor.organizationId;
+  const rows = rowsOf<{ person_id: string; seen_sends: boolean; hidden_sends: boolean; personal: boolean; running: boolean }>(
+    await tx.execute(sql`
+      with enr as (
+        select e.id, e.person_id, e.status, c.status as campaign_status, ${campaignSeenBy(actor, "c")} as seen,
+          exists (select 1 from sends s where s.organization_id = e.organization_id and s.enrollment_id = e.id and s.status in ${sqlValues(SEND_COUNTED)}) as counted
+        from campaign_enrollments e join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
+        where e.organization_id = ${org} and e.person_id in ${uuidList(personIds)}
+      )
+      select person_id,
+        bool_or(counted and seen) as seen_sends,
+        bool_or(counted and not seen) as hidden_sends,
+        bool_or(not seen) as personal,
+        bool_or(status in ${sqlValues(LIVE_ENROLLMENT_STATUSES)} and campaign_status in ('active', 'paused')) as running
+      from enr group by person_id`),
+  );
+  for (const row of rows) {
+    const reasons: LeadOutreachBlocker[] = [];
+    if (row.seen_sends) reasons.push("has_sends");
+    if (row.hidden_sends) reasons.push("has_hidden_sends");
+    if (row.personal) reasons.push("personal_campaign_sends");
+    if (row.running) reasons.push("in_active_campaign");
+    if (reasons.length > 0) found.set(row.person_id, reasons);
+  }
+  return found;
+}
+
+/**
+ * Deletes the sends of these people's enrollments, then the enrollments. `sends_enrollment_fk` is NO ACTION, so the sends go
+ * first, and the sends trigger refuses a send in flight or unresolved (`sending`, `unknown`), which the blockers ruled out.
+ * The enrollment delete cascades to their LinkedIn details and sets `linkedin_connections.enrollment_id` to null.
+ */
+async function purgeOutreachOf(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<{ enrollments: number; sends: number }> {
+  if (personIds.length === 0) return { enrollments: 0, sends: 0 };
+  const enrollments = sql`(select e.id from campaign_enrollments e where e.organization_id = ${organizationId} and e.person_id in ${uuidList(personIds)})`;
+  const [gone] = rowsOf<{ n: number }>(
+    await tx.execute(sql`with gone as (delete from sends where organization_id = ${organizationId} and enrollment_id in ${enrollments} returning 1) select count(*)::int as n from gone`),
+  );
+  const [left] = rowsOf<{ n: number }>(
+    await tx.execute(sql`
+      with gone as (delete from campaign_enrollments where organization_id = ${organizationId} and person_id in ${uuidList(personIds)} returning 1)
+      select count(*)::int as n from gone`),
+  );
+  return { enrollments: left.n, sends: gone.n };
+}
+
+/** The last outreach step of a contact delete. Campaign reports read these rows live, so they drop the sends (P2). */
+export const purgePersonOutreach = (tx: DbHandle, organizationId: string, personId: string) => purgeOutreachOf(tx, organizationId, [personId]);
+
+/** The outreach step of a lead delete. The blockers left these leads only failed sends, so nothing that reached a person goes. */
+export const purgeUnsentEnrollments = (tx: DbHandle, organizationId: string, personIds: readonly string[]) => purgeOutreachOf(tx, organizationId, personIds);
 
 /**
  * For the merge preview: leads of the company with a `pending` or `active` enrollment in an `active` campaign. Their next

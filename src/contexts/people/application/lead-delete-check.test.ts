@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkLeadDelete, deleteConfirmation, deleteQualification } from "./lead-delete-check";
 import { BLOCK_MESSAGES } from "./lead-management";
-import type { LeadDeps } from "./lead-ports";
+import type { LeadDeleteDeps } from "./lead-ports";
 
 describe("deleteQualification", () => {
   it("says a lead qualifies and what its absence of blockers means", () => {
@@ -11,7 +11,7 @@ describe("deleteQualification", () => {
     expect(q.detail).toMatch(/No message was sent/);
   });
 
-  it.each(["has_sends", "in_active_campaign", "linked_records"] as const)("says a lead blocked by %s cannot be deleted and gives the server's own reason", (reason) => {
+  it.each(["has_sends", "personal_campaign_sends", "in_active_campaign", "linked_records"] as const)("says a lead blocked by %s cannot be deleted and gives the server's own reason", (reason) => {
     const q = deleteQualification(reason);
     expect(q.canDelete).toBe(false);
     expect(q.summary).toBe("This lead cannot be deleted.");
@@ -34,18 +34,33 @@ describe("deleteConfirmation", () => {
 });
 
 describe("checkLeadDelete", () => {
-  it("asks the repository with the actor's organization", async () => {
-    const calls: Array<[string, string]> = [];
+  it("reads the person, the outreach blockers and the history with the actor's organization, without locks", async () => {
+    const calls: string[] = [];
     const deps = {
-      leads: {
-        deleteBlock: async (org: string, id: string) => {
-          calls.push([org, id]);
-          return "in_active_campaign" as const;
+      transaction: (fn: (tx: unknown) => Promise<unknown>) => fn("tx"),
+      people: {
+        read: async (_tx: unknown, org: string, ids: string[]) => {
+          calls.push(`read ${org} ${ids.join()}`);
+          return [{ id: "lead-1", name: "Lena", contact: false }];
+        },
+        lock: async () => calls.push("lock"),
+      },
+      outreach: {
+        lockEnrollments: async () => calls.push("lockEnrollments"),
+        blockers: async (_tx: unknown, actor: { organizationId: string }, ids: string[]) => {
+          calls.push(`blockers ${actor.organizationId} ${ids.join()}`);
+          return new Map([["lead-1", ["in_active_campaign"]]]);
         },
       },
-    } as unknown as LeadDeps;
+      handling: {
+        peopleWithHistory: async (_tx: unknown, org: string, ids: string[]) => {
+          calls.push(`history ${org} ${ids.join()}`);
+          return new Set<string>();
+        },
+      },
+    } as unknown as LeadDeleteDeps;
     const q = await checkLeadDelete(deps, { organizationId: "org-1" } as never, "lead-1");
-    expect(calls).toEqual([["org-1", "lead-1"]]);
-    expect(q.canDelete).toBe(false);
+    expect(calls).toEqual(["read org-1 lead-1", "blockers org-1 lead-1", "history org-1 lead-1"]);
+    expect(q).toMatchObject({ canDelete: false, detail: BLOCK_MESSAGES.in_active_campaign });
   });
 });

@@ -1,7 +1,10 @@
+import type { DbHandle } from "@/platform/db/client";
+import type { Actor } from "@/shared/errors";
 import type { LeadCurrent, LeadEditPlan } from "../domain/lead-edit";
 import type { LeadFilter } from "../domain/lead-filter";
+import type { BlockReason, LeadOutreachBlocker } from "../domain/person-delete-policy";
 
-export type { LeadFilter };
+export type { BlockReason, LeadFilter, LeadOutreachBlocker };
 
 export interface LeadDetail {
   person: {
@@ -76,9 +79,6 @@ export interface SendViewer {
   seesAllPersonal: boolean;
 }
 
-/** `has_hidden_sends`: `has_sends` where every send is in a personal campaign of another member, which the viewer cannot see. */
-export type BlockReason = "has_sends" | "has_hidden_sends" | "in_active_campaign" | "linked_records";
-
 export interface BlockedLead {
   id: string;
   name: string | null;
@@ -130,13 +130,6 @@ export interface LeadRepository {
   count(organizationId: string, filter: LeadFilter): Promise<number>;
   /** Ids of the leads that match the filter, newest first, up to `limit`. */
   matchingIds(organizationId: string, filter: LeadFilter, limit: number): Promise<string[]>;
-  /**
-   * The rule that stops this lead from being deleted, or null when it qualifies. The same check the delete runs. The viewer only
-   * picks between `has_sends` and `has_hidden_sends`; it never lets a delete through.
-   */
-  deleteBlock(organizationId: string, id: string, viewer?: SendViewer): Promise<BlockReason | null>;
-  deleteByIds(organizationId: string, ids: string[], viewer?: SendViewer): Promise<DeleteOutcome>;
-  deleteByFilter(organizationId: string, filter: LeadFilter, viewer?: SendViewer): Promise<DeleteOutcome>;
   customColumns(organizationId: string): Promise<Array<{ key: string; name: string }>>;
   /**
    * Copies raw[rawKey] of every lead in the organization into custom[customKey]
@@ -156,4 +149,57 @@ export interface LeadDeps {
   leads: LeadRepository;
   /** The organization's country for phone numbers written without a country code (setting, then environment fallback). */
   defaultPhoneCountry?: (organizationId: string) => Promise<string | undefined>;
+}
+
+/** A person as the lead delete reads it. */
+export interface LeadForDelete {
+  id: string;
+  /** The full name, else the email. */
+  name: string | null;
+  contact: boolean;
+}
+
+/** The people side of the lead delete. `drizzle-lead-repository.ts` implements it. Every method filters by organization. */
+export interface LeadDeleteStore {
+  /** Ids of the people that match the filter, for a delete by filter. */
+  idsMatching(organizationId: string, filter: LeadFilter): Promise<string[]>;
+  /** `statement_timeout` for the rest of the transaction. */
+  limitStatements(tx: DbHandle): Promise<void>;
+  /** The people of the organization among `ids`, without a lock. */
+  read(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<LeadForDelete[]>;
+  /**
+   * The outreach advisory lock of every id in one statement, then `HELD_LOCK_TIMEOUT`, then the people rows `FOR UPDATE` in
+   * id order. Ids of another organization or of a deleted person drop out.
+   */
+  lock(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<LeadForDelete[]>;
+  /** A person marked do not contact leaves their address on the suppression list. */
+  keepSuppressed(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<void>;
+  /** Deletes the do not contact rows and the people rows. Returns how many people went. */
+  deletePeople(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<number>;
+}
+
+/** Outreach: `person-outreach.ts`. */
+export interface LeadDeleteOutreach {
+  /** The enrollments of these people `FOR UPDATE` in id order, so no send claim lands between the check and the purge. */
+  lockEnrollments(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<unknown>;
+  /** The outreach blockers of each person, as the actor may see them. A person without one is left out. */
+  blockers(tx: DbHandle, actor: Actor, ids: readonly string[]): Promise<Map<string, LeadOutreachBlocker[]>>;
+  /** Deletes the failed sends of these people, then their enrollments. */
+  purge(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<unknown>;
+}
+
+/** Conversations: `person-handling.ts`. */
+export interface LeadDeleteHandling {
+  /** The people among `ids` with a reply-handling record or an event. */
+  peopleWithHistory(tx: DbHandle, organizationId: string, ids: readonly string[]): Promise<Set<string>>;
+}
+
+/** The lead delete and its check. `src/composition/person-lifecycle.ts` wires it. */
+export interface LeadDeleteDeps {
+  leads: Pick<LeadRepository, "count">;
+  people: LeadDeleteStore;
+  outreach: LeadDeleteOutreach;
+  handling: LeadDeleteHandling;
+  /** One transaction with `lock_timeout` set to `CONVERSION_LOCK_TIMEOUT`. */
+  transaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T>;
 }

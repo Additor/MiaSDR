@@ -1,4 +1,4 @@
-import { appendPersonEvent, lockPersonForDelete, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
+import { appendPersonEvent, lockPersonForDelete, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
 import { purgePersonHandling } from "@/contexts/conversations/infrastructure/person-purge";
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
@@ -7,13 +7,23 @@ import { dealCountsOfPerson, dealTitleParts, deleteClosedDealsOfPerson, lockDeal
 import { addContact, type AddContactDeps, type AddContactInput, type AddContactResult } from "@/contexts/people/application/add-contact";
 import type { CompanyLifecycleDeps, CompanyMergePreviewDeps } from "@/contexts/people/application/company-lifecycle";
 import type { ContactDeleteDeps } from "@/contexts/people/application/contact-delete";
+import type { LeadDeleteDeps } from "@/contexts/people/application/lead-ports";
 import type { MakeContactDeps } from "@/contexts/people/application/make-contact";
 import { drizzleCompanyLifecycleStore } from "@/contexts/people/infrastructure/drizzle-company-lifecycle-store";
 import { drizzleContactDeleteStore } from "@/contexts/people/infrastructure/drizzle-contact-delete-store";
 import { drizzleContactStore, personTransaction } from "@/contexts/people/infrastructure/drizzle-contact-store";
+import { drizzleLeadDeleteStore, drizzleLeadRepository } from "@/contexts/people/infrastructure/drizzle-lead-repository";
 import { drizzleLeadsAudit } from "@/contexts/people/infrastructure/drizzle-leads-audit";
 import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
-import { leadsInRunningCampaigns, personOutreachBlockers, personOutreachCounts, purgePersonOutreach } from "@/contexts/outreach/infrastructure/person-outreach";
+import {
+  leadOutreachBlockers,
+  leadsInRunningCampaigns,
+  lockEnrollmentsOfPeopleTx,
+  personOutreachBlockers,
+  personOutreachCounts,
+  purgePersonOutreach,
+  purgeUnsentEnrollments,
+} from "@/contexts/outreach/infrastructure/person-outreach";
 import { drizzleOrganizationStore } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { retryOnce } from "@/platform/db/errors";
 import type { Actor } from "@/shared/errors";
@@ -77,11 +87,21 @@ export const contactDeleteDeps: ContactDeleteDeps = {
     deleteClosed: deleteClosedDealsOfPerson,
   },
   outreach: {
+    lockEnrollments: lockEnrollmentsOfPeopleTx,
     counts: personOutreachCounts,
     blockers: personOutreachBlockers,
     purge: purgePersonOutreach,
   },
   audit: drizzleLeadsAudit,
+  transaction: personTransaction,
+};
+
+/** Lead delete and its check: people's rows, outreach's enrollments and sends, conversations' history, in one lock order. */
+export const leadDeleteDeps: LeadDeleteDeps = {
+  leads: drizzleLeadRepository,
+  people: drizzleLeadDeleteStore,
+  outreach: { lockEnrollments: lockEnrollmentsOfPeopleTx, blockers: leadOutreachBlockers, purge: purgeUnsentEnrollments },
+  handling: { peopleWithHistory },
   transaction: personTransaction,
 };
 
