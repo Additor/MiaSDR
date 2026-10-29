@@ -29,6 +29,13 @@
       "when": 1793004009121,
       "tag": "0003_reply_type_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793262834309,
+      "tag": "0004_structural_guards",
+      "breakpoints": true
     }
   ]
 }

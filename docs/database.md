@@ -40,7 +40,15 @@ A released migration never changes. A new index on a large table holds a `SHARE`
 
 `sends_final_status_trg` and `send_attempts_final_status_trg` guard a final status. Once a send reaches `sent` or `failed`, or a send attempt reaches `sent`, `reconciled` or `failed`, an `UPDATE` that changes `status` raises SQLSTATE 23514 (`check_violation`). An update that keeps the status passes, so you can still change the error or the body.
 
-The trigger allows one exit: a `failed` send may move back to `sending` when `attempt` is below 3 and the same update raises it by one. The engines re-claim a failed step that way in their `insert ... on conflict do update` statement. A test or a script that resets a final status by hand hits the trigger. Insert a new row instead.
+The trigger allows one exit: a `failed` send may move back to `sending` when the same update raises `attempt` by one. The engines re-claim a failed step that way in their `insert ... on conflict do update` statement. The trigger holds no cap: the enrollment ends a step at its attempt limit, so the engine never re-claims past it. A test or a script that resets a final status by hand hits the trigger. Insert a new row instead.
+
+`sends_unsettled_no_delete_trg` refuses a `DELETE` of a send in `sending` or `unknown` (SQLSTATE 23000). A worker holds a provider call in flight for the first, and nobody knows whether the second reached the person. The foreign key from `sends` to `campaign_enrollments` takes no action, so an enrollment delete fails while its sends remain, and the code removes them first through this guard. Deleting an organization cascades past it.
+
+## Claims and drafts in flight
+
+`ai_jobs`, `sequence_step_runs` and `inbound_events` carry a nullable `claim_token`. A worker writes a new token on each claim, and a settle filters on it, so a worker that lost its claim changes nothing. Rows from before migration 0004 hold null.
+
+`drafts_one_in_flight_uq` holds at most one draft per conversation in `sending` or `delivery_uncertain` (`IN_FLIGHT_DRAFT_STATUSES`). A second one raises SQLSTATE 23505. Migration 0004 stops with the ids when a conversation already holds two: only a send attempt settles an in-flight draft, so the migration leaves them for a person.
 
 ## Append-only tables
 

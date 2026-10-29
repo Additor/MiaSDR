@@ -108,16 +108,17 @@ export async function personOutreachBlockers(tx: DbHandle, actor: Actor, personI
 }
 
 /**
- * Step 12 of a contact delete: removes the person's enrollments. The delete cascades to their sends and LinkedIn details,
- * and sets `linkedin_connections.enrollment_id` to null. Campaign reports read these rows live, so they drop the sends (P2).
+ * Step 12 of a contact delete: removes the person's sends, then their enrollments. The enrollment delete cascades to their
+ * LinkedIn details and sets `linkedin_connections.enrollment_id` to null. Campaign reports read these rows live, so they
+ * drop the sends (P2). The sends trigger refuses a send in flight or unresolved, which the blockers already ruled out.
  */
 export async function purgePersonOutreach(tx: DbHandle, organizationId: string, personId: string): Promise<{ enrollments: number; sends: number }> {
   const enrollments = enrollmentsOf(organizationId, personId);
   const [row] = rowsOf<{ enrollments: number; sends: number }>(
     await tx.execute(sql`
-      with gone_sends as (select count(*)::int as n from sends where organization_id = ${organizationId} and enrollment_id in ${enrollments}),
+      with gone_sends as (delete from sends where organization_id = ${organizationId} and enrollment_id in ${enrollments} returning 1),
       gone as (delete from campaign_enrollments where organization_id = ${organizationId} and person_id = ${personId}::uuid returning 1)
-      select (select count(*) from gone)::int as enrollments, (select n from gone_sends) as sends`),
+      select (select count(*) from gone)::int as enrollments, (select count(*) from gone_sends)::int as sends`),
   );
   return row;
 }

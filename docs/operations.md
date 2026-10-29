@@ -79,6 +79,12 @@ Both migrators set `lock_timeout` to 30 seconds once they hold the migration loc
 
 A run that hits the timeout logs `Migration failed: canceling statement due to lock timeout`. The app log shows it at boot, and `scripts/migrate.mjs` prints it and exits 1. Find the session that holds the lock in `pg_stat_activity`, end it or stop the old instance, and start the app again.
 
+## Upgrade to migration 0004
+
+Migration 0004 builds the unique index `drafts_one_in_flight_uq` on `drafts` inside the migration transaction, which blocks writes to `drafts` until the build ends. On a large install, build it first with `CREATE UNIQUE INDEX CONCURRENTLY drafts_one_in_flight_uq ON drafts (conversation_id) WHERE status in ('sending', 'delivery_uncertain')`, and the migration skips it.
+
+The migration stops with `conversations hold more than one draft in flight` and the conversation and draft ids when a conversation holds two such drafts. Settle each pair on its Inbox thread, then start the app again.
+
 ## Grid job and enrichment settings
 
 `grid.run` runs the queued enrichment and AI cells of the Tables feature, one job row per cell, in a lease-protected claim (5 minute lease, a displaced worker changes nothing). A pass keeps `GRID_RUN_CONCURRENCY` cells running and starts the next cell the moment one finishes, until the queue is empty, the tick budget (50 seconds) ends, or the safety ceiling of 2,000 claimed cells is reached. A run, retry or auto-run request also starts a pass in the receiving process about 25 ms after the response (one kicked pass at a time, repeated while cells remain). Other instances pick the cells up on their tick. One organization runs at most 8 cells at once across all workers.

@@ -129,7 +129,12 @@ async function deleteBatch(organizationId: string, ids: string[]): Promise<numbe
   return db.transaction(async (tx: Tx) => {
     await suppressDoNotContactAddressesTx(tx, organizationId, ids);
     await deleteDoNotContactTx(tx, organizationId, ids);
-    // Left here only when no send was ever made, so nothing is lost with them.
+    // Left here only when every send failed, so nothing is lost with them. The sends go first: the enrollment keeps them.
+    const enrollments = tx
+      .select({ id: campaignEnrollments.id })
+      .from(campaignEnrollments)
+      .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, ids)));
+    await tx.delete(sends).where(and(eq(sends.organizationId, organizationId), inArray(sends.enrollmentId, enrollments)));
     await tx.delete(campaignEnrollments).where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, ids)));
     const removed = await tx.delete(people).where(and(eq(people.organizationId, organizationId), inArray(people.id, ids))).returning({ id: people.id });
     return removed.length;

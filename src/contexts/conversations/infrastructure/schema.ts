@@ -19,7 +19,7 @@ import { members } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
-import { DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
+import { DRAFT_STATUSES, IN_FLIGHT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 import type { AttemptStatus } from "../domain/send-attempt-status";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
 import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
@@ -462,6 +462,8 @@ export const drafts = pgTable(
     // The SET NULL from a deleted message and the RESTRICT check of a deleted conversation.
     index("drafts_reply_for_message_idx").on(t.replyForMessageId).where(sql`${t.replyForMessageId} is not null`),
     index("drafts_conversation_idx").on(t.conversationId),
+    // One draft per conversation with a provider call in flight or unresolved.
+    uniqueIndex("drafts_one_in_flight_uq").on(t.conversationId).where(inList(t.status, IN_FLIGHT_DRAFT_STATUSES)),
   ],
 );
 
@@ -594,6 +596,8 @@ export const aiJobs = pgTable(
     completedAt: tstz("completed_at"),
     failedAt: tstz("failed_at"),
     lastError: text("last_error"),
+    /** The token of the claim that holds the row, new on each claim. A settle that no longer holds it changes nothing. */
+    claimToken: uuid("claim_token"),
     createdAt: createdAt(),
   },
   (t) => [

@@ -548,7 +548,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### Send status tables
 
-Store queries compare and set on the previous status; the final status triggers reject any change out of a final status (SQLSTATE 23514). The one exception is the engines' re-claim `failed -> sending` with the attempt raised by one while below 3.
+Store queries compare and set on the previous status; the final status triggers reject any change out of a final status (SQLSTATE 23514). The one exception is the engines' re-claim `failed -> sending` with the attempt raised by one. The engine stops below its attempt limit; the trigger holds only the step of one.
 
 `sends` (campaign and test; `sent` and `failed` are final):
 

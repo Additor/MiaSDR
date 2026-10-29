@@ -300,7 +300,8 @@ export const sends = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    foreignKey({ columns: [t.enrollmentId, t.organizationId], foreignColumns: [campaignEnrollments.id, campaignEnrollments.organizationId] }).onDelete("cascade"),
+    // No action: a delete of an enrollment removes its sends first, so the sends delete trigger sees each one.
+    foreignKey({ columns: [t.enrollmentId, t.organizationId], foreignColumns: [campaignEnrollments.id, campaignEnrollments.organizationId] }),
     // History blocks removal of its mailbox or account (no action).
     foreignKey({ name: "sends_mailbox_fk", columns: [t.mailboxId, t.organizationId], foreignColumns: [mailboxes.id, mailboxes.organizationId] }),
     foreignKey({ name: "sends_taken_over_mailbox_fk", columns: [t.takenOverFromMailboxId, t.organizationId], foreignColumns: [mailboxes.id, mailboxes.organizationId] }),
@@ -491,6 +492,8 @@ export const inboundEvents = pgTable(
     /** Admin replays of a failed delivery. The event key stays unique, so a replay re-queues this row and never adds one. */
     replayCount: integer("replay_count").notNull().default(0),
     lastReplayedAt: tstz("last_replayed_at"),
+    /** The token of the claim that holds the row, new on each claim. A settle that no longer holds it changes nothing. */
+    claimToken: uuid("claim_token"),
     createdAt: createdAt(),
   },
   (t) => [
