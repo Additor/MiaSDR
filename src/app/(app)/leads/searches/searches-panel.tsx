@@ -55,9 +55,9 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
   const router = useRouter();
   const timeZone = useOrgTimeZone();
   const [cancelling, setCancelling] = useState<Search | null>(null);
-  // Each search runs its own actions; its buttons wait while one runs.
-  const { run, isBusy } = useApiAction();
-  const searchBusy = (id: string) => (["pause", "resume"] as const).find((action) => isBusy(`${id}:${action}`)) ?? null;
+  // Pause and Resume of one search share its key, so its buttons wait while one runs; other searches run on their own.
+  const { run, isBusy, busyTag } = useApiAction();
+  const searchBusy = (id: string) => (isBusy(id) ? (busyTag(id) as SearchAction) : null);
   const refresh = () => router.refresh();
   const capacityReturns = capacityReturnText(capacity.nextReturnAt, timeZone);
 
@@ -69,16 +69,29 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
       setCancelling(search);
       return;
     }
-    await run(`${search.id}:${action}`, async () => {
-      const result = await runApiAction(callApi(`/api/linkedin/searches/${search.id}/action`, "POST", { action }), { refresh });
-      if (!result.ok) toast.error(result.error);
-    });
+    await run(
+      search.id,
+      async () => {
+        const result = await runApiAction(callApi(`/api/linkedin/searches/${search.id}/action`, "POST", { action }), { refresh });
+        if (!result.ok) toast.error(result.error);
+      },
+      action,
+    );
   }
 
   async function cancelSearch() {
     if (!cancelling) return;
-    // ConfirmDialog shows the thrown message and keeps the dialog open.
-    orThrow(await runApiAction(callApi(`/api/linkedin/searches/${cancelling.id}/action`, "POST", { action: "cancel" }), { refresh }));
+    const id = cancelling.id;
+    // Stop runs under the search's key, so Pause and Resume wait for it. ConfirmDialog shows a thrown message and stays open.
+    const ran = await run(
+      id,
+      async () => {
+        orThrow(await runApiAction(callApi(`/api/linkedin/searches/${id}/action`, "POST", { action: "cancel" }), { refresh }));
+        return true;
+      },
+      "cancel",
+    );
+    if (ran === null) throw new Error("This search is still saving a change. Try again in a moment.");
   }
 
   return (
@@ -200,7 +213,7 @@ function SearchActions({ search: s, busy, onAct, className }: { search: Search; 
     <div className={cn("flex flex-wrap gap-1", className)}>
       {searchActions(s.status).map(({ action, label }) => (
         <Button key={action} size="sm" variant={action === "cancel" ? "ghost" : "outline"} touch disabled={busy !== null} onClick={() => onAct(s, action)}>
-          {busy === action ? (action === "pause" ? "Pausing…" : "Resuming…") : label}
+          {busy === action ? { pause: "Pausing…", resume: "Resuming…", cancel: "Stopping…" }[action] : label}
         </Button>
       ))}
     </div>

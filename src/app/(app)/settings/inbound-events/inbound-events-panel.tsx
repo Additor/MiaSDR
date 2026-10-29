@@ -59,9 +59,9 @@ interface Props {
 
 export function InboundEventsPanel({ rows, total, page, pageSize, state, source, linkedinBacklog }: Props) {
   const router = useRouter();
-  const { isBusy, run } = useApiAction();
-  // Retry and Dismiss of one row wait for each other; other rows and the replay run on their own.
-  const rowBusy = (id: string) => isBusy(`retry:${id}`) || isBusy(`dismiss:${id}`);
+  // Retry and Dismiss of one row share the row's key; the tag says which runs. Other rows and the replay run on their own.
+  const { isBusy, busyTag, run } = useApiAction();
+  const rowBusy = (id: string) => isBusy(`row:${id}`);
   const refresh = () => router.refresh();
   const pageCount = Math.max(Math.ceil(total / pageSize), 1);
 
@@ -88,7 +88,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
     });
 
   const settle = (row: Row, action: "retry" | "dismiss") =>
-    run(`${action}:${row.id}`, async () => toastResult(await runApiAction(callApi(`/api/inbound-events/${row.id}/${action}`, "POST"), { refresh }), action === "retry" ? "Queued for retry." : "Dismissed."));
+    run(`row:${row.id}`, async () => toastResult(await runApiAction(callApi(`/api/inbound-events/${row.id}/${action}`, "POST"), { refresh }), action === "retry" ? "Queued for retry." : "Dismissed."), action);
 
   return (
     <div className="stack-group">
@@ -177,12 +177,12 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
                   <TableCell className="whitespace-nowrap text-right">
                     {(row.state === "dead" || row.state === "dismissed") && (
                       <Button variant="ghost" size="sm" disabled={rowBusy(row.id)} onClick={() => void settle(row, "retry")}>
-                        {isBusy(`retry:${row.id}`) ? "Retrying…" : "Retry"}
+                        {busyTag(`row:${row.id}`) === "retry" ? "Retrying…" : "Retry"}
                       </Button>
                     )}{" "}
                     {row.state !== "dismissed" && (
                       <Button variant="ghost" size="sm" disabled={rowBusy(row.id)} onClick={() => void settle(row, "dismiss")}>
-                        {isBusy(`dismiss:${row.id}`) ? "Dismissing…" : "Dismiss"}
+                        {busyTag(`row:${row.id}`) === "dismiss" ? "Dismissing…" : "Dismiss"}
                       </Button>
                     )}
                   </TableCell>

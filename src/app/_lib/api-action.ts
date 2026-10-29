@@ -42,12 +42,12 @@ export interface ActionOptions {
 }
 
 const FALLBACK = "Something went wrong. Try again.";
-const NO_DATA = "MiaSDR saved the change but sent back nothing to show. Reload the page.";
+const NO_DATA = "The server sent back nothing to show. Reload the page and try again.";
 
 /**
  * Awaits the call, refreshes when the page is behind, and returns the outcome. It never throws. A success carries
  * `data: T | null`, since a change can answer 204 with no body; a screen that reads the answer passes `expectData: true`,
- * and a success without data then comes back as a failure that says so.
+ * and a success without data then comes back as a failure that says so. The call can be a read sent as POST (a preview), so the sentence does not claim a change.
  */
 export function runApiAction<T>(call: Promise<ApiResult<T>>, options: ActionOptions & { expectData: true }): Promise<ActionResult<T>>;
 export function runApiAction<T>(call: Promise<ApiResult<T>>, options?: ActionOptions & { expectData?: false }): Promise<ActionResult<T | null>>;

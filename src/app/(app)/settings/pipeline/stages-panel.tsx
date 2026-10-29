@@ -92,9 +92,14 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
   }
 
   async function remove(): Promise<boolean> {
-    if (!deleting?.id) return true;
-    setSettings(orThrow(await runApiAction(callApi<StageSettings>(`/api/deal-stages/${deleting.id}`, "DELETE"), { refresh, expectData: true })));
-    toast.success(`Deleted ${deleting.name}.`);
+    const stage = deleting;
+    if (!stage?.id) return true;
+    const ran = await run("list", async () => {
+      setSettings(orThrow(await runApiAction(callApi<StageSettings>(`/api/deal-stages/${stage.id}`, "DELETE"), { refresh, expectData: true })));
+      toast.success(`Deleted ${stage.name}.`);
+      return true;
+    });
+    if (ran === null) throw new Error("Another change to the stages is still saving. Try again in a moment.");
     return true;
   }
 
@@ -210,6 +215,7 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
         confirmLabel="Delete stage"
         cancelLabel="Keep stage"
         pendingLabel="Deleting…"
+        confirmDisabled={pending}
         destructive
         onConfirm={remove}
       />
