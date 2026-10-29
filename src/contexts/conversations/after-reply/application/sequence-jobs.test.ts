@@ -5,7 +5,7 @@ import { createSequenceJobs } from "./sequence-jobs";
 import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 /**
- * The sequence job writes the draft with the channel of the conversation it drafts for. insertDraft
+ * The sequence job writes the draft with the channel of the conversation it drafts for. The draft writer
  * defaults to email, which breaks the draft channel trigger on a LinkedIn conversation.
  */
 function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; sweep?: boolean } = {}) {
@@ -39,6 +39,7 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
   const claim = {
     stepRunId: "sr",
     organizationId: "org",
+    claimToken: "token",
     attempts: 1,
     run: { id: "run", recordId: "rec", conversationId: "conv", sequenceVersionId: "ver", triggerMessageId: "msg" },
     step: { id: "st", sequenceVersionId: "ver", position: 2, stepType: "follow_up", name: "Nudge", delayMinutes: 60, subjectTemplate: null, bodyTemplate: null, aiInstructions: "Check in once.", knowledgeTags: [] },
@@ -77,17 +78,17 @@ function setup(channel: "email" | "linkedin", opts: { flowActive?: boolean; swee
     },
     orphanDraft: async () => null,
     openDrafts: async () => [],
-    linkDraft: async () => true,
-    failAttempt: async (_id: string, message: string) => {
+    linkDraft: async () => "linked",
+    writeDraft: async (_claim: unknown, draft: NewDraft) => {
+      inserted.push(draft);
+      return { id: "draft-1", stale: false };
+    },
+    failAttempt: async (_claim: unknown, message: string) => {
       throw new Error(message);
     },
   };
   const replies = {
     draftContext: async () => ctx,
-    insertDraft: async (draft: NewDraft & { feedback?: string | null }) => {
-      inserted.push(draft);
-      return { id: "draft-1" };
-    },
   };
   const [job] = createSequenceJobs({
     engine: engine as never,

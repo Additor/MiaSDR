@@ -1,6 +1,7 @@
 import type { AfterReplyMode } from "../domain/after-reply";
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import type { InterruptFacts, InterruptReason, RunStatus, StepInput, StepRunStatus, StepType } from "../domain/sequences";
+import type { NewDraft } from "../../application/reply-ports";
 
 /** Persistence for a campaign's Follow-ups after a reply flow. Every method carries the organization and filters by it. */
 
@@ -195,9 +196,11 @@ export interface RunStore {
 
 // Engine (the job) ------------------------------------------------------------------------------------
 
+/** A worker's claim on one step run: the token the claim wrote and the attempt it counted (src/platform/db/claim.ts). */
 export interface ClaimedStep {
   stepRunId: string;
   organizationId: string;
+  claimToken: string;
   attempts: number;
   run: { id: string; recordId: string; conversationId: string; sequenceVersionId: string; triggerMessageId: string };
   step: StepView;
@@ -217,6 +220,8 @@ export interface InterruptCandidate {
   facts: InterruptFacts;
 }
 
+export type LinkOutcome = "linked" | "stopped" | "lost";
+
 /** What the sequences job reads and writes each tick. */
 export interface SequenceEngineStore {
   /** Records whose newest, classified inbound message has no run yet and whose owning campaign has an active flow. */
@@ -228,17 +233,21 @@ export interface SequenceEngineStore {
   settleDrafts(now: Date, limit: number): Promise<number>;
   /** Takes one due step of an active run, or null. Steps drafting past the lease are taken over. */
   claimDue(workerId: string, now: Date, leaseMs: number): Promise<ClaimedStep | null>;
-  /** Back to scheduled without using the attempt. */
-  release(stepRunId: string, dueAt: Date, now: Date): Promise<void>;
-  /** A drafting attempt failed: retried later, or failed for good. */
-  failAttempt(stepRunId: string, error: string, retryAt: Date | null, now: Date): Promise<void>;
+  /** Back to scheduled without using the attempt. Changes nothing once the claim no longer holds the step. */
+  release(claim: ClaimedStep, dueAt: Date, now: Date): Promise<void>;
+  /** A drafting attempt failed: retried later, or failed for good. Changes nothing once the claim no longer holds the step. */
+  failAttempt(claim: ClaimedStep, error: string, retryAt: Date | null, now: Date): Promise<void>;
   openDrafts(organizationId: string, recordId: string): Promise<OpenDraft[]>;
   /** A draft this step run created earlier but never linked (a crash between the two writes). */
   orphanDraft(organizationId: string, stepRunId: string): Promise<string | null>;
-  /** Links a draft to its step. False when a stop got there first: the step is no longer drafting or its run is over. */
-  linkDraft(organizationId: string, stepRunId: string, draftId: string, now: Date): Promise<boolean>;
-  /** Retires a draft written for a run that stopped while the draft was being written. */
-  retireDraft(organizationId: string, draftId: string, now: Date): Promise<void>;
+  /** The step's draft, written as `ReplyStore.insertDraft` writes one. Null, with nothing written, when the claim no longer holds the step. */
+  writeDraft(claim: ClaimedStep, draft: NewDraft): Promise<{ id: string; stale: boolean } | null>;
+  /**
+   * Links a draft to its step while the claim holds it. `stopped`: the run is over. `lost`: another claim took the step,
+   * or a pause gave it back. On either, the draft written for this step retires, unless another claim still drafts the
+   * step and adopts it as an orphan.
+   */
+  linkDraft(claim: ClaimedStep, draftId: string, now: Date): Promise<LinkOutcome>;
   knowledgeForTags(organizationId: string, tags: string[]): Promise<Array<{ documentVersionId: string; title: string; content: string }>>;
   /** Facts for the guard right before a draft is written. */
   interruptFactsFor(organizationId: string, runId: string): Promise<InterruptFacts | null>;
