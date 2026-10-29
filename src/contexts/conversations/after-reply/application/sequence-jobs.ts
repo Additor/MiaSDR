@@ -152,9 +152,9 @@ async function draftStep(deps: SequenceJobDeps, claim: ClaimedStep, count: (key:
     response: { usage: result.usage ?? null },
     citations: draftCitations(guided),
   });
-  if (!created) {
+  if (typeof created === "string") {
     // A stop or a pause ended the claim while the model wrote, or another claim took the step over. Nothing is written.
-    count("claim_lost");
+    count(linkCount(created, "drafted"));
     return;
   }
   // A stop, a pause or a takeover between the write and the link: the link retires the draft unless the claim that took

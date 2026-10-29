@@ -1368,7 +1368,7 @@ describeDb("Follow-ups after a reply flows", () => {
         await (await (await import("@/test-support/suppression")).suppressionStore()).suppressEmail({ organizationId: f.org, email: person.email, reason: "unsubscribed" });
       });
       // The stop ended the claim, so the worker writes no draft at all.
-      expect((result as { detail?: Record<string, number> }).detail).toMatchObject({ claim_lost: 1 });
+      expect((result as { detail?: Record<string, number> }).detail).toMatchObject({ stopped_while_drafting: 1 });
       await expectNoLiveDraft(f, run.id);
       expect(await count("drafts", f.org, `request->>'sequenceRunId' = '${run.id}'`)).toBe(0);
     });
@@ -1731,6 +1731,41 @@ describeDb("Follow-ups after a reply flows", () => {
       const drafts = await sql`select id, status from drafts where request->>'sequenceStepRunId' = ${stepRunId} order by created_at`;
       expect(drafts.map((d) => d.status)).toEqual(["stale", "awaiting_review"]);
       expect(await one("select draft_id from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ draft_id: drafts[1].id });
+    });
+
+    it("a link after a pause without a resume answers lost, and the step waits scheduled in the paused run", async () => {
+      const { f, run, stepRunId, tickAs } = await dueStep();
+      let paused = false;
+      const result = await tickAs("a", {
+        engine: {
+          linkDraft: async (...args: Parameters<Engine["linkDraft"]>) => {
+            if (!paused && JSON.stringify(args).includes(stepRunId)) {
+              paused = true;
+              await seqApp.pauseSequenceRun(f.seqDeps, f.actor, run.record_id);
+            }
+            return stores.engine.linkDraft(...args);
+          },
+        },
+      });
+      expect(result.detail).toMatchObject({ claim_lost: 1 });
+      expect(result.detail?.stopped_while_drafting).toBeUndefined();
+      expect(await one("select status from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "paused" });
+      expect(await one("select status, draft_id, claim_token from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ status: "scheduled", draft_id: null, claim_token: null });
+      expect(await count("drafts", f.org, `status = 'awaiting_review' and request->>'sequenceStepRunId' = '${stepRunId}'`)).toBe(0);
+    });
+
+    it("the claim never takes over a step that used every attempt, even when no sweep ran first", async () => {
+      const { takeDueStep } = await import("../drizzle-sequence-engine");
+      const { f, stepRunId } = await dueStep();
+      const expired = new Date(f.clock().getTime() - lease());
+      const seed = (attempts: number) =>
+        sql`update sequence_step_runs set status = 'drafting', attempt_count = ${attempts}, claim_token = gen_random_uuid(), updated_at = ${new Date(expired.getTime() - 60_000)} where id = ${stepRunId}`;
+      await seed(MAX_DRAFT_ATTEMPTS);
+      expect(await takeDueStep(f.clock(), expired, f.org)).toBeNull();
+      expect(await one("select status, attempt_count from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ status: "drafting", attempt_count: MAX_DRAFT_ATTEMPTS });
+      // Control: with an attempt left the same row is taken over.
+      await seed(MAX_DRAFT_ATTEMPTS - 1);
+      expect(await takeDueStep(f.clock(), expired, f.org)).toMatchObject({ id: stepRunId, attempt_count: MAX_DRAFT_ATTEMPTS });
     });
 
     it("each claim writes a fresh token, and a settle clears it", async () => {

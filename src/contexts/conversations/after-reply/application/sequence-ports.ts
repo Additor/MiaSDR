@@ -220,7 +220,9 @@ export interface InterruptCandidate {
   facts: InterruptFacts;
 }
 
-export type LinkOutcome = "linked" | "stopped" | "lost";
+/** Why a claim came too late: `stopped`, the run ended; `lost`, a pause gave the step back or another claim took it. */
+export type LateOutcome = "stopped" | "lost";
+export type LinkOutcome = "linked" | LateOutcome;
 
 /** What the sequences job reads and writes each tick. */
 export interface SequenceEngineStore {
@@ -240,11 +242,13 @@ export interface SequenceEngineStore {
   openDrafts(organizationId: string, recordId: string): Promise<OpenDraft[]>;
   /** A draft this step run created earlier but never linked (a crash between the two writes). */
   orphanDraft(organizationId: string, stepRunId: string): Promise<string | null>;
-  /** The step's draft, written as `ReplyStore.insertDraft` writes one. Null, with nothing written, when the claim no longer holds the step. */
-  writeDraft(claim: ClaimedStep, draft: NewDraft): Promise<{ id: string; stale: boolean } | null>;
   /**
-   * Links a draft to its step while the claim holds it. `stopped`: the run is over. `lost`: another claim took the step,
-   * or a pause gave it back. On either, the draft written for this step retires, unless another claim still drafts the
+   * The step's draft, written as `ReplyStore.insertDraft` writes one. Nothing is written when the claim no longer holds
+   * the step: `stopped` for an ended run, `lost` for a pause or a takeover.
+   */
+  writeDraft(claim: ClaimedStep, draft: NewDraft): Promise<{ id: string; stale: boolean } | LateOutcome>;
+  /**
+   * Links a draft to its step while the claim holds it, or answers why it came too late (`LateOutcome`). On either, the draft written for this step retires, unless another claim still drafts the
    * step and adopts it as an orphan.
    */
   linkDraft(claim: ClaimedStep, draftId: string, now: Date): Promise<LinkOutcome>;
