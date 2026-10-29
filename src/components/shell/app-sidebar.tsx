@@ -27,7 +27,7 @@ import { SETTINGS_GROUPS } from "@/app/(app)/settings/settings-nav-config";
 import { CommandPalette, type PaletteDestination } from "./command-palette";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { HOME } from "@/app/_lib/home";
-import { callApi } from "@/app/_lib/api-client";
+import { callApi, type ApiResult } from "@/app/_lib/api-client";
 
 type NavGroup = "Work" | "CRM" | "Insight" | "Admin";
 
@@ -150,7 +150,7 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
     setSwitchError(null);
     const result = await callApi("/api/organizations/active", "POST", { organizationId });
     if (!result.ok) {
-      setSwitchError(result.error ? `Could not switch organization: ${result.error}` : "Could not switch organization. Try again.");
+      setSwitchError(switchErrorText(result));
       return;
     }
     router.push(listPageOf(pathname));
@@ -353,4 +353,12 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
     </Sidebar>
     </>
   );
+}
+
+/** Why a switch failed: the session line for a lost session, the network line without an answer, else the server's reason. */
+function switchErrorText(result: ApiResult<unknown>): string {
+  if (result.code === "unauthenticated") return result.error ?? "Your session expired. Sign in again.";
+  if (result.status === 0) return "Could not switch organization. Check your connection and try again.";
+  const reason = result.details?.error;
+  return typeof reason === "string" ? `Could not switch organization: ${reason}` : "Could not switch organization. Try again.";
 }

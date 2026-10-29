@@ -120,7 +120,7 @@ function DeleteContactDialog({
     let live = true;
     void callApi<DeletePreview>(`/api/contacts/${personId}/delete-preview`, "GET").then((result) => {
       if (!live) return;
-      if (result.code === "not_found") {
+      if (result.status === 404) {
         toast.error(goneText(initialName));
         onOpenChange(false);
         router.replace("/crm/contacts");
@@ -147,7 +147,7 @@ function DeleteContactDialog({
     if (!counts) return false;
     // A 404 after a sent delete means the delete went through.
     const result = await callApi(`/api/contacts/${personId}?${expectedQuery(counts)}`, "DELETE");
-    if (result.ok || result.code === "not_found") return done();
+    if (result.ok || result.status === 404) return done();
     if (result.status === 0) throw new Error(result.error ?? "Could not reach the server.");
     const body = result.details;
     if (result.code === "contact_blocked" && Array.isArray(body?.blockers)) {

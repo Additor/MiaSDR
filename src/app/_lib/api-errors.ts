@@ -25,8 +25,11 @@ export type ErrorStatus = keyof typeof STATUS_CODES;
  */
 export type ApiErrorCode = (typeof STATUS_CODES)[ErrorStatus] | (string & {});
 
-/** An error response. `details` adds data such as `issues` or a `version`; a `code` in it replaces the status's code. */
+/**
+ * An error response. `details` adds data such as `issues` or a `version`; a `code` in it replaces the status's code. An
+ * `error` key in `details` never replaces the sentence.
+ */
 export function apiError(status: ErrorStatus, error: string, details: Record<string, unknown> = {}, init?: { headers?: HeadersInit }): NextResponse {
   const code = typeof details.code === "string" ? details.code : STATUS_CODES[status];
-  return NextResponse.json({ error, ...details, code }, { status, headers: init?.headers });
+  return NextResponse.json({ ...details, error, code }, { status, headers: init?.headers });
 }
