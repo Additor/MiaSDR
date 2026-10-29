@@ -238,7 +238,13 @@ export interface NewIdentityException {
   payload: unknown;
 }
 
-export interface ReplyHandlingStore {
+/** The one store call an ingest path makes when it parks a message. `quarantineInbound` takes only this. */
+export interface IdentityExceptionIntake {
+  /** Idempotent on (channel, account, source event). Returns the row that now holds the event. */
+  insertIdentityException(input: NewIdentityException): Promise<{ id: string; created: boolean }>;
+}
+
+export interface ReplyHandlingStore extends IdentityExceptionIntake {
   /** Everything but the conversation timelines, which the use case reads through the inbox store. */
   recordDetail(organizationId: string, recordId: string): Promise<RecordDetail | null>;
   draftIdForAttempt(organizationId: string, attemptId: string): Promise<string | null>;
@@ -266,8 +272,6 @@ export interface ReplyHandlingStore {
 
   listIdentityExceptions(organizationId: string, status: "open" | "resolved" | "ignored"): Promise<IdentityExceptionRow[]>;
   getIdentityException(organizationId: string, id: string): Promise<IdentityExceptionRow | null>;
-  /** Idempotent on (channel, account, source event). Returns the row that now holds the event. */
-  insertIdentityException(input: NewIdentityException): Promise<{ id: string; created: boolean }>;
   /** Marks an open exception resolved or ignored. False when it was no longer open. */
   closeIdentityException(input: { organizationId: string; id: string; outcome: { status: "resolved"; personId: string } | { status: "ignored" }; now: Date }): Promise<boolean>;
   /** Whether the person belongs to the organization, and the identifiers a replay needs. */
