@@ -300,6 +300,65 @@ describeDb("email send engine", () => {
       expect(provider.delivered).toHaveLength(0);
     });
 
+    it("takes the cap from the enrollment's retry decision, so a cap of four allows four calls", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      let calls = 0;
+      provider.behavior = () => {
+        calls += 1;
+        return "refuse";
+      };
+      const four: typeof store = { ...store, markFailed: (claim, error, now, retry) => store.markFailed(claim, error, now, retry, 4) };
+      const d = { ...deps(provider), store: four };
+
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("failed");
+        expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt });
+        advance(24 * 60);
+      }
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: Recipient address rejected" });
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
+      expect(calls).toBe(4);
+    });
+
+    it("ignores a stale reconciler result that lands on a later attempt of the same step", async () => {
+      const { resolveUnknownEmailSend } = await import("../drizzle-outreach-store");
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      let calls = 0;
+      const d = deps(provider);
+
+      // Attempt 1 fails; attempt 2 ends unknown.
+      provider.behavior = () => (++calls === 1 ? "refuse" : "timeout-lost");
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("failed");
+      advance(60);
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("unknown");
+
+      // A reconciler reads attempt 2 and stalls. A person marks it not delivered meanwhile.
+      advance(11);
+      const stale = (await store.listUncertain(current, 500)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
+      expect(stale).toMatchObject({ attempt: 2 });
+      const resolved = await resolveUnknownEmailSend({
+        organizationId: f.org, campaignId: f.campaign, sendId: stale.sendId, outcome: "not_delivered",
+        actorUserId: "00000000-0000-4000-8000-000000000000", now: current, retryDelayMinutes: () => 15, maxAttempts: MAX_SEND_ATTEMPTS,
+      });
+      expect(resolved).toBe("resolved");
+
+      // Attempt 3 is claimed and in flight when the stale results land. Neither changes it.
+      advance(60);
+      const third = await store.claimNext({ mailboxId: f.mailboxIds[0], now: current, pickGapMinutes: () => 18, takeoverAfterHours: () => 24, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) });
+      expect(third).toMatchObject({ sendId: stale.sendId, attempt: 3 });
+      await store.resolveUncertainAsNotSent(stale, current, 15, MAX_SEND_ATTEMPTS);
+      await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", threadId: "stale" }, current);
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sending", attempt: 3 });
+
+      // Attempt 3's own failure ends the enrollment at the cap, and no fourth claim follows.
+      await store.markFailed(third!, "Recipient address rejected", current, 45, MAX_SEND_ATTEMPTS);
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
+      advance(24 * 60);
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
+    });
+
     it("counts a lost send the reconciler proves absent as an attempt toward the same cap", async () => {
       const f = await fixture();
       const provider = new FakeMailboxProvider();
@@ -460,8 +519,9 @@ describeDb("email send engine", () => {
       expect(await store.checkBlockers(claim)).toBe("enrollment_stopped");
       await store.abandon(claim, "enrollment_stopped", current);
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "replied", stop_reason: "replied" });
+      // Nothing reached the provider, so the claim gives its attempt back.
       const [row] = await sendRows(f.enrollmentIds[0]);
-      expect(row).toMatchObject({ status: "failed", attempt: 3 });
+      expect(row).toMatchObject({ status: "failed", attempt: 0 });
     });
 
     it("blocks the send after an unsubscribe and keeps the suppressed status", async () => {

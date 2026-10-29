@@ -7,6 +7,7 @@ import { drafts, integrationAccounts, integrationCredentials, linkedinAccounts, 
 import type { AccountStatusChange, LinkedInAccountStore, LinkedInCredentials, SyncStatus, WebhookStatus } from "../application/linkedin-management";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { deleteProviderAccount, mergeProviderConfig, saveProviderCredentialTx } from "@/contexts/integrations/infrastructure/provider-accounts";
+import { SEND_COUNTED } from "../../domain/send-status";
 
 const PROVIDER_KEY = "unipile";
 
@@ -21,7 +22,7 @@ export async function countMessagesToday(account: { id: string; providerAccountI
         eq(sends.linkedinAccountId, account.id),
         eq(sends.channel, "linkedin"),
         sql`${sends.stepNumber} > 1`,
-        inArray(sends.status, ["sending", "sent", "unknown"]),
+        inArray(sends.status, SEND_COUNTED),
         sql`${sends.claimedAt} >= ${dayStart}::timestamptz`,
       ),
     );
@@ -33,6 +34,7 @@ export async function countMessagesToday(account: { id: string; providerAccountI
       and(
         eq(drafts.channel, "linkedin"),
         inArray(sendAttempts.accountRef, [account.providerAccountId, account.id]),
+        // ATTEMPT_COUNTED of conversations' send-attempt-status: outreach sits below conversations and cannot import it.
         inArray(sendAttempts.status, ["sending", "sent", "delivery_uncertain", "reconciled"]),
         sql`${sendAttempts.createdAt} >= ${dayStart}::timestamptz`,
       ),
@@ -194,7 +196,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
               eq(sends.linkedinAccountId, row.id),
               eq(sends.stepNumber, 1),
               eq(sends.channel, "linkedin"),
-              inArray(sends.status, ["sending", "sent", "unknown"]),
+              inArray(sends.status, SEND_COUNTED),
               sql`${sends.claimedAt} >= ${startOfLocalDay(now, zone).toISOString()}::timestamptz`,
             ),
           );

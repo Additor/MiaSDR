@@ -12,6 +12,7 @@ import { draftCanBecome, draftIn } from "./reply-store-shared";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
+import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 
 type Tx = DbTx;
 
@@ -67,7 +68,7 @@ async function usage(tx: Tx | typeof db, accountId: string, now: Date) {
   const [sequence] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(sends)
-    .where(and(eq(sends.linkedinAccountId, accountId), eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), sql`${sends.stepNumber} > 1`, inArray(sends.status, ["sending", "sent", "unknown"]), gte(sends.claimedAt, new Date(dayStart))));
+    .where(and(eq(sends.linkedinAccountId, accountId), eq(sends.channel, "linkedin"), eq(sends.kind, "campaign"), sql`${sends.stepNumber} > 1`, inArray(sends.status, SEND_COUNTED), gte(sends.claimedAt, new Date(dayStart))));
   // Gap: the newest attempt of any size, including one that failed, so a burst of retries does not get through.
   const [latest] = await tx
     .select({ last: sql<Date | null>`max(${sendAttempts.createdAt})` })

@@ -18,6 +18,8 @@ import {
 } from "../domain/metrics";
 import type { AnalyticsFilter, AnalyticsReadModel } from "../application/ports";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
+import { SEND_OUTCOMES, SEND_STATUSES, type SendStatus } from "@/contexts/outreach/domain/send-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 /**
  * Read-only queries over sends, enrollments, campaigns, LinkedIn details, inbound messages,
@@ -79,17 +81,23 @@ const replyMessages = (f: AnalyticsFilter, channel?: Channel) => sql`
 
 /** Send rows by outcome. Event time is sent_at for confirmed sends, otherwise the claim time. */
 const sendTime = sql`coalesce(s.sent_at, s.claimed_at)`;
-const statusCounts = () => sql.raw(
-  ["sent", "unknown", "failed", "sending"]
-    .map((st) => `(count(*) filter (where s.status = '${st}'))::int as ${st === "sending" ? "in_flight" : st}`)
-    .join(", "),
-);
-const sendCounts = (r: Row, prefix = ""): SendCounts => ({
-  sent: num(r[`${prefix}sent`]),
-  unknown: num(r[`${prefix}unknown`]),
-  failed: num(r[`${prefix}failed`]),
-  inFlight: num(r[`${prefix}in_flight`]),
-});
+/**
+ * The count column and the `SendCounts` field of each send status. Both are records over `SendStatus`, and every count
+ * below is built from `SEND_STATUSES`, so a new status does not compile until the totals have a place for it.
+ */
+const COUNT_COLUMN: Record<SendStatus, string> = { sent: "sent", unknown: "unknown", failed: "failed", sending: "in_flight" };
+const COUNT_FIELD: Record<SendStatus, keyof SendCounts> = { sent: "sent", unknown: "unknown", failed: "failed", sending: "inFlight" };
+/** One `count(*) filter` column per send status, inside `scope` when given, named `<prefix><column>`. */
+const statusCounts = (scope?: SQL, prefix = "") =>
+  sql.join(
+    SEND_STATUSES.map((st) => sql`(count(*) filter (where ${scope ? sql`${scope} and ` : sql``}s.status = ${sql.raw(`'${st}'`)}))::int as ${sql.raw(prefix + COUNT_COLUMN[st])}`),
+    sql`, `,
+  );
+/** The `statusCounts` columns of the `ss` join, zero when the join found no row. */
+const joinedCounts = (prefix = "") =>
+  sql.raw(SEND_STATUSES.map((st) => `coalesce(ss.${prefix}${COUNT_COLUMN[st]}, 0) as ${prefix}${COUNT_COLUMN[st]}`).join(", "));
+const sendCounts = (r: Row, prefix = ""): SendCounts =>
+  Object.fromEntries(SEND_STATUSES.map((st) => [COUNT_FIELD[st], num(r[`${prefix}${COUNT_COLUMN[st]}`])])) as unknown as SendCounts;
 
 const stepKind = sql`((c.steps -> (s.step_number - 1)) ->> 'kind')`;
 
@@ -130,7 +138,7 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
       select c.id, c.name, c.channel, c.status,
         coalesce(enrolled.n, 0) as enrolled,
         coalesce(cohort.contacted, 0) as contacted, coalesce(cohort.replied, 0) as replied, coalesce(cohort.bounced, 0) as bounced,
-        coalesce(ss.sent, 0) as sent, coalesce(ss.unknown, 0) as unknown, coalesce(ss.failed, 0) as failed, coalesce(ss.in_flight, 0) as in_flight
+        ${joinedCounts()}
       from campaigns c
       left join enrolled on enrolled.campaign_id = c.id
       left join cohort on cohort.campaign_id = c.id
@@ -170,7 +178,7 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
         group by s.channel
       )
       select ch.channel, coalesce(cohort.contacted, 0) as contacted, coalesce(cohort.replied, 0) as replied, coalesce(cohort.bounced, 0) as bounced,
-        coalesce(ss.sent, 0) as sent, coalesce(ss.unknown, 0) as unknown, coalesce(ss.failed, 0) as failed, coalesce(ss.in_flight, 0) as in_flight
+        ${joinedCounts()}
       from (values ('email'), ('linkedin')) as ch(channel)
       left join cohort on cohort.channel = ch.channel
       left join send_stats ss on ss.channel = ch.channel`);
@@ -240,30 +248,22 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
         and ${stepKind} = ${kind} and s.status = ${status} and ${inWindow(sendTime, f)})`;
     const [events] = await run(sql`
       select
-        ${linkedinSends("invitation", "sent")} as inv_sent, ${linkedinSends("invitation", "unknown")} as inv_unknown,
-        ${linkedinSends("invitation", "failed")} as inv_failed, ${linkedinSends("invitation", "sending")} as inv_in_flight,
-        ${linkedinSends("message", "sent")} as msg_sent, ${linkedinSends("message", "unknown")} as msg_unknown,
-        ${linkedinSends("message", "failed")} as msg_failed, ${linkedinSends("message", "sending")} as msg_in_flight,
+        ${sql.join(SEND_STATUSES.map((st) => sql`${linkedinSends("invitation", st)} as ${sql.raw(`inv_${COUNT_COLUMN[st]}`)}`), sql`, `)},
+        ${sql.join(SEND_STATUSES.map((st) => sql`${linkedinSends("message", st)} as ${sql.raw(`msg_${COUNT_COLUMN[st]}`)}`), sql`, `)},
         (select count(*)::int from linkedin_enrollment_details d join campaign_enrollments e on e.id = d.enrollment_id and e.organization_id = d.organization_id
           where d.organization_id = ${org(f)} ${campaignOf(f)} ${accountOf(f)} and d.accepted_at is not null and ${inWindow(sql`d.accepted_at`, f)}) as accepted,
         (select count(*)::int from (${replyMessages(f, "linkedin")}) rm) as replies`);
 
     const accountRows = await run(sql`
       select a.id, coalesce(a.name, a.username, a.linkedin_id) as name, a.status,
-        coalesce(ss.inv_sent, 0) as inv_sent, coalesce(ss.inv_unknown, 0) as inv_unknown, coalesce(ss.inv_failed, 0) as inv_failed, coalesce(ss.inv_in_flight, 0) as inv_in_flight,
-        coalesce(ss.msg_sent, 0) as msg_sent, coalesce(ss.msg_unknown, 0) as msg_unknown, coalesce(ss.msg_failed, 0) as msg_failed, coalesce(ss.msg_in_flight, 0) as msg_in_flight,
+        ${joinedCounts("inv_")},
+        ${joinedCounts("msg_")},
         coalesce(acc.n, 0) as accepted
       from linkedin_accounts a
       left join (
         select s.linkedin_account_id as account_id,
-          (count(*) filter (where ${stepKind} = 'invitation' and s.status = 'sent'))::int as inv_sent,
-          (count(*) filter (where ${stepKind} = 'invitation' and s.status = 'unknown'))::int as inv_unknown,
-          (count(*) filter (where ${stepKind} = 'invitation' and s.status = 'failed'))::int as inv_failed,
-          (count(*) filter (where ${stepKind} = 'invitation' and s.status = 'sending'))::int as inv_in_flight,
-          (count(*) filter (where ${stepKind} = 'message' and s.status = 'sent'))::int as msg_sent,
-          (count(*) filter (where ${stepKind} = 'message' and s.status = 'unknown'))::int as msg_unknown,
-          (count(*) filter (where ${stepKind} = 'message' and s.status = 'failed'))::int as msg_failed,
-          (count(*) filter (where ${stepKind} = 'message' and s.status = 'sending'))::int as msg_in_flight
+          ${statusCounts(sql`${stepKind} = 'invitation'`, "inv_")},
+          ${statusCounts(sql`${stepKind} = 'message'`, "msg_")}
         from sends s
         join campaign_enrollments e on e.id = s.enrollment_id and e.organization_id = s.organization_id
         join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
@@ -279,7 +279,7 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
       where a.organization_id = ${org(f)} ${f.linkedinAccountId ? sql`and a.id = ${f.linkedinAccountId}::uuid` : sql``}
       order by a.created_at, a.id`);
 
-    const counts = (r: Row, p: string): SendCounts => ({ sent: num(r[`${p}_sent`]), unknown: num(r[`${p}_unknown`]), failed: num(r[`${p}_failed`]), inFlight: num(r[`${p}_in_flight`]) });
+    const counts = (r: Row, p: string): SendCounts => sendCounts(r, `${p}_`);
     return {
       campaigns: funnelRows.map((r): LinkedInCampaignFunnel => ({
         campaignId: r.campaign_id as string,
@@ -331,7 +331,7 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
       select ${dayOf} as day, metric, count(*)::int as n from (
         select ${sendTime} as ts, 'email_' || s.status as metric
         from sends s join campaign_enrollments e on e.id = s.enrollment_id and e.organization_id = s.organization_id
-        where s.organization_id = ${org(f)} and s.channel = 'email' and s.status in ('sent', 'unknown', 'failed') ${campaignOf(f)} and ${inWindow(sendTime, f)}
+        where s.organization_id = ${org(f)} and s.channel = 'email' and s.status in ${sqlValues(SEND_OUTCOMES)} ${campaignOf(f)} and ${inWindow(sendTime, f)}
         union all
         select ts, metric from (
           select ${sendTime} as ts,

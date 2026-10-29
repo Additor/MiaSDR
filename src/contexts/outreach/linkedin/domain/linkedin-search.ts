@@ -1,7 +1,9 @@
 // Pure rules of the LinkedIn search queue: URL validation, status moves, limits, retry pacing. No I/O.
 import { BARE_SLUG } from "@/contexts/people/domain/linkedin-slug";
 
-export type SearchStatus = "queued" | "running" | "paused" | "paused_limit" | "completed" | "failed" | "cancelled";
+/** Search statuses. The `linkedin_search_queries_status_ck` check in the schema is built from this list. */
+export const SEARCH_STATUSES = ["queued", "running", "paused", "paused_limit", "completed", "failed", "cancelled"] as const;
+export type SearchStatus = (typeof SEARCH_STATUSES)[number];
 export type SearchAction = "pause" | "resume" | "cancel";
 
 export const DEFAULT_MAX_RESULTS = 100;

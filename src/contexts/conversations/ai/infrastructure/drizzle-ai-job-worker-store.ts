@@ -7,13 +7,15 @@ import type { AiJobWorkerStore, ClaimedJob, JobKind } from "../../application/re
 import { AUTO_REQUEUE_CEILING, type FailureKind } from "../domain/ai-job-requeue";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "@/contexts/tenancy/domain/ai-cap";
 import { startOfLocalDay } from "@/contexts/outreach/domain/working-hours";
-import { publicConversation, publicConversationText } from "@/platform/db/conversation-visibility";
+import { publicConversation, publicConversationSql } from "@/platform/db/conversation-visibility";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { settlesAfterAiPick } from "../../domain/workflow-state";
 import { decideReplyType, typeRulesOf, type ReplyTypeFacts } from "../../domain/reply-type";
 import { followUpModeFactsTx } from "../../infrastructure/follow-up-mode-facts";
 import { insertDraftTx } from "../../infrastructure/reply-store-drafts";
 import type { Tx } from "../../after-reply/infrastructure/sequence-stop";
+import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 /**
  * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: the
@@ -100,13 +102,16 @@ const failureMarks = (kind: FailureKind) =>
  * Whether the organization ever wrote to the sender of message `m`: an outbound message to the address or in another
  * conversation of the same record (LinkedIn has no address), or a campaign send to a person with that address.
  */
-const senderKnown = (m: string) => sql.raw(`(
+const senderKnown = (alias: string) => {
+  const m = sql.raw(alias);
+  return sql`(
   exists (select 1 from messages o where o.organization_id = ${m}.organization_id and o.direction = 'outbound' and lower(o.to_address) = lower(${m}.from_address))
   or exists (select 1 from messages o join conversations oc on oc.id = o.conversation_id join conversations mc on mc.record_id = oc.record_id
-             where mc.id = ${m}.conversation_id and o.organization_id = ${m}.organization_id and o.direction = 'outbound' and ${publicConversationText("oc")})
+             where mc.id = ${m}.conversation_id and o.organization_id = ${m}.organization_id and o.direction = 'outbound' and ${publicConversationSql("oc")})
   or exists (select 1 from sends s join campaign_enrollments e on e.id = s.enrollment_id join people p on p.id = e.person_id
-             where s.organization_id = ${m}.organization_id and s.status in ('sending', 'sent', 'unknown') and lower(p.email) = lower(${m}.from_address))
-)`);
+             where s.organization_id = ${m}.organization_id and s.status in ${sqlValues(SEND_COUNTED)} and lower(p.email) = lower(${m}.from_address))
+)`;
+};
 
 /** The AI worker's claim and every method that ends it or writes its result. Each one filters with `heldBy`. */
 export const drizzleAiJobWorkerStore: AiJobWorkerStore = {

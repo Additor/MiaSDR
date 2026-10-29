@@ -64,6 +64,10 @@ export function mailboxBlock(now: Date, mailbox: MailboxState): MailboxBlock | n
   return null;
 }
 
+/**
+ * Provider calls one campaign step may make, email and LinkedIn alike: the first try and two retries. The enrollment
+ * holds the cap (`scheduleRetry` ends it at this attempt), so no claim query and no database rule repeats the number.
+ */
 export const MAX_SEND_ATTEMPTS = 3;
 /** Wait before retrying a definite failure: 15 minutes, then 30. */
 export function retryDelayMinutes(attemptJustFailed: number): number {

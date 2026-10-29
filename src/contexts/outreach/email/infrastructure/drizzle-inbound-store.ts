@@ -7,6 +7,7 @@ import { isVerifiedBounce } from "../domain/bounce";
 import { createSuppressionStore } from "../../infrastructure/suppression-store";
 import { haltOutcome } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
+import { SEND_COUNTED } from "../../domain/send-status";
 
 type Tx = DbTx;
 
@@ -57,7 +58,7 @@ async function bounceEvidence(mailbox: SyncMailbox, email: InboundEmail, failedR
     eq(sends.organizationId, mailbox.organizationId),
     eq(sends.mailboxId, mailbox.id),
     eq(sends.channel, "email"),
-    inArray(sends.status, ["sending", "sent", "unknown"]),
+    inArray(sends.status, SEND_COUNTED),
     gte(sends.claimedAt, new Date(now.getTime() - BOUNCE_HORIZON_MS)),
     sql`lower(${people.email}) = ${failedRecipient}`,
   );

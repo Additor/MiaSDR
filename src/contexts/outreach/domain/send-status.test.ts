@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { canMoveSend, SEND_FINAL, SEND_FROM, type SendStatus } from "./send-status";
+import { canMoveSend, SEND_FINAL, SEND_FROM, SEND_STATUSES } from "./send-status";
 
-const ALL: SendStatus[] = ["sending", "sent", "failed", "unknown"];
+const ALL = SEND_STATUSES;
 
 describe("send status transitions", () => {
   it("never leaves a final status", () => {

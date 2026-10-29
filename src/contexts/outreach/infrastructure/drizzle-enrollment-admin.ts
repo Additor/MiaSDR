@@ -7,6 +7,8 @@ import { endEnrollmentsTx } from "./enrollment-end";
 import { profileUrlFor } from "../linkedin/domain/linkedin";
 import { insertSkippingContacts, notContactSql } from "./contact-guard";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { SEND_COUNTED } from "../domain/send-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 const CHUNK = 500;
 
@@ -178,7 +180,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
               eq(campaignEnrollments.currentStep, 0),
               isNotNull(campaignEnrollments.linkedinAccountId),
               notInArray(campaignEnrollments.linkedinAccountId, ids),
-              sql`not exists (select 1 from sends s where s.enrollment_id = ${campaignEnrollments.id} and s.status in ('sending', 'unknown', 'sent'))`,
+              sql`not exists (select 1 from sends s where s.enrollment_id = ${campaignEnrollments.id} and s.status in ${sqlValues(SEND_COUNTED)})`,
             ),
           )
           .returning({ id: campaignEnrollments.id });

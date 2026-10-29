@@ -3,13 +3,12 @@ import { isOutboundPaused } from "@/shared/outbound-pause";
 import {
   INVITE_EXPIRES_DAYS,
   LIMIT_PAUSE_HOURS,
-  MAX_INVITE_ATTEMPTS,
   inviteNoteProblem,
   inviteRetryMinutes,
   renderLinkedInText,
 } from "../domain/linkedin";
 import { parseLinkedInProfileRef } from "../domain/linkedin-identity";
-import { NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../domain/send-policy";
+import { MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../domain/send-policy";
 import { defaultWorkingHours } from "../../domain/working-hours";
 import {
   LinkedInGatewayError,
@@ -155,11 +154,11 @@ async function deliver(deps: LinkedInEngineDeps, gateway: LinkedInGateway, claim
     const problem = inviteNoteProblem(text);
     if (problem) {
       // Cutting a note would change what the author wrote. Fail this lead and say why.
-      await deps.store.markFailed(claim, problem, deps.clock.now(), 0, MAX_INVITE_ATTEMPTS, true);
+      await deps.store.markFailed(claim, problem, deps.clock.now(), 0, MAX_SEND_ATTEMPTS, true);
       return { kind: "failed", retry: false };
     }
   } else if (text === "") {
-    await deps.store.markFailed(claim, "The message rendered empty.", deps.clock.now(), 0, MAX_INVITE_ATTEMPTS, true);
+    await deps.store.markFailed(claim, "The message rendered empty.", deps.clock.now(), 0, MAX_SEND_ATTEMPTS, true);
     return { kind: "failed", retry: false };
   }
 
@@ -221,11 +220,11 @@ async function handleSendError(deps: LinkedInEngineDeps, claim: LinkedInSendClai
       case "not_first_degree":
       // The account lacks access to this call. Trying again changes nothing, and the account itself is healthy.
       case "insufficient_privileges":
-        await deps.store.markFailed(claim, message, now, 0, MAX_INVITE_ATTEMPTS, true);
+        await deps.store.markFailed(claim, message, now, 0, MAX_SEND_ATTEMPTS, true);
         return { kind: "failed", retry: false };
     }
-    await deps.store.markFailed(claim, message, now, inviteRetryMinutes(claim.attempt), MAX_INVITE_ATTEMPTS, false);
-    return { kind: "failed", retry: claim.attempt < MAX_INVITE_ATTEMPTS };
+    await deps.store.markFailed(claim, message, now, inviteRetryMinutes(claim.attempt), MAX_SEND_ATTEMPTS, false);
+    return { kind: "failed", retry: claim.attempt < MAX_SEND_ATTEMPTS };
   }
   // Timeout, dropped connection, 5xx, or a non-gateway error: it may have gone out. Never retry on a guess.
   await deps.store.markUnknown(claim, message);
@@ -251,7 +250,7 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
     const retryIn = inviteRetryMinutes(send.attempt);
     if (!send.rendered) {
       // Crashed before the provider call: nothing can have been sent.
-      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_INVITE_ATTEMPTS);
+      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_SEND_ATTEMPTS);
       report.retryable += 1;
       continue;
     }
@@ -284,7 +283,7 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
       continue;
     }
     if (now.getTime() - send.claimedAt.getTime() >= NOT_FOUND_GRACE_MINUTES * 60_000) {
-      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_INVITE_ATTEMPTS);
+      await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_SEND_ATTEMPTS);
       report.retryable += 1;
     } else {
       report.stillWaiting += 1;
