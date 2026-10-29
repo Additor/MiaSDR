@@ -1,6 +1,6 @@
 import { exportLeadsCsv } from "@/contexts/people/application/lead-management";
 import { parseLeadFilter } from "@/contexts/people/domain/lead-filter";
-import { leadDeps } from "@/contexts/people/infrastructure/composition";
+import { leadDeps } from "@/composition/leads";
 import { withActor } from "@/app/_lib/api";
 
 /** Streams the leads matching the list filter params (`q`, `campaign`, `email`, `ids` and the rest, see `parseLeadFilter`) as CSV: UTF-8 with BOM, formula-safe cells, batches of 1,000 rows. */

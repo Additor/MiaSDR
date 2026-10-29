@@ -37,7 +37,7 @@ describeDb("lead delete qualification", () => {
   const actor = (o: Org) => ({ organizationId: o.id, userId: "u", role: "owner" }) as never;
 
   beforeAll(async () => {
-    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("../composition")).leadDeps() };
+    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("@/composition/leads")).leadDeps() };
     check = await import("../../application/lead-delete-check");
     management = await import("../../application/lead-management");
   });

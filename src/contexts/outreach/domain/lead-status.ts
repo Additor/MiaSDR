@@ -1,7 +1,7 @@
 /*
  * Lead status: where a lead stands in outreach. It belongs to leads only; a contact carries no status, and reachability
  * (do not contact, a suppressed address) is a separate state (`reachability.ts`). The read model
- * (`infrastructure/drizzle-lead-statuses.ts`) fills it for a page of person ids, and the lead list and the lead page both
+ * (`src/read-models/lead-activity.ts`) fills it for a page of person ids, and the lead list and the lead page both
  * read it there, so the two always agree.
  *
  * new -> queued -> in_sequence <-> paused -> replied, or the sequence ends as finished (every step went out, no reply)

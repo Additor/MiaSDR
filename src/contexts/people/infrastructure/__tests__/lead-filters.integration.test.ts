@@ -10,10 +10,10 @@ describeDb("lead list filters, sort and companies", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
   let uc: typeof import("../../application/lead-management");
-  let q: typeof import("../queries");
+  let q: typeof import("@/composition/leads");
   let deps: import("../../application/lead-ports").LeadDeps & import("../../application/lead-ports").LeadDeleteDeps;
   let readLeadStatuses: ReadLeadStatuses;
-  let readLeadNeighbors: typeof import("../lead-neighbors").readLeadNeighbors;
+  let readLeadNeighbors: typeof import("@/composition/leads").readLeadNeighbors;
   const orgs: TestOrg[] = [];
 
   async function org() {
@@ -71,10 +71,10 @@ describeDb("lead list filters, sort and companies", () => {
 
   beforeAll(async () => {
     uc = await import("../../application/lead-management");
-    q = await import("../queries");
-    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("../composition")).leadDeps() };
-    ({ readLeadStatuses } = await import("@/contexts/outreach/infrastructure/drizzle-lead-statuses"));
-    ({ readLeadNeighbors } = await import("../composition"));
+    q = await import("@/composition/leads");
+    deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("@/composition/leads")).leadDeps() };
+    ({ readLeadStatuses } = await import("@/read-models/lead-activity"));
+    ({ readLeadNeighbors } = q);
   });
 
   afterAll(async () => {
@@ -440,8 +440,7 @@ describeDb("lead list filters, sort and companies", () => {
       expect(await ids(o.id, { replied: false })).toEqual(others);
 
       // The lead status of the list and the lead page (one read for both) follows the same definition.
-      const outreach = await import("@/contexts/outreach/infrastructure/drizzle-lead-statuses");
-      const statuses = await outreach.readLeadStatuses(o.id, [...repliers, ...others]);
+      const statuses = await readLeadStatuses(o.id, [...repliers, ...others]);
       for (const personId of repliers) expect(statuses.get(personId)?.state, personId).toBe("replied");
       for (const personId of others) expect(statuses.get(personId)?.state ?? "new", personId).not.toBe("replied");
     });

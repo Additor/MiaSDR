@@ -20,9 +20,9 @@ import { previewContactDelete } from "@/contexts/people/application/contact-dele
 import { getLead } from "@/contexts/people/application/lead-management";
 import { telHref } from "@/contexts/people/domain/lead-contact-links";
 import { sourceLabel } from "@/contexts/people/domain/lead-labels";
-import { leadDeps } from "@/contexts/people/infrastructure/composition";
+import { leadDeps } from "@/composition/leads";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
-import { leadActivityDeps } from "@/contexts/outreach/infrastructure/composition";
+import { leadActivityDeps } from "@/read-models/lead-activity";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError, type Actor } from "@/shared/errors";
 import { CreateDealButton } from "../../_components/create-deal-dialog";

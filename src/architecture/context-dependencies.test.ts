@@ -38,7 +38,7 @@ export function violations(file: string, source: string, forbidden: readonly str
     .map((s) => `${path.relative(ROOT, file)} -> ${s}`);
 }
 
-const CONTEXT_FORBIDDEN = ["composition"];
+const CONTEXT_FORBIDDEN = ["composition", "read-models"];
 
 /** The imports of `file` (under src/contexts/<context>) that reach a context in the same or a higher layer. */
 export function upwardImports(file: string, source: string): string[] {
@@ -53,12 +53,14 @@ export function upwardImports(file: string, source: string): string[] {
 
 /**
  * The tiers under src, lowest first: `shared` (the kernel: errors, env, time, formatting), `platform` (database client,
- * schema barrel, job runtime, files, credentials), the contexts, `composition`, then `app`. A tier imports only lower
- * tiers. `shared` imports no framework or driver either.
+ * schema barrel, job runtime, files, credentials), the contexts, `read-models` (screen reads across contexts),
+ * `composition`, then `app`. A tier imports only lower tiers. `shared` imports no framework or driver either.
  */
 const TIER_FORBIDDEN: Record<string, { paths: string[]; packages: RegExp | null }> = {
-  shared: { paths: ["contexts", "platform", "composition", "app", "components"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
-  platform: { paths: ["composition", "app", "components"], packages: null },
+  shared: { paths: ["contexts", "platform", "read-models", "composition", "app", "components"], packages: /^(next|react|drizzle-orm|postgres)(\/|$)/ },
+  platform: { paths: ["read-models", "composition", "app", "components"], packages: null },
+  // Read models join the tables of several contexts for one screen. They read; the table ownership test fails any write.
+  "read-models": { paths: ["composition", "app", "components"], packages: null },
   // Composition wires contexts together. A query there is a rule no context owns, so tables and drivers stay out.
   composition: { paths: ["app", "components", "platform/db/schema"], packages: /^(drizzle-orm|postgres)(\/|$)/ },
 };
@@ -97,8 +99,12 @@ describe("tier dependencies", () => {
     expect(tierViolations("shared")).toEqual([]);
   });
 
-  it("keeps src/platform free of composition, app and UI", () => {
+  it("keeps src/platform free of read models, composition, app and UI", () => {
     expect(tierViolations("platform")).toEqual([]);
+  });
+
+  it("keeps src/read-models free of composition, app and UI", () => {
+    expect(tierViolations("read-models")).toEqual([]);
   });
 
   it("keeps src/composition free of app, UI, tables and drivers", () => {
@@ -227,7 +233,7 @@ describe("context dependencies", () => {
     expect(upwardImports(file, source)).toEqual(["src/contexts/outreach/infrastructure/example.ts -> @/contexts/conversations/infrastructure/composition"]);
   });
 
-  it("keeps every context free of the composition root", () => {
+  it("keeps every context free of the composition root and the read models", () => {
     const files = sourceFiles(path.join(SRC, "contexts"));
     expect(files.flatMap((f) => violations(f, readFileSync(f, "utf8"), CONTEXT_FORBIDDEN))).toEqual([]);
   });
@@ -238,6 +244,7 @@ describe("context dependencies", () => {
       'import { deals } from "@/contexts/deals/application/deals";',
       'import type { Port } from "../../outreach/application/ports";',
       'const root = await import("@/composition/person-lifecycle");',
+      'import { activityCondition } from "@/read-models/lead-activity";',
       'export * from "../../deals/domain/deal";',
       'import { ok } from "@/contexts/conversations/infrastructure/person-handling";',
       'import { sql } from "drizzle-orm";',
@@ -248,6 +255,9 @@ describe("context dependencies", () => {
       "src/contexts/people/application/example.ts -> ../../deals/domain/deal",
       "src/contexts/people/application/example.ts -> @/contexts/conversations/infrastructure/person-handling",
     ]);
-    expect(violations(file, source, CONTEXT_FORBIDDEN)).toEqual(["src/contexts/people/application/example.ts -> @/composition/person-lifecycle"]);
+    expect(violations(file, source, CONTEXT_FORBIDDEN)).toEqual([
+      "src/contexts/people/application/example.ts -> @/composition/person-lifecycle",
+      "src/contexts/people/application/example.ts -> @/read-models/lead-activity",
+    ]);
   });
 });

@@ -10,7 +10,6 @@ import { createEmailJobs } from "../email/application/email-jobs";
 import type { FollowUpStop, InboxFiling } from "../application/inbound-ports";
 import { createInboxJobs } from "../email/application/inbox-jobs";
 import type { MailboxProvider } from "../email/application/ports";
-import type { LeadActivityDeps } from "../application/read-lead-activity";
 import type { EngineDeps } from "../email/application/send-next-email";
 import { reconcileTestSends, type TestSendDeps } from "../email/application/send-test-email";
 import type { SuppressionStore } from "../email/application/unsubscribe";
@@ -18,12 +17,10 @@ import type { SuppressionListDeps } from "../application/suppression-list";
 import { drizzleChannelSettingsStore } from "./drizzle-channel-settings-store";
 import { drizzleEnrollmentAdminStore } from "./drizzle-enrollment-admin";
 import { createDrizzleInboundStore } from "../email/infrastructure/drizzle-inbound-store";
-import { readLeadStatuses } from "./drizzle-lead-statuses";
 import { drizzleMergeFieldSource } from "./drizzle-merge-fields";
 import { drizzleOutreachStore } from "../email/infrastructure/drizzle-outreach-store";
 import { createSuppressionStore } from "./suppression-store";
 import { drizzleSuppressionListStore } from "./drizzle-suppression-list-store";
-import { readReachability } from "@/contexts/people/infrastructure/composition";
 import { drizzleTestSendStore } from "../email/infrastructure/drizzle-test-send-store";
 import { drizzleCampaignStore, drizzleMailboxStore } from "./drizzle-management-stores";
 import { FakeMailboxProvider } from "../email/infrastructure/fake-mailbox-provider";
@@ -70,8 +67,6 @@ export function mailboxProvider(): MailboxProvider {
   if (env().MAILBOX_PROVIDER === "gmail") return gmailProvider();
   return notConfiguredProvider;
 }
-
-export const leadActivityDeps = (): LeadActivityDeps => ({ readStatuses: readLeadStatuses, readReach: readReachability });
 
 /** The organization's email channel settings. */
 export const emailRulesDeps = (): EmailRulesDeps => ({ settings: drizzleChannelSettingsStore });

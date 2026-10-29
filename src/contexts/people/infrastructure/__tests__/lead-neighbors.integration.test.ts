@@ -6,8 +6,8 @@ import { describeDb, testSql, useTestEnv } from "@/test-support/db";
 describeDb("lead page neighbors", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
-  let neighbors: typeof import("../lead-neighbors");
-  let q: typeof import("../queries");
+  let neighbors: typeof import("@/composition/leads");
+  let q: typeof import("@/composition/leads");
   const orgs: string[] = [];
 
   async function org() {
@@ -35,8 +35,8 @@ describeDb("lead page neighbors", () => {
   const listOrder = async (orgId: string, filter: LeadFilter, sort: LeadSort) => (await q.listLeads(orgId, { filter, sort, pageSize: 200 })).rows.map((r) => r.id);
 
   beforeAll(async () => {
-    neighbors = await import("../lead-neighbors");
-    q = await import("../queries");
+    neighbors = await import("@/composition/leads");
+    q = neighbors;
   });
 
   afterAll(async () => {

@@ -16,7 +16,7 @@ import { dealsDeps } from "@/composition/deals";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getLead } from "@/contexts/people/application/lead-management";
 import { leadContactPoints } from "@/contexts/people/domain/lead-activity";
-import { leadDeps } from "@/contexts/people/infrastructure/composition";
+import { leadDeps } from "@/composition/leads";
 import { NO_REACH } from "@/contexts/people/domain/reachability";
 import { readReachability } from "@/contexts/people/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";
