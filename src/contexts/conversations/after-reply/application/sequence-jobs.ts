@@ -178,7 +178,9 @@ export function createSequenceJobs(deps: SequenceJobDeps): Job[] {
         // Triggers first, so a run a reply just ended never reaches the claim below.
         processed += await sweepInterruptions(deps, ctx.deadline, count);
         processed += await startRuns(deps, ctx.deadline, count);
-        processed += await deps.engine.settleDrafts(deps.now(), 200);
+        const settle = await deps.engine.settleDrafts(deps.now(), 200);
+        processed += settle.settled;
+        if (settle.deferred > 0) detail.settle_deferred = settle.deferred;
 
         while (Date.now() < ctx.deadline) {
           const claim = await deps.engine.claimDue(deps.workerId, deps.now(), deps.leaseMs);

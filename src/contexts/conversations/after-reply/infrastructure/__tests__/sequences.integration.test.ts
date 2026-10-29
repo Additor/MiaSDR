@@ -1822,18 +1822,25 @@ describeDb("Follow-ups after a reply flows", () => {
       await expect(seqApp.cancelSequenceRun(f.seqDeps, f.actor, recordId)).rejects.toBeInstanceOf(ConflictError);
     });
 
-    it("advancing to a step another writer moved after the pick leaves the run and the record as they were", async () => {
+    it("advancing to a step another writer moved after the pick rolls back the whole settle", async () => {
       const { f, run } = await withRun();
-      const { advanceRunTx } = await import("../sequence-run-tx");
+      const { advanceRunTx, StepMovedError } = await import("../sequence-run-tx");
       const { db } = await import("@/platform/db/client");
-      const { sql } = await import("drizzle-orm");
-      const before = await one("select r.current_step_position, rec.next_action_at from sequence_runs r join records rec on rec.id = r.record_id where r.id = $1", [run.id]);
-      const step2 = await one(
-        "select sr.id, sr.due_at from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = 2",
-        [run.id],
-      );
-      const result = await db.transaction(async (tx) => {
-        // The zone read is the first raw statement after the pick: move step 2 to awaiting_review there.
+      const { sql: q } = await import("drizzle-orm");
+      const state = () =>
+        sql.unsafe(
+          `select st.position, sr.status, sr.due_at, r.status as run_status, r.current_step_position, rec.next_action_at
+           from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id join sequence_runs r on r.id = sr.sequence_run_id
+           join records rec on rec.id = r.record_id where r.id = $1 order by st.position`,
+          [run.id],
+        );
+      const before = await state();
+      const step = (position: number) => one("select sr.id from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = $2", [run.id, position]);
+      const [step1, step2] = [await step(1), await step(2)];
+      const advancing = db.transaction(async (tx) => {
+        // The caller's own write of the step it handled, then the race: the zone read is the first raw statement after
+        // the pick, and step 2 moves to awaiting_review there.
+        await tx.execute(q`update sequence_step_runs set status = 'skipped' where id = ${step1.id}`);
         let moved = false;
         const racing = new Proxy(tx, {
           get: (target, key, receiver) => {
@@ -1842,7 +1849,7 @@ describeDb("Follow-ups after a reply flows", () => {
             return async (query: Parameters<typeof tx.execute>[0]) => {
               if (!moved) {
                 moved = true;
-                await target.execute(sql`update sequence_step_runs set status = 'awaiting_review' where id = ${step2.id}`);
+                await target.execute(q`update sequence_step_runs set status = 'awaiting_review' where id = ${step2.id}`);
               }
               return target.execute(query);
             };
@@ -1850,9 +1857,53 @@ describeDb("Follow-ups after a reply flows", () => {
         });
         return advanceRunTx(racing, { organizationId: f.org, runId: run.id, afterPosition: 1, from: f.clock(), now: f.clock() });
       });
-      expect(result).toEqual({ next: null });
-      expect(await one("select status, due_at from sequence_step_runs where id = $1", [step2.id])).toEqual({ status: "awaiting_review", due_at: step2.due_at });
-      expect(await one("select r.current_step_position, rec.next_action_at from sequence_runs r join records rec on rec.id = r.record_id where r.id = $1", [run.id])).toEqual(before);
+      await expect(advancing).rejects.toBeInstanceOf(StepMovedError);
+      // Nothing moved: step 1 still waits for review on an active run at position 1, so the next settle finds it again.
+      expect(await state()).toEqual(before);
+      expect(before[0]).toMatchObject({ position: 1, status: "awaiting_review", run_status: "active", current_step_position: 1 });
+    });
+
+    it("a settle whose next step changed under it leaves the row for the next tick and counts it", async () => {
+      const { f, run } = await withRun();
+      const step = (position: number) => one("select sr.id, sr.status, sr.draft_id from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = $2", [run.id, position]);
+      const [step1, step2] = [await step(1), await step(2)];
+      await sql.unsafe("update drafts set status = 'discarded' where id = $1", [step1.draft_id]);
+      const fn = `refuse_${uniqueKey().replace(/\W/g, "_")}`;
+      await sql.unsafe(`create function ${fn}() returns trigger language plpgsql as $$ begin if old.id = '${step2.id}' then return null; end if; return new; end $$`);
+      await sql.unsafe(`create trigger ${fn} before update on sequence_step_runs for each row execute function ${fn}()`);
+      try {
+        expect(await stores.engine.settleDrafts(f.clock(), 200)).toMatchObject({ deferred: 1 });
+      } finally {
+        await sql.unsafe(`drop trigger ${fn} on sequence_step_runs`);
+        await sql.unsafe(`drop function ${fn}()`);
+      }
+      expect(await step(1)).toMatchObject({ status: "awaiting_review" });
+      expect(await one("select current_step_position from sequence_runs where id = $1", [run.id])).toMatchObject({ current_step_position: 1 });
+      // The next tick settles it.
+      expect(await stores.engine.settleDrafts(f.clock(), 200)).toMatchObject({ deferred: 0 });
+      expect(await step(1)).toMatchObject({ status: "skipped" });
+      expect(await one("select current_step_position from sequence_runs where id = $1", [run.id])).toMatchObject({ current_step_position: 2 });
+    });
+
+    it("a skip whose next step changed under it answers 409 and changes nothing", async () => {
+      const { f, run } = await withRun();
+      const step2 = await one("select sr.id from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = 2", [run.id]);
+      const before = await sql.unsafe("select id, status, due_at from sequence_step_runs where sequence_run_id = $1 order by id", [run.id]);
+      // A trigger that drops the reschedule of step 2 stands in for a writer that moved it after the pick.
+      const fn = `refuse_${uniqueKey().replace(/\W/g, "_")}`;
+      await sql.unsafe(`create function ${fn}() returns trigger language plpgsql as $$ begin if old.id = '${step2.id}' then return null; end if; return new; end $$`);
+      await sql.unsafe(`create trigger ${fn} before update on sequence_step_runs for each row execute function ${fn}()`);
+      try {
+        const error = await seqApp.skipSequenceStep(f.seqDeps, f.actor, run.record_id).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(ConflictError);
+        expect(error).toMatchObject({ message: "The follow-up sequence changed while you skipped. Reload the page and try again.", details: { code: "sequence_changed" } });
+      } finally {
+        await sql.unsafe(`drop trigger ${fn} on sequence_step_runs`);
+        await sql.unsafe(`drop function ${fn}()`);
+      }
+      expect(await sql.unsafe("select id, status, due_at from sequence_step_runs where sequence_run_id = $1 order by id", [run.id])).toEqual(before);
+      expect(await one("select status, current_step_position from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "active", current_step_position: 1 });
+      expect(await count("drafts", f.org, "status = 'discarded'")).toBe(0);
     });
 
     it("reads the record's campaign and run with labels", async () => {
