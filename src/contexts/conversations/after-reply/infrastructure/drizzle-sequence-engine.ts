@@ -187,7 +187,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
         // Lock order is record, run, step run, as in `endRunTx`. A stop that committed first leaves nothing to settle.
         const [owner] = rowsOf<{ record_id: string }>(await tx.execute(sql`select record_id from sequence_runs where id = ${row.run_id} and organization_id = ${row.organization_id}`));
         if (!owner) return false;
-        await tx.execute(sql`select id from records where id = ${owner.record_id} and organization_id = ${row.organization_id} for update`);
+        await tx.execute(sql`select id from records where id = ${owner.record_id} and organization_id = ${row.organization_id} for no key update`);
         const [live] = rowsOf<{ status: string }>(await tx.execute(sql`select status from sequence_runs where id = ${row.run_id} and organization_id = ${row.organization_id} for update`));
         if (!live || live.status !== "active") return false;
         const [sr] = rowsOf<{ id: string; run_id: string; record_id: string; position: number; attempt_count: number; draft_id: string; draft_status: string; draft_error: string | null }>(
@@ -348,7 +348,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
         await tx.execute(sql`select r.record_id from sequence_step_runs sr join sequence_runs r on r.id = sr.sequence_run_id where sr.id = ${stepRunId} and sr.organization_id = ${organizationId}`),
       );
       if (!peek) return "stopped";
-      await tx.execute(sql`select id from records where id = ${peek.record_id} and organization_id = ${organizationId} for update`);
+      await tx.execute(sql`select id from records where id = ${peek.record_id} and organization_id = ${organizationId} for no key update`);
       const [sr] = rowsOf<{ id: string; record_id: string; run_status: string }>(
         await tx.execute(sql`
           select sr.id, r.record_id, r.status as run_status

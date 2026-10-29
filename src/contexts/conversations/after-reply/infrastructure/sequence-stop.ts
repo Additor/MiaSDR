@@ -58,7 +58,7 @@ export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ dr
   // Lock order everywhere is record, then run. A worker holding the run waits for the record, so taking the run first here could deadlock.
   const [peek] = rowsOf<{ record_id: string }>(await tx.execute(sql`select record_id from sequence_runs where id = ${input.runId} and organization_id = ${input.organizationId}`));
   if (!peek) return null;
-  await tx.execute(sql`select id from records where id = ${peek.record_id} and organization_id = ${input.organizationId} for update`);
+  await tx.execute(sql`select id from records where id = ${peek.record_id} and organization_id = ${input.organizationId} for no key update`);
   const [run] = rowsOf<{ id: string; record_id: string; status: string }>(
     await tx.execute(sql`select id, record_id, status from sequence_runs where id = ${input.runId} and organization_id = ${input.organizationId} for update`),
   );

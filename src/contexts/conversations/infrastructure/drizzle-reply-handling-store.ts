@@ -71,14 +71,15 @@ async function settingsOf(replyTypeSetId: string): Promise<ReplyHandlingSettings
 
 /**
  * Locks a record a person may see. A record whose conversations are all private answers 404, as a foreign id does.
- * `no key update` lets a draft insert's foreign key check (a key share) through while the lock is held.
+ * No key update: a writer lock that lets a draft insert's foreign key check (a key share) through (docs/database.md,
+ * "Lock modes").
  */
-async function lockRecord(tx: Tx, organizationId: string, recordId: string, strength: "update" | "no key update" = "update") {
+async function lockRecord(tx: Tx, organizationId: string, recordId: string) {
   const [row] = await tx
     .select()
     .from(records)
     .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId), visibleRecordSql("records")))
-    .for(strength);
+    .for("no key update");
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;
 }
@@ -463,7 +464,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       }
 
 
-      const owned = await tx.select().from(records).where(and(eq(records.personId, input.personId), eq(records.organizationId, input.organizationId))).for("update");
+      const owned = await tx.select().from(records).where(and(eq(records.personId, input.personId), eq(records.organizationId, input.organizationId))).for("no key update");
       const recordIds = owned.map((r) => r.id);
       for (const record of owned) {
         const version = record.contextVersion + 1;
@@ -502,9 +503,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
 
   async closeRecord(input) {
     await db.transaction(async (tx) => {
-      // A reply send holds its conversation and then inserts a draft, whose foreign key check takes a key share on the
-      // record. A full record lock here would wait on that while the close waits on the conversation below.
-      const record = await lockRecord(tx, input.organizationId, input.recordId, "no key update");
+      const record = await lockRecord(tx, input.organizationId, input.recordId);
       if (record.workflowState === "closed") throw new ConflictError("Reply handling is already closed.");
       // A reply send holds its conversation FOR UPDATE from before it reads the workflow state to its commit. The share lock
       // waits for one in progress, so the close lands after it, and a send that starts later reads the close

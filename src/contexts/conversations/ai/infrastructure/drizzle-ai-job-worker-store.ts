@@ -175,7 +175,7 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
               .innerJoin(conversations, eq(conversations.id, messages.conversationId))
               .innerJoin(records, eq(records.id, conversations.recordId))
               .where(and(eq(messages.id, job.entityId), eq(messages.organizationId, job.organizationId), publicConversation))
-              .for("update", { of: records })
+              .for("no key update", { of: records })
           : [];
       const moved = await tx
         .update(aiJobs)
@@ -273,7 +273,7 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
         .innerJoin(conversations, eq(conversations.id, messages.conversationId))
         .innerJoin(records, eq(records.id, conversations.recordId))
         .where(and(eq(messages.id, input.messageId), eq(messages.organizationId, input.job.organizationId), publicConversation))
-        .for("update", { of: records });
+        .for("no key update", { of: records });
       if (!record) return { status: "stale" as const };
       // A worker whose lease ran out writes nothing: the job's current claim owns this result.
       if (!(await holdsClaimTx(tx, input.job))) return { status: "stale" as const };

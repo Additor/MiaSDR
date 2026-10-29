@@ -269,6 +269,45 @@ describeDb("LinkedIn conversation replies", () => {
     expect(panel?.doNotContact).toBe(true);
   });
 
+  it("sends a typed reply while an AI draft write holds the record, without a deadlock", async () => {
+    // The send holds the conversation and inserts its draft, whose foreign key takes a key share on the record. The AI
+    // writer holds the record and inserts its draft, whose foreign key takes a key share on the conversation. Writer
+    // locks in NO KEY UPDATE let both key shares through (docs/database.md, "Lock modes").
+    const f = await fixture();
+    const [{ record_id: recordId, version }] = await sql`
+      select c.record_id, r.context_version as version from conversations c join records r on r.id = c.record_id where c.id = ${f.conversationId}`;
+    let reply!: Promise<unknown>;
+    let written!: Promise<unknown>;
+    await sql.begin(async (tx) => {
+      // The send stops on the account lock with the conversation held and its draft insert still ahead.
+      await tx`select id from linkedin_accounts where id = ${f.account} for update`;
+      reply = send(f, "Typed while the AI writes.");
+      reply.catch(() => undefined);
+      await waitForLockWaiters(sql, 1, 10_000, "%linkedin_accounts%");
+      written = replyStore.insertDraft({
+        organizationId: f.org,
+        recordId,
+        conversationId: f.conversationId,
+        replyForMessageId: null,
+        expectedContextVersion: version,
+        channel: "linkedin",
+        subject: null,
+        bodyText: "An AI draft.",
+        provider: "fake",
+        model: "fake",
+        request: {},
+        response: {},
+        citations: [],
+      });
+      written.catch(() => undefined);
+      // Either the AI write finishes, or it waits on the conversation the send holds; then the send goes on.
+      await Promise.race([written, waitForLockWaiters(sql, 2, 10_000)]);
+    });
+    await expect(reply).resolves.toMatchObject({ status: "sent" });
+    await expect(written).resolves.toMatchObject({ stale: false });
+    expect(f.fake.messages.map((m) => m.text)).toEqual(["Typed while the AI writes."]);
+  });
+
   it("answers 409 when drafts_one_in_flight_uq refuses a second reply of the chat", async () => {
     const f = await fixture();
     const [{ id: draftId }] = await sql`

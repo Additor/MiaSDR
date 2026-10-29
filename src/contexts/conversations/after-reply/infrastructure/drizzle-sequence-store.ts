@@ -236,7 +236,7 @@ export async function campaignIdOfSequence(organizationId: string, sequenceId: s
 
 const recordLock = async (tx: Tx, organizationId: string, recordId: string) => {
   const [row] = rowsOf<{ id: string; person_id: string; context_version: number; workflow_state: string }>(
-    await tx.execute(sql`select id, person_id, context_version, workflow_state from records where id = ${recordId} and organization_id = ${organizationId} for update`),
+    await tx.execute(sql`select id, person_id, context_version, workflow_state from records where id = ${recordId} and organization_id = ${organizationId} for no key update`),
   );
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;

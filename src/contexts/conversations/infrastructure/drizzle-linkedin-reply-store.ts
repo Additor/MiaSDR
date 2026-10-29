@@ -137,7 +137,8 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
 export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   async begin(input) {
     const result = await db.transaction(async (tx) => {
-      // The conversation row serializes every reply to one chat: double clicks, two tabs, two workers.
+      // The conversation row serializes every reply to one chat: double clicks, two tabs, two workers. FOR UPDATE, as on
+      // email, holds back an ingest's message insert (docs/database.md, "Lock modes").
       const [conv] = await tx
         .select({ id: conversations.id, recordId: conversations.recordId, channel: conversations.channel, status: conversations.status, accountRef: conversations.accountRef, chat: conversations.providerThreadId })
         .from(conversations)

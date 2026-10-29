@@ -26,7 +26,9 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
     .select({ version: records.contextVersion })
     .from(records)
     .where(and(eq(records.id, input.recordId), eq(records.organizationId, input.organizationId)))
-    .for("update");
+    // No key update, so a reply send that holds the conversation and inserts its own draft passes (docs/database.md,
+    // "Lock modes").
+    .for("no key update");
   if (!record) throw new NotFoundError("Reply handling not found");
   if (held && !(await held(tx))) return null;
   if (record.version !== input.expectedContextVersion) {
@@ -216,7 +218,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         .innerJoin(people, eq(people.id, records.personId))
         .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
         // Serializes typed drafts with each other and with AI draft writes, which lock the record too.
-        .for("update", { of: records });
+        .for("no key update", { of: records });
       if (!head) throw new NotFoundError("Conversation not found");
       // A typed draft is not a send, but one written where a send is refused could never go out (docs/decisions.md,
       // "Reply send rules").

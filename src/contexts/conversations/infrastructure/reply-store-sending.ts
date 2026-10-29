@@ -26,6 +26,9 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       if (!seen) throw new NotFoundError("Draft not found");
       // Refused before the lock, so the email path never locks a LinkedIn conversation.
       if (seen.channel !== "email") throw replyRefusal("wrong_channel", "email");
+      // FOR UPDATE, the one writer lock on a conversation that is not no key update: it also holds back an ingest's message
+      // insert, a key share, which would go on to retire drafts and update this row, a cycle with this send's draft lock
+      // (docs/database.md, "Lock modes").
       await tx.select({ id: conversations.id }).from(conversations).where(eq(conversations.id, seen.conversationId)).for("update");
 
       const [existing] = await tx.select().from(sendAttempts).where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
