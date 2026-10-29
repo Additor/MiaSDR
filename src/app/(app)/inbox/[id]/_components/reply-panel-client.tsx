@@ -6,10 +6,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
+import { Spinner } from "@/components/shell/spinner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import type { ReplyPanel } from "@/contexts/conversations/application/reply-management";
@@ -20,6 +22,7 @@ import { registerDraftEdits } from "../_lib/draft-edits";
 import { draftingAbove, regenerateControl, reloadsAfter } from "../_lib/reply-panel";
 import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
+import { useSendingWatch } from "./use-sending-watch";
 
 type Panel = Omit<ReplyPanel, "draft" | "knownCcs"> & { knownCcs: Array<Omit<ReplyPanel["knownCcs"][number], "lastSeenAt"> & { lastSeenAt: string }>; draft: (Omit<NonNullable<ReplyPanel["draft"]>, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string }) | null };
 
@@ -57,6 +60,9 @@ export function ReplyPanelClient({
   // An out-of-date draft cannot send. "Edit and send anyway" copies its text into the composer as a new draft.
   const [editStale, setEditStale] = useState(false);
   const key = useRef<string>("");
+  const watchingSend = useSendingWatch(draft?.status === "sending");
+  // The thread's mailbox is gone or the conversation closed: a send cannot succeed, so Approve and send stays off and says why.
+  const sendBlocked = draft?.status === "awaiting_review" ? panel.mailboxIssue : null;
 
   // A new draft or a revision saved elsewhere replaces the editor text.
   const currentRevision = draft ? `${draft.id}:${draft.revision}` : "";
@@ -172,7 +178,7 @@ export function ReplyPanelClient({
               setError("This draft is out of date. Regenerate it, or edit it and send it as a new draft.");
               return;
             }
-            if (draft?.status !== "awaiting_review" || busy !== null || body.trim() === "" || event.nativeEvent.isComposing) return;
+            if (draft?.status !== "awaiting_review" || busy !== null || body.trim() === "" || sendBlocked || event.nativeEvent.isComposing) return;
             event.preventDefault();
             void approve();
           }}
@@ -195,7 +201,7 @@ export function ReplyPanelClient({
                 <p>This message has been answered.</p>
               ) : drafting ? (
                 <p className="flex items-center gap-2 text-muted-foreground">
-                  <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+                  <Spinner />
                   Drafting…
                 </p>
               ) : (
@@ -203,7 +209,7 @@ export function ReplyPanelClient({
                   <p>{noDraft ?? "No draft yet."}</p>
                   <div>
                     {/* A decision on the type line above holds the filled button; a type that writes no draft makes this the rare step. */}
-                    <Button size="sm" variant={decisionWaiting || noDraft ? "outline" : "default"} disabled={busy !== null || !panel.canGenerate} onClick={() => run("draft", () => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
+                    <Button size="sm" touch variant={decisionWaiting || noDraft ? "outline" : "default"} disabled={busy !== null || !panel.canGenerate} onClick={() => run("draft", () => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
                       {busy === "draft" ? "Writing…" : "Write a draft"}
                     </Button>
                   </div>
@@ -225,7 +231,7 @@ export function ReplyPanelClient({
           {/* A draft job writes the next draft: say so above the one still shown, so nobody acts on the old one. */}
           {draft && draftingAbove(draft, drafting) && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="drafting">
-              <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+              <Spinner />
               Drafting…
             </p>
           )}
@@ -242,16 +248,16 @@ export function ReplyPanelClient({
                   disabledReason={composerBlocked}
                 />
               ) : (
-                // The clamp sits inside the padding, so a fifth line cannot peek through the bottom padding.
-                <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground" data-testid="stale-preview">
+                // A hairline on the left marks the quoted draft, no tinted box. The clamp leaves no padding for a fifth line to peek through.
+                <div className="border-l pl-3 text-sm text-muted-foreground" data-testid="stale-preview">
                   <p className="line-clamp-4 whitespace-pre-wrap">{saved || "The draft is empty."}</p>
                 </div>
               )}
               {showRegenerate && (
-                <div className="grid gap-1">
-                  <Label htmlFor="regen-note">What should change? (optional)</Label>
+                <Field>
+                  <FieldLabel htmlFor="regen-note">What should change? (optional)</FieldLabel>
                   <Input id="regen-note" value={note} onChange={(e) => setNote(e.target.value)} />
-                </div>
+                </Field>
               )}
             </div>
           )}
@@ -259,52 +265,67 @@ export function ReplyPanelClient({
           {draft && (draft.status === "awaiting_review" || draft.status === "failed") && (
             <>
               {draft.status === "failed" && <p className="text-sm text-destructive">This draft cannot be sent. Regenerate or discard it.</p>}
-              <div className="grid gap-1">
-                <Label htmlFor="draft-subject">Subject</Label>
+              <Field>
+                <FieldLabel htmlFor="draft-subject">Subject</FieldLabel>
                 <Input id="draft-subject" value={subject} onChange={(e) => setSubject(e.target.value)} disabled={draft.status !== "awaiting_review"} />
-              </div>
-              <div className="grid gap-1">
-                <Label htmlFor="draft-body">Message</Label>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="draft-body">Message</FieldLabel>
                 <Textarea id="draft-body" className="min-h-48" value={body} onChange={(e) => setBody(e.target.value)} disabled={draft.status !== "awaiting_review"} />
-              </div>
+              </Field>
               {panel.knownCcs.length > 0 && (
-                <fieldset className="grid gap-2 rounded-lg border p-3 text-sm" data-testid="cc-options" disabled={draft.status !== "awaiting_review"}>
-                  <legend className="px-1 text-xs text-muted-foreground">CC on this reply</legend>
+                // A plain fieldset with its legend as a label, no box: the options read as one more field of the reply.
+                <FieldSet className="gap-field" data-testid="cc-options">
+                  <FieldLegend variant="label" className="mb-0">
+                    CC on this reply
+                  </FieldLegend>
                   {panel.knownCcs.map((known) => (
-                    <label key={known.email} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
+                    <Field key={known.email} orientation="horizontal" className="min-h-8 w-auto max-sm:min-h-11">
+                      <Checkbox
+                        id={`cc-${known.email}`}
                         data-testid="cc-option"
                         value={known.email}
                         checked={cc.includes(known.email)}
-                        disabled={known.blocked !== null}
-                        onChange={(e) => setCc((current) => (e.target.checked ? [...current, known.email] : current.filter((c) => c !== known.email)))}
+                        // A fieldset's disabled reaches native inputs only, so each box says it itself.
+                        disabled={known.blocked !== null || draft.status !== "awaiting_review"}
+                        onCheckedChange={(checked) => setCc((current) => (checked === true ? [...current, known.email] : current.filter((c) => c !== known.email)))}
                       />
-                      <span>{known.email}</span>
+                      <FieldLabel htmlFor={`cc-${known.email}`} className="font-normal">
+                        {known.email}
+                      </FieldLabel>
                       {known.blocked && <ReachFlag kind={known.blocked} />}
-                    </label>
+                    </Field>
                   ))}
-                </fieldset>
+                </FieldSet>
               )}
               {showRegenerate && (
-                <div className="grid gap-1">
-                  <Label htmlFor="regen-note">What should change? (optional)</Label>
+                <Field>
+                  <FieldLabel htmlFor="regen-note">What should change? (optional)</FieldLabel>
                   <Input id="regen-note" value={note} onChange={(e) => setNote(e.target.value)} />
-                </div>
+                </Field>
               )}
             </>
           )}
 
           {/* One live region, present before its text changes, so "sent" is announced and not only shown. */}
           <div role="status" className="grid justify-items-start gap-2 text-sm empty:hidden" data-testid="reply-status">
-            {draft?.status === "sending" && <p>Sending. Reload in a moment to see the result.</p>}
+            {draft?.status === "sending" &&
+              (watchingSend ? (
+                // The page refreshes on its own while the send runs, for up to a minute (use-sending-watch.ts).
+                <p className="flex items-center gap-2">
+                  <Spinner />
+                  Sending…
+                </p>
+              ) : (
+                <p>Sending. Reload in a moment to see the result.</p>
+              ))}
             {draft?.status === "sent" && (
               <>
                 <p>The reply was sent and is in the thread above.</p>
                 {/* From Actions the step after a send is the next item of that queue, one tap from here. */}
                 {fromQueue &&
                   (next ? (
-                    <Link href={next.href} className={cn(buttonVariants(), "max-sm:h-11")} data-testid="sent-next" aria-keyshortcuts="]">
+                    <Link href={next.href} className={buttonVariants({ touch: true })} data-testid="sent-next" aria-keyshortcuts="]">
                       Next: {next.name}
                     </Link>
                   ) : (
@@ -321,7 +342,6 @@ export function ReplyPanelClient({
             />
           )}
 
-          {panel.mailboxIssue && draft?.status === "awaiting_review" && <p className="text-sm text-destructive">{panel.mailboxIssue}</p>}
           {draft?.error && draft.status !== "delivery_uncertain" && draft.status !== "stale" && <p className="text-sm text-muted-foreground">{draft.error}</p>}
           {error && (
             <p role="alert" className="text-sm text-destructive">
@@ -333,7 +353,7 @@ export function ReplyPanelClient({
           // The bar sticks to the bottom while a draft waits for approval; an out-of-date draft is short and keeps its bar in place.
           <CardFooter className={cn("flex flex-wrap gap-2 bg-card shadow-[0_-1px_0_0_var(--border)]", draft.status === "awaiting_review" && "sticky bottom-0 z-10")} data-testid="reply-actions">
             {draft.status === "awaiting_review" && (
-              <Button disabled={busy !== null || body.trim() === ""} onClick={approve} aria-keyshortcuts="Control+Enter Meta+Enter">
+              <Button disabled={busy !== null || body.trim() === "" || sendBlocked !== null} onClick={approve} aria-keyshortcuts="Control+Enter Meta+Enter" aria-describedby={sendBlocked ? "send-blocked" : undefined}>
                 {busy === "send" ? "Sending…" : "Approve and send"}
               </Button>
             )}
@@ -368,6 +388,12 @@ export function ReplyPanelClient({
             <Button variant="ghost" disabled={busy !== null} onClick={() => setConfirmDiscard(true)}>
               Discard
             </Button>
+            {/* Why Approve and send is off, in words beside it rather than a tooltip, so a phone and a screen reader get it too. */}
+            {sendBlocked && (
+              <p id="send-blocked" className="basis-full text-sm text-destructive" data-testid="send-blocked">
+                {sendBlocked} The reply cannot be sent until that is fixed.
+              </p>
+            )}
           </CardFooter>
         )}
       </Card>
@@ -399,13 +425,15 @@ function UncertainBox({ busy, onResolve }: { draftId: string; busy: boolean; onR
           <strong className="font-medium text-warning">Not confirmed.</strong> The mail provider did not confirm this send. It may have gone out, so it will not be retried. Check the Sent folder of the mailbox, then mark what you found.
         </p>
       </div>
-      <Label htmlFor="resolve-note">How did you check?</Label>
-      <Input id="resolve-note" value={text} onChange={(e) => setText(e.target.value)} />
+      <Field>
+        <FieldLabel htmlFor="resolve-note">How did you check?</FieldLabel>
+        <Input id="resolve-note" value={text} onChange={(e) => setText(e.target.value)} />
+      </Field>
       <div className="flex gap-2">
-        <Button size="sm" disabled={busy || !text.trim()} onClick={() => onResolve("delivered", text)}>
+        <Button size="sm" touch disabled={busy || !text.trim()} onClick={() => onResolve("delivered", text)}>
           Confirm delivered
         </Button>
-        <Button size="sm" variant="outline" disabled={busy || !text.trim()} onClick={() => onResolve("not_delivered", text)}>
+        <Button size="sm" variant="outline" touch disabled={busy || !text.trim()} onClick={() => onResolve("not_delivered", text)}>
           Not delivered
         </Button>
       </div>

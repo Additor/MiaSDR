@@ -6,15 +6,17 @@ import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
+import { Spinner } from "@/components/shell/spinner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { LinkedInReplyPanelView } from "@/contexts/conversations/application/linkedin-reply";
 import { callApi } from "@/app/_lib/api-client";
 import { draftStatusLabel } from "../../labels";
 import { draftingAbove, reloadsAfter } from "../_lib/reply-panel";
+import { useSendingWatch } from "./use-sending-watch";
 
 type SendResult = { status: string; error?: string | null };
 
@@ -49,6 +51,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
     key.current = "";
   }, [revision]);
   const draftingNext = draftingAbove(draft, drafting);
+  const watchingSend = useSendingWatch(draft?.status === "sending");
 
   async function run(action: () => Promise<{ ok: boolean; status: number; error?: string | null }>) {
     setBusy(true);
@@ -142,12 +145,22 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
         {draft?.status === "delivery_uncertain" ? (
           <UncertainBox busy={busy} onResolve={resolve} />
         ) : draft?.status === "sending" ? (
-          <p className="text-sm">A reply is being sent. Reload in a moment to see the result.</p>
+          // The page refreshes on its own while the send runs, for up to a minute (use-sending-watch.ts).
+          <p role="status" className="text-sm">
+            {watchingSend ? (
+              <span className="flex items-center gap-2">
+                <Spinner />
+                Sending…
+              </span>
+            ) : (
+              "A reply is being sent. Reload in a moment to see the result."
+            )}
+          </p>
         ) : (
-          <div className="grid gap-1">
+          <div className="stack-group">
             {draftingNext && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="drafting">
-                <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+                <Spinner />
                 Drafting…
               </p>
             )}
@@ -155,25 +168,27 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
             {!draft && !panel.canGenerate && panel.aiOff && !panel.doNotContact && <p className="text-sm text-muted-foreground">{panel.aiOff} Until then, write the message yourself below.</p>}
             {!draft && panel.canGenerate && !panel.doNotContact && drafting && (
               <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="no-draft">
-                <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" />
+                <Spinner />
                 Drafting…
               </p>
             )}
             {!draft && panel.canGenerate && !panel.doNotContact && !drafting && (
               <div className="grid justify-items-start gap-2 text-sm" data-testid="no-draft">
                 {noDraft && <p>{noDraft}</p>}
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
+                <Button size="sm" variant="outline" touch disabled={busy} onClick={() => run(() => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
                   {busy ? "Writing…" : "Write a draft"}
                 </Button>
               </div>
             )}
-            <Label htmlFor="li-reply">Message{panel.recipient ? ` to ${panel.recipient}` : ""}</Label>
-            <Textarea id="li-reply" className="min-h-32" value={stale ? (draft?.text ?? "") : text} onChange={(e) => setText(e.target.value)} disabled={blocked || busy || stale} />
+            <Field>
+              <FieldLabel htmlFor="li-reply">Message{panel.recipient ? ` to ${panel.recipient}` : ""}</FieldLabel>
+              <Textarea id="li-reply" className="min-h-32" value={stale ? (draft?.text ?? "") : text} onChange={(e) => setText(e.target.value)} disabled={blocked || busy || stale} />
+            </Field>
             {showRegenerate && (
-              <>
-                <Label htmlFor="li-regen-note">What should change? (optional)</Label>
+              <Field>
+                <FieldLabel htmlFor="li-regen-note">What should change? (optional)</FieldLabel>
                 <Input id="li-regen-note" value={note} onChange={(e) => setNote(e.target.value)} />
-              </>
+              </Field>
             )}
           </div>
         )}
@@ -244,13 +259,15 @@ function UncertainBox({ busy, onResolve }: { busy: boolean; onResolve: (outcome:
           <strong className="font-medium text-warning">Not confirmed.</strong> LinkedIn did not confirm this message. It may have gone out, so it will not be sent again. Open the chat on LinkedIn, then mark what you found.
         </p>
       </div>
-      <Label htmlFor="li-resolve-note">How did you check?</Label>
-      <Input id="li-resolve-note" value={note} onChange={(e) => setNote(e.target.value)} />
+      <Field>
+        <FieldLabel htmlFor="li-resolve-note">How did you check?</FieldLabel>
+        <Input id="li-resolve-note" value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
       <div className="flex gap-2">
-        <Button size="sm" disabled={busy || !note.trim()} onClick={() => onResolve("delivered", note)}>
+        <Button size="sm" touch disabled={busy || !note.trim()} onClick={() => onResolve("delivered", note)}>
           Confirm delivered
         </Button>
-        <Button size="sm" variant="outline" disabled={busy || !note.trim()} onClick={() => onResolve("not_delivered", note)}>
+        <Button size="sm" variant="outline" touch disabled={busy || !note.trim()} onClick={() => onResolve("not_delivered", note)}>
           Not delivered
         </Button>
       </div>

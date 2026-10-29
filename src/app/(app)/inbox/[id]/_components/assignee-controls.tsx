@@ -37,7 +37,7 @@ export function AssigneeControls({ recordId, assignedTo, members, currentUserId 
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         {assignedTo !== currentUserId && (
-          <Button size="sm" variant="outline" disabled={pending || assignedTo !== null} onClick={() => change({ action: "claim" })} className="max-sm:h-11">
+          <Button size="sm" variant="outline" disabled={pending || assignedTo !== null} onClick={() => change({ action: "claim" })} touch>
             Take it
           </Button>
         )}

@@ -8,7 +8,6 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { callApi } from "@/app/_lib/api-client";
-import { cn } from "@/components/ui/utils";
 import { dayFromToday, DueField, useBrowserZone } from "@/app/(app)/_components/person/tasks-panel";
 import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 import type { NextInQueue } from "../_lib/next-queue";
@@ -90,14 +89,14 @@ export function NextStepClient(props: NextStepProps) {
 
   return (
     <section aria-labelledby="next-step-title" className="stack-group" data-testid="next-step">
-      <h2 id="next-step-title" className="text-sm font-semibold">
+      <h2 id="next-step-title" className="heading-section">
         Next step
       </h2>
 
       {closed ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm" data-testid="reply-handling">
           <p>Done{props.closedReason ? `: ${props.closedReason}.` : "."} Follow-ups are off and no draft waits.</p>
-          <Button size="sm" variant="outline" disabled={pending} className="max-sm:h-11" onClick={() => void reopen()}>
+          <Button size="sm" variant="outline" disabled={pending} touch onClick={() => void reopen()}>
             {pending ? "Reopening…" : "Reopen"}
           </Button>
         </div>
@@ -147,7 +146,7 @@ export function NextStepClient(props: NextStepProps) {
           <>
             <span>{decided}</span>
             {props.next && (
-              <Link href={props.next.href} className={cn(buttonVariants({ size: "sm" }), "max-sm:h-11")} data-testid="next-step-next" aria-keyshortcuts="]">
+              <Link href={props.next.href} className={buttonVariants({ size: "sm", touch: true })} data-testid="next-step-next" aria-keyshortcuts="]">
                 Next: {props.next.name}
               </Link>
             )}
@@ -183,16 +182,16 @@ function FollowUpForm({ recordId, firstName, currentUserId, onCancel, onDone }: 
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor={`follow-up-${recordId}`}>Task</FieldLabel>
-          <Input id={`follow-up-${recordId}`} autoFocus value={name} maxLength={200} className="max-w-md max-sm:h-11" onChange={(e) => setName(e.target.value)} aria-invalid={error ? true : undefined} />
+          <Input id={`follow-up-${recordId}`} autoFocus value={name} maxLength={200} touch className="max-w-md" onChange={(e) => setName(e.target.value)} aria-invalid={error ? true : undefined} />
           <FieldDescription>While the task is open, this conversation leaves Next steps in Actions and the task waits under Tasks.</FieldDescription>
         </Field>
         <DueField id={`follow-up-due-${recordId}`} value={dueDay} onChange={setDueDay} />
         {error && <FieldError>{error}</FieldError>}
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={pending || zone === null} className="max-sm:h-11">
+          <Button type="submit" size="sm" disabled={pending || zone === null} touch>
             {pending ? "Adding…" : "Add reminder"}
           </Button>
-          <Button type="button" size="sm" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={onCancel}>
+          <Button type="button" size="sm" variant="ghost" disabled={pending} touch onClick={onCancel}>
             Cancel
           </Button>
         </div>
@@ -238,7 +237,8 @@ function DoneForm({ recordId, personName, typeName, onCancel, onDone }: { record
             value={reason}
             maxLength={500}
             placeholder="Went with a competitor"
-            className="max-w-md max-sm:h-11"
+            touch
+            className="max-w-md"
             aria-invalid={error ? true : undefined}
             onChange={(e) => {
               setReason(e.target.value);
@@ -249,10 +249,10 @@ function DoneForm({ recordId, personName, typeName, onCancel, onDone }: { record
         </Field>
         {error && <FieldError>{error}</FieldError>}
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={pending} className="max-sm:h-11">
+          <Button type="submit" size="sm" disabled={pending} touch>
             {pending ? "Saving…" : "Mark done"}
           </Button>
-          <Button type="button" size="sm" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={onCancel}>
+          <Button type="button" size="sm" variant="ghost" disabled={pending} touch onClick={onCancel}>
             Keep it open
           </Button>
         </div>

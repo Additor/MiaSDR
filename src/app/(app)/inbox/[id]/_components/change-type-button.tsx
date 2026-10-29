@@ -10,7 +10,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/components/ui/utils";
 import { CUSTOMER_GROUP, REPLY_TYPE_GROUPS, groupLabel } from "@/contexts/conversations/domain/reply-handling";
 import type { SystemRole, TypeChangeOutcome } from "@/contexts/conversations/domain/reply-type";
 import { callApi } from "@/app/_lib/api-client";
@@ -197,7 +196,8 @@ export function ChangeTypeButton({
       <Button
         variant={variant}
         size="sm"
-        className={cn(variant === "link" ? "h-auto px-0 text-foreground underline decoration-muted-foreground/50 hover:decoration-foreground max-sm:min-h-11" : "max-sm:h-11")}
+        touch={variant !== "link"}
+        className={variant === "link" ? "h-auto px-0 text-foreground underline decoration-muted-foreground/50 hover:decoration-foreground max-sm:min-h-11" : undefined}
         onClick={() => setOpen(true)}
       >
         Change type

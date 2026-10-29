@@ -26,16 +26,16 @@ import { recordAfterReply, recordDetail } from "./thread-data";
 export function ThreadSideSkeleton() {
   return (
     <div className="divide-y" aria-hidden data-testid="thread-side-loading">
-      <div className="p-4">
+      <div className="p-inset">
         <Skeleton className="h-28 w-full" />
       </div>
-      <div className="p-4">
+      <div className="p-inset">
         <Skeleton className="h-16 w-full" />
       </div>
-      <div className="p-4">
+      <div className="p-inset">
         <Skeleton className="h-20 w-full" />
       </div>
-      <div className="p-4">
+      <div className="p-inset">
         <Skeleton className="h-8 w-full" />
       </div>
     </div>
@@ -98,7 +98,7 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
         <AssigneeControls recordId={record.id} assignedTo={record.assignedTo} members={dialog.members} currentUserId={dialog.currentUserId} />
       </AsideSection>
 
-      <section className="stack-group p-4" data-testid="thread-tasks">
+      <section className="stack-group p-inset" data-testid="thread-tasks">
         <Suspense fallback={<Skeleton className="h-7 w-full" />}>
           <TasksSection recordId={record.id} actor={actor} compact />
         </Suspense>
@@ -113,7 +113,8 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
               return (
                 <li key={e.id} className="grid gap-0.5">
                   <div className="flex items-center justify-between gap-2">
-                    <Link href={`/campaigns/${e.campaignId}`} title={e.campaignName} className="min-w-0 truncate underline-offset-4 hover:underline">
+                    {/* A long name wraps rather than hiding behind a native title, which a phone and a keyboard never show. */}
+                    <Link href={`/campaigns/${e.campaignId}`} className="min-w-0 break-words underline-offset-4 hover:underline">
                       {e.campaignName}
                     </Link>
                     <Badge variant="outline">{status}</Badge>
@@ -139,9 +140,9 @@ export async function ThreadSide({ actor, conversationId, recordId, personId }: 
           <ul className="grid gap-1 text-sm" aria-label={`${name} also wrote from another mailbox or channel`}>
             {others.map((c) => (
               <li key={c.id}>
-                <Link href={`/inbox/${c.id}`} title={c.accountRef} className="flex min-h-8 items-center gap-2 underline-offset-4 hover:underline max-sm:min-h-11">
+                <Link href={`/inbox/${c.id}`} className="flex min-h-8 items-center gap-2 underline-offset-4 hover:underline max-sm:min-h-11">
                   <Badge variant="outline">{channelLabel(c.channel)}</Badge>
-                  <span className="min-w-0 truncate">{c.accountRef}</span>
+                  <span className="min-w-0 break-all">{c.accountRef}</span>
                 </Link>
               </li>
             ))}

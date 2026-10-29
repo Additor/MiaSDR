@@ -26,7 +26,7 @@ export async function NextUnreadLink({ currentId, params, actor }: { currentId: 
   return (
     <>
       <QueueKeys href={href} />
-      <Link href={href} className={cn(buttonVariants({ variant: "outline", size: "sm" }))} data-testid="next-unread" aria-keyshortcuts="]" title="Next unread (])">
+      <Link href={href} className={cn(buttonVariants({ variant: "outline", size: "sm" }))} data-testid="next-unread" aria-keyshortcuts="]">
         Next unread
         <kbd aria-hidden className="ml-1 hidden rounded border px-1 font-sans text-xs leading-4 text-muted-foreground sm:inline">]</kbd>
       </Link>

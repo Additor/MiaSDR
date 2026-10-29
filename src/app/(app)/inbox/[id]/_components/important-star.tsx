@@ -36,7 +36,7 @@ export function ImportantStar({ messageId, important }: { messageId: string; imp
         disabled={pending}
         aria-pressed={important}
         aria-label={important ? "Remove important mark" : "Mark as important"}
-        className="max-sm:h-11 max-sm:px-3"
+        touch
       >
         <StarIcon aria-hidden className={important ? "fill-current" : undefined} />
         {important ? "Important" : "Mark important"}

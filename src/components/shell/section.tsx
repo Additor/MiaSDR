@@ -1,13 +1,22 @@
 import type { ReactNode } from "react";
 import { cn } from "@/components/ui/utils";
 
+type CountTone = "neutral" | "waiting" | "error";
+
+const TONE: Record<CountTone, string> = {
+  neutral: "text-muted-foreground",
+  waiting: "font-semibold text-sidebar-count",
+  error: "font-semibold text-destructive",
+};
+
 /**
  * A tally beside a heading, a chip or a list. `waiting` is work that waits on a person and takes the lavender count
- * (DESIGN.md Colors); everything else is a muted number. One size and weight everywhere: no capsule, no parentheses.
+ * (DESIGN.md Colors); `error` counts errors no retry fixes by itself and takes red; everything else is a muted number. One
+ * size and weight everywhere: no capsule, no parentheses.
  */
-export function Count({ value, tone = "neutral", className, testId }: { value: ReactNode; tone?: "neutral" | "waiting"; className?: string; testId?: string }) {
+export function Count({ value, tone = "neutral", className, testId }: { value: ReactNode; tone?: CountTone; className?: string; testId?: string }) {
   return (
-    <span className={cn("text-sm tabular-nums", tone === "waiting" ? "font-semibold text-sidebar-count" : "text-muted-foreground", className)} data-testid={testId}>
+    <span className={cn("text-sm tabular-nums", TONE[tone], className)} data-testid={testId}>
       {value}
     </span>
   );
@@ -37,7 +46,7 @@ export function SectionHead({
   id?: string;
   icon?: ReactNode;
   count?: ReactNode;
-  countTone?: "neutral" | "waiting";
+  countTone?: CountTone;
   countTestId?: string;
   /** An `InfoTip` for a name that needs explaining. */
   help?: ReactNode;

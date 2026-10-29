@@ -32,14 +32,23 @@ export function Time({
   zone,
   dateOnly = false,
   relativeTo,
+  label,
   className,
+  testId,
 }: {
   value: Date | string | number;
   zone?: string;
   dateOnly?: boolean;
   /** Prints "5 min ago" against this instant. Pass the server's `now` so the server and the browser agree. The tooltip carries the exact time. */
   relativeTo?: Date | string | number;
+  /**
+   * Text the caller worded from the same instant, for a list with its own clock: the Inbox's "14:05" under a Today heading,
+   * an Actions row's "Waiting 2 d". Word it on the server, or from a passed `now`, so the server and the browser agree. The
+   * tooltip carries the exact time.
+   */
+  label?: string;
   className?: string;
+  testId?: string;
 }) {
   const orgZone = useOrgTimeZone();
   const timeZone = zone ?? orgZone;
@@ -48,8 +57,8 @@ export function Time({
   const utc = formatUtc(date);
   const exact = timeZone === "UTC" ? utc : `${formatDateTime(date, timeZone)} ${timeZone}, ${utc}`;
   return (
-    <time dateTime={date.toISOString()} title={relativeTo === undefined ? utc : exact} className={className}>
-      {relativeTo !== undefined ? relativeTime(date, relativeTo) : dateOnly ? formatDate(date, timeZone) : formatDateTime(date, timeZone)}
+    <time dateTime={date.toISOString()} title={relativeTo === undefined && label === undefined ? utc : exact} className={className} data-testid={testId}>
+      {label ?? (relativeTo !== undefined ? relativeTime(date, relativeTo) : dateOnly ? formatDate(date, timeZone) : formatDateTime(date, timeZone))}
     </time>
   );
 }

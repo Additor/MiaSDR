@@ -1,9 +1,11 @@
-import { TriangleAlertIcon } from "lucide-react";
+import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
+import { Section } from "@/components/shell/section";
 import { SummaryLine } from "@/components/shell/summary-line";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +39,7 @@ export default function ConversationPage({ params, searchParams }: PageProps<"/i
     <Suspense
       fallback={
         <div className="page">
-          <Skeleton className="h-96 w-full" />
+          <PageSkeleton shape="record" label="Loading the conversation" />
         </div>
       }
     >
@@ -130,15 +132,17 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
                 <ThreadFollowUps actor={actor} recordId={thread.recordId} personId={person.id} />
               </Suspense>
 
+              {/* Newest first, each folded to one line, so History stays near the reply. A line opens the message in place. */}
               {earlier.length > 0 && (
-                <section aria-labelledby="earlier-messages" className="stack-group">
-                  <h2 id="earlier-messages" className="text-sm font-semibold">
-                    Earlier messages ({earlier.length}), newest first
-                  </h2>
-                  {earlier.map((m) => (
-                    <MessageCard key={`${m.source}-${m.id}`} message={m} channel={thread.channel} person={person} />
-                  ))}
-                </section>
+                <Section frame="plain" id="earlier-messages" title="Earlier messages" count={earlier.length}>
+                  <ul className="divide-y rounded-lg border text-sm">
+                    {earlier.map((m) => (
+                      <li key={`${m.source}-${m.id}`}>
+                        <EarlierMessage message={m} channel={thread.channel} person={person} />
+                      </li>
+                    ))}
+                  </ul>
+                </Section>
               )}
 
               <Suspense fallback={<Skeleton className="h-24 w-full" />}>
@@ -157,47 +161,98 @@ async function Conversation({ params, searchParams }: { params: PageProps<"/inbo
   );
 }
 
+type Message = ThreadDetail["messages"][number];
+type Person = ThreadDetail["person"];
+
+/** The message is the person's own: an inbound message from their address, or with no address on it. */
+const isFromPerson = (m: Message, person: Person) => m.direction === "inbound" && person.name !== null && (m.from === null || m.from === person.email);
+
 /**
  * One message. An inbound message from the person names them, with their title and company, so you see who you answer
  * before the side panel, which a phone shows last. The address follows when it differs from the name.
  */
-function MessageCard({ message: m, channel, person }: { message: ThreadDetail["messages"][number]; channel: string; person: ThreadDetail["person"] }) {
-  const fromPerson = m.direction === "inbound" && person.name !== null && (m.from === null || m.from === person.email);
-  const role = [person.title, person.company].filter(Boolean).join(" at ");
+function MessageCard({ message: m, channel, person }: { message: Message; channel: string; person: Person }) {
   return (
     <Card className={m.direction === "outbound" ? "bg-muted/40" : undefined}>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          {fromPerson ? (
-            <span className="min-w-0">
-              {person.name}
-              {role && <span className="ml-2 font-normal text-muted-foreground">{role}</span>}
-            </span>
-          ) : (
-            <span className="min-w-0 break-all">{m.direction === "outbound" ? "You" : (m.from ?? "Sender")}</span>
-          )}
-          {m.source === "sequence" && <Badge variant="outline">{channel === "linkedin" ? "Sequence message" : "Sequence email"}</Badge>}
-          {m.possibleBounce ? (
-            <span className="inline-flex items-center gap-1 text-xs font-normal">
-              <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-warning" />
-              Bounce notice, not verified
-            </span>
-          ) : (
-            m.autoReply && <Badge variant="outline">Auto-reply</Badge>
-          )}
-          {m.unread && <Badge variant="secondary">Unread</Badge>}
-          {m.source === "message" && <ImportantStar messageId={m.id} important={m.important} />}
+          <MessageTitle message={m} channel={channel} person={person} />
         </CardTitle>
         <CardDescription>
-          {fromPerson && m.from && <span className="break-all">{m.from}, </span>}
-          <Time value={m.at} />
-          {m.to ? <span className="break-all">{`, to ${m.to}`}</span> : ""}
-          {m.cc?.length ? `, cc ${m.cc.join(", ")}` : ""}
+          <MessageMeta message={m} person={person} />
         </CardDescription>
       </CardHeader>
       <CardContent>
         <p className="text-sm whitespace-pre-wrap">{m.bodyText}</p>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * An earlier message as one line: who wrote, the start of the text and the time. It opens in place to the whole message,
+ * with the same facts as a message card, inside the list's own frame instead of a second card.
+ */
+function EarlierMessage({ message: m, channel, person }: { message: Message; channel: string; person: Person }) {
+  const sender = isFromPerson(m, person) ? person.name : m.direction === "outbound" ? "You" : (m.from ?? "Sender");
+  return (
+    <details className="group" data-testid="earlier-message">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md px-3 py-2 select-none focus-ring hover:bg-muted/50 sm:min-h-9 [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
+        <span className={m.unread ? "shrink-0 font-semibold" : "shrink-0 font-medium"}>{sender}</span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">{m.bodyText.slice(0, 240).replace(/\s+/g, " ").trim()}</span>
+        <Time value={m.at} className="shrink-0 text-xs text-muted-foreground tabular-nums" />
+      </summary>
+      <div className="stack-field px-3 pb-3 pl-9">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+          <MessageTitle message={m} channel={channel} person={person} />
+        </div>
+        <p className="text-muted-foreground">
+          <MessageMeta message={m} person={person} />
+        </p>
+        <p className="mt-group whitespace-pre-wrap">{m.bodyText}</p>
+      </div>
+    </details>
+  );
+}
+
+/** Who wrote the message, with its marks: a sequence step, a bounce or an auto-reply, unread, and the Important star. */
+function MessageTitle({ message: m, channel, person }: { message: Message; channel: string; person: Person }) {
+  const fromPerson = isFromPerson(m, person);
+  const role = [person.title, person.company].filter(Boolean).join(" at ");
+  return (
+    <>
+      {fromPerson ? (
+        <span className="min-w-0">
+          {person.name}
+          {role && <span className="ml-2 font-normal text-muted-foreground">{role}</span>}
+        </span>
+      ) : (
+        <span className="min-w-0 break-all">{m.direction === "outbound" ? "You" : (m.from ?? "Sender")}</span>
+      )}
+      {m.source === "sequence" && <Badge variant="outline">{channel === "linkedin" ? "Sequence message" : "Sequence email"}</Badge>}
+      {m.possibleBounce ? (
+        <span className="inline-flex items-center gap-1 text-xs font-normal">
+          <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-warning" />
+          Bounce notice, not verified
+        </span>
+      ) : (
+        m.autoReply && <Badge variant="outline">Auto-reply</Badge>
+      )}
+      {m.unread && <Badge variant="secondary">Unread</Badge>}
+      {m.source === "message" && <ImportantStar messageId={m.id} important={m.important} />}
+    </>
+  );
+}
+
+/** The address when it differs from the name, the time, the recipient and the copies. */
+function MessageMeta({ message: m, person }: { message: Message; person: Person }) {
+  return (
+    <>
+      {isFromPerson(m, person) && m.from && <span className="break-all">{m.from}, </span>}
+      <Time value={m.at} />
+      {m.to ? <span className="break-all">{`, to ${m.to}`}</span> : ""}
+      {m.cc?.length ? `, cc ${m.cc.join(", ")}` : ""}
+    </>
   );
 }
