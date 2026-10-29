@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MAX_DELETE_IDS, deleteLeads } from "@/contexts/people/application/lead-management";
+import { MAX_DELETE_IDS, deleteLeads, summarizeDelete } from "@/contexts/people/application/lead-management";
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
 import { leadDeleteDeps } from "@/composition/person-lifecycle";
 import { withActor } from "@/app/_lib/api";
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     const body = schema.parse(await request.json());
     if ("ids" in body) {
       const outcome = await deleteLeads(leadDeleteDeps, actor, { ids: body.ids });
-      return { deleted: outcome.deleted, blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
+      return { ...summarizeDelete(outcome), blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
     }
     // The same parser as the URL, so a value that does not parse is dropped here too and cannot widen or skip a condition.
     const f = body.filter ?? {};
@@ -62,6 +62,6 @@ export async function POST(request: Request) {
       category: f.category,
     };
     const outcome = await deleteLeads(leadDeleteDeps, actor, { filter: parseLeadFilter((key) => raw[key]), confirmCount: body.confirmCount });
-    return { deleted: outcome.deleted, blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
+    return { ...summarizeDelete(outcome), blockedCount: outcome.blocked.length, blocked: outcome.blocked.slice(0, 20) };
   });
 }

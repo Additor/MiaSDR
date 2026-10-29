@@ -31,16 +31,17 @@ export interface LeadDeleteFacts {
   outreach: readonly LeadOutreachBlocker[];
 }
 
-/** First matching reason wins. A visible send ranks first, so a member who can see the history reads that reason. */
-const LEAD_ORDER: readonly LeadOutreachBlocker[] = ["has_sends", "has_hidden_sends", "personal_campaign_sends", "in_active_campaign"];
+/**
+ * First matching reason wins. Reasons that keep the lead for every actor rank first, so the reason a person reads holds
+ * for whoever they ask. `personal_campaign_sends` keeps it from this member only, so it shows when nothing else applies.
+ */
+const LEAD_ORDER: readonly BlockReason[] = ["has_sends", "has_hidden_sends", "in_active_campaign", "linked_records", "personal_campaign_sends"];
 
 /** The reason a lead stays, or null when lead mode deletes it. */
 export function leadDeleteBlock(facts: LeadDeleteFacts): BlockReason | null {
-  const outreach = LEAD_ORDER.find((reason) => facts.outreach.includes(reason));
-  if (outreach) return outreach;
   // A contact always has events (the conversion writes one); a contact inserted without history stays undeletable too.
-  if (facts.history || facts.contact) return "linked_records";
-  return null;
+  const found: readonly BlockReason[] = facts.history || facts.contact ? [...facts.outreach, "linked_records"] : facts.outreach;
+  return LEAD_ORDER.find((reason) => found.includes(reason)) ?? null;
 }
 
 /** Contact mode: every blocker of the contexts in one list, in the order given, with `send_in_flight` named once. */

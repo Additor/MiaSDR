@@ -151,7 +151,8 @@ export async function leadOutreachBlockers(tx: DbHandle, actor: Actor, personIds
         bool_or(counted and seen) as seen_sends,
         bool_or(counted and not seen) as hidden_sends,
         bool_or(not seen) as personal,
-        bool_or(status in ${sqlValues(LIVE_ENROLLMENT_STATUSES)} and campaign_status in ('active', 'paused')) as running
+        -- A running campaign the actor cannot see is a personal one: the personal flag names it, and only its creator can cancel it.
+        bool_or(seen and status in ${sqlValues(LIVE_ENROLLMENT_STATUSES)} and campaign_status in ('active', 'paused')) as running
       from enr group by person_id`),
   );
   for (const row of rows) {

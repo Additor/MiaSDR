@@ -20,10 +20,47 @@ export const BLOCK_MESSAGES: Record<BlockReason, string> = {
   has_sends: "Messages were already sent to this lead. Mark it do not contact instead of deleting it.",
   has_hidden_sends: "This lead got messages in another member's personal campaign. Mark it do not contact instead of deleting it.",
   in_active_campaign: "The lead is still in a running or paused campaign. Cancel its enrollment or finish the campaign first.",
-  personal_campaign_sends: "The lead is in another member's personal campaign. Its creator, an owner or an admin can delete it, or you can mark it do not contact.",
+  personal_campaign_sends: "The lead is in another member's personal campaign. Ask its creator, an owner or an admin to delete it, or mark it do not contact.",
   linked_records: "The lead has history, such as replies or conversations. Mark it do not contact instead of deleting it.",
   try_again: "Another change to this lead was in progress. Try the delete again in a moment.",
 };
+
+/** One line per reason in a bulk delete's answer, for `n` leads kept. Each says why, in the order of the per-lead reasons. */
+const KEPT_LINES: Record<BlockReason, (n: number) => string> = {
+  has_sends: (n) => `${leads(n)} already got messages.`,
+  has_hidden_sends: (n) => `${leads(n)} got messages in another member's personal campaign.`,
+  in_active_campaign: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in a running or paused campaign. Cancel the enrollment or finish the campaign first.`,
+  linked_records: (n) => `${leads(n)} ${n === 1 ? "has" : "have"} history, such as replies or conversations.`,
+  personal_campaign_sends: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in another member's personal campaign. Ask its creator, an owner or an admin.`,
+  try_again: (n) => `${leads(n)} ${n === 1 ? "was" : "were"} busy with another change. Try again.`,
+};
+const leads = (n: number) => `${n} ${n === 1 ? "lead" : "leads"}`;
+
+/** Kept leads that only waited on a concurrent change: a second delete can remove them. */
+const RETRYABLE: readonly BlockReason[] = ["try_again"];
+
+export interface DeleteSummary {
+  deleted: number;
+  /** Every kept lead, counted by reason, with the line a person reads. */
+  kept: Array<{ reason: BlockReason; count: number; line: string }>;
+  /** The kept leads a second delete can remove, at most MAX_DELETE_IDS, so a retry fits one selection. */
+  retryIds: string[];
+  /** Whether marking the kept leads do not contact stops their outreach: true when one stays for its history. */
+  suggestDoNotContact: boolean;
+}
+
+/** A bulk delete's outcome as the person reads it: a count and a line per reason, and what they can do next. */
+export function summarizeDelete(outcome: DeleteOutcome): DeleteSummary {
+  const counts = new Map<BlockReason, number>();
+  for (const lead of outcome.blocked) counts.set(lead.reason, (counts.get(lead.reason) ?? 0) + 1);
+  const kept = (Object.keys(KEPT_LINES) as BlockReason[]).filter((reason) => counts.has(reason)).map((reason) => ({ reason, count: counts.get(reason)!, line: KEPT_LINES[reason](counts.get(reason)!) }));
+  return {
+    deleted: outcome.deleted,
+    kept,
+    retryIds: outcome.blocked.filter((lead) => RETRYABLE.includes(lead.reason)).map((lead) => lead.id).slice(0, MAX_DELETE_IDS),
+    suggestDoNotContact: kept.some((k) => !RETRYABLE.includes(k.reason)),
+  };
+}
 
 /** The actor as a reader of personal-campaign sends: the campaign's creator, an owner or an admin sees them. */
 export const sendViewer = (actor: Pick<Actor, "userId" | "role">): SendViewer => ({ userId: actor.userId, seesAllPersonal: isOwnerOrAdmin(actor.role) });

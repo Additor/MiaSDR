@@ -256,11 +256,12 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 - A lead is refused, never cascaded, when any of these holds (`leadDeleteBlock` in `people/domain/person-delete-policy.ts`, first match wins):
   - a `sends` row with status `sending`, `sent` or `unknown` (`has_sends`; `has_hidden_sends` when every such send sits in another member's personal campaign);
-  - for a member, an enrollment in a personal campaign another member created, sent or not (`personal_campaign_sends`). Its creator, an owner or an admin passes this rule;
-  - a `pending` or `active` enrollment in an active or paused campaign (`in_active_campaign`);
-  - a reply-handling `records` row or an `events` row, or `lifecycle = 'contact'` (contacts have their own delete) (`linked_records`).
+  - a `pending` or `active` enrollment in an active or paused campaign the actor can see (`in_active_campaign`);
+  - a reply-handling `records` row or an `events` row, or `lifecycle = 'contact'` (contacts have their own delete) (`linked_records`);
+  - for a member, an enrollment in a personal campaign another member created, sent or not (`personal_campaign_sends`). Its creator, an owner or an admin passes this rule.
+- The reasons that hold for every actor rank before `personal_campaign_sends`, so the person a member asks to delete the lead meets no other reason. A running campaign the member cannot see counts as `personal_campaign_sends`, since the member cannot cancel its enrollment.
 - A lead whose sends all failed is deleted with those sends. The recent-send windows of a contact delete do not apply to leads.
-- The refusal names the reason and points to do not contact. A deletable lead goes with its contact policy and its unsent enrollments.
+- The refusal names the reason and points to do not contact. A bulk delete answers `summarizeDelete`: a count and a line per reason, the ids of the leads kept as `try_again` (a second delete can remove them, and the toast offers it), and whether do not contact applies to the rest. A deletable lead goes with its contact policy and its unsent enrollments.
 - Deleting a person marked do not contact first copies the address to `suppression_list` (reason `manual`), so a later import cannot revive it. Setting do not contact writes history events, so a lead marked through the product counts as having history afterwards.
 
 #### Lead delete order

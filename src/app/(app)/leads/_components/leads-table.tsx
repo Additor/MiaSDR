@@ -70,7 +70,9 @@ const SIZES = [25, 50, 100, 200].map((n) => ({ value: String(n), label: `${n} pe
 interface DeleteResult {
   deleted: number;
   blockedCount: number;
-  blocked: Array<{ id: string; name: string | null; reason: string }>;
+  kept: Array<{ reason: string; count: number; line: string }>;
+  retryIds: string[];
+  suggestDoNotContact: boolean;
 }
 
 type Pending = { kind: "selected"; ids: string[] } | { kind: "filter" } | null;
@@ -186,15 +188,39 @@ export function LeadsTableView(props: {
     const result = await callApi<DeleteResult>("/api/leads/delete", "POST", body);
     // ConfirmDialog shows the thrown message and keeps the dialog open.
     if (!result.ok || !result.data) throw new Error(result.error ?? "The leads could not be deleted. Try again.");
-    const { deleted, blockedCount } = result.data;
     clear();
-    if (blockedCount > 0) {
-      toast.warning(`Deleted ${deleted}. Kept ${blockedCount} that were already messaged, are in a running or paused campaign, have history or are contacts.`, {
-        description: "Open a lead and mark it do not contact to stop all outreach to it.",
-      });
-    } else {
-      toast.success(`Deleted ${deleted} ${deleted === 1 ? "lead" : "leads"}.`);
+    announceDelete(result.data);
+    router.refresh();
+  }
+
+  /** One line per reason the server kept leads for, and a retry of the leads that only met a concurrent change. */
+  function announceDelete({ deleted, blockedCount, kept, retryIds, suggestDoNotContact }: DeleteResult) {
+    const done = `Deleted ${deleted} ${deleted === 1 ? "lead" : "leads"}.`;
+    if (blockedCount === 0) {
+      toast.success(done);
+      return;
     }
+    toast.warning(`${done} Kept ${blockedCount}.`, {
+      description: (
+        <ul className="space-y-0.5">
+          {kept.map((k) => (
+            <li key={k.reason}>{k.line}</li>
+          ))}
+          {suggestDoNotContact && <li>Mark a kept lead do not contact to stop all outreach to it.</li>}
+        </ul>
+      ),
+      duration: retryIds.length > 0 ? Infinity : undefined,
+      action: retryIds.length > 0 ? { label: "Try again", onClick: () => void retryDelete(retryIds) } : undefined,
+    });
+  }
+
+  async function retryDelete(ids: string[]) {
+    const result = await callApi<DeleteResult>("/api/leads/delete", "POST", { ids });
+    if (!result.ok || !result.data) {
+      toast.error(result.error ?? "The leads could not be deleted. Try again.");
+      return;
+    }
+    announceDelete(result.data);
     router.refresh();
   }
 

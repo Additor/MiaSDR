@@ -138,6 +138,20 @@ describeDb("lead delete qualification", () => {
     expect((await management.getLead(deps, owner, id)).sends).toHaveLength(1);
   });
 
+  it("names another member's running personal campaign as personal to a member, and as running to its creator", async () => {
+    const o = await org();
+    const [{ id: creator }] = await sql`insert into users (name, email) values ('Creator', ${`active-creator-${o.tag}@ld.test`}) returning id`;
+    users.push(creator);
+    const id = await person(o);
+    const [{ id: personal }] = await sql`insert into campaigns (organization_id, channel, name, status, type, created_by) values (${o.id}, 'linkedin', 'Mine', 'active', 'personal', ${creator}) returning id`;
+    await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${o.id}, ${personal}, ${id}, 'linkedin', 'pending')`;
+    const member = { organizationId: o.id, userId: "00000000-0000-4000-8000-000000000009", role: "member" } as never;
+    const theCreator = { organizationId: o.id, userId: creator, role: "member" } as never;
+    // The member cannot open that campaign, so "cancel its enrollment" would point nowhere.
+    expect((await management.deleteLeads(deps, member, { ids: [id] })).blocked).toEqual([{ id, name: "Lead " + n, reason: "personal_campaign_sends" }]);
+    expect((await management.deleteLeads(deps, theCreator, { ids: [id] })).blocked).toEqual([{ id, name: "Lead " + n, reason: "in_active_campaign" }]);
+  });
+
   it("refuses a member's delete of a lead in another member's draft personal campaign, and lets the creator delete it", async () => {
     const o = await org();
     const [{ id: creator }] = await sql`insert into users (name, email) values ('Creator', ${`draft-creator-${o.tag}@ld.test`}) returning id`;
