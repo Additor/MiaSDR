@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
+import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
 import { campaignEnrollments, campaigns, inboundEvents, linkedinAccounts, linkedinConnections, linkedinEnrollmentDetails, people } from "@/platform/db/schema";
 import type { InboxFiling } from "../../application/inbound-ports";
 import type { InboundResult, LedgerEvent, LinkedInInboundStore } from "../application/linkedin-ports";
@@ -13,12 +14,16 @@ const LEASE_SECONDS = 300;
 
 const logLine = (level: string, message: string, now: Date) => sql`${inboundEvents.log} || ${JSON.stringify([{ ts: now.toISOString(), level, message }])}::jsonb`;
 
-const toLedger = (r: { id: string; organizationId: string | null; payload: unknown; attempts: number }): LedgerEvent => ({
+const toLedger = (r: { id: string; organizationId: string | null; payload: unknown; attempts: number; claimToken: string | null }): LedgerEvent => ({
   id: r.id,
   organizationId: r.organizationId,
   payload: r.payload,
   attempts: r.attempts,
+  claimToken: r.claimToken as string,
 });
+
+/** The row this claim still holds: processing, with the claim's token and attempt. */
+const heldEvent = (claim: LedgerEvent) => and(eq(inboundEvents.id, claim.id), eq(inboundEvents.status, "processing"), heldBy("inbound_events", claim));
 
 /** Enrollments of this member on this account that still wait for an acceptance. */
 async function waitingForAcceptance(tx: Tx, organizationId: string, accountId: string, member: string) {
@@ -80,44 +85,55 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
           attempts: 1,
           nextAttemptAt: now,
           leaseUntil: new Date(now.getTime() + LEASE_SECONDS * 1000),
+          claimToken: NEW_CLAIM_TOKEN,
         })
         .onConflictDoNothing()
-        .returning({ id: inboundEvents.id, organizationId: inboundEvents.organizationId, payload: inboundEvents.payload, attempts: inboundEvents.attempts });
+        .returning({ id: inboundEvents.id, organizationId: inboundEvents.organizationId, payload: inboundEvents.payload, attempts: inboundEvents.attempts, claimToken: inboundEvents.claimToken });
       return row ? toLedger(row) : null;
     },
 
-    async finish(id, status, note, now) {
+    async finish(claim, status, note, now) {
       await db
         .update(inboundEvents)
-        .set({ status, processedAt: now, leaseUntil: null, log: note ? logLine("info", note, now) : inboundEvents.log })
-        .where(eq(inboundEvents.id, id));
+        .set({ status, processedAt: now, leaseUntil: null, claimToken: null, log: note ? logLine("info", note, now) : inboundEvents.log })
+        .where(heldEvent(claim));
     },
 
-    async fail(id, error, now, retryAt) {
+    async fail(claim, error, now, retryAt) {
       await db
         .update(inboundEvents)
-        .set({ status: "failed", leaseUntil: null, nextAttemptAt: retryAt ?? now, log: logLine("error", error, now) })
-        .where(eq(inboundEvents.id, id));
+        .set({ status: "failed", leaseUntil: null, claimToken: null, nextAttemptAt: retryAt ?? now, log: logLine("error", error, now) })
+        .where(heldEvent(claim));
     },
 
     async claimReplayable(now, limit, leaseSeconds, organizationId) {
       const nowIso = now.toISOString();
+      const scope = organizationId ? sql`and organization_id = ${organizationId}` : sql``;
+      // A worker that stopped during the last attempt leaves a row no claim takes again: it fails here, and the
+      // webhook backlog counts it as dead until an admin replays it.
+      await db.execute(sql`
+        update inbound_events
+           set status = 'failed', lease_until = null, claim_token = null, next_attempt_at = ${nowIso}::timestamptz,
+               log = log || ${JSON.stringify([{ ts: nowIso, level: "error", message: "The worker stopped during the last attempt." }])}::jsonb
+         where provider = 'unipile' and status = 'processing' and lease_until < ${nowIso}::timestamptz and attempts >= ${MAX_EVENT_ATTEMPTS}
+           ${scope}`);
       const rows = await db.execute(sql`
         update inbound_events ev
-           set status = 'processing', attempts = ev.attempts + 1, lease_until = ${new Date(now.getTime() + leaseSeconds * 1000).toISOString()}::timestamptz
+           set status = 'processing', attempts = ev.attempts + 1, lease_until = ${new Date(now.getTime() + leaseSeconds * 1000).toISOString()}::timestamptz,
+               claim_token = ${NEW_CLAIM_TOKEN}
          where ev.id in (
            select id from inbound_events
             where provider = 'unipile' and attempts < ${MAX_EVENT_ATTEMPTS}
-              ${organizationId ? sql`and organization_id = ${organizationId}` : sql``}
+              ${scope}
               and ((status = 'failed' and next_attempt_at <= ${nowIso}::timestamptz)
                 or (status = 'processing' and lease_until < ${nowIso}::timestamptz))
             order by created_at asc
             limit ${limit}
             for update skip locked
          )
-        returning ev.id, ev.organization_id as "organizationId", ev.payload, ev.attempts
+        returning ev.id, ev.organization_id as "organizationId", ev.payload, ev.attempts, ev.claim_token as "claimToken"
       `);
-      return (rows as unknown as Array<{ id: string; organizationId: string | null; payload: unknown; attempts: number }>).map(toLedger);
+      return (rows as unknown as Array<{ id: string; organizationId: string | null; payload: unknown; attempts: number; claimToken: string }>).map(toLedger);
     },
 
     async apply(organizationId, event, now) {

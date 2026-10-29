@@ -1,5 +1,5 @@
 import { MAX_EVENT_ATTEMPTS, eventKey, eventRetrySeconds } from "../domain/linkedin";
-import type { LinkedInInboundDeps } from "./linkedin-ports";
+import type { LedgerEvent, LinkedInInboundDeps } from "./linkedin-ports";
 
 export type WebhookResult =
   | { status: "ignored" }
@@ -31,24 +31,24 @@ export async function receiveLinkedInWebhook(deps: LinkedInInboundDeps, input: {
     now,
   });
   if (!row) return { status: "duplicate" };
-  return process(deps, row.id, row.attempts, input.organizationId, input.payload);
+  return process(deps, row, input.organizationId, input.payload);
 }
 
-async function process(deps: LinkedInInboundDeps, id: string, attempts: number, organizationId: string, payload: unknown): Promise<WebhookResult> {
+async function process(deps: LinkedInInboundDeps, claim: LedgerEvent, organizationId: string, payload: unknown): Promise<WebhookResult> {
   try {
     const event = deps.parse(payload);
     if (!event) {
-      await deps.store.finish(id, "skipped", "Payload no longer parses.", deps.clock.now());
+      await deps.store.finish(claim, "skipped", "Payload no longer parses.", deps.clock.now());
       return { status: "skipped" };
     }
     const { result, note } = await deps.store.apply(organizationId, event, deps.clock.now());
-    await deps.store.finish(id, result, note, deps.clock.now());
+    await deps.store.finish(claim, result, note, deps.clock.now());
     return { status: result };
   } catch (error) {
     const now = deps.clock.now();
     const message = errorText(error);
-    const retryAt = attempts >= MAX_EVENT_ATTEMPTS ? null : new Date(now.getTime() + eventRetrySeconds(attempts) * 1000);
-    await deps.store.fail(id, message.slice(0, 500), now, retryAt);
+    const retryAt = claim.attempts >= MAX_EVENT_ATTEMPTS ? null : new Date(now.getTime() + eventRetrySeconds(claim.attempts) * 1000);
+    await deps.store.fail(claim, message.slice(0, 500), now, retryAt);
     return { status: "failed", error: message };
   }
 }
@@ -66,11 +66,11 @@ export async function replayLinkedInEvents(deps: LinkedInInboundDeps, limit = 50
   for (const row of await deps.store.claimReplayable(deps.clock.now(), limit, 300, organizationId)) {
     report.claimed += 1;
     if (!row.organizationId) {
-      await deps.store.fail(row.id, "No organization on the event.", deps.clock.now(), null);
+      await deps.store.fail(row, "No organization on the event.", deps.clock.now(), null);
       report.failed += 1;
       continue;
     }
-    const result = await process(deps, row.id, row.attempts, row.organizationId, row.payload);
+    const result = await process(deps, row, row.organizationId, row.payload);
     if (result.status === "failed") report.failed += 1;
     else report.done += 1;
   }

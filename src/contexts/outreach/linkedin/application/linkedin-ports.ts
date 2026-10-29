@@ -248,6 +248,8 @@ export interface LedgerEvent {
   organizationId: string | null;
   payload: unknown;
   attempts: number;
+  /** Written by the claim (`begin`, `claimReplayable`). `finish` and `fail` change the row only while it still carries it. */
+  claimToken: string;
 }
 
 export type InboundResult = "done" | "skipped";
@@ -256,9 +258,13 @@ export type InboundResult = "done" | "skipped";
 export interface LinkedInInboundStore {
   /** Inserts the delivery as `processing`. Returns null when the key was seen before. */
   begin(input: { organizationId: string; key: string; eventType: string; accountRef: string; payload: unknown; now: Date }): Promise<LedgerEvent | null>;
-  finish(id: string, status: "done" | "skipped", note: string | null, now: Date): Promise<void>;
-  fail(id: string, error: string, now: Date, retryAt: Date | null): Promise<void>;
-  /** Failed rows due for retry, and `processing` rows whose lease expired. Claims them (attempt + 1, lease) atomically. */
+  /** Settles the claim. A worker whose lease ran out, or whose row an admin requeued and another claim took, changes nothing. */
+  finish(claim: LedgerEvent, status: "done" | "skipped", note: string | null, now: Date): Promise<void>;
+  fail(claim: LedgerEvent, error: string, now: Date, retryAt: Date | null): Promise<void>;
+  /**
+   * Failed rows due for retry, and `processing` rows whose lease expired. Claims them (attempt + 1, lease, fresh token)
+   * atomically. A `processing` row whose lease expired on its last attempt turns `failed` first, where an admin can replay it.
+   */
   claimReplayable(now: Date, limit: number, leaseSeconds: number, organizationId?: string): Promise<LedgerEvent[]>;
   /** Applies one event. Safe to run twice for the same event. */
   apply(organizationId: string, event: LinkedInInboundEvent, now: Date): Promise<{ result: InboundResult; note: string | null }>;
