@@ -8,8 +8,9 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { DatePicker, formatDay } from "@/components/shell/date-picker";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { callApi } from "@/app/_lib/api-client";
 import { memberItems } from "../member-select";
@@ -114,7 +115,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
   }
 
   const openButton = !formOpen && (
-    <Button type="button" variant="outline" size="sm" className="max-sm:h-11" onClick={() => setFormOpen(true)}>
+    <Button type="button" variant="outline" size="sm" touch onClick={() => setFormOpen(true)}>
       <PlusIcon /> New task
     </Button>
   );
@@ -124,7 +125,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
       {compact ? (
         // In a side panel the title row carries New task, so an empty list costs one row.
         <div className="flex min-h-7 items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold">Tasks</h2>
+          <h2 className="heading-subsection">Tasks</h2>
           {openButton}
         </div>
       ) : (
@@ -132,9 +133,9 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
       )}
       {formOpen && (
         <form onSubmit={add} className="@container grid gap-group" noValidate>
-          <div className="grid gap-group @lg:grid-cols-2">
-            <div className="stack-field @lg:col-span-2">
-              <Label htmlFor={`task-name-${fieldKey}`}>Task</Label>
+          <FieldGroup className="grid @lg:grid-cols-2">
+            <Field className="@lg:col-span-2">
+              <FieldLabel htmlFor={`task-name-${fieldKey}`}>Task</FieldLabel>
               <Input
                 id={`task-name-${fieldKey}`}
                 ref={nameRef}
@@ -146,21 +147,21 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
                 maxLength={200}
                 placeholder="Call back on Friday"
                 autoFocus={compact}
-                className="max-sm:h-11"
+                touch
               />
-            </div>
+            </Field>
             <DueField id={`task-due-${fieldKey}`} value={dueDay} onChange={setDueDay} />
-            <div className="stack-field">
-              <Label id={`task-assignee-${fieldKey}`}>Assign to</Label>
+            <Field>
+              <FieldLabel id={`task-assignee-${fieldKey}`}>Assign to</FieldLabel>
               <MemberSelect labelledBy={`task-assignee-${fieldKey}`} value={assigneeId} members={members} currentUserId={currentUserId} onChange={setAssigneeId} />
-            </div>
-          </div>
+            </Field>
+          </FieldGroup>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" variant="outline" disabled={pending || zone === null} className="max-sm:h-11">
+            <Button type="submit" size="sm" variant="outline" disabled={pending || zone === null} touch>
               {pending ? "Adding…" : "Add task"}
             </Button>
             {compact && (
-              <Button type="button" size="sm" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={closeForm}>
+              <Button type="button" size="sm" variant="ghost" disabled={pending} touch onClick={closeForm}>
                 Cancel
               </Button>
             )}
@@ -179,17 +180,19 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
             return (
               <li key={t.id} className="grid gap-1 py-2.5 text-sm" data-task-state={t.isCompleted ? "done" : "open"}>
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                  <label className="flex min-w-0 items-start gap-2.5">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 size-4 accent-foreground max-sm:size-5"
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <Checkbox
+                      id={`task-done-${t.id}`}
+                      className="mt-0.5"
                       checked={t.isCompleted}
                       disabled={!t.canChange}
-                      onChange={(e) => patch(t.id, { completed: e.target.checked })}
+                      onCheckedChange={(checked) => patch(t.id, { completed: checked })}
                       aria-label={t.isCompleted ? `Reopen ${t.name}` : `Complete ${t.name}`}
                     />
-                    <span className={t.isCompleted ? "text-muted-foreground line-through" : ""}>{t.name}</span>
-                  </label>
+                    <label htmlFor={`task-done-${t.id}`} className={t.isCompleted ? "text-muted-foreground line-through" : undefined}>
+                      {t.name}
+                    </label>
+                  </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     {/* A due date is a calendar day in the zone it was set in, which is the browser zone here. */}
                     {t.dueAt && zone && (
@@ -260,7 +263,10 @@ export function dayFromToday(days: number): string {
   return formatDay(d);
 }
 
-/** "Fri, Oct 23", in English whatever the browser's language. */
+/**
+ * The picked day read back in a sentence ("Due Thu, Jan 2."): the weekday is what a person checks after Tomorrow or Next
+ * week. A day has no zone, so it reads at noon.
+ */
 const dayText = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
 const QUICK_DAYS: Array<[label: string, days: number]> = [
@@ -277,15 +283,17 @@ export function DueField({ id, value, onChange }: { id: string; value: string; o
   const [picking, setPicking] = useState(false);
   const quick = QUICK_DAYS.map(([label, days]) => ({ label, day: dayFromToday(days) }));
   return (
-    <fieldset className="stack-field min-w-0">
-      <legend className="mb-1.5 text-sm leading-none font-medium">Due</legend>
+    <FieldSet className="min-w-0 gap-field">
+      <FieldLegend variant="label" className="leading-none">
+        Due
+      </FieldLegend>
       <div className="flex flex-wrap gap-1.5">
         {quick.map((q) => (
-          <Button key={q.label} type="button" size="sm" variant={value === q.day && !picking ? "secondary" : "outline"} aria-pressed={value === q.day && !picking} className="max-sm:h-11" onClick={() => { setPicking(false); onChange(value === q.day ? "" : q.day); }}>
+          <Button key={q.label} type="button" size="sm" variant={value === q.day && !picking ? "secondary" : "outline"} aria-pressed={value === q.day && !picking} touch onClick={() => { setPicking(false); onChange(value === q.day ? "" : q.day); }}>
             {q.label}
           </Button>
         ))}
-        <Button type="button" size="sm" variant={picking ? "secondary" : "outline"} aria-pressed={picking} className="max-sm:h-11" onClick={() => setPicking(!picking)}>
+        <Button type="button" size="sm" variant={picking ? "secondary" : "outline"} aria-pressed={picking} touch onClick={() => setPicking(!picking)}>
           Pick a date
         </Button>
       </div>
@@ -293,7 +301,7 @@ export function DueField({ id, value, onChange }: { id: string; value: string; o
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {value ? `Due ${dayText(value)}.` : "No due date."}
       </p>
-    </fieldset>
+    </FieldSet>
   );
 }
 

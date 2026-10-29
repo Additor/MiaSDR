@@ -22,11 +22,11 @@ export function CrossCampaignNoticeList({ notices }: { notices: Notices | null |
         <ul className="list-disc pl-5 text-muted-foreground">
           {contacted.map((n) => (
             <li key={`${n.personId}:${n.campaign.id}`}>
-              <Link href={`/leads/${n.personId}`} className="underline-offset-4 hover:underline">
+              <Link href={`/leads/${n.personId}`} className="underline-offset-4 focus-ring hover:underline">
                 {n.name ?? "Unnamed lead"}
               </Link>
               : in{" "}
-              <Link href={`/campaigns/${n.campaign.id}`} className="underline-offset-4 hover:underline">
+              <Link href={`/campaigns/${n.campaign.id}`} className="underline-offset-4 focus-ring hover:underline">
                 {n.campaign.name}
               </Link>{" "}
               ({n.status.replace("_", " ")}, {n.channel === "linkedin" ? "LinkedIn" : "email"})
@@ -39,7 +39,7 @@ export function CrossCampaignNoticeList({ notices }: { notices: Notices | null |
         <ul className="list-disc pl-5 text-muted-foreground">
           {excluded.map((n) => (
             <li key={n.enrollmentId}>
-              <Link href={`/leads/${n.personId}`} className="underline-offset-4 hover:underline">
+              <Link href={`/leads/${n.personId}`} className="underline-offset-4 focus-ring hover:underline">
                 {n.name ?? "Unnamed lead"}
               </Link>
               : skipped, {n.accountName ?? "the sending account"} already invited them
@@ -47,7 +47,7 @@ export function CrossCampaignNoticeList({ notices }: { notices: Notices | null |
                 <>
                   {" "}
                   in{" "}
-                  <Link href={`/campaigns/${n.campaign.id}`} className="underline-offset-4 hover:underline">
+                  <Link href={`/campaigns/${n.campaign.id}`} className="underline-offset-4 focus-ring hover:underline">
                     {n.campaign.name}
                   </Link>
                 </>

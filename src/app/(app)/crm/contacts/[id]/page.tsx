@@ -5,6 +5,9 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
+import { Count } from "@/components/shell/section";
+import { countOf, formatCount } from "@/shared/format-number";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { contactDeleteDeps } from "@/composition/person-lifecycle";
@@ -53,24 +56,14 @@ function ContactSkeleton() {
   return (
     <>
       <PageHeader title="Contact" titleAs="p" back={{ href: "/crm/contacts", label: "Contacts" }} />
-      <RecordPage>
-        <Skeleton className="h-32 w-full" aria-hidden />
-        <RecordBody
-          asideLabel="Contact details"
-          main={
-            <>
-              <Skeleton className="h-40 w-full" aria-hidden />
-              <Skeleton className="h-48 w-full" aria-hidden />
-            </>
-          }
-          aside={<Skeleton className="h-64 w-full" aria-hidden />}
-        />
-      </RecordPage>
+      <div className="page">
+        <PageSkeleton shape="record" />
+      </div>
     </>
   );
 }
 
-const PanelSkeleton = () => <Skeleton className="h-40 w-full" />;
+const PanelSkeleton = () => <Skeleton className="h-40 w-full" aria-hidden />;
 
 async function Contact({ params, searchParams }: { params: PageProps<"/crm/contacts/[id]">["params"]; searchParams: PageProps<"/crm/contacts/[id]">["searchParams"] }) {
   await connection();
@@ -118,10 +111,7 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
   const toEntries = (raw: Record<string, unknown> | null) => Object.entries(raw ?? {}).map(([key, value]) => ({ key, value: typeof value === "string" ? value : JSON.stringify(value) }));
   const companyLabel = person.companyName ?? person.companyDomain;
   const convertedAt = person.convertedAt;
-  const outreachCount = [
-    `${enrollments.length} ${enrollments.length === 1 ? "campaign" : "campaigns"}`,
-    `${sends.length} ${sends.length === 1 ? "send" : "sends"}`,
-  ].join(", ");
+  const outreachCount = [countOf(enrollments.length, "campaign"), countOf(sends.length, "send")].join(", ");
   // The deal Open deal opens: the newest open one, else the newest, as in the Contacts list.
   const headDeal = primaryDeal(summary.deals);
   const companyHref = directory?.companyId ? `/crm/companies/${directory.companyId}` : null;
@@ -181,7 +171,7 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
           asideLabel="Contact details"
           main={
             <>
-              <RecordSection title="Deals" count={summary.deals.length === 0 ? undefined : `${summary.openDeals} open of ${summary.deals.length}`} testId="contact-deals">
+              <RecordSection title="Deals" count={summary.deals.length === 0 ? undefined : `${formatCount(summary.openDeals)} open of ${formatCount(summary.deals.length)}`} testId="contact-deals">
                 {summary.deals.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No deals</p>
                 ) : (
@@ -196,10 +186,10 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
               {/* A contact who was in no campaign and got no sends has no history to open. */}
               {(enrollments.length > 0 || sends.length > 0) && (
                 <details data-testid="outreach-history" className="group border-t py-section">
-                  <summary className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11">
+                  <summary className="flex min-h-7 cursor-pointer items-center gap-2 rounded-md select-none focus-ring max-sm:min-h-11">
                     <ChevronRightIcon aria-hidden className="size-4 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
-                    <h2 className="text-sm font-semibold">Outreach history</h2>
-                    <span className="text-sm text-muted-foreground tabular-nums">{outreachCount}</span>
+                    <h2 className="heading-section">Outreach history</h2>
+                    <Count value={outreachCount} />
                   </summary>
                   <div className="mt-2 grid">
                     <CampaignsTable enrollments={enrollments} level="h3" emptyText="This contact was in no campaign." />

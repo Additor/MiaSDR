@@ -3,7 +3,7 @@
 import { Fragment } from "react";
 import { OUTCOMES } from "../_lib/data/outcomes";
 
-const LINK = "rounded-sm text-foreground underline decoration-muted-foreground/50 underline-offset-4 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring";
+const LINK = "rounded-sm text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground focus-ring";
 
 /**
  * The first move on a table that has rows and no column that runs yet: one line under the toolbar that names what the

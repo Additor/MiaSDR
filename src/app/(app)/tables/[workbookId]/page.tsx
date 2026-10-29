@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { WorkbookView } from "../_components/workbook-view";
 
 export const metadata: Metadata = { title: "Table" };
@@ -11,7 +11,7 @@ export default function WorkbookPage({ params }: PageProps<"/tables/[workbookId]
     <Suspense
       fallback={
         <div className="page">
-          <Skeleton className="h-[calc(100svh-2rem)]" />
+          <PageSkeleton shape="table" />
         </div>
       }
     >
@@ -28,7 +28,7 @@ async function Workbook({ params }: { params: PageProps<"/tables/[workbookId]">[
     <Suspense
       fallback={
         <div className="page">
-          <Skeleton className="h-[calc(100svh-2rem)]" />
+          <PageSkeleton shape="table" />
         </div>
       }
     >

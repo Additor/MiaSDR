@@ -6,9 +6,10 @@ import { useEffect, useState } from "react";
 import { useSelection } from "@/components/shell/selection";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
+import { formatCount } from "@/shared/format-number";
 import { callApi } from "@/app/_lib/api-client";
 import { addCounts, type EnrollCounts as Counts, skipReasons, ZERO_COUNTS } from "../_lib/enroll-counts";
 
@@ -118,7 +119,7 @@ function CampaignAdder({
     if (!next && counts && counts.added > 0) onAdded();
   }
 
-  const count = personIds.length.toLocaleString("en-US");
+  const count = formatCount(personIds.length);
   const noun = personIds.length === 1 ? "lead" : "leads";
 
   const skipped = counts ? counts.requested - counts.added : 0;
@@ -140,7 +141,7 @@ function CampaignAdder({
             : `${count} ${noun} selected. Leads without the channel address, unsubscribed and do not contact leads, already added leads and contacts are skipped.`
         }
         confirmLabel={`Add ${count} ${noun}`}
-        pendingLabel={`Adding… ${progress.toLocaleString("en-US")} of ${count}`}
+        pendingLabel={`Adding… ${formatCount(progress)} of ${count}`}
         cancelLabel={counts ? "Done" : "Cancel"}
         confirmDisabled={counts !== null || !chosen || personIds.length === 0}
         onConfirm={submit}
@@ -148,7 +149,7 @@ function CampaignAdder({
         {counts ? (
           <div className="grid gap-2 text-sm" role="status">
             <p>
-              Added <strong>{counts.added.toLocaleString("en-US")}</strong> of {counts.requested.toLocaleString("en-US")}.
+              Added <strong>{formatCount(counts.added)}</strong> of {formatCount(counts.requested)}.
             </p>
             {skipped > 0 && (
               <ul className="list-disc pl-5">
@@ -164,17 +165,17 @@ function CampaignAdder({
             )}
             {chosen && (
               <p>
-                <Link href={`/campaigns/${chosen.id}`} className="underline underline-offset-4">
+                <Link href={`/campaigns/${chosen.id}`} className="rounded-sm underline underline-offset-4 focus-ring">
                   Open campaign
                 </Link>
               </p>
             )}
           </div>
         ) : (
-          <div className="stack-field">
-            <Label htmlFor="add-campaign-target">Campaign</Label>
+          <Field>
+            <FieldLabel htmlFor="add-campaign-target">Campaign</FieldLabel>
             <Select items={items} value={target || null} onValueChange={(v) => v && setTarget(v)} disabled={campaigns === null || campaigns.length === 0}>
-              <SelectTrigger id="add-campaign-target" className="w-full max-sm:h-11">
+              <SelectTrigger id="add-campaign-target" className="w-full max-sm:h-11" aria-describedby={chosen?.status === "active" ? "add-campaign-live" : undefined}>
                 <SelectValue placeholder={campaigns === null ? "Loading…" : campaigns.length === 0 ? "No open campaign" : "Choose a campaign"} />
               </SelectTrigger>
               <SelectContent>
@@ -185,13 +186,13 @@ function CampaignAdder({
                 ))}
               </SelectContent>
             </Select>
-            {chosen?.status === "active" && <p className="text-xs text-muted-foreground">This campaign is live. New leads start receiving steps right away.</p>}
+            {chosen?.status === "active" && <FieldDescription id="add-campaign-live">This campaign is live. New leads start receiving steps right away.</FieldDescription>}
             {error && (
               <p role="alert" className="text-sm text-destructive">
                 {error}
               </p>
             )}
-          </div>
+          </Field>
         )}
       </ConfirmDialog>
     </>

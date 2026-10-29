@@ -19,6 +19,7 @@ import { MAX_INVITE_ATTEMPTS, INVITE_NOTE_MAX, describeLinkedInProgress, validat
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { RecordPage } from "@/app/(app)/_components/record/record-header";
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
+import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { CampaignControls } from "./campaign-controls";
 import { CampaignHeader } from "./campaign-header";
@@ -164,21 +165,21 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                                       <SelectRow id={row.enrollmentId} name={row.personName} disabled={!canRemoveEnrollment(row.status)} />
                                     </TableCell>
                                     <TableCell className="font-medium">
-                                      <Link href={`/leads/${row.personId}`} className="underline-offset-4 hover:underline">
+                                      <Link href={`/leads/${row.personId}`} className="underline-offset-4 focus-ring hover:underline">
                                         {row.personName ?? row.profileUrl ?? "Unnamed lead"}
                                       </Link>
                                       {row.profileUrl && (
-                                        <a href={row.profileUrl} target="_blank" rel="noreferrer" className="mt-0.5 block text-xs font-normal underline underline-offset-4">
+                                        <a href={row.profileUrl} target="_blank" rel="noreferrer" className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring">
                                           LinkedIn profile
                                         </a>
                                       )}
                                       {!personal && row.inboxConversationId && (
-                                        <Link href={`/inbox/${row.inboxConversationId}`} className="mt-0.5 block text-xs font-normal underline underline-offset-4" data-testid="inbox-thread-link">
+                                        <Link href={`/inbox/${row.inboxConversationId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
                                           Open in Inbox
                                         </Link>
                                       )}
                                       {threadHref && (
-                                        <Link href={threadHref} className="mt-0.5 block text-xs font-normal underline underline-offset-4" data-testid="private-thread-link">
+                                        <Link href={threadHref} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="private-thread-link">
                                           Read the reply
                                         </Link>
                                       )}
@@ -199,9 +200,12 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
                                       {row.noteLength === null ? (
                                         <span className="text-muted-foreground">-</span>
                                       ) : row.noteOverLimit ? (
-                                        <span className="text-destructive" title={`LinkedIn allows ${INVITE_NOTE_MAX} characters. This invitation fails when it goes out. Shorten the note, or fix the lead's fields.`}>
+                                        <StateTip
+                                          trigger={<span tabIndex={0} className="rounded-sm text-destructive focus-ring" />}
+                                          tip={`LinkedIn allows ${INVITE_NOTE_MAX} characters. This invitation fails when it goes out. Shorten the note, or fix the lead's fields.`}
+                                        >
                                           {row.noteLength}/{INVITE_NOTE_MAX} over limit
-                                        </span>
+                                        </StateTip>
                                       ) : (
                                         <span>
                                           {row.noteLength}/{INVITE_NOTE_MAX}
@@ -289,7 +293,7 @@ function LeadPanel({ row, totalSteps, threadHref }: { row: PanelRow; totalSteps:
   const sent = detail.sends.filter((s) => s.status === "sent");
   return (
     <details className="text-sm">
-      <summary className="cursor-pointer py-1 text-xs text-muted-foreground">
+      <summary className="w-fit cursor-pointer rounded-sm py-1 text-xs text-muted-foreground focus-ring">
         Details: {sent.length} sent, retries {detail.retries} of {MAX_INVITE_ATTEMPTS}
         {detail.lastError ? ", has an error" : ""}
       </summary>
@@ -306,7 +310,7 @@ function LeadPanel({ row, totalSteps, threadHref }: { row: PanelRow; totalSteps:
         </p>
         {threadHref && (
           <p>
-            <Link href={threadHref} className="underline underline-offset-4">
+            <Link href={threadHref} className="underline underline-offset-4 focus-ring">
               Read the reply
             </Link>{" "}
             <span className="text-xs text-muted-foreground">(private: not shown in the Inbox)</span>
@@ -323,7 +327,7 @@ function LeadPanel({ row, totalSteps, threadHref }: { row: PanelRow; totalSteps:
             {detail.alsoInCampaigns.map((c, i) => (
               <Fragment key={c.campaignId}>
                 {i > 0 && ", "}
-                <Link href={`/campaigns/${c.campaignId}`} className="underline underline-offset-4">
+                <Link href={`/campaigns/${c.campaignId}`} className="underline underline-offset-4 focus-ring">
                   {c.campaignName}
                 </Link>{" "}
                 <span className="text-xs text-muted-foreground">({enrollmentStatusLabel(c.status)})</span>

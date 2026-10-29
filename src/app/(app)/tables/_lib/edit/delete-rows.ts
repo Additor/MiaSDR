@@ -1,7 +1,7 @@
 import { GRID_LIMITS } from "@/contexts/grid/application/limits";
+import { countOf } from "@/shared/format-number";
 
-const count = (n: number) => n.toLocaleString("en-US");
-const rows = (n: number) => `${count(n)} ${n === 1 ? "row" : "rows"}`;
+const rows = (n: number) => countOf(n, "row");
 
 /** Rows per DELETE request. */
 export const DELETE_BATCH = GRID_LIMITS.deleteRows;

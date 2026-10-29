@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { listCustomColumns } from "@/contexts/people/application/custom-columns";
 import { customColumnStore } from "@/contexts/people/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Custom fields" };
 export default function ColumnsPage() {
   return (
     <div className="max-w-3xl">
-      <Suspense fallback={<Skeleton className="h-64 w-full max-w-3xl" />}>
+      <Suspense fallback={<PageSkeleton shape="form" />}>
         <Columns />
       </Suspense>
     </div>

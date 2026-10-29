@@ -25,7 +25,7 @@ export function GoogleButton({ callbackURL, errorCallbackURL = "/sign-in" }: { c
   }
 
   return (
-    <div className="grid w-full gap-2">
+    <div className="stack-field w-full">
       <Button type="button" variant="outline" className="w-full" disabled={pending} onClick={start}>
         {pending ? "Opening Google…" : "Continue with Google"}
       </Button>

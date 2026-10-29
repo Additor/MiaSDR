@@ -15,6 +15,8 @@ import { AdminNotice } from "../admin-notice";
 import { ReorderButtons } from "../settings-form";
 import { RULED_LIST, SettingsSection } from "../settings-section";
 import { moveTarget, stageBlocker } from "./stage-rules";
+import { countOf } from "@/shared/format-number";
+import { Count } from "@/components/shell/section";
 
 const KIND_ITEMS = [
   { value: "open", label: "Open" },
@@ -147,7 +149,7 @@ export function StagesPanel({ settings: initial, canManage }: { settings: StageS
                     {KIND_LABEL[stage.kind] && <Badge variant="outline">{KIND_LABEL[stage.kind]}</Badge>}
                   </div>
                 )}
-                <span className="text-xs text-muted-foreground tabular-nums">{stage.dealCount === 1 ? "1 deal" : `${stage.dealCount} deals`}</span>
+                <Count value={countOf(stage.dealCount, "deal")} />
                 {canManage && !settings.virtual && !editing && (
                   <div className="flex items-center gap-1">
                     <ReorderButtons name={stage.name} canUp={moveTarget(stages, index, -1) !== null} canDown={moveTarget(stages, index, 1) !== null} disabled={pending} onMove={(direction) => move(index, direction)} />

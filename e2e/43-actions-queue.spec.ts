@@ -102,6 +102,10 @@ test.describe("the Actions queue as a list to work through", () => {
     await expect(page.getByTestId("queue-item").filter({ hasText: "Eli Moss" }).filter({ hasText: /AI picked/ })).toHaveCount(0);
     // The page's one live region says whose pick was accepted.
     await expect(page.getByTestId("queue-notice")).toHaveText("AI pick accepted: Eli Moss.");
+    // The row stays as one muted line that says what happened, with the way to the conversation.
+    const settled = page.getByTestId("queue-settled").filter({ hasText: "Eli Moss" });
+    await expect(settled).toHaveText(/^Accepted .+ for Eli Moss\.Open conversation$/);
+    await expect(settled.getByRole("link", { name: "Open conversation" })).toHaveAttribute("href", /\/inbox\/[0-9a-f-]{36}\?.*from=actions/);
     // Once the refresh brings the new total, focus is still on the row that moved up, and j goes on from it.
     await expect(total).toHaveText(String(before - 1));
     const focused = page.getByTestId("queue-item").filter({ has: page.locator("a:focus") });
@@ -170,6 +174,11 @@ test.describe("the Actions queue as a list to work through", () => {
     await expect(bulk).toHaveText(/^Looks right: \d+ sure picks$/);
     await waitForHydrated(page.getByTestId("queue-item").first());
     await bulk.click();
+    // The bulk step names every row it marks before it marks them, and Keep for review is the way out.
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByTestId("mark-confident-list")).toContainText("Ola Sure");
+    await dialog.getByRole("button", { name: /^Mark \d+ as looked at$/ }).click();
+    await expect(page.locator("[data-sonner-toast]").filter({ hasText: /^Marked \d+ AI picks as looked at\.$/ })).toBeVisible();
     await expect(page.getByTestId("queue-item").filter({ hasText: /AI applied .*9\d% confident/ })).toHaveCount(0);
     await expect(bulk).toHaveCount(0);
   });
@@ -199,16 +208,24 @@ test.describe("the Actions queue as a list to work through", () => {
     }
   });
 
-  test("the strip counts every list, and an empty one is a muted zero with no section", async ({ page }) => {
+  test("the strip links every list with work, and names the empty ones on one muted line with no section", async ({ page }) => {
     await signInAdmin(page);
     await page.goto("/actions");
     const jumps = page.getByTestId("queue-jumps");
-    await expect(jumps.getByText(/^(Problems|Replies|Follow-ups|AI picks|Next steps|Tasks) \d+$/)).toHaveCount(6);
-    // An empty list is text, not a link, and has no section of its own.
+    // allTextContents does not wait, so the strip has to be on the page before it is read.
+    await expect(jumps).toBeVisible();
+    const linked = await jumps.getByRole("link", { name: /^(Problems|Replies|Follow-ups|AI picks|Next steps|Tasks) \d+$/ }).allTextContents();
+    const empty = (await jumps.getByTestId("queue-jumps-empty").allTextContents()).join("");
+    // Each of the six lists shows once: as a link with its count, or by name on the "Nothing in" line.
+    for (const name of ["Problems", "Replies", "Follow-ups", "AI picks", "Next steps", "Tasks"]) {
+      const shown = linked.filter((text) => text.startsWith(`${name} `)).length + (new RegExp(`(^Nothing in |, )${name}(,|\\.$)`).test(empty) ? 1 : 0);
+      expect(shown, name).toBe(1);
+    }
+    // An empty list has no section of its own.
     const groupsShown = await page.locator('[data-slot="queue-group"]').count();
     expect(groupsShown).toBeGreaterThan(0);
     expect(groupsShown).toBeLessThan(5);
-    expect(await jumps.getByRole("link").count()).toBeLessThan(6);
+    expect(linked.length).toBeLessThan(6);
     // Help sits on info marks, and only where a group's name needs it.
     await expect(page.getByText("Drafts waiting for your review. Nothing is sent until you approve.", { exact: true })).toHaveCount(0);
   });

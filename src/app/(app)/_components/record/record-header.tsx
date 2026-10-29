@@ -1,5 +1,6 @@
 import { ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { Count, Section } from "@/components/shell/section";
 
 /**
  * The top of a lead, contact, company or deal page: who or what this is, how to reach it, where it stands, and what to
@@ -34,7 +35,7 @@ export function RecordHeader({
         <div className="stack-field min-w-0">
           {/* The token follows the name on its line and wraps under it on a phone, above the actions. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <h1 id="page-title" className="min-w-0 text-2xl leading-tight font-semibold tracking-tight text-balance break-words">
+            <h1 id="page-title" className="heading-record min-w-0 text-balance break-words">
               {name}
             </h1>
             {state}
@@ -108,31 +109,20 @@ export function RecordSection({
   testId?: string;
   children?: ReactNode;
 }) {
-  const Heading = level;
+  // The last section keeps its bottom space: the histories (`RecordDisclosure`) follow it with their own rule.
   return (
-    <section className="stack-group border-t py-section first:border-t-0 first:pt-0" data-testid={testId}>
-      <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="flex items-baseline gap-2">
-          <Heading className="text-sm font-semibold">{title}</Heading>
-          {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
-        </div>
-        {action}
-      </div>
+    <Section title={title} count={count} action={action} level={level} testId={testId} flushEnd={false}>
       {children}
-    </section>
+    </Section>
   );
 }
 
-/** A section of the side panel: a title row with an optional action, then its content. */
+/** A section of the side panel: a title row with an optional action, then its content, padded by the inset role. */
 export function AsideSection({ title, action, testId, children }: { title: string; action?: ReactNode; testId?: string; children: ReactNode }) {
   return (
-    <section className="stack-group p-4" data-testid={testId}>
-      <div className="flex min-h-7 items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {action}
-      </div>
+    <Section frame="inset" role="subsection" title={title} action={action} testId={testId}>
       {children}
-    </section>
+    </Section>
   );
 }
 
@@ -142,11 +132,11 @@ export function AsideSection({ title, action, testId, children }: { title: strin
  */
 export function AsideDisclosure({ title, count, open = false, testId, children }: { title: string; count?: ReactNode; open?: boolean; testId?: string; children: ReactNode }) {
   return (
-    <details className="group p-4" open={open} data-testid={testId}>
-      <summary className="-m-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md p-1 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
+    <details className="group p-inset" open={open} data-testid={testId}>
+      <summary className="-m-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md p-1 select-none focus-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
+        <h2 className="heading-subsection">{title}</h2>
+        {count !== undefined && count !== null && <Count value={count} />}
       </summary>
       <div className="stack-group mt-group">{children}</div>
     </details>
@@ -160,10 +150,10 @@ export function AsideDisclosure({ title, count, open = false, testId, children }
 export function RecordDisclosure({ title, count, open = false, testId, children }: { title: string; count?: ReactNode; open?: boolean; testId?: string; children: ReactNode }) {
   return (
     <details className="group border-t py-group" open={open} data-testid={testId}>
-      <summary className="-mx-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md px-1 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
+      <summary className="-mx-1 flex min-h-7 cursor-pointer list-none items-center gap-2 rounded-md px-1 select-none focus-ring max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground transition-transform duration-(--duration-panel) ease-out group-open:rotate-90" />
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {count !== undefined && count !== null && <span className="text-sm text-muted-foreground tabular-nums">{count}</span>}
+        <h3 className="heading-subsection">{title}</h3>
+        {count !== undefined && count !== null && <Count value={count} />}
       </summary>
       <div className="stack-group mt-group">{children}</div>
     </details>

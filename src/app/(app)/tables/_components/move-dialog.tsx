@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
-import { Choice, Field } from "./form-bits";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { ItemSelect } from "./form-bits";
 
 export interface FolderNode {
   id: string;
@@ -61,8 +62,9 @@ export function MoveDialog({ action, folders, onSubmit, onClose }: { action: Mov
         if (problem) throw new Error(problem);
       }}
     >
-      <Field label="Destination" htmlFor="move-dest">
-        <Choice id="move-dest" items={items} value={dest} onChange={setDest} />
+      <Field>
+        <FieldLabel htmlFor="move-dest">Destination</FieldLabel>
+        <ItemSelect id="move-dest" items={items} value={dest} onChange={setDest} />
       </Field>
     </ConfirmDialog>
   );

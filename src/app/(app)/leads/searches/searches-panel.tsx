@@ -11,14 +11,17 @@ import { useOrgTimeZone } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { describeSearch, isActiveStatus, searchActions, searchNotice, searchStatusLabel, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
 import { callApi } from "@/app/_lib/api-client";
+import { countOf, formatCount } from "@/shared/format-number";
+import { humanizeToken } from "@/shared/humanize";
 import { cn } from "@/components/ui/utils";
 import { capacityReturnText } from "./capacity-return";
+import { SearchUrl } from "./search-url";
 import { SearchCapacityCard, type CapacityCardData } from "./search-capacity-card";
 import { useActiveRefresh } from "./use-active-refresh";
 
@@ -91,8 +94,8 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
         <ul className="grid gap-1 text-sm" aria-label="Sheet batches">
           {state.batches.map((batch) => (
             <li key={batch.id}>
-              <Link href={`/leads/searches/batches/${batch.id}`} className="inline-block py-1 underline-offset-4 hover:underline max-sm:py-3">
-                {batch.searches.toLocaleString("en-US")} {batch.searches === 1 ? "search" : "searches"} in batch {batch.name}
+              <Link href={`/leads/searches/batches/${batch.id}`} className="inline-block rounded-sm py-1 underline-offset-4 hover:underline focus-ring max-sm:py-3">
+                {countOf(batch.searches, "search", "searches")} in batch {batch.name}
               </Link>
             </li>
           ))}
@@ -124,14 +127,12 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
                     <p className="font-medium">{s.name}</p>
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Badge variant="outline">{s.variant === "sales_navigator" ? "Sales Navigator" : "LinkedIn"}</Badge>
-                      <span className="truncate" title={s.url}>
-                        {s.url.replace(/^https:\/\/www\.linkedin\.com/, "")}
-                      </span>
+                      <SearchUrl url={s.url} />
                     </p>
                     <SearchActions search={s} onAct={act} className="mt-2 sm:hidden" />
                   </TableCell>
                   <TableCell className="max-w-64 whitespace-normal">
-                    <StatusBadge status={searchStatusLabel(s.status)} />
+                    <StatusBadge status={s.status} label={humanizeToken(searchStatusLabel(s.status))} />
                     <p className="mt-1 text-xs text-muted-foreground">{progress.detail}</p>
                     {notice && (
                       <p role="alert" className={cn("mt-1 text-xs", s.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
@@ -140,18 +141,18 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {s.found.toLocaleString("en-US")} / {s.maxResults.toLocaleString("en-US")}
-                    {s.totalEstimate !== null && <p className="text-xs text-muted-foreground">About {s.totalEstimate.toLocaleString("en-US")} matches</p>}
+                    {formatCount(s.found)} / {formatCount(s.maxResults)}
+                    {s.totalEstimate !== null && <p className="text-xs text-muted-foreground">About {formatCount(s.totalEstimate)} matches</p>}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {s.imported > 0 ? (
-                      <Link href={`/leads?source=${encodeURIComponent(`linkedin_search:${s.id}`)}`} className="underline-offset-4 hover:underline" aria-label={`${s.imported.toLocaleString("en-US")} in Leads from ${s.name}, open the list`}>
-                        {s.imported.toLocaleString("en-US")}
+                      <Link href={`/leads?source=${encodeURIComponent(`linkedin_search:${s.id}`)}`} className="rounded-sm underline-offset-4 hover:underline focus-ring" aria-label={`${formatCount(s.imported)} in Leads from ${s.name}, open the list`}>
+                        {formatCount(s.imported)}
                       </Link>
                     ) : (
-                      s.imported.toLocaleString("en-US")
+                      formatCount(s.imported)
                     )}
-                    {s.found > s.imported && <p className="text-xs text-muted-foreground">{(s.found - s.imported).toLocaleString("en-US")} without a public profile</p>}
+                    {s.found > s.imported && <p className="text-xs text-muted-foreground">{formatCount(s.found - s.imported)} without a public profile</p>}
                   </TableCell>
                   <TableCell>
                     {s.targetCampaign ? (
@@ -192,7 +193,7 @@ function SearchActions({ search: s, onAct, className }: { search: Search; onAct:
   return (
     <div className={cn("flex flex-wrap gap-1", className)}>
       {searchActions(s.status).map(({ action, label }) => (
-        <Button key={action} size="sm" variant={action === "cancel" ? "ghost" : "outline"} className="max-sm:h-11 max-sm:px-4" onClick={() => onAct(s, action)}>
+        <Button key={action} size="sm" variant={action === "cancel" ? "ghost" : "outline"} touch onClick={() => onAct(s, action)}>
           {label}
         </Button>
       ))}
@@ -228,7 +229,7 @@ export function NewSearch({ campaigns, defaultMax, maxLimit }: { campaigns: Arra
 
   return (
     <>
-      <Button className="max-sm:h-11 max-sm:px-4" onClick={() => setOpen(true)}>
+      <Button touch onClick={() => setOpen(true)}>
         New search
       </Button>
       <ConfirmDialog
@@ -240,22 +241,23 @@ export function NewSearch({ campaigns, defaultMax, maxLimit }: { campaigns: Arra
         pendingLabel="Creating…"
         onConfirm={create}
       >
-        <form ref={form} onSubmit={(e) => e.preventDefault()} className="stack-group">
-          <div className="stack-field">
-            <Label htmlFor="search-name">Name</Label>
+        <form ref={form} onSubmit={(e) => e.preventDefault()}>
+          <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="search-name">Name</FieldLabel>
             <Input id="search-name" name="name" placeholder="CTOs at Berlin fintechs" required maxLength={120} autoFocus />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="search-url">Search URL</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="search-url">Search URL</FieldLabel>
             <Input id="search-url" name="url" type="url" placeholder="https://www.linkedin.com/search/results/people/?keywords=cto" required />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="search-max">Stop after</Label>
-            <Input id="search-max" name="maxResults" type="number" min={1} max={maxLimit} defaultValue={defaultMax} required />
-            <p className="text-xs text-muted-foreground">People, up to {maxLimit.toLocaleString("en-US")}. Each account reads a limited number per day, so large searches take days.</p>
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="search-campaign">Add to campaign</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="search-max">Stop after</FieldLabel>
+            <Input id="search-max" name="maxResults" type="number" min={1} max={maxLimit} defaultValue={defaultMax} required aria-describedby="search-max-help" />
+            <FieldDescription id="search-max-help">People, up to {formatCount(maxLimit)}. Each account reads a limited number per day, so large searches take days.</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="search-campaign">Add to campaign</FieldLabel>
             <Select items={items} value={campaign} onValueChange={(v) => v && setCampaign(v)}>
               <SelectTrigger id="search-campaign" className="w-full">
                 <SelectValue />
@@ -268,7 +270,8 @@ export function NewSearch({ campaigns, defaultMax, maxLimit }: { campaigns: Arra
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
+          </FieldGroup>
         </form>
       </ConfirmDialog>
     </>

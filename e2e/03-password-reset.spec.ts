@@ -45,7 +45,7 @@ test.describe("password reset", () => {
     await expect(alertWith(page, "Invalid email or password.")).toBeVisible();
     await page.getByLabel("Password").fill(USER.newPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page).toHaveURL(/\/leads$/);
+    await expect(page).toHaveURL(/\/actions$/);
   });
 
   test("an unknown address gets the same answer as a known one", async ({ page }) => {

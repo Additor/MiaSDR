@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { getReplyTypeCatalog } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Reply handling" };
 export default function ReplySettingsPage() {
   return (
     <div className="max-w-3xl">
-      <Suspense fallback={<Skeleton className="h-96 w-full max-w-3xl" />}>
+      <Suspense fallback={<PageSkeleton shape="form" />}>
         <Settings />
       </Suspense>
     </div>

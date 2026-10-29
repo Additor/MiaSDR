@@ -3,6 +3,7 @@ import { Time, useOrgTimeZone } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import type { SearchCapacityView } from "@/contexts/outreach/linkedin/application/linkedin-search-capacity";
 import { capacityNote, type CapacityTier } from "@/contexts/outreach/linkedin/domain/linkedin-search-capacity";
+import { formatCount } from "@/shared/format-number";
 import { capacityReturnText } from "./capacity-return";
 
 const TIER: Record<CapacityTier, string> = { green: "Plenty left", yellow: "Running low", red: "Almost out" };
@@ -36,7 +37,7 @@ export function SearchCapacityCard({ capacity }: { capacity: CapacityCardData })
   return (
     <section data-testid="search-capacity" className="stack-group">
       <div className="stack-field">
-        <h2 className="text-sm font-semibold">Search capacity today</h2>
+        <h2 className="heading-section">Search capacity today</h2>
         <p className="text-sm text-muted-foreground">
           Each account can read a limited number of people per day. {resetsAt ? `The count restarts at ${resetsAt}.` : null}
           {nextReturn ? (
@@ -63,9 +64,9 @@ export function SearchCapacityCard({ capacity }: { capacity: CapacityCardData })
               <span className="font-medium">{a.name}</span>
               <span className="flex flex-wrap items-center gap-2">
                 <span className="tabular-nums text-muted-foreground">
-                  {a.left.toLocaleString("en-US")} of {a.limit.toLocaleString("en-US")} left
+                  {formatCount(a.left)} of {formatCount(a.limit)} left
                 </span>
-                <Badge variant="outline">
+                <Badge variant="secondary">
                   <TierIcon tier={a.tier} blocked={a.left === 0 || restrictedUntil !== null} />
                   {TIER[a.tier]}
                 </Badge>

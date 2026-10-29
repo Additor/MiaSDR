@@ -9,9 +9,9 @@ export function AuthCardSkeleton({ fields = 2 }: { fields?: number }) {
         <Skeleton className="h-5 w-32" />
         <Skeleton className="h-4 w-56" />
       </CardHeader>
-      <CardContent className="grid gap-4 py-4">
+      <CardContent className="stack-group py-4">
         {Array.from({ length: fields }, (_, i) => (
-          <div key={i} className="grid gap-2">
+          <div key={i} className="stack-field">
             <Skeleton className="h-4 w-16" />
             <Skeleton className="h-9 w-full" />
           </div>

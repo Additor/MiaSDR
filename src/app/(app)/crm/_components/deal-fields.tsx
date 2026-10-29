@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { DatePicker } from "@/components/shell/date-picker";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES } from "@/contexts/deals/domain/money";
 import { callApi } from "@/app/_lib/api-client";
@@ -62,16 +62,16 @@ export function DealFields({
   const id = (name: string) => `${idPrefix}-${name}`;
 
   return (
-    <div className="grid gap-3">
+    <FieldGroup>
       {full && (
-        <div className="grid gap-1">
-          <Label htmlFor={id("title")}>Title</Label>
+        <Field>
+          <FieldLabel htmlFor={id("title")}>Title</FieldLabel>
           <Input id={id("title")} value={values.title} onChange={(e) => set("title", e.target.value)} maxLength={200} disabled={disabled} />
-        </div>
+        </Field>
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="grid gap-1">
-          <Label htmlFor={id("stage")}>Stage</Label>
+      <div className="grid gap-group sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor={id("stage")}>Stage</FieldLabel>
           <Select items={choices} value={values.stage} onValueChange={(v) => v && set("stage", v)} disabled={disabled || choices.length === 0}>
             <SelectTrigger id={id("stage")} className="w-full">
               <SelectValue placeholder={stages ? "Choose a stage" : "Loading stages…"} />
@@ -84,9 +84,9 @@ export function DealFields({
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="grid gap-1">
-          <Label htmlFor={id("owner")}>Owner</Label>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor={id("owner")}>Owner</FieldLabel>
           <Select items={ownerItems} value={values.owner} onValueChange={(v) => v && set("owner", v)} disabled={disabled}>
             <SelectTrigger id={id("owner")} className="w-full">
               <SelectValue />
@@ -99,23 +99,23 @@ export function DealFields({
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       </div>
       {chosen?.kind === "lost" && (
-        <div className="grid gap-1">
-          <Label htmlFor={id("lost-reason")}>Lost reason</Label>
+        <Field>
+          <FieldLabel htmlFor={id("lost-reason")}>Lost reason</FieldLabel>
           <Input id={id("lost-reason")} value={values.lostReason} onChange={(e) => set("lostReason", e.target.value)} maxLength={500} placeholder="Went with a competitor" disabled={disabled} />
-        </div>
+        </Field>
       )}
       {full && (
         <>
-          <div className="grid grid-cols-[1fr_6.5rem] gap-3">
-            <div className="grid gap-1">
-              <Label htmlFor={id("amount")}>Amount (optional)</Label>
+          <div className="grid grid-cols-[1fr_6.5rem] gap-group">
+            <Field>
+              <FieldLabel htmlFor={id("amount")}>Amount (optional)</FieldLabel>
               <Input id={id("amount")} inputMode="decimal" value={values.amount} onChange={(e) => set("amount", e.target.value)} maxLength={30} placeholder="12000" className="tabular-nums" disabled={disabled} />
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor={id("currency")}>Currency</Label>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={id("currency")}>Currency</FieldLabel>
               <Select items={CURRENCY_ITEMS} value={values.currency} onValueChange={(v) => v && set("currency", v)} disabled={disabled}>
                 <SelectTrigger id={id("currency")} className="w-full">
                   <SelectValue />
@@ -128,14 +128,14 @@ export function DealFields({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor={id("close")}>Expected close (optional)</Label>
+          <Field>
+            <FieldLabel htmlFor={id("close")}>Expected close (optional)</FieldLabel>
             <DatePicker id={id("close")} value={values.expectedCloseOn} onChange={(day) => set("expectedCloseOn", day)} clearable className="w-40" disabled={disabled} />
-          </div>
+          </Field>
         </>
       )}
-    </div>
+    </FieldGroup>
   );
 }

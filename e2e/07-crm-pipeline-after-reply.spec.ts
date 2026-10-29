@@ -42,7 +42,8 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
 
     // The run shows under Follow-ups in progress on the campaign and links to the conversation.
     await page.goto(`/campaigns/${campaignId}?tab=settings`);
-    await expect(settings.getByRole("heading", { name: "Follow-ups in progress (1)" })).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Follow-ups in progress" })).toBeVisible();
+    await expect(settings.getByTestId("after-reply-in-progress-count")).toHaveText("1");
     await settings.getByRole("link", { name: "Rae Costa" }).click();
     await expect(page).toHaveURL(/\/inbox\/[0-9a-f-]{36}$/);
 
@@ -138,7 +139,8 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
     await expect(settings.getByRole("radio", { name: /Off, hand to the Inbox/ })).toBeChecked();
     await expect(settings.getByRole("radio", { name: /AI drafts, you approve/ })).not.toBeChecked();
     await expect(settings.getByText("The AI still drafts a first reply for reply types set to Write one.", { exact: false })).toBeVisible();
-    await expect(settings.getByRole("heading", { name: "Follow-ups in progress (0)" })).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Follow-ups in progress" })).toBeVisible();
+    await expect(settings.getByTestId("after-reply-in-progress-count")).toHaveText("0");
     await expect(settings.getByText("No follow-ups are running for this campaign.")).toBeVisible();
 
     // The reply waits in the Inbox. Nothing follows up, so the thread shows no Follow-ups; the campaign's row says why.
@@ -216,7 +218,8 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
 
     await page.goto(`/campaigns/${campaignId}?tab=settings`);
     const settings = afterReplySettings(page);
-    await expect(settings.getByRole("heading", { name: "Follow-ups in progress (1)" })).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Follow-ups in progress" })).toBeVisible();
+    await expect(settings.getByTestId("after-reply-in-progress-count")).toHaveText("1");
 
     // Back to the handoff: Save opens the confirmation. Keep following up leaves the run alone.
     await settings.getByRole("radio", { name: /Off, hand to the Inbox/ }).check();
@@ -225,13 +228,15 @@ test.describe("reply handling on the thread and Follow-ups after a reply", () =>
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Keep following up" }).click();
     await expect(dialog).toBeHidden();
-    await expect(settings.getByRole("heading", { name: "Follow-ups in progress (1)" })).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Follow-ups in progress" })).toBeVisible();
+    await expect(settings.getByTestId("after-reply-in-progress-count")).toHaveText("1");
 
     // Confirming switches the setting off and stops the run.
     await settings.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("dialog", { name: "Stop 1 follow-up in progress?" }).getByRole("button", { name: "Switch off follow-ups" }).click();
     await expect(page.getByText(/Follow-ups switched off\. 1 stopped\./)).toBeVisible();
-    await expect(settings.getByRole("heading", { name: "Follow-ups in progress (0)" })).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Follow-ups in progress" })).toBeVisible();
+    await expect(settings.getByTestId("after-reply-in-progress-count")).toHaveText("0");
     await expect(settings.getByRole("radio", { name: /Off, hand to the Inbox/ })).toBeChecked();
   });
 });

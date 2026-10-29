@@ -54,7 +54,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Make contact:** turns a lead into a contact without a deal, from the lead page or from Add contact when the email or LinkedIn profile matches a lead.
 - **Assigned to:** the member who handles a conversation, shown on the thread and on a queue row. The first reply goes to the creator of the campaign the person is in. Anyone can take an unassigned conversation or hand one over, and choosing Nobody keeps it unassigned. A task has its own Assigned to.
 - **Owner:** the deal's field only (shown as Deal owner). A conversation has an assignee, not an owner.
-- **Actions:** the work to do now: replies to approve, AI picks to review, follow-ups due, next steps, problems and tasks. It opens on Mine.
+- **Actions:** the work to do now: replies to approve, AI picks to review, follow-ups due, next steps, problems and tasks. It is the home page and opens on Mine.
 - **Mine, Unassigned, Others:** the three scopes of Actions. Mine is what is assigned to you, Unassigned has no assignee, Others is assigned to someone else. Unconfirmed sends, unmatched senders and dead letters are Shared and sit outside the scopes.
 - **Waiting since:** the time of the last message from the person. Actions lists the longest wait first.
 - **Inbox:** the conversations, read or not. Work that needs a person lives in Actions.
@@ -81,7 +81,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - `docs/decisions.md` records scope and design choices.
 
 ## Brand Commitments
-Brand color is lavender `#b9aaff`, used so far for counts that wait for a person in the sidebar. The count is plain text in the brand hue with no capsule or fill: lavender on the dark sidebar, and the same hue mixed toward `#1e1724` on the light sidebar so it keeps 4.5:1 contrast. The collapsed rail marks the same state with a lavender dot. Everything else stays neutral grey; the existing UI is the design authority. No logo mark is chosen: the sidebar shows the text wordmark "MiaSDR".
+Brand color is lavender `#b9aaff`, used for counts of work that waits for a person: Actions, open setup steps and Settings areas an admin must look at. Inbox unread stays neutral. The count is plain text in the brand hue with no capsule or fill: lavender on the dark sidebar, and the same hue mixed toward `#1e1724` on the light sidebar so it keeps 4.5:1 contrast. The collapsed rail marks the same state with a lavender dot. Everything else stays neutral grey; the existing UI is the design authority. No logo mark is chosen: the sidebar shows the text wordmark "MiaSDR".
 
 ## Evidence on Hand
 README.md and `docs/` describe features, routes and decisions. The project has no testimonials, customer logos or benchmarks yet, so pages and copy cite none.

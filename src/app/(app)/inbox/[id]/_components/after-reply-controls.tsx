@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { InfoTip } from "@/components/shell/info-tip";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -127,7 +128,7 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
               <span>
                 {s.position}. {s.name}
               </span>
-              <Badge variant="outline" title={s.lastError ?? undefined}>
+              <Badge variant="outline">
                 {STEP_LABEL[s.status] ?? s.status}
               </Badge>
             </div>
@@ -146,36 +147,39 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
       </ol>
       <div className="flex flex-wrap gap-2">
         {run.status === "active" && (
-          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("pause")}>
+          <Button size="sm" variant="outline" touch disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("pause")}>
             Pause follow-ups
           </Button>
         )}
         {run.status === "paused" && (
-          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("resume")}>
+          <Button size="sm" variant="outline" touch disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("resume")}>
             Resume
           </Button>
         )}
         {live && (
-          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("skip")}>
+          <Button size="sm" variant="outline" touch disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => call("skip")}>
             Skip step
           </Button>
         )}
         {showRestart && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="max-sm:h-11"
-            disabled={off || !state.canRestart}
-            onClick={() => call("restart")}
-            title={disabledReason ?? restartHelp ?? "Starts the follow-ups again from the first step and replaces the current run"}
-            aria-describedby={locked ? "after-reply-disabled-reason" : restartHelp ? "restart-blocked-reason" : undefined}
-          >
-            Restart follow-ups
-          </Button>
+          // Why it is off sits in visible text below (the locked note or the blocked reason); what it does sits on an info mark.
+          <span className="inline-flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              touch
+              disabled={off || !state.canRestart}
+              onClick={() => call("restart")}
+              aria-describedby={locked ? "after-reply-disabled-reason" : restartHelp ? "restart-blocked-reason" : undefined}
+            >
+              Restart follow-ups
+            </Button>
+            {!locked && !restartHelp && <InfoTip label="About Restart follow-ups">Starts the follow-ups again from the first step and replaces the current run.</InfoTip>}
+          </span>
         )}
         {/* The destructive action comes last, and quiet until you confirm it. */}
         {live && !confirmStop && (
-          <Button size="sm" variant="outline" className="max-sm:h-11" disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => setConfirmStop(true)}>
+          <Button size="sm" variant="outline" touch disabled={off} aria-describedby={locked ? "after-reply-disabled-reason" : undefined} onClick={() => setConfirmStop(true)}>
             Stop follow-ups
           </Button>
         )}
@@ -184,10 +188,10 @@ export function AfterReplyControls({ recordId, state, disabledReason = null }: {
         <div className="grid gap-2" data-testid="stop-follow-ups">
           <p>The remaining steps are cancelled and drafts that wait for review are withdrawn. Stopped follow-ups cannot resume; Restart follow-ups starts them again from the first step.</p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="destructive" className="max-sm:h-11" disabled={stopping} onClick={() => void stopRun()}>
+            <Button size="sm" variant="destructive" touch disabled={stopping} onClick={() => void stopRun()}>
               {stopping ? "Stopping…" : "Confirm stop"}
             </Button>
-            <Button size="sm" variant="ghost" className="max-sm:h-11" disabled={stopping} onClick={() => setConfirmStop(false)}>
+            <Button size="sm" variant="ghost" touch disabled={stopping} onClick={() => setConfirmStop(false)}>
               Keep following up
             </Button>
           </div>

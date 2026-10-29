@@ -56,7 +56,7 @@ export function ConnectProviders({ entries, providers, onChanged, lead }: { entr
     <section aria-label="Connect a provider" className="grid gap-2">
       <p className="text-sm">{lead}</p>
       <p className="text-xs text-muted-foreground">Each provider uses your own account and key. MiaSDR checks a key with the vendor before it saves it, and never shows it again.</p>
-      <ul className="grid gap-2">
+      <ul className="divide-y">
         {entries.map((entry) => (
           <li key={entry.key}>
             <ProviderRow entry={entry} provider={providers.find((p) => p.key === entry.key)} onChanged={onChanged} />

@@ -2,9 +2,10 @@
 
 import { useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { countOf } from "@/shared/format-number";
 import { parseRowCount, planSubmit } from "../_lib/edit/add-rows";
-import { ErrorText, Field } from "./form-bits";
 
 interface Props {
   /** Adds the rows and returns an error message, or null when it worked. */
@@ -42,17 +43,16 @@ export function AddRowsDialog({ onAdd, onClose }: Props) {
       onOpenChange={(open) => !open && onClose()}
       title="Add rows"
       description="Blank rows are added at the end of the table, up to 1,000 at a time."
-      confirmLabel={parsed.ok ? `Add ${parsed.count.toLocaleString("en-US")} ${parsed.count === 1 ? "row" : "rows"}` : "Add rows"}
+      confirmLabel={parsed.ok ? `Add ${countOf(parsed.count, "row")}` : "Add rows"}
       pendingLabel="Adding…"
       confirmDisabled={!parsed.ok}
       onConfirm={submit}
     >
-      <div className="grid gap-3">
-        <Field label="Number of rows" htmlFor="add-rows-count">
-          <Input id="add-rows-count" inputMode="numeric" value={text} onChange={(e) => setText(e.target.value)} autoFocus onFocus={(e) => e.currentTarget.select()} aria-invalid={!parsed.ok} />
-        </Field>
-        <ErrorText>{parsed.ok ? null : parsed.error}</ErrorText>
-      </div>
+      <Field>
+        <FieldLabel htmlFor="add-rows-count">Number of rows</FieldLabel>
+        <Input id="add-rows-count" inputMode="numeric" value={text} onChange={(e) => setText(e.target.value)} autoFocus onFocus={(e) => e.currentTarget.select()} aria-invalid={!parsed.ok} />
+        <FieldError>{parsed.ok ? null : parsed.error}</FieldError>
+      </Field>
     </ConfirmDialog>
   );
 }

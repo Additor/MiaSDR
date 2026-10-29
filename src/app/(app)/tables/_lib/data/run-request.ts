@@ -1,5 +1,6 @@
 import { DEFAULT_MAX_ROWS, HARD_MAX_ROWS } from "@/contexts/grid/enrichment/domain/enrichment-run-limits";
 import { RUNNER_TYPES_WITH_RUN } from "../view/format";
+import { countOf, formatCount } from "@/shared/format-number";
 
 /** The row count the run dialog and the column menu start from for "first N rows". */
 export const DEFAULT_FIRST_N = 10;
@@ -59,13 +60,13 @@ export interface RunForm {
 /** Builds the request body for POST /run, or a message for the first field that cannot be sent. */
 export function buildRunBody(form: RunForm): { body: Record<string, unknown> } | { error: string } {
   const maxRows = form.maxRows.trim() === "" ? DEFAULT_MAX_ROWS : wholeNumber(form.maxRows, 1, RUN_MAX_ROWS);
-  if (maxRows === null) return { error: `Row limit must be a whole number from 1 to ${RUN_MAX_ROWS.toLocaleString("en-US")}.` };
+  if (maxRows === null) return { error: `Row limit must be a whole number from 1 to ${formatCount(RUN_MAX_ROWS)}.` };
   const body: Record<string, unknown> = { ...(form.columnKey ? { columnKey: form.columnKey } : {}), onlyEmpty: form.onlyEmpty, maxRows };
   if (form.scope === "selected") body.rowIds = [...form.selectedRowIds];
   if (form.scope === "first") {
     const n = wholeNumber(form.firstN, 1, RUN_MAX_ROWS);
-    if (n === null) return { error: `Enter a whole number of rows from 1 to ${RUN_MAX_ROWS.toLocaleString("en-US")}.` };
-    if (n > maxRows) return { error: `First ${n.toLocaleString("en-US")} rows is more than the row limit of ${maxRows.toLocaleString("en-US")}. Lower the number or raise the row limit.` };
+    if (n === null) return { error: `Enter a whole number of rows from 1 to ${formatCount(RUN_MAX_ROWS)}.` };
+    if (n > maxRows) return { error: `First ${formatCount(n)} rows is more than the row limit of ${formatCount(maxRows)}. Lower the number or raise the row limit.` };
     body.firstN = n;
   }
   if (form.maxCost.trim() !== "") {
@@ -87,7 +88,7 @@ export function dollarsToCents(text: string): number | null {
 /** A cents amount as a dollar field shows it: 50 as "0.5", 125 as "1.25". */
 export const centsToDollarsText = (cents: number) => String(Number((cents / 100).toFixed(5)));
 
-const count = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+const count = (n: number, one: string, many: string) => countOf(n, one, many);
 
 /** The worst case of a run, from POST /run, real or dry. */
 export interface RunEstimate {
@@ -105,7 +106,7 @@ export interface RunEstimate {
 }
 
 export const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-export const credits = (n: number) => `${Number(n.toFixed(2)).toLocaleString("en-US")} ${n === 1 ? "credit" : "credits"}`;
+export const credits = (n: number) => `${formatCount(Number(n.toFixed(2)))} ${n === 1 ? "credit" : "credits"}`;
 
 /**
  * "4 rows · up to 8 calls · 4 AI calls · up to 6 credits · up to $0.08". Credits lead, because vendors bill in credits;

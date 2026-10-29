@@ -6,6 +6,7 @@ import { Time } from "@/components/shell/time";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { hasActiveSearch, searchStatusLabel, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
+import { formatCount } from "@/shared/format-number";
 import { useActiveRefresh } from "../use-active-refresh";
 
 interface Batch {
@@ -28,7 +29,7 @@ export function statusSummary(statuses: Record<string, number>): string {
   const order = ["running", "queued", "paused", "paused_limit", "failed", "completed", "cancelled"];
   return order
     .filter((s) => statuses[s])
-    .map((s) => `${statuses[s].toLocaleString("en-US")} ${searchStatusLabel(s as SearchStatus)}`)
+    .map((s) => `${formatCount(statuses[s])} ${searchStatusLabel(s as SearchStatus)}`)
     .join(", ");
 }
 
@@ -40,7 +41,7 @@ export function BatchesPanel({ state }: { state: State }) {
       {state.batches.length === 0 ? (
         <EmptyState
           title="No batches yet"
-          description={`Upload a CSV or XLSX file with one LinkedIn or Sales Navigator people search URL per row (up to ${state.maxRows.toLocaleString("en-US")}). The upload dialog has a template. MiaSDR reads the searches in order within each account's daily limit.`}
+          description={`Upload a CSV or XLSX file with one LinkedIn or Sales Navigator people search URL per row (up to ${formatCount(state.maxRows)}). The upload dialog has a template. MiaSDR reads the searches in order within each account's daily limit.`}
         />
       ) : (
         <ScrollableTable>
@@ -58,7 +59,7 @@ export function BatchesPanel({ state }: { state: State }) {
             {state.batches.map((b) => (
               <TableRow key={b.id}>
                 <TableCell>
-                  <Link href={`/leads/searches/batches/${b.id}`} className="inline-block py-1 font-medium underline-offset-4 hover:underline max-sm:py-3">
+                  <Link href={`/leads/searches/batches/${b.id}`} className="inline-block rounded-sm py-1 font-medium underline-offset-4 hover:underline focus-ring max-sm:py-3">
                     {b.name}
                   </Link>
                   <p className="text-xs text-muted-foreground">
@@ -66,11 +67,11 @@ export function BatchesPanel({ state }: { state: State }) {
                   </p>
                 </TableCell>
                 <TableCell className="whitespace-normal">
-                  {b.queries.toLocaleString("en-US")}
+                  {formatCount(b.queries)}
                   <p className="text-xs text-muted-foreground">{statusSummary(b.statuses)}</p>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{b.found.toLocaleString("en-US")}</TableCell>
-                <TableCell className="text-right tabular-nums">{b.imported.toLocaleString("en-US")}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(b.found)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(b.imported)}</TableCell>
                 <TableCell>{b.campaign ? b.campaign.name : <span className="text-muted-foreground">Leads only</span>}</TableCell>
               </TableRow>
             ))}

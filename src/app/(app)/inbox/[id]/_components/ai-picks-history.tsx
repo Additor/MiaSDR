@@ -118,13 +118,13 @@ export function AiPicksHistory({ entries, currentConversationId }: { entries: En
                     </Link>
                   )}
                   {canLookRight && (
-                    <Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} onClick={() => looksRight(e.id)}>
+                    <Button size="xs" variant="outline" touch disabled={busy !== null} onClick={() => looksRight(e.id)}>
                       Looks right
                     </Button>
                   )}
                   {e.canUndo && (
                     <Tooltip>
-                      <TooltipTrigger delay={150} render={<Button size="xs" variant="outline" className="max-sm:h-11" disabled={busy !== null} aria-describedby="undo-tip" onClick={() => undo(e.id)} />}>
+                      <TooltipTrigger delay={150} render={<Button size="xs" variant="outline" touch disabled={busy !== null} aria-describedby="undo-tip" onClick={() => undo(e.id)} />}>
                         Undo
                       </TooltipTrigger>
                       <TooltipContent className="block max-w-72 text-left leading-relaxed">{UNDO_TIP}</TooltipContent>

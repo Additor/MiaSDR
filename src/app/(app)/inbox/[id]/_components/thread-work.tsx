@@ -54,7 +54,7 @@ export async function ThreadFollowUps({ actor, recordId, personId }: { actor: Ac
   if (!afterReply.run && (isContact || afterReply.campaign?.mode !== "ai_drafts")) return null;
   return (
     <section aria-labelledby="follow-ups" className="stack-group" data-testid="thread-after-reply">
-      <h2 id="follow-ups" className="text-sm font-semibold">
+      <h2 id="follow-ups" className="heading-section">
         Follow-ups
       </h2>
       <AfterReplyControls recordId={recordId} state={toJson(afterReply)} disabledReason={isContact ? CONTACT_FOLLOW_UPS : null} />
@@ -77,7 +77,7 @@ export async function ThreadHistory({ actor, conversationId, recordId, personId 
 
   return (
     <section aria-labelledby="thread-history" className="grid" data-testid="thread-history">
-      <h2 id="thread-history" className="pb-group text-sm font-semibold">
+      <h2 id="thread-history" className="pb-group heading-section">
         History
       </h2>
       {picks.length > 0 && (

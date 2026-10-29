@@ -142,7 +142,7 @@ test.describe("lead list status columns, chips and column set", () => {
     await expect(page.locator("thead").getByText("Title", { exact: true })).toHaveCount(0);
     await expect(page.locator("thead").getByText("Added", { exact: true })).toHaveCount(0);
     await expect(page.locator("thead").getByText("Status", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Columns (2 hidden)" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Columns 2 hidden" })).toBeVisible();
 
     // Narrow screen: the status line sits under the name and the page does not scroll sideways.
     await page.setViewportSize({ width: 390, height: 844 });

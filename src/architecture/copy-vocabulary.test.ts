@@ -56,7 +56,7 @@ function scannedFiles(): string[] {
 // Which strings count -------------------------------------------------------------------------------------
 
 /** JSX attributes whose values are identifiers, routes or styling, never text a person reads. */
-const CODE_ATTRIBUTES = new Set(["data-testid", "href", "className", "key", "id", "name", "type", "variant", "htmlFor", "value", "size", "side", "align", "method", "rel", "target", "role", "form", "autoComplete", "inputMode"]);
+const CODE_ATTRIBUTES = new Set(["data-testid", "href", "className", "key", "id", "name", "type", "variant", "htmlFor", "value", "size", "side", "align", "method", "rel", "target", "role", "form", "autoComplete", "inputMode", "shape"]);
 /** Calls whose string arguments are SQL or database plumbing. */
 const DB_CALLEES = /^(sql|sql\.raw|sql\.identifier|db\.[\w.]+|tx\.[\w.]+)$/;
 /** A route, an API path or a URL with no spaces. */

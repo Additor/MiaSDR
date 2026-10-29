@@ -2,6 +2,7 @@
 
 import { Columns3Icon } from "lucide-react";
 import { createContext, useContext, useState, type ReactNode } from "react";
+import { Count } from "@/components/shell/section";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { columnsCookie, COLUMN_LABELS, OPTIONAL_COLUMNS, toggleColumn, type OptionalColumn } from "../_lib/list-columns";
@@ -33,8 +34,14 @@ export function ColumnsMenu() {
   const hidden = OPTIONAL_COLUMNS.length - columns.length;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="max-sm:h-11 max-sm:px-4" />}>
-        <Columns3Icon aria-hidden /> Columns{hidden > 0 ? ` (${hidden} hidden)` : ""}
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" touch />}>
+        <Columns3Icon aria-hidden /> Columns
+        {hidden > 0 && (
+          <>
+            {" "}
+            <Count value={`${hidden} hidden`} className="text-xs" />
+          </>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end">
         <DropdownMenuGroup>

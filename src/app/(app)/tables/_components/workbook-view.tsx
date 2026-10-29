@@ -7,11 +7,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { NameInput } from "@/components/shell/editable-title";
+import { ErrorState } from "@/components/shell/error-state";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { ScrollCue } from "@/components/shell/scroll-cue";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/components/ui/utils";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { MoveDialog, type FolderNode } from "./move-dialog";
@@ -167,9 +169,8 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
     return (
       <>
         <PageHeader title="Table" />
-        <div className="page stack-group">
-          <Skeleton className="h-9 w-64" />
-          <Skeleton className="h-[60svh] w-full" />
+        <div className="page">
+          <PageSkeleton shape="table" />
         </div>
       </>
     );
@@ -178,16 +179,22 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
     return (
       <>
         <PageHeader title="Table" />
-        <div className="page stack-group" role="alert">
-          <p className="text-sm text-destructive">{error ?? "Could not load the workbook."}</p>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => void load()}>
-              Try again
-            </Button>
-            <Link href="/tables" className={buttonVariants({ variant: "outline" })}>
-              Back to tables
-            </Link>
-          </div>
+        <div className="page">
+          <ErrorState
+            inline
+            title="The workbook did not load"
+            reason={error ?? "Could not load the workbook."}
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" touch onClick={() => void load()}>
+                  Try again
+                </Button>
+                <Link href="/tables" className={buttonVariants({ variant: "outline", touch: true })}>
+                  Back to tables
+                </Link>
+              </div>
+            }
+          />
         </div>
       </>
     );
@@ -201,7 +208,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
         rename={{ label: "Workbook name", onSave: renameWorkbook }}
         actions={
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Workbook actions" className="max-sm:size-11" />}>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" touch aria-label="Workbook actions" />}>
               <MoreHorizontalIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
@@ -223,9 +230,14 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
           aria-label="Tables"
           className="items-end gap-1"
           after={
-            <Button variant="ghost" size="icon-sm" aria-label="New table" title="New table" className="mb-0.5 ml-1 shrink-0 max-sm:size-11" onClick={() => void createTable()} disabled={creating}>
-              <PlusIcon />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={<Button variant="ghost" size="icon-sm" touch aria-label="New table" className="mb-0.5 ml-1 shrink-0" onClick={() => void createTable()} disabled={creating} />}
+              >
+                <PlusIcon />
+              </TooltipTrigger>
+              <TooltipContent>New table</TooltipContent>
+            </Tooltip>
           }
         >
           {tabs.map((tab) => {
@@ -274,8 +286,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                     aria-selected={selected}
                     aria-controls="table-panel"
                     tabIndex={selected ? 0 : -1}
-                    title="Double-click or press F2 to rename"
-                    className="rounded-t-md px-3 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:py-3"
+                    className="rounded-t-md px-3 py-1.5 focus-ring max-sm:py-3"
                     onClick={() => select(tab.id)}
                     onDoubleClick={() => setEditingTab(tab.id)}
                     onKeyDown={(e) => {
@@ -306,7 +317,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                     aria-label={`Actions for ${tab.name}`}
                     // Shown on the open tab; on the others it waits for hover or focus, and a touch screen offers it on the open tab only.
                     className={cn(
-                      "mr-1 flex items-center justify-center rounded p-0.5 text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:size-11",
+                      "mr-1 flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-ring max-sm:size-11",
                       editing && "hidden",
                       !selected && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:hidden",
                     )}
@@ -329,7 +340,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                     <DropdownMenuItem onClick={() => void duplicate(tab.id)}>
                       <CopyIcon /> Duplicate
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled={tabs.length === 1} title={tabs.length === 1 ? "A workbook keeps at least one table, so its only table cannot move." : undefined} onClick={() => setAction({ kind: "moveTable", id: tab.id, name: tab.name })}>
+                    <DropdownMenuItem disabled={tabs.length === 1} onClick={() => setAction({ kind: "moveTable", id: tab.id, name: tab.name })}>
                       <ArrowRightLeftIcon /> Move to workbook
                       {tabs.length === 1 && <span className="ml-auto text-xs text-muted-foreground">Only table</span>}
                     </DropdownMenuItem>
@@ -340,7 +351,7 @@ export function WorkbookView({ workbookId }: { workbookId: string }) {
                       Move right
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" disabled={tabs.length === 1} title={tabs.length === 1 ? "A workbook keeps at least one table, so its only table cannot be deleted." : undefined} onClick={() => setAction({ kind: "deleteTable", id: tab.id, name: tab.name })}>
+                    <DropdownMenuItem variant="destructive" disabled={tabs.length === 1} onClick={() => setAction({ kind: "deleteTable", id: tab.id, name: tab.name })}>
                       <Trash2Icon /> Delete
                       {tabs.length === 1 && <span className="ml-auto text-xs text-muted-foreground">Only table</span>}
                     </DropdownMenuItem>

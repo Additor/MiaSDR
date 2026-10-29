@@ -4,11 +4,11 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
+import { ListSkeleton } from "@/components/shell/list-skeleton";
 import { PageHeader } from "@/components/shell/page-header";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { readPersonalThread } from "@/contexts/outreach/linkedin/application/personal-thread";
 import { personalThreadDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
@@ -22,7 +22,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function PersonalThreadPage({ params }: PageProps<"/campaigns/[id]/leads/[enrollmentId]/thread">) {
   return (
-    <Suspense fallback={<div className="page"><Skeleton className="h-64 w-full" /></div>}>
+    <Suspense
+      fallback={
+        <div className="page">
+          <ListSkeleton rows={3} toolbar={false} />
+        </div>
+      }
+    >
       <Thread params={params} />
     </Suspense>
   );
@@ -44,7 +50,7 @@ async function Thread({ params }: { params: PageProps<"/campaigns/[id]/leads/[en
           <PageHeader title="Private reply" />
           <div className="page stack-group">
             <p className="text-sm text-muted-foreground">Only an owner, an admin or the campaign creator can read this.</p>
-            <Link href={`/campaigns/${id}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            <Link href={`/campaigns/${id}`} className={cn(buttonVariants({ variant: "outline", size: "sm", touch: true }), "w-fit")}>
               Back to the campaign
             </Link>
           </div>
@@ -61,7 +67,7 @@ async function Thread({ params }: { params: PageProps<"/campaigns/[id]/leads/[en
       />
       <div className="page stack-group">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">Personal</Badge>
+          <Badge variant="outline">Personal</Badge>
           <p className="text-sm text-muted-foreground">Replies to {thread.campaignName}. They stay out of the Inbox and get no AI draft.</p>
         </div>
         {thread.messages.length === 0 ? (

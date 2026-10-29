@@ -4,11 +4,15 @@ import { CircleHelpIcon, CircleXIcon, MailIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { InfoTip } from "@/components/shell/info-tip";
+import { SectionHead } from "@/components/shell/section";
 import { Time } from "@/components/shell/time";
+import { countOf, formatCount } from "@/shared/format-number";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
@@ -73,6 +77,29 @@ function ChannelMark({ channel }: { channel: string }) {
 const doneFor = (done: string, name: string | null) => `${done.replace(/\.$/, "")}: ${name ?? "the sender"}.`;
 
 const ACCEPTED = "AI pick accepted.";
+
+/** How long a settled row stays as a one-line remnant, unless a later refresh replaces the list first. */
+const SETTLED_MS = 6_000;
+
+/** A row a person settled in place: one muted line where it stood, so the outcome shows and not only the row leaving. */
+interface Settled {
+  recordId: string;
+  /** Where the row stood, so the remnant stays at that spot while the rows around it change. */
+  index: number;
+  text: string;
+  /** The thread, when the person has a public conversation. */
+  href: string | null;
+  /** True once a server refresh replaced the list under it; the next one takes it away. */
+  survived: boolean;
+}
+
+/** What a remnant says: "Accepted Not now for Eli Moss." or "Marked as looked at: Eli Moss." */
+function settledText(item: QueueItemView, ambiguous: ReadonlySet<string>): string {
+  const c = item.classification;
+  const name = item.personName ?? "the sender";
+  if (c?.kind !== "held") return doneFor(LOOKS_RIGHT_DONE, item.personName);
+  return `Accepted ${typeLabel(c.name, c.groupKey, ambiguous) ?? "the AI pick"} for ${name}.`;
+}
 
 const NOTICE_EVENT = "miasdr:actions-notice";
 
@@ -196,10 +223,13 @@ export function QueueGroup({
   // from it. Fresh rows from the server replace the list; a refresh that brings the same rows keeps the pages loaded since.
   const serverRows = JSON.stringify([initialItems, initialCursor]);
   const [seenRows, setSeenRows] = useState(serverRows);
+  // Remnants of settled rows stay through the refresh their own step asked for, and leave with the one after it.
+  const [settled, setSettled] = useState<Settled[]>([]);
   if (serverRows !== seenRows) {
     setSeenRows(serverRows);
     setItems(initialItems);
     setCursor(initialCursor);
+    setSettled((current) => current.filter((r) => !r.survived).map((r) => ({ ...r, survived: true })));
   }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,6 +237,14 @@ export function QueueGroup({
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const list = useRef<HTMLUListElement>(null);
+  // The rows the bulk step will mark, kept as they were when its confirm opened, so the list cannot change under the person.
+  const [bulk, setBulk] = useState<{ open: boolean; rows: QueueItemView[] }>({ open: false, rows: [] });
+  const timers = useRef<number[]>([]);
+  useEffect(() => {
+    // The array only grows in place, so the one read here holds every timer started later too.
+    const pending = timers.current;
+    return () => pending.forEach((t) => window.clearTimeout(t));
+  }, []);
   // After Load more the button can vanish with the last page, so focus moves to the first new row instead of the body.
   const focusAfterLoad = useRef<string | null>(null);
 
@@ -256,8 +294,19 @@ export function QueueGroup({
     const ok = await settle(item);
     setRowBusy(null);
     if (ok) {
+      const index = items.findIndex((i) => i.recordId === item.recordId);
+      const text = settledText(item, ambiguous);
+      // The last row of a list empties it, and the refresh below takes the list off the page with its remnant. The outcome
+      // then lands off screen, so a toast says it too (DESIGN.md Feedback).
+      const last = items.length === 1 && cursor === null;
       removeRows([item.recordId]);
+      setSettled((current) => [
+        ...current.filter((r) => r.recordId !== item.recordId),
+        { recordId: item.recordId, index, text, href: item.conversationId ? rowHref(item, query) : null, survived: false },
+      ]);
+      timers.current.push(window.setTimeout(() => setSettled((current) => current.filter((r) => r.recordId !== item.recordId)), SETTLED_MS));
       announce(doneFor(item.classification?.kind === "held" ? ACCEPTED : LOOKS_RIGHT_DONE, item.personName));
+      if (last) toast.success(text);
     }
     // Totals and the group the record moves to are the server's to say.
     router.refresh();
@@ -266,18 +315,21 @@ export function QueueGroup({
   /** Applied picks the AI was at least 90 percent sure of. A held pick or a stop request needs a person's eyes, so it is never in here. */
   const confident = group === "classification" ? items.filter((i) => i.classification?.kind === "looks_right" && (i.classification.confidence ?? 0) >= 0.9) : [];
 
+  /** Runs from the confirm step, which lists the rows it marks, so a person sees what N picks they sign off on. */
   async function markConfident() {
     if (rowBusy) return;
     setRowBusy("bulk");
     const done: string[] = [];
-    for (const item of confident) {
+    for (const item of bulk.rows) {
       if (!(await settle(item))) break;
       done.push(item.recordId);
     }
     setRowBusy(null);
     if (done.length > 0) {
       removeRows(done);
-      announce(`Marked ${done.length} ${done.length === 1 ? "AI pick" : "AI picks"} as looked at.`);
+      const text = `Marked ${countOf(done.length, "AI pick")} as looked at.`;
+      announce(text);
+      toast.success(text);
     }
     router.refresh();
   }
@@ -306,29 +358,67 @@ export function QueueGroup({
     setCursor(page.nextCursor);
   }
 
-  // The same frame as the lists below the queue (actions/page.tsx Section): heading and count, help on an info mark where
-  // the name needs it, then one bordered list with hairlines between the items. The count stays lavender: it is work that waits for a person.
+  // Real rows with the remnants of settled ones back at the spots they left.
+  const rows: Array<{ item: QueueItemView } | { remnant: Settled }> = items.map((item) => ({ item }));
+  for (const remnant of [...settled].sort((a, b) => a.index - b.index)) rows.splice(Math.min(Math.max(remnant.index, 0), rows.length), 0, { remnant });
+
+  // The same frame as the lists below the queue (actions/page.tsx): the shell's section head with the lavender count (work
+  // that waits for a person), help on an info mark where the name needs it, then one bordered list with hairlines between
+  // the items. The head wraps, so the bulk button drops under the title on a phone instead of widening the page.
   return (
-    <section id={`group-${group}`} aria-label={title} data-slot="queue-group" data-group={group} className="grid scroll-mt-4 gap-2">
-      {/* The row wraps, so a long bulk button drops under the title on a phone instead of widening the page. */}
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="text-xs font-semibold text-sidebar-count tabular-nums" data-testid={`queue-total-${group}`}>
-          {total}
-        </span>
-        {description && (
-          <span className="self-center">
-            <InfoTip label={`About ${title}`}>{description}</InfoTip>
-          </span>
-        )}
-        {confident.length >= 2 && (
-          <Button variant="ghost" size="xs" className="ml-auto max-sm:h-11" disabled={rowBusy !== null} onClick={markConfident} data-testid="mark-confident">
-            {rowBusy === "bulk" ? "Saving…" : `Looks right: ${confident.length} sure picks`}
-          </Button>
-        )}
-      </div>
+    <section id={`group-${group}`} aria-label={title} data-slot="queue-group" data-group={group} className="stack-group min-w-0 scroll-mt-4">
+      <SectionHead
+        title={title}
+        count={formatCount(total)}
+        countTone="waiting"
+        countTestId={`queue-total-${group}`}
+        help={description ? <InfoTip label={`About ${title}`}>{description}</InfoTip> : undefined}
+        action={
+          confident.length >= 2 ? (
+            <Button variant="outline" size="sm" touch disabled={rowBusy !== null} onClick={() => setBulk({ open: true, rows: confident })} data-testid="mark-confident">
+              {`Looks right: ${confident.length} sure picks`}
+            </Button>
+          ) : undefined
+        }
+      />
+      {group === "classification" && (
+        <ConfirmDialog
+          open={bulk.open}
+          onOpenChange={(open) => setBulk((current) => ({ ...current, open }))}
+          title="Mark the sure picks as looked at"
+          description="The AI applied these types at 90% or more. Marking them as looked at keeps each type and takes the rows off the queue."
+          confirmLabel={`Mark ${formatCount(bulk.rows.length)} as looked at`}
+          cancelLabel="Keep for review"
+          pendingLabel="Marking…"
+          onConfirm={markConfident}
+        >
+          <ul className="grid gap-1 text-sm" data-testid="mark-confident-list">
+            {bulk.rows.map((item) => (
+              <li key={item.recordId}>
+                <span className="font-medium">{item.personName ?? "Unknown sender"}</span>
+                <span className="text-muted-foreground">{`, ${typeLabel(item.classification?.name ?? null, item.classification?.groupKey ?? null, ambiguous) ?? "a type"}`}</span>
+              </li>
+            ))}
+          </ul>
+        </ConfirmDialog>
+      )}
       <ul ref={list} className="divide-y rounded-lg border text-sm">
-        {items.map((item) => {
+        {rows.map((entry) => {
+          if ("remnant" in entry) {
+            const r = entry.remnant;
+            // Not a list row: j and k skip it, and its link sits in the tab order like any other link.
+            return (
+              <li key={`settled-${r.recordId}`} className="flex min-h-11 items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground sm:min-h-0" data-testid="queue-settled">
+                <span className="min-w-0 truncate">{r.text}</span>
+                {r.href && (
+                  <Link href={r.href} className="shrink-0 font-medium text-foreground underline-offset-4 hover:underline focus-ring max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+                    Open conversation
+                  </Link>
+                )}
+              </li>
+            );
+          }
+          const item = entry.item;
           const thread = rowHref(item, query);
           const { detail, action } = describe(item, ambiguous);
           const wait = waitingLabel(item.waitingSince, now);
@@ -359,9 +449,7 @@ export function QueueGroup({
                     </span>
                   )}
                 </div>
-                <time dateTime={item.waitingSince.at} className="shrink-0 text-xs text-muted-foreground tabular-nums" data-testid="queue-waiting">
-                  {wait}
-                </time>
+                <Time value={item.waitingSince.at} label={wait} className="shrink-0 text-xs text-muted-foreground tabular-nums" testId="queue-waiting" />
               </div>
               {item.snippet && <p className="truncate text-muted-foreground">{item.snippet}</p>}
               <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -374,7 +462,7 @@ export function QueueGroup({
                   // Above the stretched link. It opens the thread with Stop contacting open; nothing is accepted here.
                   <Link
                     href={stop}
-                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "relative z-10 shrink-0 max-sm:h-11 max-sm:px-4")}
+                    className={cn(buttonVariants({ variant: "outline", size: "sm", touch: true }), "relative z-10 shrink-0")}
                     aria-label={`${action}: ${item.personName ?? "the sender"}`}
                     data-testid="review-stop"
                   >
@@ -385,7 +473,8 @@ export function QueueGroup({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="relative z-10 shrink-0 max-sm:h-11 max-sm:px-4"
+                    touch
+                    className="relative z-10 shrink-0"
                     disabled={rowBusy !== null}
                     onClick={() => decide(item)}
                     aria-label={`${action}: ${item.personName ?? "the sender"}`}
@@ -409,10 +498,10 @@ export function QueueGroup({
       {/* The count matters while more can load; with everything shown it stays for screen readers only. */}
       <div className={cn("flex items-center justify-between gap-2 text-xs text-muted-foreground", !cursor && "sr-only")}>
         <span role="status" aria-live="polite">
-          Showing {items.length} of {total}
+          Showing {formatCount(items.length)} of {formatCount(total)}
         </span>
         {cursor && (
-          <Button variant="outline" size="sm" className="max-sm:h-11 max-sm:px-4" onClick={loadMore} disabled={busy}>
+          <Button variant="outline" size="sm" touch onClick={loadMore} disabled={busy}>
             {busy ? "Loading…" : "Load more"}
           </Button>
         )}

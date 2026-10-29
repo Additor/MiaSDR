@@ -112,18 +112,13 @@ export function KnowledgePanel({ docs, canManage }: { docs: Doc[]; canManage: bo
             {docs.map((doc) => (
               <li key={doc.id} data-testid="knowledge-doc" className={cn(RULED_ROW, "flex flex-wrap items-start gap-x-3 gap-y-2")}>
                 <div className="stack-field min-w-0 flex-1">
-                  <h3 className="text-sm font-medium">{doc.title}</h3>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="secondary">{kindLabel(doc.kind)}</Badge>
-                    {doc.alwaysInclude && <Badge variant="outline">Always included</Badge>}
-                    {!doc.active && <Badge variant="outline">Archived</Badge>}
-                    {doc.tags.map((tag) => (
-                      <Badge key={tag} variant="outline">
-                        {tag}
-                      </Badge>
-                    ))}
-                    <Badge variant="outline">v{doc.version}</Badge>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <h3 className="heading-item">{doc.title}</h3>
+                    {doc.alwaysInclude && <Badge variant="secondary">Always included</Badge>}
+                    {!doc.active && <Badge variant="secondary">Archived</Badge>}
                   </div>
+                  {/* Descriptors read as one muted line; badges stay for the states above (DESIGN.md State, one form per state). */}
+                  <p className="text-xs text-muted-foreground">{[kindLabel(doc.kind), ...doc.tags, `v${doc.version}`].join(" · ")}</p>
                   <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">{doc.content}</p>
                 </div>
                 {canManage && (

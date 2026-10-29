@@ -4,17 +4,19 @@ import { CheckCircle2Icon, CircleAlertIcon, CircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { callApi } from "@/app/_lib/api-client";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type { OnboardingView } from "@/contexts/tenancy/application/onboarding";
 import type { StepStatus } from "@/contexts/tenancy/domain/onboarding";
+import { HOME } from "@/app/_lib/home";
 
 const ICON: Record<StepStatus, React.ReactNode> = {
-  done: <CheckCircle2Icon aria-hidden className="size-5 text-primary" />,
-  // A step that needs attention waits on an admin: the lavender of the sidebar counts, not the error red.
-  attention: <CircleAlertIcon aria-hidden className="size-5 text-sidebar-count" />,
+  done: <CheckCircle2Icon aria-hidden className="size-5 text-muted-foreground" />,
+  // The marks stay grey: lavender belongs to the sidebar's count of open steps, and red to errors. The status word says the rest.
+  attention: <CircleAlertIcon aria-hidden className="size-5 text-foreground" />,
   todo: <CircleIcon aria-hidden className="size-5 text-muted-foreground" />,
 };
 
@@ -26,9 +28,9 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
   const next = view.steps.find((step) => step.id === view.nextStepId);
 
   async function hide() {
-    const response = await fetch("/api/onboarding/dismiss", { method: "POST" });
-    if (!response.ok) throw new Error("Could not hide the setup guide. Try again.");
-    router.push("/leads");
+    const result = await callApi("/api/onboarding/dismiss", "POST");
+    if (!result.ok) throw new Error(result.error ?? "Could not hide the setup guide. Try again.");
+    router.push(HOME);
     router.refresh();
   }
 
@@ -39,22 +41,22 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
           {view.complete ? `All ${view.requiredTotal} required steps done` : `${view.requiredDone} of ${view.requiredTotal} required steps done`}
         </p>
         {next && (
-          <Button nativeButton={false} render={<Link href={next.href} />}>
+          <Link href={next.href} className={buttonVariants({ touch: true })}>
             Next: {next.title}
-          </Button>
+          </Link>
         )}
       </div>
-      {/* One ruled list. The next step carries weight in its title and an outline action, since Next above holds the one filled button; the others stay quiet. */}
-      <ol className="divide-y rounded-lg border">
+      {/* One ruled list, no box. Next above is the next step's one action, so its row holds none; the other open steps keep a quiet ghost link. */}
+      <ol className="divide-y">
         {view.steps.map((step) => {
           const isNext = step.id === view.nextStepId;
           return (
-            <li key={step.id} aria-current={isNext ? "step" : undefined} className="flex items-start gap-3 p-4">
+            <li key={step.id} aria-current={isNext ? "step" : undefined} className="flex items-start gap-3 py-4 first:pt-0 last:pb-0">
               <span className="mt-0.5 shrink-0">{ICON[step.status]}</span>
               {/* Below sm the action sits under the text, so the description keeps the row's width. */}
               <div className="flex min-w-0 flex-1 flex-col items-start gap-3 sm:flex-row">
                 <div className="stack-field min-w-0 flex-1">
-                  <h2 className={cn("flex flex-wrap items-center gap-2 text-sm", isNext ? "font-semibold" : "font-medium", step.status === "done" && "text-muted-foreground")}>
+                  <h2 className={cn("heading-item flex flex-wrap items-center gap-2", step.status === "done" && "text-muted-foreground")}>
                     {step.title}
                     {step.optional && <Badge variant="outline">Optional</Badge>}
                     <span className="text-xs font-normal text-muted-foreground">{STATUS_WORD[step.status]}</span>
@@ -62,8 +64,8 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
                   {step.status !== "done" && <p className="text-sm text-muted-foreground">{step.description}</p>}
                   {step.detail && <p className="text-sm">{step.detail}</p>}
                 </div>
-                {step.status !== "done" && (
-                  <Button variant={isNext ? "outline" : "ghost"} size="sm" nativeButton={false} render={<Link href={step.href} />} className="shrink-0 max-sm:h-11">
+                {step.status !== "done" && !isNext && (
+                  <Button variant="ghost" size="sm" touch nativeButton={false} render={<Link href={step.href} />} className="shrink-0">
                     {step.action}
                   </Button>
                 )}
@@ -84,7 +86,7 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Hide the setup guide for everyone in this organization?"
-        description="The step count and highlight leave the sidebar for every owner and admin. The Setup guide link and this page stay. The app has no button to bring the highlight back."
+        description="The step count and highlight leave the sidebar for every owner and admin, and you go on to Actions. The Setup guide link and this page stay."
         confirmLabel="Hide setup guide"
         pendingLabel="Hiding…"
         onConfirm={hide}

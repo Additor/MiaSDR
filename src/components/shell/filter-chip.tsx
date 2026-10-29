@@ -17,7 +17,7 @@ export interface AppliedFilter {
 }
 
 const CHIP =
-  "inline-flex min-h-6 items-center gap-1 rounded-full border bg-background py-0.5 pr-1.5 pl-2.5 text-xs outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11";
+  "inline-flex min-h-6 items-center gap-1 rounded-full border bg-background py-0.5 pr-1.5 pl-2.5 text-xs hover:bg-muted focus-ring max-sm:min-h-11";
 
 export function FilterChip({ chip }: { chip: AppliedFilter }) {
   const said = chip.name ? `${chip.name}: ${chip.value}` : chip.value;
@@ -47,7 +47,7 @@ export function FilterChip({ chip }: { chip: AppliedFilter }) {
  */
 export function AppliedFilters({ chips, clear, extra }: { chips: AppliedFilter[]; clear: { href: string } | { onClick: () => void }; extra?: ReactNode }) {
   if (chips.length === 0) return null;
-  const clearClass = cn(buttonVariants({ variant: "ghost", size: "sm" }), "max-sm:h-11");
+  const clearClass = buttonVariants({ variant: "ghost", size: "sm", touch: true });
   return (
     <div role="group" aria-label="Applied filters" className="flex flex-wrap items-center gap-1.5">
       {chips.map((chip) => (

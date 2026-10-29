@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
@@ -113,7 +113,7 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
                 onFocusCapture={() => setSelected(step.stepNumber)}
               >
                 <div className="flex min-h-7 items-center justify-between gap-2">
-                  <h3 className={cn("text-sm", active ? "font-semibold" : "font-medium")}>{index === 0 ? "Step 1: connection request" : `Step ${step.stepNumber}: message ${index}`}</h3>
+                  <h3 className="heading-item data-[active=true]:font-semibold" data-active={active}>{index === 0 ? "Step 1: connection request" : `Step ${step.stepNumber}: message ${index}`}</h3>
                   {editable && index > 0 && (
                     <Button variant="ghost" size="icon-sm" aria-label={`Remove step ${step.stepNumber}`} onClick={() => setSteps((all) => renumber(all.filter((_, i) => i !== index)))}>
                       <Trash2Icon />
@@ -121,8 +121,8 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
                   )}
                 </div>
                 {index > 0 && (
-                  <div className="stack-field">
-                    <Label htmlFor={`li-wait-${index}`}>{index === 1 ? "Send after acceptance (days, 0 sends right away)" : "Send after (days since the previous message)"}</Label>
+                  <Field>
+                    <FieldLabel htmlFor={`li-wait-${index}`}>{index === 1 ? "Send after acceptance (days, 0 sends right away)" : "Send after (days since the previous message)"}</FieldLabel>
                     <Input
                       id={`li-wait-${index}`}
                       type="number"
@@ -133,10 +133,10 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
                       onChange={(e) => update(index, { waitDays: Number(e.target.value) })}
                       className="w-28"
                     />
-                  </div>
+                  </Field>
                 )}
-                <div className="stack-field">
-                  <Label htmlFor={`li-body-${index}`}>{index === 0 ? "Invitation note (optional)" : "Message"}</Label>
+                <Field>
+                  <FieldLabel htmlFor={`li-body-${index}`}>{index === 0 ? "Invitation note (optional)" : "Message"}</FieldLabel>
                   <Textarea
                     id={`li-body-${index}`}
                     rows={index === 0 ? 4 : 6}
@@ -152,7 +152,7 @@ export function LinkedInStepsEditor({ id, initial, editable }: { id: string; ini
                     </p>
                   )}
                   {PLACEHOLDER.test(step.body) && <p className="text-xs text-destructive">Replace the [[bracketed text]] before you start.</p>}
-                </div>
+                </Field>
                 {issues
                   .filter((i) => i.step === step.stepNumber)
                   .map((i) => (

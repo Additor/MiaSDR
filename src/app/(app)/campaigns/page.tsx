@@ -4,18 +4,21 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listCampaigns } from "@/contexts/outreach/application/campaign-management";
 import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { parseArchiveFilter } from "@/contexts/outreach/domain/campaign";
-import { CHANNEL_LABELS, emailProgressText, linkedinProgressText } from "@/contexts/outreach/domain/campaign-view";
+import { emailProgressText, linkedinProgressText } from "@/contexts/outreach/domain/campaign-view";
 import { campaignDeps, enrollmentAdminStore } from "@/contexts/outreach/infrastructure/composition";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { toActor } from "@/app/_lib/api";
+import { formatCount } from "@/shared/format-number";
+import { ChannelName } from "./[id]/_components/channel-name";
 import { CampaignStatusToken } from "./[id]/_components/campaign-status-token";
 import { NewCampaignButton } from "./new-campaign-button";
 import { FilterChips } from "@/components/shell/filter-chips";
@@ -37,7 +40,7 @@ export default function CampaignsPage({ searchParams }: PageProps<"/campaigns">)
         }
       />
       <div className="page stack-group">
-        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        <Suspense fallback={<PageSkeleton shape="list" />}>
           <CampaignTable searchParams={searchParams} />
         </Suspense>
       </div>
@@ -132,50 +135,50 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
   return (
     <div className="stack-group">
       {filters}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Channel</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Steps</TableHead>
-            <TableHead className="text-right">Leads</TableHead>
-            <TableHead>Progress</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {campaigns.map((c) => (
-            <TableRow key={`${c.channel}-${c.id}`} className={rowLinkClasses}>
-              <TableCell>
-                <RowLink href={`/campaigns/${c.id}`}>{c.name}</RowLink>
-              </TableCell>
-              <TableCell>
-                <Badge variant="outline">{CHANNEL_LABELS[c.channel]}</Badge>
-                {c.personal && (
-                  <Badge variant="secondary" className="ml-2">
-                    Personal
-                  </Badge>
-                )}
-              </TableCell>
-              <TableCell>
-                <CampaignStatusToken status={c.status} archived={c.archived} compact />
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{c.steps.toLocaleString("en-US")}</TableCell>
-              <TableCell className="text-right tabular-nums">{c.enrolled.toLocaleString("en-US")}</TableCell>
-              <TableCell className="text-muted-foreground">
-                {c.progress}
-                {c.unconfirmed > 0 && (
-                  // An unconfirmed send is uncertain, not failed: the warning hue on the icon, the count in plain text.
-                  <span className="ml-2 inline-flex items-center gap-1 text-foreground">
-                    <TriangleAlertIcon aria-hidden className="size-3.5 text-warning" />
-                    {c.unconfirmed.toLocaleString("en-US")} unconfirmed
-                  </span>
-                )}
-              </TableCell>
+      <ScrollableTable>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Channel</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Steps</TableHead>
+              <TableHead className="text-right">Leads</TableHead>
+              <TableHead>Progress</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {campaigns.map((c) => (
+              <TableRow key={`${c.channel}-${c.id}`} className={rowLinkClasses}>
+                <TableCell>
+                  <RowLink href={`/campaigns/${c.id}`}>{c.name}</RowLink>
+                </TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center gap-2">
+                    <ChannelName channel={c.channel} />
+                    {c.personal && <Badge variant="outline">Personal</Badge>}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <CampaignStatusToken status={c.status} archived={c.archived} compact />
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(c.steps)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(c.enrolled)}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {c.progress}
+                  {c.unconfirmed > 0 && (
+                    // An unconfirmed send is uncertain, not failed: the warning hue on the icon, the count in plain text.
+                    <span className="ml-2 inline-flex items-center gap-1 text-foreground">
+                      <TriangleAlertIcon aria-hidden className="size-3.5 text-warning" />
+                      {formatCount(c.unconfirmed)} unconfirmed
+                    </span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </ScrollableTable>
       <ListPager total={campaigns.length} page={1} pageCount={1} noun={["campaign", "campaigns"]} hrefFor={() => "/campaigns"} />
     </div>
   );

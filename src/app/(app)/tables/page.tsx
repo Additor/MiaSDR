@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { TablesBrowser } from "./_components/tables-browser";
 
 export const metadata: Metadata = { title: "Tables" };
@@ -15,7 +15,7 @@ export default function TablesPage() {
         <>
           <PageHeader title="Tables" />
           <div className="page">
-            <Skeleton className="h-64" />
+            <PageSkeleton shape="list" />
           </div>
         </>
       }

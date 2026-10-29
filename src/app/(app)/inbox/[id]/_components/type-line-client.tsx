@@ -94,7 +94,7 @@ export function TypeLineClient(props: TypeLineProps) {
         {/* Without a type the visible text names the reply type itself. */}
         {type && <span className="sr-only">Reply type: </span>}
         {type?.source && (
-          <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="type-source" />} tip={replyTypeSourceTip(type.source)}>
+          <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-sm text-muted-foreground focus-ring" data-testid="type-source" />} tip={replyTypeSourceTip(type.source)}>
             {type.source === "ai" ? <SparklesIcon aria-hidden className="size-3.5" /> : type.source === "integration" ? <PlugIcon aria-hidden className="size-3.5" /> : <UserIcon aria-hidden className="size-3.5" />}
           </StateTip>
         )}
@@ -111,12 +111,12 @@ export function TypeLineClient(props: TypeLineProps) {
           </span>
         )}
         {type?.locked && (
-          <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="type-locked" />} tip="Locked as Existing customer. The AI cannot move this person to another group.">
+          <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-sm text-muted-foreground focus-ring" data-testid="type-locked" />} tip="Locked as Existing customer. The AI cannot move this person to another group.">
             <LockIcon aria-hidden className="size-3.5" />
           </StateTip>
         )}
         {why && (
-          <Button variant="ghost" size="xs" className="text-muted-foreground max-sm:h-11" aria-expanded={whyOpen} aria-controls={whyId} onClick={() => setWhyOpen((o) => !o)}>
+          <Button variant="ghost" size="xs" touch className="text-muted-foreground" aria-expanded={whyOpen} aria-controls={whyId} onClick={() => setWhyOpen((o) => !o)}>
             Why
             <ChevronRightIcon aria-hidden className={cn("transition-transform duration-(--duration-panel) ease-out", whyOpen && "rotate-90")} />
           </Button>
@@ -158,14 +158,14 @@ export function TypeLineClient(props: TypeLineProps) {
           )}
           <div className="flex flex-wrap items-center gap-2">
             {decision.kind === "stop" ? (
-              <Button size="sm" variant={lead} className="max-sm:h-11" disabled={busy} onClick={openStopContacting}>
+              <Button size="sm" variant={lead} touch disabled={busy} onClick={openStopContacting}>
                 Review stop request
               </Button>
             ) : decision.kind === "held" ? (
               <Button
                 size="sm"
                 variant={lead}
-                className="max-sm:h-11"
+                touch
                 disabled={busy}
                 // Accept retires the open draft, so the editor's unsaved edits are saved first.
                 onClick={() => decide(() => afterSavingEdits(() => callApi(`/api/inbox/${props.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: props.contextVersion })), "AI pick accepted.")}
@@ -173,7 +173,7 @@ export function TypeLineClient(props: TypeLineProps) {
                 {busy ? "Accepting…" : decision.holdReason === "protected_customer" ? "Accept and unlock" : "Accept"}
               </Button>
             ) : decision.kind === "archived" ? null : (
-              <Button size="sm" variant={lead} className="max-sm:h-11" disabled={busy} onClick={() => decide(() => callApi(`/api/reply-type-picks/${decision.pickId}/acknowledge`, "POST"), LOOKS_RIGHT_DONE)}>
+              <Button size="sm" variant={lead} touch disabled={busy} onClick={() => decide(() => callApi(`/api/reply-type-picks/${decision.pickId}/acknowledge`, "POST"), LOOKS_RIGHT_DONE)}>
                 {busy ? "Saving…" : "Looks right"}
               </Button>
             )}
@@ -194,7 +194,7 @@ export function TypeLineClient(props: TypeLineProps) {
             <span>{view.done}</span>
             {props.next && (
               // Under a draft that waits for approval, Approve and send keeps the one filled button.
-              <Link href={props.next.href} className={cn(buttonVariants({ size: "sm", variant: lead }), "max-sm:h-11")} data-testid="type-next" aria-keyshortcuts="]">
+              <Link href={props.next.href} className={buttonVariants({ size: "sm", variant: lead, touch: true })} data-testid="type-next" aria-keyshortcuts="]">
                 Next: {props.next.name}
               </Link>
             )}

@@ -12,6 +12,7 @@ import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { callApi } from "@/app/_lib/api-client";
+import { countOf, formatCount } from "@/shared/format-number";
 
 interface Row {
   id: string;
@@ -78,7 +79,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
     const result = await callApi<{ requeued: number; claimed: number; done: number; failed: number }>("/api/linkedin/jobs/replay-webhooks", "POST");
     setBusy(null);
     if (!result.ok || !result.data) toast.error(result.error ?? "Replay failed.");
-    else toast.success(`Replayed ${result.data.claimed} deliveries: ${result.data.done} applied, ${result.data.failed} failed again.`);
+    else toast.success(`Replayed ${countOf(result.data.claimed, "delivery", "deliveries")}: ${formatCount(result.data.done)} applied, ${formatCount(result.data.failed)} failed again.`);
     router.refresh();
   }
 
@@ -121,7 +122,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
         {linkedinBacklog && (
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             <span className="text-sm text-muted-foreground tabular-nums">
-              {waiting === 0 ? "No LinkedIn delivery waits." : `LinkedIn: ${linkedinBacklog.dead} gave up, ${linkedinBacklog.retrying} retrying, ${linkedinBacklog.queued} queued`}
+              {waiting === 0 ? "No LinkedIn delivery waits." : `LinkedIn: ${formatCount(linkedinBacklog.dead)} gave up, ${formatCount(linkedinBacklog.retrying)} retrying, ${formatCount(linkedinBacklog.queued)} queued`}
             </span>
             <Button variant="outline" size="sm" onClick={replay} disabled={busy !== null || waiting === 0}>
               {busy === "replay" ? "Replaying…" : "Replay LinkedIn deliveries"}
@@ -151,13 +152,14 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
               {rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{row.source === "gmail" ? "Gmail" : "LinkedIn"}</TableCell>
-                  <TableCell className="max-w-48 truncate" title={row.accountRef ?? undefined}>
+                  {/* Long values wrap rather than truncate, so the whole text reads on touch and keyboard too. */}
+                  <TableCell className="max-w-48 whitespace-normal break-all">
                     {row.accountRef ?? "Unknown"}
                   </TableCell>
                   <TableCell className="max-w-56">
-                    <div className="truncate">{row.eventType}</div>
+                    <div className="break-words whitespace-normal">{row.eventType}</div>
                     {(row.from || row.subject) && (
-                      <div className="truncate text-xs text-muted-foreground" title={`${row.from ?? ""} ${row.subject ?? ""}`}>
+                      <div className="text-xs break-words whitespace-normal text-muted-foreground">
                         {[row.from, row.subject].filter(Boolean).join(": ")}
                       </div>
                     )}
@@ -171,7 +173,7 @@ export function InboundEventsPanel({ rows, total, page, pageSize, state, source,
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{row.attempts}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(row.attempts)}</TableCell>
                   <TableCell className="whitespace-nowrap"><Time value={row.createdAt} /></TableCell>
                   <TableCell className="max-w-72 whitespace-normal break-words text-xs text-muted-foreground">{row.error ?? "No error recorded."}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">

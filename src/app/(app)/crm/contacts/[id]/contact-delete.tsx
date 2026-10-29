@@ -61,7 +61,7 @@ function BlockerList({ blockers, name, personId }: { blockers: DeleteBlocker[]; 
   const timeZone = useOrgTimeZone();
   const time = (iso: string) => formatDateTime(iso, timeZone);
   return (
-    <ul className="grid gap-2 text-muted-foreground" data-testid="contact-delete-blockers">
+    <ul className="grid gap-2" data-testid="contact-delete-blockers">
       {blockers.map((blocker) => (
         <li key={blocker.reason} className="grid gap-1">
           <span>{blockerText(blocker, name, time)}</span>
@@ -69,7 +69,7 @@ function BlockerList({ blockers, name, personId }: { blockers: DeleteBlocker[]; 
             <ul className="grid gap-1">
               {blocker.deals.map((deal) => (
                 <li key={deal.id}>
-                  <Link href={dealHref(deal.id, `/crm/contacts/${personId}`)} className="text-foreground underline underline-offset-4 hover:no-underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+                  <Link href={dealHref(deal.id, `/crm/contacts/${personId}`)} className="rounded-sm text-foreground underline underline-offset-4 hover:no-underline focus-ring max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
                     {`${deal.title}, ${deal.stageName}`}
                   </Link>
                 </li>
@@ -234,7 +234,7 @@ function DeleteContactDialog({
                     {reach.unmarked.before}
                     <button
                       type="button"
-                      className="text-foreground underline underline-offset-4 hover:no-underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      className="text-foreground underline underline-offset-4 hover:no-underline focus-visible:rounded-sm focus-ring"
                       onClick={() => {
                         onOpenChange(false);
                         openDncControl(personId);

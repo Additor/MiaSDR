@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { Count } from "@/components/shell/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
@@ -15,6 +16,7 @@ import { CATCH_ALL_TYPE_KEY, REPLY_TYPE_GROUPS } from "@/contexts/conversations/
 import { DEFAULT_TYPE_RULES, SYSTEM_ROLE_REASONS, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "@/contexts/conversations/domain/reply-type";
 import { rulesSummary } from "@/app/(app)/inbox/[id]/_lib/type-line";
 import { callApi } from "@/app/_lib/api-client";
+import { countOf, formatCount } from "@/shared/format-number";
 import { cn } from "@/components/ui/utils";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
@@ -52,7 +54,7 @@ const CHECK_OPTIONS: Array<{ value: CheckMode; label: string; description: strin
 /** "Check before · Draft · Follow-ups keep going": what a type does when the AI picks it. */
 const typeSummary = (rules: TypeRules) => `${CHECK_OPTIONS.find((o) => o.value === rules.checkMode)?.summary ?? "Check before"} · ${rulesSummary(rules)}`;
 
-const archiveRecords = (count: number) => (count === 0 ? "Nobody has this type now." : `${count} ${count === 1 ? "person keeps" : "people keep"} this type.`);
+const archiveRecords = (count: number) => (count === 0 ? "Nobody has this type now." : `${formatCount(count)} ${count === 1 ? "person keeps" : "people keep"} this type.`);
 
 const draftOf = (type: ReplyTypeItem | null, groupKey = "interested"): Draft => ({
   groupKey: type?.groupKey ?? groupKey,
@@ -136,7 +138,7 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
             const types = replyTypes.filter((t) => t.groupKey === g.key);
             return (
               <div key={g.key} className="stack-group" data-testid={`group-${g.key}`}>
-                <h3 className="text-sm font-semibold">{g.label}</h3>
+                <h3 className="heading-item">{g.label}</h3>
                 {types.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No reply types.</p>
                 ) : (
@@ -147,10 +149,8 @@ export function ReplyTypesPanel({ replyTypes, canManage }: { replyTypes: ReplyTy
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{t.name}</span>
                             {t.systemRole === "customer" && <Badge variant="secondary">Locked</Badge>}
-                            {!t.active && <Badge variant="outline">Archived</Badge>}
-                            <span className="text-xs text-muted-foreground">
-                              {t.recordCount} {t.recordCount === 1 ? "person" : "people"}
-                            </span>
+                            {!t.active && <Badge variant="secondary">Archived</Badge>}
+                            <Count value={countOf(t.recordCount, "person", "people")} />
                           </div>
                           <p className="text-muted-foreground" data-testid="reply-type-rules">
                             {typeSummary(t.rules)}

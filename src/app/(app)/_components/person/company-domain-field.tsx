@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { callApi } from "@/app/_lib/api-client";
 
 /**
@@ -111,8 +111,8 @@ export function CompanyDomainField({
       </p>
     ) : null;
   return (
-    <div className="stack-field">
-      <Label htmlFor={id}>{label}</Label>
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Input
         id={id}
         value={value}
@@ -123,14 +123,14 @@ export function CompanyDomainField({
         autoFocus={autoFocus}
         aria-invalid={lookup.status === "invalid" || undefined}
         aria-describedby={line ? statusId : undefined}
-        className="max-sm:h-11"
+        touch
         onChange={(e) => onChange(e.target.value)}
       />
       {/* One live region for the lookup, so a screen reader hears "Checking…" and the answer without moving focus. */}
       <div aria-live="polite" className="contents">
         {line}
       </div>
-    </div>
+    </Field>
   );
 }
 

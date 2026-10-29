@@ -5,22 +5,26 @@ import Link from "next/link";
 import { Fragment, useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { toast } from "sonner";
+import { BulkBar } from "@/components/shell/bulk-bar";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { useOrgTimeZone } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { batchRowActions, hasActiveSearch, searchNotice, searchStatusLabel, type BatchRowActionId, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
 import { runNowConfirmation, searchableLeft } from "@/contexts/outreach/linkedin/domain/linkedin-search-capacity";
 import { callApi } from "@/app/_lib/api-client";
+import { countOf, formatCount } from "@/shared/format-number";
+import { humanizeToken } from "@/shared/humanize";
 import { cn } from "@/components/ui/utils";
 import { capacityReturnText } from "../../capacity-return";
 import { useActiveRefresh } from "../../use-active-refresh";
+import { SearchUrl } from "../../search-url";
 import { SearchCapacityCard, type CapacityCardData } from "../../search-capacity-card";
 import { statusSummary } from "../batches-panel";
 
@@ -40,7 +44,6 @@ interface Detail {
   items: Array<{ id: string; url: string; companyName: string | null; status: string; found: number; maxResults: number; imported: number; lastError: string | null; sourceRow: number | null; rerunCount: number }>;
 }
 
-const TOUCH = "max-sm:h-11 max-sm:px-4";
 const KEEP_NOTE = "People already added to Leads, and leads already in a campaign, are kept.";
 
 /** A destructive action that waits for a confirmation. Adding searches has its own dialog, because it takes input. */
@@ -86,7 +89,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
   async function rerun(ids?: string[]) {
     const result = await callApi<{ rerun: number }>(`/api/linkedin/search-batches/${batch.id}/rerun`, "POST", ids ? { ids } : {});
     if (!result.ok) toast.error(result.error ?? "Could not queue the searches again. Try again.");
-    else toast.success(result.data?.rerun ? `${result.data.rerun.toLocaleString("en-US")} ${result.data.rerun === 1 ? "search" : "searches"} queued again.` : "No failed searches to queue.");
+    else toast.success(result.data?.rerun ? `${searches(result.data.rerun)} queued again.` : "No failed searches to queue.");
     router.refresh();
   }
 
@@ -95,7 +98,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     if (!runAsk) return;
     const result = await callApi<{ queued: number }>(`/api/linkedin/search-batches/${batch.id}/run`, "POST", runAsk.ids ? { ids: runAsk.ids } : {});
     if (!result.ok) throw new Error(result.error ?? "Could not run the searches. Try again.");
-    toast.success(result.data?.queued ? `${result.data.queued.toLocaleString("en-US")} ${result.data.queued === 1 ? "search is" : "searches are"} ready to run. Each account still reads within its daily limit.` : "No paused or queued searches to run.");
+    toast.success(result.data?.queued ? `${formatCount(result.data.queued)} ${result.data.queued === 1 ? "search is" : "searches are"} ready to run. Each account still reads within its daily limit.` : "No paused or queued searches to run.");
     setSelected(new Set());
     router.refresh();
   }
@@ -128,7 +131,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     if (result.data) {
       const d = result.data;
       const skipped = [d.rejectedCount && `${d.rejectedCount} refused`, d.duplicatesInList && `${d.duplicatesInList} repeated`, d.alreadyInBatch && `${d.alreadyInBatch} already in the batch`, d.alreadyQueued && `${d.alreadyQueued} already queued`].filter(Boolean);
-      toast.success(`${d.added.toLocaleString("en-US")} ${d.added === 1 ? "search" : "searches"} queued${skipped.length ? `, ${skipped.join(", ")}` : ""}.`);
+      toast.success(`${searches(d.added)} queued${skipped.length ? `, ${skipped.join(", ")}` : ""}.`);
     }
     setPasted("");
     setSelected(new Set());
@@ -141,10 +144,10 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     let result;
     if (danger.kind === "remove") {
       result = await callApi<{ removed: number; resultsRemoved: number }>(`/api/linkedin/search-batches/${batch.id}/queries`, "DELETE", { ids: danger.ids });
-      if (result.ok && result.data) toast.success(`Removed ${result.data.removed.toLocaleString("en-US")} ${result.data.removed === 1 ? "search" : "searches"} and ${result.data.resultsRemoved.toLocaleString("en-US")} stored ${result.data.resultsRemoved === 1 ? "result" : "results"}.`);
+      if (result.ok && result.data) toast.success(`Removed ${searches(result.data.removed)} and ${countOf(result.data.resultsRemoved, "stored result")}.`);
     } else if (danger.kind === "results") {
       result = await callApi<{ searches: number; resultsRemoved: number }>(`/api/linkedin/search-batches/${batch.id}/leads`, "DELETE", danger.ids ? { ids: danger.ids } : { all: true });
-      if (result.ok && result.data) toast.success(`Deleted ${result.data.resultsRemoved.toLocaleString("en-US")} stored ${result.data.resultsRemoved === 1 ? "result" : "results"} of ${result.data.searches.toLocaleString("en-US")} ${result.data.searches === 1 ? "search" : "searches"}.`);
+      if (result.ok && result.data) toast.success(`Deleted ${countOf(result.data.resultsRemoved, "stored result")} of ${searches(result.data.searches)}.`);
     } else if (danger.kind === "cancel") {
       result = await callApi(`/api/linkedin/searches/${danger.id}/action`, "POST", { action: "cancel" });
     } else {
@@ -178,20 +181,20 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
     <>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <div role="group" aria-label="Run" className="flex flex-wrap gap-2">
-          <Button variant="outline" className={TOUCH} onClick={() => setAdding(true)}>
+          <Button variant="outline" touch onClick={() => setAdding(true)}>
             Add searches
           </Button>
-          <Button className={TOUCH} disabled={due === 0} onClick={() => setRunAsk({ ids: null })}>
+          <Button touch disabled={due === 0} onClick={() => setRunAsk({ ids: null })}>
             Run now
           </Button>
           {failed > 0 && (
-            <Button variant="outline" className={TOUCH} onClick={() => rerun()}>
-              Rerun {failed} failed
+            <Button variant="outline" touch onClick={() => rerun()}>
+              Rerun {formatCount(failed)} failed
             </Button>
           )}
         </div>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" className={TOUCH} />}>
+          <DropdownMenuTrigger render={<Button variant="outline" touch />}>
             Data
             <ChevronDownIcon aria-hidden />
           </DropdownMenuTrigger>
@@ -214,18 +217,18 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
 
       <section className="stack-group border-t pt-group">
         <div className="stack-field">
-          <h2 className="text-sm font-semibold">
-            {batch.queries.toLocaleString("en-US")} {batch.queries === 1 ? "search" : "searches"}, {batch.found.toLocaleString("en-US")} people found, {batch.imported.toLocaleString("en-US")} in leads
+          <h2 className="heading-section">
+            {searches(batch.queries)}, {formatCount(batch.found)} people found, {formatCount(batch.imported)} in leads
           </h2>
           <p className="text-sm text-muted-foreground">
-            {statusSummary(batch.statuses)}. Up to {batch.maxResults.toLocaleString("en-US")} people per search. {batch.campaign ? `Added to ${batch.campaign.name}.` : "Leads only."}{" "}
+            {statusSummary(batch.statuses)}. Up to {formatCount(batch.maxResults)} people per search. {batch.campaign ? `Added to ${batch.campaign.name}.` : "Leads only."}{" "}
             {batch.accountNames.length > 0 ? `Accounts: ${batch.accountNames.join(", ")}.` : "Any connected account."}
           </p>
         </div>
         {batch.rowsRejected ? (
           <div className="text-sm" data-testid="batch-rejections">
             <p className="font-medium">
-              {batch.rowsRejected.toLocaleString("en-US")} of {(batch.rowsTotal ?? 0).toLocaleString("en-US")} rows were refused
+              {formatCount(batch.rowsRejected)} of {formatCount(batch.rowsTotal ?? 0)} rows were refused
             </p>
             <ul className="list-disc pl-5 text-muted-foreground">
               {batch.rejections.slice(0, 10).map((r) => (
@@ -238,19 +241,25 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
         ) : null}
       </section>
 
-      {picked.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="batch-selection">
-          <span>{picked.length.toLocaleString("en-US")} selected</span>
-          <Button size="sm" variant="outline" className={TOUCH} onClick={() => setRunAsk({ ids: picked })}>
+      {/* The bar sits in the flow above the table and the cards, so it shows on a phone too. */}
+      <BulkBar
+        sticky={false}
+        testId="batch-selection"
+        count={picked.length}
+        actions={
+          <Button size="sm" variant="outline" onClick={() => setRunAsk({ ids: picked })}>
             Run selected
           </Button>
-          {canManage && (
+        }
+        onClear={() => setSelected(new Set())}
+        more={
+          canManage && (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button size="sm" variant="outline" className={TOUCH} />}>
+              <DropdownMenuTrigger render={<Button size="sm" variant="outline" touch />}>
                 More
                 <ChevronDownIcon aria-hidden />
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-auto min-w-48">
+              <DropdownMenuContent align="end" className="w-auto min-w-48">
                 <DropdownMenuItem onClick={() => setDanger({ kind: "results", ids: picked })}>Delete stored results</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => setDanger({ kind: "remove", ids: picked })}>
@@ -258,12 +267,9 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-          <Button size="sm" variant="ghost" className={TOUCH} onClick={() => setSelected(new Set())}>
-            Clear
-          </Button>
-        </div>
-      )}
+          )
+        }
+      />
 
       <ScrollableTable className="max-sm:hidden">
         <Table>
@@ -287,15 +293,13 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
                 </TableCell>
                 <TableCell className="max-w-72">
                   <p className="font-medium">{itemName(i)}</p>
-                  <p className="truncate text-xs text-muted-foreground" title={i.url}>
-                    {i.url.replace(/^https:\/\/www\.linkedin\.com/, "")}
-                  </p>
+                  <SearchUrl url={i.url} />
                 </TableCell>
                 <TableCell className="max-w-64 whitespace-normal">
                   <RowStatus item={i} capacityReturns={capacityReturns} />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {i.found.toLocaleString("en-US")} / {i.maxResults.toLocaleString("en-US")}
+                  {formatCount(i.found)} / {formatCount(i.maxResults)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   <InLeads item={i} />
@@ -316,23 +320,21 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
           Select all searches
         </label>
         {/* One column that may shrink to the screen: an implicit `auto` column is as wide as the longest search URL. */}
-        <ul className="grid grid-cols-1 gap-3">
+        <ul className="grid grid-cols-1 divide-y border-y">
           {batch.items.map((i) => (
-            <li key={i.id} className="grid gap-2 rounded-lg border p-3" data-testid="batch-card">
+            <li key={i.id} className="grid gap-2 py-3" data-testid="batch-card">
               <div className="flex items-start gap-3">
                 <Checkbox aria-label={`Select ${itemName(i)}`} checked={selected.has(i.id)} onCheckedChange={(on) => toggle(i.id, on === true)} className="mt-1" />
                 <div className="min-w-0">
                   <p className="font-medium">{itemName(i)}</p>
-                  <p className="truncate text-xs text-muted-foreground" title={i.url}>
-                    {i.url.replace(/^https:\/\/www\.linkedin\.com/, "")}
-                  </p>
+                  <SearchUrl url={i.url} />
                 </div>
               </div>
               <div>
                 <RowStatus item={i} capacityReturns={capacityReturns} />
               </div>
               <p className="text-sm tabular-nums text-muted-foreground">
-                Found {i.found.toLocaleString("en-US")} / {i.maxResults.toLocaleString("en-US")}. In leads <InLeads item={i} />.
+                Found {formatCount(i.found)} / {formatCount(i.maxResults)}. In leads <InLeads item={i} />.
               </p>
               <RowActions item={i} canRemove={canManage} onAction={onRowAction} />
             </li>
@@ -350,10 +352,10 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
         confirmDisabled={pasted.trim() === ""}
         onConfirm={addSearches}
       >
-        <div className="grid gap-2">
-          <Label htmlFor="batch-add-urls">Search URLs</Label>
+        <Field>
+          <FieldLabel htmlFor="batch-add-urls">Search URLs</FieldLabel>
           <Textarea id="batch-add-urls" rows={6} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="https://www.linkedin.com/search/results/people/?keywords=cto" autoFocus />
-        </div>
+        </Field>
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -394,9 +396,9 @@ function RowStatus({ item: i, capacityReturns }: { item: Item; capacityReturns: 
   const notice = searchNotice({ status, lastError: i.lastError });
   return (
     <>
-      <StatusBadge status={searchStatusLabel(status)} />
+      <StatusBadge status={status} label={humanizeToken(searchStatusLabel(status))} />
       {status === "paused_limit" && <p className="mt-1 text-xs text-muted-foreground">Waiting for the daily limit{capacityReturns ? `. Capacity returns ${capacityReturns}` : ""}.</p>}
-      {i.rerunCount > 0 && <p className="mt-1 text-xs text-muted-foreground">Rerun {i.rerunCount.toLocaleString("en-US")} time{i.rerunCount === 1 ? "" : "s"}.</p>}
+      {i.rerunCount > 0 && <p className="mt-1 text-xs text-muted-foreground">Rerun {countOf(i.rerunCount, "time")}.</p>}
       {notice && (
         <p role="alert" className={cn("mt-1 text-xs", status === "failed" ? "text-destructive" : "text-muted-foreground")}>
           {notice}
@@ -410,8 +412,8 @@ function RowStatus({ item: i, capacityReturns }: { item: Item; capacityReturns: 
 function InLeads({ item: i }: { item: Item }) {
   if (i.imported === 0) return <>0</>;
   return (
-    <Link href={`/leads?source=${encodeURIComponent(`linkedin_search:${i.id}`)}`} className="inline-block py-1 underline-offset-4 hover:underline" aria-label={`${i.imported.toLocaleString("en-US")} in Leads from ${itemName(i)}, open the list`}>
-      {i.imported.toLocaleString("en-US")}
+    <Link href={`/leads?source=${encodeURIComponent(`linkedin_search:${i.id}`)}`} className="inline-block rounded-sm py-1 underline-offset-4 hover:underline focus-ring" aria-label={`${formatCount(i.imported)} in Leads from ${itemName(i)}, open the list`}>
+      {formatCount(i.imported)}
     </Link>
   );
 }
@@ -424,13 +426,13 @@ function RowActions({ item, canRemove, onAction, className }: { item: Item; canR
   return (
     <div className={cn("flex flex-wrap gap-1", className)}>
       {buttons.map((a) => (
-        <Button key={a.id} size="sm" variant="outline" className={TOUCH} aria-label={`${a.label} ${itemName(item)}`} onClick={() => onAction(item, a.id)}>
+        <Button key={a.id} size="sm" variant="outline" touch aria-label={`${a.label} ${itemName(item)}`} onClick={() => onAction(item, a.id)}>
           {a.label}
         </Button>
       ))}
       {menu.length > 0 && (
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button size="sm" variant="ghost" className={TOUCH} aria-label={`More actions for ${itemName(item)}`} />}>
+          <DropdownMenuTrigger render={<Button size="sm" variant="ghost" touch aria-label={`More actions for ${itemName(item)}`} />}>
             More
             <ChevronDownIcon aria-hidden />
           </DropdownMenuTrigger>
@@ -450,7 +452,7 @@ function RowActions({ item, canRemove, onAction, className }: { item: Item; canR
   );
 }
 
-const searches = (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? "search" : "searches"}`;
+const searches = (n: number) => countOf(n, "search", "searches");
 
 function dangerTitle(danger: Danger | null, batchName: string): string {
   if (!danger) return "";
@@ -465,5 +467,5 @@ function dangerDescription(danger: Danger | null, queries: number): string {
   if (danger.kind === "remove") return `The searches leave this batch, and the results stored for them are deleted. ${KEEP_NOTE}`;
   if (danger.kind === "results") return `The stored results of each search are deleted. The searches stay in the batch. ${KEEP_NOTE}`;
   if (danger.kind === "cancel") return "The search stops for good and cannot be resumed. People it already found stay in Leads.";
-  return `The batch, its ${queries.toLocaleString("en-US")} ${queries === 1 ? "search" : "searches"} and their stored results are deleted. ${KEEP_NOTE} This cannot be undone.`;
+  return `The batch, its ${searches(queries)} and their stored results are deleted. ${KEEP_NOTE} This cannot be undone.`;
 }

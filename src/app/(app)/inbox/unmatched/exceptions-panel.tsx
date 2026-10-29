@@ -3,13 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ChoiceCard } from "@/components/shell/choice-card";
 import { EmptyState } from "@/components/shell/empty-state";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { RadioGroup } from "@/components/ui/radio-group";
 import { callApi } from "@/app/_lib/api-client";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 
@@ -61,7 +62,7 @@ function ExceptionRow({ row }: { row: Row }) {
   return (
     <li data-testid="unmatched-message" className="stack-group py-section text-sm first:pt-0 last:pb-0">
       <div className="stack-field">
-        <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+        <h2 className="flex flex-wrap items-center gap-2 heading-item">
           {row.sender ?? "Unknown sender"}
           <Badge variant="outline">{channelLabel(row.channel)}</Badge>
         </h2>
@@ -105,11 +106,11 @@ function PersonPicker({ row }: { row: Row }) {
   return (
     <>
       <form onSubmit={search} className="flex flex-wrap items-end gap-2">
-        <div className="stack-field">
-          <Label htmlFor={`find-${row.id}`}>File it under</Label>
-          <Input id={`find-${row.id}`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search people by name, email or company" className="w-80 max-w-full" />
-        </div>
-        <Button type="submit" size="sm" variant="outline" disabled={query.trim() === ""}>
+        <Field className="w-auto">
+          <FieldLabel htmlFor={`find-${row.id}`}>File it under</FieldLabel>
+          <Input id={`find-${row.id}`} touch value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search people by name, email or company" className="w-80 max-w-full" />
+        </Field>
+        <Button type="submit" size="sm" variant="outline" touch disabled={query.trim() === ""}>
           Search
         </Button>
       </form>
@@ -122,14 +123,10 @@ function PersonPicker({ row }: { row: Row }) {
           onValueChange={(personId) => setChosen(candidates.find((c) => c.personId === personId) ?? null)}
         >
           {candidates.slice(0, 8).map((c) => (
-            <label key={c.personId} htmlFor={`person-${row.id}-${c.personId}`} className="flex cursor-pointer items-center gap-2 rounded-lg border p-2 has-data-checked:border-ring has-data-checked:bg-muted/50">
-              <RadioGroupItem value={c.personId} id={`person-${row.id}-${c.personId}`} />
-              <span className="min-w-0 flex-1 truncate">
-                {c.name ?? c.email}
-                <span className="text-muted-foreground">{[c.name ? c.email : null, c.company].filter(Boolean).length ? `, ${[c.name ? c.email : null, c.company].filter(Boolean).join(", ")}` : ""}</span>
-              </span>
-              {c.lifecycle === "contact" && <Badge variant="outline">Contact</Badge>}
-            </label>
+            <ChoiceCard key={c.personId} id={`person-${row.id}-${c.personId}`} value={c.personId} trailing={c.lifecycle === "contact" ? <Badge variant="outline">Contact</Badge> : undefined}>
+              {c.name ?? c.email}
+              <span className="text-muted-foreground">{[c.name ? c.email : null, c.company].filter(Boolean).length ? `, ${[c.name ? c.email : null, c.company].filter(Boolean).join(", ")}` : ""}</span>
+            </ChoiceCard>
           ))}
         </RadioGroup>
       )}
@@ -139,10 +136,10 @@ function PersonPicker({ row }: { row: Row }) {
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={pending || !chosen} onClick={() => chosen && submit({ status: "resolved", personId: chosen.personId })}>
+        <Button size="sm" touch disabled={pending || !chosen} onClick={() => chosen && submit({ status: "resolved", personId: chosen.personId })}>
           File under {chosen ? (chosen.name ?? chosen.email) : "the chosen person"}
         </Button>
-        <Button size="sm" variant="ghost" disabled={pending} onClick={() => submit({ status: "ignored" })}>
+        <Button size="sm" variant="ghost" touch disabled={pending} onClick={() => submit({ status: "ignored" })}>
           Ignore
         </Button>
       </div>

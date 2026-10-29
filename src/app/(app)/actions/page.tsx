@@ -24,6 +24,7 @@ import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { ForbiddenError, ValidationError } from "@/shared/errors";
 import { elapsed } from "@/shared/format-time";
+import { countOf, formatCount } from "@/shared/format-number";
 import { EmptyState } from "@/components/shell/empty-state";
 import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { ListKeys } from "@/components/shell/list-keys";
@@ -33,6 +34,7 @@ import { AppliedFilters } from "@/components/shell/filter-chip";
 import { ListToolbar } from "@/components/shell/list-toolbar";
 import { InfoTip, KeyboardHint } from "@/components/shell/info-tip";
 import { PageHeader } from "@/components/shell/page-header";
+import { Count, Section } from "@/components/shell/section";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
 import { personHref } from "@/app/(app)/_components/person/person-href";
@@ -57,21 +59,26 @@ export default function ActionsPage({ searchParams }: PageProps<"/actions">) {
   );
 }
 
-/** A list of work below the queue. With nothing in it the section shrinks to one summary line. */
-function Section({ id, title, description, count, icon, children }: { id: string; title: string; description?: string; count: number; icon?: ReactNode; children: ReactNode }) {
-  // A source with nothing in it has no section. The page folds those into one line at the end.
+/**
+ * A list of work below the queue, in the shell's plain section frame like the queue groups above. A source with nothing in it
+ * has no section; the jump strip names it on its "Nothing in" line instead.
+ */
+function ListSection({ id, title, description, count, icon, error = false, children }: { id: string; title: string; description?: string; count: number; icon?: ReactNode; error?: boolean; children: ReactNode }) {
   if (count === 0) return null;
   return (
-    <section id={id} aria-label={title} className="grid scroll-mt-4 gap-2">
-      <div className="flex items-center gap-2">
-        {icon}
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {/* Lavender marks work that waits for a person, here and in the queue groups above. */}
-        <span className="text-xs font-semibold text-sidebar-count tabular-nums">{count}</span>
-        {description && <InfoTip label={`About ${title}`}>{description}</InfoTip>}
-      </div>
+    <Section
+      frame="plain"
+      sectionId={id}
+      label={title}
+      title={title}
+      icon={icon}
+      // Lavender marks work that waits for a person. A dead letter is an error no retry fixes, so its count is red like its icon.
+      count={formatCount(count)}
+      countTone={error ? "error" : "waiting"}
+      help={description ? <InfoTip label={`About ${title}`}>{description}</InfoTip> : undefined}
+    >
       <ul className="divide-y rounded-lg border text-sm">{children}</ul>
-    </section>
+    </Section>
   );
 }
 
@@ -211,14 +218,17 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
         }
       : null;
   const SHORT: Record<(typeof QUEUE_GROUPS)[number], string> = { problem: "Problems", reply: "Replies", follow_up: "Follow-ups", classification: "AI picks", next_step: "Next steps" };
-  // Every group in view with its count, the empty ones muted, so the strip says what waits and what does not in one line.
-  const jumps = [
-    ...visibleGroups.map((g) => ({ href: `#group-${g}`, label: SHORT[g], count: queue?.groups[g].total ?? 0 })),
-    { href: "#section-tasks", label: "Tasks", count: scopedTasks.length },
-    ...(extras.uncertainCampaignSends.length > 0 ? [{ href: "#section-sends", label: "Unconfirmed sends", count: extras.uncertainCampaignSends.length }] : []),
-    ...(dead && dead.total > 0 ? [{ href: "#section-dead", label: "Dead letters", count: dead.total }] : []),
-    ...(extras.openIdentityExceptions > 0 ? [{ href: "#section-unmatched", label: "Unmatched senders", count: extras.openIdentityExceptions }] : []),
+  // Every group in view with its count. A list with work is a jump link; the empty ones fold into one muted line, so the
+  // strip says what waits without a row of zeros.
+  const lists = [
+    ...visibleGroups.map((g) => ({ href: `#group-${g}`, label: SHORT[g], count: queue?.groups[g].total ?? 0, error: false })),
+    { href: "#section-tasks", label: "Tasks", count: scopedTasks.length, error: false },
+    ...(extras.uncertainCampaignSends.length > 0 ? [{ href: "#section-sends", label: "Unconfirmed sends", count: extras.uncertainCampaignSends.length, error: false }] : []),
+    ...(dead && dead.total > 0 ? [{ href: "#section-dead", label: "Dead letters", count: dead.total, error: true }] : []),
+    ...(extras.openIdentityExceptions > 0 ? [{ href: "#section-unmatched", label: "Unmatched senders", count: extras.openIdentityExceptions, error: false }] : []),
   ];
+  const jumps = lists.filter((l) => l.count > 0);
+  const emptyLists = lists.filter((l) => l.count === 0).map((l) => l.label);
 
   const scopeHref = (target: QueueScope) => {
     const rest = new URLSearchParams(Object.entries(raw).filter(([key, value]) => key !== "scope" && value !== ""));
@@ -249,16 +259,16 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
       {!clear && (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
           <nav aria-label="Jump to a list" className="flex flex-wrap gap-x-4 text-muted-foreground" data-testid="queue-jumps">
-            {jumps.map((jump) =>
-              jump.count > 0 ? (
-                <a key={jump.href} href={jump.href} className="inline-flex min-h-8 items-center gap-1 underline-offset-4 hover:text-foreground hover:underline max-sm:min-h-11">
-                  {jump.label} <span className="text-xs font-semibold text-sidebar-count tabular-nums">{jump.count}</span>
-                </a>
-              ) : (
-                <span key={jump.href} className="inline-flex min-h-8 items-center gap-1 text-muted-foreground max-sm:min-h-11">
-                  {jump.label} <span className="text-xs tabular-nums">0</span>
-                </span>
-              ),
+            {jumps.map((jump) => (
+              // The label and the count are flex items, so the space between them drops out of the computed name; the name says it.
+              <a key={jump.href} href={jump.href} aria-label={`${jump.label} ${formatCount(jump.count)}`} className="inline-flex min-h-8 items-center gap-1 rounded-sm underline-offset-4 hover:text-foreground hover:underline focus-ring max-sm:min-h-11">
+                {jump.label} <Count value={formatCount(jump.count)} tone={jump.error ? "error" : "waiting"} />
+              </a>
+            ))}
+            {emptyLists.length > 0 && (
+              <span className="inline-flex min-h-8 items-center max-sm:min-h-11" data-testid="queue-jumps-empty">
+                Nothing in {emptyLists.join(", ")}.
+              </span>
             )}
           </nav>
           {oldestWaiting && (
@@ -267,7 +277,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
               {oldestItem && (
                 <>
                   {", "}
-                  <Link href={oldestItem.href} className="font-medium text-foreground underline-offset-4 hover:underline" data-testid="queue-oldest-link">
+                  <Link href={oldestItem.href} className="rounded-sm font-medium text-foreground underline-offset-4 hover:underline focus-ring" data-testid="queue-oldest-link">
                     {oldestItem.name}
                   </Link>
                 </>
@@ -288,7 +298,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
             hasAnyFilter(filterValues)
               ? "Clear a filter to see the whole queue."
               : scope === "mine" && unassignedCount > 0
-                ? `${unassignedCount} ${unassignedCount === 1 ? "item has" : "items have"} no one assigned yet.`
+                ? `${formatCount(unassignedCount)} ${unassignedCount === 1 ? "item has" : "items have"} no one assigned yet.`
                 : scope !== "mine"
                   ? "Work that someone handles shows here. Yours is under Mine."
                   : "A conversation lands here when a reply needs approval, an AI pick waits for you or a follow-up comes due."
@@ -324,14 +334,14 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
           );
         })}
 
-      <Section id="section-tasks" title={TASK_SECTIONS[scope]} count={scopedTasks.length}>
+      <ListSection id="section-tasks" title={TASK_SECTIONS[scope]} count={scopedTasks.length}>
         {scopedTasks.map(taskRow)}
-      </Section>
+      </ListSection>
 
-      <Section
+      <ListSection
         id="section-sends"
         icon={<CircleHelpIcon aria-hidden className="size-4 shrink-0 text-warning" />}
-        title="Unconfirmed campaign sends"
+        title="Unconfirmed sends"
         description="The provider never confirmed delivery. Check the mailbox's Sent folder and mark what you found. Nothing is sent again."
         count={extras.uncertainCampaignSends.length}
       >
@@ -350,16 +360,17 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
             }
           />
         ))}
-      </Section>
+      </ListSection>
 
       {/* Dead letters are for owners and admins, so a member sees no section for them. */}
       {dead && (
-        <Section
+        <ListSection
           id="section-dead"
           icon={<CircleXIcon aria-hidden className="size-4 shrink-0 text-destructive" />}
-          title="Inbound dead letters"
-          description="Messages we could not file after every retry. Retry or dismiss them in settings."
+          title="Dead letters"
+          description="Messages we could not file after every retry. Retry or dismiss them in Settings, under Inbound events."
           count={dead.total}
+          error
         >
           {dead.rows.map((e) => (
             <Row
@@ -369,20 +380,20 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
               href="/settings/inbound-events"
               action="Open"
               title={`${e.source === "gmail" ? (e.from ?? "Unknown sender") : "LinkedIn delivery"}${e.subject ? `: ${e.subject}` : ""}`}
-              detail={`${e.attempts} attempts${e.error ? `, ${e.error}` : ""}`}
+              detail={`${countOf(e.attempts, "attempt")}${e.error ? `, ${e.error}` : ""}`}
             />
           ))}
-        </Section>
+        </ListSection>
       )}
 
-      <Section id="section-unmatched" title="Unmatched senders" description="Messages from senders we could not match to a person. File each one under a person." count={extras.openIdentityExceptions}>
+      <ListSection id="section-unmatched" title="Unmatched senders" description="Messages from senders we could not match to a person. File each one under a person." count={extras.openIdentityExceptions}>
         <Row
           id="unmatched"
           href="/inbox/unmatched"
           action="Review senders"
-          title={`${extras.openIdentityExceptions} message${extras.openIdentityExceptions === 1 ? "" : "s"} wait for you to file them under a person.`}
+          title={`${countOf(extras.openIdentityExceptions, "message")} ${extras.openIdentityExceptions === 1 ? "waits for you to file it" : "wait for you to file them"} under a person.`}
         />
-      </Section>
+      </ListSection>
 
     </>
   );

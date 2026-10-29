@@ -1,43 +1,15 @@
 "use client";
 
-import { cloneElement, isValidElement } from "react";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import { typeLabel } from "../_lib/view/format";
 import type { GridColumn } from "../_lib/data/types";
 
-/** A labelled control with an optional hint. The hint is tied to a single control child with aria-describedby, so a screen reader reads it with the field. */
-export function Field({ label, htmlFor, hint, children, className }: { label: string; htmlFor?: string; hint?: string; children: React.ReactNode; className?: string }) {
-  const hintId = hint && htmlFor ? `${htmlFor}-hint` : undefined;
-  const control = hintId && isValidElement<{ "aria-describedby"?: string }>(children) ? cloneElement(children, { "aria-describedby": hintId }) : children;
-  return (
-    <div className={cn("stack-field", className)}>
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {control}
-      {hint && (
-        <p id={hintId} className="text-xs text-muted-foreground">
-          {hint}
-        </p>
-      )}
-    </div>
-  );
-}
-
-export function ErrorText({ children }: { children: React.ReactNode }) {
-  if (!children) return null;
-  return (
-    <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-sm text-destructive">
-      {children}
-    </p>
-  );
-}
+// Labels, hints and errors come from the Field family in `@/components/ui/field`. This file keeps only the Select
+// shorthands the tables dialogs and the Filter and Sort popovers share.
 
 const NONE = "__none__";
 
-/** A table's Filter and Sort popovers sit at the bottom edge on a phone, where their controls are 44px tall. */
-export const PHONE_BUTTON = "max-sm:h-11 max-sm:px-3";
-export const PHONE_ICON_BUTTON = "max-sm:size-11";
 /** The Select trigger sets its height on `data-size`, so the phone height needs the same attribute to win. */
 export const PHONE_SELECT = "max-sm:data-[size=default]:h-11";
 
@@ -46,8 +18,11 @@ export interface Item {
   label: string;
 }
 
-/** A single choice from a fixed list. The Select needs its items up front to show the label of the current value. */
-export function Choice({ id, value, onChange, items, className, placeholder, label }: { id?: string; value: string; onChange: (value: string) => void; items: Item[]; className?: string; placeholder?: string; label?: string }) {
+/**
+ * The app's `Select` fed from a list of items, full width. The Select needs its items up front to show the label of the
+ * current value. It adds no style of its own.
+ */
+export function ItemSelect({ id, value, onChange, items, className, placeholder, label }: { id?: string; value: string; onChange: (value: string) => void; items: Item[]; className?: string; placeholder?: string; label?: string }) {
   return (
     <Select items={items} value={value} onValueChange={(v) => v !== null && onChange(v)}>
       <SelectTrigger id={id} aria-label={label} className={cn("w-full", className)}>
@@ -65,7 +40,7 @@ export function Choice({ id, value, onChange, items, className, placeholder, lab
 }
 
 /** Picks one column of the table, or nothing when `none` is set. */
-export function ColumnChoice({
+export function ColumnSelect({
   id,
   value,
   onChange,
@@ -84,5 +59,5 @@ export function ColumnChoice({
   label?: string;
 }) {
   const items: Item[] = [...(none ? [{ value: NONE, label: none }] : []), ...columns.map((c) => ({ value: c.key, label: `${c.name} (${typeLabel(c.type)})` }))];
-  return <Choice id={id} label={label} className={className} items={items} value={value ?? (none ? NONE : "")} onChange={(v) => onChange(v === NONE ? null : v)} placeholder="Choose a column" />;
+  return <ItemSelect id={id} label={label} className={className} items={items} value={value ?? (none ? NONE : "")} onChange={(v) => onChange(v === NONE ? null : v)} placeholder="Choose a column" />;
 }

@@ -7,11 +7,12 @@ import { toast } from "sonner";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { callApi } from "@/app/_lib/api-client";
 import { CampaignSection } from "./campaign-section";
+import { countOf, formatCount } from "@/shared/format-number";
 
 export interface UnconfirmedRow {
   sendId: string;
@@ -58,7 +59,7 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
       icon={<CircleHelpIcon aria-hidden className="size-4 shrink-0 text-warning" />}
       title={
         <span className="text-warning">
-          {total} send{total === 1 ? " is" : "s are"} unconfirmed
+          {countOf(total, "send is", "sends are")} unconfirmed
         </span>
       }
       description={
@@ -115,12 +116,12 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
                       {confirming === row.sendId && (
                         <div className="grid gap-2 text-xs">
                           <p>MiaSDR will send this step again. If the email is in the Sent folder, the lead gets a duplicate.</p>
-                          <div className="flex items-center gap-2">
+                          <Field orientation="horizontal">
                             <Checkbox id={`sent-folder-${row.sendId}`} checked={checked} onCheckedChange={(c) => setChecked(c === true)} />
-                            <Label htmlFor={`sent-folder-${row.sendId}`} className="text-xs font-normal">
+                            <FieldLabel htmlFor={`sent-folder-${row.sendId}`} className="text-xs font-normal">
                               I looked in the Sent folder
-                            </Label>
-                          </div>
+                            </FieldLabel>
+                          </Field>
                           <Button size="sm" variant="destructive" disabled={!checked || busy !== null} onClick={() => resolve(row.sendId, "not_delivered")}>
                             Send this step again
                           </Button>
@@ -134,7 +135,7 @@ export function UnconfirmedSends({ campaignId, total, rows, canResolve }: { camp
           </TableBody>
         </Table>
       </ScrollableTable>
-      {total > rows.length && <p className="text-xs text-muted-foreground">Showing the oldest {rows.length}. Settle these and reload for the rest.</p>}
+      {total > rows.length && <p className="text-xs text-muted-foreground">Showing the oldest {formatCount(rows.length)}. Settle these and reload for the rest.</p>}
     </CampaignSection>
   );
 }

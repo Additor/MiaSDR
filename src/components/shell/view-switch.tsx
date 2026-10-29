@@ -26,7 +26,7 @@ export function ViewSwitch({ label, items, className }: { label: string; items: 
           aria-current={item.active ? "page" : undefined}
           data-testid={item.testId}
           className={cn(
-            "-mb-px flex min-h-9 items-center border-b-2 px-3 text-sm whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "-mb-px flex min-h-9 items-center border-b-2 px-3 text-sm whitespace-nowrap focus-ring",
             item.active ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
           )}
         >

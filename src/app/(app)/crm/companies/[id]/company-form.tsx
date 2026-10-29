@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { countOf } from "@/shared/format-number";
 import { Time } from "@/components/shell/time";
 import { callApi } from "@/app/_lib/api-client";
 import { AddField } from "@/app/(app)/_components/person/person-details";
@@ -51,7 +52,7 @@ export function CompanyDetails({
         </EditableFact>
         <EditableFact label="LinkedIn" saved="LinkedIn page saved." inputs={[{ key: "linkedin", value: initial.linkedin, inputMode: "url", placeholder: "https://www.linkedin.com/company/name" }]} onSave={save}>
           {initial.linkedin ? (
-            <a href={initial.linkedin} target="_blank" rel="noopener noreferrer" aria-label="LinkedIn page (opens in a new tab)" className="underline-offset-4 hover:underline">
+            <a href={initial.linkedin} target="_blank" rel="noopener noreferrer" aria-label="LinkedIn page (opens in a new tab)" className="rounded-sm underline-offset-4 hover:underline focus-ring">
               Page
             </a>
           ) : (
@@ -70,7 +71,7 @@ export function CompanyDetails({
         settingsHint={
           customFields.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              <Link href="/settings/columns" className="underline underline-offset-4 hover:text-foreground">
+              <Link href="/settings/columns" className="rounded-sm underline underline-offset-4 hover:text-foreground focus-ring">
                 Custom fields
               </Link>{" "}
               in Settings adds company fields.
@@ -97,8 +98,8 @@ export function CompanyDetails({
         </p>
         {staleFields.length > 0 && (
           <details data-testid="company-other-values">
-            <summary className="w-fit cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:py-3">
-              {staleFields.length === 1 ? "1 value" : `${staleFields.length} values`} from removed fields
+            <summary className="w-fit cursor-pointer rounded-sm hover:text-foreground focus-ring max-sm:py-3">
+              {countOf(staleFields.length, "value")} from removed fields
             </summary>
             <dl className="mt-2 grid gap-1 text-sm">
               {staleFields.map((field) => (

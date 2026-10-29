@@ -1,5 +1,6 @@
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Time } from "@/components/shell/time";
+import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { LeadDetail } from "@/contexts/people/application/lead-ports";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
@@ -33,6 +34,7 @@ export function SendHistoryTable({
   }
   return (
     <RecordSection title="Send history" count={sends.length} level={level} testId="sends">
+      <ScrollableTable>
         <Table>
           <TableHeader>
             <TableRow>
@@ -62,6 +64,7 @@ export function SendHistoryTable({
             ))}
           </TableBody>
         </Table>
+      </ScrollableTable>
     </RecordSection>
   );
 }

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { ENROLLMENT_PAGE_SIZES, ENROLLMENT_TAB_LABELS, campaignLeadTabs, type EnrollmentListQuery, type TabCounts } from "@/contexts/outreach/domain/enrollment-list";
 import { leadsListHref } from "@/contexts/outreach/domain/campaign-view";
-import { cn } from "@/components/ui/utils";
 import { SearchField } from "@/components/shell/search-field";
 import { ListPager, pageCountOf } from "@/components/shell/list-pager";
 import { FilterChips } from "@/components/shell/filter-chips";
@@ -45,7 +44,7 @@ export function EnrollmentPager({ base, query, total }: { base: string; query: E
           key={n}
           href={leadsListHref(base, { ...query, pageSize: n, page: 1 })}
           aria-current={query.pageSize === n ? "true" : undefined}
-          className={cn(buttonVariants({ variant: query.pageSize === n ? "secondary" : "ghost", size: "sm" }), "max-sm:h-11")}
+          className={buttonVariants({ variant: query.pageSize === n ? "secondary" : "ghost", size: "sm", touch: true })}
         >
           {n}
         </Link>

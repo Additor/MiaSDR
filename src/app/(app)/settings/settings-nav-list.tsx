@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDownIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type { AttentionMap } from "./settings-attention";
 import type { SettingsGroup } from "./settings-nav-config";
 
-const LINK = "flex min-h-11 items-center rounded-md px-3 text-sm whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-9";
+const LINK = "flex min-h-11 items-center rounded-md px-3 text-sm whitespace-nowrap focus-ring md:min-h-9";
 
 function NavLink({
   href,
@@ -55,19 +56,19 @@ export function SettingsNavList({ groups, attention = {} }: { groups: SettingsGr
 
   return (
     <nav aria-label="Settings" className="border-b md:w-56 md:shrink-0 md:border-r md:border-b-0">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         aria-expanded={open}
         aria-controls="settings-nav-groups"
         onClick={() => setOpenFor(open ? null : pathname)}
-        className="flex min-h-11 w-full items-center justify-between gap-2 px-4 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+        className="h-auto min-h-11 w-full justify-between gap-2 rounded-none px-4 md:hidden"
       >
         <span className="truncate">{current?.title ?? "Settings"}</span>
         <span className="flex shrink-0 items-center gap-2 text-muted-foreground">
           {flagged > 0 && !open && <span className="text-xs">{flagged} need attention</span>}
           <ChevronDownIcon aria-hidden className={cn("size-4 transition-transform", open && "rotate-180")} />
         </span>
-      </button>
+      </Button>
       <div id="settings-nav-groups" className={cn("flex-col gap-4 p-2 md:flex md:gap-5 md:p-group transition-[opacity,translate] duration-(--duration-menu) ease-out max-md:starting:opacity-0 max-md:motion-safe:starting:-translate-y-1", open ? "flex" : "hidden")}>
         {groups.map((group) => (
           <div key={group.label} role="group" aria-label={group.label} className="flex flex-col gap-0.5">

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DatePicker } from "./date-picker";
@@ -12,8 +13,8 @@ const ROW_LABEL = "text-sm text-muted-foreground";
 /** A group of rows under a small title. Sections after the first sit under a hairline. */
 export function FilterSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="grid gap-2.5 not-first:border-t not-first:pt-4">
-      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+    <section aria-label={title} className="stack-group not-first:border-t not-first:pt-inset">
+      <h3 className="heading-item text-muted-foreground">{title}</h3>
       {children}
     </section>
   );
@@ -73,17 +74,22 @@ export function SelectField({ label, name, defaultValue, options }: { label: str
 export function TextField({ label, name, defaultValue, placeholder }: { label: string; name: string; defaultValue: string; placeholder?: string }) {
   return (
     <FilterRow label={label}>
-      <Input name={name} defaultValue={defaultValue} placeholder={placeholder} aria-label={label} className="max-sm:h-11" />
+      <Input name={name} defaultValue={defaultValue} placeholder={placeholder} aria-label={label} touch />
     </FilterRow>
   );
 }
 
-/** A checkbox row for a yes-only filter, such as Errors only. */
+/**
+ * A checkbox row for a yes-only filter, such as Errors only. The app's `Checkbox` follows the draft like the pickers do, so
+ * Reset clears it and a discard puts back the value in force; a hidden input posts "1" while it is on.
+ */
 export function CheckField({ label, name, defaultChecked }: { label: string; name: string; defaultChecked: boolean }) {
+  const [value, setValue] = useDraftValue(defaultChecked ? "1" : "", "");
   return (
-    <label className="flex min-h-8 items-center gap-2 text-sm max-sm:min-h-11">
-      <input type="checkbox" name={name} value="1" defaultChecked={defaultChecked} className="size-4 accent-primary" />
+    <label className="flex min-h-8 cursor-pointer items-center gap-2 text-sm max-sm:min-h-11">
+      <Checkbox checked={value === "1"} onCheckedChange={(checked) => setValue(checked ? "1" : "")} />
       {label}
+      {value === "1" && <input type="hidden" name={name} value="1" />}
     </label>
   );
 }

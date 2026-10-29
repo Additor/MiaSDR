@@ -8,7 +8,6 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +30,7 @@ import {
   type StepFromApi,
   type StepIssue,
 } from "../_lib/after-reply-form";
+import { countOf } from "@/shared/format-number";
 
 interface SaveResponse {
   stoppedRuns?: number;
@@ -243,8 +243,8 @@ export function AfterReplyEditor({
                   )}
                 </div>
                 {index > 0 && (
-                  <div className="grid gap-2">
-                    <Label htmlFor={`ar-delay-${index}`}>Wait after the previous message</Label>
+                  <Field>
+                    <FieldLabel htmlFor={`ar-delay-${index}`}>Wait after the previous message</FieldLabel>
                     <div className="flex gap-2">
                       <Input
                         id={`ar-delay-${index}`}
@@ -281,10 +281,10 @@ export function AfterReplyEditor({
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
+                  </Field>
                 )}
-                <div className="grid gap-2">
-                  <Label htmlFor={`ar-goal-${index}`}>Goal</Label>
+                <Field>
+                  <FieldLabel htmlFor={`ar-goal-${index}`}>Goal</FieldLabel>
                   <Textarea
                     id={`ar-goal-${index}`}
                     rows={3}
@@ -296,24 +296,24 @@ export function AfterReplyEditor({
                     onChange={(e) => update(index, { aiInstructions: e.target.value })}
                   />
                   <p className="text-xs text-muted-foreground">The instruction the AI follows when it writes this message.</p>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`ar-tags-${index}`}>Knowledge tags (comma separated, optional)</Label>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`ar-tags-${index}`}>Knowledge tags (comma separated, optional)</FieldLabel>
                   <Input id={`ar-tags-${index}`} value={tagText[index] ?? ""} disabled={pending} placeholder="pricing, faq" onChange={(e) => setTags(index, e.target.value)} />
-                </div>
+                </Field>
                 {index > 0 && (
                   <>
-                    <div className="grid gap-2">
-                      <Label htmlFor={`ar-subject-${index}`}>Starting subject (optional)</Label>
+                    <Field>
+                      <FieldLabel htmlFor={`ar-subject-${index}`}>Starting subject (optional)</FieldLabel>
                       <Input id={`ar-subject-${index}`} value={step.subjectTemplate} maxLength={500} disabled={pending} onChange={(e) => update(index, { subjectTemplate: e.target.value })} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor={`ar-body-${index}`}>Starting text (optional)</Label>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor={`ar-body-${index}`}>Starting text (optional)</FieldLabel>
                       <Textarea id={`ar-body-${index}`} rows={4} value={step.bodyTemplate} maxLength={20000} disabled={pending} onChange={(e) => update(index, { bodyTemplate: e.target.value })} />
                       <p className="text-xs text-muted-foreground">
                         The AI starts from this text. Use {"{{firstName}}"} and {"{{company}}"} for lead fields.
                       </p>
-                    </div>
+                    </Field>
                   </>
                 )}
                 {stepIssues.map((i) => (
@@ -355,7 +355,7 @@ export function AfterReplyEditor({
       <ConfirmDialog
         open={confirmStop !== null}
         onOpenChange={(open) => !open && setConfirmStop(null)}
-        title={`Stop ${confirmStop ?? 0} ${confirmStop === 1 ? "follow-up" : "follow-ups"} in progress?`}
+        title={`Stop ${countOf(confirmStop ?? 0, "follow-up")} in progress?`}
         description="Switching off stops the follow-ups that are running, and the AI writes no more drafts for them. Your steps stay saved."
         confirmLabel="Switch off follow-ups"
         cancelLabel="Keep following up"

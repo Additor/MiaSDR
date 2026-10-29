@@ -1,11 +1,13 @@
 "use client";
 
 import { ArrowDownIcon, ArrowUpIcon, PlayIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { CHOICE_TILE } from "@/components/shell/choice-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { DEFAULT_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment-config";
@@ -17,7 +19,7 @@ import { guessColumn, lookupCents, lookupPrice, usableProviders, useProviders, t
 import type { GridColumn } from "../_lib/data/types";
 import { centsToDollarsText, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, type RunEstimate } from "../_lib/data/run-request";
 import { spendSummary, type WaterfallStep } from "../_lib/data/waterfall-steps";
-import { ColumnChoice, Choice, ErrorText, Field } from "./form-bits";
+import { ColumnSelect, ItemSelect } from "./form-bits";
 import { ColumnChips, ConnectProviders, SetupRow } from "./enrichment-setup";
 import { ProviderManager } from "./provider-manager";
 
@@ -133,41 +135,34 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
         <DialogTitle>Edit {column.name}</DialogTitle>
         <DialogDescription>Change which columns feed the provider, what a cell may spend and when it runs. Existing results stay until you run the column again.</DialogDescription>
       </DialogHeader>
-      <div className="grid gap-3">
-        <fieldset className="grid gap-2">
-          <legend className="mb-1 text-sm font-medium">Inputs</legend>
+      <FieldGroup>
+        <FieldSet className="gap-2">
+          <FieldLegend variant="label">Inputs</FieldLegend>
           {specs.map((input) => (
-            <Field key={input.key} label={`${input.name}${input.required ? " (required)" : ""}`} htmlFor={`edit-in-${input.key}`}>
-              <ColumnChoice id={`edit-in-${input.key}`} value={form.inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => set("inputs", { ...form.inputs, [input.key]: v ?? "" })} columns={sources} />
+            <Field key={input.key}>
+              <FieldLabel htmlFor={`edit-in-${input.key}`}>{`${input.name}${input.required ? " (required)" : ""}`}</FieldLabel>
+              <ColumnSelect id={`edit-in-${input.key}`} value={form.inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => set("inputs", { ...form.inputs, [input.key]: v ?? "" })} columns={sources} />
             </Field>
           ))}
-        </fieldset>
+        </FieldSet>
         {actionKey === "verify-email" && (
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={form.stopAtCatchAll} onCheckedChange={(v) => set("stopAtCatchAll", v === true)} />
+          <CheckField checked={form.stopAtCatchAll} onChange={(v) => set("stopAtCatchAll", v)}>
             {isWaterfall ? "Stop at a catch-all verdict instead of asking the next verifier" : "Count a catch-all verdict as found"}
-          </label>
+          </CheckField>
         )}
         {isWaterfall && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Spend cap per row ($)" htmlFor="edit-cap" hint="Optional. A provider that would pass it is skipped. Leave empty for no cap.">
-              <Input id="edit-cap" type="number" min={0} step={0.01} value={form.maxCost} onChange={(e) => set("maxCost", e.target.value)} className="w-28" />
-            </Field>
-            <Field label="Credit cap per row" htmlFor="edit-credits" hint="Optional. Counts vendor credits. Leave empty for no cap.">
-              <Input id="edit-credits" type="number" min={0} step={0.5} value={form.maxCredits} onChange={(e) => set("maxCredits", e.target.value)} className="w-28" />
-            </Field>
-            <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <Checkbox checked={form.waitOnLimit} onCheckedChange={(v) => set("waitOnLimit", v === true)} />
+          <div className="grid gap-group sm:grid-cols-2">
+            <NumberField id="edit-cap" label="Spend cap per row ($)" hint="Optional. A provider that would pass it is skipped. Leave empty for no cap." step={0.01} value={form.maxCost} onChange={(v) => set("maxCost", v)} />
+            <NumberField id="edit-credits" label="Credit cap per row" hint="Optional. Counts vendor credits. Leave empty for no cap." step={0.5} value={form.maxCredits} onChange={(v) => set("maxCredits", v)} />
+            <CheckField className="sm:col-span-2" checked={form.waitOnLimit} onChange={(v) => set("waitOnLimit", v)}>
               {WAIT_LABEL}
-            </label>
+            </CheckField>
           </div>
         )}
-        <Field label={REUSE_LABEL} htmlFor="edit-reuse" hint="0 always asks the provider.">
-          <Input id="edit-reuse" type="number" min={0} max={365} value={form.reuseDays} onChange={(e) => set("reuseDays", e.target.value)} className="w-28" />
-        </Field>
+        <NumberField id="edit-reuse" label={REUSE_LABEL} hint="0 always asks the provider." max={365} value={form.reuseDays} onChange={(v) => set("reuseDays", v)} />
         <RunTiming autoRun={form.autoRun} setAutoRun={(v) => set("autoRun", v)} delay={form.delay} setDelay={(v) => set("delay", v)} />
-        <ErrorText>{error}</ErrorText>
-      </div>
+        <FieldError>{error}</FieldError>
+      </FieldGroup>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
           Cancel
@@ -182,15 +177,34 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
 
 export function RunTiming({ autoRun, setAutoRun, delay, setDelay }: { autoRun: boolean; setAutoRun: (v: boolean) => void; delay: string; setDelay: (v: string) => void }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={autoRun} onCheckedChange={(v) => setAutoRun(v === true)} />
+    <div className="grid gap-group sm:grid-cols-2">
+      <CheckField checked={autoRun} onChange={setAutoRun}>
         Run automatically when its inputs change
-      </label>
-      <Field label="Delay before each call (seconds)" htmlFor="run-delay">
-        <Input id="run-delay" type="number" min={0} max={3600} value={delay} onChange={(e) => setDelay(e.target.value)} className="w-28" />
-      </Field>
+      </CheckField>
+      <NumberField id="run-delay" label="Delay before each call (seconds)" max={3600} value={delay} onChange={setDelay} />
     </div>
+  );
+}
+
+/** A checkbox and its label as a horizontal field. */
+function CheckField({ checked, onChange, children, className }: { checked: boolean; onChange: (checked: boolean) => void; children: React.ReactNode; className?: string }) {
+  const id = useId();
+  return (
+    <Field orientation="horizontal" className={className}>
+      <Checkbox id={id} checked={checked} onCheckedChange={(v) => onChange(v === true)} />
+      <FieldLabel htmlFor={id}>{children}</FieldLabel>
+    </Field>
+  );
+}
+
+/** A short number field with its label and an optional hint the input names as its description. */
+function NumberField({ id, label, hint, value, onChange, step, max }: { id: string; label: string; hint?: string; value: string; onChange: (value: string) => void; step?: number; max?: number }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input id={id} type="number" min={0} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} className="w-28" aria-describedby={hint ? `${id}-hint` : undefined} />
+      {hint && <FieldDescription id={`${id}-hint`}>{hint}</FieldDescription>}
+    </Field>
   );
 }
 
@@ -218,7 +232,7 @@ function CreateBody(props: Props) {
           <DialogTitle>Connect providers</DialogTitle>
           <DialogDescription>Each provider uses your own account and key. MiaSDR checks a key with the vendor before it saves it, and never shows it again.</DialogDescription>
         </DialogHeader>
-        <ErrorText>{loadError}</ErrorText>
+        <FieldError>{loadError}</FieldError>
         <ProviderManager catalog={catalog} providers={providers} onChanged={refresh} />
         <DialogFooter>
           <Button type="button" onClick={() => setView(view.back)}>
@@ -266,7 +280,7 @@ function CreateBody(props: Props) {
         <DialogTitle>Add enrichment</DialogTitle>
         <DialogDescription>What should the new column hold? Nothing runs until you press Run, and every call uses your own provider account.</DialogDescription>
       </DialogHeader>
-      <ErrorText>{loadError}</ErrorText>
+      <FieldError>{loadError}</FieldError>
       <ul className="grid gap-2 sm:grid-cols-2">
         {OUTCOMES.map((o) => {
           const ready = usable.filter((p) => p.actions.some((a) => a.key === o.actionKey));
@@ -275,9 +289,9 @@ function CreateBody(props: Props) {
               <button
                 type="button"
                 onClick={() => setView({ kind: "outcome", actionKey: o.actionKey })}
-                className="grid h-full w-full gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                className={CHOICE_TILE}
               >
-                <span className="text-sm font-medium">{o.label}</span>
+                <span className="heading-item">{o.label}</span>
                 <span className="text-xs text-muted-foreground">{o.fills}</span>
                 <span className="text-xs">{ready.length > 0 ? `Ready: ${ready.map((p) => p.name).join(", ")}` : "No provider connected yet"}</span>
               </button>
@@ -323,30 +337,30 @@ function SpendAndTiming(p: {
 }) {
   return (
     <details className="group rounded-lg border">
-      <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3 px-3 py-2 text-sm">
+      <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3 rounded-lg px-3 py-2 text-sm focus-ring">
         <span className="font-medium">Options</span>
         <span className="truncate text-xs text-muted-foreground">{spendSummary({ autoRun: p.autoRun, delay: p.delay, reuseDays: p.reuseDays, ...(p.waterfall ? { maxCost: p.maxCost, maxCredits: p.maxCredits, waitOnLimit: p.waitOnLimit } : {}) })}</span>
       </summary>
-      <div className="grid gap-3 border-t px-3 py-3">
+      <FieldGroup className="border-t px-3 py-3">
         {p.waterfall && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Spend cap per row ($)" htmlFor="wf-cap" hint={p.maxCost.trim() !== "" && p.noPrice ? "These providers have no price, so a dollar cap never stops a call. Use the credit cap." : "Optional. A provider that would pass it is skipped."}>
-              <Input id="wf-cap" type="number" min={0} step={0.01} value={p.maxCost} onChange={(e) => p.setMaxCost(e.target.value)} className="w-28" />
-            </Field>
-            <Field label="Credit cap per row" htmlFor="wf-credits" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification.">
-              <Input id="wf-credits" type="number" min={0} step={0.5} value={p.maxCredits} onChange={(e) => p.setMaxCredits(e.target.value)} className="w-28" />
-            </Field>
-            <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <Checkbox checked={p.waitOnLimit} onCheckedChange={(v) => p.setWaitOnLimit(v === true)} />
+          <div className="grid gap-group sm:grid-cols-2">
+            <NumberField
+              id="wf-cap"
+              label="Spend cap per row ($)"
+              hint={p.maxCost.trim() !== "" && p.noPrice ? "These providers have no price, so a dollar cap never stops a call. Use the credit cap." : "Optional. A provider that would pass it is skipped."}
+              step={0.01}
+              value={p.maxCost}
+              onChange={p.setMaxCost}
+            />
+            <NumberField id="wf-credits" label="Credit cap per row" hint="Optional. Counts vendor credits, such as Hunter's half credit per verification." step={0.5} value={p.maxCredits} onChange={p.setMaxCredits} />
+            <CheckField className="sm:col-span-2" checked={p.waitOnLimit} onChange={p.setWaitOnLimit}>
               {WAIT_LABEL}
-            </label>
+            </CheckField>
           </div>
         )}
         <RunTiming autoRun={p.autoRun} setAutoRun={p.setAutoRun} delay={p.delay} setDelay={p.setDelay} />
-        <Field label={REUSE_LABEL} htmlFor="reuse-days" hint="A provider answered the same lookup within this many days: the row takes that answer and you pay nothing. 0 always asks.">
-          <Input id="reuse-days" type="number" min={0} max={365} value={p.reuseDays} onChange={(e) => p.setReuseDays(e.target.value)} className="w-28" />
-        </Field>
-      </div>
+        <NumberField id="reuse-days" label={REUSE_LABEL} hint="A provider answered the same lookup within this many days: the row takes that answer and you pay nothing. 0 always asks." max={365} value={p.reuseDays} onChange={p.setReuseDays} />
+      </FieldGroup>
     </details>
   );
 }
@@ -367,18 +381,17 @@ function ExtraOutputs({ outputs, primary, chosen, onChange }: { outputs: ActionS
   const extra = outputs.filter((o) => o.key !== primary);
   if (extra.length === 0) return null;
   return (
-    <fieldset className="stack-field">
-      <legend className="mb-1 text-sm font-medium">Also add as columns</legend>
-      <p className="-mt-1 text-xs text-muted-foreground">The new column shows {outputs.find((o) => o.key === primary)?.name.toLowerCase() ?? "the main answer"}. Tick a field to give it a column too.</p>
+    <FieldSet className="gap-field">
+      <FieldLegend variant="label">Also add as columns</FieldLegend>
+      <FieldDescription>The new column shows {outputs.find((o) => o.key === primary)?.name.toLowerCase() ?? "the main answer"}. Tick a field to give it a column too.</FieldDescription>
       <div className="grid gap-1 sm:grid-cols-2">
         {extra.map((o) => (
-          <label key={o.key} className="flex items-center gap-2 text-sm">
-            <Checkbox checked={chosen.includes(o.key)} onCheckedChange={(v) => onChange(v === true ? [...chosen, o.key] : chosen.filter((k) => k !== o.key))} />
+          <CheckField key={o.key} checked={chosen.includes(o.key)} onChange={(on) => onChange(on ? [...chosen, o.key] : chosen.filter((k) => k !== o.key))}>
             {o.name}
-          </label>
+          </CheckField>
         ))}
       </div>
-    </fieldset>
+    </FieldSet>
   );
 }
 
@@ -436,18 +449,20 @@ export async function createColumn(tableId: string, body: Record<string, unknown
  */
 function InputFields({ specs, inputs, setInputs, columns, uncovered, missingInput, samples }: { specs: Array<{ key: string; name: string; required: boolean }>; inputs: Record<string, string>; setInputs: (next: Record<string, string>) => void; columns: GridColumn[]; uncovered?: ActionSpec; missingInput?: unknown; samples?: Record<string, string> }) {
   return (
-    <fieldset className="grid gap-2">
-      <legend className="mb-1 text-sm font-medium">Inputs</legend>
+    <FieldSet className="gap-2">
+      <FieldLegend variant="label">Inputs</FieldLegend>
       {specs.map((input) => {
         const sample = inputs[input.key] ? samples?.[inputs[input.key]] : undefined;
         return (
-          <Field key={input.key} label={`${input.name}${input.required ? " (required)" : ""}`} htmlFor={`in-${input.key}`} hint={sample ? `First value: ${sample}` : undefined}>
-            <ColumnChoice id={`in-${input.key}`} value={inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => setInputs({ ...inputs, [input.key]: v ?? "" })} columns={columns} />
+          <Field key={input.key}>
+            <FieldLabel htmlFor={`in-${input.key}`}>{`${input.name}${input.required ? " (required)" : ""}`}</FieldLabel>
+            <ColumnSelect id={`in-${input.key}`} value={inputs[input.key] || null} none={input.required ? undefined : "Not used"} onChange={(v) => setInputs({ ...inputs, [input.key]: v ?? "" })} columns={columns} />
+            {sample && <FieldDescription>First value: {sample}</FieldDescription>}
           </Field>
         );
       })}
       {!missingInput && uncovered && <p className="text-sm text-muted-foreground">Map {acceptsText(uncovered)}.</p>}
-    </fieldset>
+    </FieldSet>
   );
 }
 
@@ -567,7 +582,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
     return (
       <>
         {header}
-        <ErrorText>{loadError}</ErrorText>
+        <FieldError>{loadError}</FieldError>
         <ConnectProviders
           entries={vendors}
           providers={providers}
@@ -629,10 +644,9 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
               })}
             </ul>
             {waterfall && actionKey === "verify-email" && (
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={stopAtCatchAll} onCheckedChange={(v) => setStopAtCatchAll(v === true)} />
+              <CheckField checked={stopAtCatchAll} onChange={setStopAtCatchAll}>
                 Stop at a catch-all verdict instead of asking the next verifier
-              </label>
+              </CheckField>
             )}
             <Button type="button" variant="link" size="sm" className="h-auto w-fit p-0" onClick={() => setConnecting(true)}>
               Connect or manage providers
@@ -650,8 +664,10 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
             <InputFields specs={inputSpecs} inputs={inputs} setInputs={setInputs} columns={columns} uncovered={uncovered} missingInput={missingInput} samples={preview?.samples} />
           </SetupRow>
           <SetupRow label="Adds" noun="columns" action="Edit" open={open === "outputs"} onToggle={() => toggleOpen("outputs")} summary={<ColumnChips names={[columnName, ...extraNames]} />}>
-            <Field label="Column name" htmlFor="wf-name" hint="The column shows the main answer. Ticked fields get columns of their own.">
-              <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={outcome.column} />
+            <Field>
+              <FieldLabel htmlFor="wf-name">Column name</FieldLabel>
+              <Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={outcome.column} aria-describedby="wf-name-hint" />
+              <FieldDescription id="wf-name-hint">The column shows the main answer. Ticked fields get columns of their own.</FieldDescription>
             </Field>
             <ExtraOutputs outputs={outputSpecs} primary={contract.primaryOutput} chosen={outputs} onChange={setOutputs} />
           </SetupRow>
@@ -661,7 +677,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
           noPrice={picked.every((k) => lookupCents(offering.find((p) => p.key === k)?.defaultCostCents ?? 0, actionOf(k)) === 0)}
           {...{ maxCost, setMaxCost, maxCredits, setMaxCredits, waitOnLimit, setWaitOnLimit, autoRun, setAutoRun, delay, setDelay, reuseDays, setReuseDays }}
         />
-        <ErrorText>{error}</ErrorText>
+        <FieldError>{error}</FieldError>
       </div>
       <CreateFooter blocker={blocker} summary={preview && !uncovered ? fullRunText(preview) : null} busy={busy} onBack={onBack} onSave={save} backLabel={backLabel} />
     </>
@@ -721,8 +737,9 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
         <DialogDescription>Actions outside the four shared outcomes, such as a Custom HTTP API. Nothing runs until you press Run.</DialogDescription>
       </DialogHeader>
       <div className="grid gap-4">
-        <Field label="Action" htmlFor="other-action">
-          <Choice
+        <Field>
+          <FieldLabel htmlFor="other-action">Action</FieldLabel>
+          <ItemSelect
             id="other-action"
             items={options.map((o) => ({ value: `${o.provider.key}:${o.action.key}`, label: `${o.action.name} (${o.provider.name}, ${lookupPrice(o.provider.defaultCostCents, o.action).toLowerCase()})` }))}
             value={choice}
@@ -753,7 +770,7 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
             />
           </>
         )}
-        <ErrorText>{error}</ErrorText>
+        <FieldError>{error}</FieldError>
       </div>
       <CreateFooter blocker={blocker} busy={busy} onBack={onBack} onSave={save} />
     </>

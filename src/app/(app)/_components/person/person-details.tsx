@@ -8,8 +8,8 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
 import { EditableFact, Fact, InlineForm, NotSet, type EditorProps, type SaveResult } from "../record/inline-field";
@@ -150,7 +150,7 @@ function CompanyValue({ values, href }: { values: LeadFormValues; href: string |
 function PersonOrigin({ facts }: { facts: PersonFacts }) {
   return (
     <StateTip
-      trigger={<span tabIndex={0} aria-label="When this person was added and changed" className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:size-11" data-testid="person-origin" />}
+      trigger={<span tabIndex={0} aria-label="When this person was added and changed" className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-ring max-sm:size-11" data-testid="person-origin" />}
       tip={
         <TipLines
           lines={[
@@ -231,7 +231,7 @@ function CompanyEditor({ id, person, values, companyHref, dealCount, close }: Ed
       errorId={errorId}
       extra={
         had && (
-          <Button type="button" size="sm" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={() => setAsking({ kind: "remove" })}>
+          <Button type="button" size="sm" variant="ghost" disabled={pending} touch onClick={() => setAsking({ kind: "remove" })}>
             Remove company
           </Button>
         )
@@ -254,13 +254,13 @@ function CompanyEditor({ id, person, values, companyHref, dealCount, close }: Ed
         <CompanyDomainField id={`${base}-domain`} value={domain} onChange={setDomain} lookup={lookup} autoFocus />
         {!same && typed !== "" && lookup.status === "found" && <CompanyJoinLine company={lookup.company} typedName={name} />}
         {!same && typed !== "" && lookup.status !== "found" && (
-          <div className="stack-field">
-            <Label htmlFor={`${base}-name`}>Company name</Label>
-            <Input id={`${base}-name`} value={name} autoComplete="off" aria-describedby={`${base}-name-help`} className="max-sm:h-11" onChange={(e) => setName(e.target.value)} />
-            <p id={`${base}-name-help`} className="text-xs text-muted-foreground">
+          <Field>
+            <FieldLabel htmlFor={`${base}-name`}>Company name</FieldLabel>
+            <Input id={`${base}-name`} value={name} autoComplete="off" aria-describedby={`${base}-name-help`} touch onChange={(e) => setName(e.target.value)} />
+            <FieldDescription id={`${base}-name-help`} className="text-xs">
               Names the company when the domain is new.
-            </p>
-          </div>
+            </FieldDescription>
+          </Field>
         )}
       </div>
       <ConfirmDialog
@@ -332,7 +332,7 @@ export function AddField({ fields, allowNew = false, onSave, settingsHint }: { f
   if (!open) {
     return (
       <div>
-        <Button type="button" variant="ghost" size="sm" className="-ml-2 text-muted-foreground max-sm:h-11" onClick={() => setOpen(true)}>
+        <Button type="button" variant="ghost" size="sm" className="-ml-2 text-muted-foreground" touch onClick={() => setOpen(true)}>
           <PlusIcon /> Add field
         </Button>
       </div>
@@ -341,8 +341,8 @@ export function AddField({ fields, allowNew = false, onSave, settingsHint }: { f
 
   return (
     <InlineForm label={null} onSubmit={onSubmit} onCancel={reset} busy={pending || refreshing} error={error} errorId={`${base}-error`} submitLabel="Add">
-      <div className="stack-field">
-        <Label htmlFor={`${base}-field`}>Field</Label>
+      <Field>
+        <FieldLabel htmlFor={`${base}-field`}>Field</FieldLabel>
         <Input
           id={`${base}-field`}
           autoFocus
@@ -350,7 +350,7 @@ export function AddField({ fields, allowNew = false, onSave, settingsHint }: { f
           value={field}
           autoComplete="off"
           placeholder={allowNew ? "Pick a field or name a new one" : "Pick a field"}
-          className="max-sm:h-11"
+          touch
           onChange={(e) => setField(e.target.value)}
         />
         <datalist id={`${base}-fields`}>
@@ -358,11 +358,11 @@ export function AddField({ fields, allowNew = false, onSave, settingsHint }: { f
             <option key={c.key} value={c.name} />
           ))}
         </datalist>
-      </div>
-      <div className="stack-field">
-        <Label htmlFor={`${base}-value`}>Value</Label>
-        <Input id={`${base}-value`} value={value} autoComplete="off" className="max-sm:h-11" onChange={(e) => setValue(e.target.value)} />
-      </div>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor={`${base}-value`}>Value</FieldLabel>
+        <Input id={`${base}-value`} value={value} autoComplete="off" touch onChange={(e) => setValue(e.target.value)} />
+      </Field>
     </InlineForm>
   );
 }

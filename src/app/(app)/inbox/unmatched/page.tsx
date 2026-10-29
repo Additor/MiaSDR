@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { listIdentityExceptions } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { toActor } from "@/app/_lib/api";
+import { ListSkeleton } from "@/components/shell/list-skeleton";
 import { PageHeader } from "@/components/shell/page-header";
 import { ExceptionsPanel } from "./exceptions-panel";
 
@@ -16,7 +16,14 @@ export default function UnmatchedSendersPage() {
     <>
       <PageHeader title="Unmatched senders" back={{ href: "/inbox", label: "Inbox" }} />
       <div className="page stack-group">
-        <Suspense fallback={<Skeleton className="h-64 w-full max-w-3xl" />}>
+        <Suspense
+          fallback={
+            // A ruled list of messages with no toolbar above it.
+            <div className="max-w-3xl">
+              <ListSkeleton toolbar={false} label="Loading unmatched senders" />
+            </div>
+          }
+        >
           <Exceptions />
         </Suspense>
       </div>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { lookupCents } from "@/contexts/grid/enrichment/domain/enrichment-pricing";
 import { gridRequest } from "./client";
+import { formatCount } from "@/shared/format-number";
 
 export interface ActionInput {
   key: string;
@@ -96,7 +97,7 @@ export function impactText(kind: "off" | "disconnect", impact: ProviderImpact | 
   }
   const n = impact.columns.length;
   const cols = `${n} ${n === 1 ? "column uses" : "columns use"} it`;
-  const waiting = impact.pendingCells > 0 ? ` ${impact.pendingCells.toLocaleString("en-US")} ${impact.pendingCells === 1 ? "cell is" : "cells are"} waiting to run.` : "";
+  const waiting = impact.pendingCells > 0 ? ` ${formatCount(impact.pendingCells)} ${impact.pendingCells === 1 ? "cell is" : "cells are"} waiting to run.` : "";
   if (kind === "off") {
     if (n === 0) return "No column uses it. You can turn it back on at any time.";
     return `${cols}.${waiting} Their cells wait until you turn it back on, without using an attempt; a column that tries several providers asks the next one meanwhile.`;
@@ -133,9 +134,14 @@ export function useProviders() {
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Loads can overlap (a retry, the refresh after a save). Only the latest one writes, so a slow failure never covers a
+  // list that loaded after it.
+  const latest = useRef(0);
 
   const refresh = useCallback(async () => {
+    const call = ++latest.current;
     const res = await gridRequest<{ catalog: CatalogEntry[]; providers: ProviderView[] }>("/api/grid/providers", "GET");
+    if (call !== latest.current) return;
     if (res.ok && res.data) {
       setCatalog(res.data.catalog);
       setProviders(res.data.providers);
@@ -146,12 +152,19 @@ export function useProviders() {
     setLoading(false);
   }, []);
 
+  /** Loads again behind the skeleton, so a retry shows its work and a second failure shows again. */
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    return refresh();
+  }, [refresh]);
+
   useEffect(() => {
     const handle = setTimeout(() => void refresh(), 0);
     return () => clearTimeout(handle);
   }, [refresh]);
 
-  return { catalog, providers, loading, error, refresh };
+  return { catalog, providers, loading, error, refresh, retry };
 }
 
 /** Providers a column can call right now: switched on, with a key when the catalog entry needs one. */

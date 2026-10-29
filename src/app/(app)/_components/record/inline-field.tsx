@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { DatePicker } from "@/components/shell/date-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 
 /** The label column every fact row shares, read-only or editable, so a panel lines up whatever it holds. */
 const ROW = "grid grid-cols-[6.5rem_minmax(0,1fr)] items-baseline gap-3";
@@ -113,10 +113,10 @@ export function EditableFact({
         type="button"
         variant="ghost"
         size="icon-xs"
+        touch
         aria-label={`Edit ${label}`}
-        title={`Edit ${label}`}
         // Quiet until the row is hovered or focused; always there on a touch screen, at a thumb's size.
-        className="-my-1 self-center text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-sm:-my-3 max-sm:size-11 [@media(hover:none)]:opacity-100"
+        className="-my-1 self-center text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-sm:-my-3 [@media(hover:none)]:opacity-100"
         onClick={() => setOpen(true)}
       >
         <PencilIcon />
@@ -150,10 +150,10 @@ function InlineEditor({ label, inputs, onSave, close, busy }: { label: string; i
       {inputs.map((input, index) => {
         const id = `${base}-${input.key}`;
         return (
-          <div key={input.key} className="stack-field">
-            <Label htmlFor={id} className={single ? "sr-only" : undefined}>
+          <Field key={input.key}>
+            <FieldLabel htmlFor={id} className={single ? "sr-only" : undefined}>
               {single ? label : input.label}
-            </Label>
+            </FieldLabel>
             {input.type === "date" ? (
               <DatePicker
                 id={id}
@@ -176,16 +176,16 @@ function InlineEditor({ label, inputs, onSave, close, busy }: { label: string; i
                 value={values[input.key] ?? ""}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={[error ? errorId : null, input.help ? `${id}-help` : null].filter(Boolean).join(" ") || undefined}
-                className="max-sm:h-11"
+                touch
                 onChange={(e) => setValues({ ...values, [input.key]: e.target.value })}
               />
             )}
             {input.help && (
-              <p id={`${id}-help`} className="text-xs text-muted-foreground">
+              <FieldDescription id={`${id}-help`} className="text-xs">
                 {input.help}
-              </p>
+              </FieldDescription>
             )}
-          </div>
+          </Field>
         );
       })}
     </InlineForm>
@@ -232,15 +232,13 @@ export function InlineForm({
       {label && <p className="text-sm text-muted-foreground" aria-hidden>{label}</p>}
       {children}
       {error && (
-        <p id={errorId} role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <FieldError id={errorId}>{error}</FieldError>
       )}
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <Button type="submit" size="sm" disabled={busy} className="max-sm:h-11">
+        <Button type="submit" size="sm" disabled={busy} touch>
           {busy ? "Saving…" : submitLabel}
         </Button>
-        <Button type="button" size="sm" variant="ghost" disabled={busy} className="max-sm:h-11" onClick={onCancel}>
+        <Button type="button" size="sm" variant="ghost" disabled={busy} touch onClick={onCancel}>
           Cancel
         </Button>
         {extra}

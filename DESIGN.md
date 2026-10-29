@@ -30,14 +30,18 @@ typography:
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: "-0.025em"
-  settings-heading:
+  section-heading:
     fontFamily: "Geist, sans-serif"
     fontSize: "1rem"
     fontWeight: 600
-  section-heading:
+  subsection-heading:
     fontFamily: "Geist, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 600
+  item-heading:
+    fontFamily: "Geist, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 500
   bar:
     fontFamily: "Geist, sans-serif"
     fontSize: "0.875rem"
@@ -45,6 +49,10 @@ typography:
   body:
     fontFamily: "Geist, sans-serif"
     fontSize: "0.875rem"
+    fontWeight: 400
+  meta:
+    fontFamily: "Geist, sans-serif"
+    fontSize: "0.75rem"
     fontWeight: 400
 rounded:
   md: "0.4rem"
@@ -56,6 +64,7 @@ spacing:
   section-wide: "2rem"
   gutter: "1rem"
   gutter-wide: "1.5rem"
+  inset: "1rem"
   page-end: "3rem"
 components:
   top-bar:
@@ -66,11 +75,19 @@ components:
 
 # MiaSDR design system
 
-The code is the authority. When this file and the code disagree, `src/app/globals.css` (tokens), `src/components/ui` (primitives) and `src/components/shell` (shared shell parts) win, and this file needs a fix. The YAML frontmatter above holds machine-readable tokens for design tooling: a plain key is the light value, and the same key with `-dark` is the value under `.dark`.
+The code is the authority. When this file and the code disagree, `src/app/globals.css` (tokens and roles), `src/components/ui` (primitives) and `src/components/shell` (shared shell parts) win, and this file needs a fix. The YAML frontmatter above holds machine-readable tokens for design tooling: a plain key is the light value, and the same key with `-dark` is the value under `.dark`.
+
+This file holds the system: tokens, roles, parts and the rules that pick between them. How each screen behaves lives in the feature specs:
+
+- [Actions, Inbox and the thread](docs/design/inbox-and-actions.md)
+- [Leads and the CRM](docs/design/crm.md): the lead header, stop controls, the deal board
+- [Campaigns](docs/design/campaigns.md)
+- [Tables](docs/design/tables.md)
+- [Settings and the setup guide](docs/design/settings.md)
 
 ## Overview
 
-MiaSDR is an operating tool. A sales rep scans lists, opens a record and acts, many times a day. The surface stays neutral grey on white (and its dark counterpart). Structure comes from type weight, hairlines and spacing, not from boxes or color. The code is the source of truth: tokens live in `src/app/globals.css`, primitives in `src/components/ui`, and the shared shell in `src/components/shell`.
+MiaSDR is an operating tool. A sales rep scans lists, opens a record and acts, many times a day, starting from Actions, the home page. The surface stays neutral grey on white (and its dark counterpart). Structure comes from type weight, hairlines and spacing, not from boxes or color.
 
 ## Colors
 
@@ -78,49 +95,59 @@ Everything is grey. Normal states use the secondary badge; a colored badge marks
 
 | Hue | Token | Means | Form |
 |---|---|---|---|
-| Red | `--destructive`, `text-destructive` | An error or an irreversible action: a failed send, a refused registration, a dead inbound event, Delete | Error text, the destructive button, the badge of a failed row |
+| Red | `--destructive`, `text-destructive` | An error or an irreversible action: a failed send, a refused registration, a dead inbound event, Delete | Error text, the destructive button, the badge of a failed row, `Count tone="error"` for errors no retry fixes |
 | Amber | `--warning`, `text-warning` | An uncertain or degraded state: an unconfirmed send, an unknown outcome, a paused send engine, a limit near its end, a stale table | The icon and a short lead label only. Never a fill, a tinted band or a colored badge. The sentence beside it stays in the foreground. |
-| Lavender | `--sidebar-count`, `text-sidebar-count`, the rail dot `bg-sidebar-primary` | Work that waits for a person: Inbox unread, Actions pending, open setup steps, Settings areas an admin must look at | A plain count in the brand hue with no capsule, and a dot where no count fits (the collapsed rail, the Settings nav) |
+| Lavender | `--sidebar-count`, `text-sidebar-count`, the rail dot `bg-sidebar-primary` | Work that waits for a person: Actions pending, open setup steps, Settings areas an admin must look at | `Count tone="waiting"`: a plain count in the brand hue with no capsule, and a dot where no count fits (the collapsed rail, the Settings nav) |
 
 - Success is the normal outcome, so it reads in the foreground. No green: a delivered test email shows a muted check and the message.
-- A count goes red only when the row is an error that a retry cannot fix by itself. "2 failed" on the Settings overview is lavender: it waits for an admin.
-- The Setup guide item in the sidebar shows "3 of 5" as lavender count text and the lavender dot on the rail, like Inbox and Actions. No amber fill, no badge.
+- Inbox unread is not lavender. The replies that need a person already count in Actions, so the Inbox shows a muted count in the sidebar and a foreground dot on an unread row.
+- A count goes red only when the row is an error that a retry cannot fix by itself (dead letters). "2 failed" on the Settings overview is lavender: it waits for an admin.
+- The Setup guide item in the sidebar shows "3 of 5" as lavender count text and the lavender dot on the rail, like Actions. No amber fill, no badge.
 - `--warning` keeps 4.5:1 on the background in both themes (`oklch(0.52 0.13 60)` light, `oklch(0.83 0.14 80)` dark).
 - Red has two tokens. `--destructive` colors text and its 10% tint. `--destructive-solid` fills a solid destructive button behind white text. In light mode they match. In dark mode the text red (`oklch(0.704 0.191 22.216)`) gives white text only 3.4:1, so the fill takes a darker red (`oklch(0.55 0.22 27)`).
-- The lavender count changes with the sidebar. The brand hue `#b9aaff` reaches only about 2:1 as text on the light sidebar, so `--sidebar-count` mixes it toward `#1e1724` there (`color-mix(in oklab, #b9aaff 55%, #1e1724)`) until it reaches 4.5:1. On the dark sidebar the count uses `#b9aaff` as is. The rail dot (`--sidebar-primary`) stays `#b9aaff` in both themes.
+- The lavender count changes with the sidebar. The brand hue `#b9aaff` reaches only about 2:1 as text on the light sidebar, so `--sidebar-count` mixes it toward `#1e1724` there (`color-mix(in oklab, #b9aaff 55%, #1e1724)`) until it reaches 4.5:1. On the dark sidebar the count uses `#b9aaff` as is. The rail dot (`--sidebar-primary`) stays `#b9aaff` in both themes, and stays in the sidebar: on white it reaches only about 2:1.
+- Charts stay grey while they show one series: a bar is `bg-foreground/80` with its value printed as text. The `chart-1` to `chart-5` tokens are for a chart that has to tell series apart.
 - Dark mode redefines the same tokens under `.dark` in `src/app/globals.css`. Light and dark values for the main tokens sit in the frontmatter.
 
 ## Typography
 
 Geist Sans for everything, Geist Mono for code. Tables and fact lists use tabular numerals.
 
-| Role | Size and weight | Where |
-|---|---|---|
-| Record title | text-2xl, semibold | The h1 of a lead, contact, company or deal page (`RecordHeader`) |
-| Settings heading | text-base, semibold | The h2 of a `SettingsSection`, and a step of the lead import |
-| Section heading | text-sm, semibold | `RecordSection`, `AsideSection`, the Actions groups, analytics report blocks |
-| Top bar | text-sm; parent step muted, current step medium | `PageHeader` |
-| Body and labels | text-sm | Everything else; helper text in muted-foreground |
-| Meta | text-xs, muted | Timestamps, footnotes under a list |
+A heading takes its role by name, a utility in `globals.css`, never a size and a weight picked on the spot. Four steps, each apart from the next in size or in weight, never by a pixel. The step follows what the part is to the page: a page's own sections at 16px, the parts under or beside them at 14px semibold, so a side panel block or a folded history never competes with the work column.
+
+| Role | Utility | Size and weight | Where |
+|---|---|---|---|
+| Record title | `heading-record` | text-2xl, semibold, tight | The h1 of a lead, contact, company, deal or campaign page (`RecordHeader`) |
+| Section heading | `heading-section` | text-base, semibold | A part of the page itself, through `Section`/`SectionHead` (an h2 by default): a Settings block, a record's or a campaign's work-column section, the thread's Next step, Follow-ups, Earlier messages and History, an Actions list, an analytics report, a step of the lead import, an error page |
+| Subsection heading | `heading-subsection` | text-sm, semibold | A part under or beside a section (`role="subsection"`, the default for an h3): a side panel block (`AsideSection`), a folded history (`AsideDisclosure`, `RecordDisclosure`), a drawer's or a dialog's part, a deal board column |
+| Item heading | `heading-item` | text-sm, medium | An item's name in a ruled list, a group inside a section, the Inbox day labels (muted) |
+| Top bar | none | text-sm; parent step muted, current step medium | `PageHeader` |
+| Body and labels | none | text-sm | Everything else; helper text in muted-foreground |
+| Meta | none | text-xs, muted | Timestamps, footnotes under a list, a grid header's type and fill rate |
 
 The top bar is navigation, so it carries one size. "Leads / Ada Lovelace" reads as one breadcrumb: the parent in muted text, the slash dimmer, the current page in the foreground at medium weight. A page with a display title shows it in the body (record pages); every other page names itself in the bar.
+
+Nothing in the app is smaller than text-xs. Button `sm` and Toggle `sm` use text-xs.
+
+**Numbers.** Counts print through `formatCount` and `countOf` (`src/shared/format-number.ts`): grouped the English way ("1,204"), with the noun in the right number ("1 lead", "2 replies"). A count beside a heading, a segment or a list is a `Count`: one size, no capsule, no parentheses.
 
 ## Layout
 
 ### Spacing roles
 
-Spacing follows the relationship between two things, never a number picked on the spot. Four roles, loose to tight:
+Spacing follows the relationship between two things, never a number picked on the spot. Five roles, loose to tight:
 
 | Role | Token | Use it between | Narrow / wide |
 |---|---|---|---|
 | gutter | `--space-gutter` | The page edge and the content. The top bar and the body share it, so the title and the first column start on one line. | 1rem / 1.5rem |
 | section | `--space-section` | Independent parts of a page: the record header and its body, record sections, Settings blocks, the work column and the side column. | 1.5rem / 2rem |
+| inset | `--space-inset` | The edge of a bordered panel and the block inside it: a side panel section, a skeleton's side panel. | 1rem |
 | group | `--space-group` | Parts of one thing: a toolbar and its table, a section heading and its content, form fields, list rows. | 0.75rem |
 | field | `--space-field` | A label and its control, a heading and its one-line description. | 0.375rem |
 
-Gutter and section open up from the `lg` breakpoint. Group and field stay fixed, so a form reads the same in a side panel and on a full page.
+Gutter and section open up from the `lg` breakpoint. The others stay fixed, so a form reads the same in a side panel and on a full page.
 
-Each role is a Tailwind spacing key, so any spacing utility takes it by name: `gap-section`, `py-section`, `px-gutter`, `gap-group`, `pt-section`.
+Each role is a Tailwind spacing key, so any spacing utility takes it by name: `gap-section`, `py-section`, `px-gutter`, `p-inset`, `gap-group`, `pt-section`.
 
 ### Patterns
 
@@ -133,119 +160,93 @@ Each role is a Tailwind spacing key, so any spacing utility takes it by name: `g
 
 Pick the stack by asking what the children are to each other:
 
-- A list page (Leads, Contacts, Campaigns, Analytics) is one task: `page stack-group`. The filters, the count line and the table sit close.
+- A list page (Actions, Inbox, Leads, Contacts, Campaigns, Analytics) is one task: `page stack-group`. The filters, the count line and the list sit close.
 - A record page (`RecordPage`) is several independent parts: `page stack-section`.
-- A ruled sheet (`RecordSection`) puts a hairline between sections and section space on both sides of it: `border-t py-section`.
-- A side panel (`AsideSection`) pads its blocks by `p-4` and stacks their content by group. A block a person reads now and then (histories, lists) is an `AsideDisclosure`: the same padding and head, folded, with its count beside the title.
-- A Settings page is a column of blocks (`SettingsSection`, below).
+- A ruled sheet (`Section`, the default frame) puts a hairline between sections and section space on both sides of it.
+- A side panel (`AsideSection`, `Section frame="inset"`) pads its blocks by the inset role and stacks their content by group. A block a person reads now and then (histories, lists) is an `AsideDisclosure`: the same padding and head, folded, with its count beside the title.
+- A Settings page is a column of blocks (Settings pages, below).
 - A form stacks its fieldsets by section, the fields inside a fieldset by group, and each label and control by field.
 
 A heading always sits closer to its content than to the block above it. A section heading gets section space above and group space below.
 
-### Settings blocks
+### Layers
+
+z-index stays on four steps, never an arbitrary value:
+
+| Step | Use |
+|---|---|
+| `z-10` | Raised: a control above a stretched `RowLink`, the active cell of a grid |
+| `z-20` | Sticky: a sticky table header, pinned columns, the grid gutter |
+| `z-30` | Bars: the selection bar, a grid's header row over its sticky cells |
+| `z-50` | Overlays: popups, tooltips, dialogs, sheets |
+
+A component with layers of its own (the grid) sets `isolate` on its scroller, so its steps stay inside it.
+
+### Touch
+
+Below `sm`, a control a person taps is 44px. `Button` and `buttonVariants` take `touch` (a text button grows to 44px tall, an icon button to a 44px square) and `Input` takes `touch`. Dense surfaces that fold on a phone, such as grid cells, leave it off.
+
+### Settings pages
 
 `SettingsSection` (`src/app/(app)/settings/settings-section.tsx`) is the only block on a Settings page.
 
-- Each block is a `section` with a text-base semibold h2 and an optional one-line muted description, set as `stack-field`. The content follows by `stack-group`.
+- Each block is the shell's `Section`: a `heading-section` h2 and an optional one-line muted description, set as `stack-field`. The content follows by `stack-group`.
 - Blocks sit one after another with `border-t py-section`. The first block has no rule and no top padding, the last no bottom padding (`first-of-type`, `last-of-type`), so put intro text in a `div` or `p` before the first block, not between blocks.
 - A form lives inside its block and ends with its own Save button in a plain row. No card, no footer band.
-- A list of items inside a block (mailboxes, LinkedIn accounts, documents, stages, fields, invitations, jobs) is one ruled list: `RULED_LIST` (`divide-y`) with `RULED_ROW` rows. No box around the list and no box per item. An item's name is an h3 at text-sm medium.
-- Two levels at most: block, then rows. Settings > Reply handling lists reply types under an h3 per group (Interested, Existing customer, Not interested, Other) inside one Reply types block.
-- **Reply handling.** Settings > Reply handling holds three blocks. Reply types comes first, with Add reply type on its heading row. A type row shows the name, a Locked badge on Customer question, an Archived badge when archived, the count of people, and the rules summary in muted text ("Check after · Draft · Follow-ups keep going"). Asked to stop and Customer question add their reason sentence. Edit opens the dialog: Group (when adding), Name, Description, AI guidance, then the fieldset "When the AI picks {type}" with "Applies to replies picked from now on." and three radio groups: Check (Before it applies, After it applies, Skip), Reply draft (Write one, Don't write) and Follow-ups (Keep going, Stop). Asked to stop shows its fixed rules and reason in place of the radios. The archive dialog says how many people keep the type and where the AI sends replies that would have fit it. Confidence floor follows as one percent field with the help "Below this, an AI pick waits for a person." The floor holds a pick whatever its Check says. Unknown senders closes the page.
+- A list of items inside a block (mailboxes, LinkedIn accounts, documents, stages, fields, invitations, jobs) is one ruled list: `RULED_LIST` (`divide-y`) with `RULED_ROW` rows. No box around the list and no box per item. An item's name is an h3 at `heading-item`.
+- Two levels at most: block, then rows. Settings > Reply handling lists reply types under an h3 per group inside one Reply types block ([Settings and the setup guide](docs/design/settings.md)).
 - Width: the content column is `max-w-3xl`. Jobs and Inbound events take `max-w-5xl`: their tables carry six to eight columns of times, counts and errors. Tables in Settings sit flush in the column (`ScrollableTable`), not in a card.
-- The Settings overview (`/settings`) keeps its bordered link lists: they are navigation rows, not content blocks.
-- Groups follow what a setting changes, and each setting has one home: You, Workspace, Sending, CRM, AI, Operations (`settings-nav-config.ts`).
 
-### Settings forms
+### Forms
 
-Every Settings form builds from the same parts, so a person learns one way to change a value:
+Every form in the app builds from the same parts, so a person learns one way to change a value. Settings, dialogs, side panels and the sign-in pages alike:
 
 - **Fields.** shadcn's `Field` family (`src/components/ui/field.tsx`): `FieldGroup` stacks fields at group space, `Field` holds a `FieldLabel`, the control and an optional `FieldDescription` at field space, `FieldSet` with a `FieldLegend variant="label"` groups related controls, and `FieldError` carries the error. A checkbox or radio sits in `Field orientation="horizontal"`. In a flex row a field takes `className="w-auto"`.
-- **Save.** A form is controlled and compares its values with what is saved. `SaveRow` (`settings/settings-form.tsx`) ends it: the error, then Save, which stays off until something changed, then "Unsaved changes" and a ghost Discard while it is on. The button is always the default size and reads Save. `useLeaveGuard` asks before the tab closes with unsaved changes. A list that saves each step at once (custom fields, stages) has no Save.
-- **Members.** A member sees the same page with the controls off or hidden and the `AdminNotice` once at the top, before the first block. No Save row. A page with nothing a member may see (Audit log, Integrations, Inbound events, Jobs, LinkedIn) shows only the notice (`replacesPage`).
+- **Save (Settings).** A Settings form is controlled and compares its values with what is saved. `SaveRow` (`settings/settings-form.tsx`) ends it: the error, then Save, which stays off until something changed, then "Unsaved changes" and a ghost Discard while it is on. The button is always the default size and reads Save. `useLeaveGuard` asks before the tab closes with unsaved changes. A list that saves each step at once (custom fields, stages) has no Save.
+- **Members (Settings).** A member sees the same page with the controls off or hidden and the `AdminNotice` once at the top, before the first block. No Save row. A page with nothing a member may see (Audit log, Integrations, Inbound events, Jobs, LinkedIn) shows only the notice (`replacesPage`).
 - **Add and edit.** A list of things (reply types, knowledge documents) leads the page. Add sits on the block's heading row as an outline button, and Add and Edit open the same `ConfirmDialog` with the form in its body and Save as the confirm. A list whose items are only a name (custom fields, pipeline stages) adds in place instead: a Name field and an Add button after the list, Add off while the name is empty, no Save row. A short single-value change (a field or stage name) edits in place: Enter saves, Escape cancels, Save stays off while the name is unchanged.
 - **Empty and archived.** An empty list inside a block is an `EmptyState` with its title only; an empty group under a group h3 keeps a muted line. An archived item keeps full-strength text and says its state with an Archived badge, never with opacity.
 - **Row actions.** Ghost `sm` buttons at the end of the row (Edit, Recheck, Requeue, Retry, Manage, Reconnect); the destructive step is the dialog's red confirm, never a red button in the row. Reordering uses `ReorderButtons` (arrow icons, "Move {name} up").
 - **Pickers.** A long list is a searchable `Combobox` (`TimeZoneSelect`, `CountrySelect`); a short fixed list is a `Select`. `WorkingHoursFields`, shared by mailboxes and LinkedIn accounts, sets the sending days with a `ToggleGroup` of outline buttons and the window with two `TimeSelect`s, From and Until. A choice between two modes with an explanation is a `RadioGroup` of horizontal fields. See Pickers.
 
-### Inbox thread
-
-The thread page uses `RecordBody`. The work column holds the conversation and every decision about it: the channel as a summary line only when it is not email, the latest message with the type line fixed under it, the reply panel, Next step, Follow-ups (only while a run exists or the campaign drafts follow-ups), earlier messages, then History, where AI picks, Drafts, Notes and Activity fold as `RecordDisclosure`s with their counts. All four start closed, and a history with nothing in it is left out. The bordered side panel holds what is on file about the person, not decisions: the person, Assigned to (the assignee's name as a select with Take it, never a status badge or a sentence), Tasks (New task in its title row, `compact`), then Campaigns and Other conversations folded as `AsideDisclosure`s, and Do not contact with Clear only once the person is marked. A campaign that hands replies to the Inbox says so in its Campaigns row. Lists inside a block are plain rows, notes and AI picks divided by hairlines. Messages keep their own frame; no rule covers them yet. Opened from Actions, the header breadcrumb reads Actions and Next in queue sits on the right; opened from the Inbox it reads Inbox with Next unread. Both answer `]` and show the key on the button. After a send, an accepted pick, Looks right or a step taken in Next step, the thread links to Next in the queue.
-
-- **Type line.** One line under the latest message, the same for email and LinkedIn: a sparkle (the AI set it), a plug (an integration set it) or a person mark, then "{type} · {group}" (the group once when the type shares its name), then the rules summary in muted text ("Draft · Follow-ups keep going"), a lock for a locked Existing customer, Why, and Change type as a link. Why opens the AI's pick, confidence and reasoning in place. Without a type the line reads "No reply type yet". On a phone the rules take their own line.
-- **Decision first.** The type line expands in place, under the same line, when the AI's pick waits for a person: a held pick says why it waits and offers Accept, a held pick whose type an admin archived since reads "The AI picked {type}, but an admin archived that type since. Choose another type." with Change type as the leading button, an applied pick nobody checked offers Looks right, and a stop request shows the amber help icon, "Possible stop request." and Review stop request, which opens Stop contacting. Otherwise Change type sits beside the button as an outline button. The button is filled while no draft waits for approval; under a waiting draft it turns outline, so one filled button leads the page. `?stop=1` opens Stop contacting on load.
-- **Reply panel.** With no draft, the panel says why: the type's reason ("No draft: Not now replies get none.") or "No draft yet.", with Write a draft, or "Drafting…" while a job runs. When a draft job runs while an older draft still shows, "Drafting…" sits above that draft, so nobody acts on the old one. Hand-typing folds behind Write it yourself while the AI can draft.
-- **Next step.** Under the reply, one section holds three outline buttons to finish without a reply: Remind me adds a task due tomorrow, assigned to you; Done, no reply needed closes reply handling with a reason that starts as the reply type, and Reopen undoes it, so its confirm is not red; Stop contacting… opens the stop dialog. Closed, the section says Done with the reason and Reopen in place of the buttons. The reply type lives on the type line, not here.
-- **Change type.** One dialog changes the reply type. It shows the AI's pick on top and asks what changed: the AI read the last reply wrong (your pick replaces the AI's, and the new type's rules apply) or something happened off the thread, like a meeting (the AI's pick stays and no draft is written). A searchable picker lists the types by group. Under it three outcome lines say what the change does: Reply draft, Follow-ups and Contact. Picking Asked to stop adds the stop scope and reason to the same dialog, with a red Stop contacting and Only change the type, which stops nothing.
-- **AI picks.** The history lists each AI pick with a badge only when it waits: Held for a check or Not checked. The rest of its facts read as one muted line. Looks right shows only on a pick marked Not checked, so the button and the badge agree, and confirms it with one toast. Undo puts back the type from before the pick; its tooltip names what it retires (open drafts and follow-ups), and its toast says what it did.
-- **Draft edits survive.** Change type, Accept, Undo, Done and Stop contacting retire the open draft, so they save unsaved edits in the reply editor first (`draft-edits.ts`), and the out-of-date preview shows what was typed. A failed save stops the step and says "Your draft edits were not saved, so nothing changed." with the reason.
-- **Out of date.** A stale draft is a read-only preview with its cause in one sentence and the warning icon on its badge. Regenerate leads, Edit and send anyway copies the text into the composer, and no second editor stacks above it. While a draft job writes the next draft, "Drafting…" sits above the preview and Regenerate turns outline and stays off, so it cannot start a second draft.
-- **Message cards.** An inbound message names the person with title and company, the address on the line below.
-
-### Actions and Inbox lists
-
-Both pages are lists of rows, not tables. A row is one `RowLink` (a stretched link) in `LIST_ROW_FRAME` (`grid grid-cols-1`, so a long draft or subject cannot widen the page), at least 44px tall on a phone.
-
-- **Actions.** The toolbar holds the scope chips (Mine, Unassigned, Others) with their counts and the Filters button. Under it one strip counts every list (Problems, Replies, Follow-ups, AI picks, Next steps, Tasks, and the shared lists when they hold something): a list with work is a jump link with a lavender count, an empty one a muted zero. The oldest wait sits at the strip's right, its name linked to its row. Sections run problem first. A section head is the text-sm semibold title with a lavender count, and an info mark only where the name needs explaining (AI picks, Problems, the shared lists); a section with nothing in it has no head. A row shows the name with the channel as an icon after it (its name is the icon's accessible label), the reply type alone as meta (with its group only when two groups share the name), the wait as a `time`, the start of the inbound message, and a detail line (the draft for a reply). An AI pick row comes in three kinds: `held` reads "AI picked {type}" with Accept (a held pick without a public conversation offers Open lead or Open contact instead, since Accept answers only on a public thread), `looks_right` reads "AI applied {type}" with Looks right, and `stop_review` shows the amber help icon and "Possible stop request." with Review stop request, which opens the thread with Stop contacting open (`?stop=1`). The verb is trailing text at medium weight in the foreground. `Accept` and `Looks right` are small buttons above the stretched link (`relative z-10`).
-- **Inbox.** The toolbar ends on a link to the conversations waiting in Actions ("1 waiting in Actions"). Rows sit under `h2` day headings in a `divide-y` bordered list: an unread dot in a fixed gutter, the name and email, the time on the right (`HH:mm` for today and yesterday, a date otherwise), the subject and snippet on one line, and one state (reply type badge, auto-reply badge or an amber bounce icon). The channel shows only when it is not email.
-- **Marks.** An unconfirmed send carries the amber icon, a failed draft, job or dead letter the red icon, and each list uses the lavender count for work that waits on a person. No fills.
-- **Hidden mail.** All leaves automated mail out. An eye-off mark with the count sits beside the Inbox chips, names the kinds in its tooltip and opens the Automated view, which the More menu also counts.
-- **Keyboard.** `ListKeys` marks rows with `data-list-row`: j and k move, Enter opens. The keys sit on a keyboard mark (`KeyboardHint`) at the right of the toolbar, hidden on a phone. The thread adds `]` for the next queue item and Ctrl or Cmd+Enter to approve.
-
-### Tables
-
-A workbook (`src/app/(app)/tables`) is a spreadsheet and the densest surface in the app. The tables browser is an ordinary list page: New folder, New from file and New workbook (the filled one) in `PageHeader`, and a search that filters as you type in `ListToolbar`. A workbook page fills the viewport height (`h-svh`): `PageHeader` with the workbook name and Tables as the back step, a strip of table tabs, then the active table.
-
-- **Names.** On the workbook page, the workbook name and each table tab rename in place. The title is an `EditableTitle` (`PageHeader`'s `rename`): hover or focus shows a muted ground and a pencil, a click, Enter or F2 opens the field, Enter or leaving it saves and Escape cancels. A tab opens the same field on a double-click, F2 or Rename in its menu, and a new table opens with its tab in rename under the default name. No dialog names a table or renames a workbook there. The tables browser is a list of many workbooks and folders, so its row menu renames one through a name dialog. The header's actions area holds one ghost More menu with Move to folder and Delete workbook.
-- **Tabs.** The strip is a `ScrollCue` without a hint line, with New table after it. The open tab shows its More menu; the others show it on hover or focus, and a touch screen offers it on the open tab only. On a phone the tabs, the menus and New table are 44px tall. The table stacks its toolbar, the filter and sort chips, the selection bar and the grid at `gap-2` inside `p-3`, tighter than the page roles, because the grid needs the room.
-
-- **Editors.** A cell edits in place. A select column opens the app's `Select` on the cell: a pick commits, and Escape, Tab or a click outside discards. A date column types yyyy-MM-dd in the cell with a `Calendar` under it; a click on a day commits it, and the keys stay those of a text cell.
-- **Grid.** `DataGrid` is one `role="grid"` scroll container with a hairline border and rounded-lg. Rows are 32px and the header 36px on a muted band. A 72px gutter holds the row checkbox and number. Cells are text-sm. The header names the column at text-xs medium, with the type and the fill rate in 10px muted text. Numbers and currency align right in tabular numerals. Formula columns and columns a run fills are read-only and sit on a `bg-muted/30` tint. Pinned columns stay on the left behind a shadow edge; at phone width the grid ignores pins. The grid renders the rows in view and loads more near the end.
-- **Toolbar.** Two groups. On the left, what you see: search, Filter, Sort, Columns and the row count. On the right, what you do, in the order the work goes and ending on the one filled button: Undo and Redo (ghost, left out on a phone, where the grid's keys do the work), Add (columns, then rows and Import file), Push to campaign paired with an Export CSV icon button (the two ways rows leave the table), Enrich, then Run. Enrich is a menu of the four outcomes, Ask AI about each row and All enrichments; it is filled until the table has a column that runs, and then Run takes the fill and stays last, so the filled button never moves inside the row. Push and Export, and Run with its options chevron, are `ButtonGroup`s; "Auto-run on" shows in Run's chevron while the table auto-runs. On a phone the left group takes the first line and the right group's secondary buttons show their icons; counts stay visible.
-- **Enrichment start.** A table with rows and no running column shows one hairline-ruled line of text-xs under the toolbar: "Enrich these rows:", the four outcomes and Ask AI about each row as underlined links into the same choices as the Enrich menu, and "Nothing runs or spends until you press Run". It has no box and no buttons, so the toolbar keeps the one filled button. It goes once a column runs.
-- **Enrichment dialog.** It opens on four outcome tiles (Find work emails, Verify emails, Enrich people, Enrich companies), or on one outcome straight from the Enrich menu, where Cancel replaces Back. An outcome reads as three ruled lines, each a label, a sentence and a Change link that opens its fields: Provider (the vendor and its price a lookup; a second tick tries providers in order, "Hunter, then ZeroBounce"), Match rows on (the mapped inputs, the columns they come from and how many rows have them; each input shows its column's first value, and the fields stay open while the mapping covers nothing) and Adds (the new columns as chips, ticked from what the outcome names, with the column name behind Edit). Options folds the caps, timing and reuse. Until a connected provider offers the outcome, the dialog lists only the vendors that do, each connecting in place with its key and price, and keeps what you set. The footer says what a full run can cost, or why the add buttons are off; "Add column" is the filled button and "Add and run first 10 rows" the outline one, so nothing spends until you choose to.
-- **One enrichment, one column.** The enrichment column shows the action's main answer and is named for it (Work email, Email status). Other fields become columns only when ticked, or later from the cell drawer's More fields. An empty cell whose row lacks an input reads "Needs email" in muted text.
-- **Selection.** The active cell takes a 2px primary ring, a range a `bg-primary/10` tint and a selected row `bg-primary/5`. The tints come from primary, so they stay grey. The fill handle at the corner of a range copies it down on drag. Selected rows open a bar above the grid: the count, "Select all {N} matching rows", then Run, Push to campaign, Export, Delete and Clear, all outline or ghost; red waits for the confirm step.
-- **Keyboard.** Arrows, Page Up and Down, Home and End move; Ctrl or Cmd jumps, Shift extends the range. Tab moves across and leaves the grid at the first or last cell. Enter or F2 edits, and a typed character starts an edit with it. Delete clears the range, Shift+Space selects the row, Ctrl or Cmd+A selects every cell, Ctrl or Cmd+Enter runs the cell, Alt+Enter opens the cell drawer and Escape clears the row selection. Copy, cut and paste carry tab-separated text. Ctrl or Cmd+Z undoes and Shift+Z or Y redoes while the grid has focus. Table tabs move with the arrow keys and reorder with Alt+Arrow or a drag. A column's resize handle takes focus: Left and Right resize by 10px (50px with Shift), Home and End jump to the narrowest and widest.
-- **Cell states.** A cell shows one trailing icon at most: a spinner while it runs, a red alert for an error, an amber alert for a skipped cell and an amber refresh icon for a stale one. The reason sits in the tooltip and the accessible label. "This table changed elsewhere." takes the amber icon and a Reload button. Run progress is a bordered status line with a thin primary bar, the counts, Stop and Retry failed.
-- **Cell drawer.** `CellDrawer` is a right `Sheet`, full width on a phone and `sm:max-w-lg` from sm up (the width classes carry the `data-[side=right]:` prefix so they replace the Sheet's). The column name is the title and "Row n · type" sits under it. Three sections follow with the text-sm semibold heads of the record panels: Value in a muted block with Run this cell beside its head, Last run (the error in red as a sentence, then a `dl`) and Run history as a ruled list, each failed run with its reason. A history that does not load says so and offers Try again.
-- **Column dialogs.** Add offers Column and Formula; enrichment and AI columns start from Enrich. The formula dialog previews the expression on one row. The AI dialog takes a prompt that reads other columns as `{{key}}` and makes one column per output field. The enrichment dialog runs one provider action, or several tried in order. The run dialog picks rows with a `RadioGroup`. These and the run dialog are plain `Dialog`s at `sm:max-w-2xl`, capped at 90 to 92svh with a scrolling body.
-- **Filter and Sort.** Two `ToolbarPopover`s (see Filters and sorts). Filter holds the condition builder at the `builder` width: column, operator, value, mute and remove per condition, groups nested up to the view's depth, and Match all or any. Sort lists the sorts in order with Add sort. Each edits a draft and saves the view once on Apply, so a half-typed value never reaches the server. A muted condition stays in the view and filters nothing, and the Filter count leaves it out. `AppliedFilters` shows the conditions and sorts above the grid, with Match all or any beside them. A member looking at their own view gets a muted line with Reset to default view.
-- **Conflicts.** When another person or a run changed rows you edited, `ConflictDialog` saves nothing and lists each cell with Now and Yours (yours at medium weight). The footer offers Keep current values and Retry my edits.
-- **Empty and loading.** An empty table shows `EmptyState` with Import file and Add rows; a search or filter with no hits shows "No rows match". Loading shows skeleton bars. A failed load prints the error in red with Try again.
-
-### Deal board
-
-The Pipeline page (`src/app/(app)/crm/pipeline`) is a `ScrollCue` of stage columns, 18rem wide, each a heading with its count and totals over a stack of deal cards.
-
-- **Drag.** A card drags to another column. The column under it takes the `bg-primary/5` tint and a `ring-primary/30` hairline, and an empty one reads "Drop a deal here". The card moves on screen at once, faded until the server confirms, and the column counts and totals follow it; the board does not reload, so cards loaded with "N more" stay. A refused move puts the card back where it was before that drop, says why in a toast and reloads the board. A card whose move is on its way cannot drag again, and its Move stage button waits too. A drop on Won or Lost opens the move dialog on that stage, as Mark won and Mark lost ask first; Lost keeps its reason.
-- **Move stage.** Each card keeps its Move stage button, the way to move from the keyboard or a touch screen.
+- **Choices.** A checkbox or a radio is always the app's `Checkbox` or `RadioGroupItem`, in a horizontal `Field`. A choice that needs more than a label is a `ChoiceCard`.
+- **Errors.** A field's error is `FieldError` under it; the form's error sits in its Save row or in the dialog's alert line. Error text is plain red text, never a tinted box.
 
 ## Shapes
 
-Radius 0.5rem for panels, inputs and buttons; badges use rounded-md. Hairline borders, no shadows on page surfaces. A side panel is one bordered box with `divide-y` between its blocks. Cards are not the page structure: Settings, the Inbox side panel, Actions, the setup guide, the lead import, analytics and Unmatched senders use ruled sections and divided lists. Cards remain for the sign-in pages, the deal board's cards and the frames of a thread: its messages and the reply panel.
+Radius 0.5rem for panels, inputs and buttons; badges and state tokens use rounded-md; dialogs use rounded-xl (Dialogs). Hairline borders, no shadows on page surfaces. A side panel is one bordered box with `divide-y` between its blocks. Cards are not the page structure: Settings, the Inbox side panel, the setup guide, the lead import, analytics and Unmatched senders use ruled sections and divided lists. A list of rows a person works through (the Actions lists, the Inbox) sits in one framed list (`divide-y rounded-lg border`), so its rows read as one unit. Cards remain for the sign-in pages, the deal board's cards and the frames of a thread: its latest message and the reply panel. No tinted box holds content or a status line.
 
 ## Components
 
 - `PageHeader`: the 3.5rem top bar on every page. `rename` makes its title an `EditableTitle`.
 - `ButtonGroup` (`src/components/ui/button-group.tsx`): buttons read as one control, such as a main button and the chevron that opens its menu (Run) or two related actions (Push to campaign and Export CSV).
 - `RecordHeader`, `RecordBody`, `RecordSection`, `AsideSection`, `MetaLine`: the record frame shared by lead, contact, company and deal pages. `MetaLine` carries company and deal facts; lead and contact pages pass none. The header's actions hold at most one filled button, the move that fits the record's state, then outline buttons, then the ghost More menu for rare actions.
-- **Lead header.** The lead status picks the filled action: Replied with a conversation leads with Open conversation, New, Finished and Stopped lead with Add to campaign, and Queued, In sequence and Paused have none, since the sequence is working the lead. Create deal follows as an outline button. More holds Add to campaign when the header does not show it, Make contact without a deal, and Delete lead. A do not contact lead is offered no campaign. Previous and Next lead sit in the top bar as two outline icon links that stay put from lead to lead, and `[` and `]` follow them. Imported fields closes the page folded behind its count, with Copy and the Map buttons inside.
 - `LeadStatusToken`, `ReachLinks`, `ReachIcons`: the state forms in `src/app/(app)/_components/person`, described under State.
-- `Fact`, `EditableFact`, `InlineForm` (`src/app/(app)/_components/record/inline-field.tsx`): the rows of a Details panel and the deal Summary. A fact you can change edits and saves on its own row: a quiet pencil (shown on hover and focus, always on touch) or a click on the value opens the inputs in place; Enter saves only that field, Escape cancels and returns focus to the pencil, and a failed save keeps what you typed with the reason under it. Facts nobody edits close the panel as one muted text-xs line, not as rows (a merge's domains, values of removed fields, a deal's source and stage dates). A person's added, changed and contact-since dates sit on a clock mark in the Details title row, and the campaign that made them a contact is a Source row. Add field gives a value to a field that has none.
-
-### Stop controls
-
-Every person side panel on a lead, contact or deal page ends with the Do not contact block (`DoNotContactCard`): when and why the person was marked, if they were, then the control. What marking does is said in the confirm step, next to the reason. Each stop works the same way: a quiet outline button opens the reason or the consequence in place, and only the confirm button is red (`Confirm do not contact`, `Confirm stop` for follow-ups). Clearing do not contact asks too. The safe choice is named (`Keep do not contact`, `Keep following up`, and `Keep contacting` on a mark or a bulk mark).
-
-The Inbox thread stops contact only through Stop contacting: Next step's Stop contacting…, Review stop request on the type line (and on an Actions row), and Change type to Asked to stop, which asks the same questions inside its own dialog. The dialog asks how far the stop reaches: every channel (do not contact, with a reason, which can be cleared) or only the email address (the suppression list, which stays). The description of each choice says which one lasts, the red confirm reads Stop contacting and the safe choice Keep contacting. The thread's side panel shows the Do not contact block only for a marked person, with Clear. A type change never marks the person do not contact: Only change the type to Asked to stop changes the type, writes no draft and stops follow-ups, and contact stays open until you choose Stop contacting.
-
-Deleting a lead or a contact is a rare action, so it sits in the header's ghost More menu, as Delete company and Delete deal do. The dialog says whether the record qualifies; one the rules protect gets the reason and nothing to confirm. A side panel never ends on a refusal.
+- `Fact`, `EditableFact`, `InlineForm` (`src/app/(app)/_components/record/inline-field.tsx`): the rows of a Details panel and the deal Summary. A fact you can change edits and saves on its own row: a quiet pencil (shown on hover and focus, always on touch) or a click on the value opens the inputs in place; Enter saves only that field, Escape cancels and returns focus to the pencil, and a failed save keeps what you typed with the reason under it. Facts nobody edits close the panel as one muted text-xs line, not as rows. Add field gives a value to a field that has none.
+- `OffAction` (`src/app/(app)/_components/off-action.tsx`): an action that is off for a reason. An outline button that stays focusable (`aria-disabled`), shows the reason on a tip and carries it in its accessible name, so a person on a phone or a keyboard learns why.
 - `Tabs`, `ViewSwitch`, `FilterChips`, `EmptyState`, `StatusBadge`: shared shell parts in `src/components/shell`.
 - `SettingsSection`, `RULED_LIST`, `RULED_ROW`: the Settings block and its ruled list (`src/app/(app)/settings/settings-section.tsx`).
-- Setup guide (`/onboarding`): one divided list of steps. "Next: …" is the one filled button, the next step's action is outline and the others ghost; on a phone the action sits under the step's text.
 
 The primitives in `src/components/ui` come from shadcn's `base-nova` style built on `@base-ui/react` (`components.json`). Extend a primitive with a variant or a prop in place; don't fork a copy into a feature folder.
+
+### Badges
+
+A badge says one thing about a row, and its variant says what kind of thing:
+
+| Variant | Means | Examples |
+|---|---|---|
+| `secondary` (the default) | A state | Archived, Always included, Locked, Off, a sent or active status |
+| `outline` | A descriptor, a label that sorts or names | Contact, Auto-reply, You, Optional, Personal, a role, a tag |
+| `destructive` | An error | Failed, Bounced, Disconnected |
+
+`StatusBadge` maps a stored status token to its variant; pass the token as `status` and the words as `label`. A row carries one badge per state; other facts (a kind, tags, a version) read as one muted line. The black `default` variant is for an explicit ask only.
+
+### Focus
+
+Two focus languages, one per kind of target:
+
+- A control with a border (an input, a button, a select) keeps the primitives' border in the ring color with a soft halo.
+- A target without a border (a link, a segment, a chip, a `summary`, an info mark, a list row) takes `focus-ring`: a 2px outline in the ring color that follows the radius. A list row's stretched link draws it on the row.
 
 ### Shell parts
 
@@ -257,16 +258,22 @@ The app layout and many pages share these parts from `src/components/shell`:
 | `CommandPalette` | Jump to any page by name with Cmd or Ctrl+K. `AppSidebar` mounts it; don't mount a second one. With nothing typed, recent picks come first. |
 | `OutboundPauseBanner` | The one line across the top of every page while `PAUSE_OUTBOUND` is set. Amber icon and lead words, no tinted band. The app layout renders it. |
 | `ResponsibleUseNote` | The one-line consent and LinkedIn terms note where a campaign starts and where LinkedIn accounts connect. Keep its text in the component. |
-| `ListSkeleton` | A list while its rows stream in, at the height of the real rows, so the page does not jump. `bordered` for framed lists like the Actions groups. |
-| `SummaryLine` | A compact row of label and value pairs ("Sent 120 · Replied 14") above a table or in a detail header. It is not a metric card and does not headline a page. |
+| `ListSkeleton` | A list while its rows stream in, at the height of the real rows, so the page does not jump. `bordered` for framed lists like the Actions groups, `toolbar={false}` for a list without a toolbar. |
+| `PageSkeleton` | A page while it streams in, in its shape: `list`, `record`, `form` or `table`. One status region. Never a lone grey block. |
+| `SummaryLine` | A compact row of label and value pairs ("Sent 120 · Replied 14") above a table or in a detail header, a pair's `hint` on an info mark. It is not a metric card and does not headline a page. |
 | `TouchTip` | Secondary text on a trigger: a tooltip on hover and keyboard focus, a popover on a tap where the device cannot hover. `InfoTip` and `StateTip` build on it. A link trigger keeps a tooltip, because a tap navigates. |
 | `ScrollCue` | A horizontal scroller that fades the edges with more content and shows a hint while the right edge is out of sight, such as the deal board. A strip with no room for the hint, such as the table tabs, leaves `hint` out; `after` places a control past the scroller. |
 | `EditableTitle`, `NameInput` | A name you rename where you read it: a page title through `PageHeader`'s `rename`, or a tab that swaps in `NameInput`. Enter or leaving the field saves, Escape cancels, an empty name on Enter says "Give it a name.", and a refused save keeps your text with the reason floating under the field. |
 | `ReachFlag` | A neutral badge for Do not contact or Email suppressed where a send is blocked. The sentence that explains why stays red. |
+| `Section`, `SectionHead`, `Count` | Every section head: the heading in its role, an optional icon, a `Count`, an info mark, a description and an action. `Section` frames it `ruled` (a hairline and section space, the default), `plain` (a list's own grid, the Actions sections) or `inset` (a side panel block). `RecordSection`, `AsideSection`, `CampaignSection` and `SettingsSection` wrap it. |
+| `ErrorState` | Something did not load: the missing thing as the title, the reason in red, the way back (Try again). No box, like `EmptyState`; `inline` inside a section or a drawer. |
+| `Spinner` | Work in progress beside the words that name it ("Sending…"). Decoration; `label` only when it stands alone. |
+| `ChoiceCard`, `CHOICE_CARD`, `CHOICE_TILE` | A choice that needs more than a label (a company to merge into, a person to file a sender under): a 44px hairline card around a `RadioGroupItem` or `Checkbox` that takes the ring border and a muted ground when checked. `CHOICE_TILE` is a button that opens a choice (the enrichment outcomes). |
+| `BulkBar` | The selection bar. See Bulk bar. |
 | `ErrorWithLinks` | A stored error text that names the inbound events page; it turns that path into a link. |
 | `DatePicker` | One calendar day, as yyyy-MM-dd. See Pickers. |
 | `TimeSelect` | A time of day on the half hour. See Pickers. |
-| `Time` | Every timestamp: a `time` element in the organization's time zone with the UTC original in the tooltip, `dateOnly` for dates, and `relativeTo` with the server's `now` for "5 min ago". Outside JSX, use `formatDateTime` from `@/shared/format-time`. |
+| `Time` | Every timestamp: a `time` element in the organization's time zone with the UTC original in its native title (the one native title the app keeps: a rare extra, and a tab stop on every time would cost more), `dateOnly` for dates, `relativeTo` with the server's `now` for "5 min ago", and `label` for a caller's own wording of the same instant. Outside JSX, use `formatDateTime` from `@/shared/format-time`. |
 
 ### List parts
 
@@ -275,13 +282,13 @@ Every list page builds from the same parts in `src/components/shell`:
 | Part | Use it for |
 |---|---|
 | `ListToolbar` | The one row between the header and the list: chips, search and the Filters button on the left, list options (Columns, Export, the keyboard mark, a side count) on the right. |
-| `ToolbarPopover` | The popover behind a toolbar button that edits a draft: Filters on a list with two or more filter fields (Leads, Contacts, Inbox, Actions, Analytics), Filter and Sort on a table. The trigger is an outline button with an icon, a label and a count; the popup holds a scrolling body and a footer with Reset and Apply. See Filters and sorts. |
+| `ToolbarPopover` | The popover behind a toolbar button that edits a draft: Filters on a list with two or more filter fields (Leads, Contacts, Inbox, Actions, Analytics), Filter and Sort on a table. The trigger is an outline button with an icon, a label and a muted count; the popup holds a scrolling body and a footer with Reset and Apply. See Filters and sorts. |
 | `FilterPopover` | `ToolbarPopover` for a list's GET form. Its fields stay mounted inside the form while it is closed, so Enter in the search keeps the filters in force. |
 | `FilterSection`, `FilterRow`, `SelectField`, `TristateField`, `DateRangeField` | The fields of a Filters popover: a ruled section title, a row with the label on the left and the control on the right (stacked on a phone), the app's `Select` posted under a `name`, an Any, Yes and No segment, and a from and to pair of `DatePicker`s on one row. |
-| `AppliedFilters`, `FilterChip` | The filters and sorts in force as removable chips under the toolbar, with the one Clear filters at the end. A chip is a link on a list and a button on a table; a muted table condition reads struck through. |
-| `InfoTip` | Help on demand: an info mark beside a heading whose name needs explaining, the text in a tooltip on hover and keyboard focus, in a popover on a tap on a touch screen, and in screen-reader text. Use it in place of a muted description line. |
+| `AppliedFilters`, `FilterChip` | The filters and sorts in force as removable chips under the toolbar, with the one Clear filters at the end. These are the only round pills in a toolbar. A chip is a link on a list and a button on a table; a muted table condition reads struck through. |
+| `InfoTip` | A definition on demand: an info mark beside a heading whose name needs explaining, the text in a tooltip on hover and keyboard focus, in a popover on a tap on a touch screen, and in screen-reader text. A sentence that says what an action or a setting does stays visible as a description; an info mark never hides a consequence. |
 | `SearchField` | The search box: icon inside the field, Enter submits the GET form, a screen-reader Search button. No Apply button beside it. |
-| `FilterChips` | A row that narrows the list on screen (Show all, a lifecycle, a state). Round chips, `role="group"`, the active chip filled, a `count` in one muted tabular style. |
+| `FilterChips` | A row that narrows the list on screen (Mine, Unassigned and Others, a lifecycle, a state): one segmented control in the `TristateField` frame, `role="group"`, the active segment on a muted ground at medium weight, a `count` in one muted tabular style. A row too long for a phone scrolls inside the frame. |
 | `ViewSwitch` | A row that switches to another view of the page with its own URL (Inbox Conversations and Scheduled, a campaign's Leads, Sequence and Settings, the Analytics reports). Underlined tabs in a `nav`. |
 | `ListPager` | "12 contacts" at the foot of the list, and from two pages on "page 2 of 3" with ghost Previous and Next links. A page size control goes in its `size` slot, never at the top. |
 | `EmptyState` | Nothing to show: the missing thing as the title, the next step as the description and action. It draws no box. |
@@ -338,29 +345,34 @@ Every choice in the app goes through one of these parts. The app has no native `
 
 ### Dialogs
 
-Every confirm and form dialog builds on `ConfirmDialog` (`src/components/shell/confirm-dialog.tsx`): Add contact, Add company, Make contact, Create deal, the company merge, Delete contact and Delete company, New campaign, Add to campaign, New search, Upload sheet, and the tables dialogs that name, move, describe, add rows, import and push. The column dialogs and the run dialog stay plain `Dialog`s (see Tables).
+Every confirm and form dialog builds on `ConfirmDialog` (`src/components/shell/confirm-dialog.tsx`): Add contact, Add company, Make contact, Create deal, the company merge, Delete contact and Delete company, New campaign, Add to campaign, New search, Upload sheet, Change type, the mailbox test send, and the tables dialogs that name, move, describe, add rows, import and push. The column dialogs and the run dialog stay plain `Dialog`s ([Tables](docs/design/tables.md)).
+
+- A dialog is an overlay, so its panel takes `rounded-xl` and its footer a muted band that keeps the actions apart from a scrolling body. Pages keep 0.5rem panels and no footer band.
+- `secondary` adds a second way forward as an outline button before the confirm (Only change the type beside Stop contacting), with its own pending label.
 
 - The title names the object, the confirm repeats the action ("Delete 2 leads", "Remove mailbox"), and the cancel names the safe choice when "Cancel" would read as the destructive one ("Keep contact", "Keep company", "Keep contacting"). Pending labels name the action and end in "…" ("Deleting…").
-- Enter in a text field of the body presses the confirm, as a form submit would. A textarea and a control that handles Enter itself keep the key.
+- Enter in a text field of the body presses the confirm, as a form submit would. A textarea, a combobox and a control that handles Enter itself keep the key.
 - The panel stops at the viewport height minus 2rem. The header and the footer stay in place and the body scrolls, so the confirm stays on screen at 390x844 with a deal's fields or a merge preview open.
 - A dialog with two steps keeps one panel and swaps the body: Add contact's matching-lead step, the merge picker and its preview, the bulk conversion's second confirm. `back` puts a ghost Back button at the start of the footer, and Back keeps what you typed or picked.
 - Errors and outcomes the caller renders as data (a blocker list, changed counts, a bulk report) sit in the body in a `role="status"` region, in body text, never muted.
-- Delete lead and Delete contact sit in the header's ghost More menu (Stop controls). The item opens the confirm with counts when the record qualifies, or a plain dialog with the reason and nothing to confirm when the rules protect it.
+- Delete lead and Delete contact sit in the header's ghost More menu ([Leads and the CRM](docs/design/crm.md#stop-controls)). The item opens the confirm with counts when the record qualifies, or a plain dialog with the reason and nothing to confirm when the rules protect it.
 - A company with people left opens a plain `Dialog` with the reason and a link to find them, and no confirm.
 
 ### Bulk bar
 
-Leads and Contacts share the selection model (`SelectionProvider`, `src/components/shell/selection.tsx`), keyed by the list's filter so a selection survives paging and resets on a filter change. While rows are ticked the page reserves the bar's height as scroll padding (`useBarScrollPadding`), so a focused row never sits under it. The bar sticks to the bottom edge: the "{n} selected." line, then at most four controls, the bulk actions first, then Clear selection (Esc clears too) and More actions with "Select all {N} matching".
+Leads and Contacts share the selection model (`SelectionProvider`, `src/components/shell/selection.tsx`), keyed by the list's filter so a selection survives paging and resets on a filter change. Every selection bar is `BulkBar` (`src/components/shell/bulk-bar.tsx`). On a list it sticks to the bottom edge, in the thumb zone on a phone, and while rows are ticked the page reserves the bar's height as scroll padding (`useBarScrollPadding`), so a focused row never sits under it. Above a grid or a short list (a table, a search batch, a campaign's leads) it sits in the flow with `sticky={false}` and takes no room while nothing is ticked. The bar holds the "{n} selected." line, then at most four controls: the bulk actions first, then Clear selection (Esc clears too) and More actions with "Select all {N} matching". The status line stays mounted, so a screen reader hears the count as it changes. A failed bulk step (Select all matching, Export) puts its reason on the bar while the rows stay ticked; it leaves with the selection, so ticking rows later never shows an old failure (`useBulkStep`). A step that returns after the selection emptied drops its answer: it ticks nothing, and an Export failure goes to a toast.
 
-### Campaign page
+### Feedback
 
-Campaign pages use the record frame. `PageHeader` keeps the breadcrumb (Campaigns / name) and `RecordHeader` carries the name as the h1. Beside it sits `CampaignStatusToken`, one neutral token with an icon per status (Draft, Active, Paused, Completed, Archived). The Campaigns list shows the same token in its `compact` size. The controls go in `actions`, the main move first; on a phone, Mark completed and Delete move into a More menu. One `MetaLine` names the channel, the step count and the senders ("All mailboxes", "From a and b"), on one wrapping row on a phone too, and the campaign counts follow it. The Leads heading carries no count: the All chip and the summary say it.
+Every action says what it did, where the person is looking:
 
-- **Follow-ups after a reply.** The campaign's Settings tab has one section with that name. A `RadioGroup` picks the mode: "Off, hand to the Inbox" (the AI still drafts a first reply for reply types set to Write one) or "AI drafts, you approve", which edits the steps: 1. Reply to their answer, then the follow-ups. Under the form, "Stops for these reply types" lists the organization's types whose Follow-ups rule is Stop, with Change in Settings, and one muted line names the fixed stops (a new reply, do not contact, an unsubscribe, a bounce, the suppression list, a conversion, closed reply handling). Follow-ups in progress closes the section as a table.
-- Every block below the tabs is a ruled section (`CampaignSection`: a text-sm semibold h2 with `border-t py-section`), never a card. Steps form a divided list, and the step you edit gets a 1px foreground rule on its left.
-- The Leads tab speaks the lead status vocabulary scoped to the campaign. `campaignLeadStatus()` runs `leadStatus()` on one enrollment and the campaign status, so a row reads Queued, In sequence, Paused, Replied, Finished or Stopped through `LeadStatusToken`. A removed lead shows no token.
-- The status filters above the list are `FilterChips` with the same words, because they narrow the list, and they share `ListToolbar` with the search. Rows per page sits with the pager. The campaign tabs stay a `ViewSwitch`.
-- An uncertain state, such as a send that may or may not have gone out, uses `text-warning` on its icon and label, never a fill and never red.
+- **On the spot.** A step on one item says its outcome where the item was: an Actions row folds into one line that names what happened, a saved field closes with its new value, a failed field keeps what was typed with the reason under it.
+- **Toast.** A toast carries an outcome that lands off screen or across many items: a bulk step ("Marked 7 AI picks as looked at."), a change made from a dialog that then closes, a step after which the page moves. One sentence in the past tense. An error toast only when no place on the page can hold the reason.
+- **Status region.** A dialog that stays open says its outcome in the body, in a `role="status"` region in body text (Dialogs).
+- **Pending.** The button that runs names the work and ends in "…" ("Saving…", "Sending…") and stays off. Background work shows a `Spinner` beside its words. A page waiting on the server refreshes itself; it never asks a person to reload while the work is in flight.
+- **Undo.** Offer Undo only where the server has an inverse (an AI pick's Undo, Reopen). A step without one that acts on many items confirms first and lists what it will touch.
+- **Errors.** Next to the control (`FieldError`), in the Save row or the dialog's alert line, or as `ErrorState` when content did not load. Plain red text with the reason and the way out.
+- **Loading.** A page streams in as a `PageSkeleton` or `ListSkeleton` in its own shape.
 
 ### State
 
@@ -368,7 +380,7 @@ A person carries three states, each with one form. Lists and record pages read t
 
 | State | Who has it | Form | Where |
 |---|---|---|---|
-| Lead status | Leads only | `LeadStatusToken`: a neutral token, a lucide icon per state and the label (New, Queued, In sequence, Paused, Replied, Finished, Stopped) | Beside the h1 in `RecordHeader`'s `state` slot; the Status column of Leads, with the campaign as a muted second line |
+| Lead status | Leads only | `LeadStatusToken`: a neutral token (`stateTokenClass`: secondary ground, no border, text-xs medium, so it never reads as a button), a lucide icon per state and the label (New, Queued, In sequence, Paused, Replied, Finished, Stopped) | Beside the h1 in `RecordHeader`'s `state` slot; the Status column of Leads, with the campaign as a muted second line |
 | Deal stage | Contacts, through their deals | The stage badge | The Deals section of the contact page, the Latest deal column of Contacts, the deal page |
 | Reach | Leads and contacts | `ReachLinks` in a record header and the Inbox side panel, `ReachIcons` in a list row | Do not contact is a neutral badge with a ban icon in front of the links, which turn muted. A suppressed address keeps its link with a crossed mail icon and a line through. A missing channel is left out of the header and shows as a dashed mark in a list. |
 
@@ -378,11 +390,19 @@ A person carries three states, each with one form. Lists and record pages read t
 - State tokens stay neutral grey: no lavender and no red. Red stays for irreversible actions and errors.
 - A list shows both a Reach column and an Email column. The icons act (write, open the profile) and show the reach state; the Email column is data a rep scans, sorts by eye and copies. The Leads and Contacts lists both carry the pair.
 
+## Enforcement
+
+`src/architecture/design-system.test.ts` reads the JSX of every page and shell part and fails on a native checkbox or radio, a native `title` (outside `Time`), a raw `time` element, a heading without a heading role, lavender outside the counts that wait on a person, an arbitrary z-index, and a feature folder that defines a UI kit component again. Each allowance in it names its file and the reason. `src/architecture/popup-placement.test.ts` holds the popup rules (Popups), and `copy-vocabulary.test.ts` the words.
+
 ## Do's and Don'ts
 
 - Do pick a spacing role from the relationship. Don't write `gap-4 p-4` on a new page body; write `page stack-group` or `page stack-section`.
+- Do give a heading its role (`heading-section`). Don't write `text-sm font-semibold` on a heading.
 - Do keep the top bar on one size. Don't give the current page a larger size than its parent step.
-- Do let hairlines and space separate sections. Don't wrap each section in a card.
+- Do let hairlines and space separate sections. Don't wrap each section, or a status line, in a card or a tinted box.
+- Do draw a section through `Section` and a count through `Count`. Don't build a section head, a count capsule or a selection bar in a feature folder.
 - Don't use lavender outside work that waits on a person.
 - Do mark an uncertain state with a `text-warning` icon. Don't tint a row, a band or a badge amber, and don't use green for success.
 - Do keep red for errors and irreversible actions. Don't use it for a count that waits on an admin.
+- Do say why an action is off where a person can read it. Don't put the reason in a native `title`.
+- Do show the outcome of every step. Don't make a row disappear without a word, or ask for a reload.

@@ -1,4 +1,4 @@
-import { ADMIN, MOBILE_DARK, expect, expectNoHorizontalOverflow, linkOrButton, signInAs, test } from "./support/fixtures";
+import { ADMIN, MOBILE_DARK, expect, expectNoHorizontalOverflow, signInAs, test } from "./support/fixtures";
 
 test.describe("first-run setup and onboarding", () => {
   test.use({ timezoneId: "Europe/Berlin" });
@@ -18,7 +18,8 @@ test.describe("first-run setup and onboarding", () => {
     // The browser time zone was saved at setup, so the profile step reads as done.
     await expect(page.getByText("Time zone saved")).toBeVisible();
 
-    await linkOrButton(page, "Connect mailbox").first().click();
+    // The next step's one action is the filled Next link above the list.
+    await page.getByRole("link", { name: "Next: Connect a mailbox" }).click();
     await expect(page).toHaveURL(/\/settings\/mailboxes$/);
     await page.getByLabel("Email address").fill("sdr@e2e-corp.test");
     await page.getByLabel("Sender name (optional)").fill("Sam from E2E");
@@ -31,7 +32,7 @@ test.describe("first-run setup and onboarding", () => {
 
     await page.getByRole("button", { name: "Hide setup guide" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Hide setup guide" }).click();
-    await expect(page).toHaveURL(/\/leads$/);
+    await expect(page).toHaveURL(/\/actions$/);
   });
 
   test("a second setup is refused once an admin exists", async ({ page, watch }) => {

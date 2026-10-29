@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
@@ -103,7 +103,7 @@ export function StepsEditor({ id, initial, editable }: { id: string; initial: Ed
                 onFocusCapture={() => setSelected(step.stepNumber)}
               >
                 <div className="flex min-h-7 items-center justify-between gap-2">
-                  <h3 className={cn("text-sm", active ? "font-semibold" : "font-medium")}>Step {step.stepNumber}</h3>
+                  <h3 className="heading-item data-[active=true]:font-semibold" data-active={active}>Step {step.stepNumber}</h3>
                   {editable && steps.length > 1 && (
                     <Button variant="ghost" size="icon-sm" aria-label={`Remove step ${step.stepNumber}`} onClick={() => setSteps((all) => renumber(all.filter((_, i) => i !== index)))}>
                       <Trash2Icon />
@@ -111,19 +111,19 @@ export function StepsEditor({ id, initial, editable }: { id: string; initial: Ed
                   )}
                 </div>
                 {index > 0 && (
-                  <div className="stack-field">
-                    <Label htmlFor={`wait-${index}`}>Send after (days since the previous step)</Label>
+                  <Field>
+                    <FieldLabel htmlFor={`wait-${index}`}>Send after (days since the previous step)</FieldLabel>
                     <Input id={`wait-${index}`} type="number" min={1} max={60} value={step.waitDays} disabled={!editable} onChange={(e) => update(index, { waitDays: Number(e.target.value) })} className="w-28" />
-                  </div>
+                  </Field>
                 )}
-                <div className="stack-field">
-                  <Label htmlFor={`subject-${index}`}>Subject{index > 0 ? " (optional)" : ""}</Label>
+                <Field>
+                  <FieldLabel htmlFor={`subject-${index}`}>Subject{index > 0 ? " (optional)" : ""}</FieldLabel>
                   <Input id={`subject-${index}`} value={step.subject ?? ""} disabled={!editable} onChange={(e) => update(index, { subject: e.target.value })} onSelect={track(index, "subject")} onBlur={track(index, "subject")} />
-                </div>
-                <div className="stack-field">
-                  <Label htmlFor={`body-${index}`}>Message</Label>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`body-${index}`}>Message</FieldLabel>
                   <Textarea id={`body-${index}`} rows={7} value={step.body} disabled={!editable} onChange={(e) => update(index, { body: e.target.value })} onSelect={track(index, "body")} onBlur={track(index, "body")} />
-                </div>
+                </Field>
                 {issues.filter((i) => i.step === step.stepNumber).map((i) => (
                   <p key={i.message} role="alert" className="text-sm text-destructive">
                     {i.message}

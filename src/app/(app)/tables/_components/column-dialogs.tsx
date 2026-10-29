@@ -5,8 +5,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { countOf } from "@/shared/format-number";
 import { FILTER_OPERATORS, type FilterOperator, type TableView } from "@/contexts/grid/domain/view-query";
 import { gridRequest, gridUrl } from "../_lib/data/client";
 import { EDITABLE_TYPE_OPTIONS, selectOptions, typeLabel } from "../_lib/view/format";
@@ -14,7 +16,7 @@ import type { GridColumn } from "../_lib/data/types";
 import { RUN_FILLED_TYPES } from "../_lib/edit/filter-edit";
 import { addFilter, OPERATOR_LABELS, operatorNeedsValue } from "../_lib/view/view";
 import type { ColumnAction } from "./column-menu";
-import { Choice, ErrorText, Field } from "./form-bits";
+import { ItemSelect } from "./form-bits";
 
 export type ColumnRequest = { column: GridColumn; action: ColumnAction } | { column: null; action: { kind: "add"; afterColumnId?: string; beforeColumnId?: string } };
 
@@ -118,11 +120,12 @@ function RenameDialog({ tableId, column, onClose, onChanged }: Shared & { column
   const submit = () => run(() => gridRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}`, "PATCH", { name }));
   return (
     <Shell title="Rename column" onClose={onClose} footer={<Footer onClose={onClose} busy={busy} label="Rename" onSubmit={submit} disabled={!name.trim()} />}>
-      <form onSubmit={(e) => (e.preventDefault(), submit())} className="grid gap-3">
-        <Field label="Name" htmlFor="col-name">
+      <form onSubmit={(e) => (e.preventDefault(), submit())}>
+        <Field>
+          <FieldLabel htmlFor="col-name">Name</FieldLabel>
           <Input id="col-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={120} />
+          <FieldError>{error}</FieldError>
         </Field>
-        <ErrorText>{error}</ErrorText>
       </form>
     </Shell>
   );
@@ -138,7 +141,7 @@ function TypeDialog({ tableId, column, type, onClose, onChanged }: Shared & { co
       onClose={onClose}
       footer={<Footer onClose={onClose} busy={busy} label="Change type" onSubmit={submit} />}
     >
-      <ErrorText>{error}</ErrorText>
+      <FieldError>{error}</FieldError>
     </Shell>
   );
 }
@@ -157,15 +160,19 @@ function OptionsDialog({ tableId, column, onClose, onChanged }: Shared & { colum
   return (
     <Shell title={isSelect ? "Edit options" : "Edit currency"} onClose={onClose} footer={<Footer onClose={onClose} busy={busy} label="Save" onSubmit={submit} />}>
       {isSelect ? (
-        <Field label="Options" htmlFor="col-options" hint="One option per line.">
-          <Textarea id="col-options" rows={8} value={options} onChange={(e) => setOptions(e.target.value)} />
+        <Field>
+          <FieldLabel htmlFor="col-options">Options</FieldLabel>
+          <Textarea id="col-options" rows={8} value={options} onChange={(e) => setOptions(e.target.value)} aria-describedby="col-options-hint" />
+          <FieldDescription id="col-options-hint">One option per line.</FieldDescription>
         </Field>
       ) : (
-        <Field label="Currency code" htmlFor="col-currency" hint="Three letters, such as USD or EUR.">
-          <Input id="col-currency" value={currency} onChange={(e) => setCurrency(e.target.value)} maxLength={8} className="w-32" />
+        <Field>
+          <FieldLabel htmlFor="col-currency">Currency code</FieldLabel>
+          <Input id="col-currency" value={currency} onChange={(e) => setCurrency(e.target.value)} maxLength={8} className="w-32" aria-describedby="col-currency-hint" />
+          <FieldDescription id="col-currency-hint">Three letters, such as USD or EUR.</FieldDescription>
         </Field>
       )}
-      <ErrorText>{error}</ErrorText>
+      <FieldError>{error}</FieldError>
     </Shell>
   );
 }
@@ -183,12 +190,12 @@ function DeleteDialog({ tableId, column, onClose, onChanged }: Shared & { column
       footer={<Footer onClose={onClose} busy={busy} label="Delete column" onSubmit={submit} destructive />}
     >
       {hasOutputs && (
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={withOutputs} onCheckedChange={(v) => setWithOutputs(v === true)} />
-          Also delete the output columns it fills
-        </label>
+        <Field orientation="horizontal">
+          <Checkbox id="delete-with-outputs" checked={withOutputs} onCheckedChange={(v) => setWithOutputs(v === true)} />
+          <FieldLabel htmlFor="delete-with-outputs">Also delete the output columns it fills</FieldLabel>
+        </Field>
       )}
-      <ErrorText>{error}</ErrorText>
+      <FieldError>{error}</FieldError>
     </Shell>
   );
 }
@@ -200,7 +207,7 @@ function DedupeDialog({ tableId, column, onClose, onChanged }: Shared & { column
       () => gridRequest<{ deleted?: number }>(`${gridUrl.sub(tableId, "columns")}/${column.id}/dedupe`, "POST"),
       (data) => {
         const n = data.deleted ?? 0;
-        toast.success(n === 0 ? "No duplicates found." : `Removed ${n} duplicate row${n === 1 ? "" : "s"}.`);
+        toast.success(n === 0 ? "No duplicates found." : `Removed ${countOf(n, "duplicate row")}.`);
       },
     );
   return (
@@ -210,7 +217,7 @@ function DedupeDialog({ tableId, column, onClose, onChanged }: Shared & { column
       onClose={onClose}
       footer={<Footer onClose={onClose} busy={busy} label="Remove duplicates" onSubmit={submit} destructive />}
     >
-      <ErrorText>{error}</ErrorText>
+      <FieldError>{error}</FieldError>
     </Shell>
   );
 }
@@ -228,7 +235,7 @@ function SplitDialog({ tableId, column, onClose, onChanged }: Shared & { column:
   const submit = () =>
     run(
       () => gridRequest<{ columnsCreated?: number; rowsUpdated?: number }>(`${gridUrl.sub(tableId, "columns")}/${column.id}/text-to-columns`, "POST", { delimiter }),
-      (data) => toast.success(`Created ${data.columnsCreated ?? 0} columns from ${data.rowsUpdated ?? 0} rows.`),
+      (data) => toast.success(`Created ${countOf(data.columnsCreated ?? 0, "column")} from ${countOf(data.rowsUpdated ?? 0, "row")}.`),
     );
   return (
     <Shell
@@ -237,10 +244,11 @@ function SplitDialog({ tableId, column, onClose, onChanged }: Shared & { column:
       onClose={onClose}
       footer={<Footer onClose={onClose} busy={busy} label="Split" onSubmit={submit} />}
     >
-      <Field label="Separator" htmlFor="split-delim">
-        <Choice id="split-delim" items={DELIMITERS} value={delimiter} onChange={setDelimiter} className="w-48" />
+      <Field>
+        <FieldLabel htmlFor="split-delim">Separator</FieldLabel>
+        <ItemSelect id="split-delim" items={DELIMITERS} value={delimiter} onChange={setDelimiter} className="w-48" />
       </Field>
-      <ErrorText>{error}</ErrorText>
+      <FieldError>{error}</FieldError>
     </Shell>
   );
 }
@@ -258,15 +266,19 @@ function FilterDialog({ column, view, saveView, onClose }: { column: GridColumn;
   };
   return (
     <Shell title={`Filter "${column.name}"`} description="The filter is saved for you and only changes what you see. Owners and admins can save the current view as the default for everyone." onClose={onClose} footer={<Footer onClose={onClose} busy={busy} label="Add filter" onSubmit={submit} />}>
-      <form onSubmit={(e) => (e.preventDefault(), void submit())} className="grid gap-3">
-        <Field label="Condition" htmlFor="filter-op">
-          <Choice id="filter-op" items={items} value={operator} onChange={(v) => setOperator(v as FilterOperator)} />
-        </Field>
-        {operatorNeedsValue(operator) && (
-          <Field label="Value" htmlFor="filter-value">
-            <Input id="filter-value" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+      <form onSubmit={(e) => (e.preventDefault(), void submit())}>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="filter-op">Condition</FieldLabel>
+            <ItemSelect id="filter-op" items={items} value={operator} onChange={(v) => setOperator(v as FilterOperator)} />
           </Field>
-        )}
+          {operatorNeedsValue(operator) && (
+            <Field>
+              <FieldLabel htmlFor="filter-value">Value</FieldLabel>
+              <Input id="filter-value" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+            </Field>
+          )}
+        </FieldGroup>
         {/* The select adds a second field, so Enter needs a submit button to trigger the form. */}
         <button type="submit" hidden />
       </form>
@@ -290,15 +302,19 @@ function AddColumnDialog({ tableId, columns, where, onClose, onChanged }: Shared
     );
   return (
     <Shell title="Add column" onClose={onClose} footer={<Footer onClose={onClose} busy={busy} label="Add column" onSubmit={submit} />}>
-      <form onSubmit={(e) => (e.preventDefault(), submit())} className="grid gap-3">
-        <Field label="Name" htmlFor="new-col-name">
-          <Input id="new-col-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={120} placeholder="Column name" />
-        </Field>
-        <Field label="Type" htmlFor="new-col-type">
-          <Choice id="new-col-type" items={EDITABLE_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))} value={type} onChange={setType} className="w-56" />
-        </Field>
+      <form onSubmit={(e) => (e.preventDefault(), submit())}>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="new-col-name">Name</FieldLabel>
+            <Input id="new-col-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={120} placeholder="Column name" />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="new-col-type">Type</FieldLabel>
+            <ItemSelect id="new-col-type" items={EDITABLE_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))} value={type} onChange={setType} className="w-56" />
+          </Field>
+          <FieldError>{error}</FieldError>
+        </FieldGroup>
         <button type="submit" hidden />
-        <ErrorText>{error}</ErrorText>
       </form>
     </Shell>
   );

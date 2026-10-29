@@ -6,12 +6,12 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { gridRequest } from "../_lib/data/client";
 import { centsToDollarsText, dollarsToCents } from "../_lib/data/run-request";
 import { catalogGroups, impactText, usageLine, type CatalogEntry, type ProviderImpact, type ProviderUsage, type ProviderView } from "../_lib/data/providers";
-import { ErrorText, Field } from "./form-bits";
 
 interface Props {
   catalog: CatalogEntry[];
@@ -32,13 +32,14 @@ export function ProviderManager({ catalog, providers, onChanged }: Props) {
     };
   }, [providers]);
   return (
-    <div className="grid gap-4">
+    <div className="stack-section">
       {catalogGroups(catalog).map((group) => (
-        <section key={group.label} aria-labelledby={`pg-${group.label}`} className="grid gap-2">
-          <h3 id={`pg-${group.label}`} className="text-xs font-medium text-muted-foreground">
+        <section key={group.label} aria-labelledby={`pg-${group.label}`} className="stack-field">
+          <h3 id={`pg-${group.label}`} className="heading-item">
             {group.label}
           </h3>
-          <ul className="grid gap-2">
+          {/* One ruled list per group, no box per vendor. */}
+          <ul className="divide-y">
             {group.entries.map((entry) => {
               const provider = providers.find((p) => p.key === entry.key);
               const used = provider && usage?.usage.find((u) => u.provider === provider.key);
@@ -68,6 +69,7 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
   const [error, setError] = useState<string | null>(null);
   const available = entry.status === "available";
   const isHttp = entry.adapter === "http";
+  const credentialHint = [provider?.hasCredential ? "Leave blank to keep the saved key. A saved key is never shown again." : null, isHttp ? "MiaSDR cannot check a Custom HTTP key; a wrong one fails on the first call." : null].filter(Boolean).join(" ");
 
   async function save() {
     setBusy(true);
@@ -134,7 +136,7 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
   }
 
   return (
-    <div className="rounded-lg border p-3">
+    <div className="py-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 text-sm font-medium">
@@ -145,7 +147,7 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
                 <CheckCircle2Icon /> {isHttp ? "Key saved, not checked" : "Key checked and saved"}
               </Badge>
             )}
-            {provider && !provider.enabled && <Badge variant="outline">Off</Badge>}
+            {provider && !provider.enabled && <Badge variant="secondary">Off</Badge>}
           </p>
           <p className="max-w-[72ch] text-xs text-muted-foreground">{entry.description}</p>
           {usage && <p className="mt-1 text-xs text-muted-foreground tabular-nums">{usageLine(usage)}</p>}
@@ -170,7 +172,7 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
       </div>
       {open && (
         <form
-          className="mt-3 grid gap-3 border-t pt-3 transition-[opacity,translate] duration-(--duration-menu) ease-out starting:opacity-0 motion-safe:starting:-translate-y-1"
+          className="mt-3 grid gap-group transition-[opacity,translate] duration-(--duration-menu) ease-out starting:opacity-0 motion-safe:starting:-translate-y-1"
           onSubmit={(e) => {
             e.preventDefault();
             void save();
@@ -178,9 +180,11 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
           autoComplete="off"
         >
           {entry.credentialFields.map((f) => (
-            <Field key={f.key} label={f.label} htmlFor={`cred-${entry.key}-${f.key}`} hint={[provider?.hasCredential ? "Leave blank to keep the saved key. A saved key is never shown again." : null, isHttp ? "MiaSDR cannot check a Custom HTTP key; a wrong one fails on the first call." : null].filter(Boolean).join(" ") || undefined}>
+            <Field key={f.key}>
+              <FieldLabel htmlFor={`cred-${entry.key}-${f.key}`}>{f.label}</FieldLabel>
               <Input
                 id={`cred-${entry.key}-${f.key}`}
+                aria-describedby={credentialHint ? `cred-${entry.key}-${f.key}-hint` : undefined}
                 type="password"
                 autoComplete="new-password"
                 spellCheck={false}
@@ -188,29 +192,38 @@ export function ProviderRow({ entry, provider, usage, onChanged }: { entry: Cata
                 onChange={(e) => setCreds((c) => ({ ...c, [f.key]: e.target.value }))}
                 placeholder={provider?.hasCredential ? "Saved" : ""}
               />
+              {credentialHint && <FieldDescription id={`cred-${entry.key}-${f.key}-hint`}>{credentialHint}</FieldDescription>}
             </Field>
           ))}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Price per lookup ($)" htmlFor={`price-${entry.key}`} hint="What one lookup costs you on your plan. Estimates and dollar caps use it. Leave 0 to use the vendor's listed price or count its credits.">
-              <Input id={`price-${entry.key}`} type="number" min={0} step={0.001} value={price} onChange={(e) => setPrice(e.target.value)} className="w-28" />
+          <div className="grid gap-group sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor={`price-${entry.key}`}>Price per lookup ($)</FieldLabel>
+              <Input id={`price-${entry.key}`} type="number" min={0} step={0.001} value={price} onChange={(e) => setPrice(e.target.value)} className="w-28" aria-describedby={`price-${entry.key}-hint`} />
+              <FieldDescription id={`price-${entry.key}-hint`}>What one lookup costs you on your plan. Estimates and dollar caps use it. Leave 0 to use the vendor&apos;s listed price or count its credits.</FieldDescription>
             </Field>
             {provider && (
-              <Field label="Calls per minute" htmlFor={`rate-${entry.key}`} hint="Your plan's limit. Leave blank for no limit.">
-                <Input id={`rate-${entry.key}`} type="number" min={1} value={rate} onChange={(e) => setRate(e.target.value)} className="w-28" />
+              <Field>
+                <FieldLabel htmlFor={`rate-${entry.key}`}>Calls per minute</FieldLabel>
+                <Input id={`rate-${entry.key}`} type="number" min={1} value={rate} onChange={(e) => setRate(e.target.value)} className="w-28" aria-describedby={`rate-${entry.key}-hint`} />
+                <FieldDescription id={`rate-${entry.key}-hint`}>Your plan&apos;s limit. Leave blank for no limit.</FieldDescription>
               </Field>
             )}
           </div>
           {isHttp && (
             <>
-              <Field label="Base URL" htmlFor="http-base" hint="https only. The host must be on the operator's allow-list.">
-                <Input id="http-base" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.example.com" />
+              <Field>
+                <FieldLabel htmlFor="http-base">Base URL</FieldLabel>
+                <Input id="http-base" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.example.com" aria-describedby="http-base-hint" />
+                <FieldDescription id="http-base-hint">https only. The host must be on the operator&apos;s allow-list.</FieldDescription>
               </Field>
-              <Field label="Configuration (JSON)" htmlFor="http-config" hint="Auth mode and the actions this API offers.">
-                <Textarea id="http-config" rows={6} className="font-mono text-xs" value={configText} onChange={(e) => setConfigText(e.target.value)} spellCheck={false} />
+              <Field>
+                <FieldLabel htmlFor="http-config">Configuration (JSON)</FieldLabel>
+                <Textarea id="http-config" rows={6} className="font-mono text-xs" value={configText} onChange={(e) => setConfigText(e.target.value)} spellCheck={false} aria-describedby="http-config-hint" />
+                <FieldDescription id="http-config-hint">Auth mode and the actions this API offers.</FieldDescription>
               </Field>
             </>
           )}
-          <ErrorText>{error}</ErrorText>
+          <FieldError>{error}</FieldError>
           <div>
             <Button type="submit" size="sm" disabled={busy}>
               {busy ? "Saving…" : provider ? "Save" : "Connect"}

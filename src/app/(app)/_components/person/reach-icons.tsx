@@ -1,5 +1,8 @@
 import { BanIcon, MailIcon, MailXIcon } from "lucide-react";
+import type { ReactElement, ReactNode } from "react";
 import { Time } from "@/components/shell/time";
+import { TouchTip } from "@/components/shell/touch-tip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { LeadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { suppressionReasonLabel, type Reachability } from "@/contexts/people/domain/reachability";
 import { cn } from "@/components/ui/utils";
@@ -71,31 +74,51 @@ export function ReachIcons({ reach, contact, person }: { reach: Reachability; co
           <span className="sr-only">{`Email ${email.address}`}</span>
         </StateTip>
       ) : email ? (
-        <a href={email.href} aria-label={`Email ${email.address}`} title={`Email ${email.address}`} className={cn(iconClasses, liveClasses, tone)}>
+        <LinkTip tip={`Email ${email.address}`} link={<a href={email.href} aria-label={`Email ${email.address}`} className={cn(iconClasses, liveClasses, tone)} />}>
           <MailIcon aria-hidden />
-        </a>
+        </LinkTip>
       ) : (
-        <span role="img" aria-label="No email" title="No email" className={cn(iconClasses, "border-dashed text-muted-foreground")}>
+        <MissingMark name="No email">
           <MailXIcon aria-hidden />
-        </span>
+        </MissingMark>
       )}
       {linkedin ? (
-        <a
-          href={linkedin.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Open LinkedIn profile of ${person}`}
-          title={`Open LinkedIn profile of ${person}`}
-          className={cn(iconClasses, liveClasses, tone)}
+        <LinkTip
+          tip={`Open LinkedIn profile of ${person}`}
+          link={<a href={linkedin.href} target="_blank" rel="noopener noreferrer" aria-label={`Open LinkedIn profile of ${person}`} className={cn(iconClasses, liveClasses, tone)} />}
         >
           <LinkedInMark />
-        </a>
+        </LinkTip>
       ) : (
-        <span role="img" aria-label="No LinkedIn" title="No LinkedIn" className={cn(iconClasses, "border-dashed text-muted-foreground")}>
+        <MissingMark name="No LinkedIn">
           <LinkedInMark crossed />
-        </span>
+        </MissingMark>
       )}
     </span>
+  );
+}
+
+/** An icon link with its name in a tooltip. A tap follows the link, so a link keeps the tooltip and opens no popover. */
+function LinkTip({ tip, link, children }: { tip: string; link: ReactElement; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger delay={150} render={link}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * A channel the person has no value for: a dashed mark, not interactive, that names the gap on hover, keyboard focus and
+ * a tap. It sits above the row's stretched link so the pointer and a tap reach it.
+ */
+function MissingMark({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <TouchTip trigger={<span tabIndex={0} role="img" aria-label={name} className={cn(iconClasses, liveClasses, "border-dashed bg-transparent text-muted-foreground hover:bg-transparent")} />} tip={name}>
+      {children}
+    </TouchTip>
   );
 }
 

@@ -15,6 +15,7 @@ import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { cn } from "@/components/ui/utils";
 import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
+import { formatCount } from "@/shared/format-number";
 
 interface SessionRow {
   id: string;
@@ -249,7 +250,7 @@ function SessionsSection() {
         open={confirming}
         onOpenChange={setConfirming}
         title="Sign out other devices?"
-        description={`${others} other ${others === 1 ? "device signs" : "devices sign"} out. This device stays signed in.`}
+        description={`${formatCount(others)} other ${others === 1 ? "device signs" : "devices sign"} out. This device stays signed in.`}
         confirmLabel="Sign out other devices"
         cancelLabel="Keep them signed in"
         pendingLabel="Signing out…"

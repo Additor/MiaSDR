@@ -5,8 +5,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { callApi } from "@/app/_lib/api-client";
 import { useDealStages } from "./deal-fields";
@@ -117,7 +117,7 @@ export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenSta
       onConfirm={move}
     >
       {stale && (
-        <p role="status" className="rounded-lg border p-3 text-sm">
+        <p role="status" className="text-sm">
           {STALE}
         </p>
       )}
@@ -126,8 +126,8 @@ export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenSta
           {stagesError}
         </p>
       )}
-      <div className="grid gap-1">
-        <Label htmlFor={`move-deal-${deal.id}`}>New stage</Label>
+      <Field>
+        <FieldLabel htmlFor={`move-deal-${deal.id}`}>New stage</FieldLabel>
         <Select items={choices} value={chosenValue} onValueChange={(v) => v && setTarget(v)} disabled={choices.length === 0}>
           <SelectTrigger id={`move-deal-${deal.id}`} className="w-full">
             <SelectValue placeholder={stages ? "Choose a stage" : "Loading stages…"} />
@@ -140,12 +140,12 @@ export function MoveDealStageDialog({ open, onOpenChange, deal, stages: givenSta
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </Field>
       {chosen?.kind === "lost" && (
-        <div className="grid gap-1">
-          <Label htmlFor={`move-deal-reason-${deal.id}`}>Lost reason</Label>
+        <Field>
+          <FieldLabel htmlFor={`move-deal-reason-${deal.id}`}>Lost reason</FieldLabel>
           <Input id={`move-deal-reason-${deal.id}`} value={lostReason} onChange={(e) => setLostReason(e.target.value)} maxLength={500} placeholder="Went with a competitor" />
-        </div>
+        </Field>
       )}
     </ConfirmDialog>
   );
@@ -157,6 +157,7 @@ export function MoveDealStageButton({
   variant = "outline",
   size = "sm",
   disabled = false,
+  touch = false,
   className,
   ...props
 }: Omit<MoveDealStageDialogProps, "open" | "onOpenChange"> & {
@@ -165,12 +166,14 @@ export function MoveDealStageButton({
   size?: "default" | "sm" | "xs";
   /** Off while another move of this deal is on its way. */
   disabled?: boolean;
+  /** 44px on a phone, where the button sits on a card a person taps. */
+  touch?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant={variant} size={size} className={className} onClick={() => setOpen(true)} disabled={disabled}>
+      <Button variant={variant} size={size} touch={touch} className={className} onClick={() => setOpen(true)} disabled={disabled}>
         {label}
       </Button>
       <MoveDealStageDialog {...props} open={open} onOpenChange={setOpen} />

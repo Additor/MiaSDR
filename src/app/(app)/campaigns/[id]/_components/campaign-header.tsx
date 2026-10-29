@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 import { SummaryLine, type SummaryItem } from "@/components/shell/summary-line";
-import { channelLabel, type OutreachChannelName } from "@/contexts/outreach/domain/campaign-view";
+import { InfoTip } from "@/components/shell/info-tip";
+import type { OutreachChannelName } from "@/contexts/outreach/domain/campaign-view";
+import { countOf } from "@/shared/format-number";
 import { MetaLine, RecordHeader } from "@/app/(app)/_components/record/record-header";
 import { CampaignStatusToken } from "./campaign-status-token";
+import { ChannelName } from "./channel-name";
 
 /** Senders the meta line names before it counts the rest. */
 const SENDERS_SHOWN = 2;
@@ -52,14 +55,15 @@ export function CampaignHeader({
             label="Campaign facts"
             testId="campaign-facts"
             items={[
-              <span key="channel">{channelLabel(channel)}</span>,
+              <ChannelName key="channel" channel={channel} />,
               personal && (
-                <span key="personal" title="Replies stay out of the Inbox, Actions and the AI.">
+                <span key="personal" className="inline-flex items-center gap-1">
                   Personal
+                  <InfoTip label="Personal campaign">Replies stay out of the Inbox, Actions and the AI.</InfoTip>
                 </span>
               ),
               <span key="steps" className="tabular-nums">
-                {steps} {steps === 1 ? "step" : "steps"}
+                {countOf(steps, "step")}
               </span>,
               <span key="senders" className="min-w-0 break-words">
                 {sendersText(channel, senders)}

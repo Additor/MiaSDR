@@ -1,6 +1,7 @@
 import { StarIcon, TriangleAlertIcon } from "lucide-react";
 import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
+import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import type { InboxRow } from "@/contexts/conversations/application/ports";
 import { groupLabel } from "@/contexts/conversations/domain/reply-handling";
@@ -36,7 +37,8 @@ export function ConversationRow({ row, href, time }: { row: InboxRow; href: stri
     <li data-list-row={row.conversationId} data-href={href} className={cn(rowLinkClasses, LIST_ROW_FRAME)}>
       <div className="flex items-baseline gap-2">
         <span className="flex w-3 shrink-0 justify-center">
-          {unread && <span role="img" aria-label={`${row.unreadCount} unread`} className="size-2 rounded-full bg-sidebar-primary" />}
+          {/* Neutral: lavender stays with the sidebar's count of work that waits (DESIGN.md Colors). The bold name says unread too. */}
+          {unread && <span role="img" aria-label={`${row.unreadCount} unread`} className="size-2 rounded-full bg-foreground" />}
         </span>
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
           <RowLink href={href} className={cn("truncate", unread && "font-semibold")}>
@@ -48,9 +50,8 @@ export function ConversationRow({ row, href, time }: { row: InboxRow; href: stri
           {row.hasImportant && <StarIcon role="img" aria-label="Important" className="size-3.5 shrink-0 self-center text-foreground" />}
           {row.personName && row.personEmail && <span className="hidden truncate text-xs text-muted-foreground sm:inline">{row.personEmail}</span>}
         </div>
-        <time dateTime={row.lastMessageAt.toISOString()} className="shrink-0 text-xs text-muted-foreground tabular-nums">
-          {time}
-        </time>
+        {/* The page words the time from its day group ("14:05" under Today, a date under Earlier); the tooltip has the exact time. */}
+        <Time value={row.lastMessageAt} label={time} className="shrink-0 text-xs text-muted-foreground tabular-nums" />
       </div>
       <p className="truncate pl-5">
         <span className={unread ? "font-semibold" : undefined}>{subject}</span>

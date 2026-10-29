@@ -5,7 +5,8 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ListSkeleton } from "@/components/shell/list-skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { checkLeadDelete } from "@/contexts/people/application/lead-delete-check";
 import { getLead } from "@/contexts/people/application/lead-management";
@@ -41,7 +42,7 @@ export default function LeadPage({ params, searchParams }: PageProps<"/leads/[id
     <Suspense
       fallback={
         <div className="page">
-          <Skeleton className="h-96 w-full" />
+          <PageSkeleton shape="record" />
         </div>
       }
     >
@@ -135,7 +136,7 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
             <>
               <CampaignsTable enrollments={enrollments} invitedFrom={invitedFrom} />
               <SendHistoryTable sends={sends} hiddenSends={hiddenSends} />
-              <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+              <Suspense fallback={<ListSkeleton rows={3} toolbar={false} label="Loading activity" />}>
                 <PersonActivity actor={actor} personId={person.id} />
               </Suspense>
               <SourceDataCard person={toEntries(person.raw)} company={toEntries(person.companyRaw)} companyName={person.companyName} />

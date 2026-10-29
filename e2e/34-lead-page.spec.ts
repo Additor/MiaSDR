@@ -190,7 +190,7 @@ test.describe("previous and next follow the list", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("S34 Alpha Adams");
     // First lead of the list: no link, and the control says why.
     await expect(nav.getByRole("link", { name: /Previous/ })).toHaveCount(0);
-    await expect(nav.locator('[aria-disabled="true"]')).toContainText("Previous lead, none: this is the first in the list");
+    await expect(nav.locator('[aria-disabled="true"]')).toContainText("Previous lead, This is the first lead in the list.");
     // `]` and `[` walk the list too, as `]` does in an Inbox queue.
     await page.keyboard.press("]");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("S34 Bea Beta");

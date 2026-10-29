@@ -2,6 +2,7 @@ import Link from "next/link";
 import { rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
+import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { PersonDealRow } from "@/contexts/deals/application/deal-ports";
 import { DealRowLink } from "./deal-row-link";
@@ -16,8 +17,8 @@ export const stageVariant = (kind: string) => (kind === "open" ? "secondary" : "
  * link names the page it sits on as `from`, so a delete on the deal page returns there.
  */
 export function DealsList({ deals, contactNames }: { deals: PersonDealRow[]; contactNames?: Map<string, string> }) {
-  // It sits inside a Card, so it skips ScrollableTable: that cue paints the page background, which shows as a box on a card.
   return (
+    <ScrollableTable>
       <Table>
         <TableHeader>
           <TableRow>
@@ -36,7 +37,7 @@ export function DealsList({ deals, contactNames }: { deals: PersonDealRow[]; con
               </TableCell>
               {contactNames && (
                 <TableCell>
-                  <Link href={`/crm/contacts/${deal.personId}`} className="relative z-10 hover:underline">
+                  <Link href={`/crm/contacts/${deal.personId}`} className="relative z-10 rounded-sm hover:underline focus-ring">
                     {contactNames.get(deal.personId) ?? "Contact"}
                   </Link>
                 </TableCell>
@@ -52,5 +53,6 @@ export function DealsList({ deals, contactNames }: { deals: PersonDealRow[]; con
           ))}
         </TableBody>
       </Table>
+    </ScrollableTable>
   );
 }

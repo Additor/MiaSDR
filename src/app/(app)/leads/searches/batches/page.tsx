@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { acceptsEnrollments } from "@/contexts/outreach/domain/campaign";
 import { listLinkedInCampaigns } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
@@ -29,7 +29,7 @@ export default function SearchBatchesPage() {
         }
       />
       <div className="page stack-group">
-        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        <Suspense fallback={<PageSkeleton shape="list" />}>
           <Batches />
         </Suspense>
       </div>

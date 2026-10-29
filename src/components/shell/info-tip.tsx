@@ -12,7 +12,7 @@ import { TouchTip } from "./touch-tip";
 export function InfoTip({ label, children }: { label: string; children: ReactNode }) {
   return (
     <TouchTip
-      trigger={<span tabIndex={0} role="note" aria-label={label} className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:size-8" />}
+      trigger={<span tabIndex={0} role="note" aria-label={label} className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-ring max-sm:size-8" />}
       tip={children}
     >
       <InfoIcon aria-hidden className="size-3.5" />
@@ -25,7 +25,7 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
 export function KeyboardHint({ noun }: { noun: string }) {
   return (
     <TouchTip
-      trigger={<span tabIndex={0} role="note" aria-label="Keyboard keys" className="hidden size-8 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex" data-testid="keyboard-hint" />}
+      trigger={<span tabIndex={0} role="note" aria-label="Keyboard keys" className="hidden size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-ring sm:inline-flex" data-testid="keyboard-hint" />}
       tip={
         <>
           <kbd className="font-sans font-semibold">j</kbd> and <kbd className="font-sans font-semibold">k</kbd> move between {noun}, <kbd className="font-sans font-semibold">Enter</kbd> opens the highlighted one.

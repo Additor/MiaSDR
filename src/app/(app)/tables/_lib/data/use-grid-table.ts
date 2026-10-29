@@ -11,6 +11,7 @@ import type { CellEditInput, ChangesPage, GridColumn, GridRow, GridTable, JobCou
 import { canRedo, canUndo, columnsInvalidate, complete, discardCells, drop, EMPTY_STACK, nextAction, record, restoreUpdates, settleAfter, type Direction, type UndoCell, type UndoStack, type WrittenCell } from "../edit/undo-stack";
 import type { BlockPasteRequest } from "../edit/paste";
 import { keepsTableOrder } from "../view/view";
+import { countOf, formatCount } from "@/shared/format-number";
 
 const PAGE = 200;
 /** The most rows one table request returns. */
@@ -346,7 +347,7 @@ export function useGridTable(tableId: string): GridTableState {
           const batch = buildBatches(snapshot, rowsRef.current)[0];
           const res = await gridRequest<CellsResponse>(gridUrl.sub(tableId, "cells"), "PATCH", { updates: batch.updates });
           if (res.ok && res.data) {
-            if (res.data.skippedByCap) toast.warning(`${res.data.skippedByCap.toLocaleString("en-US")} ${res.data.skippedByCap === 1 ? "cell was" : "cells were"} not run automatically because this change went over the auto-run limit. Run the column to fill ${res.data.skippedByCap === 1 ? "it" : "them"}.`);
+            if (res.data.skippedByCap) toast.warning(`${formatCount(res.data.skippedByCap)} ${res.data.skippedByCap === 1 ? "cell was" : "cells were"} not run automatically because this change went over the auto-run limit. Run the column to fill ${res.data.skippedByCap === 1 ? "it" : "them"}.`);
             const merged = mergeRows(rowsRef.current, res.data.rows, { canAppend: false });
             putRows(merged.rows);
             // The server coerces what it stores ("42" becomes 42); undo must expect that value.
@@ -494,8 +495,8 @@ export function useGridTable(tableId: string): GridTableState {
         }
         putStack(complete(stackRef.current, direction, action.id, written));
         const verb = direction === "undo" ? "Undid" : "Redid";
-        if (skipped > 0) toast.warning(`${skipped.toLocaleString("en-US")} ${skipped === 1 ? "cell changed after your edit and was" : "cells changed after your edit and were"} left as ${skipped === 1 ? "it is" : "they are"}.`, { id: "grid-history" });
-        else toast.message(`${verb} ${written.length.toLocaleString("en-US")} cell${written.length === 1 ? "" : "s"}.`, { id: "grid-history" });
+        if (skipped > 0) toast.warning(`${formatCount(skipped)} ${skipped === 1 ? "cell changed after your edit and was" : "cells changed after your edit and were"} left as ${skipped === 1 ? "it is" : "they are"}.`, { id: "grid-history" });
+        else toast.message(`${verb} ${countOf(written.length, "cell")}.`, { id: "grid-history" });
       } finally {
         historyBusy.current = false;
       }

@@ -36,7 +36,7 @@ test.describe("invite and sign-up", () => {
     await page.goto(confirm);
     await expect(page).toHaveURL(/\/accept-invitation\//);
     await page.getByRole("button", { name: "Accept invitation" }).click();
-    await expect(page).toHaveURL(/\/leads$/);
+    await expect(page).toHaveURL(/\/actions$/);
 
     // A member sees the members page without the invite form.
     await page.goto("/settings/members");

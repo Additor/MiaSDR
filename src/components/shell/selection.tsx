@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 /*
  * The ticked rows of a list page (Leads, Contacts). The table writes it, and any client component rendered inside the
@@ -64,4 +64,31 @@ export function useBarScrollPadding(bar: RefObject<HTMLDivElement | null>, activ
       root.style.scrollPaddingBottom = "";
     };
   }, [bar, active]);
+}
+
+/**
+ * The bar's line for a failed bulk step (Select all matching, Export). The reason shows while the rows it failed on stay
+ * ticked, and it goes when the selection empties (Clear, Esc, a finished step) or fills again from empty, so ticking rows
+ * later never brings back an old failure. A step calls `begin()` before its request and the check it returns after: the
+ * check turns false once the selection emptied in between, so a late answer neither ticks rows the person cleared nor puts
+ * its failure on a new selection.
+ */
+export function useBulkStep(count: number) {
+  const [error, setError] = useState<string | null>(null);
+  const [had, setHad] = useState(count > 0);
+  if (had !== count > 0) {
+    setHad(count > 0);
+    setError(null);
+  }
+  // How many times the selection emptied. Clear and Esc are discrete events, so the effect runs before a request returns.
+  const emptied = useRef(0);
+  const empty = count === 0;
+  useEffect(() => {
+    if (empty) emptied.current += 1;
+  }, [empty]);
+  const begin = useCallback(() => {
+    const at = emptied.current;
+    return () => emptied.current === at;
+  }, []);
+  return { error, setError, begin };
 }

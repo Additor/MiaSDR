@@ -46,7 +46,7 @@ export function PageHeader({
             href={back.href}
             aria-label={`Back to ${back.label}`}
             title={`Back to ${back.label}`}
-            className="-ml-1 inline-flex h-8 shrink-0 items-center gap-1 rounded-md pr-2 pl-1 text-sm max-sm:h-11 max-sm:min-w-11 max-sm:justify-center text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="-ml-1 inline-flex h-8 shrink-0 items-center gap-1 rounded-md pr-2 pl-1 text-sm max-sm:h-11 max-sm:min-w-11 max-sm:justify-center text-muted-foreground hover:bg-muted hover:text-foreground focus-ring"
           >
             <ChevronLeftIcon className="size-4 shrink-0" />
             <span className="hidden max-w-40 truncate sm:inline">{back.label}</span>

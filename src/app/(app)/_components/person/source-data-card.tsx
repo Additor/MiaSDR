@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { callApi } from "@/app/_lib/api-client";
 import { RecordDisclosure } from "../record/record-header";
+import { countOf } from "@/shared/format-number";
 
 type Entry = { key: string; value: string };
 
@@ -47,7 +48,7 @@ export function SourceDataCard({ person, company, companyName }: { person: Entry
                   <dt className="text-sm font-medium break-words">{e.key}</dt>
                   <dd className="text-sm break-words whitespace-pre-wrap text-muted-foreground">{e.value}</dd>
                   <div>
-                    <Button variant="ghost" size="sm" className="max-sm:h-11" aria-label={`Map this field: ${e.key}`} onClick={() => setMapping(mapping === e.key ? null : e.key)}>
+                    <Button variant="ghost" size="sm" touch aria-label={`Map this field: ${e.key}`} onClick={() => setMapping(mapping === e.key ? null : e.key)}>
                       Map this field
                     </Button>
                   </div>
@@ -60,7 +61,7 @@ export function SourceDataCard({ person, company, companyName }: { person: Entry
         {company.length > 0 && (
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium">Company{companyName ? `: ${companyName}` : ""}</h4>
+              <h4 className="heading-item">Company{companyName ? `: ${companyName}` : ""}</h4>
               <Button variant="outline" size="sm" onClick={() => copy(company)}>
                 Copy
               </Button>
@@ -96,7 +97,7 @@ function MapForm({ rawKey, onDone }: { rawKey: string; onDone: () => void }) {
       return;
     }
     const updated = result.data?.updated ?? 0;
-    toast.success(`${updated} ${updated === 1 ? "lead" : "leads"} updated in "${result.data?.name ?? name}".`);
+    toast.success(`${countOf(updated, "lead")} updated in "${result.data?.name ?? name}".`);
     onDone();
     router.refresh();
   }

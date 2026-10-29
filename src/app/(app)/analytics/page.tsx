@@ -3,12 +3,12 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/components/ui/utils";
 import { AppliedFilters, type AppliedFilter } from "@/components/shell/filter-chip";
 import { CheckField, DateRangeField, FilterSection, SelectField } from "@/components/shell/filter-fields";
 import { FilterPopover } from "@/components/shell/filter-popover";
 import { ListToolbar } from "@/components/shell/list-toolbar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/shell/error-state";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { ANALYTICS_VIEWS, getAnalytics, getFilterOptions, isAnalyticsView, type AnalyticsView } from "@/contexts/analytics/application/analytics-queries";
 import { analyticsDeps } from "@/contexts/analytics/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -34,7 +34,7 @@ export default function AnalyticsPage({ searchParams }: PageProps<"/analytics">)
     <>
       <PageHeader title="Analytics" />
       <div className="page stack-group">
-        <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+        <Suspense fallback={<PageSkeleton shape="table" />}>
           <AnalyticsBody searchParams={searchParams} />
         </Suspense>
       </div>
@@ -100,7 +100,7 @@ async function AnalyticsBody({ searchParams }: { searchParams: PageProps<"/analy
         end={
           !(result instanceof ValidationError) && (
             <a
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-sm:h-11")}
+              className={buttonVariants({ variant: "outline", size: "sm", touch: true })}
               href={`/api/analytics/${view}?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}), ...(campaignId ? { campaignId } : {}), ...(excludeArchived ? { excludeArchived: "1" } : {}), ...(accountId && view === "linkedin" ? { linkedinAccountId: accountId } : {}), format: "csv" })}`}
             >
               Export CSV
@@ -111,10 +111,7 @@ async function AnalyticsBody({ searchParams }: { searchParams: PageProps<"/analy
       <AppliedFilters chips={chips} clear={{ href: `/analytics?${query({ from: undefined, to: undefined, campaign: undefined, account: undefined, hideArchived: undefined })}` }} />
 
       {result instanceof ValidationError ? (
-        <section role="alert" className="stack-field">
-          <h2 className="text-sm font-semibold">Check the filters</h2>
-          <p className="text-sm text-muted-foreground">{result.message}</p>
-        </section>
+        <ErrorState inline title="Check the filters" reason={result.message} />
       ) : (
         <>
           <p className="text-sm text-muted-foreground">

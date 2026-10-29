@@ -51,7 +51,7 @@ test.describe("linkedin settings and jobs", () => {
     await page.reload();
     await expect(page.getByText(/LinkedIn: 1 gave up/)).toBeVisible();
     await page.getByRole("button", { name: "Replay LinkedIn deliveries" }).click();
-    await expect(page.getByText(/Replayed 1 deliveries/)).toBeVisible();
+    await expect(page.getByText(/Replayed 1 delivery:/)).toBeVisible();
     // The audit rows live on the Jobs History tab.
     await page.goto("/settings/jobs");
     await page.getByRole("tab", { name: "History" }).click();
@@ -62,7 +62,7 @@ test.describe("linkedin settings and jobs", () => {
     await page.goto("/settings/linkedin");
     await page.getByRole("button", { name: "Reset daily counters" }).click();
     await page.getByRole("dialog", { name: "Reset daily counters?" }).getByRole("button", { name: "Reset counters" }).click();
-    await expect(page.getByText(/Reset \d+ account\(s\)/)).toBeVisible();
+    await expect(page.getByText(/Reset \d+ accounts?:/)).toBeVisible();
     await page.goto("/settings/jobs");
     await page.getByRole("tab", { name: "History" }).click();
     await expect(page.getByText("Reset daily counters", { exact: true }).first()).toBeVisible();

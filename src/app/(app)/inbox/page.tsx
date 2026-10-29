@@ -3,6 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
+import { ErrorState } from "@/components/shell/error-state";
 import { FilterChips } from "@/components/shell/filter-chips";
 import { SearchField } from "@/components/shell/search-field";
 import { ListPager } from "@/components/shell/list-pager";
@@ -10,6 +11,7 @@ import { ListSkeleton } from "@/components/shell/list-skeleton";
 import { getOrgTimeZone } from "@/components/shell/org-time-zone";
 import { PageHeader } from "@/components/shell/page-header";
 import { Time } from "@/components/shell/time";
+import { formatCount } from "@/shared/format-number";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,10 +21,10 @@ import { getWorkQueueCounts, getWorkQueueExtras } from "@/contexts/conversations
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { AppliedFilters } from "@/components/shell/filter-chip";
 import { ListToolbar } from "@/components/shell/list-toolbar";
+import { Count } from "@/components/shell/section";
 import { activeFilterChips, clearedInboxHref, InboxFilters } from "./filter-panel";
 import { HiddenAutomated, MoreViews } from "./more-views";
 import { KeyboardHint } from "@/components/shell/info-tip";
@@ -58,11 +60,11 @@ async function UnmatchedSendersLink() {
   await connection();
   const { openIdentityExceptions: open } = await getWorkQueueExtras(workQueueDeps(), toActor(await requireOrgContext()));
   return (
-    <Link href="/inbox/unmatched" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-sm:h-11")} data-testid="unmatched-senders-link">
+    <Link href="/inbox/unmatched" className={buttonVariants({ variant: "outline", size: "sm", touch: true })} data-testid="unmatched-senders-link">
       Unmatched senders
       {open > 0 && (
         <span className="font-semibold tabular-nums" data-testid="unmatched-senders-count">
-          {open}
+          {formatCount(open)}
           <span className="sr-only"> open</span>
         </span>
       )}
@@ -153,8 +155,8 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
   const waiting = counts?.work.mine ?? 0;
   const status =
     waiting > 0 && !scheduled ? (
-      <Link href="/actions" className="inline-flex min-h-8 items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline max-sm:min-h-11" data-testid="waiting-in-actions">
-        <span className="font-semibold text-sidebar-count tabular-nums">{waiting}</span> waiting in Actions
+      <Link href="/actions" className="inline-flex min-h-8 items-center gap-1 rounded-sm text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-ring max-sm:min-h-11" data-testid="waiting-in-actions">
+        <Count value={formatCount(waiting)} tone="waiting" /> waiting in Actions
       </Link>
     ) : null;
 
@@ -180,13 +182,16 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
       {options && <AppliedFilters chips={activeFilterChips(params, options)} clear={{ href: clearedInboxHref(params) }} />}
 
       {!loaded && (
-        <div role="alert" className="grid justify-items-start gap-2 py-8 text-sm" data-testid="inbox-load-failed">
-          <p className="font-medium">{scheduled ? "The queued steps did not load" : "The conversations did not load"}</p>
-          <p className="max-w-prose text-muted-foreground">Nothing was lost. Try again, and if it keeps failing, ask your admin to look at the server log.</p>
-          <Link href={link({})} className={cn(buttonVariants({ variant: "outline" }), "max-sm:h-11")}>
-            Try again
-          </Link>
-        </div>
+        <ErrorState
+          title={scheduled ? "The queued steps did not load" : "The conversations did not load"}
+          reason="Nothing was lost. Try again, and if it keeps failing, ask your admin to look at the server log."
+          action={
+            <Link href={link({})} className={buttonVariants({ variant: "outline", touch: true })}>
+              Try again
+            </Link>
+          }
+          testId="inbox-load-failed"
+        />
       )}
 
       {!loaded ? null : total === 0 ? (
@@ -238,10 +243,12 @@ async function Conversations({ searchParams }: { searchParams: PageProps<"/inbox
               </TableBody>
             </Table>
           ) : (
-            <div className="grid gap-4">
+            <div className="stack-group">
               {groupByDayInZone(rows, (r) => r.lastMessageAt, now, timeZone).map((group) => (
-                <section key={group.group} aria-labelledby={`day-${group.group}`} className="grid gap-1.5">
-                  <h2 id={`day-${group.group}`} data-slot="day-divider" className="px-1 text-xs font-medium text-muted-foreground">
+                // A day heading labels a group of rows inside the one list: the item role in muted text, under the page's own
+                // name in the top bar, and still an h2 so a screen reader can jump from day to day.
+                <section key={group.group} aria-labelledby={`day-${group.group}`} className="stack-field">
+                  <h2 id={`day-${group.group}`} data-slot="day-divider" className="px-1 heading-item text-muted-foreground">
                     {group.label}
                   </h2>
                   <ul className="divide-y rounded-lg border text-sm">

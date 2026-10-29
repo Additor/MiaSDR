@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInvitations, listMembers } from "@/contexts/tenancy/application/member-management";
 import { memberDeps } from "@/contexts/tenancy/infrastructure/member-composition";
@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Members" };
 export default function MembersPage() {
   return (
     <div className="max-w-3xl">
-      <Suspense fallback={<Skeleton className="h-64 w-full max-w-3xl" />}>
+      <Suspense fallback={<PageSkeleton shape="form" />}>
         <Members />
       </Suspense>
     </div>

@@ -1,8 +1,11 @@
-import { TriangleAlertIcon } from "lucide-react";
+import { MailIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { cn } from "@/components/ui/utils";
 import { EmptyState } from "@/components/shell/empty-state";
+import { StatusBadge } from "@/components/shell/status-badge";
 import { SummaryLine } from "@/components/shell/summary-line";
-import { Badge } from "@/components/ui/badge";
+import { TouchTip } from "@/components/shell/touch-tip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { AnalyticsResult } from "@/contexts/analytics/application/analytics-queries";
 import {
@@ -17,8 +20,9 @@ import {
   type TimeSeriesReport,
 } from "@/contexts/analytics/domain/metrics";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
-import { SMALL_SAMPLE_BELOW, int, percent, rateDisplay, rateText, summaryItems } from "./report-format";
-
+import { formatCount } from "@/shared/format-number";
+import { LinkedInMark } from "@/app/(app)/_components/person/reach-icons";
+import { SMALL_SAMPLE_BELOW, percent, rateDisplay, rateText, summaryItems } from "./report-format";
 
 const NOBODY_CONTACTED = "Nobody contacted in this window";
 const linkClass = "underline-offset-4 hover:underline focus-visible:underline";
@@ -29,25 +33,45 @@ const linkClass = "underline-offset-4 hover:underline focus-visible:underline";
  */
 function Rate({ part, whole, none }: { part: number; whole: number; none: string }) {
   const rate = rateDisplay(part, whole);
-  if (rate.kind === "empty") return <span title={none}>-</span>;
+  if (rate.kind === "empty") return <Why tip={none}>-</Why>;
   if (rate.kind === "fraction") {
     return (
-      <span className="text-muted-foreground" title={`Fewer than ${SMALL_SAMPLE_BELOW} people, so no percentage.`}>
+      <Why tip={`Fewer than ${SMALL_SAMPLE_BELOW} people, so no percentage.`} className="text-muted-foreground">
         {rate.text}
-      </span>
+      </Why>
     );
   }
   return <>{rate.text}</>;
+}
+
+/** A cell value whose reason sits in a tip on hover, focus and tap, and in screen-reader text after the value. */
+function Why({ tip, className, children }: { tip: string; className?: string; children: ReactNode }) {
+  return (
+    <TouchTip trigger={<span tabIndex={0} className={cn("inline-flex items-center gap-1 rounded-sm focus-ring", className)} />} tip={tip}>
+      {children}
+      <span className="sr-only">{`. ${tip}`}</span>
+    </TouchTip>
+  );
+}
+
+/** The channel as a descriptor: its mark and its name in muted text, the way the Actions rows show it. */
+function Channel({ channel }: { channel: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-muted-foreground [&_svg]:size-3.5">
+      {channel === "linkedin" ? <LinkedInMark /> : <MailIcon aria-hidden />}
+      {channelLabel(channel)}
+    </span>
+  );
 }
 
 /** Unknown-outcome sends are never part of "sent"; they get their own column and a warning icon, since the outcome is uncertain. */
 function Unknown({ count, resolveHref }: { count: number; resolveHref?: string }) {
   if (count === 0) return <span className="text-muted-foreground">0</span>;
   const badge = (
-    <span className="inline-flex items-center gap-1" title="The provider call may or may not have gone out. Not counted as sent.">
+    <Why tip="The provider call may or may not have gone out. Not counted as sent.">
       <TriangleAlertIcon aria-hidden className="size-3.5 text-warning" />
-      {count}
-    </span>
+      {formatCount(count)}
+    </Why>
   );
   if (!resolveHref) return badge;
   return (
@@ -76,12 +100,12 @@ function Empty({ title, view, filtered }: { title: string; view: string; filtere
 function SendCells({ sends, resolveHref }: { sends: SendCounts; resolveHref?: string }) {
   return (
     <>
-      <TableCell className="text-right tabular-nums">{int(sends.sent)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatCount(sends.sent)}</TableCell>
       <TableCell className="text-right tabular-nums">
         <Unknown count={sends.unknown} resolveHref={resolveHref} />
       </TableCell>
-      <TableCell className="text-right tabular-nums">{int(sends.failed)}</TableCell>
-      <TableCell className="text-right tabular-nums">{int(sends.inFlight)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatCount(sends.failed)}</TableCell>
+      <TableCell className="text-right tabular-nums">{formatCount(sends.inFlight)}</TableCell>
     </>
   );
 }
@@ -125,14 +149,14 @@ function CampaignsView({ report, filtered }: { report: CampaignsReport; filtered
                 c.name
               )}
             </TableCell>
-            <TableCell>{c.campaignId ? <Badge variant="outline">{channelLabel(c.channel)}</Badge> : null}</TableCell>
-            <TableCell className="text-right tabular-nums">{int(c.enrolled)}</TableCell>
-            <TableCell className="text-right tabular-nums">{int(c.contacted)}</TableCell>
-            <TableCell className="text-right tabular-nums">{int(c.replied)}</TableCell>
+            <TableCell>{c.campaignId ? <Channel channel={c.channel} /> : null}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatCount(c.enrolled)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatCount(c.contacted)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatCount(c.replied)}</TableCell>
             <TableCell className="text-right tabular-nums">
               <Rate part={c.replied} whole={c.contacted} none={NOBODY_CONTACTED} />
             </TableCell>
-            <TableCell className="text-right tabular-nums">{int(c.bounced)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatCount(c.bounced)}</TableCell>
             <TableCell className="text-right tabular-nums">
               <Rate part={c.bounced} whole={c.contacted} none={NOBODY_CONTACTED} />
             </TableCell>
@@ -164,12 +188,12 @@ function ChannelsView({ report, filtered }: { report: ChannelsReport; filtered: 
             {report.channels.map((c) => (
               <TableRow key={c.channel}>
                 <TableCell>{channelLabel(c.channel)}</TableCell>
-                <TableCell className="text-right tabular-nums">{int(c.contacted)}</TableCell>
-                <TableCell className="text-right tabular-nums">{int(c.replied)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(c.contacted)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(c.replied)}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   <Rate part={c.replied} whole={c.contacted} none={NOBODY_CONTACTED} />
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{int(c.bounced)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(c.bounced)}</TableCell>
                 <SendCells sends={c.sends} />
               </TableRow>
             ))}
@@ -199,10 +223,12 @@ function ChannelsView({ report, filtered }: { report: ChannelsReport; filtered: 
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{channelLabel(s.channel)}</Badge>
+                    <Channel channel={s.channel} />
                   </TableCell>
-                  <TableCell>{s.status}</TableCell>
-                  <TableCell className="text-right tabular-nums">{int(s.contacted)}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={s.status} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(s.contacted)}</TableCell>
                   <SendCells sends={s.sends} />
                 </TableRow>
               ))}
@@ -214,15 +240,26 @@ function ChannelsView({ report, filtered }: { report: ChannelsReport; filtered: 
   );
 }
 
-function FunnelBar({ label, value, max }: { label: string; value: number; max: number }) {
+/** A bar's share of the whole, with a sliver for any value above zero so it never reads as nothing. */
+const barWidth = (value: number, max: number) => `${max > 0 ? Math.max((value / max) * 100, value > 0 ? 1 : 0) : 0}%`;
+
+/**
+ * Bars of one series, so they stay grey (DESIGN.md Colors). The label and the number are the content and read as a
+ * list; the bar repeats the number for the eye and is hidden from screen readers. `max` is the whole the bars share.
+ */
+function BarList({ label, max, bars }: { label: string; max: number; bars: Array<{ key: string; label: string; value: number }> }) {
   return (
-    <div className="grid grid-cols-[7rem_1fr_4rem] items-center gap-3 text-sm">
-      <span>{label}</span>
-      <div className="h-5 rounded bg-muted">
-        <div className="h-5 rounded bg-primary" style={{ width: `${max > 0 ? Math.max((value / max) * 100, value > 0 ? 1 : 0) : 0}%` }} />
-      </div>
-      <span className="text-right tabular-nums">{int(value)}</span>
-    </div>
+    <ul aria-label={label} className="grid gap-2">
+      {bars.map((b) => (
+        <li key={b.key} className="grid grid-cols-[7rem_1fr_4rem] items-center gap-3 text-sm">
+          <span>{b.label}</span>
+          <span aria-hidden className="h-5 rounded bg-muted">
+            <span className="block h-5 rounded bg-foreground/80" style={{ width: barWidth(b.value, max) }} />
+          </span>
+          <span className="text-right tabular-nums">{formatCount(b.value)}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -232,24 +269,28 @@ function LinkedInView({ report }: { report: LinkedInReport }) {
     <div className="stack-section">
       <section className={REPORT_BLOCK}>
         <div className="stack-field">
-          <h2 className="text-sm font-semibold">Funnel for people invited in this window</h2>
+          <h2 className="heading-section">Funnel for people invited in this window</h2>
           <p className="text-sm text-muted-foreground">
             Acceptance {rateText(f.accepted, f.invited)} of invited. Messaged {rateText(f.messaged, f.accepted)} and replied {rateText(f.replied, f.accepted)} of accepted.
           </p>
         </div>
-        <div className="grid gap-2">
-          <FunnelBar label="Invited" value={f.invited} max={f.invited} />
-          <FunnelBar label="Accepted" value={f.accepted} max={f.invited} />
-          <FunnelBar label="Messaged" value={f.messaged} max={f.invited} />
-          <FunnelBar label="Replied" value={f.replied} max={f.invited} />
-        </div>
+        <BarList
+          label="LinkedIn funnel"
+          max={f.invited}
+          bars={[
+            { key: "invited", label: "Invited", value: f.invited },
+            { key: "accepted", label: "Accepted", value: f.accepted },
+            { key: "messaged", label: "Messaged", value: f.messaged },
+            { key: "replied", label: "Replied", value: f.replied },
+          ]}
+        />
       </section>
 
       <section className={REPORT_BLOCK}>
         <div className="stack-field">
-          <h2 className="text-sm font-semibold">Activity in this window</h2>
+          <h2 className="heading-section">Activity in this window</h2>
           <p className="text-sm text-muted-foreground">
-            {int(report.events.accepted)} connections accepted, {int(report.events.replies)} replies received. Invitations and messages by outcome:
+            {formatCount(report.events.accepted)} connections accepted, {formatCount(report.events.replies)} replies received. Invitations and messages by outcome:
           </p>
         </div>
         <div>
@@ -296,13 +337,13 @@ function LinkedInView({ report }: { report: LinkedInReport }) {
                       {c.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{int(c.invited)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{int(c.accepted)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(c.invited)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(c.accepted)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <Rate part={c.accepted} whole={c.invited} none="Nobody invited in this window" />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{int(c.messaged)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{int(c.replied)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(c.messaged)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(c.replied)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <Rate part={c.replied} whole={c.accepted} none="Nobody accepted in this window" />
                   </TableCell>
@@ -335,13 +376,15 @@ function LinkedInView({ report }: { report: LinkedInReport }) {
                       {a.name}
                     </Link>
                   </TableCell>
-                  <TableCell>{a.status}</TableCell>
-                  <TableCell className="text-right tabular-nums">{int(a.invites.sent)}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={a.status} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(a.invites.sent)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <Unknown count={a.invites.unknown} />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{int(a.accepted)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{int(a.messages.sent)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(a.accepted)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(a.messages.sent)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <Unknown count={a.messages.unknown} />
                   </TableCell>
@@ -361,14 +404,10 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
     <div className="stack-section">
       <section className={REPORT_BLOCK}>
         <div className="stack-field">
-          <h2 className="text-sm font-semibold">{int(report.total)} replies</h2>
+          <h2 className="heading-section">{formatCount(report.total)} replies</h2>
           <p className="text-sm text-muted-foreground">{report.classifiedShare === null ? "-" : percent(report.classifiedShare)} have an applied reply type.</p>
         </div>
-        <div className="grid gap-2">
-          {report.byBucket.map((b) => (
-            <FunnelBar key={b.bucket} label={b.label} value={b.replies} max={report.total} />
-          ))}
-        </div>
+        <BarList label="Replies by group" max={report.total} bars={report.byBucket.map((b) => ({ key: b.bucket, label: b.label, value: b.replies }))} />
       </section>
       <section className={REPORT_BLOCK}>
         <Table>
@@ -387,10 +426,10 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
             {report.byChannel.map((c) => (
               <TableRow key={c.channel}>
                 <TableCell>{channelLabel(c.channel)}</TableCell>
-                <TableCell className="text-right tabular-nums">{int(c.total)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatCount(c.total)}</TableCell>
                 {report.byBucket.map((b) => (
                   <TableCell key={b.bucket} className="text-right tabular-nums">
-                    {int(c.byBucket[b.bucket])}
+                    {formatCount(c.byBucket[b.bucket])}
                   </TableCell>
                 ))}
               </TableRow>
@@ -413,7 +452,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
                 <TableRow key={`${s.bucket}-${s.name}`}>
                   <TableCell>{s.name}</TableCell>
                   <TableCell>{s.bucket.replace("_", " ")}</TableCell>
-                  <TableCell className="text-right tabular-nums">{int(s.replies)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(s.replies)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -422,7 +461,7 @@ function RepliesView({ report, filtered }: { report: RepliesReport; filtered: bo
       )}
       {report.suppressions ? (
         <p className="text-sm text-muted-foreground">
-          Suppressions added in this window: {report.suppressions.unsubscribed} unsubscribed, {report.suppressions.bounced} bounced, {report.suppressions.complaint} complaints, {report.suppressions.manual} manual.
+          Suppressions added in this window: {formatCount(report.suppressions.unsubscribed)} unsubscribed, {formatCount(report.suppressions.bounced)} bounced, {formatCount(report.suppressions.complaint)} complaints, {formatCount(report.suppressions.manual)} manual.
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">Suppressions belong to the organization, not a campaign, so they are hidden while a campaign filter is on.</p>
@@ -439,7 +478,7 @@ function TimeSeriesView({ report }: { report: TimeSeriesReport }) {
       <TableHeader>
         <TableRow>
           <TableHead>Day</TableHead>
-          <TableHead className="w-40">Sent</TableHead>
+          <TableHead className="w-48">Sent</TableHead>
           {DAILY_METRICS.map((m) => (
             <TableHead key={m} className="text-right">
               {DAILY_METRIC_LABELS[m]}
@@ -452,13 +491,17 @@ function TimeSeriesView({ report }: { report: TimeSeriesReport }) {
           <TableRow key={p.day}>
             <TableCell className="tabular-nums">{p.day}</TableCell>
             <TableCell>
-              <div className="h-2 rounded bg-muted">
-                <div className="h-2 rounded bg-primary" style={{ width: `${(outbound(p) / max) * 100}%` }} />
+              {/* The bar is for the eye; the number beside it is what a screen reader hears. */}
+              <div className="flex items-center gap-2">
+                <span aria-hidden className="h-2 flex-1 rounded bg-muted">
+                  <span className="block h-2 rounded bg-foreground/80" style={{ width: barWidth(outbound(p), max) }} />
+                </span>
+                <span className="w-12 text-right tabular-nums">{formatCount(outbound(p))}</span>
               </div>
             </TableCell>
             {DAILY_METRICS.map((m) => (
               <TableCell key={m} className="text-right tabular-nums">
-                {p[m] === 0 ? <span className="text-muted-foreground">0</span> : m.endsWith("unknown") ? <Unknown count={p[m]} /> : int(p[m])}
+                {p[m] === 0 ? <span className="text-muted-foreground">0</span> : m.endsWith("unknown") ? <Unknown count={p[m]} /> : formatCount(p[m])}
               </TableCell>
             ))}
           </TableRow>
@@ -468,7 +511,7 @@ function TimeSeriesView({ report }: { report: TimeSeriesReport }) {
           <TableCell />
           {DAILY_METRICS.map((m) => (
             <TableCell key={m} className="text-right tabular-nums">
-              {int(report.totals[m])}
+              {formatCount(report.totals[m])}
             </TableCell>
           ))}
         </TableRow>
@@ -488,7 +531,7 @@ export function AnalyticsReportView({ result, filtered }: { result: AnalyticsRes
       {result.view === "replies" && <RepliesView report={result.data} filtered={filtered} />}
       {result.view === "timeseries" && <TimeSeriesView report={result.data} />}
       <details className="text-sm text-muted-foreground">
-        <summary className="cursor-pointer">How these numbers are counted</summary>
+        <summary className="w-fit cursor-pointer rounded-sm focus-ring">How these numbers are counted</summary>
         <dl className="mt-2 grid gap-2">
           {METRIC_DEFINITIONS.map((m) => (
             <div key={m.key}>

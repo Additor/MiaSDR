@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ReachFlag } from "@/components/shell/reach-flag";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { MANUAL_BODY_MAX, MANUAL_SUBJECT_MAX } from "@/contexts/conversations/domain/manual-reply";
 import { callApi } from "@/app/_lib/api-client";
@@ -55,32 +56,37 @@ export function ReplyComposer({
 
   return (
     <div className="grid gap-3" data-testid="reply-composer">
-      <p className="text-sm font-medium">{title}</p>
-      <div className="grid gap-1">
-        <Label htmlFor="compose-subject">Subject</Label>
+      <p className="heading-item">{title}</p>
+      <Field>
+        <FieldLabel htmlFor="compose-subject">Subject</FieldLabel>
         <Input id="compose-subject" value={subject} maxLength={MANUAL_SUBJECT_MAX} onChange={(e) => setSubject(e.target.value)} />
-      </div>
-      <div className="grid gap-1">
-        <Label htmlFor="compose-body">Message</Label>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="compose-body">Message</FieldLabel>
         <Textarea id="compose-body" className="min-h-48" value={body} maxLength={MANUAL_BODY_MAX} onChange={(e) => setBody(e.target.value)} />
-      </div>
+      </Field>
       {knownCcs.length > 0 && (
-        <fieldset className="grid gap-2 rounded-lg border p-3 text-sm" data-testid="compose-cc-options">
-          <legend className="px-1 text-xs text-muted-foreground">CC on this reply</legend>
+        // A plain fieldset with its legend as a label, no box, as in the draft editor.
+        <FieldSet className="gap-field" data-testid="compose-cc-options">
+          <FieldLegend variant="label" className="mb-0">
+            CC on this reply
+          </FieldLegend>
           {knownCcs.map((known) => (
-            <label key={known.email} className="flex items-center gap-2">
-              <input
-                type="checkbox"
+            <Field key={known.email} orientation="horizontal" className="min-h-8 w-auto max-sm:min-h-11">
+              <Checkbox
+                id={`compose-cc-${known.email}`}
                 value={known.email}
                 checked={cc.includes(known.email)}
                 disabled={known.blocked !== null}
-                onChange={(e) => setCc((current) => (e.target.checked ? [...current, known.email] : current.filter((c) => c !== known.email)))}
+                onCheckedChange={(checked) => setCc((current) => (checked === true ? [...current, known.email] : current.filter((c) => c !== known.email)))}
               />
-              <span>{known.email}</span>
+              <FieldLabel htmlFor={`compose-cc-${known.email}`} className="font-normal">
+                {known.email}
+              </FieldLabel>
               {known.blocked && <ReachFlag kind={known.blocked} />}
-            </label>
+            </Field>
           ))}
-        </fieldset>
+        </FieldSet>
       )}
       {disabledReason && <p className="text-sm text-destructive">{disabledReason}</p>}
       {error && (
@@ -89,7 +95,7 @@ export function ReplyComposer({
         </p>
       )}
       <div>
-        <Button size="sm" disabled={busy || disabledReason !== null || subject.trim() === "" || body.trim() === ""} onClick={create}>
+        <Button size="sm" touch disabled={busy || disabledReason !== null || subject.trim() === "" || body.trim() === ""} onClick={create}>
           {busy ? "Saving…" : "Create draft"}
         </Button>
       </div>

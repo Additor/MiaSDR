@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import type { InvitationView } from "@/contexts/tenancy/application/invitation-view";
+import { HOME } from "@/app/_lib/home";
 
 const ROLE_LABEL: Record<string, string> = { owner: "an owner", admin: "an admin", member: "a member" };
 
@@ -17,7 +18,7 @@ function Notice({ title, description, children }: { title: string; description: 
         <CardTitle as="h1">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      {children && <CardFooter className="flex-col items-stretch gap-3">{children}</CardFooter>}
+      {children && <CardFooter className="flex-col items-stretch gap-group">{children}</CardFooter>}
     </Card>
   );
 }
@@ -44,7 +45,7 @@ export function AcceptInvitation({ invitationId, view }: { invitationId: string;
 
   const accept = () =>
     run("accept", () => authClient.organization.acceptInvitation({ invitationId }), () => {
-      router.push("/leads");
+      router.push(HOME);
       router.refresh();
     });
   const decline = () => run("decline", () => authClient.organization.rejectInvitation({ invitationId }), () => router.refresh());
@@ -87,7 +88,7 @@ export function AcceptInvitation({ invitationId, view }: { invitationId: string;
     case "used":
       return (
         <Notice title="Invitation already used" description={`This invitation to ${view.organizationName} was accepted. Open the app to continue.`}>
-          <Link href="/leads" className="text-center text-sm underline">Open MiaSDR</Link>
+          <Link href={HOME} className="text-center text-sm underline">Open MiaSDR</Link>
         </Notice>
       );
     case "declined":
@@ -104,7 +105,7 @@ export function AcceptInvitation({ invitationId, view }: { invitationId: string;
               {new Date(view.expiresAt).toLocaleDateString("en", { dateStyle: "long" })}.
             </CardDescription>
           </CardHeader>
-          <CardFooter className="flex-col items-stretch gap-3">
+          <CardFooter className="flex-col items-stretch gap-group">
             {error && (
               <p role="alert" className="text-sm text-destructive">
                 {error}

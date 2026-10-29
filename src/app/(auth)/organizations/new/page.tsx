@@ -6,6 +6,7 @@ import { AuthCardSkeleton } from "../../auth-skeleton";
 import { apiUser } from "@/contexts/identity/infrastructure/session";
 import { canCreateOrganization } from "@/contexts/identity/infrastructure/signup-facts";
 import { OrganizationForm } from "./organization-form";
+import { HOME } from "@/app/_lib/home";
 
 export const metadata: Metadata = { title: "New organization" };
 
@@ -21,6 +22,6 @@ async function NewOrganization() {
   await connection();
   const user = await apiUser();
   if (!user) redirect("/sign-in?next=%2Forganizations%2Fnew");
-  if (!(await canCreateOrganization(user.userId))) redirect("/leads");
+  if (!(await canCreateOrganization(user.userId))) redirect(HOME);
   return <OrganizationForm />;
 }

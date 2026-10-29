@@ -3,6 +3,7 @@
 
 import { AFTER_REPLY_MODE_LABELS } from "@/contexts/conversations/after-reply/domain/after-reply";
 import { MAX_STEPS, MAX_TAGS } from "@/contexts/conversations/after-reply/domain/sequences";
+import { formatCount } from "@/shared/format-number";
 
 export const MAX_FOLLOW_UP_STEPS = MAX_STEPS;
 const MAX_TAG_LENGTH = 80;
@@ -138,7 +139,7 @@ export function lockedNote(reason: string | null, personal: boolean): string | n
 /** "3 follow-ups use an earlier version", or null when every run uses the newest. */
 export function earlierVersionNote(count: number): string | null {
   if (count <= 0) return null;
-  return count === 1 ? "1 follow-up uses an earlier version" : `${count.toLocaleString("en-US")} follow-ups use an earlier version`;
+  return count === 1 ? "1 follow-up uses an earlier version" : `${formatCount(count)} follow-ups use an earlier version`;
 }
 
 /** The ids of `FIXED_STOP_RULES` that `FIXED_STOPS_LINE` names. A test fails when the rules change and the line does not. */

@@ -6,9 +6,9 @@ import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { AppliedFilters } from "@/components/shell/filter-chip";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { SelectionProvider } from "@/components/shell/selection";
 import { buttonVariants } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isFilterActive, leadFilterParams, parseLeadFilter, parseLeadSort } from "@/contexts/people/domain/lead-filter";
 import { leadFilterOptions, listLeads } from "@/contexts/people/infrastructure/composition";
@@ -18,7 +18,7 @@ import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import type { Actor } from "@/shared/errors";
 import { dealDialogData } from "../crm/_components/deal-dialog-data";
-import { StateTip } from "@/app/(app)/_components/person/state-tip";
+import { OffAction } from "@/app/(app)/_components/off-action";
 import { AddToCampaign } from "./_components/add-to-campaign";
 import { ColumnsMenu, LeadColumnsProvider } from "./_components/columns-menu";
 import { leadsHref } from "./_lib/list-url";
@@ -47,7 +47,7 @@ export default function LeadsPage({ searchParams }: PageProps<"/leads">) {
       />
       {/* The selection bar sticks to the bottom edge, so the page ends at the bar with no padding below it. */}
       <div className="page stack-group pb-0">
-        <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+        <Suspense fallback={<PageSkeleton shape="list" />}>
           <LeadsContent searchParams={searchParams} />
         </Suspense>
       </div>
@@ -97,14 +97,9 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
           <>
             {total > 0 && <ColumnsMenu />}
             {total === 0 ? (
-              <StateTip
-                trigger={<button type="button" aria-disabled="true" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-not-allowed opacity-50 max-sm:h-11")} />}
-                tip={active ? "No leads match, so there is nothing to export." : "Import leads to export them."}
-              >
-                {active ? "Export filtered CSV" : "Export CSV"}
-              </StateTip>
+              <OffAction reason={active ? "No leads match, so there is nothing to export." : "Import leads to export them."}>{active ? "Export filtered CSV" : "Export CSV"}</OffAction>
             ) : (
-              <a href={`/api/leads/export${exportParams ? `?${exportParams}` : ""}`} download className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-sm:h-11")}>
+              <a href={`/api/leads/export${exportParams ? `?${exportParams}` : ""}`} download className={buttonVariants({ variant: "outline", size: "sm", touch: true })}>
                 {active ? "Export filtered CSV" : "Export CSV"}
               </a>
             )}
