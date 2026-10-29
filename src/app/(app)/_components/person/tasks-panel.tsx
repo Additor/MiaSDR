@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { DatePicker, formatDay } from "@/components/shell/date-picker";
 import { Time } from "@/components/shell/time";
-import { formatDate } from "@/shared/format-time";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -126,7 +125,7 @@ export function TasksPanel({ tasks, members, currentUserId, nowMs, compact = fal
       {compact ? (
         // In a side panel the title row carries New task, so an empty list costs one row.
         <div className="flex min-h-7 items-center justify-between gap-3">
-          <h2 className="heading-section">Tasks</h2>
+          <h2 className="heading-subsection">Tasks</h2>
           {openButton}
         </div>
       ) : (
@@ -264,8 +263,11 @@ export function dayFromToday(days: number): string {
   return formatDay(d);
 }
 
-/** The picked day in the app's date format (yyyy-MM-dd), as `<Time dateOnly>` prints the due date in the list. A day has no zone, so it reads at UTC noon. */
-const dayText = (day: string) => formatDate(new Date(`${day}T12:00:00Z`), "UTC");
+/**
+ * The picked day read back in a sentence ("Due Thu, Jan 2."): the weekday is what a person checks after Tomorrow or Next
+ * week. A day has no zone, so it reads at noon.
+ */
+const dayText = (day: string) => new Date(`${day}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
 const QUICK_DAYS: Array<[label: string, days: number]> = [
   ["Today", 0],
@@ -275,7 +277,7 @@ const QUICK_DAYS: Array<[label: string, days: number]> = [
 
 /**
  * The due date as three quick choices and Pick a date. Pick a date shows a `DatePicker` with its calendar open; the
- * chosen day reads back under the buttons in the format the task list shows.
+ * chosen day reads back in English under the buttons.
  */
 export function DueField({ id, value, onChange }: { id: string; value: string; onChange: (day: string) => void }) {
   const [picking, setPicking] = useState(false);

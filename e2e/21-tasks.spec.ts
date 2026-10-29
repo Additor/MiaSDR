@@ -33,7 +33,7 @@ test.describe("tasks, notes and the important flag", () => {
     // The due date offers Today, Tomorrow and Next week; Pick a date opens a date picker with its calendar open.
     await panel.getByRole("button", { name: "Pick a date" }).click();
     await pickDate(page, panel.getByRole("combobox", { name: "Due date" }), "2020-01-02", { opened: true });
-    await expect(panel.getByText("Due 2020-01-02.")).toBeVisible();
+    await expect(panel.getByText("Due Thu, Jan 2.")).toBeVisible();
     await pick(page, panel.getByRole("combobox", { name: "Assign to" }), MEMBER.name);
     await panel.getByRole("button", { name: "Add task" }).click();
     await expect(panel.getByText("Send rollout plan")).toBeVisible();
