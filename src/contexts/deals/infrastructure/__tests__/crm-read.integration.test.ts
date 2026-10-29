@@ -166,8 +166,6 @@ describeDb("crm-read against Postgres", () => {
     const plan = await kit.sql.begin(async (tx) => {
       await tx`analyze people`;
       await tx`set local enable_seqscan = off`;
-      // Bitmap scans go too: the question is whether the partial index can serve the list, not which scan wins on few rows.
-      await tx`set local enable_bitmapscan = off`;
       return tx.unsafe(`explain (generic_plan, format json) ${list.sql}`);
     });
     expect(JSON.stringify(plan[0]["QUERY PLAN"])).toContain("people_org_contacts_idx");

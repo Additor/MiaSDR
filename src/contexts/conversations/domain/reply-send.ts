@@ -1,4 +1,5 @@
 import { ConflictError, ValidationError } from "@/shared/errors";
+import { isUuid } from "@/shared/uuid";
 import { MAX_LINKEDIN_REPLY, type ReplyBlock } from "./linkedin-reply";
 import { MANUAL_BODY_MAX } from "./manual-reply";
 
@@ -59,12 +60,13 @@ export function replyRefusal(reason: ReplyRefusalReason, channel: ReplyChannel, 
   return new row.error(row.text(channel, detail));
 }
 
+/** What a draft writer returns, with nothing written, when reply handling is marked done under its record lock. */
+export const HANDLING_CLOSED = "handling_closed" as const;
+
 /** A person marked reply handling done (`records.workflow_state = 'closed'`). Reopen, or a new inbound message, opens it again. */
 export function checkRecordOpen(record: { workflowState: string }, channel: ReplyChannel): void {
   if (record.workflowState === "closed") throw replyRefusal("handling_closed", channel);
 }
-
-const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The conversation can carry a reply on `channel`: it is that channel's, it is active, and it has somewhere to send to,
@@ -81,7 +83,7 @@ export function checkThreadWritable(
     return;
   }
   if (!conversation.chat) throw replyRefusal("no_chat", channel);
-  if (!conversation.accountRef || !ACCOUNT_ID.test(conversation.accountRef)) throw replyRefusal("no_account", channel);
+  if (!isUuid(conversation.accountRef)) throw replyRefusal("no_account", channel);
 }
 
 /**

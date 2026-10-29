@@ -337,7 +337,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
         return row?.held === true && row.run_status === "active";
       }),
     );
-    return written ?? late;
+    return written === "handling_closed" ? "stopped" : (written ?? late);
   },
 
   async linkDraft(claim, draftId, now) {
