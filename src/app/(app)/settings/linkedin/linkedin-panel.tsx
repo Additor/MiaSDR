@@ -4,7 +4,9 @@ import { TriangleAlertIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { Count } from "@/components/shell/section";
 import { StatusBadge } from "@/components/shell/status-badge";
+import { StateTip } from "@/app/(app)/_components/person/state-tip";
 import { Time, useOrgTimeZone } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { callApi } from "@/app/_lib/api-client";
+import { formatCount } from "@/shared/format-number";
 import { formatDateTime } from "@/shared/format-time";
 import { syncLine, type StoredSyncStatus } from "./sync-status";
 import { webhookBadge, type StoredWebhookStatus } from "./webhook-status";
@@ -72,7 +75,6 @@ interface ConnectResult {
 
 export function LinkedInPanel({ state, canManage, zones }: { state: State | null; canManage: boolean; zones: string[] }) {
   const router = useRouter();
-  const timeZone = useOrgTimeZone();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [linking, setLinking] = useState<string | null>(null);
@@ -177,9 +179,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={state.connected ? "connected" : "disconnected"} />
           {state.connected && (
-            <Badge variant={webhookBadge(state.webhooks).variant} title={state.webhooks ? `Last attempt ${formatDateTime(state.webhooks.at, timeZone)}` : undefined}>
-              Webhooks: {webhookBadge(state.webhooks).label}
-            </Badge>
+            <WebhookBadge webhooks={state.webhooks} />
           )}
         </div>
         <form onSubmit={connect} className="stack-group">
@@ -288,9 +288,9 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
         {state.links.length > 0 && (
           <details className="border-t pt-group">
             <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium focus-ring">
-              Recent connection links <span className="font-normal text-muted-foreground">({state.links.length})</span>
+              Recent connection links <Count value={formatCount(state.links.length)} className="font-normal" />
             </summary>
-            <div className="grid gap-1 pt-2 text-sm">
+            <div className="stack-field pt-2 text-sm">
               <p className="text-muted-foreground">A link lasts 15 minutes. It completes when Unipile reports the new account.</p>
               {state.links.map((link) => (
                 <div key={link.id} className="flex flex-wrap items-center gap-2">
@@ -337,12 +337,32 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
 }
 
 function SyncLine({ sync }: { sync: StoredSyncStatus | null }) {
-  const line = syncLine(sync, useOrgTimeZone());
+  const line = syncLine(sync);
   if (!line) return null;
   return (
-    <p className={line.failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"} title={line.title} data-testid="linkedin-sync-line">
-      {line.text}
+    <p className={line.failed ? "text-sm text-destructive" : "text-sm text-muted-foreground"} data-testid="linkedin-sync-line">
+      {line.error}
+      {line.error && line.lastSyncAt && " "}
+      {line.lastSyncAt && (
+        <>
+          Last synced <Time value={line.lastSyncAt} />.
+        </>
+      )}
+      {!line.error && !line.lastSyncAt && "Not synced yet. Accounts sync every hour."}
     </p>
+  );
+}
+
+/** The webhook state as a badge; the time of the last attempt sits in its tip, on hover, focus and a tap. */
+function WebhookBadge({ webhooks }: { webhooks: StoredWebhookStatus | null }) {
+  const timeZone = useOrgTimeZone();
+  const badge = webhookBadge(webhooks);
+  const content = <Badge variant={badge.variant}>Webhooks: {badge.label}</Badge>;
+  if (!webhooks) return content;
+  return (
+    <StateTip trigger={<span tabIndex={0} className="inline-flex rounded-md focus-ring" />} tip={`Last attempt ${formatDateTime(webhooks.at, timeZone)}`}>
+      {content}
+    </StateTip>
   );
 }
 
@@ -398,11 +418,11 @@ function AccountRow({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="stack-field min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-medium">{name}</h3>
+            <h3 className="heading-item">{name}</h3>
             <StatusBadge status={account.status} />
           </div>
           <p className="text-sm text-muted-foreground">
-            {account.invitesToday} of {account.dailyInviteLimit} invitations and {account.messagesToday} of {account.dailyMessageLimit} messages used today.
+            {formatCount(account.invitesToday)} of {formatCount(account.dailyInviteLimit)} invitations and {formatCount(account.messagesToday)} of {formatCount(account.dailyMessageLimit)} messages used today.
             {account.limitReachedUntil && (
               <>
                 {" "}

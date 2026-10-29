@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getLinkedInJobsOverview } from "@/contexts/outreach/linkedin/application/linkedin-operations";
 import { linkedinOperations } from "@/composition/inbox-filing";
@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: "Jobs" };
 export default function JobsPage() {
   return (
     <div className="max-w-5xl">
-      <Suspense fallback={<Skeleton className="h-64 w-full max-w-5xl" />}>
+      <Suspense fallback={<PageSkeleton shape="table" />}>
         <Jobs />
       </Suspense>
     </div>

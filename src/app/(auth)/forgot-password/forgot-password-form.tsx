@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 
 export function ForgotPasswordForm() {
@@ -49,18 +49,16 @@ export function ForgotPasswordForm() {
             <CardTitle as="h1">Reset your password</CardTitle>
             <CardDescription>Enter your account email and we will send you a link to choose a new password.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" autoComplete="email" required />
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
+          <CardContent className="py-4">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input id="email" name="email" type="email" autoComplete="email" required />
+              </Field>
+              <FieldError>{error}</FieldError>
+            </FieldGroup>
           </CardContent>
-          <CardFooter className="flex-col gap-3">
+          <CardFooter className="flex-col gap-group">
             <Button type="submit" className="w-full" disabled={pending}>
               {pending ? "Sending…" : "Send reset link"}
             </Button>

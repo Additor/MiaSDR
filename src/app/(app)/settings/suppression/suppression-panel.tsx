@@ -17,6 +17,7 @@ import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
+import { countOf, formatCount } from "@/shared/format-number";
 
 interface Row {
   id: string;
@@ -60,7 +61,7 @@ export function SuppressionPanel({ rows, total, page, pageSize, q, canManage }: 
     form.reset();
     const { added, alreadyListed, stopped } = result.data;
     toast.success(
-      [`${added} address${added === 1 ? "" : "es"} added.`, alreadyListed > 0 ? `${alreadyListed} already on the list.` : null, stopped > 0 ? `${stopped} sequence${stopped === 1 ? "" : "s"} stopped.` : null].filter(Boolean).join(" "),
+      [`${countOf(added, "address", "addresses")} added.`, alreadyListed > 0 ? `${formatCount(alreadyListed)} already on the list.` : null, stopped > 0 ? `${countOf(stopped, "sequence")} stopped.` : null].filter(Boolean).join(" "),
     );
     router.refresh();
   }

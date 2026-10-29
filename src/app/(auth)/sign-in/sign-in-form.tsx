@@ -6,7 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 import { GoogleButton } from "../google-button";
 import { safeNext } from "./safe-next";
@@ -72,57 +72,55 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
           <CardTitle as="h1">Sign in</CardTitle>
           <CardDescription>Use the email and password for your MiaSDR account.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 py-4">
-          {notice && (
-            <p className="text-sm text-muted-foreground">
-              {notice}
-              {canCreateOrganization && (
-                <>
-                  {" "}
-                  <Link href="/organizations/new" className="underline">
-                    Create an organization
-                  </Link>
-                </>
-              )}
-            </p>
-          )}
-          <div className="grid gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" autoComplete="email" required />
-          </div>
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
-              <Link href="/forgot-password" className="text-sm text-muted-foreground underline">
-                Forgot password?
-              </Link>
-            </div>
-            <Input id="password" name="password" type="password" autoComplete="current-password" required />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          {unverifiedEmail && (
-            <div className="grid gap-1">
-              <Button type="button" variant="outline" size="sm" disabled={resend === "sending" || resend === "sent"} onClick={resendLink}>
-                {resend === "sending" ? "Sending…" : "Resend verification link"}
-              </Button>
-              {resend === "sent" && (
-                <p role="status" className="text-sm text-muted-foreground">
-                  If an account exists for {unverifiedEmail}, we sent a new link.
-                </p>
-              )}
-              {resend === "limited" && (
-                <p role="alert" className="text-sm text-destructive">
-                  Too many requests. Wait a minute and try again.
-                </p>
-              )}
-            </div>
-          )}
+        <CardContent className="py-4">
+          <FieldGroup>
+            {notice && (
+              <p className="text-sm text-muted-foreground">
+                {notice}
+                {canCreateOrganization && (
+                  <>
+                    {" "}
+                    <Link href="/organizations/new" className="underline">
+                      Create an organization
+                    </Link>
+                  </>
+                )}
+              </p>
+            )}
+            <Field>
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <Input id="email" name="email" type="email" autoComplete="email" required />
+            </Field>
+            <Field>
+              <div className="flex items-center justify-between">
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Link href="/forgot-password" className="text-sm text-muted-foreground underline">
+                  Forgot password?
+                </Link>
+              </div>
+              <Input id="password" name="password" type="password" autoComplete="current-password" required />
+            </Field>
+            <FieldError>{error}</FieldError>
+            {unverifiedEmail && (
+              <div className="stack-field">
+                <Button type="button" variant="outline" size="sm" disabled={resend === "sending" || resend === "sent"} onClick={resendLink}>
+                  {resend === "sending" ? "Sending…" : "Resend verification link"}
+                </Button>
+                {resend === "sent" && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    If an account exists for {unverifiedEmail}, we sent a new link.
+                  </p>
+                )}
+                {resend === "limited" && (
+                  <p role="alert" className="text-sm text-destructive">
+                    Too many requests. Wait a minute and try again.
+                  </p>
+                )}
+              </div>
+            )}
+          </FieldGroup>
         </CardContent>
-        <CardFooter className="flex-col gap-3">
+        <CardFooter className="flex-col gap-group">
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Signing in…" : "Sign in"}
           </Button>

@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { HOME } from "@/app/_lib/home";
 
 export function OrganizationForm() {
@@ -41,18 +41,16 @@ export function OrganizationForm() {
           <CardTitle as="h1">New organization</CardTitle>
           <CardDescription>You become its owner and MiaSDR opens in it. Your other organizations stay available from the sidebar.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name">Organization name</Label>
-            <Input id="name" name="name" maxLength={80} autoComplete="organization" required />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+        <CardContent className="py-4">
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="name">Organization name</FieldLabel>
+              <Input id="name" name="name" maxLength={80} autoComplete="organization" required />
+            </Field>
+            <FieldError>{error}</FieldError>
+          </FieldGroup>
         </CardContent>
-        <CardFooter className="flex-col gap-3">
+        <CardFooter className="flex-col gap-group">
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Creating…" : "Create organization"}
           </Button>

@@ -96,7 +96,7 @@ function BlockList({
           <ul className={RULED_LIST} aria-label={title}>
             {blocks.map((b) => (
               <li key={b.id} className={cn(RULED_ROW, "stack-field")}>
-                <h3 className="text-sm font-medium">{b.title || "Untitled"}</h3>
+                <h3 className="heading-item">{b.title || "Untitled"}</h3>
                 <p className="text-sm whitespace-pre-wrap text-muted-foreground">{b.content}</p>
               </li>
             ))}

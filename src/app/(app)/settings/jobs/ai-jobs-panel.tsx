@@ -5,8 +5,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { FieldLabel } from "@/components/ui/field";
 import { Time, useOrgTimeZone } from "@/components/shell/time";
 import { callApi } from "@/app/_lib/api-client";
+import { countOf, formatCount } from "@/shared/format-number";
 import { formatDateTime } from "@/shared/format-time";
 import { isRequeueableSkip } from "@/contexts/conversations/ai/domain/ai-job-requeue";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -55,8 +57,8 @@ const WINDOW_ITEMS = WINDOWS.map((w, i) => ({ value: String(i), label: w.label }
 function nextStep(job: FailedAiJob, timeZone: string): string {
   if (job.failureKind === "permanent") return "Needs a fix first (key, reply types or content). Not retried automatically.";
   if (job.failureKind === "shape") return "The AI answered in the wrong form. Not retried automatically.";
-  if (!job.nextAutoRequeueAt) return `Automatic retries used up (${job.autoRequeues} of ${job.requeueCeiling}).`;
-  return `Automatic retry after ${formatDateTime(job.nextAutoRequeueAt, timeZone)} (${job.autoRequeues} of ${job.requeueCeiling} used).`;
+  if (!job.nextAutoRequeueAt) return `Automatic retries used up (${formatCount(job.autoRequeues)} of ${formatCount(job.requeueCeiling)}).`;
+  return `Automatic retry after ${formatDateTime(job.nextAutoRequeueAt, timeZone)} (${formatCount(job.autoRequeues)} of ${formatCount(job.requeueCeiling)} used).`;
 }
 
 export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total: number; rows: FailedAiJob[] }; skipped: { total: number; rows: SkippedAiJob[] }; tickFailures: TickFailure[] }) {
@@ -72,7 +74,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
     setBusy(null);
     if (!result.ok || !result.data) toast.error(result.error ?? "Requeue failed.");
     else if (result.data.requeued === 0) toast.info("Nothing to requeue. The job is not failed or skipped any more.");
-    else toast.success(`Requeued ${result.data.requeued} job(s).${result.data.more ? " More remain. Run it again." : ""}`);
+    else toast.success(`Requeued ${countOf(result.data.requeued, "job")}.${result.data.more ? " More remain. Run it again." : ""}`);
     router.refresh();
   }
 
@@ -83,14 +85,14 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
         description={
           failed.total === 0
             ? "No failed reply type or draft jobs."
-            : `${failed.total} failed. Provider outages and timeouts retry automatically with growing waits. Requeueing by hand gives a job fresh attempts and is recorded with your name.`
+            : `${formatCount(failed.total)} failed. Provider outages and timeouts retry automatically with growing waits. Requeueing by hand gives a job fresh attempts and is recorded with your name.`
         }
       >
         {failed.total > 0 && (
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <label htmlFor="requeue-window" className="text-muted-foreground">
+            <FieldLabel htmlFor="requeue-window" className="font-normal text-muted-foreground">
               Requeue everything that failed in
-            </label>
+            </FieldLabel>
             <Select items={WINDOW_ITEMS} value={String(windowIndex)} onValueChange={(v) => v && setWindowIndex(Number(v))}>
               <SelectTrigger id="requeue-window" size="sm" className="w-44">
                 <SelectValue />
@@ -123,8 +125,8 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{KIND_LABEL[job.kind]}</span>
                   <span className="text-muted-foreground">
-                    failed <Time value={job.failedAt} /> after {job.attempts} attempt(s)
-                    {job.manualRequeues > 0 ? `, requeued by hand ${job.manualRequeues} time(s)` : ""}
+                    failed <Time value={job.failedAt} /> after {countOf(job.attempts, "attempt")}
+                    {job.manualRequeues > 0 ? `, requeued by hand ${countOf(job.manualRequeues, "time")}` : ""}
                   </span>
                   <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => requeue(job.id, `/api/jobs/ai/${job.id}/requeue`)}>
                     {busy === job.id ? "Requeueing…" : "Requeue"}
@@ -136,7 +138,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
             ))}
           </ul>
         )}
-        {failed.total > failed.rows.length && <p className="text-xs text-muted-foreground">Showing the newest {failed.rows.length} of {failed.total}.</p>}
+        {failed.total > failed.rows.length && <p className="text-xs text-muted-foreground">Showing the newest {formatCount(failed.rows.length)} of {formatCount(failed.total)}.</p>}
       </SettingsSection>
 
       <SettingsSection
@@ -144,7 +146,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
         description={
           skipped.total === 0
             ? "No AI job was skipped."
-            : `${skipped.total} skipped because the daily limit for unknown senders (set under Reply handling) was used up. The sweep never retries them. Raise the limit or wait a day, then requeue.`
+            : `${formatCount(skipped.total)} skipped because the daily limit for unknown senders (set under Reply handling) was used up. The sweep never retries them. Raise the limit or wait a day, then requeue.`
         }
       >
         {skipped.rows.length > 0 && (
@@ -165,7 +167,7 @@ export function AiJobsPanel({ failed, skipped, tickFailures }: { failed: { total
             ))}
           </ul>
         )}
-        {skipped.total > skipped.rows.length && <p className="text-xs text-muted-foreground">Showing the newest {skipped.rows.length} of {skipped.total}.</p>}
+        {skipped.total > skipped.rows.length && <p className="text-xs text-muted-foreground">Showing the newest {formatCount(skipped.rows.length)} of {formatCount(skipped.total)}.</p>}
       </SettingsSection>
 
       <SettingsSection title="Background job failures" description="Errors and failed items from scheduler ticks. A repeating failure updates one line here.">

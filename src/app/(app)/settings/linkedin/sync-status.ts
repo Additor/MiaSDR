@@ -1,19 +1,13 @@
-import { formatDateTime, formatUtc } from "@/shared/format-time";
-
 export interface StoredSyncStatus {
   lastSyncAt: string | null;
   lastSyncError: string | null;
 }
 
 /**
- * The status line under the account list. Times print in the organization's zone, which the caller passes in so the
- * server and the browser render the same text. `title` holds the UTC original for the tooltip.
+ * The status line under the account list, as parts: the stored error, the last success for `Time` to print in the
+ * organization's zone (with the UTC original in its tooltip), and whether the line reads as a failure.
  */
-export function syncLine(sync: StoredSyncStatus | null, timeZone: string): { text: string; failed: boolean; title?: string } | null {
+export function syncLine(sync: StoredSyncStatus | null): { error: string | null; lastSyncAt: string | null; failed: boolean } | null {
   if (!sync) return null;
-  const when = sync.lastSyncAt ? formatDateTime(sync.lastSyncAt, timeZone) : "";
-  const title = sync.lastSyncAt ? formatUtc(sync.lastSyncAt) || undefined : undefined;
-  if (sync.lastSyncError) return { text: when ? `${sync.lastSyncError} Last synced ${when}.` : sync.lastSyncError, failed: true, title };
-  if (when) return { text: `Last synced ${when}.`, failed: false, title };
-  return { text: "Not synced yet. Accounts sync every hour.", failed: false };
+  return { error: sync.lastSyncError, lastSyncAt: sync.lastSyncAt, failed: sync.lastSyncError !== null };
 }

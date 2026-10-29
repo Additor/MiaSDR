@@ -6,7 +6,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
       <body style={{ fontFamily: "system-ui, sans-serif", margin: 0, minHeight: "100svh", display: "grid", placeItems: "center" }}>
         <main style={{ maxWidth: 420, padding: 24 }}>
           <h1 style={{ fontSize: 20 }}>Something went wrong</h1>
-          <p style={{ color: "#555", fontSize: 14 }}>MiaSDR failed to load{error.digest ? ` (reference ${error.digest})` : ""}. Try again.</p>
+          <p style={{ color: "oklch(0.52 0 0)", fontSize: 14 }}>MiaSDR failed to load{error.digest ? ` (reference ${error.digest})` : ""}. Try again.</p>
           <button type="button" onClick={reset} style={{ padding: "6px 12px", fontSize: 14 }}>
             Try again
           </button>

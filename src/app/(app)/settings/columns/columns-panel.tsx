@@ -13,6 +13,7 @@ import { Tabs } from "@/components/shell/tabs";
 import { cn } from "@/components/ui/utils";
 import { ReorderButtons } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
+import { formatCount } from "@/shared/format-number";
 
 type Entity = "people" | "companies";
 
@@ -133,7 +134,7 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
                 ) : (
                   <>
                     <span className="font-medium">{column.name}</span>
-                    <span className="text-sm text-muted-foreground">{column.usedBy} with a value</span>
+                    <span className="text-sm text-muted-foreground">{formatCount(column.usedBy)} with a value</span>
                     {canManage && (
                       <span className="ml-auto flex items-center gap-1">
                         <ReorderButtons name={column.name} canUp={index > 0} canDown={index < active.length - 1} disabled={pending} onMove={(direction) => move(index, direction)} />
@@ -178,12 +179,12 @@ function EntityColumns({ entity, columns, canManage }: { entity: Entity; columns
         </SettingsSection>
       )}
       {archived.length > 0 && (
-        <SettingsSection title={`Archived (${archived.length})`} description="Archived fields keep their values. Delete one to remove the values from every row.">
+        <SettingsSection title="Archived" count={formatCount(archived.length)} description="Archived fields keep their values. Delete one to remove the values from every row.">
           <ul className={RULED_LIST}>
             {archived.map((column) => (
               <li key={column.id} className={cn(RULED_ROW, "flex min-h-11 flex-wrap items-center gap-2")}>
                 <span className="font-medium">{column.name}</span>
-                <span className="text-sm text-muted-foreground">{column.usedBy} with a value</span>
+                <span className="text-sm text-muted-foreground">{formatCount(column.usedBy)} with a value</span>
                 {canManage && (
                   <span className="ml-auto flex gap-1">
                     <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(callApi(`/api/leads/columns/${column.id}`, "PATCH", { archived: false }), `${column.name} restored.`)}>

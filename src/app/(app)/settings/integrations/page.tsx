@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { listIntegrations } from "@/contexts/integrations/application/integration-management";
 import { MANAGED_PROVIDERS } from "@/contexts/integrations/domain/providers";
 import { aiIsOn } from "@/contexts/integrations/domain/ai-status";
@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Integrations" };
 export default function IntegrationsPage() {
   return (
     <div className="max-w-3xl">
-      <Suspense fallback={<Skeleton className="h-64 w-full max-w-3xl" />}>
+      <Suspense fallback={<PageSkeleton shape="form" />}>
         <Integrations />
       </Suspense>
     </div>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { listInboundEvents, type InboundStateFilter } from "@/contexts/outreach/application/inbound-review";
 import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-review-composition";
@@ -23,7 +23,7 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 export default function InboundEventsPage({ searchParams }: PageProps<"/settings/inbound-events">) {
   return (
     <div className="max-w-5xl">
-      <Suspense fallback={<Skeleton className="h-64 w-full max-w-5xl" />}>
+      <Suspense fallback={<PageSkeleton shape="table" />}>
         <InboundEvents searchParams={searchParams} />
       </Suspense>
     </div>

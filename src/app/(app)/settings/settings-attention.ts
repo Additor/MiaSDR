@@ -5,6 +5,7 @@ import { listMailboxes } from "@/contexts/outreach/email/application/mailbox-man
 import { mailboxDeps } from "@/contexts/outreach/infrastructure/composition";
 import { inboundReviewDeps } from "@/contexts/outreach/infrastructure/inbound-review-composition";
 import type { Actor } from "@/shared/errors";
+import { formatCount } from "@/shared/format-number";
 import { recentTickFailures } from "@/platform/jobs/failure-log";
 
 export interface Attention {
@@ -32,7 +33,7 @@ export async function loadSettingsAttention(actor: Actor, isAdmin: boolean): Pro
     isAdmin ? count(async () => (await getFailedAiJobs(aiJobOpsDeps(), actor)).total + (await recentTickFailures(20)).length) : 0,
     isAdmin ? count(async () => (await listInboundEvents(inboundReviewDeps(), actor, { state: "open", limit: 1 })).total) : 0,
   ]);
-  const entry = (n: number, label: string): Attention | undefined => (n > 0 ? { count: n, label: `${n} ${label}` } : undefined);
+  const entry = (n: number, label: string): Attention | undefined => (n > 0 ? { count: n, label: `${formatCount(n)} ${label}` } : undefined);
   return {
     "/settings/mailboxes": entry(mailboxes, "failed"),
     "/settings/jobs": entry(jobs, "failed"),

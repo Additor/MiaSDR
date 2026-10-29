@@ -51,7 +51,7 @@ test.describe("linkedin settings and jobs", () => {
     await page.reload();
     await expect(page.getByText(/LinkedIn: 1 gave up/)).toBeVisible();
     await page.getByRole("button", { name: "Replay LinkedIn deliveries" }).click();
-    await expect(page.getByText(/Replayed 1 deliveries/)).toBeVisible();
+    await expect(page.getByText(/Replayed 1 delivery:/)).toBeVisible();
     // The audit rows live on the Jobs History tab.
     await page.goto("/settings/jobs");
     await page.getByRole("tab", { name: "History" }).click();

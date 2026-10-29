@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
 
 const MIN_LENGTH = 8;
@@ -72,20 +72,18 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
           <CardTitle as="h1">Choose a new password</CardTitle>
           <CardDescription>At least {MIN_LENGTH} characters.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="password">New password</Label>
-            <Input id="password" name="password" type="password" autoComplete="new-password" minLength={MIN_LENGTH} required />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="confirm">Confirm password</Label>
-            <Input id="confirm" name="confirm" type="password" autoComplete="new-password" minLength={MIN_LENGTH} required />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+        <CardContent className="py-4">
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="password">New password</FieldLabel>
+              <Input id="password" name="password" type="password" autoComplete="new-password" minLength={MIN_LENGTH} required />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
+              <Input id="confirm" name="confirm" type="password" autoComplete="new-password" minLength={MIN_LENGTH} required />
+            </Field>
+            <FieldError>{error}</FieldError>
+          </FieldGroup>
         </CardContent>
         <CardFooter>
           <Button type="submit" className="w-full" disabled={pending}>

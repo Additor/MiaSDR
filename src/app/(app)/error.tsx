@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { ErrorState } from "@/components/shell/error-state";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 
@@ -11,11 +12,13 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
   return (
     <>
       <PageHeader title="Something went wrong" />
-      <div className="page stack-group justify-items-start">
-        <p className="text-sm text-muted-foreground">
-          This page failed to load. Try again, and if it keeps failing, send this reference to your admin{error.digest ? `: ${error.digest}` : "."}
-        </p>
-        <Button onClick={reset}>Try again</Button>
+      <div className="page">
+        <ErrorState
+          inline
+          title="This page failed to load."
+          reason={`Try again, and if it keeps failing, send this reference to your admin${error.digest ? `: ${error.digest}` : "."}`}
+          action={<Button onClick={reset}>Try again</Button>}
+        />
       </div>
     </>
   );

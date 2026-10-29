@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/shell/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -111,39 +111,37 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
     <div>
       {canManage ? (
         <SettingsSection title="Invite someone" description="Sign-up is by invitation only. An invitation lasts 7 days.">
-          <form onSubmit={invite} className="stack-group">
-            <div className="grid gap-group sm:grid-cols-[1fr_12rem]">
-              <Field>
-                <FieldLabel htmlFor="email">Email address</FieldLabel>
-                <Input id="email" name="email" type="email" required />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="role">Role</FieldLabel>
-                <Select items={grantable} value={role} onValueChange={(v) => v && setRole(v)}>
-                  <SelectTrigger id="role" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {grantable.map((r) => (
-                      <SelectItem key={r.value} value={r.value}>
-                        {r.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-            <div>
-              <Button type="submit" disabled={pending}>
-                {pending ? "Inviting…" : "Send invitation"}
-              </Button>
-            </div>
-            {created && <AcceptLink email={created.email} link={created.link} emailConfigured={emailConfigured} />}
+          <form onSubmit={invite}>
+            <FieldGroup>
+              <div className="grid gap-group sm:grid-cols-[1fr_12rem]">
+                <Field>
+                  <FieldLabel htmlFor="email">Email address</FieldLabel>
+                  <Input id="email" name="email" type="email" required />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="role">Role</FieldLabel>
+                  <Select items={grantable} value={role} onValueChange={(v) => v && setRole(v)}>
+                    <SelectTrigger id="role" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {grantable.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              {error && <FieldError>{error}</FieldError>}
+              <div>
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Inviting…" : "Send invitation"}
+                </Button>
+              </div>
+              {created && <AcceptLink email={created.email} link={created.link} emailConfigured={emailConfigured} />}
+            </FieldGroup>
           </form>
         </SettingsSection>
       ) : (
@@ -196,7 +194,7 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
                         </Select>
                       ) : (
                         <>
-                          <Badge variant="secondary">{roleLabel(m.role)}</Badge>
+                          <Badge variant="outline">{roleLabel(m.role)}</Badge>
                           {canManage && isSelf && <span className="text-xs text-muted-foreground">Another owner or admin changes your role.</span>}
                           {canManage && locked && <span className="text-xs text-muted-foreground">Only an owner changes an owner.</span>}
                         </>
@@ -229,10 +227,10 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
           ) : (
             <ul className={RULED_LIST}>
               {invitations.map((inv) => (
-                <li key={inv.id} className={`grid gap-1 ${RULED_ROW}`}>
+                <li key={inv.id} className={`stack-field ${RULED_ROW}`}>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{inv.email}</span>
-                    <Badge variant="secondary">{roleLabel(inv.role)}</Badge>
+                    <Badge variant="outline">{roleLabel(inv.role)}</Badge>
                     <span className="text-sm text-muted-foreground">
                       expires <Time value={inv.expiresAt} dateOnly />
                     </span>
@@ -279,7 +277,7 @@ export function MembersPanel({ members, invitations, currentUserId, actorIsOwner
 
 function AcceptLink({ email, link, emailConfigured }: { email: string; link: string; emailConfigured: boolean }) {
   return (
-    <div className="grid w-full gap-1 text-sm" role="status">
+    <div className="stack-field w-full text-sm" role="status">
       <p>{emailConfigured ? `Invitation emailed to ${email}.` : `Invitation created for ${email}. No email service is configured, so share this link:`}</p>
       {!emailConfigured && <CopyLink link={link} />}
     </div>

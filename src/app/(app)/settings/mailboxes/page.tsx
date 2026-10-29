@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { getOrgTimeZone } from "@/components/shell/org-time-zone";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getEmailRules } from "@/contexts/outreach/email/application/email-rules";
 import { listMailboxes } from "@/contexts/outreach/email/application/mailbox-management";
@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Mailboxes" };
 export default function MailboxesPage() {
   return (
     <div className="max-w-3xl">
-      <Suspense fallback={<Skeleton className="h-64 w-full max-w-3xl" />}>
+      <Suspense fallback={<PageSkeleton shape="form" />}>
         <Mailboxes />
       </Suspense>
     </div>

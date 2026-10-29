@@ -8,6 +8,7 @@ import { humanizeToken } from "@/shared/humanize";
 const VARIANT: Record<string, "secondary" | "destructive" | "outline"> = {
   active: "secondary",
   connected: "secondary",
+  registered: "secondary",
   sent: "secondary",
   completed: "secondary",
   draft: "outline",
@@ -15,6 +16,7 @@ const VARIANT: Record<string, "secondary" | "destructive" | "outline"> = {
   pending: "outline",
   connecting: "outline",
   disabled: "outline",
+  expired: "outline",
   paused_limit: "outline",
   failed: "destructive",
   bounced: "destructive",

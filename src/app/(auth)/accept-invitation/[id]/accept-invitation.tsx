@@ -18,7 +18,7 @@ function Notice({ title, description, children }: { title: string; description: 
         <CardTitle as="h1">{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      {children && <CardFooter className="flex-col items-stretch gap-3">{children}</CardFooter>}
+      {children && <CardFooter className="flex-col items-stretch gap-group">{children}</CardFooter>}
     </Card>
   );
 }
@@ -105,7 +105,7 @@ export function AcceptInvitation({ invitationId, view }: { invitationId: string;
               {new Date(view.expiresAt).toLocaleDateString("en", { dateStyle: "long" })}.
             </CardDescription>
           </CardHeader>
-          <CardFooter className="flex-col items-stretch gap-3">
+          <CardFooter className="flex-col items-stretch gap-group">
             {error && (
               <p role="alert" className="text-sm text-destructive">
                 {error}

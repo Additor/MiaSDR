@@ -9,13 +9,13 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { ErrorWithLinks } from "@/components/shell/error-with-links";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/app/_lib/api-client";
+import { formatCount } from "@/shared/format-number";
 import { cn } from "@/components/ui/utils";
 import { AdminNotice } from "../admin-notice";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
@@ -38,7 +38,7 @@ interface Mailbox {
 
 /** What happens to leads waiting on a mailbox that stops sending. */
 function waitingWarning(count: number, hours: number) {
-  return `${count} lead${count === 1 ? " waits" : "s wait"} for follow-ups on this mailbox; after ${hours} hour${hours === 1 ? "" : "s"} another mailbox takes over and the thread breaks.`;
+  return `${formatCount(count)} lead${count === 1 ? " waits" : "s wait"} for follow-ups on this mailbox; after ${hours} hour${hours === 1 ? "" : "s"} another mailbox takes over and the thread breaks.`;
 }
 
 /** Mirrors the send-time domain policy: a connected mailbox outside the list (or any mailbox under open sign-up without a list) does not send. */
@@ -161,12 +161,12 @@ export function MailboxList({
               <li key={mailbox.id} data-testid="mailbox-row" className={cn(RULED_ROW, "stack-group")}>
                 <div className="stack-field">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-medium break-all">{mailbox.emailAddress}</h3>
+                    <h3 className="heading-item break-all">{mailbox.emailAddress}</h3>
                     <StatusBadge status={mailbox.status} />
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {mailbox.displayName ? `${mailbox.displayName}. ` : ""}
-                    {mailbox.sentToday} of {mailbox.dailySendLimit} sent today.
+                    {formatCount(mailbox.sentToday)} of {formatCount(mailbox.dailySendLimit)} sent today.
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {hoursSummary(hoursDraft(mailbox.workingHours, defaultTimeZone))}
@@ -383,52 +383,47 @@ interface TestSendResult {
   message: string;
 }
 
-/** Sends one test email through the normal send claim, and shows the outcome in words. */
+/**
+ * Sends one test email through the normal send claim, and shows the outcome in words. The dialog stays open after a send,
+ * so the outcome sits in the body and a second address can follow; a refused request shows ConfirmDialog's error line.
+ */
 function TestSendDialog({ mailbox, open, onOpenChange }: { mailbox: Mailbox; open: boolean; onOpenChange: (open: boolean) => void }) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <TestSendForm mailbox={mailbox} />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Mounted with the dialog content, so every opening starts without the last error or result. */
-function TestSendForm({ mailbox }: { mailbox: Mailbox }) {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [to, setTo] = useState("");
   const [result, setResult] = useState<TestSendResult | null>(null);
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    setPending(true);
-    setError(null);
+  function change(next: boolean) {
+    // Every opening starts without the last address or result.
+    if (!next) {
+      setTo("");
+      setResult(null);
+    }
+    onOpenChange(next);
+  }
+
+  async function send() {
     setResult(null);
-    const response = await callApi<TestSendResult>(`/api/mailboxes/${mailbox.id}/send-test`, "POST", { to: String(data.get("to") ?? "").trim() });
-    setPending(false);
-    if (!response.ok) setError(response.error);
-    else setResult(response.data);
+    const response = await callApi<TestSendResult>(`/api/mailboxes/${mailbox.id}/send-test`, "POST", { to: to.trim() });
+    if (!response.ok) throw new Error(response.error ?? "Could not send the test email.");
+    setResult(response.data);
+    return false;
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-4">
-      <DialogHeader>
-        <DialogTitle>Send a test email from {mailbox.emailAddress}</DialogTitle>
-        <DialogDescription>
-          The test goes through the same checks as a campaign email. A mailbox sends 3 test emails per hour, and test emails do not use the daily campaign limit.
-        </DialogDescription>
-      </DialogHeader>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={change}
+      title={`Send a test email from ${mailbox.emailAddress}`}
+      description="The test goes through the same checks as a campaign email. A mailbox sends 3 test emails per hour, and test emails do not use the daily campaign limit."
+      confirmLabel="Send test"
+      pendingLabel="Sending…"
+      cancelLabel={result ? "Close" : "Cancel"}
+      confirmDisabled={to.trim() === ""}
+      onConfirm={send}
+    >
       <Field>
         <FieldLabel htmlFor={`test-to-${mailbox.id}`}>Send to</FieldLabel>
-        <Input id={`test-to-${mailbox.id}`} name="to" type="email" required placeholder="you@example.com" />
+        <Input id={`test-to-${mailbox.id}`} type="email" required placeholder="you@example.com" value={to} onChange={(e) => setTo(e.target.value)} />
       </Field>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
       {result && (
         // A delivered test is the normal outcome, so it reads in the foreground with a check; anything else is an error.
         <p role={result.status === "sent" ? "status" : "alert"} data-testid="test-send-result" className={cn("flex items-start gap-2 text-sm", result.status !== "sent" && "text-destructive")}>
@@ -436,11 +431,6 @@ function TestSendForm({ mailbox }: { mailbox: Mailbox }) {
           {result.message}
         </p>
       )}
-      <DialogFooter>
-        <Button type="submit" disabled={pending}>
-          {pending ? "Sending…" : "Send test"}
-        </Button>
-      </DialogFooter>
-    </form>
+    </ConfirmDialog>
   );
 }

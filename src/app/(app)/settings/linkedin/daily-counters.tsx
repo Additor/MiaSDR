@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { callApi } from "@/app/_lib/api-client";
+import { countOf } from "@/shared/format-number";
 import { SettingsSection } from "../settings-section";
 
 /** Clears the pause LinkedIn set after a limit error and the search lead counter, on every account. */
@@ -16,7 +17,7 @@ export function DailyCounters() {
   async function reset() {
     const result = await callApi<{ accounts: number; pausesCleared: number; searchCountersCleared: number }>("/api/linkedin/jobs/reset-daily-limits", "POST");
     if (!result.ok || !result.data) throw new Error(result.error ?? "Reset failed.");
-    toast.success(`Reset ${result.data.accounts} account(s): ${result.data.pausesCleared} pause(s) and ${result.data.searchCountersCleared} search counter(s) cleared.`);
+    toast.success(`Reset ${countOf(result.data.accounts, "account")}: ${countOf(result.data.pausesCleared, "pause")} and ${countOf(result.data.searchCountersCleared, "search counter")} cleared.`);
     router.refresh();
   }
 

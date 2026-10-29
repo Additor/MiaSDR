@@ -1,11 +1,11 @@
 import type { SummaryItem } from "@/components/shell/summary-line";
 import type { AnalyticsResult } from "@/contexts/analytics/application/analytics-queries";
 import { attempted, ratio, type SendCounts } from "@/contexts/analytics/domain/metrics";
+import { formatCount } from "@/shared/format-number";
 
 /** A rate over fewer people than this reads as "x of n". One person moves a rate over 19 people by 5 points or more. */
 export const SMALL_SAMPLE_BELOW = 20;
 
-export const int = (value: number) => value.toLocaleString("en-US");
 export const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 
 export type RateDisplay =
@@ -17,7 +17,7 @@ export type RateDisplay =
 export function rateDisplay(part: number, whole: number): RateDisplay {
   const value = ratio(part, whole);
   if (value === null) return { kind: "empty" };
-  if (whole < SMALL_SAMPLE_BELOW) return { kind: "fraction", text: `${int(part)} of ${int(whole)}` };
+  if (whole < SMALL_SAMPLE_BELOW) return { kind: "fraction", text: `${formatCount(part)} of ${formatCount(whole)}` };
   return { kind: "percent", text: percent(value) };
 }
 
@@ -31,15 +31,15 @@ export function rateText(part: number, whole: number): string {
 export function countWithRate(part: number, whole: number): string {
   const rate = rateDisplay(part, whole);
   if (rate.kind === "empty") return "-";
-  return rate.kind === "fraction" ? rate.text : `${int(part)} (${rate.text})`;
+  return rate.kind === "fraction" ? rate.text : `${formatCount(part)} (${rate.text})`;
 }
 
 function unknownItem(unknown: number, sends: SendCounts): SummaryItem {
   const total = attempted(sends);
   return {
     label: "Unknown outcome",
-    value: int(unknown),
-    hint: total > 0 ? `${int(unknown)} of ${int(total)} send attempts. The provider call may or may not have gone out, so these are not counted as sent.` : "No send attempts in this window.",
+    value: formatCount(unknown),
+    hint: total > 0 ? `${formatCount(unknown)} of ${formatCount(total)} send attempts. The provider call may or may not have gone out, so these are not counted as sent.` : "No send attempts in this window.",
   };
 }
 
@@ -67,10 +67,10 @@ export function summaryItems(result: AnalyticsResult): SummaryItem[] {
       const { funnel, events } = result.data;
       const unknown = events.invites.unknown + events.messages.unknown;
       return [
-        { label: "Invited", value: int(funnel.invited), hint: "People whose first confirmed invitation went out in this window." },
-        { label: "Accepted", value: countWithRate(funnel.accepted, funnel.invited), hint: `${int(funnel.accepted)} of ${int(funnel.invited)} invited` },
-        { label: "Messaged", value: countWithRate(funnel.messaged, funnel.accepted), hint: `${int(funnel.messaged)} of ${int(funnel.accepted)} accepted` },
-        { label: "Replied", value: countWithRate(funnel.replied, funnel.accepted), hint: `${int(funnel.replied)} of ${int(funnel.accepted)} accepted` },
+        { label: "Invited", value: formatCount(funnel.invited), hint: "People whose first confirmed invitation went out in this window." },
+        { label: "Accepted", value: countWithRate(funnel.accepted, funnel.invited), hint: `${formatCount(funnel.accepted)} of ${formatCount(funnel.invited)} invited` },
+        { label: "Messaged", value: countWithRate(funnel.messaged, funnel.accepted), hint: `${formatCount(funnel.messaged)} of ${formatCount(funnel.accepted)} accepted` },
+        { label: "Replied", value: countWithRate(funnel.replied, funnel.accepted), hint: `${formatCount(funnel.replied)} of ${formatCount(funnel.accepted)} accepted` },
         unknownItem(unknown, { sent: events.invites.sent + events.messages.sent, unknown, failed: events.invites.failed + events.messages.failed, inFlight: events.invites.inFlight + events.messages.inFlight }),
       ];
     }
@@ -78,18 +78,18 @@ export function summaryItems(result: AnalyticsResult): SummaryItem[] {
       const { total, byBucket, classifiedShare } = result.data;
       const pending = byBucket.find((b) => b.bucket === "pending_review")?.replies ?? 0;
       return [
-        { label: "Replies", value: int(total), hint: "Inbound messages in this window from people who were contacted before the message arrived." },
-        { label: "With a reply type", value: classifiedShare === null ? "-" : percent(classifiedShare), hint: `Replies with an applied reply type, out of ${int(total)} replies.` },
-        { label: "Pending review", value: int(pending), hint: "Replies whose latest AI pick is held for a check." },
+        { label: "Replies", value: formatCount(total), hint: "Inbound messages in this window from people who were contacted before the message arrived." },
+        { label: "With a reply type", value: classifiedShare === null ? "-" : percent(classifiedShare), hint: `Replies with an applied reply type, out of ${formatCount(total)} replies.` },
+        { label: "Pending review", value: formatCount(pending), hint: "Replies whose latest AI pick is held for a check." },
       ];
     }
     case "timeseries": {
       const t = result.data.totals;
       return [
-        { label: "Email sent", value: int(t.email_sent) },
-        { label: "LinkedIn sent", value: int(t.linkedin_invites + t.linkedin_messages), hint: "Invitations and messages." },
-        { label: "Replies", value: int(t.replies_email + t.replies_linkedin) },
-        { label: "Unknown outcome", value: int(t.email_unknown + t.linkedin_unknown), hint: "Sends whose delivery nobody confirmed. Not counted as sent." },
+        { label: "Email sent", value: formatCount(t.email_sent) },
+        { label: "LinkedIn sent", value: formatCount(t.linkedin_invites + t.linkedin_messages), hint: "Invitations and messages." },
+        { label: "Replies", value: formatCount(t.replies_email + t.replies_linkedin) },
+        { label: "Unknown outcome", value: formatCount(t.email_unknown + t.linkedin_unknown), hint: "Sends whose delivery nobody confirmed. Not counted as sent." },
       ];
     }
   }
@@ -97,9 +97,9 @@ export function summaryItems(result: AnalyticsResult): SummaryItem[] {
 
 function emailStyleSummary(t: { contacted: number; replied: number; bounced: number; sends: SendCounts }): SummaryItem[] {
   return [
-    { label: "Contacted", value: int(t.contacted), hint: "People whose first confirmed send fell in this window, one per person and campaign." },
-    { label: "Replied", value: countWithRate(t.replied, t.contacted), hint: `${int(t.replied)} of ${int(t.contacted)} contacted` },
-    { label: "Bounced", value: countWithRate(t.bounced, t.contacted), hint: `${int(t.bounced)} of ${int(t.contacted)} contacted` },
+    { label: "Contacted", value: formatCount(t.contacted), hint: "People whose first confirmed send fell in this window, one per person and campaign." },
+    { label: "Replied", value: countWithRate(t.replied, t.contacted), hint: `${formatCount(t.replied)} of ${formatCount(t.contacted)} contacted` },
+    { label: "Bounced", value: countWithRate(t.bounced, t.contacted), hint: `${formatCount(t.bounced)} of ${formatCount(t.contacted)} contacted` },
     unknownItem(t.sends.unknown, t.sends),
   ];
 }

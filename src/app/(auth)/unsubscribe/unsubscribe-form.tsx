@@ -33,7 +33,7 @@ export function UnsubscribeForm({ token, email }: { token: string; email: string
         <CardTitle as="h1">Unsubscribe</CardTitle>
         <CardDescription>Stop all emails to {email} from this sender?</CardDescription>
       </CardHeader>
-      <CardFooter className="flex-col items-stretch gap-2">
+      <CardFooter className="flex-col items-stretch gap-group">
         {state === "error" && <p role="alert" className="text-sm text-destructive">Something went wrong. Try again.</p>}
         <Button onClick={confirm} disabled={state === "pending"}>
           {state === "pending" ? "Unsubscribing…" : "Confirm unsubscribe"}

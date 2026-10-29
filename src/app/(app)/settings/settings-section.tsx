@@ -9,6 +9,7 @@ import { Section } from "@/components/shell/section";
 export function SettingsSection({
   title,
   description,
+  count,
   action,
   id,
   testId,
@@ -16,6 +17,8 @@ export function SettingsSection({
 }: {
   title: ReactNode;
   description?: ReactNode;
+  /** A tally of the block's items, muted beside the heading. */
+  count?: ReactNode;
   /** A control on the heading row, such as Add. */
   action?: ReactNode;
   /** Names the section for `aria-labelledby`. */
@@ -24,7 +27,7 @@ export function SettingsSection({
   children?: ReactNode;
 }) {
   return (
-    <Section role="block" title={title} description={description} action={action} id={id} testId={testId}>
+    <Section role="block" title={title} description={description} count={count} action={action} id={id} testId={testId}>
       {children}
     </Section>
   );
