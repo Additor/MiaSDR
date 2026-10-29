@@ -155,7 +155,10 @@ describeDb("crm-read against Postgres", () => {
       execute.mockRestore();
     }
     const list = new PgDialect().sqlToQuery(statement);
+    expect(list.sql).toContain("lifecycle = 'contact'");
+    // Other suites fill and empty people; fresh statistics keep the planner's pick about the predicate, not the churn.
     const plan = await kit.sql.begin(async (tx) => {
+      await tx`analyze people`;
       await tx`set local enable_seqscan = off`;
       return tx.unsafe(`explain (generic_plan, format json) ${list.sql}`);
     });
