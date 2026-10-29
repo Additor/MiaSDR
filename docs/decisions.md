@@ -75,6 +75,16 @@ Node 22 or newer, pnpm 10, Next.js 16.4 (App Router, `output: "standalone"`), Re
 - Client components take request and response types from the use case with `import type` (`ImportReport`, `ConvertPreview`, `BulkCreateResult`, `BulkDncResult`, `DncResult`, `ConnectResult`, `TestSendResult`, `UploadBatchReport`, `EnrichmentPreview`); no client copy of them exists. There is no shared contracts module.
 - Values the browser shares with the server (limits, refusal sentences) live in leaf `application/` modules that load nothing but `domain/` and `src/shared`: `people/application/conversion-terms.ts` (`MAX_CONVERT_PREVIEW_IDS`, `PERSONAL_CAMPAIGN_MESSAGE`), `people/application/lead-delete-terms.ts` (the lead delete sentences), `deals/application/deal-limits.ts` (`MAX_BULK_CONVERT_IDS`) and `conversations/application/dnc-limits.ts` (`MAX_BULK_DNC_IDS`). `src/architecture/client-imports.test.ts` walks the value imports of every `"use client"` file at any depth: from `src/contexts` they may reach `domain/` and leaf `application/` modules, plus identity's `auth-client.ts`; never `src/platform`, `src/composition`, other infrastructure or a database package. After `pnpm build`, `scripts/client-bundle-check.sh` checks the output: no browser chunk holds drizzle-orm or postgres code.
 
+### Change actions
+
+- A screen sends a change through `runApiAction(callApi(...), { refresh, onConflict })` (`src/app/_lib/api-action.ts`). It returns a success with `data` or a failure with one sentence in `error`, and never throws.
+- `refresh` (the page's `router.refresh`) runs after a success and after a 404 or 409, since those say the page shows something the server no longer holds. A 401, a refused input and an unanswered call leave the page alone, so the person keeps what they typed.
+- `onConflict` maps a 409 code to the screen's own step. A handler that returns a sentence replaces `error`; the deal pages use it for `stale_version`, a person screen for `try_again` with the person named.
+- A ConfirmDialog's `onConfirm` passes the result through `orThrow`, or `toastOrThrow` with a success toast (`src/app/_lib/use-api-action.ts`). A refusal rejects, and the dialog stays open with the reason.
+- `useApiAction()` holds a screen's busy state: `run(key, work)` marks `key` busy and drops a second call while one runs, with a ref, so a double click sends one request. Buttons read `busy` to disable themselves and show their pending label. `toastResult` shows the outcome of an action outside a dialog.
+- `runApiAction` has unit tests; the hook has none, since vitest runs in node without a DOM. The settings, organization, deal, contact and company e2e specs cover the screens.
+- The flows that show an error per row (the Actions queue) and Tables (`gridRequest`) keep their own handling.
+
 ### Route matrix
 
 `src/architecture/route-matrix/route-matrix.integration.test.ts` calls every exported handler of every `route.ts` in process, against Postgres and real Better Auth sessions, and runs `proxy()` for every path.

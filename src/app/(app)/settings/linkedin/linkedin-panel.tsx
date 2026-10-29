@@ -14,7 +14,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, toastResult, useApiAction } from "@/app/_lib/use-api-action";
 import { formatCount } from "@/shared/format-number";
 import { formatDateTime } from "@/shared/format-time";
 import { syncLine, type StoredSyncStatus } from "./sync-status";
@@ -78,6 +80,8 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
   const [setup, setSetup] = useState<WebhookSetup | null>(null);
   const [editingCredentials, setEditingCredentials] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const { busy, run } = useApiAction<"sync" | "webhooks" | "setup">();
+  const refresh = () => router.refresh();
 
   // Back from the Unipile wizard: pull the new account in at once, then drop the query so a reload does not repeat it.
   useEffect(() => {
@@ -119,13 +123,6 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
     router.refresh();
   }
 
-  async function act(label: string, run: () => Promise<{ ok: boolean; error: string | null }>) {
-    const result = await run();
-    if (!result.ok) toast.error(result.error ?? `${label} failed.`);
-    else toast.success(`${label}.`);
-    router.refresh();
-  }
-
   /** One full-page navigation to Unipile's wizard. Unipile advises against an iframe. */
   async function startHostedAuth(accountId: string | null) {
     setLinking(accountId ?? "new");
@@ -138,11 +135,12 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
     window.location.assign(result.data.url);
   }
 
-  async function revealSetup() {
-    const result = await callApi<WebhookSetup>("/api/linkedin/webhooks/setup", "POST");
-    if (!result.ok || !result.data) toast.error(result.error ?? "Could not load the webhook setup.");
-    else setSetup(result.data);
-  }
+  const revealSetup = () =>
+    run("setup", async () => {
+      const result = await runApiAction(callApi<WebhookSetup>("/api/linkedin/webhooks/setup", "POST"));
+      if (result.ok) setSetup(result.data);
+      else toast.error(result.error);
+    });
 
   async function copy(text: string, label: string) {
     try {
@@ -153,13 +151,15 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
     }
   }
 
-  async function registerWebhooks() {
-    const result = await callApi<ConnectResult["webhooks"]>("/api/linkedin/webhooks", "POST");
-    if (!result.ok || !result.data) toast.error(result.error ?? "Webhooks failed.");
-    else if (result.data.status === "registered") toast.success(result.data.detail);
-    else toast.warning(result.data.detail);
-    router.refresh();
-  }
+  const registerWebhooks = () =>
+    run("webhooks", async () => {
+      // A refusal can still have changed the stored webhook state, so the page reloads either way.
+      const result = await runApiAction(callApi<ConnectResult["webhooks"]>("/api/linkedin/webhooks", "POST"));
+      refresh();
+      if (!result.ok) toast.error(result.error);
+      else if (result.data.status === "registered") toast.success(result.data.detail);
+      else toast.warning(result.data.detail);
+    });
 
   return (
     <div>
@@ -216,8 +216,12 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
                   <DropdownMenuTrigger render={<Button type="button" variant="ghost" />}>More</DropdownMenuTrigger>
                   <DropdownMenuContent className="w-auto min-w-48">
                     <DropdownMenuItem onClick={() => setEditingCredentials(true)}>Edit credentials</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => act("Accounts synced", () => callApi("/api/linkedin/sync", "POST"))}>Sync accounts</DropdownMenuItem>
-                    <DropdownMenuItem onClick={registerWebhooks}>Register webhooks</DropdownMenuItem>
+                    <DropdownMenuItem disabled={busy !== null} onClick={() => void run("sync", async () => toastResult(await runApiAction(callApi("/api/linkedin/sync", "POST"), { refresh }), "Accounts synced."))}>
+                      {busy === "sync" ? "Syncing…" : "Sync accounts"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={busy !== null} onClick={() => void registerWebhooks()}>
+                      {busy === "webhooks" ? "Registering…" : "Register webhooks"}
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onClick={() => setConfirmDisconnect(true)}>
                       Disconnect
@@ -271,8 +275,8 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
                 </FieldGroup>
               ) : (
                 <div>
-                  <Button type="button" variant="outline" onClick={revealSetup}>
-                    Show setup values
+                  <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void revealSetup()}>
+                    {busy === "setup" ? "Loading…" : "Show setup values"}
                   </Button>
                 </div>
               )}
@@ -325,7 +329,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
         cancelLabel="Stay connected"
         pendingLabel="Disconnecting…"
         destructive
-        onConfirm={() => act("Disconnected", () => callApi("/api/linkedin", "DELETE"))}
+        onConfirm={async () => toastOrThrow(await runApiAction(callApi("/api/linkedin", "DELETE"), { refresh }), "Disconnected.")}
       />
     </div>
   );

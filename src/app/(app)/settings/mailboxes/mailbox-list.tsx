@@ -14,7 +14,9 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLab
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { orThrow, runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, toastResult, useApiAction } from "@/app/_lib/use-api-action";
 import type { TestSendResult } from "@/contexts/outreach/email/application/send-test-email";
 import { formatCount } from "@/shared/format-number";
 import { cn } from "@/components/ui/utils";
@@ -88,12 +90,8 @@ export function MailboxList({
     router.refresh();
   }
 
-  async function act(label: string, run: () => Promise<{ ok: boolean; error: string | null }>) {
-    const result = await run();
-    if (!result.ok) toast.error(result.error ?? `${label} failed.`);
-    else toast.success(`${label}.`);
-    router.refresh();
-  }
+  const { busy, run } = useApiAction();
+  const refresh = () => router.refresh();
 
   return (
     <div>
@@ -193,11 +191,16 @@ export function MailboxList({
                 )}
                 {canManage && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => act("Connection checked", () => callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"))}>
-                      Recheck connection
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy !== null}
+                      onClick={() => void run(`test:${mailbox.id}`, async () => toastResult(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}/test`, "POST"), { refresh }), "Connection checked."))}
+                    >
+                      {busy === `test:${mailbox.id}` ? "Checking…" : "Recheck connection"}
                     </Button>
-                    <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} onSaved={() => router.refresh()} />
-                    <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} act={act} />
+                    <EditMailbox mailbox={mailbox} zones={zones} defaultTimeZone={defaultTimeZone} refresh={refresh} />
+                    <MailboxMenu mailbox={mailbox} takeoverAfterHours={takeoverAfterHours} busy={busy !== null} run={run} refresh={refresh} />
                   </div>
                 )}
               </li>
@@ -218,13 +221,20 @@ type MailboxDialog = "test" | "disable" | "remove" | null;
 function MailboxMenu({
   mailbox,
   takeoverAfterHours,
-  act,
+  busy,
+  run,
+  refresh,
 }: {
   mailbox: Mailbox;
   takeoverAfterHours: number;
-  act: (label: string, run: () => Promise<{ ok: boolean; error: string | null }>) => Promise<void>;
+  /** True while another action of the list runs. */
+  busy: boolean;
+  run: ReturnType<typeof useApiAction>["run"];
+  refresh: () => void;
 }) {
   const [dialog, setDialog] = useState<MailboxDialog>(null);
+  const setEnabled = (enabled: boolean) => runApiAction(callApi(`/api/mailboxes/${mailbox.id}/enabled`, "POST", { enabled }), { refresh });
+
   const warning = mailbox.waitingLeads > 0 ? waitingWarning(mailbox.waitingLeads, takeoverAfterHours) : null;
   const onOpenChange = (next: boolean) => {
     if (!next) setDialog(null);
@@ -236,7 +246,9 @@ function MailboxMenu({
         <DropdownMenuContent align="end" className="w-auto min-w-44">
           {mailbox.status === "connected" && <DropdownMenuItem onClick={() => setDialog("test")}>Send test email</DropdownMenuItem>}
           {mailbox.status === "disabled" ? (
-            <DropdownMenuItem onClick={() => act("Enabled", () => callApi(`/api/mailboxes/${mailbox.id}/enabled`, "POST", { enabled: true }))}>Enable</DropdownMenuItem>
+            <DropdownMenuItem disabled={busy} onClick={() => void run(`enable:${mailbox.id}`, async () => toastResult(await setEnabled(true), "Enabled."))}>
+              Enable
+            </DropdownMenuItem>
           ) : (
             <DropdownMenuItem onClick={() => setDialog("disable")}>Disable</DropdownMenuItem>
           )}
@@ -254,7 +266,7 @@ function MailboxMenu({
         description={warning ?? NO_WAITING_LEADS}
         confirmLabel="Disable"
         pendingLabel="Disabling…"
-        onConfirm={() => act("Disabled", () => callApi(`/api/mailboxes/${mailbox.id}/enabled`, "POST", { enabled: false }))}
+        onConfirm={async () => toastOrThrow(await setEnabled(false), "Disabled.")}
       />
       {mailbox.waitingLeads > 0 ? (
         <ConfirmDialog
@@ -264,7 +276,7 @@ function MailboxMenu({
           description="A mailbox with leads in a sequence cannot be removed. Disable it instead, or finish those sequences first."
           confirmLabel="Disable instead"
           pendingLabel="Disabling…"
-          onConfirm={() => act("Disabled", () => callApi(`/api/mailboxes/${mailbox.id}/enabled`, "POST", { enabled: false }))}
+          onConfirm={async () => toastOrThrow(await setEnabled(false), "Disabled.")}
         >
           {warning && <p className="text-sm text-muted-foreground">{warning}</p>}
         </ConfirmDialog>
@@ -278,7 +290,7 @@ function MailboxMenu({
           cancelLabel="Keep mailbox"
           pendingLabel="Removing…"
           destructive
-          onConfirm={() => act("Removed", () => callApi(`/api/mailboxes/${mailbox.id}`, "DELETE"))}
+          onConfirm={async () => toastOrThrow(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}`, "DELETE"), { refresh }), "Removed.")}
         />
       )}
     </>
@@ -286,7 +298,7 @@ function MailboxMenu({
 }
 
 /** Sender name, daily limit, hours and signature of one mailbox, in the shared confirm dialog. */
-function EditMailbox({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox: Mailbox; zones: string[]; defaultTimeZone: string; onSaved: () => void }) {
+function EditMailbox({ mailbox, zones, defaultTimeZone, refresh }: { mailbox: Mailbox; zones: string[]; defaultTimeZone: string; refresh: () => void }) {
   const saved = {
     displayName: mailbox.displayName ?? "",
     limit: String(mailbox.dailySendLimit),
@@ -306,15 +318,14 @@ function EditMailbox({ mailbox, zones, defaultTimeZone, onSaved }: { mailbox: Ma
 
   async function save() {
     if (values.hoursMode === "custom" && values.hours.days.length === 0) throw new Error("Pick at least one sending day, or use organization hours.");
-    const result = await callApi(`/api/mailboxes/${mailbox.id}`, "PATCH", {
+    const body = {
       displayName: values.displayName.trim() || null,
       dailySendLimit: Number(values.limit),
       signatureHtml: values.signature.trim() || null,
       workingHours: values.hoursMode === "organization" ? null : toStoredHours(values.hours),
-    });
-    if (!result.ok) throw new Error(result.error ?? "Could not save the mailbox.");
+    };
+    orThrow(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}`, "PATCH", body), { refresh }));
     toast.success("Mailbox saved.");
-    onSaved();
   }
 
   return (
@@ -398,9 +409,7 @@ function TestSendDialog({ mailbox, open, onOpenChange }: { mailbox: Mailbox; ope
 
   async function send() {
     setResult(null);
-    const response = await callApi<TestSendResult>(`/api/mailboxes/${mailbox.id}/send-test`, "POST", { to: to.trim() });
-    if (!response.ok) throw new Error(response.error ?? "Could not send the test email.");
-    setResult(response.data);
+    setResult(orThrow(await runApiAction(callApi<TestSendResult>(`/api/mailboxes/${mailbox.id}/send-test`, "POST", { to: to.trim() }))));
     return false;
   }
 
