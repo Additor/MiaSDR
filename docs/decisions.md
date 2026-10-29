@@ -251,13 +251,28 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### Delete
 
-- A lead is refused, never cascaded, when any of these holds:
-  - a `sends` row with status `sending`, `sent` or `unknown` (`has_hidden_sends` when the send sits in another member's personal campaign);
-  - a `pending` or `active` enrollment in an active or paused campaign;
-  - a reply-handling `records` row or an `events` row;
-  - `lifecycle = 'contact'` (contacts have their own delete).
-- The refusal names the reason and points to do not contact. A deletable lead goes with its contact policy and its unsent enrollments. Each batch is one transaction. A foreign key from a table the people context does not know (`23503`) reruns the batch one lead at a time and reports that lead as `linked_records`.
+- A lead is refused, never cascaded, when any of these holds (`leadDeleteBlock` in `people/domain/person-delete-policy.ts`, first match wins):
+  - a `sends` row with status `sending`, `sent` or `unknown` (`has_sends`; `has_hidden_sends` when every such send sits in another member's personal campaign);
+  - for a member, an enrollment in a personal campaign another member created, sent or not (`personal_campaign_sends`). Its creator, an owner or an admin passes this rule;
+  - a `pending` or `active` enrollment in an active or paused campaign (`in_active_campaign`);
+  - a reply-handling `records` row or an `events` row, or `lifecycle = 'contact'` (contacts have their own delete) (`linked_records`).
+- A lead whose sends all failed is deleted with those sends. The recent-send windows of a contact delete do not apply to leads.
+- The refusal names the reason and points to do not contact. A deletable lead goes with its contact policy and its unsent enrollments.
 - Deleting a person marked do not contact first copies the address to `suppression_list` (reason `manual`), so a later import cannot revive it. Setting do not contact writes history events, so a lead marked through the product counts as having history afterwards.
+
+#### Lead delete order
+
+`deleteLeads` (by ids or by filter) splits the people into batches of 500. Each batch runs in `personTransaction` with `retryOnce` and a 30 s statement timeout, in this order:
+
+1. The outreach advisory lock of every person in the batch, in one statement (`lockPeopleOutreachTx`, the sort order of `lockPersonOutreachTx`). The reply stop takes this lock before the enrollments it stops and the event it writes, so the delete takes it first too.
+2. The held-lock timeout (300 ms).
+3. The `people` rows `FOR UPDATE` in id order. Ids of another organization or of a gone person drop out.
+4. Their enrollments `FOR UPDATE` in id order (`lockEnrollmentsOfPeopleTx`). A send claim selects its enrollment `FOR UPDATE SKIP LOCKED`, so it skips these until the batch commits; a claim that already holds one makes the batch wait and then shows in the blockers.
+5. The blockers: `leadOutreachBlockers` (outreach) and `peopleWithHistory` (conversations), ranked by the policy.
+6. `suppressDoNotContactAddressesTx`, then `purgeUnsentEnrollments` (the failed sends, then the enrollments; `sends` points at enrollments with NO ACTION), then the `contact_policies` rows and the `people` rows.
+
+A batch that fails on a lock twice or past the statement timeout rolls back and reports its leads as `try_again`; the other batches still run. A foreign key violation (`23503`) reruns the batch one lead at a time and reports a lead that fails alone as `try_again`. Before the locks, that fallback caught a send claim or a record that committed between the check and the delete; under the locks it is the last guard. `src/composition/person-lifecycle.ts` wires the ports (`leadDeleteDeps`). Every batch runs the same statements whatever its size.
+
 - The lead page states the outcome before the click with the same rules (`checkLeadDelete`).
 
 ## Email outreach
@@ -639,7 +654,7 @@ MiaSDR is an outbound tool first. A person starts as a lead in Leads, Campaigns 
 - `src/contexts/deals` owns `deals` and `deal_stages`. Its one cross-context write port is `ConvertLead`. `deals/infrastructure/crm-read.ts` is the read model of the CRM screens: read-only SQL over `people`, `companies`, `deals`, `deal_stages` and `events`, with a test that pins the columns it reads.
 - The people context owns `people`, `companies` and reachability (`contact_policies`, `suppression_list`): `markConverted`, `convertToContact`, `previewConvert`, `makeContact`, `addContact`, the company use cases, `personSummaries` and `searchPeople` (`people/infrastructure/people-directory.ts`).
 - Outreach owns `stopPersonEnrollmentsTx`, `liveEnrollmentSummary`, `latestRepliedEnrollment`, `enrollmentSources` (`drizzle-conversion-outreach.ts`), `notContactSql` and the delete side in `person-outreach.ts`.
-- Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
+- Conversations owns `lockPersonRecords`, `lockPersonRecordRows`, `peopleWithHistory`, `interruptPersonRuns`, `previewPersonRunStop`, `appendPersonEvent`, `activeConversationOfPerson`, `activeConversationOfRecord` and `listPersonEvents` (`person-handling.ts`), plus `purgePersonHandling` (`person-purge.ts`). `events` is declared in conversations; every person event goes through `appendPersonEvent`.
 - The people context imports only identity and tenancy. The wiring that needs deals or outreach lives in `src/composition/person-lifecycle.ts`, which routes import and no context does.
 - `src/composition/deals.ts` is the composition root of the conversion and the deal use cases.
 - "CRM" names only the screen group of deals, contacts and companies. Reply handling lives in `conversations/**/reply-handling*.ts` and answers on `/api/records`, `/api/reply-types` and `/api/settings/replies`.
@@ -755,7 +770,7 @@ A contact without an open deal can be deleted (`deleteContact`, `DELETE /api/con
 1. `lockPersonForDelete`: the person's records `FOR UPDATE` in id order, their conversations `FOR UPDATE` in id order (a message insert needs `FOR KEY SHARE` on its conversation, so no reply lands mid-purge), then the person advisory lock. After the first lock the wait drops to 300 ms.
 2. The `people` row `FOR UPDATE`. A gone person answers 404, a lead 409 `not_a_contact`.
 3. The `contact_policies` row `FOR UPDATE` (people's `lockDoNotContact`).
-4. Every deal of the person `FOR UPDATE`.
+4. Every deal of the person `FOR UPDATE`, then the person's enrollments `FOR UPDATE` in id order (`lockEnrollmentsOfPeopleTx`), so no send claim lands between the blockers and the purge.
 5. Blockers answer 409 `contact_blocked { blockers }`: `open_deals` (named and linked in the dialog), `send_in_flight`, `recent_send` (a campaign send under 24 hours old, which today's mailbox limit counts), `recent_invite` (a LinkedIn invitation under 7 days old, which the weekly cap counts), `ai_job_running`, and `private_conversation` or `personal_campaign_sends` when another member's personal campaign holds the person and the actor is not its creator, an owner or an admin.
 6. The counts must equal the counts the dialog showed, else 409 `counts_changed { counts }`.
 7. `keepEmailSuppressed` (people): a person marked do not contact gets a `manual` suppression row, so the address stays Email suppressed. A lead delete applies the same rule (`suppressDoNotContactAddressesTx`).
