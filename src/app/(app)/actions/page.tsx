@@ -260,7 +260,8 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
           <nav aria-label="Jump to a list" className="flex flex-wrap gap-x-4 text-muted-foreground" data-testid="queue-jumps">
             {jumps.map((jump) => (
-              <a key={jump.href} href={jump.href} className="inline-flex min-h-8 items-center gap-1 rounded-sm underline-offset-4 hover:text-foreground hover:underline focus-ring max-sm:min-h-11">
+              // The label and the count are flex items, so the space between them drops out of the computed name; the name says it.
+              <a key={jump.href} href={jump.href} aria-label={`${jump.label} ${formatCount(jump.count)}`} className="inline-flex min-h-8 items-center gap-1 rounded-sm underline-offset-4 hover:text-foreground hover:underline focus-ring max-sm:min-h-11">
                 {jump.label} <Count value={formatCount(jump.count)} tone={jump.error ? "error" : "waiting"} />
               </a>
             ))}

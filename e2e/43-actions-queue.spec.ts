@@ -212,6 +212,8 @@ test.describe("the Actions queue as a list to work through", () => {
     await signInAdmin(page);
     await page.goto("/actions");
     const jumps = page.getByTestId("queue-jumps");
+    // allTextContents does not wait, so the strip has to be on the page before it is read.
+    await expect(jumps).toBeVisible();
     const linked = await jumps.getByRole("link", { name: /^(Problems|Replies|Follow-ups|AI picks|Next steps|Tasks) \d+$/ }).allTextContents();
     const empty = (await jumps.getByTestId("queue-jumps-empty").allTextContents()).join("");
     // Each of the six lists shows once: as a link with its count, or by name on the "Nothing in" line.

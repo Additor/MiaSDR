@@ -155,7 +155,8 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
         if (accepts && column.id) drop({ id: column.id, name: column.name, kind: column.kind });
       }}
     >
-      <header className="grid gap-0.5 px-1">
+      {/* relative: the sr-only count is absolute, and without a positioned ancestor it sits at its place far along the board and widens the page. */}
+      <header className="relative grid gap-0.5 px-1">
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="truncate heading-subsection">{column.name}</h2>
           <Count
