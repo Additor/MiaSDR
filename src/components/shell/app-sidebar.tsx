@@ -26,6 +26,7 @@ import { cn } from "@/components/ui/utils";
 import { SETTINGS_GROUPS } from "@/app/(app)/settings/settings-nav-config";
 import { CommandPalette, type PaletteDestination } from "./command-palette";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
+import { HOME } from "@/app/_lib/home";
 
 type NavGroup = "Work" | "CRM" | "Insight" | "Admin";
 
@@ -107,7 +108,7 @@ export interface ShellOrganization {
  * The list page of each sidebar row, where an organization switch lands: a detail page of the old organization does not
  * exist in the new one. A deal page lands on Pipeline. Anything else (such as /organizations/new) lands on /leads.
  */
-const listPageOf = (pathname: string) => rowOf(pathname)?.href ?? "/leads";
+const listPageOf = (pathname: string) => rowOf(pathname)?.href ?? HOME;
 
 interface AppSidebarProps {
   organizationName: string;

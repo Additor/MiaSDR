@@ -4,7 +4,8 @@
 
 import { useMemo } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "cn"
+// The app's `cn`, which knows the spacing scale: callers narrow these parts' `gap-group` and `mb-field` through `className`.
+import { cn } from "@/components/ui/utils"
 
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"

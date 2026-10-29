@@ -751,12 +751,14 @@ function CellContent({ value, column, active, onToggle }: { value: unknown; colu
   if ((type === "url" || type === "email") && typeof value === "string") {
     const href = type === "email" ? `mailto:${value}` : /^https?:\/\//i.test(value) ? value : null;
     if (href) {
+      // A click selects the cell, so the link opens on Ctrl or Cmd and click. That press leaves the cell alone: selecting it
+      // swaps this anchor for the one in the active cell's tip before the click lands, and the click then opens nothing.
       const link = (
-        <a href={href} target={type === "url" ? "_blank" : undefined} rel="noreferrer noopener" tabIndex={-1} className="truncate text-primary underline-offset-2 hover:underline" onMouseDown={(e) => e.preventDefault()} onClick={(e) => !(e.metaKey || e.ctrlKey) && e.preventDefault()}>
+        <a href={href} target={type === "url" ? "_blank" : undefined} rel="noreferrer noopener" tabIndex={-1} className="truncate text-primary underline-offset-2 hover:underline" onMouseDown={(e) => { e.preventDefault(); if (e.metaKey || e.ctrlKey) e.stopPropagation(); }} onClick={(e) => !(e.metaKey || e.ctrlKey) && e.preventDefault()}>
           {text}
         </a>
       );
-      // A click selects the cell, so the link opens on Ctrl or Cmd and click. Only the active cell says so, in one tip.
+      // Only the active cell says how to open it, in one tip.
       if (!active) return link;
       return (
         <Tooltip>

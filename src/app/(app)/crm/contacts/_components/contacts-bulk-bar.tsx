@@ -3,8 +3,9 @@
 import { useRouter } from "next/navigation";
 import { ChevronDownIcon, MoreHorizontalIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { BulkBar } from "@/components/shell/bulk-bar";
-import { useBarScrollPadding, useSelection } from "@/components/shell/selection";
+import { useBarScrollPadding, useBulkStep, useSelection } from "@/components/shell/selection";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { callApi } from "@/app/_lib/api-client";
@@ -28,14 +29,7 @@ export function ContactsBulkBar({ total, pageIds, query }: { total: number; page
   const router = useRouter();
   const { selectedIds: ids, select, clear } = useSelection();
   const [busy, setBusy] = useState<"gathering" | "exporting" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // An error speaks about the selection it failed on. Once the selection empties (Clear, Esc, a finished bulk step), it
-  // goes too, so ticking rows later never brings back an old failure.
-  const [hadSelection, setHadSelection] = useState(ids.length > 0);
-  if (hadSelection !== ids.length > 0) {
-    setHadSelection(ids.length > 0);
-    if (ids.length === 0) setError(null);
-  }
+  const { error, setError, begin } = useBulkStep(ids.length);
   const bar = useRef<HTMLDivElement>(null);
   useBarScrollPadding(bar, ids.length > 0);
   // The ids the do not contact dialog works on, fixed when it opens.
@@ -44,23 +38,32 @@ export function ContactsBulkBar({ total, pageIds, query }: { total: number; page
   const offPage = ids.some((id) => !pageIds.includes(id));
 
   async function selectAllMatching() {
+    const current = begin();
     setBusy("gathering");
     setError(null);
     const result = await callApi<{ ids: string[]; capped: boolean }>(`/api/contacts/ids${query ? `?${query}` : ""}`, "GET");
     setBusy(null);
+    // Cleared while the request ran: the answer belongs to a selection the person dropped.
+    if (!current()) return;
     if (!result.ok || !result.data) return setError(`${result.error ?? "Could not read the matching contacts."} Try again, or tick rows by hand.`);
     select(result.data.ids, true);
   }
 
   /** Export selected posts the ids (up to 5,000) and saves the CSV the route answers. */
   async function exportSelected() {
+    const current = begin();
+    // After Clear or Esc the bar has no line for the reason, so a failure goes to a toast.
+    const fail = (reason: string) => {
+      if (current()) setError(reason);
+      else toast.error(reason);
+    };
     setBusy("exporting");
     setError(null);
     try {
       const response = await fetch("/api/contacts/export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids }) });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        return setError(body?.error ?? "The export did not finish. Try again.");
+        return fail(body?.error ?? "The export did not finish. Try again.");
       }
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
@@ -69,7 +72,7 @@ export function ContactsBulkBar({ total, pageIds, query }: { total: number; page
       link.click();
       URL.revokeObjectURL(url);
     } catch {
-      setError("The export did not finish. Check your connection and try again.");
+      fail("The export did not finish. Check your connection and try again.");
     } finally {
       setBusy(null);
     }

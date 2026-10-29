@@ -13,8 +13,8 @@ import { cn } from "@/components/ui/utils";
  * the caller renders as data in `children` (a link, a report). `children` render under the description for extra detail or inputs.
  * The panel never grows past the viewport: the header and the footer stay in place and the body between them scrolls, so the
  * confirm button stays on screen at 390x844. `back` adds a ghost button at the start of the footer for a dialog with two steps.
- * Enter in a text field of the body presses the confirm, as a form submit would; a textarea, an IME composition and a control
- * that handles Enter itself (a combobox picking an item) keep the key. `secondary` adds an outline action before the confirm for
+ * Enter in a text field of the body presses the confirm, as a form submit would; a textarea, an IME composition, a combobox and
+ * a control that handles Enter itself keep the key. `secondary` adds an outline action before the confirm for
  * a dialog with two ways forward ("Only change the type" beside "Stop contacting"); it runs like the confirm, with its own
  * pending label, and Enter still presses the confirm.
  */
@@ -90,6 +90,9 @@ export function ConfirmDialog({
     if (e.key !== "Enter" || e.shiftKey || e.defaultPrevented || e.nativeEvent.isComposing) return;
     const target = e.target;
     if (!(target instanceof HTMLInputElement) || NOT_TEXT.has(target.type)) return;
+    // A combobox keeps Enter even with no item highlighted. Base UI lets that key through to close the list, and a confirm
+    // there would submit the earlier pick while the person still searches for another.
+    if (target.getAttribute("role") === "combobox") return;
     e.preventDefault();
     if (pending === null && !confirmDisabled) void confirm();
   }

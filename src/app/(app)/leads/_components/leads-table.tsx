@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { BulkBar } from "@/components/shell/bulk-bar";
 import { ListPager } from "@/components/shell/list-pager";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
-import { useBarScrollPadding, useSelection } from "@/components/shell/selection";
+import { useBarScrollPadding, useBulkStep, useSelection } from "@/components/shell/selection";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
@@ -114,14 +114,7 @@ export function LeadsTableView(props: {
   const { selectedIds: ids, isSelected, select, clear } = useSelection();
   const [pending, setPending] = useState<Pending>(null);
   const [gathering, setGathering] = useState(false);
-  const [gatherError, setGatherError] = useState<string | null>(null);
-  // An error speaks about the selection it failed on. Once the selection empties (Clear, Esc, a finished bulk step), it
-  // goes too, so ticking rows later never brings back an old failure.
-  const [hadSelection, setHadSelection] = useState(ids.length > 0);
-  if (hadSelection !== ids.length > 0) {
-    setHadSelection(ids.length > 0);
-    if (ids.length === 0) setGatherError(null);
-  }
+  const { error: gatherError, setError: setGatherError, begin } = useBulkStep(ids.length);
   // The ids the Create deals dialog works on, fixed when it opens: the dialog reloads its preview for a new array.
   const [dealIds, setDealIds] = useState<string[] | null>(null);
   const lifecycle = lifecycleOf(filter);
@@ -173,10 +166,13 @@ export function LeadsTableView(props: {
 
   /** Ticks every lead that matches the filter, on all pages, so Add to campaign and Delete selected reach them. */
   async function selectAllMatching() {
+    const current = begin();
     setGathering(true);
     setGatherError(null);
     const result = await callApi<{ ids: string[]; capped: boolean }>(`/api/leads/ids?${leadFilterParams({ ...filter, ids: undefined }).toString()}`, "GET");
     setGathering(false);
+    // Cleared while the request ran: the answer belongs to a selection the person dropped.
+    if (!current()) return;
     if (!result.ok || !result.data) {
       setGatherError(`${result.error ?? "Could not read the matching leads."} Try again, or tick rows by hand.`);
       return;

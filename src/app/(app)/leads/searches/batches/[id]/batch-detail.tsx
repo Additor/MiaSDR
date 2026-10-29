@@ -20,6 +20,7 @@ import { batchRowActions, hasActiveSearch, searchNotice, searchStatusLabel, type
 import { runNowConfirmation, searchableLeft } from "@/contexts/outreach/linkedin/domain/linkedin-search-capacity";
 import { callApi } from "@/app/_lib/api-client";
 import { countOf, formatCount } from "@/shared/format-number";
+import { humanizeToken } from "@/shared/humanize";
 import { cn } from "@/components/ui/utils";
 import { capacityReturnText } from "../../capacity-return";
 import { useActiveRefresh } from "../../use-active-refresh";
@@ -395,7 +396,7 @@ function RowStatus({ item: i, capacityReturns }: { item: Item; capacityReturns: 
   const notice = searchNotice({ status, lastError: i.lastError });
   return (
     <>
-      <StatusBadge status={status} label={searchStatusLabel(status)} />
+      <StatusBadge status={status} label={humanizeToken(searchStatusLabel(status))} />
       {status === "paused_limit" && <p className="mt-1 text-xs text-muted-foreground">Waiting for the daily limit{capacityReturns ? `. Capacity returns ${capacityReturns}` : ""}.</p>}
       {i.rerunCount > 0 && <p className="mt-1 text-xs text-muted-foreground">Rerun {countOf(i.rerunCount, "time")}.</p>}
       {notice && (

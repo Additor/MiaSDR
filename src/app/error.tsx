@@ -5,7 +5,7 @@ import { ErrorState } from "@/components/shell/error-state";
 import { Button } from "@/components/ui/button";
 
 /** A failure outside the app shell (the auth pages). It draws the same `ErrorState` the app pages draw, under its own h1. */
-export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function ErrorPage({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -16,7 +16,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
         inline
         title="The page failed to load."
         reason={`Try again, and if it keeps failing, send this reference to your admin${error.digest ? `: ${error.digest}` : "."}`}
-        action={<Button onClick={reset}>Try again</Button>}
+        action={<Button onClick={retry}>Try again</Button>}
       />
     </main>
   );

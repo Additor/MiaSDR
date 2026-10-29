@@ -127,6 +127,9 @@ export function ChangeTypeButton({
   function change(next: boolean) {
     setOpen(next);
     if (next) return;
+    // The page catches up once the dialog closes. A refresh while it stays open can take away the decision block that
+    // holds this button, and the dialog with the failure it shows.
+    if (changedTo.current) router.refresh();
     setTarget(null);
     setNote("");
     setUnlock(false);
@@ -151,32 +154,27 @@ export function ChangeTypeButton({
 
   /**
    * Runs inside `ConfirmDialog`, which guards against a second press, shows the pending label and the thrown message, and
-   * closes when this resolves. A stop scope that is not filled in yet resolves `false`, so the dialog stays open.
+   * closes when this resolves. A stop scope that is not filled in yet resolves `false`, so the dialog stays open. Closing
+   * refreshes the page once the type changed (`change`), so a stop that fails after the change keeps its message here.
    */
   async function submit(mode: "change" | "stop"): Promise<boolean | void> {
     if (!chosen) return false;
     if (mode === "stop" && !stopScope.ready()) return false;
     const steps = submitSteps(changedTo.current, chosen.id, mode);
-    try {
-      if (steps.change) {
-        const unsaved = await saveDraftEdits();
-        if (unsaved) throw new Error(unsavedEditsError(unsaved));
-        await changeType(chosen);
-        changedTo.current = chosen.id;
-      }
-      const changedText = `Changed the reply type of ${personName} to ${chosen.name}.`;
-      if (steps.stop) {
-        const stopped = await stopScope.stop().catch((e: unknown) => {
-          throw new Error(`The reply type changed, but contact did not stop. ${e instanceof Error ? e.message : ""} Use Stop contacting under Next step.`.trim());
-        });
-        toast.success(`${changedText} ${stopped}`);
-      } else {
-        toast.success(changedText);
-      }
-      router.refresh();
-    } catch (e) {
-      if (changedTo.current) router.refresh();
-      throw e;
+    if (steps.change) {
+      const unsaved = await saveDraftEdits();
+      if (unsaved) throw new Error(unsavedEditsError(unsaved));
+      await changeType(chosen);
+      changedTo.current = chosen.id;
+    }
+    const changedText = `Changed the reply type of ${personName} to ${chosen.name}.`;
+    if (steps.stop) {
+      const stopped = await stopScope.stop().catch((e: unknown) => {
+        throw new Error(`The reply type changed, but contact did not stop. ${e instanceof Error ? e.message : ""} Use Stop contacting under Next step.`.trim());
+      });
+      toast.success(`${changedText} ${stopped}`);
+    } else {
+      toast.success(changedText);
     }
   }
 

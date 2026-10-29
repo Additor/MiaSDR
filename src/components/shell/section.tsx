@@ -38,6 +38,7 @@ export function SectionHead({
   help,
   description,
   action,
+  narrow = false,
 }: {
   title: ReactNode;
   level?: "h2" | "h3";
@@ -55,12 +56,17 @@ export function SectionHead({
   help?: ReactNode;
   description?: ReactNode;
   action?: ReactNode;
+  /**
+   * A side panel block or a drawer's part, narrower than the 16rem the text claims before an action wraps under it. The
+   * text claims no width first, so the action keeps the heading row and the title wraps beside it.
+   */
+  narrow?: boolean;
 }) {
   const Heading = level;
   return (
     <div className="flex min-h-7 flex-wrap items-start justify-between gap-x-3 gap-y-2">
       {/* The text takes the row and wraps, so an action stays on the heading row beside a long description. */}
-      <div className="stack-field min-w-0 flex-1 basis-64">
+      <div className={cn("stack-field min-w-0 flex-1", !narrow && "basis-64")}>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <Heading id={id} className={cn("flex items-center gap-1.5", role === "section" ? "heading-section" : "heading-subsection")}>
             {icon}
@@ -91,7 +97,8 @@ export function Section({
   sectionRole,
   flushEnd = true,
   ...head
-}: Parameters<typeof SectionHead>[0] & {
+}: Omit<Parameters<typeof SectionHead>[0], "narrow"> & {
+  /** `plain` and `inset` sit in a grid, a side panel or a drawer, so their head is `narrow`. */
   frame?: "ruled" | "plain" | "inset";
   /** The last ruled section drops its bottom space. Off where a disclosure or a list follows the stack and needs the space. */
   flushEnd?: boolean;
@@ -120,7 +127,7 @@ export function Section({
         className,
       )}
     >
-      <SectionHead {...head} />
+      <SectionHead {...head} narrow={frame !== "ruled"} />
       {children}
     </section>
   );

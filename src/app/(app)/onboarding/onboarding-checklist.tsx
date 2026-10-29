@@ -7,7 +7,7 @@ import { useState } from "react";
 import { callApi } from "@/app/_lib/api-client";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 import type { OnboardingView } from "@/contexts/tenancy/application/onboarding";
 import type { StepStatus } from "@/contexts/tenancy/domain/onboarding";
@@ -41,9 +41,9 @@ export function OnboardingChecklist({ view }: { view: OnboardingView }) {
           {view.complete ? `All ${view.requiredTotal} required steps done` : `${view.requiredDone} of ${view.requiredTotal} required steps done`}
         </p>
         {next && (
-          <Button touch nativeButton={false} render={<Link href={next.href} />}>
+          <Link href={next.href} className={buttonVariants({ touch: true })}>
             Next: {next.title}
-          </Button>
+          </Link>
         )}
       </div>
       {/* One ruled list, no box. Next above is the next step's one action, so its row holds none; the other open steps keep a quiet ghost link. */}

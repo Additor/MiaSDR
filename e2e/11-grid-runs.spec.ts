@@ -46,7 +46,9 @@ test.describe("grid runs", () => {
     const progress = page.getByRole("status").filter({ hasText: "1 failed" });
     await expect(progress).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("gridcell", { name: "Email: ann.lee@acme.test", exact: true })).toBeVisible();
-    await expect(page.getByLabel("The fake provider rejected this request.")).toBeVisible();
+    // The failed cell carries the reason as its accessible description, and the mark shows it in a tip on the active cell.
+    const failedCell = page.getByRole("gridcell").filter({ hasText: "The fake provider rejected this request." });
+    await expect(failedCell).toHaveAccessibleDescription("The fake provider rejected this request.");
 
     // With auto-run on, editing an input queues the cell again by itself. Turn it off so the retry button does the work.
     await page.getByRole("button", { name: /^Run options/ }).click();
@@ -64,7 +66,7 @@ test.describe("grid runs", () => {
 
     // Fix the name, then retry. The run changed the row since the page loaded, so load it again before editing.
     await page.reload();
-    await expect(page.getByLabel("The fake provider rejected this request.")).toBeVisible();
+    await expect(failedCell).toHaveAccessibleDescription("The fake provider rejected this request.");
     await page.getByRole("gridcell", { name: "Full name: Boom Bob" }).click();
     await page.keyboard.type("Bob Ray");
     await page.keyboard.press("Enter");

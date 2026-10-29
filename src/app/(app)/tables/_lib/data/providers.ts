@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { lookupCents } from "@/contexts/grid/enrichment/domain/enrichment-pricing";
 import { gridRequest } from "./client";
 import { formatCount } from "@/shared/format-number";
@@ -134,9 +134,14 @@ export function useProviders() {
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Loads can overlap (a retry, the refresh after a save). Only the latest one writes, so a slow failure never covers a
+  // list that loaded after it.
+  const latest = useRef(0);
 
   const refresh = useCallback(async () => {
+    const call = ++latest.current;
     const res = await gridRequest<{ catalog: CatalogEntry[]; providers: ProviderView[] }>("/api/grid/providers", "GET");
+    if (call !== latest.current) return;
     if (res.ok && res.data) {
       setCatalog(res.data.catalog);
       setProviders(res.data.providers);
@@ -147,12 +152,19 @@ export function useProviders() {
     setLoading(false);
   }, []);
 
+  /** Loads again behind the skeleton, so a retry shows its work and a second failure shows again. */
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    return refresh();
+  }, [refresh]);
+
   useEffect(() => {
     const handle = setTimeout(() => void refresh(), 0);
     return () => clearTimeout(handle);
   }, [refresh]);
 
-  return { catalog, providers, loading, error, refresh };
+  return { catalog, providers, loading, error, refresh, retry };
 }
 
 /** Providers a column can call right now: switched on, with a key when the catalog entry needs one. */

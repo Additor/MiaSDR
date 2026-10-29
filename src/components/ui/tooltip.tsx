@@ -4,12 +4,8 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 import { cn } from "cn"
 import { BESIDE_TIP_POSITIONER, TIP_POSITIONER } from "./popup"
 
-/**
- * 300ms before a tooltip opens, so a pointer that crosses a dense list does not flash a tip on every row. Once one tip is
- * open, the next opens at once (Base UI's provider group).
- */
 function TooltipProvider({
-  delay = 300,
+  delay = 0,
   ...props
 }: TooltipPrimitive.Provider.Props) {
   return (

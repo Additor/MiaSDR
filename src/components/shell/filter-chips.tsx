@@ -19,7 +19,7 @@ export function FilterChips({ label, items, className }: { label: string; items:
           aria-current={item.active ? "true" : undefined}
           data-testid={item.testId}
           className={cn(
-            "inline-flex h-6 shrink-0 items-center rounded-md px-2.5 text-xs whitespace-nowrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:h-10",
+            "inline-flex h-6 shrink-0 items-center rounded-md px-2.5 text-xs whitespace-nowrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50 max-sm:h-11",
             item.active ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >

@@ -295,13 +295,18 @@ export function QueueGroup({
     setRowBusy(null);
     if (ok) {
       const index = items.findIndex((i) => i.recordId === item.recordId);
+      const text = settledText(item, ambiguous);
+      // The last row of a list empties it, and the refresh below takes the list off the page with its remnant. The outcome
+      // then lands off screen, so a toast says it too (DESIGN.md Feedback).
+      const last = items.length === 1 && cursor === null;
       removeRows([item.recordId]);
       setSettled((current) => [
         ...current.filter((r) => r.recordId !== item.recordId),
-        { recordId: item.recordId, index, text: settledText(item, ambiguous), href: item.conversationId ? rowHref(item, query) : null, survived: false },
+        { recordId: item.recordId, index, text, href: item.conversationId ? rowHref(item, query) : null, survived: false },
       ]);
       timers.current.push(window.setTimeout(() => setSettled((current) => current.filter((r) => r.recordId !== item.recordId)), SETTLED_MS));
       announce(doneFor(item.classification?.kind === "held" ? ACCEPTED : LOOKS_RIGHT_DONE, item.personName));
+      if (last) toast.success(text);
     }
     // Totals and the group the record moves to are the server's to say.
     router.refresh();

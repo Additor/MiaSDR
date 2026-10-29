@@ -23,6 +23,9 @@ test.describe("organizations", () => {
     await name.fill(secondName);
     await page.getByRole("button", { name: "Create organization" }).click();
     await expect(page).toHaveURL(/\/actions$/);
+    // A new organization lands on Actions, which lists no leads. Leads is where the first one's lead would show, and the
+    // switch below keeps the list page you are on.
+    await page.goto("/leads");
 
     // The new organization is active and has none of the first one's leads.
     await expect(page.getByTestId("org-switcher")).toContainText(secondName);

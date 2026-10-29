@@ -62,7 +62,7 @@ test.describe("linkedin settings and jobs", () => {
     await page.goto("/settings/linkedin");
     await page.getByRole("button", { name: "Reset daily counters" }).click();
     await page.getByRole("dialog", { name: "Reset daily counters?" }).getByRole("button", { name: "Reset counters" }).click();
-    await expect(page.getByText(/Reset \d+ account\(s\)/)).toBeVisible();
+    await expect(page.getByText(/Reset \d+ accounts?:/)).toBeVisible();
     await page.goto("/settings/jobs");
     await page.getByRole("tab", { name: "History" }).click();
     await expect(page.getByText("Reset daily counters", { exact: true }).first()).toBeVisible();

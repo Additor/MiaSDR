@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { describeSearch, isActiveStatus, searchActions, searchNotice, searchStatusLabel, type SearchAction, type SearchStatus } from "@/contexts/outreach/linkedin/domain/linkedin-search";
 import { callApi } from "@/app/_lib/api-client";
 import { countOf, formatCount } from "@/shared/format-number";
+import { humanizeToken } from "@/shared/humanize";
 import { cn } from "@/components/ui/utils";
 import { capacityReturnText } from "./capacity-return";
 import { SearchUrl } from "./search-url";
@@ -131,7 +132,7 @@ export function SearchesPanel({ state, capacity }: { state: State; capacity: Cap
                     <SearchActions search={s} onAct={act} className="mt-2 sm:hidden" />
                   </TableCell>
                   <TableCell className="max-w-64 whitespace-normal">
-                    <StatusBadge status={s.status} label={searchStatusLabel(s.status)} />
+                    <StatusBadge status={s.status} label={humanizeToken(searchStatusLabel(s.status))} />
                     <p className="mt-1 text-xs text-muted-foreground">{progress.detail}</p>
                     {notice && (
                       <p role="alert" className={cn("mt-1 text-xs", s.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
