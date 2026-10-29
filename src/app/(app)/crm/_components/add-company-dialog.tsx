@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, companyName, useCompanyDomainLookup, type ResolvedCompany } from "@/app/(app)/_components/person/company-domain-field";
 
@@ -128,22 +128,22 @@ export function AddCompanyDialog({ open, onOpenChange }: { open: boolean; onOpen
         {/* A company that exists keeps its name and LinkedIn page; it edits them on its own page. */}
         {!holder && (
           <>
-            <div className="stack-field">
-              <Label htmlFor={`${id}-name`}>Name</Label>
-              <Input id={`${id}-name`} value={name} placeholder={domain.trim()} autoComplete="off" className="max-sm:h-11" onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="stack-field">
-              <Label htmlFor={`${id}-linkedin`}>LinkedIn page</Label>
+            <Field>
+              <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
+              <Input id={`${id}-name`} value={name} placeholder={domain.trim()} autoComplete="off" touch onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${id}-linkedin`}>LinkedIn page</FieldLabel>
               <Input
                 id={`${id}-linkedin`}
                 value={linkedin}
                 inputMode="url"
                 placeholder="https://www.linkedin.com/company/acme"
                 autoComplete="off"
-                className="max-sm:h-11"
+                touch
                 onChange={(e) => setLinkedin(e.target.value)}
               />
-            </div>
+            </Field>
           </>
         )}
       </form>

@@ -147,10 +147,10 @@ test.describe("company merge and delete", () => {
 
     await dialog.getByLabel("Company to merge").fill(tag);
     await dialog.getByRole("button", { name: "Search" }).click();
-    const match = dialog.getByRole("list", { name: "Matching companies" }).getByRole("listitem");
+    const match = dialog.getByRole("radiogroup", { name: "Matching companies" }).getByRole("radio");
     await expect(match).toHaveCount(1);
-    await expect(match).toContainText("Leads only");
-    await match.getByRole("radio").check();
+    await expect(dialog.getByRole("radiogroup", { name: "Matching companies" })).toContainText("Leads only");
+    await match.check();
     const keep = dialog.getByRole("group", { name: "Company to keep" });
     await expect(keep.getByRole("radio", { name: `${kept} (${keptDomain}), 1 contact` })).toBeChecked();
     await expect(keep.getByRole("radio", { name: `${other} (${otherDomain}), 0 contacts` })).not.toBeChecked();
@@ -249,7 +249,7 @@ test.describe("delete and merge at 390px in the dark theme", () => {
     const merge = page.getByRole("dialog");
     await merge.getByLabel("Company to merge").fill(otherDomain);
     await merge.getByRole("button", { name: "Search" }).click();
-    await merge.getByRole("list", { name: "Matching companies" }).getByRole("radio").check();
+    await merge.getByRole("radiogroup", { name: "Matching companies" }).getByRole("radio").check();
     await merge.getByRole("button", { name: "Preview merge" }).click();
     await expect(merge.getByTestId("merge-preview")).toBeVisible();
     await expectInViewport(page, merge.getByRole("button", { name: "Merge companies" }));

@@ -5,14 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { ChoiceCard } from "@/components/shell/choice-card";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { RadioGroup } from "@/components/ui/radio-group";
 import {
   MERGE_TIMEOUT,
   companyChangedText,
@@ -269,55 +270,46 @@ function MergeDialog({ company, open, onOpenChange }: { company: CompanyActionTa
       onConfirm={toPreview}
     >
       <form onSubmit={search} className="flex flex-wrap items-end gap-2" data-testid="merge-search">
-        <div className="stack-field min-w-0 flex-1">
-          <Label htmlFor={`${id}-q`}>Company to merge</Label>
-          <Input id={`${id}-q`} value={query} autoFocus autoComplete="off" placeholder="Search companies by name or domain" className="max-sm:h-11" onChange={(e) => setQuery(e.target.value)} />
-        </div>
-        <Button type="submit" variant="outline" disabled={query.trim() === ""} className="max-sm:h-11">
+        <Field className="min-w-0 flex-1">
+          <FieldLabel htmlFor={`${id}-q`}>Company to merge</FieldLabel>
+          <Input id={`${id}-q`} value={query} autoFocus autoComplete="off" placeholder="Search companies by name or domain" touch onChange={(e) => setQuery(e.target.value)} />
+        </Field>
+        <Button type="submit" variant="outline" disabled={query.trim() === ""} touch>
           Search
         </Button>
       </form>
       {statusLine}
       {results && results.length === 0 && searched && <p className="text-sm text-muted-foreground">{noMatchText(searched)}</p>}
       {results && results.length > 0 && (
-        <ul className="grid gap-1" aria-label="Matching companies">
+        <RadioGroup
+          aria-label="Matching companies"
+          value={picked?.companyId ?? ""}
+          onValueChange={(value) => {
+            const row = results.find((r) => r.companyId === value);
+            if (!row) return;
+            setPicked(row);
+            setKeepId(company.id);
+          }}
+          className="gap-1"
+        >
           {results.map((row) => (
-            <li key={row.companyId}>
-              <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border p-2 text-sm has-[:checked]:border-ring has-[:checked]:bg-muted/50">
-                <input
-                  type="radio"
-                  name={`${id}-other`}
-                  checked={picked?.companyId === row.companyId}
-                  onChange={() => {
-                    setPicked(row);
-                    setKeepId(company.id);
-                  }}
-                />
-                <span className="min-w-0 flex-1 break-words">
-                  {companyLabel(row)} <span className="text-muted-foreground">({row.domain})</span>
-                </span>
-                {!row.listed && <Badge variant="outline">Leads only</Badge>}
-              </label>
-            </li>
+            <ChoiceCard key={row.companyId} id={`${id}-other-${row.companyId}`} value={row.companyId} trailing={!row.listed && <Badge variant="outline">Leads only</Badge>}>
+              {companyLabel(row)} <span className="text-muted-foreground">({row.domain})</span>
+            </ChoiceCard>
           ))}
-        </ul>
+        </RadioGroup>
       )}
       {picked && (
-        <fieldset className="grid gap-1" data-testid="merge-keep">
-          <legend className="mb-1 text-sm font-medium">Company to keep</legend>
+        <FieldSet data-testid="merge-keep">
+          <FieldLegend variant="label">Company to keep</FieldLegend>
           <RadioGroup value={keepId} onValueChange={(value) => setKeepId(value as string)} className="gap-1">
             {[current, picked].map((row) => (
-              <Label
-                key={row.companyId}
-                htmlFor={`${id}-keep-${row.companyId}`}
-                className="min-h-11 cursor-pointer rounded-lg border p-2 leading-normal font-normal has-data-checked:border-ring has-data-checked:bg-muted/50"
-              >
-                <RadioGroupItem value={row.companyId} id={`${id}-keep-${row.companyId}`} />
-                <span className="min-w-0 flex-1 break-words">{keepOptionLabel(row)}</span>
-              </Label>
+              <ChoiceCard key={row.companyId} id={`${id}-keep-${row.companyId}`} value={row.companyId}>
+                {keepOptionLabel(row)}
+              </ChoiceCard>
             ))}
           </RadioGroup>
-        </fieldset>
+        </FieldSet>
       )}
     </ConfirmDialog>
   );

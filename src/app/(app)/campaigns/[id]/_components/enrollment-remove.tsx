@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { callApi } from "@/app/_lib/api-client";
 import { canRemoveEnrollment } from "@/contexts/outreach/domain/enrollment-status";
+import { BulkBar } from "@/components/shell/bulk-bar";
+import { countOf, formatCount } from "@/shared/format-number";
 
 type Channel = "email" | "linkedin";
 
@@ -44,7 +46,7 @@ async function removeIds(channel: Channel, campaignId: string, ids: string[]): P
 
 /** Title, consequence and button of the remove dialog, for one named lead or a count of them. */
 function removeCopy(count: number, name?: string | null) {
-  const leads = `${count.toLocaleString("en-US")} ${count === 1 ? "lead" : "leads"}`;
+  const leads = countOf(count, "lead");
   return {
     title: name ? `Remove ${name} from this campaign?` : `Remove ${leads} from this campaign?`,
     description: `Nothing more is sent to ${count === 1 ? "this lead" : "these leads"} from this campaign. The lead stays in Leads and the history stays here. You can restore a removed lead from the Removed filter unless the person has replied or is marked do not contact.`,
@@ -90,24 +92,24 @@ export function EnrollmentSelectionProvider({ channel, campaignId, children }: {
     if (typeof result === "string") throw new Error(result);
     setSelected(new Set());
     toast.success(
-      `Removed ${result.removed} ${result.removed === 1 ? "lead" : "leads"}.${result.alreadyRemoved > 0 ? ` ${result.alreadyRemoved} were already removed.` : ""}${result.skippedFinal > 0 ? ` ${result.skippedFinal} kept their final status (replied, bounced, unsubscribed, completed, failed or cancelled).` : ""}`,
+      `Removed ${countOf(result.removed, "lead")}.${result.alreadyRemoved > 0 ? ` ${formatCount(result.alreadyRemoved)} were already removed.` : ""}${result.skippedFinal > 0 ? ` ${formatCount(result.skippedFinal)} kept their final status (replied, bounced, unsubscribed, completed, failed or cancelled).` : ""}`,
     );
     router.refresh();
   }
 
   return (
     <Context.Provider value={value}>
-      {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm" role="status">
-          <span>{selected.size} selected.</span>
-          <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+      <BulkBar
+        count={selected.size}
+        sticky={false}
+        testId="enrollment-selection"
+        onClear={value.clear}
+        actions={
+          <Button variant="outline" onClick={() => setConfirming(true)}>
             Remove from campaign
           </Button>
-          <Button size="sm" variant="ghost" onClick={value.clear}>
-            Clear selection
-          </Button>
-        </div>
-      )}
+        }
+      />
       <ConfirmDialog open={confirming} onOpenChange={setConfirming} {...removeCopy(selected.size)} pendingLabel="Removing…" destructive onConfirm={confirm} />
       {children}
     </Context.Provider>

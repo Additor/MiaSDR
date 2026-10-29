@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { callApi } from "@/app/_lib/api-client";
 import { START_BLOCKERS_ID } from "./start-blockers";
+import { countOf } from "@/shared/format-number";
 
 type Target = "active" | "paused" | "completed";
 
@@ -166,7 +167,7 @@ export function CampaignControls({
         pendingLabel="Starting…"
         onConfirm={() => change("active")}
       >
-        <ul className="grid gap-1 text-sm">
+        <ul className="stack-field text-sm">
           {startLines.map((line) => (
             <li key={line}>{line}</li>
           ))}
@@ -178,7 +179,7 @@ export function CampaignControls({
         open={dialog === "complete"}
         onOpenChange={(open) => setDialog(open ? "complete" : null)}
         title={`Mark ${name} as completed?`}
-        description={`${inProgress > 0 ? `Nothing more is sent to the ${inProgress.toLocaleString("en-US")} ${inProgress === 1 ? "lead" : "leads"} still in progress. ` : ""}Leads, sends and replies stay. A completed campaign cannot be restarted.`}
+        description={`${inProgress > 0 ? `Nothing more is sent to the ${countOf(inProgress, "lead")} still in progress. ` : ""}Leads, sends and replies stay. A completed campaign cannot be restarted.`}
         confirmLabel="Mark completed"
         cancelLabel="Keep campaign open"
         pendingLabel="Completing…"

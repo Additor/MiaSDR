@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { getOrgTimeZone } from "@/components/shell/org-time-zone";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -44,12 +45,8 @@ export default function DealPage({ params, searchParams }: PageProps<"/crm/deals
       fallback={
         <>
           <PageHeader title="Deal" titleAs="p" back={PIPELINE_BACK} />
-          <div className="page stack-section" data-testid="deal-loading" aria-busy="true">
-            <Skeleton className="h-24 w-full" />
-            <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
-              <Skeleton className="h-64 w-full" />
-              <Skeleton className="h-72 w-full" />
-            </div>
+          <div className="page" data-testid="deal-loading" aria-busy="true">
+            <PageSkeleton shape="record" />
           </div>
         </>
       }
@@ -102,14 +99,14 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
           name={deal.title}
           subtitle={
             <>
-              <Link href={contactHref} className="text-foreground underline-offset-4 hover:underline">
+              <Link href={contactHref} className="text-foreground underline-offset-4 hover:underline rounded-sm focus-ring">
                 {contactName}
               </Link>
               {person.companyName && (
                 <>
                   {" at "}
                   {person.companyId ? (
-                    <Link href={`/crm/companies/${person.companyId}`} className="text-foreground underline-offset-4 hover:underline">
+                    <Link href={`/crm/companies/${person.companyId}`} className="text-foreground underline-offset-4 hover:underline rounded-sm focus-ring">
                       {person.companyName}
                     </Link>
                   ) : (
@@ -185,7 +182,7 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
                   {deal.source ? (
                     <>
                       From{" "}
-                      <Link href={`/campaigns/${deal.source.campaignId}`} className="underline underline-offset-4 hover:text-foreground">
+                      <Link href={`/campaigns/${deal.source.campaignId}`} className="underline underline-offset-4 hover:text-foreground rounded-sm focus-ring">
                         {deal.source.campaignName}
                       </Link>
                       .{" "}
@@ -202,7 +199,7 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
                   )}
                 </p>
               </RecordSection>
-              <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+              <Suspense fallback={<Skeleton className="h-64 w-full" aria-hidden />}>
                 <PersonActivity actor={actor} personId={person.id} first="tasks" />
               </Suspense>
             </>
@@ -211,7 +208,7 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
             <>
               <AsideSection title="Contact" testId="deal-contact">
                 <div className="grid gap-0.5 text-sm">
-                  <Link href={contactHref} className="font-medium underline underline-offset-4">
+                  <Link href={contactHref} className="font-medium underline underline-offset-4 rounded-sm focus-ring">
                     {contactName}
                   </Link>
                   {(person.title || person.companyName) && (
@@ -220,7 +217,7 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
                       {person.title && person.companyName && " at "}
                       {person.companyName &&
                         (person.companyId ? (
-                          <Link href={`/crm/companies/${person.companyId}`} className="underline underline-offset-4 hover:text-foreground">
+                          <Link href={`/crm/companies/${person.companyId}`} className="underline underline-offset-4 hover:text-foreground rounded-sm focus-ring">
                             {person.companyName}
                           </Link>
                         ) : (
@@ -233,7 +230,7 @@ async function Deal({ params, searchParams }: { params: PageProps<"/crm/deals/[i
                 <ReachIcons reach={reach} contact={leadContactPoints(person)} person={contactName} />
                 {conversation && (
                   <div>
-                    <Link href={`/inbox/${conversation.conversationId}`} className={buttonVariants({ variant: "outline", size: "sm", className: "max-sm:h-11" })}>
+                    <Link href={`/inbox/${conversation.conversationId}`} className={buttonVariants({ variant: "outline", size: "sm", touch: true })}>
                       Open conversation
                     </Link>
                   </div>

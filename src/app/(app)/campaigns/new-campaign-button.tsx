@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
+import { ChoiceCard } from "@/components/shell/choice-card";
+import { Field, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { RadioGroup } from "@/components/ui/radio-group";
 import { callApi } from "@/app/_lib/api-client";
 import { SenderPicker, type SenderOption } from "./sender-picker";
 
@@ -31,15 +31,10 @@ function ChoiceTiles<T extends string>({ name, legend, options, value, onChange 
       <FieldLegend variant="label">{legend}</FieldLegend>
       <RadioGroup value={value} onValueChange={(next) => onChange(next as T)} className="grid-cols-2">
         {options.map(([option, label, hint]) => (
-          <FieldLabel key={option} htmlFor={`${name}-${option}`}>
-            <Field orientation="horizontal">
-              <RadioGroupItem value={option} id={`${name}-${option}`} />
-              <FieldContent>
-                <FieldTitle>{label}</FieldTitle>
-                <FieldDescription className="text-xs">{hint}</FieldDescription>
-              </FieldContent>
-            </Field>
-          </FieldLabel>
+          <ChoiceCard key={option} id={`${name}-${option}`} value={option} className="items-start">
+            <span className="block font-medium">{label}</span>
+            <span className="block text-xs text-muted-foreground">{hint}</span>
+          </ChoiceCard>
         ))}
       </RadioGroup>
     </FieldSet>
@@ -102,14 +97,11 @@ export function NewCampaignButton({ senders }: { senders: { email: SenderOption[
           }}
         />
         {channel === "linkedin" && <ChoiceTiles name="campaign-type" legend="Campaign type" options={TYPES} value={type} onChange={setType} />}
-        <div className="stack-field">
-          <Label htmlFor="campaign-name">Name</Label>
+        <Field>
+          <FieldLabel htmlFor="campaign-name">Name</FieldLabel>
           <Input id="campaign-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Q4 outreach to CTOs" maxLength={120} autoFocus />
-        </div>
-        <div className="stack-field">
-          <span className="text-sm font-medium">Send from</span>
-          <SenderPicker options={senders[channel]} value={senderIds} onChange={setSenderIds} noun={channel === "linkedin" ? "LinkedIn account" : "mailbox"} />
-        </div>
+        </Field>
+        <SenderPicker options={senders[channel]} value={senderIds} onChange={setSenderIds} noun={channel === "linkedin" ? "LinkedIn account" : "mailbox"} legend />
       </ConfirmDialog>
     </>
   );

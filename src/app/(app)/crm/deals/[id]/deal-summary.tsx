@@ -3,7 +3,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES, formatMinor } from "@/contexts/deals/domain/money";
 import { cn } from "@/components/ui/utils";
@@ -104,13 +104,13 @@ function AmountEditor({ deal, save, close }: EditorProps & { deal: SummaryDeal; 
 
   return (
     <InlineForm label={null} onSubmit={onSubmit} onCancel={() => close(false)} busy={pending} error={error} errorId={`${base}-error`}>
-      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
-        <div className="stack-field">
-          <Label htmlFor={`${base}-amount`}>Amount</Label>
-          <Input id={`${base}-amount`} autoFocus inputMode="decimal" value={amount} maxLength={30} placeholder="12000" className="tabular-nums max-sm:h-11" onChange={(e) => setAmount(e.target.value)} />
-        </div>
-        <div className="stack-field">
-          <Label htmlFor={`${base}-currency`}>Currency</Label>
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-group">
+        <Field>
+          <FieldLabel htmlFor={`${base}-amount`}>Amount</FieldLabel>
+          <Input id={`${base}-amount`} autoFocus inputMode="decimal" value={amount} maxLength={30} placeholder="12000" touch className="tabular-nums" onChange={(e) => setAmount(e.target.value)} />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor={`${base}-currency`}>Currency</FieldLabel>
           <Select items={CURRENCY_ITEMS} value={currency} onValueChange={(v) => v && setCurrency(v)}>
             <SelectTrigger id={`${base}-currency`} className="w-full max-sm:data-[size=default]:h-11">
               <SelectValue />
@@ -123,7 +123,7 @@ function AmountEditor({ deal, save, close }: EditorProps & { deal: SummaryDeal; 
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       </div>
       <p className="text-xs text-muted-foreground">Empty clears the amount.</p>
     </InlineForm>
@@ -149,8 +149,8 @@ function OwnerEditor({ value, items, save, close }: EditorProps & { value: strin
 
   return (
     <InlineForm label={null} onSubmit={onSubmit} onCancel={() => close(false)} busy={pending} error={error} errorId={`${base}-error`}>
-      <div className="stack-field">
-        <Label htmlFor={`${base}-owner`}>Deal owner</Label>
+      <Field>
+        <FieldLabel htmlFor={`${base}-owner`}>Deal owner</FieldLabel>
         <Select items={items} value={owner} onValueChange={(v) => v && setOwner(v)}>
           <SelectTrigger id={`${base}-owner`} autoFocus className="w-full max-sm:data-[size=default]:h-11">
             <SelectValue />
@@ -163,7 +163,7 @@ function OwnerEditor({ value, items, save, close }: EditorProps & { value: strin
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </Field>
     </InlineForm>
   );
 }

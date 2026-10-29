@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ChangeEvent, type Ref } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CUSTOM_LABEL_MAX, describeCustomLabels } from "@/contexts/people/domain/custom-fields";
 import { confirmLabel, RESULT_EXAMPLES, summaryChangesAnything, type ImportSummary, type SkipGroup } from "@/contexts/people/domain/import-summary";
 import { cn } from "@/components/ui/utils";
+import { countOf, formatCount } from "@/shared/format-number";
 import { TARGETS, TARGET_GROUPS, customLabelOf, describeCustom, mappingError, selectValue, type Mapping } from "./mapping";
 import { useMediaQuery } from "@/components/hooks/use-media-query";
 
@@ -32,7 +34,6 @@ interface Report {
 
 type Busy = "reading" | "checking" | "importing" | null;
 
-const count = (n: number) => n.toLocaleString("en-US");
 const NETWORK_ERROR = "MiaSDR could not be reached. Check your connection and try again.";
 
 const SKIP_LABELS: Record<SkipGroup["kind"], string> = {
@@ -168,22 +169,22 @@ export function ImportWizard() {
 
   const blocking = preview ? mappingError(preview.headers, mapping) : null;
   const customInfo = preview ? describeCustom(preview.headers, mapping) : new Map<string, ReturnType<typeof describeCustomLabels>[number]>();
-  const touch = wide ? "" : "h-11";
-  const buttonClass = "max-sm:h-11 max-sm:flex-1";
+  // On a phone the step buttons share the row, each 44px tall.
+  const buttonClass = "max-sm:flex-1";
 
   return (
     <div className="stack-section max-w-4xl">
       {step === 1 && (
         <section className="stack-group">
           <div className="stack-field">
-            <h2 className="text-base font-semibold">1. Choose a file</h2>
+            <h2 className="heading-block">1. Choose a file</h2>
             <p className="text-sm text-muted-foreground">
               Use a CSV or Excel (.xlsx) file with column names in the first row. Each lead needs an email or a LinkedIn profile. The limit is 5 MB and 10,000 rows. CSV files can separate values with commas, semicolons or tabs. MiaSDR reads the first sheet of an Excel file and refuses files with macros.
             </p>
           </div>
           <div className="stack-group">
             <div>
-              <a href="/api/leads/import/sample" download className={cn(buttonVariants({ variant: "outline" }), "max-sm:h-11")}>
+              <a href="/api/leads/import/sample" download className={buttonVariants({ variant: "outline", touch: true })}>
                 Download sample CSV
               </a>
             </div>
@@ -194,7 +195,8 @@ export function ImportWizard() {
               accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={onFile}
               disabled={busy !== null}
-              className={cn("max-sm:h-11 max-sm:file:h-8")}
+              touch
+              className="max-sm:file:h-8"
             />
             {busy === "reading" && (
               <p role="status" className="text-sm text-muted-foreground">
@@ -204,7 +206,7 @@ export function ImportWizard() {
             {preview && file && (
               <p className="text-sm">
                 <span className="font-medium break-all">{file.name}</span>
-                <span className="text-muted-foreground">: {count(preview.totalRows)} {preview.totalRows === 1 ? "row" : "rows"}, {count(preview.headers.length)} {preview.headers.length === 1 ? "column" : "columns"}.</span>
+                <span className="text-muted-foreground">: {countOf(preview.totalRows, "row")}, {countOf(preview.headers.length, "column")}.</span>
               </p>
             )}
             {error && (
@@ -214,10 +216,10 @@ export function ImportWizard() {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/leads" className={cn(buttonVariants({ variant: "ghost" }), buttonClass)}>
+            <Link href="/leads" className={cn(buttonVariants({ variant: "ghost", touch: true }), buttonClass)}>
               Cancel
             </Link>
-            <Button className={buttonClass} onClick={() => setStep(2)} disabled={!preview || busy !== null}>
+            <Button touch className={buttonClass} onClick={() => setStep(2)} disabled={!preview || busy !== null}>
               Continue
             </Button>
           </div>
@@ -227,13 +229,14 @@ export function ImportWizard() {
       {step === 2 && preview && (
         <section className="stack-group">
           <div className="stack-field">
-            <h2 className="text-base font-semibold">2. Match columns</h2>
+            <h2 className="heading-block">2. Match columns</h2>
             <p className="text-sm text-muted-foreground">
-              {count(preview.totalRows)} {preview.totalRows === 1 ? "row" : "rows"} found. Each lead needs an email or a LinkedIn profile. A full name column fills first and last name when the file has none. Columns MiaSDR does not recognize become custom fields you can use in campaigns. Choose &quot;Keep in source data only&quot; to store a column without a field.
+              {countOf(preview.totalRows, "row")} found. Each lead needs an email or a LinkedIn profile. A full name column fills first and last name when the file has none. Columns MiaSDR does not recognize become custom fields you can use in campaigns. Choose &quot;Keep in source data only&quot; to store a column without a field.
             </p>
           </div>
           <div className="stack-group">
             {wide ? (
+              <ScrollableTable>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -259,6 +262,7 @@ export function ImportWizard() {
                   ))}
                 </TableBody>
               </Table>
+              </ScrollableTable>
             ) : (
               <ul className="grid divide-y" aria-label="Columns in your file">
                 {preview.headers.map((header) => (
@@ -267,14 +271,14 @@ export function ImportWizard() {
                     <Examples values={preview.examples[header] ?? []} />
                     <TargetSelect header={header} mapping={mapping} onTarget={setTarget} className="w-full data-[size=default]:h-11" />
                     {customInfo.has(header) && (
-                      <CustomField header={header} label={customLabelOf(mapping[header])} info={customInfo.get(header)!} onLabel={(label) => setLabel(header, label)} className={cn("w-full", touch)} />
+                      <CustomField header={header} label={customLabelOf(mapping[header])} info={customInfo.get(header)!} onLabel={(label) => setLabel(header, label)} className="w-full" />
                     )}
                   </li>
                 ))}
               </ul>
             )}
-            <div className="grid max-w-xs gap-2">
-              <Label htmlFor="country">Country for phone numbers without a country code (optional, overrides the organization default)</Label>
+            <Field className="max-w-xs">
+              <FieldLabel htmlFor="country">Country for phone numbers without a country code (optional, overrides the organization default)</FieldLabel>
               <Input
                 id="country"
                 value={country}
@@ -284,9 +288,9 @@ export function ImportWizard() {
                 }}
                 maxLength={2}
                 placeholder="KR, US, …"
-                className={touch}
+                touch
               />
-            </div>
+            </Field>
             <p className="text-sm text-muted-foreground">MiaSDR matches leads already in your database by email or LinkedIn profile. A value in your file replaces the stored value. An empty cell never erases anything.</p>
             {error && (
               <p role="alert" className="text-sm text-destructive">
@@ -301,18 +305,18 @@ export function ImportWizard() {
             {summary && <SummaryPanel summary={summary} panelRef={summaryRef} />}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className={buttonClass} onClick={() => setStep(1)} disabled={busy !== null}>
+            <Button variant="outline" touch className={buttonClass} onClick={() => setStep(1)} disabled={busy !== null}>
               Back
             </Button>
-            <Link href="/leads" className={cn(buttonVariants({ variant: "ghost" }), buttonClass)}>
+            <Link href="/leads" className={cn(buttonVariants({ variant: "ghost", touch: true }), buttonClass)}>
               Cancel
             </Link>
             {summary ? (
-              <Button className={cn(buttonClass, "sm:ml-auto")} onClick={runImport} disabled={busy !== null || Boolean(blocking) || !summaryChangesAnything(summary)}>
+              <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={runImport} disabled={busy !== null || Boolean(blocking) || !summaryChangesAnything(summary)}>
                 {busy === "importing" ? "Importing…" : confirmLabel(summary)}
               </Button>
             ) : (
-              <Button className={cn(buttonClass, "sm:ml-auto")} onClick={review} disabled={busy !== null || Boolean(blocking) || preview.totalRows === 0}>
+              <Button touch className={cn(buttonClass, "sm:ml-auto")} onClick={review} disabled={busy !== null || Boolean(blocking) || preview.totalRows === 0}>
                 {busy === "checking" ? "Checking…" : "Review import"}
               </Button>
             )}
@@ -329,7 +333,7 @@ function Examples({ values }: { values: string[] }) {
   return (
     <ul className="grid gap-0.5 text-sm text-muted-foreground">
       {values.map((value) => (
-        <li key={value} className="truncate" title={value}>
+        <li key={value} className="break-words">
           {value}
         </li>
       ))}
@@ -371,13 +375,13 @@ function SummaryPanel({ summary, panelRef }: { summary: ImportSummary; panelRef:
   ];
   const rows = all.filter((r) => r.always || r.count > 0);
   return (
-    <section ref={panelRef} tabIndex={-1} role="status" aria-labelledby="import-summary-title" className="grid gap-4 rounded-lg bg-muted/50 p-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-      <div className="grid gap-1">
-        <h3 id="import-summary-title" className="text-sm font-semibold">
+    <section ref={panelRef} tabIndex={-1} role="status" aria-labelledby="import-summary-title" className="stack-group border-t pt-group outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+      <div className="stack-field">
+        <h3 id="import-summary-title" className="heading-section">
           Review before importing
         </h3>
         <p className="text-sm text-muted-foreground">
-          {count(summary.totalRows)} {summary.totalRows === 1 ? "row" : "rows"} read. Nothing is saved until you import. Row numbers count data rows, not the header.
+          {countOf(summary.totalRows, "row")} read. Nothing is saved until you import. Row numbers count data rows, not the header.
         </p>
       </div>
       <ul className="grid gap-2 text-sm">
@@ -385,16 +389,16 @@ function SummaryPanel({ summary, panelRef }: { summary: ImportSummary; panelRef:
           <li key={row.label}>
             <div className="flex justify-between gap-6">
               <span className="text-muted-foreground">{row.label}</span>
-              <span className="font-medium tabular-nums">{count(row.count)}</span>
+              <span className="font-medium tabular-nums">{formatCount(row.count)}</span>
             </div>
             {row.examples && row.examples.length > 0 && (
               <ul className="mt-1 grid gap-0.5 text-xs text-muted-foreground">
                 {row.examples.map((example) => (
                   <li key={example.row} className="break-words">
-                    Row {count(example.row)}: {example.reason}
+                    Row {formatCount(example.row)}: {example.reason}
                   </li>
                 ))}
-                {row.count > row.examples.length && <li>{count(row.count - row.examples.length)} more. The result screen lists up to {RESULT_EXAMPLES} rows per kind.</li>}
+                {row.count > row.examples.length && <li>{formatCount(row.count - row.examples.length)} more. The result screen lists up to {RESULT_EXAMPLES} rows per kind.</li>}
               </ul>
             )}
           </li>
@@ -406,7 +410,7 @@ function SummaryPanel({ summary, panelRef }: { summary: ImportSummary; panelRef:
           <ul className="grid gap-0.5">
             {summary.overwrites.map((column) => (
               <li key={column.header} className="break-words">
-                {column.header}: {count(column.leads)} {column.leads === 1 ? "lead" : "leads"}
+                {column.header}: {countOf(column.leads, "lead")}
               </li>
             ))}
           </ul>
@@ -423,7 +427,7 @@ function SummaryPanel({ summary, panelRef }: { summary: ImportSummary; panelRef:
 function CustomField({ header, label, info, onLabel, className }: { header: string; label: string; info: { key: string | null; mergeField: string | null; problem: string | null }; onLabel: (label: string) => void; className: string }) {
   return (
     <div className="mt-2 grid gap-1">
-      <Input aria-label={`Field name for ${header}`} value={label} onChange={(e) => onLabel(e.target.value)} className={className} />
+      <Input aria-label={`Field name for ${header}`} value={label} onChange={(e) => onLabel(e.target.value)} touch className={className} />
       <p className="text-xs text-muted-foreground">
         {info.mergeField ? (
           <>
@@ -468,15 +472,15 @@ function Result({ report, onReset }: { report: Report; onReset: () => void }) {
     <div className="max-w-3xl">
       <section className="stack-group pb-section">
         <div ref={doneRef} tabIndex={-1} role="status" className="stack-field outline-none">
-          <h2 className="text-base font-semibold">Import finished</h2>
-          <p className="text-sm text-muted-foreground">{s.totalRows.toLocaleString("en-US")} rows read.</p>
+          <h2 className="heading-block">Import finished</h2>
+          <p className="text-sm text-muted-foreground">{countOf(s.totalRows, "row")} read.</p>
         </div>
         <div>
           <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-sm">
             {rows.map(([label, value]) => (
               <div key={label} className="contents">
                 <dt className="text-muted-foreground">{label}</dt>
-                <dd className="text-right font-medium tabular-nums">{value.toLocaleString("en-US")}</dd>
+                <dd className="text-right font-medium tabular-nums">{formatCount(value)}</dd>
               </div>
             ))}
           </dl>
@@ -484,7 +488,7 @@ function Result({ report, onReset }: { report: Report; onReset: () => void }) {
         <div className="flex flex-wrap gap-2">
           {addable > 0 && report.runId && (
             <Link href={`/leads?source=${encodeURIComponent(`import:${report.runId}`)}`} className={cn(buttonVariants())}>
-              Add these {addable.toLocaleString("en-US")} to a campaign
+              Add these {formatCount(addable)} to a campaign
             </Link>
           )}
           <Link href="/leads" className={cn(buttonVariants({ variant: addable > 0 && report.runId ? "outline" : "default" }))}>
@@ -498,7 +502,7 @@ function Result({ report, onReset }: { report: Report; onReset: () => void }) {
       {issues.length > 0 && (
         <section className="stack-group border-t pt-section">
           <div className="stack-field">
-            <h2 className="text-base font-semibold">Rows to check</h2>
+            <h2 className="heading-block">Rows to check</h2>
             <p className="text-sm text-muted-foreground">Up to {RESULT_EXAMPLES} rows per kind. Row numbers count data rows, not the header.</p>
           </div>
           <div>

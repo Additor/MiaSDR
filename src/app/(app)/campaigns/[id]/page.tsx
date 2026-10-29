@@ -7,7 +7,7 @@ import { TriangleAlertIcon } from "lucide-react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
 import { Time } from "@/components/shell/time";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -23,6 +23,7 @@ import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastruct
 import { campaignDeps, emailRulesDeps } from "@/contexts/outreach/infrastructure/composition";
 import { toActor } from "@/app/_lib/api";
 import { NotFoundError } from "@/shared/errors";
+import { countOf } from "@/shared/format-number";
 import { RecordPage } from "@/app/(app)/_components/record/record-header";
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
 import { CampaignControls } from "./_components/campaign-controls";
@@ -47,9 +48,8 @@ export default function CampaignPage({ params, searchParams }: PageProps<"/campa
   return (
     <Suspense
       fallback={
-        <div className="page stack-section">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-96 w-full" />
+        <div className="page">
+          <PageSkeleton shape="record" />
         </div>
       }
     >
@@ -154,9 +154,9 @@ async function Campaign({ params, searchParams }: { params: PageProps<"/campaign
                 title="Follow-ups waiting on an unavailable mailbox"
                 description={
                   <>
-                    {waitingOnUnavailable} lead{waitingOnUnavailable === 1 ? " waits" : "s wait"} for follow-ups on a mailbox that is disabled or failed. After {takeoverAfterHours} hour
-                    {takeoverAfterHours === 1 ? "" : "s"} without it, another mailbox takes over and the thread breaks.{" "}
-                    <Link href="/settings/mailboxes" className="text-foreground underline underline-offset-4">
+                    {countOf(waitingOnUnavailable, "lead waits", "leads wait")} for follow-ups on a mailbox that is disabled or failed. After {countOf(takeoverAfterHours, "hour")} without
+                    it, another mailbox takes over and the thread breaks.{" "}
+                    <Link href="/settings/mailboxes" className="text-foreground underline underline-offset-4 focus-ring">
                       Open mailboxes
                     </Link>
                     .
@@ -208,11 +208,11 @@ async function Campaign({ params, searchParams }: { params: PageProps<"/campaign
                                     <SelectRow id={row.enrollmentId} name={row.personName} disabled={!canRemoveEnrollment(row.status)} />
                                   </TableCell>
                                   <TableCell className="font-medium">
-                                    <Link href={`/leads/${row.personId}`} className="underline-offset-4 hover:underline">
+                                    <Link href={`/leads/${row.personId}`} className="underline-offset-4 focus-ring hover:underline">
                                       {row.personName ?? row.email ?? "Unnamed lead"}
                                     </Link>
                                     {row.inboxConversationId && (
-                                      <Link href={`/inbox/${row.inboxConversationId}`} className="mt-0.5 block text-xs font-normal underline underline-offset-4" data-testid="inbox-thread-link">
+                                      <Link href={`/inbox/${row.inboxConversationId}`} className="mt-0.5 block w-fit text-xs font-normal underline underline-offset-4 focus-ring" data-testid="inbox-thread-link">
                                         Open in Inbox
                                       </Link>
                                     )}

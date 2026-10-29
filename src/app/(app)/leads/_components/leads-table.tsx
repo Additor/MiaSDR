@@ -6,6 +6,7 @@ import { ChevronDownIcon, MoreHorizontalIcon } from "lucide-react";
 import { Fragment, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { BulkBar } from "@/components/shell/bulk-bar";
 import { ListPager } from "@/components/shell/list-pager";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { useBarScrollPadding, useSelection } from "@/components/shell/selection";
@@ -16,12 +17,13 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LEAD_STATE_LABELS } from "@/contexts/outreach/domain/lead-status";
 import type { LeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { isFilterActive, leadFilterParams, lifecycleOf, matchingSelection, selectionExport, type LeadFilter, type LeadSort, type LeadSortKey } from "@/contexts/people/domain/lead-filter";
 import { callApi } from "@/app/_lib/api-client";
-import { cn } from "@/components/ui/utils";
+import { formatCount } from "@/shared/format-number";
 import { CreateDealsBulkDialog } from "@/app/(app)/crm/_components/create-deal-dialog";
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
 import { personHref } from "@/app/(app)/_components/person/person-href";
@@ -128,16 +130,17 @@ export function LeadsTableView(props: {
   const offPage = ids.some((id) => !pageIds.includes(id));
   const matching = matchingSelection(ids.length, total);
   const exporting = selectionExport(ids);
+  const exportCap = `An export covers up to ${formatCount(exporting.ids.length)} leads. Filter the list to export the rest.`;
   const exportSelected = `/api/leads/export?${new URLSearchParams({ ids: exporting.ids.join(",") }).toString()}`;
   const model = bulkActionModel({ selectedCount: ids.length, total, filterActive: filtered, canSelectAll: matching.canSelectAll, lifecycle });
   const menuLabels: Record<BulkMenuItemId, string> = {
     selectAll:
       matching.reach < total
-        ? `Select the first ${matching.reach.toLocaleString("en-US")} of ${total.toLocaleString("en-US")}`
-        : `Select all ${total.toLocaleString("en-US")} ${filtered ? "matching" : listNoun(lifecycle, total)}`,
+        ? `Select the first ${formatCount(matching.reach)} of ${formatCount(total)}`
+        : `Select all ${formatCount(total)} ${filtered ? "matching" : listNoun(lifecycle, total)}`,
     createDeals: "Create deals",
     deleteSelected: "Delete selected",
-    deleteMatching: `Delete all ${total.toLocaleString("en-US")} matching`,
+    deleteMatching: `Delete all ${formatCount(total)} matching`,
   };
   function runMenuItem(id: BulkMenuItemId) {
     if (id === "selectAll") void selectAllMatching();
@@ -235,7 +238,7 @@ export function LeadsTableView(props: {
                       {lead.fullName ?? <span className="text-muted-foreground">Unnamed</span>}
                     </RowLink>
                     {lifecycle === "all" && lead.lifecycle === "contact" && (
-                      <Badge variant="secondary" className="ml-2 text-muted-foreground" data-testid="contact-chip">
+                      <Badge variant="outline" className="ml-2" data-testid="contact-chip">
                         Contact
                       </Badge>
                     )}
@@ -272,9 +275,7 @@ export function LeadsTableView(props: {
                   {shows("company") && (
                     <TableCell>
                       {lead.companyName ?? lead.companyDomain ?? (
-                        <span className="text-muted-foreground" title="Map a company domain column when you import leads to fill this.">
-                          No company
-                        </span>
+                        <span className="text-muted-foreground">No company</span>
                       )}
                     </TableCell>
                   )}
@@ -312,49 +313,39 @@ export function LeadsTableView(props: {
         }
       />
 
-      {/*
-        The selection bar sticks to the bottom of the viewport, in the thumb zone on a phone. It sits after the table, so ticking
-        the first row never moves the rows above it, and its wrapper keeps the height of one row of controls whether or not
-        anything is ticked. The status line is always mounted so a screen reader announces the count as it changes.
-      */}
-      <div ref={bar} className="sticky bottom-0 z-20 min-h-14 pb-[env(safe-area-inset-bottom)]" data-testid="selection-bar">
-        <div className={cn("flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-sm", ids.length > 0 && "border bg-background shadow-md ring-1 ring-foreground/5")}>
-          <div role="status" className="max-md:order-1 max-md:min-h-11 max-md:flex-1 max-md:content-center md:mr-1">
-            {ids.length > 0 && (
-              <>
-                {gathering ? "Selecting all matching leads…" : `${ids.length.toLocaleString("en-US")} selected${offPage ? ", across pages" : ""}.`}
-                {matching.capped && <span className="block text-xs text-muted-foreground">The first {matching.reach.toLocaleString("en-US")} of {total.toLocaleString("en-US")} matching leads. Narrow the filter to reach the rest.</span>}
-              </>
-            )}
-          </div>
-          {gatherError && (
-            <span role="alert" className="basis-full text-destructive max-md:order-7">
-              {gatherError}
-            </span>
-          )}
-          {/* On a phone the count and Clear selection share the first row; the actions take the second. */}
-          <div aria-hidden className="-mb-2 hidden basis-full max-md:order-3 max-md:block" />
-          {model.visible.includes("addToCampaign") && (
-            <div className="flex max-md:order-4 max-md:flex-1 max-md:[&>button]:h-11 max-md:[&>button]:flex-1">{bulkActions}</div>
-          )}
-          {model.visible.includes("export") && (
-            <a
-              href={exportSelected}
-              download
-              title={exporting.capped ? `An export covers up to ${exporting.ids.length} leads. Filter the list to export the rest.` : undefined}
-              className={cn(buttonVariants({ variant: "outline" }), "max-md:order-5 max-md:h-11 max-md:flex-1")}
-            >
-              {exporting.label}
-            </a>
-          )}
-          {model.visible.includes("clear") && (
-            <Button variant="ghost" className="text-muted-foreground max-md:order-2 max-md:h-11" onClick={clear}>
-              Clear selection
-            </Button>
-          )}
-          {model.visible.includes("more") && (
+      {/* The bar sits after the table, so ticking the first row never moves the rows above it. */}
+      <BulkBar
+        barRef={bar}
+        count={ids.length}
+        status={gathering ? "Selecting all matching leads…" : `${formatCount(ids.length)} selected${offPage ? ", across pages" : ""}.`}
+        note={matching.capped ? `The first ${formatCount(matching.reach)} of ${formatCount(total)} matching leads. Narrow the filter to reach the rest.` : undefined}
+        error={gatherError}
+        actions={
+          (model.visible.includes("addToCampaign") || model.visible.includes("export")) && (
+            <>
+              {model.visible.includes("addToCampaign") && bulkActions}
+              {model.visible.includes("export") &&
+                (exporting.capped ? (
+                  <Tooltip>
+                    <TooltipTrigger delay={150} render={<a href={exportSelected} download className={buttonVariants({ variant: "outline" })} />}>
+                      {exporting.label}
+                      <span className="sr-only">, {exportCap}</span>
+                    </TooltipTrigger>
+                    <TooltipContent className="block max-w-72 text-left leading-relaxed">{exportCap}</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <a href={exportSelected} download className={buttonVariants({ variant: "outline" })}>
+                    {exporting.label}
+                  </a>
+                ))}
+            </>
+          )
+        }
+        onClear={model.visible.includes("clear") ? clear : undefined}
+        more={
+          model.visible.includes("more") && (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" className="max-md:order-6 max-md:size-11 md:ml-auto" />}>
+              <DropdownMenuTrigger render={<Button variant="outline" className="max-md:size-11" />}>
                 <MoreHorizontalIcon aria-hidden className="md:hidden" />
                 <span className="max-md:sr-only">More actions</span>
                 <ChevronDownIcon aria-hidden className="max-md:hidden" />
@@ -370,17 +361,17 @@ export function LeadsTableView(props: {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(open) => !open && setPending(null)}
         title={
           pending?.kind === "filter"
-            ? `Delete ${total.toLocaleString("en-US")} matching leads?`
-            : `Delete ${pending?.kind === "selected" ? pending.ids.length.toLocaleString("en-US") : 0} selected ${pending?.kind === "selected" && pending.ids.length === 1 ? "lead" : "leads"}?`
+            ? `Delete ${formatCount(total)} matching leads?`
+            : `Delete ${pending?.kind === "selected" ? formatCount(pending.ids.length) : 0} selected ${pending?.kind === "selected" && pending.ids.length === 1 ? "lead" : "leads"}?`
         }
         description={`${
           pending?.kind === "filter" ? `This deletes every lead that matches the current search and filters (${leadFilterParams({ ...filter, ids: undefined }).toString().replace(/&/g, ", ")}), on all pages. ` : ""
@@ -405,7 +396,7 @@ export function LeadsTableView(props: {
 }
 
 /** The delete confirm names what it deletes: "Delete lead" or "Delete 12 leads". */
-const deleteLabel = (count: number) => (count === 1 ? "Delete lead" : `Delete ${count.toLocaleString("en-US")} leads`);
+const deleteLabel = (count: number) => (count === 1 ? "Delete lead" : `Delete ${formatCount(count)} leads`);
 
 /** The narrow-screen stand-in for the Reach, Status and Last contact columns: one line under the name. */
 function StatusLine({ lead, now }: { lead: LeadListRow; now: string }) {

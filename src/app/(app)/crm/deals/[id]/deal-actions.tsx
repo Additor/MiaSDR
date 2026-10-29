@@ -8,8 +8,8 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { DatePicker } from "@/components/shell/date-picker";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CURRENCIES, formatMinor } from "@/contexts/deals/domain/money";
 import { callApi } from "@/app/_lib/api-client";
@@ -182,17 +182,17 @@ function EditDealDialog({
         onConfirm={save}
       >
         {stale && (
-          <p role="status" className="rounded-lg border p-3 text-sm">
+          <p role="status" className="text-sm">
             {STALE}
           </p>
         )}
-        <div className="grid gap-3">
-          <div className="grid gap-1">
-            <Label htmlFor="edit-deal-title">Title</Label>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="edit-deal-title">Title</FieldLabel>
             <Input id="edit-deal-title" value={values.title} onChange={(e) => set("title", e.target.value)} maxLength={200} />
-          </div>
-          <div className="grid gap-1">
-            <Label htmlFor="edit-deal-owner">Owner</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="edit-deal-owner">Owner</FieldLabel>
             <Select items={ownerItems} value={values.owner} onValueChange={(v) => v && set("owner", v)}>
               <SelectTrigger id="edit-deal-owner" className="w-full">
                 <SelectValue />
@@ -205,14 +205,14 @@ function EditDealDialog({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="grid grid-cols-[1fr_6.5rem] gap-3">
-            <div className="grid gap-1">
-              <Label htmlFor="edit-deal-amount">Amount (optional)</Label>
+          </Field>
+          <div className="grid grid-cols-[1fr_6.5rem] gap-group">
+            <Field>
+              <FieldLabel htmlFor="edit-deal-amount">Amount (optional)</FieldLabel>
               <Input id="edit-deal-amount" inputMode="decimal" value={values.amount} onChange={(e) => set("amount", e.target.value)} maxLength={30} placeholder="12000" className="tabular-nums" />
-            </div>
-            <div className="grid gap-1">
-              <Label htmlFor="edit-deal-currency">Currency</Label>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-deal-currency">Currency</FieldLabel>
               <Select items={CURRENCY_ITEMS} value={values.currency} onValueChange={(v) => v && set("currency", v)}>
                 <SelectTrigger id="edit-deal-currency" className="w-full">
                   <SelectValue />
@@ -225,13 +225,13 @@ function EditDealDialog({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor="edit-deal-close">Expected close (optional)</Label>
+          <Field>
+            <FieldLabel htmlFor="edit-deal-close">Expected close (optional)</FieldLabel>
             <DatePicker id="edit-deal-close" value={values.expectedCloseOn} onChange={(day) => set("expectedCloseOn", day)} clearable className="w-40" />
-          </div>
-        </div>
+          </Field>
+        </FieldGroup>
       </ConfirmDialog>
     </>
   );

@@ -49,9 +49,9 @@ test.describe("contacts list bulk actions", () => {
     for (const person of NAMES) expect(csv).toContain(person.email);
 
     await page.goto(`/crm/contacts?q=nobody-${SUFFIX}`);
-    const off = page.getByRole("button", { name: "Export filtered CSV" });
+    const off = page.getByRole("button", { name: /^Export filtered CSV/ });
     await expect(off).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText("No contacts match, so there is nothing to export.")).toBeVisible();
+    await expect(off).toContainText("No contacts match, so there is nothing to export.");
   });
 
   test("Deal owner names the latest deal's owner, and rows link with the list they came from", async ({ page }) => {

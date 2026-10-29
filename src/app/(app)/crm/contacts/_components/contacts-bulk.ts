@@ -1,4 +1,5 @@
 import { MAX_MATCHING_IDS, matchingSelection } from "@/contexts/people/domain/lead-filter";
+import { countOf, formatCount as count } from "@/shared/format-number";
 
 /*
  * What the Contacts selection bar shows and says. The bar holds at most four controls: Export selected, Mark do not
@@ -15,8 +16,6 @@ export interface DncReport {
   skipped: Array<{ personId: string; reason: "already_marked" | "not_found" | "retryable" }>;
 }
 
-const count = (n: number) => n.toLocaleString("en-US");
-const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
 
 export function contactsBarModel(input: { selectedCount: number; total: number }): { visible: ContactsBarControl[]; selectAll: string | null } {
   if (input.selectedCount === 0) return { visible: [], selectAll: null };
@@ -37,7 +36,7 @@ export function selectedText(selectedCount: number, offPage: boolean): string {
 }
 
 export function bulkDncTitle(n: number): string {
-  return `Mark ${plural(n, "person", "people")} do not contact?`;
+  return `Mark ${countOf(n, "person", "people")} do not contact?`;
 }
 
 export function mergeDncReports(reports: readonly DncReport[]): DncReport {

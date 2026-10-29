@@ -7,6 +7,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { callApi } from "@/app/_lib/api-client";
+import { countOf, formatCount } from "@/shared/format-number";
 import { ENROLL_BATCH_LIMIT, ENROLL_CONFIRM_FROM, enrollNeedsConfirmation } from "@/contexts/outreach/domain/campaign-view";
 import type { CrossCampaignNotices } from "@/contexts/outreach/application/cross-campaign-notices";
 import { CampaignSection } from "./campaign-section";
@@ -31,15 +32,13 @@ interface Result {
   wouldAdd?: number;
 }
 
-const num = (n: number) => n.toLocaleString("en-US");
-
 /** The skipped total and its breakdown, the same wording before and after an add. */
 function skippedSummary(result: Result, linkedin: boolean): { count: number; text: string } {
   const contacts = result.skippedContact ?? 0;
   const count = result.alreadyEnrolled + result.skippedDoNotContact + contacts + (result.skippedSuppressed ?? 0) + (result.skippedNoEmail ?? 0) + (result.skippedNoProfile ?? 0);
   const text = linkedin
-    ? `${num(result.alreadyEnrolled)} already added, ${num(result.skippedDoNotContact)} do not contact, ${num(contacts)} are contacts, ${num(result.skippedNoProfile ?? 0)} without a LinkedIn URL`
-    : `${num(result.alreadyEnrolled)} already added, ${num(result.skippedSuppressed ?? 0)} unsubscribed, ${num(result.skippedDoNotContact)} do not contact, ${num(contacts)} are contacts, ${num(result.skippedNoEmail ?? 0)} without an email`;
+    ? `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedDoNotContact)} do not contact, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoProfile ?? 0)} without a LinkedIn URL`
+    : `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedSuppressed ?? 0)} unsubscribed, ${formatCount(result.skippedDoNotContact)} do not contact, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoEmail ?? 0)} without an email`;
   return { count, text };
 }
 
@@ -118,7 +117,7 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
   return (
     <section id="add-leads-panel" aria-labelledby="add-leads-title" className="stack-group border-y py-section transition-[opacity,translate] duration-(--duration-menu) ease-out starting:opacity-0 motion-safe:starting:-translate-y-1">
       <div className="stack-field">
-        <h3 id="add-leads-title" className="text-sm font-semibold">
+        <h3 id="add-leads-title" className="heading-section">
           Add leads
         </h3>
         <p className="max-w-prose text-sm text-muted-foreground">
@@ -142,11 +141,11 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
         )}
         {result && summary && (
           <p className="text-sm" role="status">
-            Added {num(result.added)} {result.added === 1 ? "lead" : "leads"}.
+            Added {countOf(result.added, "lead")}.
             {summary.count > 0 && (
               <span className="text-muted-foreground">
                 {" "}
-                Skipped {num(summary.count)}: {summary.text}.
+                Skipped {formatCount(summary.count)}: {summary.text}.
               </span>
             )}
           </p>
@@ -156,21 +155,21 @@ export function EnrollPanel({ id, disabled, channel = "email" }: { id: string; d
       <ConfirmDialog
         open={review !== null}
         onOpenChange={(open) => !open && setReview(null)}
-        title={found ? `Add ${num(found.adds)} ${found.adds === 1 ? "lead" : "leads"} to this campaign?` : "Add leads to this campaign?"}
+        title={found ? `Add ${countOf(found.adds, "lead")} to this campaign?` : "Add leads to this campaign?"}
         description={review?.query ? `Leads in your database that match "${review.query}" and can be added.` : "The search is empty, so this adds every lead in your database that can be added."}
-        confirmLabel={found ? `Add ${num(found.adds)} ${found.adds === 1 ? "lead" : "leads"}` : "Add leads"}
+        confirmLabel={found ? `Add ${countOf(found.adds, "lead")}` : "Add leads"}
         pendingLabel="Adding…"
         onConfirm={async () => {
           await enroll(review?.query ?? "");
         }}
       >
         {review && found && (
-          <div className="grid gap-1 text-sm">
+          <div className="stack-field text-sm">
             <p>
-              {num(review.found.requested)} {review.found.requested === 1 ? "lead matches" : "leads match"}.
-              {found.skipped.count > 0 && <span className="text-muted-foreground"> {num(found.skipped.count)} will be skipped: {found.skipped.text}.</span>}
+              {countOf(review.found.requested, "lead matches", "leads match")}.
+              {found.skipped.count > 0 && <span className="text-muted-foreground"> {formatCount(found.skipped.count)} will be skipped: {found.skipped.text}.</span>}
             </p>
-            {found.adds >= ENROLL_BATCH_LIMIT && <p className="text-muted-foreground">One add takes at most {num(ENROLL_BATCH_LIMIT)} leads. Run it again for the rest.</p>}
+            {found.adds >= ENROLL_BATCH_LIMIT && <p className="text-muted-foreground">One add takes at most {formatCount(ENROLL_BATCH_LIMIT)} leads. Run it again for the rest.</p>}
           </div>
         )}
       </ConfirmDialog>

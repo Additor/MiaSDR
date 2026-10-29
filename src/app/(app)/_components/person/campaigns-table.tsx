@@ -1,6 +1,7 @@
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { StatusBadge } from "@/components/shell/status-badge";
 import { Time } from "@/components/shell/time";
+import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { LeadDetail } from "@/contexts/people/application/lead-ports";
 import type { LeadCrossContext } from "@/contexts/outreach/application/cross-campaign-notices";
@@ -34,13 +35,14 @@ export function CampaignsTable({
   }
   return (
     <RecordSection title="Campaigns" count={enrollments.length} level={level} testId="campaigns">
-        {invitedFrom.length > 0 && (
-          <p className="text-sm" data-testid="invited-from">
-            <span className="text-muted-foreground">Already invited from:</span>{" "}
-            {invitedFrom.map((a) => `${a.accountName ?? "a LinkedIn account"}${a.campaignName ? ` (${a.campaignName})` : ""}`).join(", ")}
-            <span className="ml-2 text-xs text-muted-foreground">Those accounts do not invite this person again.</span>
-          </p>
-        )}
+      {invitedFrom.length > 0 && (
+        <p className="text-sm" data-testid="invited-from">
+          <span className="text-muted-foreground">Already invited from:</span>{" "}
+          {invitedFrom.map((a) => `${a.accountName ?? "a LinkedIn account"}${a.campaignName ? ` (${a.campaignName})` : ""}`).join(", ")}
+          <span className="ml-2 text-xs text-muted-foreground">Those accounts do not invite this person again.</span>
+        </p>
+      )}
+      <ScrollableTable>
         <Table>
           <TableHeader>
             <TableRow>
@@ -75,6 +77,7 @@ export function CampaignsTable({
             })}
           </TableBody>
         </Table>
+      </ScrollableTable>
     </RecordSection>
   );
 }

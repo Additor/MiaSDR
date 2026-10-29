@@ -29,6 +29,7 @@ import {
   type ConvertPreview,
 } from "./deal-effects";
 import { chunks } from "@/app/(app)/_components/chunks";
+import { countOf, formatCount } from "@/shared/format-number";
 import { DealFields, useDealStages } from "./deal-fields";
 import { dealHref } from "./deal-href";
 import { dealFieldsReady, dealRequestFields, firstOpenChoice, initialDealFields, type DealFieldValues, type DealMemberOption, type DealStageList } from "./deal-form";
@@ -76,7 +77,7 @@ function Flags({ person }: { person: CreateDealPerson }) {
 /** "Already a contact", with a link to the deal when the server named one and to the contact otherwise. */
 function AlreadyContact({ dealId, personId }: { dealId: string | null; personId: string }) {
   return (
-    <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm">
+    <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
       <span>Already a contact.</span>
       <Link href={dealId ? `/crm/deals/${dealId}` : `/crm/contacts/${personId}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
         {dealId ? "Open deal" : "Open contact"}
@@ -268,7 +269,7 @@ export function CreateDealsBulkDialog({ open, onOpenChange, ids, members, curren
 
   const form = { ...values, stage: values.stage ?? firstOpenChoice(stages) };
   const ready = dealFieldsReady(form, stages, false) && preview !== null && preview.people > 0 && report === null;
-  const count = `${ids.length} ${ids.length === 1 ? "lead" : "leads"}`;
+  const count = countOf(ids.length, "lead");
 
   const second = preview !== null && needsSecondConfirm(preview) ? secondConfirmText(preview.people) : null;
   const confirming = second !== null && step === "confirm" && report === null;
@@ -316,7 +317,7 @@ export function CreateDealsBulkDialog({ open, onOpenChange, ids, members, curren
       description={confirming ? second.question : (previewError ?? (preview ? bulkEffectsText(preview) : "Checking what this changes…"))}
       confirmLabel={confirming ? second.confirm : "Create deals"}
       cancelLabel={report ? "Close" : "Cancel"}
-      pendingLabel={progress.total > 0 ? `Creating… ${progress.done} of ${progress.total}` : "Creating…"}
+      pendingLabel={progress.total > 0 ? `Creating… ${formatCount(progress.done)} of ${formatCount(progress.total)}` : "Creating…"}
       confirmDisabled={!ready}
       className="sm:max-w-md"
       back={confirming ? { label: "Back", onClick: () => setStep("form") } : undefined}

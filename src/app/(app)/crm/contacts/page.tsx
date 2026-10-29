@@ -4,13 +4,14 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
+import { countOf } from "@/shared/format-number";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
 import { SelectionProvider } from "@/components/shell/selection";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ContactSort } from "@/contexts/deals/application/deal-ports";
 import { isUuid, listContacts } from "@/contexts/deals/application/deals";
@@ -19,7 +20,6 @@ import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { leadContactPoints } from "@/contexts/people/domain/lead-activity";
 import { NO_REACH } from "@/contexts/people/domain/reachability";
 import { readReachability } from "@/contexts/people/infrastructure/composition";
-import { cn } from "@/components/ui/utils";
 import { toActor } from "@/app/_lib/api";
 import { AddContactButton } from "../_components/add-contact-dialog";
 import { dealDialogData } from "../_components/deal-dialog-data";
@@ -33,6 +33,7 @@ import { ListPager, pageCountOf, SortHeader } from "@/components/shell/list-page
 import { contactLabel } from "../_components/labels";
 import { ReachIcons } from "@/app/(app)/_components/person/reach-icons";
 import { StateTip } from "@/app/(app)/_components/person/state-tip";
+import { OffAction } from "@/app/(app)/_components/off-action";
 import { ownerText } from "../pipeline/deal-format";
 import { ContactsBulkBar } from "./_components/contacts-bulk-bar";
 import { phoneLineParts } from "./_components/contacts-bulk";
@@ -53,7 +54,7 @@ export default function ContactsPage({ searchParams }: PageProps<"/crm/contacts"
       />
       {/* The selection bar sticks to the bottom edge, so the page ends at the bar with no padding below it. */}
       <div className="page stack-group pb-0">
-        <Suspense fallback={<ContactsSkeleton />}>
+        <Suspense fallback={<PageSkeleton shape="list" />}>
           <Contacts searchParams={searchParams} />
         </Suspense>
       </div>
@@ -66,15 +67,6 @@ async function AddContactAction() {
   await connection();
   const { stages, members, currentUserId } = await dealDialogData(toActor(await requireOrgContext()));
   return <AddContactButton stages={stages} members={members} currentUserId={currentUserId} />;
-}
-
-function ContactsSkeleton() {
-  return (
-    <div className="stack-group" aria-hidden>
-      <Skeleton className="h-9 w-full max-w-md" />
-      <Skeleton className="h-80 w-full" />
-    </div>
-  );
 }
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -160,16 +152,9 @@ async function Contacts({ searchParams }: { searchParams: PageProps<"/crm/contac
           }
           end={
             total === 0 ? (
-              <div className="flex items-center gap-2">
-                <button type="button" aria-disabled="true" aria-describedby="export-reason" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-not-allowed opacity-50 max-sm:h-11")}>
-                  {exportLabel}
-                </button>
-                <span id="export-reason" className="text-xs text-muted-foreground">
-                  {filtered ? "No contacts match, so there is nothing to export." : "Add contacts to export them."}
-                </span>
-              </div>
+              <OffAction reason={filtered ? "No contacts match, so there is nothing to export." : "Add contacts to export them."}>{exportLabel}</OffAction>
             ) : (
-              <a href={`/api/contacts/export${query ? `?${query}` : ""}`} download className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-sm:h-11")}>
+              <a href={`/api/contacts/export${query ? `?${query}` : ""}`} download className={buttonVariants({ variant: "outline", size: "sm", touch: true })}>
                 {exportLabel}
               </a>
             )
@@ -202,7 +187,7 @@ async function Contacts({ searchParams }: { searchParams: PageProps<"/crm/contac
           />
         )
       ) : rows.length === 0 ? (
-        <EmptyState title="This page is empty" description={`The list has ${pageCount} ${pageCount === 1 ? "page" : "pages"}.`} action={{ label: "First page", href: contactsHref(state) }} />
+        <EmptyState title="This page is empty" description={`The list has ${countOf(pageCount, "page")}.`} action={{ label: "First page", href: contactsHref(state) }} />
       ) : (
         // The key resets the selection when the filter changes. Sort and page keep it, so you can tick rows across pages.
         <SelectionProvider key={query}>

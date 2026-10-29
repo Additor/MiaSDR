@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/convert-to-contact";
 import { callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
@@ -325,10 +325,10 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
           <p className="text-xs text-muted-foreground">Add a phone number and custom fields on the contact page.</p>
         </div>
         <div className="stack-group">
-          <div className="flex items-center gap-2">
+          <Field orientation="horizontal">
             <Checkbox id={`${id}-deal`} checked={withDeal} onCheckedChange={(checked) => setWithDeal(checked === true)} />
-            <Label htmlFor={`${id}-deal`}>Also create a deal</Label>
-          </div>
+            <FieldLabel htmlFor={`${id}-deal`}>Also create a deal</FieldLabel>
+          </Field>
           {withDeal && stagesError && (
             <p role="alert" className="text-sm text-destructive">
               {stagesError}
@@ -359,10 +359,10 @@ function TextField({
   autoFocus?: boolean;
 }) {
   return (
-    <div className="stack-field">
-      <Label htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} placeholder={placeholder} inputMode={inputMode} autoComplete="off" autoFocus={autoFocus} className="max-sm:h-11" onChange={(e) => onChange(e.target.value)} />
-    </div>
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input id={id} value={value} placeholder={placeholder} inputMode={inputMode} autoComplete="off" autoFocus={autoFocus} touch onChange={(e) => onChange(e.target.value)} />
+    </Field>
   );
 }
 

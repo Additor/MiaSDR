@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/shell/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getLinkedInSearchBatch } from "@/contexts/outreach/linkedin/application/linkedin-search-batch";
 import { getSearchCapacity } from "@/contexts/outreach/linkedin/application/linkedin-search-capacity";
@@ -21,7 +21,7 @@ export default function SearchBatchPage({ params }: PageProps<"/leads/searches/b
     <Suspense
       fallback={
         <div className="page">
-          <Skeleton className="h-96 w-full" />
+          <PageSkeleton shape="list" />
         </div>
       }
     >

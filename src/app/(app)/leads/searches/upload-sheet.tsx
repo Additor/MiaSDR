@@ -7,8 +7,9 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { countOf, formatCount } from "@/shared/format-number";
 
 export interface UploadSheetConfig {
   accounts: Array<{ id: string; name: string }>;
@@ -58,7 +59,7 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
     setCampaign(NO_CAMPAIGN);
     setAccountIds([]);
     const skipped = [report.rejectedCount && `${report.rejectedCount} refused`, report.duplicatesInFile && `${report.duplicatesInFile} repeated`, report.alreadyQueued && `${report.alreadyQueued} already queued`].filter(Boolean);
-    toast.success(`${report.queued.toLocaleString("en-US")} ${report.queued === 1 ? "search" : "searches"} queued${skipped.length ? `, ${skipped.join(", ")}` : ""}.`);
+    toast.success(`${countOf(report.queued, "search", "searches")} queued${skipped.length ? `, ${skipped.join(", ")}` : ""}.`);
     router.push(`/leads/searches/batches/${report.id}`);
     return true;
   }
@@ -73,39 +74,40 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
 
   return (
     <>
-      <Button variant={variant} className="max-sm:h-11 max-sm:px-4" onClick={() => setOpen(true)}>
+      <Button variant={variant} touch onClick={() => setOpen(true)}>
         Upload sheet
       </Button>
       <ConfirmDialog
         open={open}
         onOpenChange={onOpenChange}
         title="Upload search batch"
-        description={`A CSV or XLSX file of up to ${config.maxRows.toLocaleString("en-US")} rows with a search_url column and an optional company_name column.`}
+        description={`A CSV or XLSX file of up to ${formatCount(config.maxRows)} rows with a search_url column and an optional company_name column.`}
         confirmLabel="Queue searches"
         pendingLabel="Uploading…"
         onConfirm={upload}
       >
-        <form ref={form} onSubmit={(e) => e.preventDefault()} className="stack-group">
+        <form ref={form} onSubmit={(e) => e.preventDefault()}>
+          <FieldGroup>
           <p className="text-sm">
-            <a href="/api/linkedin/search-batches/template" download className="underline underline-offset-4">
+            <a href="/api/linkedin/search-batches/template" download className="rounded-sm underline underline-offset-4 focus-ring">
               Download the template
             </a>
           </p>
-          <div className="stack-field">
-            <Label htmlFor="batch-name">Name</Label>
+          <Field>
+            <FieldLabel htmlFor="batch-name">Name</FieldLabel>
             <Input id="batch-name" name="name" placeholder="Berlin fintech CTOs" required maxLength={120} autoFocus />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="batch-file">File</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="batch-file">File</FieldLabel>
             <Input id="batch-file" name="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="batch-max">Stop each search after</Label>
-            <Input id="batch-max" name="maxResults" type="number" min={1} max={config.maxResultsLimit} defaultValue={config.defaultMaxResults} required />
-            <p className="text-xs text-muted-foreground">People per search, up to {config.maxResultsLimit.toLocaleString("en-US")}.</p>
-          </div>
-          <div className="stack-field">
-            <Label htmlFor="batch-campaign">Add to campaign</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="batch-max">Stop each search after</FieldLabel>
+            <Input id="batch-max" name="maxResults" type="number" min={1} max={config.maxResultsLimit} defaultValue={config.defaultMaxResults} required aria-describedby="batch-max-help" />
+            <FieldDescription id="batch-max-help">People per search, up to {formatCount(config.maxResultsLimit)}.</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="batch-campaign">Add to campaign</FieldLabel>
             <Select items={items} value={campaign} onValueChange={(v) => v && setCampaign(v)}>
               <SelectTrigger id="batch-campaign" className="w-full">
                 <SelectValue />
@@ -118,18 +120,22 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
           {config.accounts.length > 1 && (
-            <fieldset className="grid gap-1">
-              <legend className="mb-1 text-sm font-medium">LinkedIn accounts</legend>
-              {config.accounts.map((a) => (
-                <label key={a.id} className="flex min-h-8 items-center gap-2 text-sm max-sm:min-h-11">
-                  <Checkbox checked={accountIds.includes(a.id)} onCheckedChange={(on) => setAccountIds((cur) => (on === true ? [...cur, a.id] : cur.filter((id) => id !== a.id)))} />
-                  {a.name}
-                </label>
-              ))}
-              <p className="text-xs text-muted-foreground">Leave all unchecked to let any connected account search.</p>
-            </fieldset>
+            <FieldSet>
+              <FieldLegend variant="label">LinkedIn accounts</FieldLegend>
+              <FieldDescription>Leave all unchecked to let any connected account search.</FieldDescription>
+              <FieldGroup className="gap-0">
+                {config.accounts.map((a) => (
+                  <Field key={a.id} orientation="horizontal" className="min-h-8 max-sm:min-h-11">
+                    <Checkbox id={`batch-account-${a.id}`} checked={accountIds.includes(a.id)} onCheckedChange={(on) => setAccountIds((cur) => (on === true ? [...cur, a.id] : cur.filter((id) => id !== a.id)))} />
+                    <FieldLabel htmlFor={`batch-account-${a.id}`} className="font-normal">
+                      {a.name}
+                    </FieldLabel>
+                  </Field>
+                ))}
+              </FieldGroup>
+            </FieldSet>
           )}
           {error && (
             <div role="alert" className="text-sm text-destructive">
@@ -143,6 +149,7 @@ export function UploadSheet({ config, campaigns, variant = "default" }: { config
               )}
             </div>
           )}
+          </FieldGroup>
         </form>
       </ConfirmDialog>
     </>

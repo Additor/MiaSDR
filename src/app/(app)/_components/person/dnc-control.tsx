@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { callApi } from "@/app/_lib/api-client";
 
 interface DncResult {
@@ -92,7 +92,7 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
     <div className="grid gap-2">
       {doNotContact && !open ? (
         <div>
-          <Button variant="outline" size="sm" className="max-sm:h-11" onClick={() => setOpen(true)}>
+          <Button variant="outline" size="sm" touch onClick={() => setOpen(true)}>
             Clear do not contact
           </Button>
         </div>
@@ -100,25 +100,25 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
         <div className="grid gap-2">
           <p className="text-sm">Campaigns can add this person again.</p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={pending} className="max-sm:h-11" onClick={() => void submit(false)}>
+            <Button size="sm" disabled={pending} touch onClick={() => void submit(false)}>
               Confirm clear
             </Button>
-            <Button size="sm" variant="ghost" disabled={pending} className="max-sm:h-11" onClick={() => setOpen(false)}>
+            <Button size="sm" variant="ghost" disabled={pending} touch onClick={() => setOpen(false)}>
               Keep do not contact
             </Button>
           </div>
         </div>
       ) : !open ? (
         <div>
-          <Button variant="outline" size="sm" className="max-sm:h-11" onClick={() => setOpen(true)}>
+          <Button variant="outline" size="sm" touch onClick={() => setOpen(true)}>
             Mark do not contact
           </Button>
         </div>
       ) : (
         <form onSubmit={onSubmit} className="grid gap-2" noValidate>
           <p className="text-sm">{DNC_CONSEQUENCE}</p>
-          <div className="stack-field">
-            <Label htmlFor={fieldId}>Reason</Label>
+          <Field>
+            <FieldLabel htmlFor={fieldId}>Reason</FieldLabel>
             <Input
               id={fieldId}
               ref={reasonRef}
@@ -132,11 +132,11 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
               placeholder="Asked to stop, competitor, wrong person"
               aria-invalid={error === DNC_REASON_REQUIRED ? true : undefined}
               aria-describedby={error ? `${fieldId}-error` : undefined}
-              className="max-sm:h-11"
+              touch
             />
-          </div>
+          </Field>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" variant="destructive" disabled={pending} className="max-sm:h-11">
+            <Button type="submit" size="sm" variant="destructive" disabled={pending} touch>
               Confirm do not contact
             </Button>
             <Button
@@ -144,7 +144,7 @@ export function DncControl({ personId, doNotContact }: { personId: string; doNot
               size="sm"
               variant="ghost"
               disabled={pending}
-              className="max-sm:h-11"
+              touch
               onClick={() => {
                 setOpen(false);
                 setReason("");

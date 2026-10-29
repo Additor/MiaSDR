@@ -1,6 +1,6 @@
 import { ArchiveIcon, CircleCheckIcon, PauseIcon, PencilLineIcon, PlayIcon, type LucideIcon } from "lucide-react";
 import { campaignStatusLabel } from "@/contexts/outreach/domain/campaign-view";
-import { cn } from "@/components/ui/utils";
+import { stateTokenClass } from "@/app/(app)/_components/person/state-token";
 
 const ICONS: Record<string, LucideIcon> = {
   draft: PencilLineIcon,
@@ -20,11 +20,7 @@ export function CampaignStatusToken({ status, archived = false, compact = false,
     <span
       data-testid="campaign-status"
       data-state={archived ? "archived" : status}
-      className={cn(
-        "inline-flex w-fit shrink-0 items-center gap-1.5 rounded-md border bg-background font-medium whitespace-nowrap text-foreground [&>svg]:shrink-0 [&>svg]:text-muted-foreground",
-        compact ? "h-6 px-1.5 text-xs [&>svg]:size-3.5" : "h-7 px-2 text-sm [&>svg]:size-4",
-        className,
-      )}
+      className={stateTokenClass(compact, className)}
     >
       <Icon aria-hidden />
       <span>{archived ? "Archived" : campaignStatusLabel(status)}</span>

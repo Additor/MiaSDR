@@ -3,6 +3,8 @@
 import { memo, useEffect, useMemo, useState, type DragEvent } from "react";
 import { cn } from "@/components/ui/utils";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
+import { Count } from "@/components/shell/section";
+import { countOf, formatCount } from "@/shared/format-number";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Board, BoardCard } from "@/contexts/deals/application/deals";
@@ -78,11 +80,12 @@ const DealCard = memo(function DealCard({ card, stageId, stages, nowMs, from, dr
         <p className="truncate tabular-nums">{facts.join(", ")}</p>
         {card.source && <p className="truncate text-muted-foreground">From {card.source.campaignName}</p>}
         <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground tabular-nums" title="Time in this stage">
+          <span className="text-muted-foreground tabular-nums">
             {daysInStage(card.stageChangedAt, nowMs)}
+            <span className="sr-only"> in this stage</span>
           </span>
           <div className="relative z-10">
-            <MoveDealStageButton deal={{ id: card.id, title: card.title, version: card.version, stageId }} stages={stages} size="xs" className="max-sm:h-11 max-sm:px-4" disabled={moving} />
+            <MoveDealStageButton deal={{ id: card.id, title: card.title, version: card.version, stageId }} stages={stages} size="xs" touch disabled={moving} />
           </div>
         </div>
       </CardContent>
@@ -154,13 +157,18 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
     >
       <header className="grid gap-0.5 px-1">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="truncate text-sm font-semibold">{column.name}</h2>
-          <span className="text-xs text-muted-foreground tabular-nums" aria-label={`${total} deal${total === 1 ? "" : "s"}`}>
-            {total}
-          </span>
+          <h2 className="truncate heading-section">{column.name}</h2>
+          <Count
+            value={
+              <>
+                <span aria-hidden>{formatCount(total)}</span>
+                <span className="sr-only">{countOf(total, "deal")}</span>
+              </>
+            }
+          />
         </div>
         {(totals || (closedWindow && column.kind !== "open")) && (
-          <p className="truncate text-xs text-muted-foreground tabular-nums" title={totals ?? undefined}>
+          <p className="text-xs break-words text-muted-foreground tabular-nums">
             {[closedWindow && column.kind !== "open" ? "Last 30 days" : null, totals].filter(Boolean).join(", ")}
           </p>
         )}
@@ -173,8 +181,8 @@ export function BoardColumn({ column, stages, nowMs, query, closedWindow }: { co
         <DealCard key={card.id} card={card} stageId={column.id ?? ""} stages={stages} nowMs={nowMs} from={from} dragged={dragging?.card.id === card.id} moving={pending} />
       ))}
       {remaining > 0 && cursor && (
-        <Button variant="ghost" size="sm" className="justify-start text-muted-foreground max-sm:h-11" onClick={more} disabled={pending}>
-          {pending ? "Loading…" : `${remaining} more`}
+        <Button variant="ghost" size="sm" touch className="justify-start text-muted-foreground" onClick={more} disabled={pending}>
+          {pending ? "Loading…" : `${formatCount(remaining)} more`}
         </Button>
       )}
       {error && (

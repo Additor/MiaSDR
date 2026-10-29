@@ -6,10 +6,13 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
+import { countOf, formatCount } from "@/shared/format-number";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { personReplyHandling } from "@/contexts/conversations/infrastructure/composition";
 import type { ContactListRow } from "@/contexts/deals/application/deal-ports";
@@ -41,19 +44,9 @@ export default function CompanyPage({ params }: PageProps<"/crm/companies/[id]">
       fallback={
         <>
           <PageHeader title="Company" titleAs="p" back={{ href: "/crm/companies", label: "Companies" }} />
-          <RecordPage>
-            <Skeleton className="h-28 w-full" aria-hidden />
-            <RecordBody
-              asideLabel="Company details"
-              main={
-                <>
-                  <Skeleton className="h-48 w-full" aria-hidden />
-                  <Skeleton className="h-40 w-full" aria-hidden />
-                </>
-              }
-              aside={<Skeleton className="h-56 w-full" aria-hidden />}
-            />
-          </RecordPage>
+          <div className="page">
+            <PageSkeleton shape="record" />
+          </div>
         </>
       }
     >
@@ -110,12 +103,12 @@ async function Company({ params }: { params: PageProps<"/crm/companies/[id]">["p
           name={title}
           subtitle={
             <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <a href={`https://${company.domain}`} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-6 items-center gap-1 break-all text-foreground underline-offset-4 hover:underline max-sm:min-h-11" aria-label={`${company.domain} (opens in a new tab)`}>
+              <a href={`https://${company.domain}`} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-6 items-center gap-1 break-all text-foreground underline-offset-4 hover:underline max-sm:min-h-11 rounded-sm focus-ring" aria-label={`${company.domain} (opens in a new tab)`}>
                 {company.domain}
                 <ExternalLinkIcon aria-hidden className="size-3.5 text-muted-foreground" />
               </a>
               {linkedin && (
-                <a href={linkedin} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-6 items-center gap-1 text-foreground underline-offset-4 hover:underline max-sm:min-h-11" aria-label="LinkedIn page (opens in a new tab)">
+                <a href={linkedin} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-6 items-center gap-1 text-foreground underline-offset-4 hover:underline max-sm:min-h-11 rounded-sm focus-ring" aria-label="LinkedIn page (opens in a new tab)">
                   LinkedIn page
                   <ExternalLinkIcon aria-hidden className="size-3.5 text-muted-foreground" />
                 </a>
@@ -127,8 +120,8 @@ async function Company({ params }: { params: PageProps<"/crm/companies/[id]">["p
               label="Company summary"
               testId="company-summary"
               items={[
-                <span key="contacts">{`${summary.contacts} ${summary.contacts === 1 ? "contact" : "contacts"}`}</span>,
-                <span key="deals">{`${openDeals} open ${openDeals === 1 ? "deal" : "deals"}`}</span>,
+                <span key="contacts">{countOf(summary.contacts, "contact")}</span>,
+                <span key="deals">{countOf(openDeals, "open deal")}</span>,
                 openAmount && (
                   <span key="amount" className="text-foreground tabular-nums">
                     {`${openAmount} open`}
@@ -170,13 +163,14 @@ async function Company({ params }: { params: PageProps<"/crm/companies/[id]">["p
                     action={
                       <div className="flex flex-wrap gap-2 max-sm:[&_a]:h-11 max-sm:[&_button]:h-11">
                         {addContact({ variant: "outline" })}
-                        <Link href={`/leads?q=${encodeURIComponent(company.domain)}`} className={buttonVariants({ variant: "outline" })}>
+                        <Link href={`/leads?q=${encodeURIComponent(company.domain)}`} className={buttonVariants({ variant: "outline", touch: true })}>
                           Find its leads
                         </Link>
                       </div>
                     }
                   />
                 ) : (
+                  <ScrollableTable>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -199,10 +193,11 @@ async function Company({ params }: { params: PageProps<"/crm/companies/[id]">["p
                       ))}
                     </TableBody>
                   </Table>
+                  </ScrollableTable>
                 )}
               </RecordSection>
 
-              <RecordSection title="Deals" count={deals.length === 0 ? undefined : `${openDeals} open of ${deals.length}`} testId="company-deals">
+              <RecordSection title="Deals" count={deals.length === 0 ? undefined : `${formatCount(openDeals)} open of ${formatCount(deals.length)}`} testId="company-deals">
                 {deals.length === 0 ? (
                   <EmptyState
                     className="py-2"
@@ -215,7 +210,7 @@ async function Company({ params }: { params: PageProps<"/crm/companies/[id]">["p
               </RecordSection>
 
               {contacts.length > 0 && (
-                <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+                <Suspense fallback={<Skeleton className="h-40 w-full" aria-hidden />}>
                   <CompanyActivity actor={actor} contacts={contacts.map((c) => ({ id: c.id, name: c.name ?? c.email ?? "Contact" }))} />
                 </Suspense>
               )}

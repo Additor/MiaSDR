@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { callApi } from "@/app/_lib/api-client";
 import { DNC_CONSEQUENCE, DNC_REASON_REQUIRED } from "@/app/(app)/_components/person/dnc-control";
 import { chunks } from "@/app/(app)/_components/chunks";
+import { formatCount } from "@/shared/format-number";
 import { bulkDncTitle, DNC_CHUNK, dncReportText, mergeDncReports, type DncReport } from "./contacts-bulk";
 
 const DESCRIPTION = DNC_CONSEQUENCE;
@@ -65,7 +66,7 @@ export function BulkDncDialog({ open, ids, onClose }: { open: boolean; ids: read
       description={DESCRIPTION}
       confirmLabel="Mark do not contact"
       cancelLabel={report ? "Close" : "Keep contacting"}
-      pendingLabel={progress.total > DNC_CHUNK ? `Marking… ${progress.done} of ${progress.total}` : "Marking…"}
+      pendingLabel={progress.total > DNC_CHUNK ? `Marking… ${formatCount(progress.done)} of ${formatCount(progress.total)}` : "Marking…"}
       destructive
       confirmDisabled={report !== null}
       className="sm:max-w-md"
@@ -77,33 +78,30 @@ export function BulkDncDialog({ open, ids, onClose }: { open: boolean; ids: read
         </p>
       ) : (
         <form
-          className="stack-field"
           noValidate
           onSubmit={(event) => {
             // Enter in the field does not submit: the footer's button does, so the dialog keeps its pending state.
             event.preventDefault();
           }}
         >
-          <Label htmlFor="bulk-dnc-reason">Reason</Label>
-          <Input
-            id="bulk-dnc-reason"
-            autoFocus
-            value={reason}
-            maxLength={500}
-            placeholder="Asked to stop, competitor, wrong person"
-            aria-invalid={fieldError || undefined}
-            aria-describedby={fieldError ? "bulk-dnc-reason-error" : undefined}
-            className="max-sm:h-11"
-            onChange={(event) => {
-              setReason(event.target.value);
-              setFieldError(false);
-            }}
-          />
-          {fieldError && (
-            <p id="bulk-dnc-reason-error" role="alert" className="text-sm text-destructive">
-              {DNC_REASON_REQUIRED}
-            </p>
-          )}
+          <Field data-invalid={fieldError || undefined}>
+            <FieldLabel htmlFor="bulk-dnc-reason">Reason</FieldLabel>
+            <Input
+              id="bulk-dnc-reason"
+              autoFocus
+              value={reason}
+              maxLength={500}
+              placeholder="Asked to stop, competitor, wrong person"
+              aria-invalid={fieldError || undefined}
+              aria-describedby={fieldError ? "bulk-dnc-reason-error" : undefined}
+              touch
+              onChange={(event) => {
+                setReason(event.target.value);
+                setFieldError(false);
+              }}
+            />
+            {fieldError && <FieldError id="bulk-dnc-reason-error">{DNC_REASON_REQUIRED}</FieldError>}
+          </Field>
         </form>
       )}
     </ConfirmDialog>

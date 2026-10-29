@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldError, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { callApi } from "@/app/_lib/api-client";
 
@@ -72,10 +72,10 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
 
   const content = (
     <div className="stack-group">
-      <form onSubmit={add} className="grid gap-2" noValidate>
-        <Label htmlFor="note-body" className="sr-only">
+      <form onSubmit={add} className="grid gap-group" noValidate>
+        <FieldLabel htmlFor="note-body" className="sr-only">
           Note
-        </Label>
+        </FieldLabel>
         <Textarea
           id="note-body"
           value={body}
@@ -87,13 +87,9 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
           placeholder="Write a note. Wants a demo with their CTO after the 20th."
           className="min-h-20"
         />
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        <FieldError>{error}</FieldError>
         <div>
-          <Button type="submit" size="sm" variant="outline" disabled={pending} className="max-sm:h-11">
+          <Button type="submit" size="sm" variant="outline" disabled={pending} touch>
             Add note
           </Button>
         </div>
@@ -108,10 +104,10 @@ export function NotesPanel({ notes, currentUserId, isAdmin, ...target }: NotesPa
                   <Input aria-label="Note title" value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} maxLength={200} placeholder="Title (optional)" />
                   <Textarea aria-label="Note text" value={editing.body} onChange={(e) => setEditing({ ...editing, body: e.target.value })} maxLength={10_000} />
                   <div className="flex gap-2">
-                    <Button type="button" size="sm" onClick={save} disabled={editing.body.trim() === ""} className="max-sm:h-11">
+                    <Button type="button" size="sm" onClick={save} disabled={editing.body.trim() === ""} touch>
                       Save
                     </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)} className="max-sm:h-11">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)} touch>
                       Cancel
                     </Button>
                   </div>

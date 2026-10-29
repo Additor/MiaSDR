@@ -4,10 +4,12 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
+import { PageSkeleton } from "@/components/shell/page-skeleton";
+import { countOf } from "@/shared/format-number";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { Time } from "@/components/shell/time";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CompanySort } from "@/contexts/deals/application/deal-ports";
 import { listCompanies } from "@/contexts/deals/application/deals";
@@ -27,14 +29,7 @@ export default function CompaniesPage({ searchParams }: PageProps<"/crm/companie
     <>
       <PageHeader title="Companies" actions={<AddCompanyButton />} />
       <div className="page stack-group">
-        <Suspense
-          fallback={
-            <div className="stack-group" aria-hidden>
-              <Skeleton className="h-9 w-full max-w-md" />
-              <Skeleton className="h-80 w-full" />
-            </div>
-          }
-        >
+        <Suspense fallback={<PageSkeleton shape="list" />}>
           <Companies searchParams={searchParams} />
         </Suspense>
       </div>
@@ -54,10 +49,8 @@ function companiesHref(state: { q: string; sort: CompanySort; page?: number }): 
   return query ? `/crm/companies?${query}` : "/crm/companies";
 }
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 /** The phone line under a company name: "3 contacts · 1 open deal", then the last activity when there is one. */
-const phoneLine = (contacts: number, openDeals: number) => `${count(contacts, "contact", "contacts")} · ${count(openDeals, "open deal", "open deals")}`;
+const phoneLine = (contacts: number, openDeals: number) => `${countOf(contacts, "contact")} · ${countOf(openDeals, "open deal")}`;
 
 /** A LinkedIn company page, shown only for an http(s) URL. */
 const safeUrl = (url: string | null) => (url && /^https?:\/\//i.test(url) ? url : null);
@@ -96,7 +89,7 @@ async function Companies({ searchParams }: { searchParams: PageProps<"/crm/compa
           />
         )
       ) : rows.length === 0 ? (
-        <EmptyState title="This page is empty" description={`The list has ${pageCount} ${pageCount === 1 ? "page" : "pages"}.`} action={{ label: "First page", href: companiesHref({ q, sort }) }} />
+        <EmptyState title="This page is empty" description={`The list has ${countOf(pageCount, "page")}.`} action={{ label: "First page", href: companiesHref({ q, sort }) }} />
       ) : (
         <ScrollableTable>
           <Table>
@@ -129,16 +122,23 @@ async function Companies({ searchParams }: { searchParams: PageProps<"/crm/compa
                           {name}
                         </RowLink>
                         {linkedin && (
-                          <a
-                            href={linkedin}
-                            target="_blank"
-                            rel="noreferrer noopener"
-                            className="relative z-10 -my-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-ring max-sm:-my-2 max-sm:size-11"
-                            aria-label={`LinkedIn page of ${name} (opens in a new tab)`}
-                            title="LinkedIn page"
-                          >
-                            <ExternalLinkIcon aria-hidden className="size-3.5" />
-                          </a>
+                          <Tooltip>
+                            <TooltipTrigger
+                              delay={150}
+                              render={
+                                <a
+                                  href={linkedin}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="relative z-10 -my-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-ring max-sm:-my-2 max-sm:size-11"
+                                  aria-label={`LinkedIn page of ${name} (opens in a new tab)`}
+                                />
+                              }
+                            >
+                              <ExternalLinkIcon aria-hidden className="size-3.5" />
+                            </TooltipTrigger>
+                            <TooltipContent>LinkedIn page</TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
                       {/* Below md the Domain, Open amount and Last activity columns hide, so the name cell carries them. */}
