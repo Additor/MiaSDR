@@ -37,6 +37,8 @@ export interface ClaimedJob {
   entityId: string;
   attempts: number;
   maxAttempts: number;
+  /** Written by this claim. Every method that ends the claim or writes its result filters on it (`heldBy`). */
+  claimToken: string;
 }
 
 /** What the classification worker needs to build a prompt and judge the answer. */
@@ -232,10 +234,11 @@ export interface ReplyStore {
   suppressSender(input: { organizationId: string; conversationId: string; actorUserId: string }): Promise<{ email: string }>;
 }
 
-/** Durable AI queue and the two job handlers' persistence. */
-export interface AiJobStore {
-  /** Queues a classification job for every record whose latest inbound message has none. */
-  enqueueMissing(now: Date): Promise<number>;
+/**
+ * The AI worker's claim and the methods that end it or write its result. Each one filters on the claim
+ * (`heldBy`), so a worker whose lease ran out changes nothing of the row a later claim holds.
+ */
+export interface AiJobWorkerStore {
   /** Takes one runnable job (queued and due, or running with an expired lease). Exhausted stale jobs are failed first. */
   claim(kind: JobKind, workerId: string, now: Date, leaseMs: number): Promise<ClaimedJob | null>;
   /** Settles the claim only while this worker still holds it: a job reclaimed after its lease ran out belongs to the new claim. */
@@ -245,6 +248,23 @@ export interface AiJobStore {
   retry(job: ClaimedJob, error: string, runAfter: Date): Promise<void>;
   /** Final failure. `failureKind` decides whether the sweep may requeue it (default transient). */
   fail(job: ClaimedJob, error: string, now: Date, failureKind?: FailureKind): Promise<void>;
+  /**
+   * The unknown-sender cap. A reply from a sender the organization never wrote to counts against the daily limit (one place for its classification and draft together)
+   * in the organization's general settings (default 50, day by the organization time zone). A job over the limit is
+   * marked `skipped` with reason `daily_cap` and is not retried. Known senders and later attempts pass. Returns true
+   * when the job was skipped.
+   */
+  skipOverCap(job: ClaimedJob, now: Date): Promise<boolean>;
+  /** Stale, with nothing written, when the job no longer holds its claim. */
+  finishClassification(input: FinishClassification): Promise<{ status: "auto_applied" | "proposed" | "stale" }>;
+  /** The draft job's draft, written as `ReplyStore.insertDraft` writes one. Null, with nothing written, when the job no longer holds its claim. */
+  insertDraft(job: ClaimedJob, draft: NewDraft): Promise<{ id: string; stale: boolean } | null>;
+}
+
+/** The AI queue outside a claim: enqueueing, the failed and skipped lists, requeue, and the job handlers' reads. */
+export interface AiJobQueueStore {
+  /** Queues a classification job for every record whose latest inbound message has none. */
+  enqueueMissing(now: Date): Promise<number>;
 
   /** Failed jobs of one organization, newest first, with the requeue state the jobs page shows. */
   listFailed(organizationId: string, limit: number): Promise<{ total: number; rows: FailedAiJob[] }>;
@@ -260,21 +280,15 @@ export interface AiJobStore {
   organizationsWithSweepable(now: Date): Promise<string[]>;
   /** Sweep requeue: the same transition as `requeueFailed`, limited to jobs that pass backoff, kind and ceiling. */
   requeueSweepable(organizationId: string, now: Date, limit: number): Promise<string[]>;
-
-  /**
-   * The unknown-sender cap. A reply from a sender the organization never wrote to counts against the daily limit (one place for its classification and draft together)
-   * in the organization's general settings (default 50, day by the organization time zone). A job over the limit is
-   * marked `skipped` with reason `daily_cap` and is not retried. Known senders and later attempts pass. Returns true
-   * when the job was skipped.
-   */
-  skipOverCap(job: ClaimedJob, now: Date): Promise<boolean>;
   /** Skipped jobs of one organization, newest first. */
   listSkipped(organizationId: string, limit: number): Promise<{ total: number; rows: SkippedAiJob[] }>;
 
   loadClassifyContext(organizationId: string, messageId: string): Promise<ClassifyContext | null>;
-  finishClassification(input: FinishClassification): Promise<{ status: "auto_applied" | "proposed" | "stale" }>;
   loadDraftContext(organizationId: string, replyTypePickId: string): Promise<(DraftContext & { skip: string | null }) | null>;
 }
+
+/** Durable AI queue and the two job handlers' persistence. */
+export type AiJobStore = AiJobQueueStore & AiJobWorkerStore;
 
 export interface ReplySendRequest {
   mailbox: { emailAddress: string; displayName: string | null; signatureHtml: string | null };

@@ -89,6 +89,7 @@ export async function getLinkedInWebhookBacklog(deps: LinkedInOperationsDeps, ac
 
 export interface ReplaySummary {
   requeued: number;
+  stopped: number;
   claimed: number;
   done: number;
   failed: number;

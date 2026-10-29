@@ -45,7 +45,7 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
   async requeueFailedWebhooks(organizationId, now, limit) {
     const rows = await db.execute(sql`
       update inbound_events ev
-         set attempts = 0, next_attempt_at = ${now.toISOString()}::timestamptz, lease_until = null,
+         set attempts = 0, next_attempt_at = ${now.toISOString()}::timestamptz, lease_until = null, claim_token = null,
              replay_count = ev.replay_count + 1, last_replayed_at = ${now.toISOString()}::timestamptz,
              log = ev.log || ${entry("Replay requested.", now)}::jsonb
        where ev.id in (

@@ -54,7 +54,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
       name: "linkedin.replay-events",
       async run() {
         const report = await replayLinkedInEvents(inbound);
-        return { processed: report.done, more: report.claimed >= 50, detail: { failed: report.failed } };
+        return { processed: report.done, more: report.claimed >= 50, detail: { failed: report.failed, stopped: report.stopped } };
       },
     },
     {

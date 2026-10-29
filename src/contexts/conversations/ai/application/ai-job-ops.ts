@@ -3,7 +3,7 @@ import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/sh
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { REQUEUE_BATCH } from "../domain/ai-job-requeue";
 import type { ReplyAiResolver } from "./ai-ports";
-import type { AiJobStore, FailedAiJob, SkippedAiJob } from "../../application/reply-ports";
+import type { AiJobQueueStore, FailedAiJob, SkippedAiJob } from "../../application/reply-ports";
 
 /** Same shape as the audit sink other contexts use; each composition root passes the `audit_log` writer. */
 export interface AuditPort {
@@ -11,7 +11,7 @@ export interface AuditPort {
 }
 
 export interface AiJobOpsDeps {
-  jobs: AiJobStore;
+  jobs: AiJobQueueStore;
   audit: AuditPort;
   now: () => Date;
 }

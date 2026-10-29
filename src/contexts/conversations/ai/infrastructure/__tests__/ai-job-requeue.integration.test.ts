@@ -5,6 +5,7 @@ import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING } from "../../domain/ai
 import { ForbiddenError, NotFoundError, type Actor } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, type TestOrg } from "@/test-support/db";
+import { randomUUID } from "node:crypto";
 import { replyAiResolverOf } from "@/contexts/conversations/ai/application/ai-ports";
 
 describeDb("failed AI jobs: requeue and sweep", () => {
@@ -16,6 +17,8 @@ describeDb("failed AI jobs: requeue and sweep", () => {
   let store: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
   let audit: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
   let FakeAi: typeof import("../fake-reply-ai").FakeReplyAi;
+  let db: typeof import("@/platform/db/client").db;
+  let restart: typeof import("../../../infrastructure/restart-record-work");
   const orgs: TestOrg[] = [];
   let counter = 0;
   // One clock for every fixture: a tick of one organization also claims, and releases, the jobs of the others.
@@ -36,7 +39,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     const state = { key: opts.withKey ?? true };
     const clock = () => new Date(Date.now() + shared.offsetMs);
     const resolver = replyAiResolverOf(async (o: string) => (o === org && state.key ? ai : null));
-    const deps = { jobs: store, replies: (await import("../../../infrastructure/drizzle-reply-store")).drizzleReplyStore, ai: resolver, now: clock, workerId: "test", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000, audit };
+    const deps = { jobs: store, ai: resolver, now: clock, workerId: "test", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000, audit };
     const [tick] = aiJobsApp.createAiJobs(deps) as [Job];
     const run = () => tick.run({ deadline: Date.now() + 60_000, now: clock });
     const opsDeps = { jobs: store, audit, now: clock };
@@ -86,6 +89,8 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     store = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
     audit = (await import("@/contexts/tenancy/infrastructure/audit")).auditSink;
     FakeAi = (await import("../fake-reply-ai")).FakeReplyAi;
+    db = (await import("@/platform/db/client")).db;
+    restart = await import("../../../infrastructure/restart-record-work");
   });
 
   afterAll(async () => {
@@ -116,22 +121,6 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       const j = await job(b.org);
       expect(j).toMatchObject({ status: "failed", attempts: 3 });
       expect(j.payload).toMatchObject({ failureKind: "shape" });
-    });
-
-    it("a worker whose lease ran out cannot settle the job another worker reclaimed", async () => {
-      const f = await fixture();
-      await receive(f);
-      const j = await job(f.org);
-      const stale = { id: j.id as string, organizationId: f.org, kind: "classification" as const, entityId: j.entity_id as string, attempts: 1, maxAttempts: 3 };
-      // The lease ran out and a second worker holds attempt 2.
-      await sql`update ai_jobs set status = 'running', attempts = 2, locked_at = now(), locked_by = 'worker-b', started_at = now() where id = ${j.id}`;
-      await store.fail(stale, "late failure", new Date());
-      await store.retry(stale, "late retry", new Date());
-      await store.release(stale, new Date());
-      await store.complete(stale, new Date());
-      expect(await job(f.org)).toMatchObject({ status: "running", attempts: 2, locked_by: "worker-b" });
-      expect(await sql`select 1 from reply_type_picks where organization_id = ${f.org}`).toHaveLength(0);
-      expect(await sql`select 1 from events where organization_id = ${f.org} and event_type = 'reply_type_pick.failed'`).toHaveLength(0);
     });
 
     it("leaves a running job with a live lease alone and takes over one whose lease is older than 5 minutes", async () => {
@@ -190,6 +179,209 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       expect(await job(f.org)).toMatchObject({ status: "queued", attempts: 0 });
       expect(f.ai.classifyCalls).toBe(0);
       expect(await auditRows(f.org)).toHaveLength(0);
+    });
+  });
+
+  describe("claim fence", () => {
+    const LEASE = 5 * MINUTE;
+    /** Moments far enough apart that each lease has run out by the next one. */
+    const at = (n: number) => new Date(Date.now() + shared.offsetMs + n * (LEASE + MINUTE));
+
+    /** Claims this job through the store at `now`: it goes first, and other tests' jobs stay where they are. */
+    async function claimAt(id: string, kind: "classification" | "initial_draft", now: Date, worker: string) {
+      await sql`update ai_jobs set priority = 2000000 where id = ${id}`;
+      try {
+        const claimed = await store.claim(kind, worker, now, LEASE);
+        expect(claimed?.id).toBe(id);
+        return claimed as NonNullable<typeof claimed>;
+      } finally {
+        await sql`update ai_jobs set priority = 0 where id = ${id}`;
+      }
+    }
+
+    /** Every way a worker ends or writes its claim, called with a claim it lost. */
+    async function settleAll(stale: Awaited<ReturnType<typeof claimAt>>, now: Date) {
+      await store.fail(stale, "late failure", now);
+      await store.retry(stale, "late retry", now);
+      await store.release(stale, now);
+      await store.complete(stale, now);
+    }
+
+    const row = async (id: string) => (await sql`select status, attempts, locked_by, claim_token, payload from ai_jobs where id = ${id}`)[0];
+
+    /** A classification job of a fresh organization, queued. */
+    async function classificationJob() {
+      const f = await fixture();
+      await receive(f);
+      return { f, id: (await job(f.org)).id as string };
+    }
+
+    /** An initial draft job a person's pick queued, for a record of a fresh organization. */
+    async function draftJob(contextVersion = 1) {
+      const { f } = await classificationJob();
+      const pickId = randomUUID();
+      await db.transaction((tx) => restart.queuePickDraftTx(tx, { organizationId: f.org, replyTypePickId: pickId, contextVersion }));
+      const [j] = await sql`select id from ai_jobs where organization_id = ${f.org} and kind = 'initial_draft' and entity_id = ${pickId}`;
+      return { f, id: j.id as string, pickId };
+    }
+
+    it("writes a fresh token on every claim and clears it when the claim ends", async () => {
+      const { id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      expect(a.claimToken).toMatch(/^[0-9a-f-]{36}$/);
+      expect((await row(id)).claim_token).toBe(a.claimToken);
+      const b = await claimAt(id, "classification", at(2), "worker-b");
+      expect(b.claimToken).not.toBe(a.claimToken);
+      await store.retry(b, "retry", at(2));
+      expect(await row(id)).toMatchObject({ status: "queued", claim_token: null });
+    });
+
+    it("a worker whose lease ran out cannot settle the job another worker reclaimed", async () => {
+      const { f, id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      await claimAt(id, "classification", at(2), "worker-b");
+      await settleAll(a, at(2));
+      expect(await row(id)).toMatchObject({ status: "running", attempts: 2, locked_by: "worker-b" });
+      expect(await sql`select 1 from reply_type_picks where organization_id = ${f.org}`).toHaveLength(0);
+      expect(await sql`select 1 from events where organization_id = ${f.org} and event_type = 'reply_type_pick.failed'`).toHaveLength(0);
+    });
+
+    it("after an admin requeue, the new claim's attempt 1 does not answer to the old worker's attempt 1", async () => {
+      const { f, id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      const b = await claimAt(id, "classification", at(2), "worker-b");
+      await store.fail(b, "gave up", at(2));
+      expect(await store.requeueFailed(f.org, { jobId: id }, at(2), 10)).toEqual([id]);
+      const c = await claimAt(id, "classification", at(3), "worker-c");
+      expect(c.attempts).toBe(a.attempts);
+      await settleAll(a, at(3));
+      expect(await row(id)).toMatchObject({ status: "running", attempts: 1, locked_by: "worker-c", claim_token: c.claimToken });
+    });
+
+    it("after a rerun puts the job back with fresh attempts, the old worker's settle matches nothing", async () => {
+      const { id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      const b = await claimAt(id, "classification", at(2), "worker-b");
+      // A person's pick marked the job while worker b ran it.
+      await sql`update ai_jobs set payload = payload || '{"rerun": true}'::jsonb where id = ${id}`;
+      await store.complete(b, at(2));
+      expect(await row(id)).toMatchObject({ status: "queued", attempts: 0, claim_token: null });
+      const c = await claimAt(id, "classification", at(3), "worker-c");
+      await settleAll(a, at(3));
+      expect(await row(id)).toMatchObject({ status: "running", attempts: 1, locked_by: "worker-c", claim_token: c.claimToken });
+    });
+
+    it("after a person's pick queues the finished draft job again, the old worker cannot settle or write its draft", async () => {
+      const { f, id, pickId } = await draftJob(1);
+      const a = await claimAt(id, "initial_draft", at(1), "worker-a");
+      const b = await claimAt(id, "initial_draft", at(2), "worker-b");
+      await store.complete(b, at(2));
+      const [{ record_id: recordId, context_version: version }] = await sql`select id as record_id, context_version from records where organization_id = ${f.org}`;
+      await db.transaction((tx) => restart.queuePickDraftTx(tx, { organizationId: f.org, replyTypePickId: pickId, contextVersion: 2 }));
+      expect(await row(id)).toMatchObject({ status: "queued", attempts: 0, claim_token: null });
+      const c = await claimAt(id, "initial_draft", at(3), "worker-c");
+      const [conversation] = await sql`select id from conversations where record_id = ${recordId}`;
+      const written = await store.insertDraft(a, {
+        organizationId: f.org,
+        recordId,
+        conversationId: conversation.id,
+        replyForMessageId: null,
+        expectedContextVersion: Number(version),
+        subject: "Re: hello",
+        bodyText: "A late draft.",
+        provider: "fake",
+        model: "fake",
+        request: {},
+        response: {},
+        citations: [],
+      });
+      expect(written).toBeNull();
+      expect(await sql`select 1 from drafts where organization_id = ${f.org}`).toHaveLength(0);
+      await settleAll(a, at(3));
+      expect(await row(id)).toMatchObject({ status: "running", attempts: 1, locked_by: "worker-c", claim_token: c.claimToken });
+    });
+
+    it("after the claim's sweep puts an exhausted rerun job back, the old worker's settle matches nothing", async () => {
+      const { id } = await classificationJob();
+      await sql`update ai_jobs set max_attempts = 1 where id = ${id}`;
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      await sql`update ai_jobs set payload = payload || '{"rerun": true}'::jsonb where id = ${id}`;
+      // The lease ran out on the last attempt: the sweep at the start of the next claim queues the rerun, and the claim takes it.
+      const c = await claimAt(id, "classification", at(2), "worker-c");
+      expect(c.attempts).toBe(a.attempts);
+      await settleAll(a, at(2));
+      expect(await row(id)).toMatchObject({ status: "running", attempts: 1, locked_by: "worker-c", claim_token: c.claimToken });
+    });
+
+    it("a stale worker cannot mark the job another worker reclaimed as skipped by the daily cap", async () => {
+      const { f, id } = await classificationJob();
+      await sql`insert into channel_settings (organization_id, channel, values) values (${f.org}, 'general', ${sql.json({ unknownSenderAiDailyCap: 0 })})`;
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      await claimAt(id, "classification", at(2), "worker-b");
+      expect(await store.skipOverCap(a, at(2))).toBe(false);
+      expect(await row(id)).toMatchObject({ status: "running", attempts: 2, locked_by: "worker-b" });
+    });
+
+    it("a stale worker's classification writes no pick and leaves the record alone", async () => {
+      const { f, id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      await claimAt(id, "classification", at(2), "worker-b");
+      const ctx = await store.loadClassifyContext(f.org, a.entityId);
+      if (!ctx) throw new Error("no classify context");
+      const before = (await sql`select group_key, reply_type_id, workflow_state from records where id = ${ctx.recordId}`)[0];
+      const outcome = await store.finishClassification({
+        job: a,
+        messageId: a.entityId,
+        expectedContextVersion: ctx.contextVersion,
+        proposedReplyTypeKey: ctx.taxonomy[0].key,
+        confidence: 0.99,
+        reason: "late",
+        stopRequested: false,
+        provider: "fake",
+        model: "fake",
+        request: {},
+        response: {},
+      });
+      expect(outcome).toEqual({ status: "stale" });
+      expect(await sql`select 1 from reply_type_picks where organization_id = ${f.org}`).toHaveLength(0);
+      expect((await sql`select group_key, reply_type_id, workflow_state from records where id = ${ctx.recordId}`)[0]).toEqual(before);
+    });
+
+    it("a reclaimed job's failure takes the record before the job row, as a late worker's classification does", async () => {
+      const { id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      const b = await claimAt(id, "classification", at(2), "worker-b");
+      const [{ record_id: recordId }] = await sql`
+        select c.record_id from messages m join conversations c on c.id = m.conversation_id where m.id = ${a.entityId}`;
+      let failing: Promise<void> | undefined;
+      // Worker a's classification, step by step: the record lock, then the job row. Worker b fails in between.
+      await sql.begin(async (tx) => {
+        await tx`select id from records where id = ${recordId} for update`;
+        failing = store.fail(b, "permanent failure", at(2), "permanent");
+        for (let i = 0; i < 100; i++) {
+          const [{ n }] = await tx`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()`;
+          if (n > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        // The failure waits on the record, so the job row is free: before the fix it held the row and this deadlocked.
+        await tx`set local lock_timeout = '2s'`;
+        await tx`select id from ai_jobs where id = ${id} for update`;
+      });
+      await failing;
+      expect(await row(id)).toMatchObject({ status: "failed", payload: expect.objectContaining({ failureKind: "permanent" }) });
+    });
+
+    it("mid-deploy: an old worker claims without a token, and the new worker's late settle with its stale token matches nothing", async () => {
+      const { id } = await classificationJob();
+      const a = await claimAt(id, "classification", at(1), "worker-a");
+      // The claim of the previous release: it raises the attempt and leaves claim_token as it was.
+      await sql`
+        update ai_jobs j
+        set status = 'running', locked_at = ${at(2)}, locked_by = 'old-worker', started_at = ${at(2)}, attempts = j.attempts + 1
+        where j.id = ${id}`;
+      expect((await row(id)).claim_token).toBe(a.claimToken);
+      await settleAll(a, at(2));
+      expect(await row(id)).toMatchObject({ status: "running", attempts: 2, locked_by: "old-worker" });
     });
   });
 

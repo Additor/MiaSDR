@@ -50,7 +50,7 @@ describeDb("Follow-ups after a reply flows", () => {
     const state = { offsetMs: 0 };
     const clock = () => new Date(Date.now() + state.offsetMs);
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
-    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, replies: stores.replies, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
+    const [aiTick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "ai", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
     const seqTickFor = (workerId: string) =>
       (seqJobsApp.createSequenceJobs({ engine: stores.engine, runs: stores.runs, replies: stores.replies, ai: resolver, now: clock, workerId, leaseMs: seqJobsApp.SEQUENCE_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job])[0];
     const seqTick = seqTickFor("w1");
