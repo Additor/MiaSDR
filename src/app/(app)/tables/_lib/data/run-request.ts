@@ -1,3 +1,4 @@
+import { MAX_CREDITS, MAX_DELAY_SECONDS, MAX_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment-config";
 import { DEFAULT_MAX_ROWS, HARD_MAX_ROWS } from "@/contexts/grid/enrichment/domain/enrichment-run-limits";
 import { RUNNER_TYPES_WITH_RUN } from "../view/format";
 import { countOf, formatCount } from "@/shared/format-number";
@@ -83,6 +84,22 @@ export function dollarsToCents(text: string): number | null {
   if (text.trim() === "" || !Number.isFinite(value) || value < 0) return null;
   // Prices can be fractions of a cent, so keep three decimals of a cent and drop float noise.
   return Math.round(value * 100 * 1000) / 1000;
+}
+
+const clampWhole = (text: string, max: number) => Math.max(0, Math.min(max, Math.floor(Number(text) || 0)));
+
+/** A delay in whole seconds from what someone typed, within what the server accepts. */
+export const delaySecondsOf = (text: string) => clampWhole(text, MAX_DELAY_SECONDS);
+
+/** The pacing fields of an enrichment column from what someone typed, within what the server accepts. */
+export function toRunSettingsBody(form: { delay: string; reuseDays: string }): { delaySeconds: number; reuseDays: number } {
+  return { delaySeconds: delaySecondsOf(form.delay), reuseDays: clampWhole(form.reuseDays, MAX_REUSE_DAYS) };
+}
+
+/** A waterfall's credit cap per row from what someone typed, within what the server accepts, or null when empty. */
+export function creditCap(text: string): number | null {
+  if (text.trim() === "") return null;
+  return Math.max(0, Math.min(MAX_CREDITS, Number(text) || 0));
 }
 
 /** A cents amount as a dollar field shows it: 50 as "0.5", 125 as "1.25". */

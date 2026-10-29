@@ -27,6 +27,7 @@ import { SaveRow, useLeaveGuard } from "../settings-form";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 import { hoursDraft, sameHours, toStoredHours, WorkingHoursFields, type StoredHours } from "../working-hours-fields";
 import { DailyCounters } from "./daily-counters";
+import type { ConnectResult } from "@/contexts/outreach/linkedin/application/linkedin-management";
 
 interface Account {
   id: string;
@@ -65,12 +66,6 @@ interface WebhookSetup {
   headerName: string;
   secret: string;
   webhooks: Array<{ name: string; source: string; event: string; requestUrl: string }>;
-}
-
-interface ConnectResult {
-  accounts: number;
-  added: number;
-  webhooks: { status: string; detail: string };
 }
 
 export function LinkedInPanel({ state, canManage, zones }: { state: State | null; canManage: boolean; zones: string[] }) {

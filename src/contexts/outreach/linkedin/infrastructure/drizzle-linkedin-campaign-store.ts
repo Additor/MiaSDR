@@ -18,6 +18,7 @@ import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns, personVariableColumns } from "../../infrastructure/enrollment-variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { doNotContactSql } from "@/contexts/people/infrastructure/reachability";
+import { SEND_COUNTED } from "../../domain/send-status";
 
 const DAY_MS = 86_400_000;
 
@@ -427,7 +428,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
               eq(sends.linkedinAccountId, account.id),
               eq(sends.stepNumber, 1),
               eq(sends.channel, "linkedin"),
-              inArray(sends.status, ["sending", "sent", "unknown"]),
+              inArray(sends.status, SEND_COUNTED),
               sql`${sends.claimedAt} >= ${weekAgo}::timestamptz`,
             ),
           );

@@ -10,6 +10,7 @@ import { LIVE_ENROLLMENT_STATUSES } from "../domain/enrollment-status";
 import { rowsOf, sqlValues } from "@/platform/db/sql-values";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 import type { PersonTimeline } from "../application/inbound-ports";
+import { SEND_PROGRESS } from "../domain/send-status";
 
 const uuidList = (ids: string[]) => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 /** Facts about the people of the named enrollments, read inside the restore transaction. */
@@ -104,7 +105,7 @@ export const createEnrollmentRestoreStore = (timeline: PersonTimeline): Enrollme
           await tx.execute(sql`
             select distinct on (s.enrollment_id) s.enrollment_id as "enrollmentId", s.step_number as step, coalesce(s.sent_at, s.claimed_at) as at
             from sends s
-            where s.organization_id = ${organizationId} and s.enrollment_id in (${uuidList(found.map((e) => e.id))}) and s.status in ('sent', 'unknown')
+            where s.organization_id = ${organizationId} and s.enrollment_id in (${uuidList(found.map((e) => e.id))}) and s.status in ${sqlValues(SEND_PROGRESS)}
             order by s.enrollment_id, s.step_number desc
           `),
         );

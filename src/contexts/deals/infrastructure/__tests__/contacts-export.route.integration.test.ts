@@ -59,7 +59,7 @@ describeDb("contacts export routes", () => {
   it("GET answers 422 as JSON for a bad filter, before any file starts", async () => {
     const result = await callRoute("contacts/export/route.ts", "GET", { query: { owner: "someone" }, as: world.member });
     expect(result.status).toBe(422);
-    expect(result.body).toEqual({ error: "Filter by a member, me or none.", issues: [] });
+    expect(result.body).toEqual({ error: "Filter by a member, me or none.", issues: [], code: "validation" });
   });
 
   it("POST exports the ticked contacts only: leads and other organizations' ids export nothing", async () => {
@@ -74,7 +74,7 @@ describeDb("contacts export routes", () => {
     const many = Array.from({ length: 5001 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
     const tooMany = await callRoute("contacts/export/route.ts", "POST", { json: { ids: many }, as: world.member });
     expect(tooMany.status).toBe(413);
-    expect(tooMany.body).toEqual({ error: "Export up to 5,000 contacts at a time." });
+    expect(tooMany.body).toEqual({ error: "Export up to 5,000 contacts at a time.", code: "payload_too_large" });
     expect((await callRoute("contacts/export/route.ts", "POST", { json: { ids: [] }, as: world.member })).status).toBe(400);
   });
 

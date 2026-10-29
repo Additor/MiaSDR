@@ -4,7 +4,8 @@
  * `sent` or `failed` only through reconciliation or a person's answer, never by a guess.
  * Every UPDATE of `sends.status` in a store filters on `SEND_FROM[target]`, so a late writer changes nothing.
  */
-export type SendStatus = "sending" | "sent" | "failed" | "unknown";
+export const SEND_STATUSES = ["sending", "sent", "failed", "unknown"] as const;
+export type SendStatus = (typeof SEND_STATUSES)[number];
 
 export const SEND_FROM: Record<SendStatus, readonly SendStatus[]> = {
   sending: [],
@@ -28,6 +29,12 @@ export const SEND_FINAL: readonly SendStatus[] = ["sent", "failed"];
 
 /** Sends that reached or may have reached the provider. They count against the daily and weekly limits; a failed one used no quota. */
 export const SEND_COUNTED: readonly SendStatus[] = ["sending", "sent", "unknown"];
+
+/** Sends past the provider call: delivered, with an outcome nobody confirmed, or failed. Daily analytics count these and leave the calls in flight out. */
+export const SEND_OUTCOMES: readonly SendStatus[] = ["sent", "unknown", "failed"];
+
+/** Sends a restored lead counts as progress: delivered, or `unknown` (it may have gone out, so the engine never retries it). A call still in flight may yet fail. */
+export const SEND_PROGRESS: readonly SendStatus[] = ["sent", "unknown"];
 
 export function canMoveSend(from: SendStatus, to: SendStatus): boolean {
   return SEND_FROM[to].includes(from);

@@ -57,7 +57,7 @@ export function TypeLineClient(props: TypeLineProps) {
   const key = decisionKey(decision);
   const view = decisionView(key, settled);
 
-  async function decide(call: () => Promise<{ ok: boolean; error: string | null; details: Record<string, unknown> | null }>, done: string) {
+  async function decide(call: () => Promise<{ ok: boolean; error: string | null; code: string | null }>, done: string) {
     if (busy || !key) return;
     setBusy(true);
     setError(null);
@@ -65,7 +65,7 @@ export function TypeLineClient(props: TypeLineProps) {
     setBusy(false);
     if (!result.ok) {
       // Accepting a held stop request would only change the type: the server sends the person to Stop contacting.
-      if (result.details?.code === "stop_review") return openStopContacting();
+      if (result.code === "stop_review") return openStopContacting();
       return setError(result.error);
     }
     setSettled({ key, text: done });

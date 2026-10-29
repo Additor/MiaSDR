@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { LinkedInEngineDeps, LinkedInInboundDeps, LinkedInInboundStore } from "../../application/linkedin-ports";
 import { FakeLinkedInGateway } from "../fake-linkedin-gateway";
-import { MAX_INVITE_ATTEMPTS } from "../../domain/linkedin";
+import { MAX_SEND_ATTEMPTS } from "../../../domain/send-policy";
 
 
 const ALL_DAY = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), [{ start: "00:00", end: "23:59" }]]));
@@ -286,7 +286,7 @@ describeDb("linkedin engine", () => {
     expect(gateway.messages).toHaveLength(0);
     expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "suppressed", stop_reason: "do_not_contact", next_send_at: null });
     const rows = await sendRows(f.enrollmentIds[0]);
-    expect(rows.find((r) => r.step_number === 2)).toMatchObject({ status: "failed", attempt: 3, error: "do_not_contact" });
+    expect(rows.find((r) => r.step_number === 2)).toMatchObject({ status: "failed", attempt: 0, error: "do_not_contact" });
   });
 
   it("stops the sequence when the lead replies, and a redelivered reply changes nothing", async () => {
@@ -612,10 +612,10 @@ describeDb("linkedin engine", () => {
   // Migration 0004 took the cap out of the sends trigger, so these two tests are what holds it.
   describe("the attempt cap", () => {
     it("is three attempts", () => {
-      expect(MAX_INVITE_ATTEMPTS).toBe(3);
+      expect(MAX_SEND_ATTEMPTS).toBe(3);
     });
 
-    it("asks LinkedIn at most MAX_INVITE_ATTEMPTS times for an invitation, then ends the enrollment failed", async () => {
+    it("asks LinkedIn at most MAX_SEND_ATTEMPTS times for an invitation, then ends the enrollment failed", async () => {
       const f = await fixture();
       const gateway = new FakeLinkedInGateway();
       let calls = 0;
@@ -624,12 +624,12 @@ describeDb("linkedin engine", () => {
         return { refuse: "rejected" };
       };
       expect((await act(gateway, f)).kind).toBe("resolved");
-      for (let attempt = 1; attempt <= MAX_INVITE_ATTEMPTS; attempt++) {
+      for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
         advance(24 * 60);
-        expect(await act(gateway, f)).toEqual({ kind: "failed", retry: attempt < MAX_INVITE_ATTEMPTS });
+        expect(await act(gateway, f)).toEqual({ kind: "failed", retry: attempt < MAX_SEND_ATTEMPTS });
         expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ step_number: 1, status: "failed", attempt, error: "Fake refusal: rejected" });
       }
-      expect(calls).toBe(MAX_INVITE_ATTEMPTS);
+      expect(calls).toBe(MAX_SEND_ATTEMPTS);
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: Fake refusal: rejected", next_send_at: null, current_step: 0 });
 
       // LinkedIn would accept now, and is never asked again.
@@ -641,12 +641,83 @@ describeDb("linkedin engine", () => {
         advance(24 * 60);
         expect((await act(gateway, f)).kind).toBe("idle");
       }
-      expect(calls).toBe(MAX_INVITE_ATTEMPTS);
+      expect(calls).toBe(MAX_SEND_ATTEMPTS);
       expect(await sendRows(f.enrollmentIds[0])).toHaveLength(1);
       expect(gateway.invitations).toHaveLength(0);
     });
 
-    it("asks LinkedIn at most MAX_INVITE_ATTEMPTS times for a follow-up message, then ends the enrollment failed", async () => {
+    it("takes the cap from the enrollment's retry decision, so a cap of four allows four invitation calls", async () => {
+      const f = await fixture();
+      const gateway = new FakeLinkedInGateway();
+      let calls = 0;
+      gateway.inviteBehavior = () => {
+        calls += 1;
+        return { refuse: "rejected" };
+      };
+      const four: typeof store = { ...store, markFailed: (claim, error, now, retry, _max, fatal) => store.markFailed(claim, error, now, retry, 4, fatal) };
+      const run = () => engine.runNextLinkedInAction({ ...deps(gateway), store: four }, f.account);
+      expect((await run()).kind).toBe("resolved");
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        advance(24 * 60);
+        expect((await run()).kind).toBe("failed");
+        expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ step_number: 1, status: "failed", attempt });
+      }
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: Fake refusal: rejected" });
+      advance(24 * 60);
+      expect((await run()).kind).toBe("idle");
+      expect(calls).toBe(4);
+    });
+
+    it("ignores a stale reconciler result that lands on a later attempt of the same invitation", async () => {
+      const f = await fixture();
+      const gateway = new FakeLinkedInGateway();
+      let calls = 0;
+      gateway.inviteBehavior = () => (++calls === 1 ? { refuse: "rejected" } : "timeout-lost");
+      expect((await act(gateway, f)).kind).toBe("resolved");
+      advance(24 * 60);
+      expect((await act(gateway, f)).kind).toBe("failed");
+      advance(24 * 60);
+      expect((await act(gateway, f)).kind).toBe("unknown");
+
+      // Two reconciler passes read attempt 2. The first settles it as not sent; the second stalls.
+      advance(11);
+      const stale = (await store.listUncertain(current, 500)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
+      expect(stale).toMatchObject({ attempt: 2 });
+      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS, "not_found");
+
+      // Attempt 3 is claimed and in flight when the stale results land. Neither changes it.
+      advance(60);
+      const third = await store.claimNext({ accountId: f.account, now: current, random: () => 0, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) });
+      expect(third).toMatchObject({ kind: "invitation", sendId: stale.sendId, attempt: 3 });
+      if (third?.kind !== "invitation") throw new Error("expected an invitation claim");
+      await store.resolveUncertainAsNotSent(stale, current, 0, MAX_SEND_ATTEMPTS, "not_found");
+      await store.resolveUncertainAsSent(stale, { providerMessageId: "stale", accepted: false }, current);
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sending", attempt: 3 });
+
+      // Attempt 3's own failure ends the enrollment at the cap, and no fourth claim follows.
+      await store.markFailed(third, "Fake refusal: rejected", current, 0, MAX_SEND_ATTEMPTS, false);
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed" });
+      advance(24 * 60);
+      expect((await act(gateway, f)).kind).toBe("idle");
+    });
+
+    it("names the interruption when claims that stopped before LinkedIn use up the cap", async () => {
+      const f = await fixture();
+      const gateway = new FakeLinkedInGateway();
+      expect((await act(gateway, f)).kind).toBe("resolved");
+      for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+        advance(24 * 60);
+        // The worker dies after the claim, before it renders the invitation.
+        expect(await store.claimNext({ accountId: f.account, now: current, random: () => 0, defaultWorkingHours: () => ({ timeZone: "UTC", days: ALL_DAY }) })).toMatchObject({ kind: "invitation", attempt });
+        advance(11);
+        expect(await engine.reconcileLinkedInSends(deps(gateway))).toMatchObject({ retryable: 1 });
+        expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt, error: "The send stopped before it reached the provider." });
+      }
+      expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: The send stopped before it reached the provider." });
+      expect(gateway.invitations).toHaveLength(0);
+    });
+
+    it("asks LinkedIn at most MAX_SEND_ATTEMPTS times for a follow-up message, then ends the enrollment failed", async () => {
       const f = await fixture();
       const gateway = new FakeLinkedInGateway();
       await invite(gateway, f);
@@ -657,12 +728,12 @@ describeDb("linkedin engine", () => {
         calls += 1;
         return { refuse: "rejected" };
       };
-      for (let attempt = 1; attempt <= MAX_INVITE_ATTEMPTS; attempt++) {
+      for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
         advance(24 * 60);
-        expect(await act(gateway, f)).toEqual({ kind: "failed", retry: attempt < MAX_INVITE_ATTEMPTS });
+        expect(await act(gateway, f)).toEqual({ kind: "failed", retry: attempt < MAX_SEND_ATTEMPTS });
         expect((await sendRows(f.enrollmentIds[0])).find((r) => r.step_number === 2)).toMatchObject({ status: "failed", attempt, error: "Fake refusal: rejected" });
       }
-      expect(calls).toBe(MAX_INVITE_ATTEMPTS);
+      expect(calls).toBe(MAX_SEND_ATTEMPTS);
       expect(await enrollment(f.enrollmentIds[0])).toMatchObject({ status: "failed", stop_reason: "send_failed: Fake refusal: rejected", next_send_at: null, current_step: 1 });
 
       gateway.messageBehavior = () => {
@@ -673,7 +744,7 @@ describeDb("linkedin engine", () => {
         advance(24 * 60);
         expect((await act(gateway, f)).kind).toBe("idle");
       }
-      expect(calls).toBe(MAX_INVITE_ATTEMPTS);
+      expect(calls).toBe(MAX_SEND_ATTEMPTS);
       expect(gateway.messages).toHaveLength(0);
     });
   });

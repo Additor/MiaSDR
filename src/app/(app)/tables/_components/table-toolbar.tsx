@@ -50,6 +50,7 @@ interface Props {
   /** The Filter and Sort popovers. */
   viewControls: ReactNode;
   onJobsChanged: () => void;
+  onRetryFailed: Progress["onRetry"];
   /** Filters the grid to the rows whose run failed. */
   onShowFailed?: () => void;
 }
@@ -104,7 +105,7 @@ export function TableToolbar(props: Props) {
           {props.total !== props.unfilteredTotal ? ` of ${formatCount(props.unfilteredTotal)}` : ""}
         </span>
       </div>
-      <RunProgress tableId={props.tableId} jobs={props.jobs} activeJobs={props.activeJobs} onChanged={props.onJobsChanged} onShowFailed={props.onShowFailed} />
+      <RunProgress tableId={props.tableId} jobs={props.jobs} activeJobs={props.activeJobs} onChanged={props.onJobsChanged} onRetry={props.onRetryFailed} onShowFailed={props.onShowFailed} />
 
       <div className="ml-auto flex items-center gap-2">
         {/* The grid answers Ctrl or Cmd+Z itself; the buttons are for a mouse, so a phone leaves them out. */}

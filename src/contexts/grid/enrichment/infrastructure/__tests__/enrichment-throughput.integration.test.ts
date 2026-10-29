@@ -22,6 +22,7 @@ describeDb("grid run throughput", () => {
     adapters: typeof import("../enrichment-adapters");
     pstore: typeof import("../enrichment-provider-store");
     rstore: typeof import("../enrichment-run-store");
+    wstore: typeof import("../enrichment-worker-store");
     crypto: typeof import("@/contexts/integrations/infrastructure/credential-crypto");
   };
 
@@ -34,7 +35,7 @@ describeDb("grid run throughput", () => {
       runDeps: { store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters, now: () => new Date(), kick },
       columnDeps: { store: m.rstore.drizzleGridRunStore, providers: m.pstore.drizzleProviderStore, adapters },
       worker: (workerId: string, over: Partial<import("../../application/enrichment-worker").WorkerDeps> = {}) => ({
-        store: m.rstore.drizzleGridRunStore,
+        store: m.wstore.drizzleGridWorkerStore,
         providers: m.pstore.drizzleProviderStore,
         adapters,
         cipher,
@@ -84,6 +85,7 @@ describeDb("grid run throughput", () => {
       adapters: await import("../enrichment-adapters"),
       pstore: await import("../enrichment-provider-store"),
       rstore: await import("../enrichment-run-store"),
+      wstore: await import("../enrichment-worker-store"),
       crypto: await import("@/contexts/integrations/infrastructure/credential-crypto"),
     };
   });
@@ -113,7 +115,7 @@ describeDb("grid run throughput", () => {
     const small = await setupRun(1, 1);
     await m.run.requestRun(small.d.runDeps, small.actor, small.table);
     // The small organization queued later than all 60 cells of the large one.
-    const first = await m.rstore.drizzleGridRunStore.claim(new Date(), 5 * 60_000, 4, "w1");
+    const first = await m.wstore.drizzleGridWorkerStore.claim(new Date(), 5 * 60_000, 4, "w1");
     expect(first).toHaveLength(4);
     expect(first.map((j) => j.organizationId)).toContain(small.org);
     const [{ n }] = await sql`select count(*)::int as n from grid_jobs where status = 'queued' and organization_id = ${big.org}`;
@@ -133,7 +135,7 @@ describeDb("grid run throughput", () => {
 
   it("two concurrent claimers over a queue larger than both limits claim disjoint sets that fill both limits", async () => {
     await manyOrgQueue(10, 10);
-    const store = m.rstore.drizzleGridRunStore;
+    const store = m.wstore.drizzleGridWorkerStore;
     for (let round = 0; round < 5; round++) {
       await sql`update grid_jobs set status = 'queued', locked_at = null, attempts = 0`;
       const [a, b] = await Promise.all([store.claim(new Date(), lease, 8, "w1"), store.claim(new Date(), lease, 8, "w2")]);
@@ -146,7 +148,7 @@ describeDb("grid run throughput", () => {
 
   it("fills the limit when a concurrent claimer holds the top candidates", async () => {
     const made = await manyOrgQueue(10, 10);
-    const store = m.rstore.drizzleGridRunStore;
+    const store = m.wstore.drizzleGridWorkerStore;
     // Hold the row locks of the first job of four organizations, the head of the claim order.
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
@@ -174,7 +176,7 @@ describeDb("grid run throughput", () => {
     const o = await setupRun(2, 0);
     await m.run.requestRun(o.d.runDeps, o.actor, o.table);
     await sql`update grid_jobs set attempts = max_attempts where id = (select id from grid_jobs where table_id = ${o.table} order by created_at limit 1)`;
-    const store = m.rstore.drizzleGridRunStore;
+    const store = m.wstore.drizzleGridWorkerStore;
     const first = await store.claim(new Date(), lease, 8, "w1", { sweepExhausted: false });
     expect(first).toHaveLength(1);
     expect((await jobs(o.table)).failed).toBeUndefined();
@@ -186,7 +188,7 @@ describeDb("grid run throughput", () => {
     const { ORG_MAX_RUNNING_CELLS: cap } = await import("../../domain/enrichment-run-limits");
     const o = await setupRun(30, 0);
     await m.run.requestRun(o.d.runDeps, o.actor, o.table);
-    const store = m.rstore.drizzleGridRunStore;
+    const store = m.wstore.drizzleGridWorkerStore;
     // A trigger slows each claim's update, so a second claimer starts while the first is uncommitted. That is the window the race needs.
     await sql`create or replace function grid_slow_claim() returns trigger language plpgsql as $$ begin if new.status = 'running' and old.status = 'queued' then perform pg_sleep(0.05); end if; return new; end $$`;
     await sql`create trigger grid_slow_claim before update on grid_jobs for each row execute function grid_slow_claim()`;

@@ -10,7 +10,9 @@ import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CUSTOM_LABEL_MAX, describeCustomLabels } from "@/contexts/people/domain/custom-fields";
 import { confirmLabel, RESULT_EXAMPLES, summaryChangesAnything, type ImportSummary, type SkipGroup } from "@/contexts/people/domain/import-summary";
+import type { ImportReport } from "@/contexts/people/application/import-leads";
 import { cn } from "@/components/ui/utils";
+import { callApi, type ApiResult } from "@/app/_lib/api-client";
 import { countOf, formatCount } from "@/shared/format-number";
 import { TARGETS, TARGET_GROUPS, customLabelOf, describeCustom, mappingError, selectValue, type Mapping } from "./mapping";
 import { useMediaQuery } from "@/components/hooks/use-media-query";
@@ -20,21 +22,15 @@ interface Preview {
   totalRows: number;
   /** Up to three distinct non-empty values per column. */
   examples: Record<string, string[]>;
-}
-interface Issue {
-  row: number;
-  reason: string;
-}
-interface Report {
-  /** Names the import. New leads carry `import:<runId>` as their source, which the lead list filters on. */
-  runId?: string;
-  stats: Record<string, number>;
-  issues: { invalid: Issue[]; conflicts: Issue[]; duplicates: Issue[]; warnings: Issue[] };
+  suggestedMapping: Mapping;
 }
 
 type Busy = "reading" | "checking" | "importing" | null;
 
 const NETWORK_ERROR = "MiaSDR could not be reached. Check your connection and try again.";
+
+/** The refusal's sentence, or the network line when no answer came. */
+const failure = (result: ApiResult<unknown>, fallback: string) => (result.status === 0 ? NETWORK_ERROR : (result.error ?? fallback));
 
 const SKIP_LABELS: Record<SkipGroup["kind"], string> = {
   invalid_email: "Skipped, the email is not valid",
@@ -56,7 +52,7 @@ export function ImportWizard() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
-  const [report, setReport] = useState<Report | null>(null);
+  const [report, setReport] = useState<ImportReport | null>(null);
 
   // The summary is the point of the review step, so keyboard and screen reader users land on it.
   useEffect(() => {
@@ -75,21 +71,12 @@ export function ImportWizard() {
     setBusy("reading");
     const body = new FormData();
     body.set("file", chosen);
-    try {
-      const response = await fetch("/api/leads/import/preview", { method: "POST", body });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(data.error ?? "The file could not be read.");
-        return;
-      }
-      setPreview(data);
-      setMapping(data.suggestedMapping);
-      setStep(2);
-    } catch {
-      setError(NETWORK_ERROR);
-    } finally {
-      setBusy(null);
-    }
+    const result = await callApi<Preview>("/api/leads/import/preview", "POST", body);
+    setBusy(null);
+    if (!result.ok || !result.data) return setError(failure(result, "The file could not be read."));
+    setPreview(result.data);
+    setMapping(result.data.suggestedMapping);
+    setStep(2);
   }
 
   /** A change to the mapping or the country makes the last summary wrong, so it goes. */
@@ -118,38 +105,20 @@ export function ImportWizard() {
     if (!file || !preview) return;
     setBusy("checking");
     setError(null);
-    try {
-      const response = await fetch("/api/leads/import/summary", { method: "POST", body: importBody() });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(data.error ?? "The file could not be checked.");
-        return;
-      }
-      setSummary(data);
-    } catch {
-      setError(NETWORK_ERROR);
-    } finally {
-      setBusy(null);
-    }
+    const result = await callApi<ImportSummary>("/api/leads/import/summary", "POST", importBody());
+    setBusy(null);
+    if (!result.ok || !result.data) return setError(failure(result, "The file could not be checked."));
+    setSummary(result.data);
   }
 
   async function runImport() {
     if (!file || !preview) return;
     setBusy("importing");
     setError(null);
-    try {
-      const response = await fetch("/api/leads/import", { method: "POST", body: importBody() });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(data.error ?? "The import failed.");
-        return;
-      }
-      setReport(data);
-    } catch {
-      setError(NETWORK_ERROR);
-    } finally {
-      setBusy(null);
-    }
+    const result = await callApi<ImportReport>("/api/leads/import", "POST", importBody());
+    setBusy(null);
+    if (!result.ok || !result.data) return setError(failure(result, "The import failed."));
+    setReport(result.data);
   }
 
   function reset() {
@@ -365,7 +334,7 @@ function TargetSelect({ header, mapping, onTarget, className }: { header: string
 
 function SummaryPanel({ summary, panelRef }: { summary: ImportSummary; panelRef: Ref<HTMLElement> }) {
   const empty = !summaryChangesAnything(summary);
-  const all: Array<{ label: string; count: number; examples?: Issue[]; always?: boolean }> = [
+  const all: Array<{ label: string; count: number; examples?: ImportReport["issues"]["invalid"]; always?: boolean }> = [
     { label: "New leads", count: summary.created, always: true },
     { label: "Existing leads to update", count: summary.updated, always: true },
     { label: "Already up to date", count: summary.unchanged, always: true },
@@ -446,7 +415,7 @@ function CustomField({ header, label, info, onLabel, className }: { header: stri
   );
 }
 
-function Result({ report, onReset }: { report: Report; onReset: () => void }) {
+function Result({ report, onReset }: { report: ImportReport; onReset: () => void }) {
   const s = report.stats;
   const doneRef = useRef<HTMLDivElement>(null);
   useEffect(() => doneRef.current?.focus(), []);

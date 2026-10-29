@@ -9,7 +9,7 @@ import { claimMethodsWithoutFence, fencedTableWritesWithoutFence, leaseWritesWit
  * `heldBy` (src/platform/db/claim.ts). Three scans hold the rule:
  * (a) a statement that writes a lease status (`running`, `drafting`, `processing`) also writes `claim_token`;
  * (b) a store method that takes a claim (a type with `claimToken`, or one that holds such a type) calls `heldBy`;
- * (c) a statement that updates, deletes or upserts a fenced table (`ai_jobs`, `inbound_events`) calls `heldBy`, or
+ * (c) a statement that updates, deletes or upserts a fenced table (`ai_jobs`, `inbound_events`, `sequence_step_runs`) calls `heldBy`, or
  *     its method sits in FENCE_EXEMPT with the reason it may write without a claim.
  */
 
@@ -21,14 +21,29 @@ const sources = [...sourceFiles(path.join(ROOT, "src/contexts")), ...sourceFiles
  * its settles filter with `heldBy`.
  */
 const NOT_YET_FENCED: Record<string, string> = {
-  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#claimDue": "Sequence step runs (`drafting`).",
-  "src/contexts/grid/enrichment/infrastructure/enrichment-run-store.ts#claim": "Grid enrichment jobs.",
+  "src/contexts/grid/enrichment/infrastructure/enrichment-worker-store.ts#claim": "Grid enrichment jobs.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-search-store.ts#claimPage": "LinkedIn searches.",
   "src/platform/jobs/slots.ts#claimSlot": "Scheduler job runs (`job_runs`).",
 };
 
 /** Methods that update, delete or upsert a fenced table without holding a claim, and why that is right. */
 const FENCE_EXEMPT: Record<string, string> = {
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#claimDue":
+    "The expiry sweep before the claim: it fails steps whose lease ran out on the last attempt and clears their token. A worker still on that attempt finds the step no longer drafting, so its settles change nothing.",
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#takeDueStep":
+    "Takes the claim: it writes the fresh token.",
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts#settleDrafts":
+    "Reconcile: it moves `awaiting_review` steps by the fate of their draft. The link that put them there ended the claim and cleared the token.",
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-store.ts#pause":
+    "A person's pause: it moves the run's open steps back to `scheduled`, a drafting one included, and clears the token. The pause ends the claim, so the worker's late settle changes nothing.",
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-store.ts#resume":
+    "A person's resume: it moves the due time of `scheduled` steps, which no claim holds.",
+  "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-store.ts#skipStep":
+    "A person's skip: it refuses a `drafting` step, so it skips a step no claim holds.",
+  "src/contexts/conversations/after-reply/infrastructure/sequence-run-tx.ts#advanceRunTx":
+    "Schedules the step after a settled one. That step is `scheduled` or `failed`, which no claim holds.",
+  "src/contexts/conversations/after-reply/infrastructure/sequence-stop.ts#endRunCountingTx":
+    "A stop: it cancels the run's open steps, a drafting one included, and clears the token. The stop ends the claim, so the worker's late settle changes nothing.",
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-worker-store.ts#claim":
     "Takes the claim: it writes the fresh token. Its first statement is the expiry sweep, which fails jobs whose lease ran out on the last attempt and clears their token.",
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-store.ts#requeue":
@@ -81,6 +96,9 @@ describe("claim fences", () => {
         "AiJobWorkerStore.insertDraft",
         "LinkedInInboundStore.finish",
         "LinkedInInboundStore.fail",
+        "SequenceEngineStore.release",
+        "SequenceEngineStore.failAttempt",
+        "SequenceEngineStore.linkDraft",
       ]),
     );
   });

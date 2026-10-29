@@ -90,7 +90,7 @@ export function AddCompanyDialog({ open, onOpenChange }: { open: boolean; onOpen
       return true;
     }
     const details = result.details;
-    if (details?.code === "company_exists" && typeof details.companyId === "string") {
+    if (result.code === "company_exists" && typeof details?.companyId === "string") {
       setConflict({
         company: {
           companyId: details.companyId,

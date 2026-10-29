@@ -1,8 +1,7 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { parseSource, walk } from "./source-ast";
+import { disk, resolveSource as resolve, specifiersOf, type SourceReader } from "./source-ast";
 
 /**
  * Route handlers read the session through `withActor`, `withUser` or `withAdmin` (src/app/_lib/api.ts), so they answer 401
@@ -53,49 +52,9 @@ function scannedFiles(): string[] {
   return [...files].sort();
 }
 
-/** The module specifiers a source loads at run time: imports and re-exports that are not type-only, `import()` and `require()`. */
-export function runtimeSpecifiers(file: string, text: string): string[] {
-  const found: string[] = [];
-  walk(parseSource(file, text), (node) => {
-    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      const clause = node.importClause;
-      const named = clause?.namedBindings && ts.isNamedImports(clause.namedBindings) ? clause.namedBindings.elements : null;
-      const typeOnly = clause?.isTypeOnly || (clause && !clause.name && named && named.length > 0 && named.every((e) => e.isTypeOnly));
-      if (!typeOnly) found.push(node.moduleSpecifier.text);
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) && !node.isTypeOnly) {
-      found.push(node.moduleSpecifier.text);
-    } else if (ts.isCallExpression(node) && node.arguments.length > 0 && ts.isStringLiteralLike(node.arguments[0])) {
-      const loads = node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require");
-      if (loads) found.push(node.arguments[0].text);
-    }
-  });
-  return found;
-}
-
-/** How the walk reads files: their text, and whether one exists. A test hands in sample files. */
-export interface SourceReader {
-  read(file: string): string;
-  exists(file: string): boolean;
-}
-
-/** A specifier as a src file (`@/x` or relative), or null for a package or a file that does not exist. */
-function resolve(from: string, specifier: string, reader: SourceReader): string | null {
-  const base = specifier.startsWith("@/") ? `src/${specifier.slice(2)}` : specifier.startsWith(".") ? path.posix.join(path.posix.dirname(from), specifier) : null;
-  if (!base) return null;
-  return [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`].find((candidate) => /\.tsx?$/.test(candidate) && reader.exists(candidate)) ?? null;
-}
-
 /** Better Auth's hashing helpers read no session; every other entry point can. */
 const HARMLESS_BETTER_AUTH = new Set(["better-auth/crypto"]);
 const isBetterAuth = (specifier: string) => (specifier === "better-auth" || specifier.startsWith("better-auth/")) && !HARMLESS_BETTER_AUTH.has(specifier);
-
-const parsed = new WeakMap<SourceReader, Map<string, string[]>>();
-function specifiersOf(file: string, reader: SourceReader): string[] {
-  if (!parsed.has(reader)) parsed.set(reader, new Map());
-  const known = parsed.get(reader)!;
-  if (!known.has(file)) known.set(file, runtimeSpecifiers(file, reader.read(file)));
-  return known.get(file)!;
-}
 
 /** Why a file breaks the rule, or null. Imports are followed through src; the walk stops at the wrappers. */
 export function sessionReach(file: string, reader: SourceReader): string | null {
@@ -117,11 +76,6 @@ export function sessionReach(file: string, reader: SourceReader): string | null 
   }
   return null;
 }
-
-const disk: SourceReader = {
-  read: (file) => readFileSync(path.join(ROOT, file), "utf8"),
-  exists: (file) => existsSync(path.join(ROOT, file)) && statSync(path.join(ROOT, file)).isFile(),
-};
 
 describe("route wrappers", () => {
   it("leaves the session to withActor, withUser or withAdmin everywhere but the listed files", () => {

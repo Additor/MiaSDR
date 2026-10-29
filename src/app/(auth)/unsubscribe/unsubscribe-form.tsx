@@ -3,18 +3,15 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { callApi } from "@/app/_lib/api-client";
 
 export function UnsubscribeForm({ token, email }: { token: string; email: string }) {
   const [state, setState] = useState<"idle" | "pending" | "done" | "error">("idle");
 
   async function confirm() {
     setState("pending");
-    const response = await fetch("/api/outreach/unsubscribe", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    setState(response.ok ? "done" : "error");
+    const result = await callApi("/api/outreach/unsubscribe", "POST", { token });
+    setState(result.ok ? "done" : "error");
   }
 
   if (state === "done") {

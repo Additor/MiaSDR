@@ -1,5 +1,6 @@
 import { hashPassword } from "better-auth/crypto";
 import { NextResponse } from "next/server";
+import { apiError } from "@/app/_lib/api-errors";
 import { ZodError } from "zod";
 import { SetupAlreadyDoneError, setupInstance } from "@/contexts/tenancy/application/setup-instance";
 import { setupDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
@@ -11,13 +12,13 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof SetupAlreadyDoneError) {
-      return NextResponse.json({ error: error.message }, { status: 409 });
+      return apiError(409, error.message, { code: "already_set_up" });
     }
     if (error instanceof ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
+      return apiError(400, error.issues[0]?.message ?? "Invalid input");
     }
     if (error instanceof SyntaxError) {
-      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+      return apiError(400, "Invalid input");
     }
     throw error;
   }

@@ -1,6 +1,7 @@
 import type { DbHandle } from "@/platform/db/client";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import { MAX_CONVERT_PREVIEW_IDS } from "./conversion-terms";
 
 /*
  * Lead to contact, the one transition the people context owns ("Leads and CRM" in docs/decisions.md).
@@ -127,7 +128,7 @@ export interface PreviewDeps {
   previewRunStop(organizationId: string, personIds: readonly string[]): Promise<Map<string, RunStopPreview>>;
 }
 
-export const MAX_CONVERT_PREVIEW_IDS = 500;
+export { MAX_CONVERT_PREVIEW_IDS, PERSONAL_CAMPAIGN_MESSAGE } from "./conversion-terms";
 
 export interface ConvertPreview {
   /** Leads the actor may convert. */
@@ -152,8 +153,6 @@ export function personalCampaignSkip(actor: Pick<Actor, "userId" | "role">, summ
   return !(createdBy.length > 0 && createdBy.every((id) => id === actor.userId));
 }
 
-/** What a refused conversion says when `personalCampaignSkip` holds. Deals answers it as 403, the leads routes as 409 `personal_campaign`. */
-export const PERSONAL_CAMPAIGN_MESSAGE = "A personal campaign of another member is still reaching this person. Its creator or an admin can create the deal.";
 
 /** The effects of converting these leads, said before the click. Counts only what the actor may convert and see. */
 export async function previewConvert(deps: PreviewDeps, actor: Actor, personIds: readonly string[]): Promise<ConvertPreview> {

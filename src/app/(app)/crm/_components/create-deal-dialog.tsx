@@ -152,8 +152,8 @@ export function CreateDealDialog({ open, onOpenChange, mode, person, members, cu
         ? await callApi<{ dealId: string }>(`/api/leads/${person.id}/convert`, "POST", fields)
         : await callApi<{ dealId: string }>("/api/deals", "POST", { ...fields, personId: person.id });
     if (!result.ok || !result.data) {
-      if (result.details?.code === "already_converted") {
-        setAlready({ dealId: typeof result.details.dealId === "string" ? result.details.dealId : null });
+      if (result.code === "already_converted") {
+        setAlready({ dealId: typeof result.details?.dealId === "string" ? result.details.dealId : null });
         return false;
       }
       throw new Error(result.error ?? "Could not create the deal. Try again.");

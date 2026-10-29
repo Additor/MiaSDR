@@ -1,5 +1,7 @@
 import { MAX_MATCHING_IDS, matchingSelection } from "@/contexts/people/domain/lead-filter";
 import { countOf, formatCount as count } from "@/shared/format-number";
+import { MAX_BULK_DNC_IDS } from "@/contexts/conversations/application/dnc-limits";
+import type { BulkDncResult } from "@/contexts/conversations/application/reply-handling";
 
 /*
  * What the Contacts selection bar shows and says. The bar holds at most four controls: Export selected, Mark do not
@@ -8,13 +10,10 @@ import { countOf, formatCount as count } from "@/shared/format-number";
 
 export type ContactsBarControl = "export" | "doNotContact" | "clear" | "more";
 
-/** The person routes take 200 ids per request (`POST /api/people/dnc`), so the dialog sends chunks of this size. */
-export const DNC_CHUNK = 200;
+/** The dialog sends chunks of the ids `POST /api/people/dnc` takes per request. */
+export const DNC_CHUNK = MAX_BULK_DNC_IDS;
 
-export interface DncReport {
-  marked: number;
-  skipped: Array<{ personId: string; reason: "already_marked" | "not_found" | "retryable" }>;
-}
+export type { BulkDncResult as DncReport };
 
 
 export function contactsBarModel(input: { selectedCount: number; total: number }): { visible: ContactsBarControl[]; selectAll: string | null } {
@@ -39,15 +38,15 @@ export function bulkDncTitle(n: number): string {
   return `Mark ${countOf(n, "person", "people")} do not contact?`;
 }
 
-export function mergeDncReports(reports: readonly DncReport[]): DncReport {
+export function mergeDncReports(reports: readonly BulkDncResult[]): BulkDncResult {
   return { marked: reports.reduce((sum, r) => sum + r.marked, 0), skipped: reports.flatMap((r) => r.skipped) };
 }
 
 /** "Marked {n}." or "Marked {n}. Skipped {m}: ..." with each zero part dropped. */
-export function dncReportText(report: DncReport): string {
+export function dncReportText(report: BulkDncResult): string {
   const marked = `Marked ${count(report.marked)}.`;
   if (report.skipped.length === 0) return marked;
-  const by = (reason: DncReport["skipped"][number]["reason"]) => report.skipped.filter((s) => s.reason === reason).length;
+  const by = (reason: BulkDncResult["skipped"][number]["reason"]) => report.skipped.filter((s) => s.reason === reason).length;
   const [already, gone, retry] = [by("already_marked"), by("not_found"), by("retryable")];
   const parts = [
     already > 0 ? `${count(already)} already marked` : null,

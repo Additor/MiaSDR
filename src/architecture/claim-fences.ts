@@ -13,6 +13,7 @@ export const LEASE_STATUSES = ["running", "drafting", "processing"];
 export const FENCED_TABLES = [
   { drizzle: "aiJobs", raw: "ai_jobs" },
   { drizzle: "inboundEvents", raw: "inbound_events" },
+  { drizzle: "sequenceStepRuns", raw: "sequence_step_runs" },
 ];
 
 export interface Source {

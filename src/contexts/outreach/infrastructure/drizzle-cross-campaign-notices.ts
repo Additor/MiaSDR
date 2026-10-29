@@ -2,6 +2,8 @@ import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import type { AlreadyContactedNotice, CrossCampaignNoticeReader, ExcludedByAccountNotice, LeadCrossContext } from "../application/cross-campaign-notices";
 import { ALREADY_CONTACTED_BY_ACCOUNT, NOTICE_LIST_LIMIT } from "../domain/cross-campaign-notice";
+import { SEND_COUNTED } from "../domain/send-status";
+import { sqlValues } from "@/platform/db/sql-values";
 
 const list = (ids: string[]): SQL => sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
 const rows = <T>(result: unknown) => result as unknown as T[];
@@ -10,7 +12,7 @@ const rows = <T>(result: unknown) => result as unknown as T[];
 const personName = sql`coalesce(nullif(btrim(p.full_name), ''), nullif(btrim(concat_ws(' ', p.first_name, p.last_name)), ''), p.email)`;
 
 /** A step that went out (or may have) on the enrollment. Same statuses the engine counts for limits. */
-const sentStep = sql`exists (select 1 from sends s where s.enrollment_id = e.id and s.status in ('sending', 'sent', 'unknown'))`;
+const sentStep = sql`exists (select 1 from sends s where s.enrollment_id = e.id and s.status in ${sqlValues(SEND_COUNTED)})`;
 
 /**
  * A personal campaign (and its replies) is private to the people who work in it. Another campaign's report, lead panel
@@ -62,7 +64,7 @@ export const drizzleCrossCampaignNotices: CrossCampaignNoticeReader = {
           join campaign_enrollments e2 on e2.id = s.enrollment_id
           join campaigns c2 on c2.id = e2.campaign_id and c2.organization_id = e2.organization_id
           where e2.person_id = e.person_id and e2.id <> e.id and s.linkedin_account_id = e.linkedin_account_id
-            and s.step_number = 1 and s.status in ('sending', 'sent', 'unknown') and ${visibleTo("c2", campaignId)}
+            and s.step_number = 1 and s.status in ${sqlValues(SEND_COUNTED)} and ${visibleTo("c2", campaignId)}
           order by s.claimed_at asc
           limit 1
         ) earlier on true
@@ -109,7 +111,7 @@ export const drizzleCrossCampaignNotices: CrossCampaignNoticeReader = {
         join campaign_enrollments e on e.id = s.enrollment_id and e.organization_id = ${organizationId}
         join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
         left join linkedin_accounts a on a.id = s.linkedin_account_id and a.organization_id = e.organization_id
-        where e.person_id in (${list(personIds)}) and s.linkedin_account_id is not null and s.step_number = 1 and s.status in ('sending', 'sent', 'unknown')
+        where e.person_id in (${list(personIds)}) and s.linkedin_account_id is not null and s.step_number = 1 and s.status in ${sqlValues(SEND_COUNTED)}
           and ${visibleTo("c", campaignId)}
         order by e.person_id, s.linkedin_account_id, s.claimed_at asc
       `),

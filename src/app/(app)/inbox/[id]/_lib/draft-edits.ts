@@ -31,8 +31,8 @@ export const unsavedEditsError = (reason: string) => `Your draft edits were not 
  * Saves the edits, then runs a step that retires the open draft. A failed save stops before the step and answers with the
  * refusal in the shape of `callApi`, so the caller shows it like any other error.
  */
-export async function afterSavingEdits<T extends { ok: boolean; error: string | null }>(step: () => Promise<T>, save: () => Promise<string | null> = saveDraftEdits): Promise<T | { ok: false; status: 0; error: string; data: null; details: null }> {
+export async function afterSavingEdits<T extends { ok: boolean; error: string | null }>(step: () => Promise<T>, save: () => Promise<string | null> = saveDraftEdits): Promise<T | { ok: false; status: 0; error: string; code: null; data: null; details: null }> {
   const unsaved = await save();
-  if (unsaved) return { ok: false, status: 0, error: unsavedEditsError(unsaved), data: null, details: null };
+  if (unsaved) return { ok: false, status: 0, error: unsavedEditsError(unsaved), code: null, data: null, details: null };
   return step();
 }

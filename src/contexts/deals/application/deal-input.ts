@@ -1,11 +1,11 @@
-import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/convert-to-contact";
+import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/conversion-terms";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCloseDate, parseDealTitle } from "../domain/deal";
 import { parseAmountToMinor, parseCurrency } from "../domain/money";
 import { firstOpenStage } from "../domain/stages";
 import type { DealPerson, DealsDeps, DealStage } from "./deal-ports";
 
-export const MAX_BULK_CONVERT_IDS = 200;
+export { MAX_BULK_CONVERT_IDS } from "./deal-limits";
 /** The time one bulk request spends on conversions; the ids it did not reach come back `retryable`. */
 export const BULK_TIME_BUDGET_MS = 20_000;
 export const BOARD_LIMIT = 25;

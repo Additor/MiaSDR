@@ -5,6 +5,7 @@ import { revokeInvitation } from "@/contexts/tenancy/application/member-manageme
 import { getInvitationView } from "@/contexts/tenancy/application/invitation-view";
 import { memberDeps, invitationViewDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 import { withActor } from "@/app/_lib/api";
+import { apiError } from "@/app/_lib/api-errors";
 
 /**
  * The accept-invitation page's data. It needs a session but no organization: the invited person usually has none yet.
@@ -13,10 +14,11 @@ import { withActor } from "@/app/_lib/api";
 export const GET = async (_request: Request, { params }: RouteContext<"/api/invitations/[id]">) => {
   await connection();
   const session = await auth().api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session) return apiError(401, "Sign in to continue.");
   const { id } = await params;
   const view = await getInvitationView(invitationViewDeps(), { invitationId: id, viewerEmail: session.user.email });
-  return NextResponse.json(view, { status: view.state === "not-found" ? 404 : 200 });
+  if (view.state === "not-found") return apiError(404, "This invitation does not exist.", view);
+  return NextResponse.json(view);
 };
 
 export const DELETE = async (_request: Request, { params }: RouteContext<"/api/invitations/[id]">) => {

@@ -64,11 +64,24 @@ export function mailboxBlock(now: Date, mailbox: MailboxState): MailboxBlock | n
   return null;
 }
 
+/**
+ * Provider calls one campaign step may make, email and LinkedIn alike: the first try and two retries. The enrollment
+ * holds the cap (`scheduleRetry` ends it at this attempt), so no claim query and no database rule repeats the number.
+ */
 export const MAX_SEND_ATTEMPTS = 3;
 /** Wait before retrying a definite failure: 15 minutes, then 30. */
 export function retryDelayMinutes(attemptJustFailed: number): number {
   return 15 * attemptJustFailed;
 }
+/**
+ * Why a reconciler settles an unresolved send as not sent: the provider has no trace of it after the grace period, or
+ * the claim stopped (a crash, a deploy) before it rendered, so it never reached the provider. Both count the attempt:
+ * a claim that broke on the way is still a try of this step, and the cap keeps a crash that repeats on one lead from
+ * looping. The interruption gets its own reason, so the lead page says what happened.
+ */
+export type NotSentCause = "not_found" | "interrupted";
+export const INTERRUPTED_BEFORE_PROVIDER = "The send stopped before it reached the provider.";
+
 /** An unresolved send older than this is looked up in the mailbox instead of trusted. */
 export const UNCERTAIN_AFTER_MINUTES = 10;
 /** A send still missing from the mailbox after this long is treated as not sent. */

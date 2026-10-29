@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { duplicateRowIds, removeColumnFromView, splitValue } from "./column-operations";
+import { dedupeReport, duplicateRowIds, removeColumnFromView, splitValue } from "./column-operations";
 import { buildLeadImport } from "./campaign-rows";
 
 describe("column operations", () => {
@@ -22,6 +22,11 @@ describe("column operations", () => {
       { id: "7", cells: { k: "a" } },
     ];
     expect(duplicateRowIds(rows, "k")).toEqual(["2", "7"]);
+  });
+
+  it("reports the removed rows up to a cap and says when it left some out", () => {
+    expect(dedupeReport(["a", "b"], 3)).toEqual({ deleted: 2, rowIds: ["a", "b"], truncated: false });
+    expect(dedupeReport(["a", "b", "c", "d"], 3)).toEqual({ deleted: 4, rowIds: ["a", "b", "c"], truncated: true });
   });
 
   it("removes a deleted column from a saved view", () => {

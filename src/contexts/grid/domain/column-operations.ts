@@ -28,6 +28,14 @@ export function duplicateRowIds(rows: ReadonlyArray<{ id: string; cells: Record<
   return duplicates;
 }
 
+/**
+ * What dedupe answers: the count, and the removed ids up to `cap` so the client can forget their queued edits.
+ * `truncated` says the list left some out, and the client then forgets the table's edits and undo steps whole.
+ */
+export function dedupeReport(removed: readonly string[], cap: number): { deleted: number; rowIds: string[]; truncated: boolean } {
+  return { deleted: removed.length, rowIds: removed.slice(0, cap), truncated: removed.length > cap };
+}
+
 /** The view without any mention of a deleted column. */
 export function removeColumnFromView(view: TableView, columnKey: string): TableView {
   const clean = (conditions: (FilterCondition | FilterGroup)[]): (FilterCondition | FilterGroup)[] =>

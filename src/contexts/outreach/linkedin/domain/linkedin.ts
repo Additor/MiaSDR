@@ -20,7 +20,6 @@ export const MAX_LINKEDIN_STEPS = 6;
 export const MAX_LINKEDIN_WAIT_DAYS = 60;
 /** An invitation nobody accepted after this many days ends the sequence. */
 export const INVITE_EXPIRES_DAYS = 30;
-export const MAX_INVITE_ATTEMPTS = 3;
 export const MAX_RESOLVE_ATTEMPTS = 3;
 
 export const DEFAULT_LINKEDIN_STEPS: LinkedInStep[] = [
@@ -230,7 +229,7 @@ export function eventKey(event: LinkedInInboundEvent, organizationId: string): s
 }
 
 export const MAX_EVENT_ATTEMPTS = 8;
-/** Backoff after a failed processing attempt: 5 s doubling, capped at 15 minutes. */
+/** Backoff after a failed attempt to process an event: 5 s doubling, capped at 15 minutes. */
 export function eventRetrySeconds(attempt: number): number {
   return Math.min(15 * 60, 5 * 2 ** (attempt - 1));
 }

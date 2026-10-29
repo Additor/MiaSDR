@@ -3,7 +3,7 @@ import { convertStoredValue } from "../domain/cell-values";
 import { assertNoCycle, prepareColumnConfig } from "../domain/column-config";
 import { isColumnType, isStaticColumnType, type ColumnType } from "../domain/column-types";
 import { cleanName, placeAfter, placeBefore, uniqueColumnKey, uniqueColumnName } from "../domain/keys";
-import { removeColumnFromView, TEXT_SPLIT_DELIMITERS, duplicateRowIds, splitValue, MAX_SPLIT_CELLS, MAX_SPLIT_COLUMNS, type TextSplitDelimiter } from "../domain/column-operations";
+import { dedupeReport, removeColumnFromView, TEXT_SPLIT_DELIMITERS, duplicateRowIds, splitValue, MAX_SPLIT_CELLS, MAX_SPLIT_COLUMNS, type TextSplitDelimiter } from "../domain/column-operations";
 import { effectiveColumnType } from "../domain/column-types";
 import { columnTokens, tableTokens } from "../domain/formula-dependencies";
 import { refreshAfterSourceWrite, refreshLookupDependentsQuietly } from "./formula-lookup-refresh";
@@ -238,10 +238,10 @@ export async function recalculateColumn(deps: Deps, actor: Actor, tableId: strin
 export async function dedupeColumn(deps: Deps, actor: Actor, tableId: string, columnId: string) {
   const table = await deps.structure.getTable(actor.organizationId, tableId);
   if (!table) throw new NotFoundError("Table not found");
-  const deleted = await deps.rows.deleteDuplicates(actor.organizationId, tableId, columnId, (rows, column) => duplicateRowIds(rows, column.key));
-  if (deleted === null) throw new NotFoundError("Column not found");
-  if (deleted > 0) await refreshAfterSourceWrite(deps, actor.organizationId, table);
-  return { deleted };
+  const rowIds = await deps.rows.deleteDuplicates(actor.organizationId, tableId, columnId, (rows, column) => duplicateRowIds(rows, column.key));
+  if (rowIds === null) throw new NotFoundError("Column not found");
+  if (rowIds.length > 0) await refreshAfterSourceWrite(deps, actor.organizationId, table);
+  return dedupeReport(rowIds, GRID_LIMITS.pageSize);
 }
 
 /** Splits a text column into new text columns to its right. The original stays, so nothing is lost. */

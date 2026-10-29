@@ -33,6 +33,7 @@ step "lint";      pnpm lint
 step "migrate";   DATABASE_URL="$TEST_DATABASE_URL" DATABASE_SSL=disable pnpm db:migrate
 step "vitest";    pnpm test
 step "build";     pnpm build
+step "client bundle"; scripts/client-bundle-check.sh
 step "e2e";       pnpm e2e
 if [ "${SKIP_DOCKER_IMAGE:-0}" != "1" ]; then
   step "docker image"; scripts/docker-image-check.sh "postgres://postgres:test@host.docker.internal:${port}/postgres"

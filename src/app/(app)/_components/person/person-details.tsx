@@ -10,7 +10,7 @@ import { Time } from "@/components/shell/time";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { callApi } from "@/app/_lib/api-client";
+import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
 import { EditableFact, Fact, InlineForm, NotSet, type EditorProps, type SaveResult } from "../record/inline-field";
 import { AsideSection } from "../record/record-header";
@@ -122,7 +122,7 @@ export function PersonDetails({
 async function savePerson(id: string, body: Record<string, unknown>, person: string): Promise<SaveResult> {
   const result = await callApi(`/api/leads/${id}`, "PATCH", body);
   if (result.ok) return null;
-  if (result.details?.code === "try_again") return `MiaSDR is saving another change to ${person}. Try again in a moment.`;
+  if (result.code === "try_again") return apiMessage("try_again", person);
   return result.issues[0]?.message ?? result.error ?? "Could not save.";
 }
 

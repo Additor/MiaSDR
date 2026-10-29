@@ -105,7 +105,7 @@ describeDb("send status guard", () => {
     const f = await fixture("timeout-lost");
     advance(60);
     await uc.resolveCampaignSend(sendsDeps(), f.admin, f.campaign, f.sendId, { outcome: "delivered" });
-    await outreachStore.resolveUncertainAsNotSent({ sendId: f.sendId, enrollmentId: f.enrollment, stepNumber: 1, attempt: 1, nextStepWaitDays: 2 } as never, current, 5, 3);
+    await outreachStore.resolveUncertainAsNotSent({ sendId: f.sendId, enrollmentId: f.enrollment, stepNumber: 1, attempt: 1, nextStepWaitDays: 2 } as never, current, 5, 3, "not_found");
     expect(await row(f.sendId)).toMatchObject({ status: "sent" });
   });
 

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { createEnrichmentColumns, createWaterfallColumns, fillAddedOutput, updateRunnableColumn } from "@/contexts/grid/enrichment/application/enrichment-columns";
+import { MAX_COST_CENTS, MAX_CREDITS, MAX_DELAY_SECONDS, MAX_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment-config";
 import { gridColumnDeps } from "@/contexts/grid/enrichment/infrastructure/enrichment-composition";
 import { withActor } from "@/app/_lib/api";
 
-const placement = { afterColumnId: z.string().uuid().optional(), autoRun: z.boolean().optional(), delaySeconds: z.number().int().min(0).max(3600).optional(), reuseDays: z.number().int().min(0).max(365).optional(),
+const placement = { afterColumnId: z.string().uuid().optional(), autoRun: z.boolean().optional(), delaySeconds: z.number().int().min(0).max(MAX_DELAY_SECONDS).optional(), reuseDays: z.number().int().min(0).max(MAX_REUSE_DAYS).optional(),
   settledStatuses: z.array(z.enum(["valid", "invalid", "catch_all", "unknown", "disposable"])).min(1).max(5).optional(),
 };
 
@@ -15,8 +16,8 @@ const body = z.discriminatedUnion("kind", [
     inputs: z.record(z.string(), z.string()),
     steps: z.array(z.object({ providerKey: z.string(), actionKey: z.string() })),
     selectedOutputs: z.array(z.string()),
-    maxCostCents: z.number().min(0).optional(),
-    maxCredits: z.number().min(0).optional(),
+    maxCostCents: z.number().min(0).max(MAX_COST_CENTS).optional(),
+    maxCredits: z.number().min(0).max(MAX_CREDITS).optional(),
     onRateLimit: z.enum(["next", "wait"]).optional(),
     ...placement,
   }),
@@ -37,12 +38,12 @@ const patch = z.strictObject({
   columnId: z.string().uuid(),
   inputs: z.record(z.string(), z.string()).optional(),
   autoRun: z.boolean().optional(),
-  delaySeconds: z.number().int().min(0).max(3600).optional(),
+  delaySeconds: z.number().int().min(0).max(MAX_DELAY_SECONDS).optional(),
   steps: z.array(z.strictObject({ providerKey: z.string(), actionKey: z.string() })).min(1).max(8).optional(),
-  maxCostCents: z.number().min(0).max(100_000).nullable().optional(),
-  maxCredits: z.number().min(0).max(100_000).nullable().optional(),
+  maxCostCents: z.number().min(0).max(MAX_COST_CENTS).nullable().optional(),
+  maxCredits: z.number().min(0).max(MAX_CREDITS).nullable().optional(),
   onRateLimit: z.enum(["next", "wait"]).optional(),
-  reuseDays: z.number().int().min(0).max(365).optional(),
+  reuseDays: z.number().int().min(0).max(MAX_REUSE_DAYS).optional(),
   settledStatuses: z.array(z.enum(["valid", "invalid", "catch_all", "unknown", "disposable"])).min(1).max(5).nullable().optional(),
   addOutput: z.string().min(1).max(60).optional(),
 });

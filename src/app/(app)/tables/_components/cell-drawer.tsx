@@ -13,7 +13,8 @@ import { contractAction, type ContractKey } from "@/contexts/grid/enrichment/dom
 import { runnerActionKey } from "@/contexts/grid/domain/verified-push";
 import { OUTCOMES } from "../_lib/data/outcomes";
 import { useProviders } from "../_lib/data/providers";
-import { gridRequest, gridUrl } from "../_lib/data/client";
+import { gridUrl } from "../_lib/data/client";
+import { useCellRequest } from "../_lib/data/cell-request";
 import { cellResultText, displayValue, editorText, RUN_OUTCOME_LABELS, runCost, typeLabel } from "../_lib/view/format";
 import type { GridColumn, GridRow } from "../_lib/data/types";
 
@@ -78,6 +79,7 @@ function runError(run: Run): string | null {
 
 /** Everything known about one cell: its value, the state of its last run and the history of attempts. */
 export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [], onAddOutput, onClose }: Props) {
+  const cellRequest = useCellRequest();
   const [adding, setAdding] = useState<string | null>(null);
   // Runs record the provider's key; the drawer names it as the provider list does. An AI run keeps its model label.
   const { providers } = useProviders();
@@ -93,12 +95,12 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
     let cancelled = false;
     (async () => {
       const params = new URLSearchParams({ rowId: row.id, columnKey: column.key });
-      const d = await gridRequest<Details>(`${gridUrl.sub(tableId, "cell-details")}?${params}`, "GET");
+      const d = await cellRequest<Details>(`${gridUrl.sub(tableId, "cell-details")}?${params}`, "GET");
       if (cancelled) return;
       // 404 means no run fills this cell; anything else is a failed load the person can retry.
       if (!d.ok || !d.data) return setState(d.status === 404 ? "none" : "failed");
       setDetails(d.data);
-      const h = await gridRequest<{ runs: Run[] }>(`${gridUrl.sub(tableId, "cell-runs")}?${params}`, "GET");
+      const h = await cellRequest<{ runs: Run[] }>(`${gridUrl.sub(tableId, "cell-runs")}?${params}`, "GET");
       if (cancelled) return;
       if (!h.ok || !h.data) return setState("failed");
       setRuns(h.data.runs);
@@ -107,7 +109,7 @@ export function CellDrawer({ tableId, row, column, rowNumber, onRun, columns = [
     return () => {
       cancelled = true;
     };
-  }, [tableId, row.id, column.key, attempt]);
+  }, [tableId, row.id, column.key, attempt, cellRequest]);
 
   const value = row.cells[column.key];
   // An output column's run state sits on the column that ran.

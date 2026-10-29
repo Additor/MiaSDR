@@ -18,6 +18,7 @@ import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { SEND_COUNTED } from "../domain/send-status";
 
 /** SQL condition for an archive filter on `campaigns`. */
 export const archiveCondition = (filter: ArchiveFilter): SQL | undefined =>
@@ -409,7 +410,7 @@ export const drizzleMailboxStore: MailboxStore = {
           .where(
             and(
               eq(sends.mailboxId, row.id),
-              inArray(sends.status, ["sending", "sent", "unknown"]),
+              inArray(sends.status, SEND_COUNTED),
               sql`${sends.claimedAt} >= ${startOfLocalDay(now, zone).toISOString()}::timestamptz`,
             ),
           );

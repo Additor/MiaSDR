@@ -9,15 +9,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { gridRequest, gridUrl } from "../_lib/data/client";
-import { DEFAULT_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment-config";
+import { gridUrl } from "../_lib/data/client";
+import { useCellRequest, type CellRequest } from "../_lib/data/cell-request";
+import { DEFAULT_REUSE_DAYS, MAX_DELAY_SECONDS, MAX_REUSE_DAYS } from "@/contexts/grid/enrichment/domain/enrichment-config";
 import { contractAction, SETTLED_STATUSES } from "@/contexts/grid/enrichment/domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { OUTCOMES, outcomeOf } from "../_lib/data/outcomes";
 import { coverageText, fullRunText, useEnrichmentPreview } from "../_lib/data/enrichment-preview";
 import { guessColumn, lookupCents, lookupPrice, usableProviders, useProviders, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
 import type { GridColumn } from "../_lib/data/types";
-import { centsToDollarsText, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, type RunEstimate } from "../_lib/data/run-request";
+import { centsToDollarsText, creditCap, DEFAULT_FIRST_N, dollarsToCents, RUN_MAX_ROWS, runSummary, toRunSettingsBody, type RunEstimate } from "../_lib/data/run-request";
 import { spendSummary, type WaterfallStep } from "../_lib/data/waterfall-steps";
 import { ColumnSelect, ItemSelect } from "./form-bits";
 import { ColumnChips, ConnectProviders, SetupRow } from "./enrichment-setup";
@@ -53,6 +54,7 @@ export function EnrichmentDialog(props: Props) {
 const inputLabel = (key: string) => key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()).replace(/ ([A-Z])/g, (_, c: string) => ` ${c.toLowerCase()}`);
 
 function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { column: GridColumn }) {
+  const cellRequest = useCellRequest();
   const { providers, catalog } = useProviders();
   const config = column.config as {
     inputs?: Record<string, string>;
@@ -105,22 +107,22 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
     const inputs = Object.fromEntries(Object.entries(form.inputs).filter(([, v]) => v));
     if (JSON.stringify(inputs) !== JSON.stringify(initial.inputs)) patch.inputs = inputs;
     if (form.autoRun !== initial.autoRun) patch.autoRun = form.autoRun;
-    if (form.delay !== initial.delay) patch.delaySeconds = Math.max(0, Math.min(3600, Math.floor(Number(form.delay) || 0)));
-    if (form.reuseDays !== initial.reuseDays) patch.reuseDays = Math.max(0, Math.min(365, Math.floor(Number(form.reuseDays) || 0)));
+    const pacing = toRunSettingsBody(form);
+    if (form.delay !== initial.delay) patch.delaySeconds = pacing.delaySeconds;
+    if (form.reuseDays !== initial.reuseDays) patch.reuseDays = pacing.reuseDays;
     if (form.stopAtCatchAll !== initial.stopAtCatchAll) patch.settledStatuses = form.stopAtCatchAll ? [...SETTLED_STATUSES, "catch_all"] : null;
     if (isWaterfall) {
-      const cap = (text: string) => (text.trim() === "" ? null : Math.max(0, Number(text) || 0));
       if (form.maxCost !== initial.maxCost) {
         if (form.maxCost.trim() !== "" && dollarsToCents(form.maxCost) === null) return setError("Enter the spend cap as zero or more dollars, or leave it empty.");
         patch.maxCostCents = form.maxCost.trim() === "" ? null : dollarsToCents(form.maxCost);
       }
-      if (form.maxCredits !== initial.maxCredits) patch.maxCredits = cap(form.maxCredits);
+      if (form.maxCredits !== initial.maxCredits) patch.maxCredits = creditCap(form.maxCredits);
       if (form.waitOnLimit !== initial.waitOnLimit) patch.onRateLimit = form.waitOnLimit ? "wait" : "next";
     }
     if (Object.keys(patch).length === 1) return onClose();
     setBusy(true);
     setError(null);
-    const res = await gridRequest(gridUrl.sub(tableId, "enrichments"), "PATCH", patch);
+    const res = await cellRequest(gridUrl.sub(tableId, "enrichments"), "PATCH", patch);
     if (!res.ok) {
       setBusy(false);
       return setError(res.error);
@@ -159,7 +161,7 @@ function EditBody({ tableId, columns, column, onClose, onSaved }: Props & { colu
             </CheckField>
           </div>
         )}
-        <NumberField id="edit-reuse" label={REUSE_LABEL} hint="0 always asks the provider." max={365} value={form.reuseDays} onChange={(v) => set("reuseDays", v)} />
+        <NumberField id="edit-reuse" label={REUSE_LABEL} hint="0 always asks the provider." max={MAX_REUSE_DAYS} value={form.reuseDays} onChange={(v) => set("reuseDays", v)} />
         <RunTiming autoRun={form.autoRun} setAutoRun={(v) => set("autoRun", v)} delay={form.delay} setDelay={(v) => set("delay", v)} />
         <FieldError>{error}</FieldError>
       </FieldGroup>
@@ -181,7 +183,7 @@ export function RunTiming({ autoRun, setAutoRun, delay, setDelay }: { autoRun: b
       <CheckField checked={autoRun} onChange={setAutoRun}>
         Run automatically when its inputs change
       </CheckField>
-      <NumberField id="run-delay" label="Delay before each call (seconds)" max={3600} value={delay} onChange={setDelay} />
+      <NumberField id="run-delay" label="Delay before each call (seconds)" max={MAX_DELAY_SECONDS} value={delay} onChange={setDelay} />
     </div>
   );
 }
@@ -359,7 +361,7 @@ function SpendAndTiming(p: {
           </div>
         )}
         <RunTiming autoRun={p.autoRun} setAutoRun={p.setAutoRun} delay={p.delay} setDelay={p.setDelay} />
-        <NumberField id="reuse-days" label={REUSE_LABEL} hint="A provider answered the same lookup within this many days: the row takes that answer and you pay nothing. 0 always asks." max={365} value={p.reuseDays} onChange={p.setReuseDays} />
+        <NumberField id="reuse-days" label={REUSE_LABEL} hint="A provider answered the same lookup within this many days: the row takes that answer and you pay nothing. 0 always asks." max={MAX_REUSE_DAYS} value={p.reuseDays} onChange={p.setReuseDays} />
       </FieldGroup>
     </details>
   );
@@ -428,15 +430,16 @@ export function CreateFooter({ blocker, summary, busy, onBack, onSave, backLabel
 }
 
 /**
- * Creates a runner column through `path` ("enrichments" or "ai"), then on `run` queues its first rows. A refused run
+ * Creates a runner column through `path` ("enrichments" or "ai"), then on `run` queues its first rows, both through
+ * the open table's `cellRequest`. A refused run
  * leaves the column added and says why.
  */
-export async function createColumn(tableId: string, body: Record<string, unknown>, run: boolean, path: "enrichments" | "ai" = "enrichments"): Promise<{ ok: true; key?: string } | { ok: false; error: string | null }> {
-  const res = await gridRequest<{ primaryColumnKey?: string }>(gridUrl.sub(tableId, path), "POST", body);
+export async function createColumn(cellRequest: CellRequest, tableId: string, body: Record<string, unknown>, run: boolean, path: "enrichments" | "ai" = "enrichments"): Promise<{ ok: true; key?: string } | { ok: false; error: string | null }> {
+  const res = await cellRequest<{ primaryColumnKey?: string }>(gridUrl.sub(tableId, path), "POST", body);
   if (!res.ok) return { ok: false, error: res.error };
   const columnKey = res.data?.primaryColumnKey;
   if (run && columnKey) {
-    const started = await gridRequest<RunEstimate & { queued: number }>(gridUrl.sub(tableId, "run"), "POST", { columnKey, firstN: DEFAULT_FIRST_N, onlyEmpty: true, maxRows: RUN_MAX_ROWS });
+    const started = await cellRequest<RunEstimate & { queued: number }>(gridUrl.sub(tableId, "run"), "POST", { columnKey, firstN: DEFAULT_FIRST_N, onlyEmpty: true, maxRows: RUN_MAX_ROWS });
     if (started.ok && started.data) toast.success(runSummary(started.data));
     else toast.error(`The column was added, but the run did not start: ${started.error ?? "unknown error"}`);
   } else toast.success("Column added. Press Run when you are ready.");
@@ -475,6 +478,7 @@ const listText = (items: string[]) => (items.length <= 1 ? (items[0] ?? "") : `$
  * vendors that do, and the form keeps what you set while you connect one.
  */
 function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, actionKey, usable, providers, catalog, loadError, refresh, onBack, backLabel }: Props & { actionKey: string; usable: ProviderView[]; providers: ProviderView[]; catalog: CatalogEntry[]; loadError: string | null; refresh: () => Promise<void>; onBack: () => void; backLabel: string }) {
+  const cellRequest = useCellRequest();
   const outcome = outcomeOf(actionKey)!;
   const offering = usable.filter((p) => p.actions.some((a) => a.key === actionKey));
   const actionOf = (key: string) => offering.find((p) => p.key === key)?.actions.find((a) => a.key === actionKey);
@@ -544,8 +548,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
       selectedOutputs: outputs.filter((k) => outputSpecs.some((o) => o.key === k)),
       afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id,
       autoRun,
-      delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
-      reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
+      ...toRunSettingsBody({ delay, reuseDays }),
     };
     const steps = picked.map((providerKey) => ({ providerKey, actionKey }));
     const body = waterfall
@@ -556,11 +559,11 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
           ...base,
           ...(stopAtCatchAll && actionKey === "verify-email" ? { settledStatuses: [...SETTLED_STATUSES, "catch_all"] } : {}),
           ...(maxCost.trim() !== "" && dollarsToCents(maxCost) !== null ? { maxCostCents: dollarsToCents(maxCost) } : {}),
-          ...(maxCredits.trim() !== "" ? { maxCredits: Math.max(0, Number(maxCredits) || 0) } : {}),
+          ...(creditCap(maxCredits) !== null ? { maxCredits: creditCap(maxCredits) } : {}),
           ...(waitOnLimit ? { onRateLimit: "wait" } : {}),
         }
       : { kind: "enrichment", name: columnName, providerKey: picked[0], actionKey, ...base };
-    const res = await createColumn(tableId, body, run);
+    const res = await createColumn(cellRequest, tableId, body, run);
     if (!res.ok) {
       setBusy(false);
       return setError(res.error);
@@ -686,6 +689,7 @@ function OutcomeForm({ tableId, columns, afterColumnId, onClose, onSaved, action
 
 /** Any other action a connected provider offers (a Custom HTTP API, Hunter's company search): one provider, one action. */
 function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, usable, onBack, onConnect }: Props & { usable: ProviderView[]; onBack: () => void; onConnect: () => void }) {
+  const cellRequest = useCellRequest();
   const shared = new Set<string>(OUTCOMES.map((o) => o.actionKey));
   const options = usable.flatMap((p) => p.actions.filter((a) => !shared.has(a.key)).map((a) => ({ provider: p, action: a })));
   const [choice, setChoice] = useState(options[0] ? `${options[0].provider.key}:${options[0].action.key}` : "");
@@ -718,10 +722,9 @@ function OtherActionForm({ tableId, columns, afterColumnId, onClose, onSaved, us
       selectedOutputs: chosenOutputs,
       afterColumnId: afterColumnId ?? columns[columns.length - 1]?.id,
       autoRun,
-      delaySeconds: Math.max(0, Math.min(3600, Math.floor(Number(delay) || 0))),
-      reuseDays: Math.max(0, Math.min(365, Math.floor(Number(reuseDays) || 0))),
+      ...toRunSettingsBody({ delay, reuseDays }),
     };
-    const res = await createColumn(tableId, body, run);
+    const res = await createColumn(cellRequest, tableId, body, run);
     if (!res.ok) {
       setBusy(false);
       return setError(res.error);

@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { setPeopleDoNotContact } from "@/contexts/conversations/application/reply-handling";
+import { MAX_BULK_DNC_IDS, setPeopleDoNotContact } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { withActor } from "@/app/_lib/api";
 
-const bodySchema = z.object({ ids: z.array(z.string().max(64)).min(1).max(200), reason: z.string().max(500).nullable().optional() });
+const bodySchema = z.object({ ids: z.array(z.string().max(64)).min(1).max(MAX_BULK_DNC_IDS), reason: z.string().max(500).nullable().optional() });
 
 /**
  * Bulk Mark do not contact: 1 to 200 people per request, one transaction each. `{ marked, skipped }`, where

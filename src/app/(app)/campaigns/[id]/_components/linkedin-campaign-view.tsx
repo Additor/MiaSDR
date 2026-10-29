@@ -15,7 +15,8 @@ import { enrollmentSelectionKey, type EnrollmentListQuery } from "@/contexts/out
 import { campaignSummary, enrollmentStatusLabel, leadsInProgress, sendingRulesLine, startBlockers, startSummaryLines, type CampaignTab } from "@/contexts/outreach/domain/campaign-view";
 import { getCampaignAfterReply } from "@/contexts/conversations/after-reply/application/after-reply";
 import { afterReplyDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
-import { MAX_INVITE_ATTEMPTS, INVITE_NOTE_MAX, describeLinkedInProgress, validateLinkedInSteps } from "@/contexts/outreach/linkedin/domain/linkedin";
+import { INVITE_NOTE_MAX, describeLinkedInProgress, validateLinkedInSteps } from "@/contexts/outreach/linkedin/domain/linkedin";
+import { MAX_SEND_ATTEMPTS } from "@/contexts/outreach/domain/send-policy";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { RecordPage } from "@/app/(app)/_components/record/record-header";
 import { LeadStatusToken } from "@/app/(app)/_components/person/lead-status-token";
@@ -294,7 +295,7 @@ function LeadPanel({ row, totalSteps, threadHref }: { row: PanelRow; totalSteps:
   return (
     <details className="text-sm">
       <summary className="w-fit cursor-pointer rounded-sm py-1 text-xs text-muted-foreground focus-ring">
-        Details: {sent.length} sent, retries {detail.retries} of {MAX_INVITE_ATTEMPTS}
+        Details: {sent.length} sent, retries {detail.retries} of {MAX_SEND_ATTEMPTS}
         {detail.lastError ? ", has an error" : ""}
       </summary>
       <div className="grid gap-1 pb-3">
@@ -306,7 +307,7 @@ function LeadPanel({ row, totalSteps, threadHref }: { row: PanelRow; totalSteps:
           <span className="text-muted-foreground">Step:</span> {row.currentStep}/{totalSteps}
           <span className="ml-4 text-muted-foreground">Account:</span> {detail.accountName ?? "not assigned yet"}
           <span className="ml-4 text-muted-foreground">Messages sent:</span> {sent.length}
-          <span className="ml-4 text-muted-foreground">Retries:</span> {detail.retries} of {MAX_INVITE_ATTEMPTS}
+          <span className="ml-4 text-muted-foreground">Retries:</span> {detail.retries} of {MAX_SEND_ATTEMPTS}
         </p>
         {threadHref && (
           <p>

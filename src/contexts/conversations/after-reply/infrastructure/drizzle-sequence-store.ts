@@ -500,13 +500,15 @@ export const drizzleRunStore: RunStore = {
         await tx.execute(sql`select id, status from sequence_runs where record_id = ${event.recordId} and organization_id = ${event.organizationId} and status = 'active' for update`),
       );
       if (!run) throw new ConflictError("There is no active sequence run to pause.");
-      // A draft waiting for review is retired and its step goes back to scheduled, so resuming drafts it afresh.
+      // A draft waiting for review is retired and its step goes back to scheduled, so resuming drafts it afresh. As in
+      // `endRunTx`, that covers a draft a worker wrote and has not linked yet: the pause ends the worker's claim.
       await tx.execute(sql`
         update drafts set status = 'stale', error = 'The sequence was paused.', updated_at = ${ts(now)}
         where organization_id = ${event.organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}
-          and id in (select draft_id from sequence_step_runs where sequence_run_id = ${run.id} and draft_id is not null and status in ('drafting', 'awaiting_review', 'failed'))`);
+          and (id in (select draft_id from sequence_step_runs where sequence_run_id = ${run.id} and draft_id is not null and status in ('drafting', 'awaiting_review', 'failed'))
+               or (request->>'sequenceRunId' = ${run.id} and not exists (select 1 from sequence_step_runs sr where sr.draft_id = drafts.id)))`);
       await tx.execute(sql`
-        update sequence_step_runs set status = 'scheduled', draft_id = null, updated_at = ${ts(now)}
+        update sequence_step_runs set status = 'scheduled', draft_id = null, claim_token = null, updated_at = ${ts(now)}
         where sequence_run_id = ${run.id} and organization_id = ${event.organizationId} and ${stepMayBecome("scheduled")}`);
       await tx.execute(sql`update sequence_runs set status = 'paused', updated_at = ${ts(now)} where id = ${run.id} and ${runMayBecome("paused")}`);
       await tx.execute(sql`update records set next_action_at = null where id = ${event.recordId} and organization_id = ${event.organizationId} and workflow_state = 'waiting'`);

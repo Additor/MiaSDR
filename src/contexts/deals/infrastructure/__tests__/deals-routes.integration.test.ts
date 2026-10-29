@@ -87,6 +87,7 @@ describeDb("deal routes", () => {
     await world.sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${world.orgA.id}, ${campaign}, ${personId}, 'linkedin', 'active')`;
     const refused = await callRoute("leads/[id]/convert/route.ts", "POST", { params: { id: personId }, json: {}, as: world.member });
     expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: "personal_campaign" });
     const preview = await callRoute("leads/convert/preview/route.ts", "POST", { json: { ids: [personId] }, as: world.member });
     expect(preview.body).toEqual({ people: 0, alreadyContacts: 0, enrollments: 0, runs: 0, followUpDraftsToRetire: 0, skippedPersonalCampaign: 1 });
     const adminPreview = await callRoute("leads/convert/preview/route.ts", "POST", { json: { ids: [personId] }, as: world.admin });

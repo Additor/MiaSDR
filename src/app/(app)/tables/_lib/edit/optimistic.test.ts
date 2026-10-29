@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addPending, applyConflictRows, buildBatches, cellId, clearPending, conflictItems, mergeRows, overlayPending, type PendingMap } from "./optimistic";
+import { addPending, applyConflictRows, buildBatches, cellId, clearPending, conflictItems, dropPendingRows, mergeRows, sendablePending, overlayPending, type PendingMap } from "./optimistic";
 import type { GridRow } from "../data/types";
 
 const row = (id: string, version: number, cells: Record<string, unknown> = {}, position = 0): GridRow => ({ id, position, cells, cellMeta: {}, version });
@@ -81,6 +81,33 @@ describe("conflicts", () => {
     const next = applyConflictRows([row("r1", 5, { a: "old" }), row("r2", 7)], conflicts);
     expect(next[0]).toMatchObject({ version: 8, cells: { a: "theirs" } });
     expect(next[1].version).toBe(7);
+  });
+  it("keeps a cached row that is newer than the 409 reported, so a retry names the newer version", () => {
+    // A poll brought v9 after the server answered the 409 with v8.
+    const next = applyConflictRows([row("r1", 9, { a: "newest" })], conflicts);
+    expect(next[0]).toMatchObject({ version: 9, cells: { a: "newest" } });
+    const pending = addPending(new Map(), { rowId: "r1", columnKey: "a", value: "mine" }, row("r1", 5));
+    expect(buildBatches(pending, next)[0].updates[0].expectedVersion).toBe(9);
+  });
+});
+
+describe("dropPendingRows", () => {
+  it("drops the queued edits of the given rows and keeps the rest", () => {
+    let pending: PendingMap = addPending(new Map(), { rowId: "r1", columnKey: "a", value: "x" }, row("r1", 1));
+    pending = addPending(pending, { rowId: "r1", columnKey: "b", value: "y" }, row("r1", 1));
+    pending = addPending(pending, { rowId: "r2", columnKey: "a", value: "z" }, row("r2", 1));
+    const left = dropPendingRows(pending, ["r1"]);
+    expect(left.dropped.map((e) => e.columnKey)).toEqual(["a", "b"]);
+    expect([...left.pending.keys()]).toEqual([cellId("r2", "a")]);
+  });
+});
+
+describe("sendablePending", () => {
+  it("leaves out the edits of rows being deleted", () => {
+    let pending: PendingMap = addPending(new Map(), { rowId: "r1", columnKey: "a", value: "x" }, row("r1", 1));
+    pending = addPending(pending, { rowId: "r2", columnKey: "a", value: "y" }, row("r2", 1));
+    expect([...sendablePending(pending, new Set(["r1"])).keys()]).toEqual([cellId("r2", "a")]);
+    expect(sendablePending(pending, new Set())).toBe(pending);
   });
 });
 

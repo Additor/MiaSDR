@@ -19,7 +19,7 @@ import {
   type CellJob,
   type CellWrite,
   type CredentialCipher,
-  type GridRunStore,
+  type GridWorkerStore,
   type LedgerRun,
   type ProviderStore,
   type RetryState,
@@ -28,7 +28,7 @@ import { cascadeSpecFor, estimateStepCents } from "./enrichment-cost";
 import { lookupKey } from "./enrichment-reuse";
 
 export interface WorkerDeps {
-  store: GridRunStore;
+  store: GridWorkerStore;
   providers: ProviderStore;
   adapters: AdapterRegistry;
   cipher: CredentialCipher;
@@ -283,7 +283,7 @@ async function notifyWritten(deps: WorkerDeps, job: CellJob, keys: string[]): Pr
   }
 }
 
-async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awaited<ReturnType<GridRunStore["loadCell"]>>>, gate: LocalRateGate): Promise<string> {
+async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awaited<ReturnType<GridWorkerStore["loadCell"]>>>, gate: LocalRateGate): Promise<string> {
   const { column, cells } = ctx;
   const plan = stepsOf(column.type, column.config);
   if (typeof plan === "string") {
@@ -365,7 +365,7 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
   return ok === "saved" ? (hit ? "hit" : "miss") : ok === "save_failed" ? "failed" : "lease_lost";
 }
 
-async function runAiColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awaited<ReturnType<GridRunStore["loadCell"]>>>): Promise<string> {
+async function runAiColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awaited<ReturnType<GridWorkerStore["loadCell"]>>>): Promise<string> {
   const { column, cells } = ctx;
   const parsed = aiConfigSchema.safeParse(column.config);
   if (!parsed.success) {

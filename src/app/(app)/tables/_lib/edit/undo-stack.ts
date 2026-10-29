@@ -110,6 +110,13 @@ export function discardCells(stack: UndoStack, actionId: string, cells: Readonly
   return { ...stack, done };
 }
 
+/** Removes the cells of deleted rows from every action, undone ones included. An action left empty is gone. */
+export function discardRows(stack: UndoStack, rowIds: Iterable<string>): UndoStack {
+  const gone = new Set(rowIds);
+  const keep = (list: readonly UndoAction[]) => list.map((action) => ({ ...action, cells: action.cells.filter((c) => !gone.has(c.rowId)) })).filter((action) => action.cells.length > 0);
+  return { done: keep(stack.done), undone: keep(stack.undone) };
+}
+
 /** The action the next undo or redo would apply. */
 export function nextAction(stack: UndoStack, direction: Direction): UndoAction | undefined {
   const list = direction === "undo" ? stack.done : stack.undone;

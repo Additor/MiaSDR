@@ -1,5 +1,6 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
+import { apiError } from "@/app/_lib/api-errors";
 
 /** Request header carrying the path and query, read by identity/infrastructure/session.ts to build a return-to link. */
 const REQUEST_PATH_HEADER = "x-miasdr-path";
@@ -40,7 +41,7 @@ export function proxy(request: NextRequest) {
   }
 
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return apiError(401, "Sign in to continue.");
   }
   const url = new URL("/sign-in", request.url);
   url.searchParams.set("next", pathname);

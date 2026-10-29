@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
+import { callApi } from "@/app/_lib/api-client";
 import { GoogleButton } from "../google-button";
 import { safeNext } from "./safe-next";
 
@@ -28,10 +29,7 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
   // Signed in without an organization: offer the create form when the instance allows it.
   useEffect(() => {
     if (params.get("error") !== "no-organization") return;
-    fetch("/api/organizations")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body: { canCreate?: boolean } | null) => setCanCreateOrganization(body?.canCreate === true))
-      .catch(() => undefined);
+    void callApi<{ canCreate?: boolean }>("/api/organizations", "GET").then((result) => setCanCreateOrganization(result.data?.canCreate === true));
   }, [params]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
