@@ -508,8 +508,9 @@ describeDb("Follow-ups after a reply flows", () => {
       };
       const owned = await dueRun();
       // Control: while the flow is active the step is claimable.
-      expect(await stores.engine.claimDue("w", owned.f.clock(), lease)).toMatchObject({ run: { id: owned.run.id } });
-      await stores.engine.release((await one("select id from sequence_step_runs where sequence_run_id = $1 and status = 'drafting'", [owned.run.id])).id, owned.f.clock(), owned.f.clock());
+      const claimed = await stores.engine.claimDue("w", owned.f.clock(), lease);
+      expect(claimed).toMatchObject({ run: { id: owned.run.id } });
+      await stores.engine.release(claimed!, owned.f.clock(), owned.f.clock());
       await sql`update sequences set status = 'archived' where id = ${owned.sequenceId}`;
       // The claim runs before any sweep and still refuses the archived campaign flow.
       expect(await stores.engine.claimDue("w", owned.f.clock(), lease)).toBeNull();
@@ -1348,9 +1349,9 @@ describeDb("Follow-ups after a reply flows", () => {
       const resolver = replyAiResolverOf(async (o: string) => (o === f.org ? f.ai : null));
       const tickWith = (beforeWrite: () => Promise<void>) =>
         (seqJobsApp.createSequenceJobs({
-          engine: stores.engine,
           runs: stores.runs,
-          replies: { ...stores.replies, insertDraft: async (input) => (await beforeWrite(), stores.replies.insertDraft(input)) },
+          engine: { ...stores.engine, writeDraft: async (claim, input) => (await beforeWrite(), stores.engine.writeDraft(claim, input)) },
+          replies: stores.replies,
           ai: resolver,
           now: f.clock,
           workerId: "race",
@@ -1366,9 +1367,10 @@ describeDb("Follow-ups after a reply flows", () => {
       const result = await tickWith(async () => {
         await (await (await import("@/test-support/suppression")).suppressionStore()).suppressEmail({ organizationId: f.org, email: person.email, reason: "unsubscribed" });
       });
+      // The stop ended the claim, so the worker writes no draft at all.
       expect((result as { detail?: Record<string, number> }).detail).toMatchObject({ stopped_while_drafting: 1 });
       await expectNoLiveDraft(f, run.id);
-      expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(0);
+      expect(await count("drafts", f.org, `request->>'sequenceRunId' = '${run.id}'`)).toBe(0);
     });
 
     it("a stop between the draft write and the link retires the unlinked draft", async () => {
@@ -1585,6 +1587,202 @@ describeDb("Follow-ups after a reply flows", () => {
       await f.seqRun();
       expect(await stepRun(stepRunId)).toMatchObject({ status: "drafting", attempt_count: MAX_DRAFT_ATTEMPTS, last_error: null });
       expect(f.ai.draftCalls).toBe(calls);
+    });
+  });
+
+  describe("a worker that lost its claim", () => {
+    type Engine = import("../../application/sequence-ports").SequenceEngineStore;
+    type Resolver = import("../../../ai/application/ai-ports").ReplyAiResolver;
+    const lease = () => seqJobsApp.SEQUENCE_LEASE_MS;
+    const step2 = async (runId: string) =>
+      (await one("select sr.id from sequence_step_runs sr join sequence_steps st on st.id = sr.sequence_step_id where sr.sequence_run_id = $1 and st.position = 2", [runId])).id as string;
+
+    /** A run whose step 2 is due, and ticks whose engine or AI a test can wrap. Only this organization has AI. */
+    async function dueStep() {
+      const { f, run } = await withRun();
+      const first = await one("select id from drafts where organization_id = $1", [f.org]);
+      await approve(f, first.id);
+      await f.seqRun();
+      f.state.offsetMs += 3 * DAY;
+      const own = replyAiResolverOf(async (o: string) => (o === f.org ? f.ai : null));
+      const tickAs = (workerId: string, wrap: { engine?: Partial<Engine>; ai?: Resolver } = {}) =>
+        (seqJobsApp.createSequenceJobs({
+          engine: { ...stores.engine, ...wrap.engine },
+          runs: stores.runs,
+          replies: stores.replies,
+          ai: wrap.ai ?? own,
+          now: f.clock,
+          workerId,
+          leaseMs: lease(),
+          notConfiguredDelayMs: 60_000,
+        }) as [Job])[0].run({ deadline: Date.now() + 60_000, now: f.clock });
+      return { f, run, stepRunId: await step2(run.id), tickAs };
+    }
+
+    /** The two ways worker a loses its claim on the step before it settles. Worker b claims the step next. */
+    const losses = {
+      "its lease ran out": async (f: Fx) => {
+        f.state.offsetMs += lease() + 60_000;
+      },
+      "a person paused and resumed the run": async (f: Fx, recordId: string) => {
+        await seqApp.pauseSequenceRun(f.seqDeps, f.actor, recordId);
+        await seqApp.resumeSequenceRun(f.seqDeps, f.actor, recordId);
+      },
+    };
+    /** `writeDraft`: a loses the step while the model writes, so b writes a draft first and a writes late. */
+    type Settle = "linkDraft" | "writeDraft" | "release" | "failAttempt";
+
+    /**
+     * Worker a claims step 2 and loses the claim at the point where it would settle. Worker b claims the step and, while
+     * it still drafts, a's late settle lands. Returns the step row as b saw it right before b linked its draft.
+     */
+    async function lateSettle(lose: (f: Fx, recordId: string) => Promise<void>, settle: Settle) {
+      const { f, run, stepRunId, tickAs } = await dueStep();
+      let holding!: () => void;
+      const bHolding = new Promise<void>((r) => (holding = r));
+      let settled!: () => void;
+      const aSettled = new Promise<void>((r) => (settled = r));
+      let seenByB: Record<string, unknown> | undefined;
+      let tickB: Promise<unknown> | undefined;
+      // Worker b drafts the step after a lost it, and links after a's late settle has landed.
+      const startB = async () => {
+        await lose(f, run.record_id);
+        tickB = tickAs("b", {
+          engine: {
+            linkDraft: async (...args: Parameters<Engine["linkDraft"]>) => {
+              holding();
+              await aSettled;
+              seenByB = await one("select status, attempt_count, draft_id from sequence_step_runs where id = $1", [stepRunId]);
+              return stores.engine.linkDraft(...args);
+            },
+          },
+        });
+        await bHolding;
+      };
+      // Settles of steps another test left due are released alongside; only this step's settle counts.
+      const ofStep = (args: unknown[]) => JSON.stringify(args).includes(stepRunId);
+      let aStarted = false;
+      const after = <A extends unknown[], R>(real: (...a: A) => Promise<R>) =>
+        async (...args: A) => {
+          const out = await real(...args);
+          if (ofStep(args)) settled();
+          return out;
+        };
+      const engine: Partial<Engine> = {
+        release: after(stores.engine.release),
+        failAttempt: after(stores.engine.failAttempt),
+        writeDraft: async (...args: Parameters<Engine["writeDraft"]>) => {
+          if (settle === "writeDraft" && !aStarted && ofStep(args)) {
+            aStarted = true;
+            await startB();
+            return after(stores.engine.writeDraft)(...args);
+          }
+          return stores.engine.writeDraft(...args);
+        },
+        linkDraft: async (...args: Parameters<Engine["linkDraft"]>) => {
+          if (settle === "linkDraft" && !aStarted && ofStep(args)) {
+            aStarted = true;
+            await startB();
+          }
+          return after(stores.engine.linkDraft)(...args);
+        },
+      };
+      // release: a finds no AI for the organization. failAttempt: the model fails with a transient error.
+      const ai = replyAiResolverOf(async (o: string) => {
+        if (o !== f.org) return null;
+        if (settle === "linkDraft" || settle === "writeDraft" || aStarted) return f.ai;
+        aStarted = true;
+        await startB();
+        if (settle === "release") return null;
+        return { name: f.ai.name, model: f.ai.model, classify: (input) => f.ai.classify(input), draft: async () => Promise.reject(new AiError("The model is overloaded.", "transient")) };
+      });
+      const tickA = await tickAs("a", { engine, ai });
+      await tickB;
+      return { f, run, stepRunId, seenByB, detailA: tickA.detail };
+    }
+
+    for (const [loss, lose] of Object.entries(losses)) {
+      for (const settle of ["linkDraft", "release", "failAttempt"] as const) {
+        it(`a late ${settle} after ${loss} leaves the step to the worker that holds it`, async () => {
+          const { f, stepRunId, seenByB, detailA } = await lateSettle(lose, settle);
+          // Worker b still held the step when a's settle landed.
+          expect(seenByB).toMatchObject({ status: "drafting", draft_id: null });
+          if (settle === "linkDraft") expect(detailA).toMatchObject({ claim_lost: 1 });
+          const row = await one("select status, draft_id, claim_token from sequence_step_runs where id = $1", [stepRunId]);
+          expect(row).toMatchObject({ status: "awaiting_review", claim_token: null });
+          // One draft waits for review, the one linked to the step.
+          const live = await sql`select id from drafts where organization_id = ${f.org} and status = 'awaiting_review' and request->>'sequenceStepRunId' = ${stepRunId}`;
+          expect(live.map((d) => d.id)).toEqual([row.draft_id]);
+        });
+      }
+    }
+
+    it("a worker that lost the step while the model wrote writes no draft, so the person sees the new holder's", async () => {
+      const { stepRunId, seenByB, detailA } = await lateSettle(losses["its lease ran out"], "writeDraft");
+      expect(seenByB).toMatchObject({ status: "drafting", draft_id: null });
+      expect(detailA).toMatchObject({ claim_lost: 1 });
+      const drafts = await sql`select id, status from drafts where request->>'sequenceStepRunId' = ${stepRunId}`;
+      expect(drafts.map((d) => d.status)).toEqual(["awaiting_review"]);
+      expect(await one("select status, draft_id from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ status: "awaiting_review", draft_id: drafts[0].id });
+    });
+
+    it("a draft written before a pause is retired, so the resumed run drafts the step afresh", async () => {
+      const { stepRunId } = await lateSettle(losses["a person paused and resumed the run"], "linkDraft");
+      const drafts = await sql`select id, status from drafts where request->>'sequenceStepRunId' = ${stepRunId} order by created_at`;
+      expect(drafts.map((d) => d.status)).toEqual(["stale", "awaiting_review"]);
+      expect(await one("select draft_id from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ draft_id: drafts[1].id });
+    });
+
+    it("a link after a pause without a resume answers lost, and the step waits scheduled in the paused run", async () => {
+      const { f, run, stepRunId, tickAs } = await dueStep();
+      let paused = false;
+      const result = await tickAs("a", {
+        engine: {
+          linkDraft: async (...args: Parameters<Engine["linkDraft"]>) => {
+            if (!paused && JSON.stringify(args).includes(stepRunId)) {
+              paused = true;
+              await seqApp.pauseSequenceRun(f.seqDeps, f.actor, run.record_id);
+            }
+            return stores.engine.linkDraft(...args);
+          },
+        },
+      });
+      expect(result.detail).toMatchObject({ claim_lost: 1 });
+      expect(result.detail?.stopped_while_drafting).toBeUndefined();
+      expect(await one("select status from sequence_runs where id = $1", [run.id])).toMatchObject({ status: "paused" });
+      expect(await one("select status, draft_id, claim_token from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ status: "scheduled", draft_id: null, claim_token: null });
+      expect(await count("drafts", f.org, `status = 'awaiting_review' and request->>'sequenceStepRunId' = '${stepRunId}'`)).toBe(0);
+    });
+
+    it("the claim never takes over a step that used every attempt, even when no sweep ran first", async () => {
+      const { takeDueStep } = await import("../drizzle-sequence-engine");
+      const { f, stepRunId } = await dueStep();
+      const expired = new Date(f.clock().getTime() - lease());
+      const seed = (attempts: number) =>
+        sql`update sequence_step_runs set status = 'drafting', attempt_count = ${attempts}, claim_token = gen_random_uuid(), updated_at = ${new Date(expired.getTime() - 60_000)} where id = ${stepRunId}`;
+      await seed(MAX_DRAFT_ATTEMPTS);
+      expect(await takeDueStep(f.clock(), expired, f.org)).toBeNull();
+      expect(await one("select status, attempt_count from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ status: "drafting", attempt_count: MAX_DRAFT_ATTEMPTS });
+      // Control: with an attempt left the same row is taken over.
+      await seed(MAX_DRAFT_ATTEMPTS - 1);
+      expect(await takeDueStep(f.clock(), expired, f.org)).toMatchObject({ id: stepRunId, attempt_count: MAX_DRAFT_ATTEMPTS });
+    });
+
+    it("each claim writes a fresh token, and a settle clears it", async () => {
+      const { f, stepRunId, tickAs } = await dueStep();
+      await sql`update sequence_step_runs set status = 'drafting', attempt_count = 1, claim_token = gen_random_uuid(), updated_at = ${new Date(f.clock().getTime() - lease() - 60_000)} where id = ${stepRunId}`;
+      const before = (await one("select claim_token from sequence_step_runs where id = $1", [stepRunId])).claim_token;
+      const tokens: string[] = [];
+      const own = replyAiResolverOf(async (o: string) => {
+        if (o === f.org) tokens.push((await one("select claim_token from sequence_step_runs where id = $1", [stepRunId])).claim_token);
+        return o === f.org ? f.ai : null;
+      });
+      // The takeover of a step whose lease ran out.
+      await tickAs("t", { ai: own });
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(tokens[0]).not.toBe(before);
+      expect(await one("select status, attempt_count, claim_token from sequence_step_runs where id = $1", [stepRunId])).toMatchObject({ status: "awaiting_review", attempt_count: 2, claim_token: null });
     });
   });
 

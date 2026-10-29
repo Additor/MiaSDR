@@ -4,7 +4,7 @@ import { produceDraft, draftCitations } from "../../ai/application/ai-jobs";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import type { ReplyAiResolver } from "../../ai/application/ai-ports";
 import type { ReplyStore } from "../../application/reply-ports";
-import type { ClaimedStep, RunStore, SequenceEngineStore } from "./sequence-ports";
+import type { ClaimedStep, LinkOutcome, RunStore, SequenceEngineStore } from "./sequence-ports";
 import { startRun } from "./sequences";
 
 export interface SequenceJobDeps {
@@ -26,6 +26,9 @@ const SWEEP_PAGE = 200;
 const DEFER_MS = 10 * 60_000;
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
+
+/** The counter for a link: the path's own name when it linked, else why the link came too late. */
+const linkCount = (outcome: LinkOutcome, linked: string) => (outcome === "linked" ? linked : outcome === "stopped" ? "stopped_while_drafting" : "claim_lost");
 
 /** Opens a run for every record that has a newly classified reply and a sequence to follow. */
 async function startRuns(deps: SequenceJobDeps, deadline: number, count: (key: string) => void): Promise<number> {
@@ -90,8 +93,7 @@ async function draftStep(deps: SequenceJobDeps, claim: ClaimedStep, count: (key:
   // A draft a crash left unlinked is linked, not written twice.
   const orphan = await deps.engine.orphanDraft(org, claim.stepRunId);
   if (orphan) {
-    await deps.engine.linkDraft(org, claim.stepRunId, orphan, now);
-    count("relinked");
+    count(linkCount(await deps.engine.linkDraft(claim, orphan, now), "relinked"));
     return;
   }
 
@@ -100,28 +102,27 @@ async function draftStep(deps: SequenceJobDeps, claim: ClaimedStep, count: (key:
     // The reply step adopts the draft the classification already queued, so the reviewer sees one.
     const adoptable = open.find((d) => d.replyForMessageId === claim.run.triggerMessageId);
     if (adoptable) {
-      await deps.engine.linkDraft(org, claim.stepRunId, adoptable.id, now);
-      count("adopted");
+      count(linkCount(await deps.engine.linkDraft(claim, adoptable.id, now), "adopted"));
       return;
     }
   }
   if (open.length > 0) {
     // Someone is already reviewing or writing a draft for this record. Writing another would replace it.
-    await deps.engine.release(claim.stepRunId, new Date(now.getTime() + DEFER_MS), now);
+    await deps.engine.release(claim, new Date(now.getTime() + DEFER_MS), now);
     count("deferred");
     return;
   }
 
   const provider = await deps.ai.forOrganization(org);
   if (!provider) {
-    await deps.engine.release(claim.stepRunId, new Date(now.getTime() + deps.notConfiguredDelayMs), now);
+    await deps.engine.release(claim, new Date(now.getTime() + deps.notConfiguredDelayMs), now);
     count("not_configured");
     return;
   }
 
   const ctx = await deps.replies.draftContext(org, claim.run.conversationId);
   if (!ctx) {
-    await deps.engine.failAttempt(claim.stepRunId, "Sequence drafts need an email conversation.", null, now);
+    await deps.engine.failAttempt(claim, "Sequence drafts need an email conversation.", null, now);
     count("failed");
     return;
   }
@@ -135,7 +136,7 @@ async function draftStep(deps: SequenceJobDeps, claim: ClaimedStep, count: (key:
   const result = await produceDraft(provider, guided);
   const subject = claim.step.subjectTemplate ? renderTemplate(claim.step.subjectTemplate, vars).trim() || result.output.subject : result.output.subject;
 
-  const created = await deps.replies.insertDraft({
+  const created = await deps.engine.writeDraft(claim, {
     organizationId: org,
     recordId: ctx.recordId,
     conversationId: ctx.conversationId,
@@ -151,14 +152,14 @@ async function draftStep(deps: SequenceJobDeps, claim: ClaimedStep, count: (key:
     response: { usage: result.usage ?? null },
     citations: draftCitations(guided),
   });
-  const linked = await deps.engine.linkDraft(org, claim.stepRunId, created.id, deps.now());
-  if (!linked) {
-    // A stop committed while the draft was being written. The draft belongs to a dead run, so it retires now.
-    await deps.engine.retireDraft(org, created.id, deps.now());
-    count("stopped_while_drafting");
+  if (typeof created === "string") {
+    // A stop or a pause ended the claim while the model wrote, or another claim took the step over. Nothing is written.
+    count(linkCount(created, "drafted"));
     return;
   }
-  count("drafted");
+  // A stop, a pause or a takeover between the write and the link: the link retires the draft unless the claim that took
+  // the step over adopts it.
+  count(linkCount(await deps.engine.linkDraft(claim, created.id, deps.now()), "drafted"));
 }
 
 /**
@@ -188,7 +189,7 @@ export function createSequenceJobs(deps: SequenceJobDeps): Job[] {
           } catch (error) {
             const permanent = error instanceof AiError && error.kind === "permanent";
             const final = permanent || claim.attempts >= MAX_DRAFT_ATTEMPTS;
-            await deps.engine.failAttempt(claim.stepRunId, errorMessage(error), final ? null : new Date(deps.now().getTime() + draftRetryDelayMs(claim.attempts)), deps.now());
+            await deps.engine.failAttempt(claim, errorMessage(error), final ? null : new Date(deps.now().getTime() + draftRetryDelayMs(claim.attempts)), deps.now());
             count(final ? "failed" : "retry");
           }
         }

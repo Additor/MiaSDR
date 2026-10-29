@@ -1,20 +1,36 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import type { ClaimedStep, InterruptCandidate, SequenceEngineStore } from "../application/sequence-ports";
-import { MAX_DRAFT_ATTEMPTS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
+import type { ClaimedStep, InterruptCandidate, LateOutcome, LinkOutcome, SequenceEngineStore } from "../application/sequence-ports";
+import { ACTIVE_RUN_STATUSES, MAX_DRAFT_ATTEMPTS, stepTypeAt, type InterruptFacts } from "../domain/sequences";
 import { NEW_REPLY_MARGIN_MINUTES } from "../domain/after-reply";
 import type { FollowUpsRule } from "../../domain/reply-type";
 import { flowRunnableSql, owningCampaignSql, startableCampaignSql, startFollowUpsSql, startReplyDraftSql } from "./after-reply-sql";
 import { rowsOf } from "@/platform/db/sql-values";
+import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
 import { advanceRunTx, asDate, ts, zoneOfTx } from "./sequence-run-tx";
 import { endRunTx, recordEvent, stepMayBecome, type Tx } from "./sequence-stop";
 import { knowledgeFor } from "../../infrastructure/thread-context";
+import { insertDraftTx } from "../../infrastructure/reply-store-drafts";
 import { stopRequestedSql } from "../../infrastructure/stop-requested-sql";
 import { PENDING_DRAFT_STATUSES, RETIRABLE_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
 
 const PENDING_DRAFTS = sqlValues(PENDING_DRAFT_STATUSES);
+/** Run statuses that have not ended. A paused run gives its steps back; an ended one stops them. */
+const LIVE_RUN: readonly string[] = ACTIVE_RUN_STATUSES;
+
+/** The fence of a step run settle: the step is still drafting under this claim. */
+const heldStep = (claim: ClaimedStep) =>
+  sql`id = ${claim.stepRunId} and organization_id = ${claim.organizationId} and status = 'drafting' and ${heldBy("sequence_step_runs", claim, "attempt_count")}`;
+
+/** Retires `draftId` when it was written for the claim's step run, no step run links it, and no send touched it. */
+const retireStepDraft = (tx: Tx, claim: ClaimedStep, draftId: string, error: string, now: Date) =>
+  tx.execute(sql`
+    update drafts d set status = 'stale', error = ${error}, updated_at = ${ts(now)}
+    where d.id = ${draftId} and d.organization_id = ${claim.organizationId} and d.request->>'sequenceStepRunId' = ${claim.stepRunId}
+      and d.status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}
+      and not exists (select 1 from sequence_step_runs sr where sr.draft_id = d.id)`);
 
 interface FactsRow {
   run_id: string;
@@ -63,6 +79,41 @@ const factsQuery = (where: SQL, tail: SQL = sql``) => sql`
   join people p on p.id = rec.person_id and p.organization_id = r.organization_id
   left join reply_types s on s.id = rec.reply_type_id
   where ${where} ${tail}`;
+
+/**
+ * The claim of `claimDue` without its expiry sweep: one due step, or one whose lease ran out with attempts left, now
+ * drafting under a fresh token. `organizationId` keeps a test's claim inside its fixture; the job claims across
+ * organizations.
+ */
+export async function takeDueStep(now: Date, expired: Date, organizationId?: string) {
+  const [claimed] = rowsOf<{ id: string; organization_id: string; attempt_count: number; claim_token: string }>(
+    await db.execute(sql`
+      with pick as (
+        select sr.id
+        from sequence_step_runs sr
+        join sequence_runs r on r.id = sr.sequence_run_id and r.organization_id = sr.organization_id
+        join sequence_steps st on st.id = sr.sequence_step_id
+        join records rec on rec.id = r.record_id
+        join sequences fl on fl.id = r.sequence_id and fl.organization_id = r.organization_id
+        left join campaigns camp on camp.id = fl.campaign_id and camp.organization_id = fl.organization_id
+        where r.status = 'active' ${organizationId ? sql`and sr.organization_id = ${organizationId}` : sql``}
+          and ${flowRunnableSql("fl")}
+          and (camp.id is null or camp.status <> 'paused')
+          and st.position = r.current_step_position
+          and rec.workflow_state not in ('paused', 'closed')
+          -- A step drafting past its lease with every attempt used is never taken over: the sweep in claimDue fails it.
+          and ((sr.status = 'scheduled' and sr.due_at <= ${ts(now)}) or (sr.status = 'drafting' and sr.updated_at < ${ts(expired)} and sr.attempt_count < ${MAX_DRAFT_ATTEMPTS}))
+          and (st.position = 1 or not exists (select 1 from drafts d where d.record_id = rec.id and d.status in ${PENDING_DRAFTS} and d.request->>'sequenceStepRunId' is distinct from sr.id::text))
+        order by sr.due_at
+        limit 1
+        for update of sr skip locked
+      )
+      update sequence_step_runs u set status = 'drafting', attempt_count = u.attempt_count + 1, claim_token = ${NEW_CLAIM_TOKEN}, updated_at = ${ts(now)}
+      from pick where u.id = pick.id
+      returning u.id, u.organization_id, u.attempt_count, u.claim_token`),
+  );
+  return claimed ?? null;
+}
 
 export const drizzleSequenceEngine: SequenceEngineStore = {
   // Only new replies start a run: the reply arrived no earlier than NEW_REPLY_MARGIN_MINUTES before the flow was turned
@@ -182,35 +233,13 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
 
   async claimDue(workerId, now, leaseMs) {
     const expired = new Date(now.getTime() - leaseMs);
-    // A step whose drafting died too many times stops retrying.
+    // A step whose drafting died too many times stops retrying. The sweep covers every organization, as the claim
+    // below does, and touches only steps whose lease ran out. A worker still on its last attempt changes nothing after
+    // it: its settles no longer find the step drafting.
     await db.execute(sql`
-      update sequence_step_runs set status = 'failed', last_error = 'Drafting did not finish.', updated_at = ${ts(now)}
+      update sequence_step_runs set status = 'failed', last_error = 'Drafting did not finish.', claim_token = null, updated_at = ${ts(now)}
       where status = 'drafting' and updated_at < ${ts(expired)} and attempt_count >= ${MAX_DRAFT_ATTEMPTS}`);
-    const [claimed] = rowsOf<{ id: string; organization_id: string; attempt_count: number }>(
-      await db.execute(sql`
-        with pick as (
-          select sr.id
-          from sequence_step_runs sr
-          join sequence_runs r on r.id = sr.sequence_run_id and r.organization_id = sr.organization_id
-          join sequence_steps st on st.id = sr.sequence_step_id
-          join records rec on rec.id = r.record_id
-          join sequences fl on fl.id = r.sequence_id and fl.organization_id = r.organization_id
-          left join campaigns camp on camp.id = fl.campaign_id and camp.organization_id = fl.organization_id
-          where r.status = 'active'
-            and ${flowRunnableSql("fl")}
-            and (camp.id is null or camp.status <> 'paused')
-            and st.position = r.current_step_position
-            and rec.workflow_state not in ('paused', 'closed')
-            and ((sr.status = 'scheduled' and sr.due_at <= ${ts(now)}) or (sr.status = 'drafting' and sr.updated_at < ${ts(expired)}))
-            and (st.position = 1 or not exists (select 1 from drafts d where d.record_id = rec.id and d.status in ${PENDING_DRAFTS} and d.request->>'sequenceStepRunId' is distinct from sr.id::text))
-          order by sr.due_at
-          limit 1
-          for update of sr skip locked
-        )
-        update sequence_step_runs u set status = 'drafting', attempt_count = u.attempt_count + 1, updated_at = ${ts(now)}
-        from pick where u.id = pick.id
-        returning u.id, u.organization_id, u.attempt_count`),
-    );
+    const claimed = await takeDueStep(now, expired);
     if (!claimed) return null;
     void workerId;
     const [d] = rowsOf<{
@@ -250,6 +279,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
     return {
       stepRunId: claimed.id,
       organizationId: claimed.organization_id,
+      claimToken: claimed.claim_token,
       attempts: claimed.attempt_count,
       run: { id: d.run_id, recordId: d.record_id, conversationId: d.conversation_id, sequenceVersionId: d.sequence_version_id, triggerMessageId: d.trigger_message_id },
       step,
@@ -257,17 +287,17 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
     };
   },
 
-  async release(stepRunId, dueAt, now) {
+  async release(claim, dueAt, now) {
     await db.execute(sql`
-      update sequence_step_runs set status = 'scheduled', due_at = ${ts(dueAt)}, attempt_count = greatest(attempt_count - 1, 0), updated_at = ${ts(now)}
-      where id = ${stepRunId} and status = 'drafting'`);
+      update sequence_step_runs set status = 'scheduled', due_at = ${ts(dueAt)}, attempt_count = greatest(attempt_count - 1, 0), claim_token = null, updated_at = ${ts(now)}
+      where ${heldStep(claim)}`);
   },
 
-  async failAttempt(stepRunId, error, retryAt, now) {
+  async failAttempt(claim, error, retryAt, now) {
     if (retryAt) {
-      await db.execute(sql`update sequence_step_runs set status = 'scheduled', due_at = ${ts(retryAt)}, last_error = ${error}, updated_at = ${ts(now)} where id = ${stepRunId} and status = 'drafting'`);
+      await db.execute(sql`update sequence_step_runs set status = 'scheduled', due_at = ${ts(retryAt)}, last_error = ${error}, claim_token = null, updated_at = ${ts(now)} where ${heldStep(claim)}`);
     } else {
-      await db.execute(sql`update sequence_step_runs set status = 'failed', last_error = ${error}, updated_at = ${ts(now)} where id = ${stepRunId} and status = 'drafting'`);
+      await db.execute(sql`update sequence_step_runs set status = 'failed', last_error = ${error}, claim_token = null, updated_at = ${ts(now)} where ${heldStep(claim)}`);
     }
   },
 
@@ -291,13 +321,33 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
     return row?.id ?? null;
   },
 
-  async linkDraft(organizationId, stepRunId, draftId, now) {
-    return db.transaction(async (tx: Tx) => {
-      // Lock order is record, run, step run, as in `endRunTx`, so a stop and this link serialize.
+  async writeDraft(claim, draft) {
+    // `insertDraftTx` locks the record first and then the step row, the order `linkDraft` and `endRunTx` take them in.
+    // The row lock makes a takeover skip the step until the draft is in, so the new holder adopts it as an orphan.
+    let late: LateOutcome = "lost";
+    const written = await db.transaction((tx) =>
+      insertDraftTx(tx, draft, async (locked) => {
+        const [row] = rowsOf<{ run_status: string; held: boolean }>(
+          await locked.execute(sql`
+            select (select r.status from sequence_runs r where r.id = sequence_run_id) as run_status, (${heldStep(claim)}) as held
+            from sequence_step_runs where id = ${claim.stepRunId} and organization_id = ${claim.organizationId}
+            for update`),
+        );
+        if (!row || !LIVE_RUN.includes(row.run_status)) late = "stopped";
+        return row?.held === true && row.run_status === "active";
+      }),
+    );
+    return written ?? late;
+  },
+
+  async linkDraft(claim, draftId, now) {
+    const { organizationId, stepRunId } = claim;
+    return db.transaction(async (tx: Tx): Promise<LinkOutcome> => {
+      // Lock order is record, run, step run, as in `endRunTx`, so a stop, a pause and this link serialize.
       const [peek] = rowsOf<{ record_id: string }>(
         await tx.execute(sql`select r.record_id from sequence_step_runs sr join sequence_runs r on r.id = sr.sequence_run_id where sr.id = ${stepRunId} and sr.organization_id = ${organizationId}`),
       );
-      if (!peek) return false;
+      if (!peek) return "stopped";
       await tx.execute(sql`select id from records where id = ${peek.record_id} and organization_id = ${organizationId} for update`);
       const [sr] = rowsOf<{ id: string; record_id: string; run_status: string }>(
         await tx.execute(sql`
@@ -306,25 +356,31 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           where sr.id = ${stepRunId} and sr.organization_id = ${organizationId}
           for update of r`),
       );
-      if (!sr || sr.run_status !== "active") return false;
-      const [locked] = rowsOf<{ id: string }>(await tx.execute(sql`select id from sequence_step_runs where id = ${stepRunId} and status = 'drafting' for update`));
-      if (!locked) return false;
+      if (!sr) return "stopped";
+      const [step] = rowsOf<{ status: string; held: boolean }>(
+        await tx.execute(sql`select status, ${heldBy("sequence_step_runs", claim, "attempt_count")} as held from sequence_step_runs where id = ${stepRunId} for update`),
+      );
+      // A pause gives the step back without ending the run, so it answers `lost`. Only an ended run is `stopped`.
+      const late: LinkOutcome | null = !LIVE_RUN.includes(sr.run_status) ? "stopped" : sr.run_status !== "active" || step.status !== "drafting" || !step.held ? "lost" : null;
+      if (late) {
+        // A claim that still drafts the step adopts this draft as its orphan.
+        if (late === "stopped" || step.status !== "drafting") {
+          await retireStepDraft(tx, claim, draftId, late === "stopped" ? "The follow-up sequence ended." : "The follow-up step moved on without this draft.", now);
+        }
+        return late;
+      }
       // The draft must belong to the run's record. SQL only knows both sit in the organization.
       const [draft] = rowsOf<{ id: string }>(await tx.execute(sql`select id from drafts where id = ${draftId} and organization_id = ${organizationId} and record_id = ${sr.record_id}`));
       if (!draft) throw new Error("The draft does not belong to the run's record.");
-      await tx.execute(sql`update sequence_step_runs set status = 'awaiting_review', draft_id = ${draftId}, last_error = null, updated_at = ${ts(now)} where id = ${stepRunId} and ${stepMayBecome("awaiting_review")}`);
+      await tx.execute(sql`
+        update sequence_step_runs set status = 'awaiting_review', draft_id = ${draftId}, last_error = null, claim_token = null, updated_at = ${ts(now)}
+        where ${heldStep(claim)} and ${stepMayBecome("awaiting_review")}`);
       await tx.execute(sql`
         update records set workflow_state = 'action_required', next_action_at = null
         where id = ${sr.record_id} and organization_id = ${organizationId} and workflow_state in ('waiting', 'idle')`);
       await recordEvent(tx, { organizationId, recordId: sr.record_id, type: "sequence.draft_created", actorUserId: null, to: { stepRunId, draftId } });
-      return true;
+      return "linked";
     });
-  },
-
-  async retireDraft(organizationId, draftId, now) {
-    await db.execute(sql`
-      update drafts set status = 'stale', error = 'The follow-up sequence ended.', updated_at = ${ts(now)}
-      where id = ${draftId} and organization_id = ${organizationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
   },
 
   async knowledgeForTags(organizationId, tags) {

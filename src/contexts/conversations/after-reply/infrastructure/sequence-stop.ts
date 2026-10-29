@@ -70,7 +70,7 @@ export async function endRunCountingTx(tx: Tx, input: EndRunInput): Promise<{ dr
            or request->>'sequenceRunId' = ${input.runId})
     returning id`));
   await tx.execute(sql`
-    update sequence_step_runs set status = 'cancelled', updated_at = ${ts(input.now)}
+    update sequence_step_runs set status = 'cancelled', claim_token = null, updated_at = ${ts(input.now)}
     where sequence_run_id = ${input.runId} and organization_id = ${input.organizationId} and ${stepMayBecome("cancelled")}`);
   await tx.execute(sql`update sequence_runs set status = ${input.final}, updated_at = ${ts(input.now)} where id = ${input.runId} and ${runMayBecome(input.final)}`);
   await tx.execute(sql`update records set next_action_at = null where id = ${run.record_id} and organization_id = ${input.organizationId} and workflow_state = 'waiting'`);
