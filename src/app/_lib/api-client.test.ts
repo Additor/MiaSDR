@@ -30,6 +30,12 @@ describe("callApi", () => {
   it("names an expired session and a call nobody answered", async () => {
     vi.stubGlobal("fetch", answer(401, {}));
     expect((await callApi("/api/x", "GET")).error).toBe("Your session expired. Sign in again.");
+    // The route wrappers answer 401 with `{ error: "unauthorized" }`: a person reads the session line, not the code.
+    vi.stubGlobal("fetch", answer(401, { error: "unauthorized" }));
+    expect((await callApi("/api/x", "GET")).error).toBe("Your session expired. Sign in again.");
+    // A 401 that says something else keeps its own words.
+    vi.stubGlobal("fetch", answer(401, { error: "This invitation belongs to another account." }));
+    expect((await callApi("/api/x", "GET")).error).toBe("This invitation belongs to another account.");
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("offline"))));
     expect(await callApi("/api/x", "GET")).toMatchObject({ ok: false, status: 0, error: "Could not reach the server." });
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new DOMException("stop", "AbortError"))));

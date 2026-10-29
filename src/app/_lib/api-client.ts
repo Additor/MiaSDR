@@ -33,7 +33,9 @@ export async function callApi<T = unknown>(url: string, method: Method, body?: u
     const data = (await response.json().catch(() => null)) as (T & { error?: unknown; issues?: unknown }) | null;
     if (!response.ok) {
       const details = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
-      const error = typeof data?.error === "string" ? data.error : response.status === 401 ? "Your session expired. Sign in again." : "Something went wrong. Try again.";
+      // The wrappers' 401 says `unauthorized`, a code rather than words for a person.
+      const sessionGone = response.status === 401 && (typeof data?.error !== "string" || data.error === "unauthorized");
+      const error = sessionGone ? "Your session expired. Sign in again." : typeof data?.error === "string" ? data.error : "Something went wrong. Try again.";
       return { ok: false, status: response.status, data: null, error, issues: Array.isArray(data?.issues) ? (data.issues as ApiResult<T>["issues"]) : [], details };
     }
     return { ok: true, status: response.status, data, error: null, issues: [], details: null };
