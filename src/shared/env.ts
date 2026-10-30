@@ -57,6 +57,8 @@ const schema = z.object({
   EMBEDDED_SCHEDULER: flagSchema(true),
   /** Emergency brake: while true, automated sequence sends (email and LinkedIn) and test sends are held. Approved replies still send. A lenient string here: `src/shared/outbound-pause.ts` is the only parser and treats an unreadable value as paused. Default false. */
   PAUSE_OUTBOUND: z.string().optional(),
+  /** Serves the MCP endpoint at `/api/mcp`. Each organization still turns MCP on for itself. Set false to turn it off for the whole install. Default true. */
+  MCP_ENABLED: flagSchema(true),
   /** Two-letter country (ISO 3166-1 alpha-2) for phone numbers written without a country code, such as `KR` for `010-...`. An organization setting overrides it. Read from the process environment at call time. */
   DEFAULT_PHONE_COUNTRY: z
     .string()

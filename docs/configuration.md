@@ -2,7 +2,7 @@
 
 Every setting is an environment variable. Copy `.env.example` to `.env`, replace each `CHANGEME`, and restart the app after a change. `src/shared/env.ts` validates the values on first use and names the variable that failed. Empty values count as unset.
 
-Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `PAUSE_OUTBOUND`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS` or `EMBEDDED_SCHEDULER` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
+Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `PAUSE_OUTBOUND`, `MCP_ENABLED`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER` or `MCP_ENABLED` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
 
 A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and the schema in step: a variable in one of them and not in the others fails CI.
 
@@ -54,6 +54,12 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 | `GRID_PROVIDER` | none | `fake` enables the deterministic enrichment provider (demos only). It offers Find email and the four shared actions. An address with `invalid`, `catchall`, `unknown` or `disposable` in it gets that verdict, and `nohit` finds nothing. |
 | `GRID_HTTP_ALLOWED_HOSTS` | none | Hosts a Custom HTTP enrichment provider may call. Empty means none. |
 | `GRID_RUN_CONCURRENCY` | `8` | Grid cells run at once per tick, 1 to 16. |
+
+## MCP
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `MCP_ENABLED` | `true` | Serves the MCP endpoint for AI agents at `/api/mcp`. A request needs a personal MCP token, and the token's organization must have MCP turned on. Set `false` to turn the endpoint off for the whole install; it then answers 404. |
 
 ## Retention
 

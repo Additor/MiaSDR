@@ -21,6 +21,7 @@ const PUBLIC_PREFIXES = [
   // Authenticated by their own secrets, not by a session.
   "/api/jobs/tick",
   "/api/webhooks",
+  "/api/mcp",
 ];
 
 function isPublic(pathname: string): boolean {

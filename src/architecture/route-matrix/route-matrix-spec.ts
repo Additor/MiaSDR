@@ -14,6 +14,7 @@ export const PUBLIC_ROUTES: Record<string, string> = {
   "auth/[...all]": "Better Auth's own endpoints (sign-in, sign-up, reset). Covered by the auth integration tests.",
   "health": "Liveness probe.",
   "jobs/tick": "Scheduler entry point. Authenticated by the CRON_SECRET bearer token.",
+  "mcp": "MCP endpoint for AI agents. Authenticated by a personal MCP token, stored as a hash, and the token organization's MCP setting.",
   "outreach/unsubscribe": "Unsubscribe link in outgoing mail. Authenticated by a signed token.",
   "setup": "First-run setup. Answers 409 once a user exists.",
   "webhooks/dev-fakes": "Test controls. 404 unless E2E_FAKE_CONTROLS=1 outside production.",
