@@ -28,6 +28,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { href: "/settings/organization", title: "Organization", summary: "Rename the organization and set its default time zone and phone country." },
       { href: "/settings/members", title: "Members", summary: "Invite people, change roles and remove members." },
       { href: "/settings/integrations", title: "Integrations", summary: "API keys for the AI provider and the enrichment providers. Keys are stored encrypted.", adminOnly: true },
+      { href: "/settings/mcp", title: "AI agents (MCP)", summary: "Turn on MCP and create the personal tokens that connect agents such as Claude Code." },
     ],
   },
   {

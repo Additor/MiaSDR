@@ -1,0 +1,288 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shell/confirm-dialog";
+import { EmptyState } from "@/components/shell/empty-state";
+import { Time } from "@/components/shell/time";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { runApiAction } from "@/app/_lib/api-action";
+import { callApi } from "@/app/_lib/api-client";
+import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
+import { AdminNotice } from "../admin-notice";
+import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
+
+interface Token {
+  id: string;
+  name: string;
+  hint: string | null;
+  ownerUserId: string;
+  ownerName: string;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+}
+
+interface Props {
+  /** `MCP_ENABLED`: false turns the endpoint off for the whole install. */
+  installEnabled: boolean;
+  /** The organization's own switch. */
+  enabled: boolean;
+  canManage: boolean;
+  currentUserId: string;
+  endpoint: string;
+  tokenDays: number;
+  tokenLimit: number;
+  mine: Token[];
+  everyone: Token[];
+}
+
+/** The client setups the page shows, each with the token in place. */
+function clientSetups(endpoint: string, token: string) {
+  const server = { url: endpoint, headers: { Authorization: `Bearer ${token}` } };
+  return [
+    { client: "Claude Code", where: "Run in a terminal.", text: `claude mcp add --transport http miasdr ${endpoint} --header "Authorization: Bearer ${token}"` },
+    { client: "Cursor", where: "Add to ~/.cursor/mcp.json.", text: JSON.stringify({ mcpServers: { miasdr: server } }, null, 2) },
+    { client: "VS Code", where: "Add to .vscode/mcp.json.", text: JSON.stringify({ servers: { miasdr: { type: "http", ...server } } }, null, 2) },
+  ];
+}
+
+const isExpired = (token: Token) => token.expiresAt !== null && new Date(token.expiresAt).getTime() <= Date.now();
+
+const copy = (text: string, what: string) =>
+  navigator.clipboard.writeText(text).then(
+    () => toast.success(`${what} copied.`),
+    () => toast.error(`Copy failed. Select the ${what.toLowerCase()} and copy it.`),
+  );
+
+export function McpPanel({ installEnabled, enabled, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone }: Props) {
+  const router = useRouter();
+  const refresh = () => router.refresh();
+  const { isBusy, run } = useApiAction();
+  const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ name: string; token: string } | null>(null);
+  const [revoking, setRevoking] = useState<Token | null>(null);
+  const [revokingAll, setRevokingAll] = useState(false);
+  const usable = installEnabled && enabled;
+  // The limit counts live tokens; an expired one stays listed until someone revokes it.
+  const live = mine.filter((t) => !isExpired(t)).length;
+
+  function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const name = String(new FormData(form).get("name"));
+    void run("create", async () => {
+      setError(null);
+      const result = await runApiAction(callApi<{ token: string; name: string }>("/api/settings/mcp/tokens", "POST", { name }), { refresh, expectData: true });
+      if (!result.ok) return setError(result.error);
+      form.reset();
+      setCreated({ name: result.data.name, token: result.data.token });
+    });
+  }
+
+  if (!installEnabled) {
+    return (
+      <SettingsSection title="AI agents (MCP)">
+        <p className="text-sm">
+          This install has MCP turned off. The server administrator turns it on with the <code className="font-mono text-xs">MCP_ENABLED</code> variable.
+        </p>
+      </SettingsSection>
+    );
+  }
+
+  return (
+    <div>
+      <SettingsSection
+        id="access"
+        title="Access"
+        description="MCP lets an AI agent, such as Claude Code, Cursor or VS Code, read this organization's inbox, leads, campaigns, deals and analytics. Each person connects with a personal token, and the agent sees what that person sees."
+      >
+        {enabled ? (
+          <p className="text-sm">MCP is on. Agents with a live token can read this organization.</p>
+        ) : (
+          <p className="text-sm">MCP is off. Agents cannot connect, and nobody can create a token.</p>
+        )}
+        {canManage ? (
+          <div>
+            <Button variant="outline" onClick={() => setSwitching(true)}>
+              {enabled ? "Turn off MCP" : "Turn on MCP"}
+            </Button>
+          </div>
+        ) : (
+          !enabled && <AdminNotice action="turn on MCP" />
+        )}
+      </SettingsSection>
+
+      <SettingsSection
+        id="tokens"
+        title="Your tokens"
+        count={mine.length > 0 ? `${live} of ${tokenLimit} live` : undefined}
+        description={`A token reads what you can read here. It lasts ${tokenDays} days. Revoke a token you no longer use, or one you think someone else has.`}
+      >
+        {usable && (
+          <form onSubmit={create}>
+            <FieldGroup>
+              <div className="flex flex-wrap items-end gap-2">
+                <Field className="min-w-0 flex-1">
+                  <FieldLabel htmlFor="token-name">Token name</FieldLabel>
+                  <Input id="token-name" name="name" required maxLength={100} placeholder="Work laptop, Claude Code" />
+                </Field>
+                <Button type="submit" disabled={isBusy("create")}>
+                  {isBusy("create") ? "Creating…" : "Create token"}
+                </Button>
+              </div>
+              {error && <FieldError>{error}</FieldError>}
+            </FieldGroup>
+          </form>
+        )}
+        {created && <NewToken name={created.name} token={created.token} endpoint={endpoint} onDone={() => setCreated(null)} />}
+        {mine.length === 0 ? (
+          <EmptyState className="py-0" title="No tokens" description={usable ? "Create one to connect an agent." : undefined} />
+        ) : (
+          <TokenList tokens={mine} showOwner={false} onRevoke={setRevoking} />
+        )}
+      </SettingsSection>
+
+      {canManage && (
+        <SettingsSection
+          id="all-tokens"
+          title="Every member's tokens"
+          description="Revoke one token, or all of them when you suspect a leak. A revoked token stops working on its next request."
+          action={
+            everyone.length > 0 ? (
+              <Button variant="outline" size="sm" onClick={() => setRevokingAll(true)}>
+                Revoke all
+              </Button>
+            ) : undefined
+          }
+        >
+          {everyone.length === 0 ? (
+            <EmptyState className="py-0" title="No member has a token" />
+          ) : (
+            <TokenList tokens={everyone} showOwner currentUserId={currentUserId} onRevoke={setRevoking} />
+          )}
+        </SettingsSection>
+      )}
+
+      <ConfirmDialog
+        open={switching}
+        onOpenChange={setSwitching}
+        title={enabled ? "Turn off MCP?" : "Turn on MCP?"}
+        description={
+          enabled
+            ? "Every agent loses access on its next request. Tokens stay, so turning MCP back on restores them."
+            : "Members can then create tokens and connect agents that read what they can read."
+        }
+        confirmLabel={enabled ? "Turn off" : "Turn on"}
+        cancelLabel={enabled ? "Keep on" : "Keep off"}
+        pendingLabel={enabled ? "Turning off…" : "Turning on…"}
+        onConfirm={async () => toastOrThrow(await runApiAction(callApi("/api/settings/mcp", "PATCH", { enabled: !enabled }), { refresh }), enabled ? "MCP turned off." : "MCP turned on.")}
+      />
+      <ConfirmDialog
+        open={revoking !== null}
+        onOpenChange={(open) => !open && setRevoking(null)}
+        title={`Revoke "${revoking?.name ?? "this token"}"?`}
+        description={
+          revoking && revoking.ownerUserId !== currentUserId
+            ? `${revoking.ownerName}'s agent stops working on its next request. They can create a new token.`
+            : "The agent that uses it stops working on its next request."
+        }
+        confirmLabel="Revoke token"
+        cancelLabel="Keep token"
+        pendingLabel="Revoking…"
+        destructive
+        onConfirm={async () => revoking && toastOrThrow(await runApiAction(callApi(`/api/settings/mcp/tokens/${revoking.id}`, "DELETE"), { refresh }), "Token revoked.")}
+      />
+      <ConfirmDialog
+        open={revokingAll}
+        onOpenChange={setRevokingAll}
+        title="Revoke every MCP token?"
+        description={`All ${everyone.length} tokens of this organization stop working on their next request, yours included. Each person creates a new one to reconnect.`}
+        confirmLabel="Revoke all tokens"
+        cancelLabel="Keep tokens"
+        pendingLabel="Revoking…"
+        destructive
+        onConfirm={async () => toastOrThrow(await runApiAction(callApi("/api/settings/mcp/tokens/revoke-all", "POST"), { refresh }), "Every token revoked.")}
+      />
+    </div>
+  );
+}
+
+/** The secret, shown once, with a setup for each client. */
+function NewToken({ name, token, endpoint, onDone }: { name: string; token: string; endpoint: string; onDone: () => void }) {
+  return (
+    <div className="stack-group rounded-md border p-4 text-sm" role="status">
+      <p>
+        <strong className="font-medium">Copy the token for &ldquo;{name}&rdquo; now.</strong> It does not show again; if you lose it, revoke it and create another.
+      </p>
+      <div className="flex items-center gap-2">
+        <Input readOnly value={token} aria-label="New token" onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
+        <Button type="button" variant="outline" size="sm" onClick={() => void copy(token, "Token")}>
+          Copy
+        </Button>
+      </div>
+      {clientSetups(endpoint, token).map((setup) => (
+        <div key={setup.client} className="stack-field">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{setup.client}</span>
+            <span className="text-muted-foreground">{setup.where}</span>
+            <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={() => void copy(setup.text, "Setup")}>
+              Copy
+            </Button>
+          </div>
+          <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs">{setup.text}</pre>
+        </div>
+      ))}
+      <div>
+        <Button type="button" variant="outline" size="sm" onClick={onDone}>
+          I copied it
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function TokenList({ tokens, showOwner, currentUserId, onRevoke }: { tokens: Token[]; showOwner: boolean; currentUserId?: string; onRevoke: (token: Token) => void }) {
+  return (
+    <ul className={RULED_LIST} aria-label={showOwner ? "Every member's tokens" : "Your tokens"}>
+      {tokens.map((token) => {
+        const expired = isExpired(token);
+        return (
+          <li key={token.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-sm ${RULED_ROW}`}>
+            <span className="font-medium">{token.name}</span>
+            {token.hint && <span className="font-mono text-xs text-muted-foreground">…{token.hint}</span>}
+            {showOwner && (
+              <span className="text-muted-foreground">
+                {token.ownerName}
+                {token.ownerUserId === currentUserId && " (you)"}
+              </span>
+            )}
+            {expired && <Badge variant="outline">Expired</Badge>}
+            <span className="text-muted-foreground">
+              {token.lastUsedAt ? (
+                <>
+                  used <Time value={token.lastUsedAt} />
+                </>
+              ) : (
+                "never used"
+              )}
+              {token.expiresAt && !expired && (
+                <>
+                  , expires <Time value={token.expiresAt} dateOnly />
+                </>
+              )}
+            </span>
+            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => onRevoke(token)}>
+              Revoke
+            </Button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
