@@ -6,6 +6,8 @@ import { getConversationTool } from "./conversation";
 import { registerTools, type ToolDefinition } from "./define";
 import { listInboxTool } from "./inbox";
 import { getPersonTool, searchPeopleTool } from "./people";
+import { getPipelineTool } from "./pipeline";
+import { getAnalyticsTool, getSendingHealthTool } from "./reports";
 import { getWorkQueueTool } from "./work-queue";
 import { getWorkspace } from "./workspace";
 
@@ -13,7 +15,7 @@ import { getWorkspace } from "./workspace";
 export const TOOL_LIST_TTL_MS = 300_000;
 
 /** Every tool. `registerTools` keeps the ones the token's scopes allow. */
-export const TOOLS: readonly ToolDefinition[] = [getWorkspace, getWorkQueueTool, listInboxTool, getConversationTool, searchPeopleTool, getPersonTool, listCampaignsTool, getCampaignTool];
+export const TOOLS: readonly ToolDefinition[] = [getWorkspace, getWorkQueueTool, listInboxTool, getConversationTool, searchPeopleTool, getPersonTool, listCampaignsTool, getCampaignTool, getAnalyticsTool, getPipelineTool, getSendingHealthTool];
 
 /**
  * One server per request, built for the principal: the tools it registers depend on the token's scopes, so a token
