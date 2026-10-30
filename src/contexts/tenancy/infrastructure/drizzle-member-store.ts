@@ -1,8 +1,9 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { invitations, members, users } from "@/platform/db/schema";
+import { invitations, mcpTokens, members, users } from "@/platform/db/schema";
 import { clearActiveOrganizationTx } from "@/contexts/identity/infrastructure/user-accounts";
 import type { MemberStore } from "../application/member-management";
+import { lockAgentSend } from "./agent-send-lock";
 
 const invitationColumns = {
   id: invitations.id,
@@ -60,8 +61,10 @@ export const drizzleMemberStore: MemberStore = {
   },
 
   transaction(organizationId, run) {
-    return db.transaction(async (tx) =>
-      run({
+    return db.transaction(async (tx) => {
+      // Before the member rows: a role change or a removal then lands between agent actions, never inside one.
+      await lockAgentSend(tx, organizationId);
+      return run({
         async members() {
           return tx
             .select({ id: members.id, userId: members.userId, role: members.role })
@@ -77,9 +80,15 @@ export const drizzleMemberStore: MemberStore = {
             .delete(members)
             .where(and(eq(members.organizationId, organizationId), eq(members.id, memberId)))
             .returning({ userId: members.userId });
-          if (row) await clearActiveOrganizationTx(tx, row.userId, organizationId);
+          if (!row) return;
+          await clearActiveOrganizationTx(tx, row.userId, organizationId);
+          // Revoked, not deleted: a later invitation makes a new member row, and the old tokens stay dead.
+          await tx
+            .update(mcpTokens)
+            .set({ revokedAt: new Date() })
+            .where(and(eq(mcpTokens.organizationId, organizationId), eq(mcpTokens.userId, row.userId), isNull(mcpTokens.revokedAt)));
         },
-      }),
-    );
+      });
+    });
   },
 };

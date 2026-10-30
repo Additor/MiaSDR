@@ -1,0 +1,128 @@
+import { randomBytes } from "node:crypto";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
+import type { Actor } from "@/shared/errors";
+
+describeDb("MCP principal", () => {
+  useTestEnv();
+  const sql = testSql({ max: 4 });
+  let resolve: typeof import("../../application/mcp-principal").resolveMcpPrincipal;
+  let deps: import("../../application/mcp-principal").McpPrincipalDeps;
+  let hash: (token: string) => string;
+  let members: typeof import("../../application/member-management");
+  let memberStore: typeof import("../drizzle-member-store").drizzleMemberStore;
+  const orgs: TestOrg[] = [];
+  const users: string[] = [];
+
+  const newToken = () => `msdr_pat_${randomBytes(32).toString("base64url")}`;
+
+  async function seed(org: TestOrg, userId: string, patch: { revokedAt?: string; expiresAt?: string; scopes?: string[] } = {}) {
+    const token = newToken();
+    const [{ id }] = await sql<{ id: string }[]>`
+      insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, token_hint, scopes, policy_epoch, expires_at, revoked_at)
+      values (${org.organizationId}, ${userId}, 'pat', 'Laptop', ${hash(token)}, ${token.slice(-4)}, ${patch.scopes ?? ["mcp:read", "mcp:write"]}, 2,
+              ${patch.expiresAt ?? null}, ${patch.revokedAt ?? null})
+      returning id`;
+    return { token, id };
+  }
+
+  async function member(org: TestOrg, role: string) {
+    const [{ id: userId }] = await sql<{ id: string }[]>`insert into users (name, email) values ('M', ${`m-${randomBytes(4).toString("hex")}@mcp.test`}) returning id`;
+    users.push(userId);
+    const [{ id: memberId }] = await sql<{ id: string }[]>`insert into members (organization_id, user_id, role) values (${org.organizationId}, ${userId}, ${role}) returning id`;
+    return { userId, memberId };
+  }
+
+  beforeAll(async () => {
+    ({ resolveMcpPrincipal: resolve } = await import("../../application/mcp-principal"));
+    const composition = await import("../mcp-composition");
+    deps = composition.mcpPrincipalDeps();
+    hash = composition.hashMcpToken;
+    members = await import("../../application/member-management");
+    memberStore = (await import("../drizzle-member-store")).drizzleMemberStore;
+    orgs.push(await createTestOrg(sql, "MCP A"), await createTestOrg(sql, "MCP B"));
+  });
+
+  afterAll(async () => {
+    try {
+      await dropOrgs(sql, orgs, users);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("resolves a live token to its organization, owner, role and scopes, and records use", async () => {
+    const [a] = orgs;
+    const { token, id } = await seed(a, a.userId);
+    const principal = await resolve(deps, token);
+    expect(principal).toEqual({
+      tokenId: id,
+      tokenName: "Laptop",
+      userId: a.userId,
+      organizationId: a.organizationId,
+      role: "owner",
+      scopes: ["mcp:read", "mcp:write"],
+      policyEpoch: 2,
+      expiresAt: null,
+    });
+    const [{ last_used_at }] = await sql`select last_used_at from mcp_tokens where id = ${id}`;
+    expect(last_used_at).not.toBeNull();
+  });
+
+  it("answers null for a malformed, unknown, revoked or expired token", async () => {
+    const [a] = orgs;
+    expect(await resolve(deps, null)).toBeNull();
+    expect(await resolve(deps, "msdr_pat_short")).toBeNull();
+    expect(await resolve(deps, newToken())).toBeNull();
+    expect(await resolve(deps, (await seed(a, a.userId, { revokedAt: new Date().toISOString() })).token)).toBeNull();
+    expect(await resolve(deps, (await seed(a, a.userId, { expiresAt: new Date(Date.now() - 1000).toISOString() })).token)).toBeNull();
+  });
+
+  it("reads the role on every call and refuses a person who is not a member of the token's organization", async () => {
+    const [a, b] = orgs;
+    const m = await member(a, "admin");
+    const { token } = await seed(a, m.userId);
+    expect((await resolve(deps, token))?.role).toBe("admin");
+    await sql`update members set role = 'member' where id = ${m.memberId}`;
+    expect((await resolve(deps, token))?.role).toBe("member");
+
+    // A member of B holding a token issued in A after leaving A reaches nothing, not B.
+    await sql`insert into members (organization_id, user_id, role) values (${b.organizationId}, ${m.userId}, 'owner')`;
+    await sql`delete from members where id = ${m.memberId}`;
+    expect(await resolve(deps, token)).toBeNull();
+  });
+
+  it("revokes the removed member's tokens, so a new invitation does not revive them", async () => {
+    const [a] = orgs;
+    const m = await member(a, "member");
+    const { token, id } = await seed(a, m.userId);
+    const owner: Actor = { userId: a.userId, organizationId: a.organizationId, role: "owner" };
+    await members.removeMember({ members: memberStore, invitations: { invite: async () => ({ id: "unused" }) } }, owner, m.memberId);
+
+    const [{ revoked_at }] = await sql`select revoked_at from mcp_tokens where id = ${id}`;
+    expect(revoked_at).not.toBeNull();
+    await sql`insert into members (organization_id, user_id, role) values (${a.organizationId}, ${m.userId}, 'member')`;
+    expect(await resolve(deps, token)).toBeNull();
+  });
+
+  it("waits for the agent-send lock before it touches the member rows", async () => {
+    const [a] = orgs;
+    const m = await member(a, "member");
+    const owner: Actor = { userId: a.userId, organizationId: a.organizationId, role: "owner" };
+    const holder = await sql.reserve();
+    try {
+      await holder`begin`;
+      await holder`select pg_advisory_xact_lock(hashtextextended(${`agent-send:${a.organizationId}`}, 0))`;
+      const removal = members.removeMember({ members: memberStore, invitations: { invite: async () => ({ id: "unused" }) } }, owner, m.memberId);
+      await waitForLockWaiters(sql, 1, 10_000, "%pg_advisory_xact_lock%");
+      const [{ still }] = await sql<{ still: number }[]>`select count(*)::int as still from members where id = ${m.memberId}`;
+      expect(still).toBe(1);
+      await holder`commit`;
+      await removal;
+    } finally {
+      holder.release();
+    }
+    const [{ gone }] = await sql<{ gone: number }[]>`select count(*)::int as gone from members where id = ${m.memberId}`;
+    expect(gone).toBe(0);
+  });
+});
