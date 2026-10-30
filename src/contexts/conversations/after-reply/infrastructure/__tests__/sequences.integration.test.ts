@@ -1065,7 +1065,7 @@ describeDb("Follow-ups after a reply flows", () => {
 
     it("schedules whole-day delays in the organization time zone", async () => {
       const f = await fixture();
-      await sql`insert into channel_settings (organization_id, channel, "values") values (${f.org}, 'general', ${JSON.stringify({ timeZone: "America/New_York" })}::jsonb)`;
+      await sql`insert into channel_settings (organization_id, channel, "values") values (${f.org}, 'general', ${sql.json({ timeZone: "America/New_York" })})`;
       await ingest(f);
       await emailedBy(f);
       await f.cycle();
