@@ -1,5 +1,5 @@
 import type { McpServer, ToolAnnotations } from "@modelcontextprotocol/server";
-import type { z } from "zod";
+import { z } from "zod";
 import { clientNameFrom, mcpActor, runTool, type ToolOutput } from "@/app/_lib/mcp";
 import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
 import { hasScope, type McpScope } from "@/contexts/tenancy/domain/mcp-policy";
@@ -46,6 +46,21 @@ export async function withinBudget<T extends Record<string, unknown>>(run: () =>
 }
 
 /**
+ * The output schema `tools/list` publishes: the top-level keys only. Full schemas for eleven tools would cost more
+ * than the whole definition budget, and an agent reads the structured content itself. `checkedOutput` still holds
+ * every answer to the tool's full schema.
+ */
+export const publishedOutput = (output: AnyObject) => z.object(Object.fromEntries(Object.keys(output.shape).map((key) => [key, z.unknown()])));
+
+/** The answer, checked against the tool's full output schema. A mismatch is a bug here, so it is logged as one. */
+export async function checkedOutput<T extends Record<string, unknown>>(tool: Pick<ToolDefinition, "name" | "output">, run: () => Promise<ToolOutput<T>>): Promise<ToolOutput<T>> {
+  const output = await run();
+  const parsed = tool.output.safeParse(output.structured);
+  if (!parsed.success) throw new Error(`${tool.name} answered outside its output schema: ${parsed.error.message}`);
+  return output;
+}
+
+/**
  * Registers the tools the token's scopes allow, by name, so `tools/list` comes out in the same order every time. Each
  * call runs through `runTool` with the person's actor and a fresh output context, within the response budget.
  */
@@ -54,10 +69,10 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
     if (!hasScope(principal.scopes, tool.scope)) continue;
     server.registerTool(
       tool.name,
-      { title: tool.title, description: tool.description, inputSchema: tool.input, outputSchema: tool.output, annotations: tool.annotations },
+      { title: tool.title, description: tool.description, inputSchema: tool.input, outputSchema: publishedOutput(tool.output), annotations: tool.annotations },
       (input, extra) =>
         runTool(tool.name, mcpActor(principal, clientNameFrom(extra.mcpReq.envelope)), (actor) =>
-          withinBudget(() => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never)),
+          withinBudget(() => checkedOutput(tool, () => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never))),
         ),
     );
   }

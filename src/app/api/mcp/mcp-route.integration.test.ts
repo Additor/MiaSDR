@@ -58,6 +58,14 @@ describeDb("/api/mcp", () => {
     }
   });
 
+  it("answers a 2025-11-25 client the same 401 for a missing, malformed or unknown token", async () => {
+    for (const value of [null, "not-a-token", `msdr_pat_${randomBytes(32).toString("base64url")}`]) {
+      const result = await callMcp(POST, { era: "legacy", token: value, method: "initialize", params: legacyInitialize });
+      expect(result.status, String(value)).toBe(401);
+      expect(result.headers.get("www-authenticate")).toBe('Bearer realm="miasdr"');
+    }
+  });
+
   it("answers 403 mcp_disabled while the token's organization has MCP off", async () => {
     const result = await post({ token: await token(orgs[1]), method: "server/discover" });
     expect(result.status).toBe(403);

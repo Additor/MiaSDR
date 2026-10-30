@@ -5,6 +5,7 @@ import { getCampaignTool, listCampaignsTool } from "./campaigns";
 import { getConversationTool } from "./conversation";
 import { registerTools, type ToolDefinition } from "./define";
 import { listInboxTool } from "./inbox";
+import { SERVER_INSTRUCTIONS } from "./instructions";
 import { getPersonTool, searchPeopleTool } from "./people";
 import { getPipelineTool } from "./pipeline";
 import { getAnalyticsTool, getSendingHealthTool } from "./reports";
@@ -24,7 +25,7 @@ export const TOOLS: readonly ToolDefinition[] = [getWorkspace, getWorkQueueTool,
 export function createMcpServer(principal: McpPrincipal, appUrl: string): McpServer {
   const server = new McpServer(
     { name: "miasdr", version: pkg.version },
-    { cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
+    { instructions: SERVER_INSTRUCTIONS, cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
   );
   registerTools(server, principal, appUrl, TOOLS);
   return server;
