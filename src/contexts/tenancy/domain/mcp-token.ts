@@ -18,3 +18,16 @@ export function bearerToken(header: string | null): string | null {
   const match = /^Bearer\s+(\S+)\s*$/i.exec(header ?? "");
   return match ? match[1] : null;
 }
+
+/** Live tokens one person may hold in one organization. A revoked or expired token does not count. */
+export const MCP_TOKEN_LIMIT = 10;
+
+export const MCP_TOKEN_NAME_MAX = 100;
+
+/** Why a token name is not allowed, as a sentence, or null. The name tells a person's tokens apart in lists and logs. */
+export function mcpTokenNameProblem(name: string): string | null {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return "Name the token, for example after the laptop or the agent that uses it.";
+  if (trimmed.length > MCP_TOKEN_NAME_MAX) return `Keep the token name to ${MCP_TOKEN_NAME_MAX} characters.`;
+  return null;
+}

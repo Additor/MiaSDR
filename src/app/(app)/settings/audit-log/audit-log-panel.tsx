@@ -33,6 +33,7 @@ const AREA_LABEL: Record<AuditArea, string> = {
   linkedin: "LinkedIn",
   ai_jobs: "AI jobs",
   search_batch: "LinkedIn searches",
+  mcp: "MCP",
 };
 
 const AREA_ITEMS = [{ value: "all", label: "Everything" }, ...AUDIT_AREAS.map((area) => ({ value: area, label: AREA_LABEL[area] }))];
@@ -68,6 +69,11 @@ const ACTION_LABEL: Record<string, string> = {
   "company.merged": "Merged two companies",
   "company.deleted": "Deleted a company",
   "person.deleted": "Deleted a person",
+  "mcp.enabled": "Turned on MCP",
+  "mcp.disabled": "Turned off MCP",
+  "mcp.token_created": "Created an MCP token",
+  "mcp.token_revoked": "Revoked an MCP token",
+  "mcp.tokens_revoked_all": "Revoked every MCP token",
 };
 
 const actionLabel = (action: string) => ACTION_LABEL[action] ?? humanizeToken(action.replace(".", " "));

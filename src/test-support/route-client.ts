@@ -285,6 +285,8 @@ export const SEED_OVERRIDES: Record<string, Record<string, unknown>> = {
   grid_provider_credentials: { encryption_version: "v1", encrypted_payload: "v1:seed" },
   // A deal's person must be a contact (trigger on `deals`), so the person the foreign key walk seeds is one.
   deals: { parentForce: { people: { lifecycle: "contact", converted_at: new Date("2026-10-16T00:00:00Z") } } },
+  // A personal token; ROW_HOOKS gives each one its own hash, which is unique.
+  mcp_tokens: { kind: "pat", name: "Seeded token", scopes: ["mcp:read"] },
 };
 
 type Tx = postgres.TransactionSql;
@@ -302,6 +304,11 @@ const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<st
   // The classification validator wants the message to belong to the classification's record. The foreign key walk
   // seeds an unrelated record, so point record_id at the record of the seeded message's conversation.
   // Positions are unique per organization (checked at commit), so each seeded stage goes after the last one.
+  mcp_tokens: {
+    before: async (_sql, values) => {
+      values.token_hash = crypto.randomUUID();
+    },
+  },
   deal_stages: {
     before: async (sql, values) => {
       const [row] = await sql`select coalesce(max(position), 0) + 1 as next from deal_stages where organization_id = ${values.organization_id as string}`;

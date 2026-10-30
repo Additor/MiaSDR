@@ -1,9 +1,9 @@
-import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { invitations, mcpTokens, members, users } from "@/platform/db/schema";
+import { invitations, members, users } from "@/platform/db/schema";
 import { clearActiveOrganizationTx } from "@/contexts/identity/infrastructure/user-accounts";
 import type { MemberStore } from "../application/member-management";
-import { lockAgentSend } from "./agent-send-lock";
+import { lockAgentSend, revokeMcpTokensTx } from "./agent-send-lock";
 
 const invitationColumns = {
   id: invitations.id,
@@ -82,11 +82,7 @@ export const drizzleMemberStore: MemberStore = {
             .returning({ userId: members.userId });
           if (!row) return;
           await clearActiveOrganizationTx(tx, row.userId, organizationId);
-          // Revoked, not deleted: a later invitation makes a new member row, and the old tokens stay dead.
-          await tx
-            .update(mcpTokens)
-            .set({ revokedAt: new Date() })
-            .where(and(eq(mcpTokens.organizationId, organizationId), eq(mcpTokens.userId, row.userId), isNull(mcpTokens.revokedAt)));
+          await revokeMcpTokensTx(tx, organizationId, { userId: row.userId });
         },
       });
     });

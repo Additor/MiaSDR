@@ -1,0 +1,153 @@
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT, mcpTokenHint, mcpTokenNameProblem } from "../domain/mcp-token";
+import type { McpScope } from "../domain/mcp-policy";
+import { mcpSettingsProblem, type McpSettings, type McpSettingsPatch } from "../domain/mcp-settings";
+import { isOwnerOrAdmin } from "../domain/roles";
+import type { AuditEntry } from "./audit-log";
+
+/** A token as lists show it. The secret appears once, in the answer to `createMcpToken`. */
+export interface McpTokenView {
+  id: string;
+  name: string;
+  /** The secret's last four characters. */
+  hint: string | null;
+  scopes: McpScope[];
+  ownerUserId: string;
+  ownerName: string;
+  createdAt: Date;
+  expiresAt: Date | null;
+  lastUsedAt: Date | null;
+}
+
+export interface NewMcpToken {
+  organizationId: string;
+  userId: string;
+  name: string;
+  tokenHash: string;
+  tokenHint: string;
+  scopes: McpScope[];
+  policyEpoch: number;
+  expiresAt: Date;
+}
+
+/** One person's tokens, while the transaction holds their member row. */
+export interface McpTokenTx {
+  /** Tokens that are neither revoked nor expired at `now`. */
+  liveCount(now: Date): Promise<number>;
+  insert(token: NewMcpToken, audit: AuditEntry): Promise<McpTokenView>;
+}
+
+export interface McpTokenStore {
+  /** Tokens that are not revoked, newest first; one person's when `userId` is given. */
+  list(organizationId: string, userId: string | null): Promise<McpTokenView[]>;
+  /** The token's owner, revoked or not, or null when the organization has no such token. */
+  owner(organizationId: string, tokenId: string): Promise<{ userId: string } | null>;
+  /**
+   * Runs `run` while it holds the person's member row, so a new token cannot slip in after their removal revoked the
+   * others. Null when the person is no longer a member.
+   */
+  forMember<T>(organizationId: string, userId: string, run: (tx: McpTokenTx) => Promise<T>): Promise<T | null>;
+  /**
+   * Revokes the live tokens that match, under the agent-send lock. When it revoked any, it writes the audit row in the
+   * same transaction with their number added to `meta.count`. Answers how many it revoked.
+   */
+  revoke(organizationId: string, match: { tokenId: string } | "all", audit: AuditEntry): Promise<number>;
+  settings(organizationId: string): Promise<McpSettings>;
+  saveSettings(organizationId: string, patch: McpSettingsPatch, userId: string, audit: AuditEntry[]): Promise<void>;
+}
+
+export interface McpTokenDeps {
+  store: McpTokenStore;
+  /** A new secret in the `msdr_pat_` format. */
+  newSecret: () => string;
+  hash: (token: string) => string;
+  now: () => Date;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Phase 1 serves read tools only, so a token reads. The scope input arrives with the write tools. */
+const ISSUED_SCOPES: McpScope[] = ["mcp:read"];
+/** Keys this version lets a person save. The member write switch and agent sending arrive with the tools they govern. */
+const EDITABLE_SETTINGS = new Set(["enabled"]);
+
+const audit = (actor: Actor, action: string, entityId: string | undefined, meta: Record<string, unknown>): AuditEntry => ({
+  organizationId: actor.organizationId,
+  actorUserId: actor.userId,
+  action,
+  entityType: entityId ? "mcp_token" : undefined,
+  entityId,
+  meta,
+});
+
+function requireAdmin(actor: Actor, message: string) {
+  if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError(message);
+}
+
+/** Any member reads whether MCP is on, so the settings page can say why a token would not work. */
+export async function getMcpSettings(deps: Pick<McpTokenDeps, "store">, actor: Actor): Promise<McpSettings> {
+  return deps.store.settings(actor.organizationId);
+}
+
+export async function updateMcpSettings(deps: Pick<McpTokenDeps, "store">, actor: Actor, patch: Record<string, unknown>): Promise<McpSettings> {
+  requireAdmin(actor, "Only an owner or admin can change MCP settings.");
+  const problem = mcpSettingsProblem(patch) ?? Object.keys(patch).map((key) => (EDITABLE_SETTINGS.has(key) ? null : `${key} cannot be changed yet.`)).find(Boolean);
+  if (problem) throw new ValidationError(problem);
+  const current = await deps.store.settings(actor.organizationId);
+  const entries: AuditEntry[] = [];
+  if (typeof patch.enabled === "boolean" && patch.enabled !== current.enabled) entries.push(audit(actor, patch.enabled ? "mcp.enabled" : "mcp.disabled", undefined, {}));
+  if (entries.length > 0) await deps.store.saveSettings(actor.organizationId, patch as McpSettingsPatch, actor.userId, entries);
+  return deps.store.settings(actor.organizationId);
+}
+
+/** The caller's own tokens; with `organization`, every member's, which only an owner or admin may read. */
+export async function listMcpTokens(deps: Pick<McpTokenDeps, "store">, actor: Actor, scope: "mine" | "organization"): Promise<McpTokenView[]> {
+  if (scope === "organization") requireAdmin(actor, "Only an owner or admin can see every member's MCP tokens.");
+  return deps.store.list(actor.organizationId, scope === "mine" ? actor.userId : null);
+}
+
+/** Creates a token for the caller. The answer carries the secret, which is never shown again. */
+export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { name: string }): Promise<McpTokenView & { token: string }> {
+  const problem = mcpTokenNameProblem(input.name);
+  if (problem) throw new ValidationError(problem);
+  const settings = await deps.store.settings(actor.organizationId);
+  if (!settings.enabled) throw new ConflictError("MCP is off in this organization. An owner or admin can turn it on.", { code: "mcp_disabled" });
+
+  const now = deps.now();
+  const token = deps.newSecret();
+  const name = input.name.trim();
+  const created = await deps.store.forMember(actor.organizationId, actor.userId, async (tx) => {
+    if ((await tx.liveCount(now)) >= MCP_TOKEN_LIMIT) {
+      throw new ConflictError(`You have ${MCP_TOKEN_LIMIT} live MCP tokens. Revoke one you no longer use first.`, { code: "mcp_token_limit" });
+    }
+    return tx.insert(
+      {
+        organizationId: actor.organizationId,
+        userId: actor.userId,
+        name,
+        tokenHash: deps.hash(token),
+        tokenHint: mcpTokenHint(token),
+        scopes: ISSUED_SCOPES,
+        policyEpoch: settings.agentSendEpoch,
+        expiresAt: new Date(now.getTime() + MCP_TOKEN_DAYS * DAY_MS),
+      },
+      audit(actor, "mcp.token_created", undefined, { name, scopes: ISSUED_SCOPES.join(" ") }),
+    );
+  });
+  // The session found the member a moment ago; null means a removal committed in between.
+  if (!created) throw new ForbiddenError("You are no longer a member of this organization.");
+  return { ...created, token };
+}
+
+/** A member revokes their own tokens; an owner or admin revokes anyone's. Revoking a revoked token is a no-op. */
+export async function revokeMcpToken(deps: Pick<McpTokenDeps, "store">, actor: Actor, tokenId: string): Promise<void> {
+  const owner = await deps.store.owner(actor.organizationId, tokenId);
+  // A member asking for someone else's token learns nothing about it.
+  if (!owner || (owner.userId !== actor.userId && !isOwnerOrAdmin(actor.role))) throw new NotFoundError("Token not found");
+  await deps.store.revoke(actor.organizationId, { tokenId }, audit(actor, "mcp.token_revoked", tokenId, { ownerUserId: owner.userId }));
+}
+
+/** Revokes every live token in the organization, for a suspected leak. Answers how many it revoked. */
+export async function revokeAllMcpTokens(deps: Pick<McpTokenDeps, "store">, actor: Actor): Promise<{ revoked: number }> {
+  requireAdmin(actor, "Only an owner or admin can revoke every MCP token.");
+  return { revoked: await deps.store.revoke(actor.organizationId, "all", audit(actor, "mcp.tokens_revoked_all", undefined, {})) };
+}

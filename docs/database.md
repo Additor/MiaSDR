@@ -60,7 +60,7 @@ A row lock that serializes writers on `records` or `conversations` takes `FOR NO
 
 One order for the conflicting locks: the record before its conversations. Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its public conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). A LinkedIn message that makes a chat private locks the record before it updates the conversation, since the detach that follows writes the record; updating the conversation first deadlocked with a close (`reply-send-refusals.integration.test.ts`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes records, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
-A member change (a role change or a removal) takes the organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) before it locks the member rows. A removal revokes the person's MCP tokens in the same transaction.
+A member change (a role change or a removal), an MCP token revoke and an MCP settings save take the organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) before any row lock. A removal revokes the person's MCP tokens in the same transaction. Token creation locks the creator's member row `FOR UPDATE`, so it waits for a removal in progress and then finds no member row.
 
 ## Append-only tables
 
