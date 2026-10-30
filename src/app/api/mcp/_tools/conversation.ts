@@ -13,7 +13,7 @@ import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { NotFoundError, ValidationError } from "@/shared/errors";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, excerpt, fitItems, iso, UNTRUSTED_NOTE, untrusted, type ToolOutputContext } from "./output";
+import { appLinks, EXCERPT_CHARS, excerpt, fencedField, fitItems, iso, messageSource, UNTRUSTED_NOTE, untrusted, type ToolOutputContext } from "./output";
 
 /** Characters of one message body a `detailed` answer keeps. */
 const DETAILED_BODY_CHARS = 4000;
@@ -29,6 +29,8 @@ const message = z.object({
   from: z.string().nullable(),
   subject: z.string().nullable(),
   text: z.string(),
+  /** The body was longer than the answer keeps; `text` ends with "…". */
+  truncated: z.boolean(),
 });
 
 const output = z.object({
@@ -61,16 +63,20 @@ const output = z.object({
 
 /** A message as the answer carries it: ours as written, the lead's fenced; `concise` keeps an excerpt of each. */
 function toMessage(ctx: ToolOutputContext, channel: string, m: ThreadMessage, detailed: boolean): z.infer<typeof message> {
-  const body = detailed ? m.bodyText.slice(0, DETAILED_BODY_CHARS) : excerpt(m.bodyText);
-  const source = channel === "linkedin" ? "linkedin" : "email";
+  const limit = detailed ? DETAILED_BODY_CHARS : EXCERPT_CHARS;
+  const truncated = m.bodyText.length > limit;
+  const body = detailed ? (truncated ? `${m.bodyText.slice(0, limit)}…` : m.bodyText) : excerpt(m.bodyText);
+  const source = messageSource(channel);
   const inbound = m.direction === "inbound";
   return {
     id: m.id,
     direction: m.direction,
     at: m.at.toISOString(),
-    from: m.from,
+    // The From header of an inbound message is whatever the sender wrote.
+    from: inbound && m.from !== null ? untrusted(ctx, source, m.from) : m.from,
     subject: inbound && m.subject !== null ? untrusted(ctx, source, m.subject) : m.subject,
     text: inbound ? untrusted(ctx, source, body) : body,
+    truncated,
   };
 }
 
@@ -79,7 +85,7 @@ export const getConversationTool = defineTool({
   title: "Get conversation",
   description: [
     "One conversation with its lead, reply handling state, messages, the open draft, AI reply-type picks, notes, open tasks and follow-ups. Pass `conversationId`, or `recordId` for the main conversation of that reply handling.",
-    "`response_format` `concise` (default) gives a 200-character excerpt of each message; `detailed` gives each body up to 4,000 characters. Long threads keep the newest messages.",
+    "`response_format` `concise` (default) gives a 200-character excerpt of each message; `detailed` gives each body up to 4,000 characters and marks a longer one `truncated`. Long threads keep the newest messages.",
     "Write tools take `contextVersion`, the draft's `revision` and `assignedTo` from this answer.",
   ].join(" "),
   scope: "mcp:read",
@@ -91,7 +97,8 @@ export const getConversationTool = defineTool({
   }),
   output,
   async run({ actor, out }, input) {
-    if (!input.conversationId === !input.recordId) throw new ValidationError("Pass conversationId or recordId, not both.");
+    if (input.conversationId && input.recordId) throw new ValidationError("Pass conversationId or recordId, not both.");
+    if (!input.conversationId && !input.recordId) throw new ValidationError("Pass conversationId or recordId.");
     const handling = replyHandlingDeps();
     let conversationId = input.conversationId;
     let byRecord: Awaited<ReturnType<typeof getRecordDetail>> | null = null;
@@ -126,7 +133,7 @@ export const getConversationTool = defineTool({
       channel: thread.channel,
       account: thread.accountLabel,
       appUrl: appLinks(out).conversation(conversationId),
-      person: { id: person.id, name: person.name, email: person.email, title: person.title, company: person.company },
+      person: { id: person.id, name: person.name, email: person.email, title: fencedField(out, person.title), company: fencedField(out, person.company) },
       record: {
         workflowState: record.workflowState,
         contextVersion: record.contextVersion,

@@ -82,6 +82,10 @@ export async function validateSenderIds(admin: EnrollmentAdminStore, actor: Acto
 }
 
 /** Launch check: with senders assigned, each one must be connected. No assigned senders means the default applies. */
+/** The senders assigned to a campaign. The caller loads the campaign first, so another organization's id finds none. */
+export const listAssignedSenders = (deps: { admin?: EnrollmentAdminStore }, actor: Actor, channel: OutreachChannel, campaignId: string): Promise<SenderRef[]> =>
+  adminStore(deps).listSenders(actor.organizationId, campaignId, channel);
+
 export async function assertAssignedSendersConnected(admin: EnrollmentAdminStore, actor: Actor, channel: OutreachChannel, campaignId: string): Promise<void> {
   const offline = (await admin.listSenders(actor.organizationId, campaignId, channel)).filter((s) => !s.connected);
   if (offline.length > 0) {

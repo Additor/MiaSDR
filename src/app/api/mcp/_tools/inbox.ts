@@ -3,7 +3,7 @@ import { INBOX_PAGE_SIZE, listInbox, listScheduledInbox } from "@/contexts/conve
 import { DATE_MODES, INBOX_GROUPS, INBOX_VIEWS, parseInboxParams } from "@/contexts/conversations/domain/inbox-filter";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, fencedExcerpt, UNTRUSTED_NOTE, untrusted } from "./output";
+import { appLinks, fencedExcerpt, messageSource, UNTRUSTED_NOTE, untrusted } from "./output";
 
 const conversation = z.object({
   conversationId: z.string(),
@@ -106,7 +106,7 @@ export const listInboxTool = defineTool({
       channel: r.channel,
       assignedTo: r.assignedTo,
       // Our own last message is not fenced; the lead's subject and text are.
-      subject: r.lastDirection === "inbound" && r.subject !== null ? untrusted(out, r.channel === "linkedin" ? "linkedin" : "email", r.subject) : r.subject,
+      subject: r.lastDirection === "inbound" && r.subject !== null ? untrusted(out, messageSource(r.channel), r.subject) : r.subject,
       lastMessage: r.lastDirection === "inbound" ? (fencedExcerpt(out, r.channel, r.snippet) ?? "") : r.snippet,
       lastMessageAt: r.lastMessageAt.toISOString(),
       lastDirection: r.lastDirection,

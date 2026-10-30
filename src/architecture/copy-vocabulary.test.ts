@@ -192,10 +192,10 @@ const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> = [
   { file: "src/app/(app)/settings/settings-nav-config.ts", text: "Pipeline stages", reason: "Settings entry for the deal stages page (/settings/pipeline)." },
   {
     file: "src/app/api/mcp/_tools/workspace.ts",
-    text: "The organization's members, active reply types, deal stages, mailboxes and LinkedIn accounts, with the ids other tools take. Call it first to learn who `assignedTo` names and which reply type or stage an id means.",
+    text: "The organization's members, active reply types, deal stages, mailboxes and, for an owner or admin, LinkedIn accounts, with the ids other tools take. Call it first to learn who `assignedTo` names and which reply type or stage an id means.",
     reason: "MCP tool description; the stages are the deal stages, which the tool lists next to reply types and mailboxes.",
   },
-  { file: "src/app/api/mcp/_tools/workspace.ts", text: "{} reply types, {} deal stages, {} mailboxes, {} LinkedIn accounts.", reason: "MCP tool summary; the stages are the deal stages." },
+  { file: "src/app/api/mcp/_tools/workspace.ts", text: "{} reply types, {} deal stages, {} mailboxes{}.", reason: "MCP tool summary; the stages are the deal stages." },
   { file: "src/app/(app)/settings/settings-nav-config.ts", text: "Rename, reorder, add and delete the stages deals move through.", reason: "Summary of the deal stages Settings entry." },
   {
     file: "src/contexts/ai/domain/prompt-fence.ts",

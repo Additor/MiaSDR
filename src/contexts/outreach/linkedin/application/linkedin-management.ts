@@ -221,6 +221,15 @@ export function storedGateway(deps: LinkedInManagementDeps, credentials: LinkedI
 
 const webhookRequestUrl = (deps: LinkedInManagementDeps, organizationId: string) => `${deps.appUrl.replace(/\/$/, "")}/api/webhooks/unipile?org=${organizationId}`;
 
+/**
+ * The accounts with their status, limits and use today, for an owner or admin. Members only see that LinkedIn is
+ * connected, as on the settings page. Reads no credentials, webhooks or connect links.
+ */
+export async function listLinkedInAccountStatus(deps: LinkedInManagementDeps, actor: Actor): Promise<LinkedInAccountRecord[]> {
+  requireAdmin(actor);
+  return deps.accounts.list(actor.organizationId, deps.now());
+}
+
 export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: Actor) {
   const now = deps.now();
   const [credentials, webhooks, sync, accounts, links] = await Promise.all([

@@ -86,6 +86,11 @@ describeDb("get_work_queue and list_inbox", () => {
     expect(JSON.stringify(result.structured)).not.toContain("secret reply");
   });
 
+  it("get_work_queue takes any limit and holds it to the tool's maximum", async () => {
+    const result = await caller.tool("get_work_queue", { group: "reply", limit: 100_000 });
+    expect(result.isError, result.text).toBe(false);
+  });
+
   it("get_work_queue refuses a cursor without a group as a tool error", async () => {
     const result = await caller.tool("get_work_queue", { cursor: "abc" });
     expect(result.isError).toBe(true);

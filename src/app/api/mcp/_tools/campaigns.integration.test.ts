@@ -48,7 +48,7 @@ describeDb("list_campaigns and get_campaign", () => {
     const campaigns = result.structured.campaigns as Array<Record<string, unknown>>;
     expect(campaigns.map((c) => [c.campaignId, c.channel]).sort()).toEqual([[emailId, "email"], [linkedinId, "linkedin"]].sort());
     expect(campaigns.find((c) => c.campaignId === emailId)).toMatchObject({ enrolled: 1, status: "draft", appUrl: `http://localhost:3000/campaigns/${emailId}` });
-    expect((await caller.tool("list_campaigns", { channel: "linkedin" })).structured.campaigns).toHaveLength(1);
+    expect((await caller.tool("list_campaigns", { channel: "linkedin" })).structured).toMatchObject({ campaigns: [expect.anything()], omitted: 0 });
   });
 
   it("get_campaign gives steps, leads and a rendered step, and answers not found across organizations", async () => {
@@ -56,11 +56,19 @@ describeDb("list_campaigns and get_campaign", () => {
     expect(result.isError, result.text).toBe(false);
     expect(result.structured).toMatchObject({ name: "Q4 email", status: "draft", enrollments: { total: 1, page: 1 } });
     expect((result.structured.steps as unknown[]).length).toBeGreaterThan(0);
-    expect(result.structured.preview).toMatchObject({ stepNumber: 1, leadName: "Ada Lovelace" });
+    expect(result.structured.preview).toMatchObject({ stepNumber: 1, leadName: "Ada Lovelace", usedSampleLead: false, body: expect.stringMatching(/^<untrusted_field_/) });
+    expect(result.structured.senders).toEqual([]);
+
+    const outOfRange = await caller.tool("get_campaign", { channel: "email", campaignId: emailId, previewStep: 99 });
+    expect(outOfRange.isError, outOfRange.text).toBe(false);
+    expect(outOfRange.structured.preview).toBeNull();
+    expect(outOfRange.text).toContain("Step 99 does not exist");
 
     const linkedin = await caller.tool("get_campaign", { channel: "linkedin", campaignId: linkedinId });
     expect(linkedin.isError, linkedin.text).toBe(false);
     expect(linkedin.structured).toMatchObject({ name: "Q4 LinkedIn", enrollments: { total: 0 } });
+    const sample = await caller.tool("get_campaign", { channel: "linkedin", campaignId: linkedinId, previewStep: 1 });
+    expect(sample.structured.preview).toMatchObject({ usedSampleLead: true, leadName: null });
 
     const foreign = await caller.tool("get_campaign", { channel: "email", campaignId: foreignId });
     expect(foreign.structured).toMatchObject({ error: { code: "not_found" } });

@@ -45,6 +45,11 @@ describeDb("get_analytics, get_pipeline and get_sending_health", () => {
     expect(refused.structured).toMatchObject({ error: { code: "validation" } });
   });
 
+  it("get_workspace leaves the LinkedIn accounts out for a member, as the settings page does", async () => {
+    expect((await member.tool("get_workspace", {})).structured.linkedinAccounts).toBe("omitted");
+    expect((await owner.tool("get_workspace", {})).structured.linkedinAccounts).toEqual([]);
+  });
+
   it("get_pipeline answers the default stages of an organization without deals, and not found for an unknown deal", async () => {
     const result = await owner.tool("get_pipeline", {});
     expect(result.isError, result.text).toBe(false);
@@ -64,6 +69,8 @@ describeDb("get_analytics, get_pipeline and get_sending_health", () => {
     const asMember = await member.tool("get_sending_health", {});
     expect(asMember.isError, asMember.text).toBe(false);
     expect(asMember.structured.failedAiJobs).toBe("omitted");
+    expect(asMember.structured.linkedinAccounts).toBe("omitted");
+    expect(asOwner.structured.linkedinAccounts).toEqual([]);
     expect(asMember.structured.mailboxes).toEqual([expect.objectContaining({ emailAddress: "broken@corp.test", lastError: "Gmail refused the token" })]);
   });
 });

@@ -4,7 +4,7 @@ import type { QueueItem } from "@/contexts/conversations/actions/application/wor
 import { QUEUE_GROUPS, QUEUE_SCOPES } from "@/contexts/conversations/actions/domain/action-queue";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, DEFAULT_LIST_LIMIT, fencedExcerpt, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
+import { appLinks, DEFAULT_LIST_LIMIT, fencedExcerpt, listLimit, OVERVIEW_LIMIT, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
 
 const item = z.object({
   recordId: z.string(),
@@ -68,13 +68,13 @@ export const getWorkQueueTool = defineTool({
     replyTypeId: z.string().optional(),
     campaignId: z.string().optional(),
     cursor: z.string().optional(),
-    limit: z.number().int().optional().describe("Items per group. Default 20."),
+    limit: z.number().int().optional().describe("Items per group: default 5 across every group, 20 with `group`, at most 40."),
   }),
   output,
   async run({ actor, out }, input) {
     const deps = workQueueDeps();
     const { cursor, limit, ...filter } = input;
-    const [queue, counts] = await Promise.all([getWorkQueue(deps, actor, { filter, cursor, limit: limit ?? DEFAULT_LIST_LIMIT }), getWorkQueueCounts(deps, actor)]);
+    const [queue, counts] = await Promise.all([getWorkQueue(deps, actor, { filter, cursor, limit: listLimit(limit, input.group ? DEFAULT_LIST_LIMIT : OVERVIEW_LIMIT) }), getWorkQueueCounts(deps, actor)]);
     const groups = QUEUE_GROUPS.filter((g) => !input.group || g === input.group).map((group) => {
       const page = queue.groups[group];
       return { group, total: page.total, nextCursor: page.nextCursor, items: page.items.map((i) => toItem(out, i)) };

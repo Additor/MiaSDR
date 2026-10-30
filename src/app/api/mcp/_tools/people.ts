@@ -4,7 +4,7 @@ import { readLeadActivity } from "@/contexts/outreach/application/read-lead-acti
 import { getLead } from "@/contexts/people/application/lead-management";
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, iso } from "./output";
+import { appLinks, fencedField, iso, untrusted } from "./output";
 
 const tristate = (value: boolean | undefined) => (value === undefined ? undefined : value ? "yes" : "no");
 
@@ -23,7 +23,7 @@ export const searchPeopleTool = defineTool({
   name: "search_people",
   title: "Search people",
   description: [
-    "Leads and contacts, newest first, 25 a page, with the same filters as the Leads page. `query` matches name, email, title, company, LinkedIn and phone.",
+    "Leads and contacts, newest first, 50 a page, with the same filters as the Leads page. `query` matches name, email, title, company, LinkedIn and phone.",
     "`lifecycle` is `lead` (default), `contact` or `all`. `campaign` takes a campaign id, `any` or `none`.",
   ].join(" "),
   scope: "mcp:read",
@@ -56,19 +56,21 @@ export const searchPeopleTool = defineTool({
     };
     const filter = parseLeadFilter((key) => params[key]);
     const result = await listLeads(actor, { filter, page: input.page });
+    // listLeads answers the last page for a page past the end; the agent reads an empty page as the end instead.
+    const pastEnd = input.page !== undefined && input.page > result.pageCount;
     const links = appLinks(out);
-    const people = result.rows.map((r) => ({
+    const people = (pastEnd ? [] : result.rows).map((r) => ({
       personId: r.id,
       name: r.fullName,
       email: r.email,
-      title: r.title,
-      company: r.companyName ?? r.companyDomain,
+      title: fencedField(out, r.title),
+      company: fencedField(out, r.companyName ?? r.companyDomain),
       lifecycle: r.lifecycle,
       doNotContact: r.doNotContact,
       appUrl: links.person(r.id, r.lifecycle),
     }));
-    const summary = `${result.total} people match. Page ${result.page} of ${result.pageCount}: ${people.map((p) => p.name ?? p.email ?? p.personId).join(", ") || "none"}.`;
-    return { summary, structured: { total: result.total, page: result.page, pageCount: result.pageCount, people } };
+    const summary = `${result.total} people match. Page ${pastEnd ? input.page : result.page} of ${result.pageCount}: ${people.map((p) => p.name ?? p.email ?? p.personId).join(", ") || "none"}.`;
+    return { summary, structured: { total: result.total, page: pastEnd ? input.page! : result.page, pageCount: result.pageCount, people } };
   },
 });
 
@@ -104,15 +106,19 @@ export const getPersonTool = defineTool({
     const activity = (await readLeadActivity(leadActivityDeps(), actor.organizationId, [{ id: p.id, lifecycle: p.lifecycle, email: p.email, linkedinSlug: p.linkedinSlug, linkedinUrl: p.linkedinUrl }])).get(p.id);
     // Custom fields by their names, which is how a person reads them.
     const labels = new Map(lead.customColumns.map((c) => [c.key, c.name]));
-    const customFields = Object.fromEntries(Object.entries(p.custom).filter(([key]) => labels.has(key)).map(([key, value]) => [labels.get(key)!, value]));
+    const customFields = Object.fromEntries(
+      Object.entries(p.custom)
+        .filter(([key]) => labels.has(key))
+        .map(([key, value]) => [labels.get(key)!, typeof value === "string" ? untrusted(out, "field", value) : value]),
+    );
     const structured = {
       personId: p.id,
       name: p.fullName,
       email: p.email,
       phone: p.phone,
       linkedinUrl: p.linkedinUrl,
-      title: p.title,
-      company: p.companyName ?? p.companyDomain,
+      title: fencedField(out, p.title),
+      company: fencedField(out, p.companyName ?? p.companyDomain),
       lifecycle: p.lifecycle,
       status: activity?.status?.state ?? null,
       lastContactAt: iso(activity?.status?.lastContactAt ?? null),

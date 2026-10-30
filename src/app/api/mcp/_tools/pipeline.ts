@@ -2,7 +2,7 @@ import { z } from "zod";
 import { dealsDeps } from "@/composition/deals";
 import { board, getDeal } from "@/contexts/deals/application/deal-reads";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, iso } from "./output";
+import { appLinks, DEFAULT_LIST_LIMIT, fencedField, iso, OVERVIEW_LIMIT } from "./output";
 
 const card = z.object({
   dealId: z.string(),
@@ -22,7 +22,7 @@ export const getPipelineTool = defineTool({
   name: "get_pipeline",
   title: "Get pipeline",
   description: [
-    "The deal pipeline: one column per stage with its deal count, amounts and newest deals. Won and Lost hold the last 30 days unless `showAll`. Filter by `owner` (a user id, `me` or `none`) or `query`; page one stage with `stageId` and its `nextCursor`.",
+    "The deal pipeline: one column per stage with its deal count, amounts and its 5 newest deals (20 with `stageId`). Won and Lost hold the last 30 days unless `showAll`. Filter by `owner` (a user id, `me` or `none`) or `query`; page one stage with `stageId` and its `nextCursor`.",
     "With `dealId`, it answers that one deal instead, with the `version` that edits take.",
   ].join(" "),
   scope: "mcp:read",
@@ -71,12 +71,13 @@ export const getPipelineTool = defineTool({
         closedAt: iso(d.closedAt),
         lostReason: d.lostReason,
         sourceCampaign: d.source?.campaignName ?? null,
-        person: { personId: d.person.id, name: d.person.name, email: d.person.email, company: d.person.companyName },
+        person: { personId: d.person.id, name: d.person.name, email: d.person.email, company: fencedField(out, d.person.companyName) },
         appUrl: links.deal(d.id),
       };
       return { summary: `${d.title}: ${d.stage.name}, version ${d.version}.`, structured: { columns: [], deal } };
     }
-    const result = await board(dealsDeps(), actor, { stage: input.stageId, owner: input.owner, q: input.query, cursor: input.cursor, showAll: input.showAll });
+    const limit = input.stageId ? DEFAULT_LIST_LIMIT : OVERVIEW_LIMIT;
+    const result = await board(dealsDeps(), actor, { stage: input.stageId, owner: input.owner, q: input.query, limit, cursor: input.cursor, showAll: input.showAll });
     const columns = result.columns.map((c) => ({
       stageId: c.id,
       name: c.name,
@@ -84,7 +85,7 @@ export const getPipelineTool = defineTool({
       total: c.total,
       amounts: c.amounts,
       nextCursor: c.nextCursor,
-      deals: c.cards.map((k) => ({ dealId: k.id, title: k.title, version: k.version, personId: k.personId, personName: k.personName, company: k.companyName, amountMinor: k.amountMinor, currency: k.currency, owner: k.owner?.name ?? null, expectedCloseOn: k.expectedCloseOn, appUrl: links.deal(k.id) })),
+      deals: c.cards.map((k) => ({ dealId: k.id, title: k.title, version: k.version, personId: k.personId, personName: k.personName, company: fencedField(out, k.companyName), amountMinor: k.amountMinor, currency: k.currency, owner: k.owner?.name ?? null, expectedCloseOn: k.expectedCloseOn, appUrl: links.deal(k.id) })),
     }));
     return { summary: columns.map((c) => `${c.name}: ${c.total}`).join(", "), structured: { columns, deal: null } };
   },
