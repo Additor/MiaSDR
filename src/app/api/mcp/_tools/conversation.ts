@@ -13,7 +13,7 @@ import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { NotFoundError, ValidationError } from "@/shared/errors";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, EXCERPT_CHARS, excerpt, fencedField, fitItems, iso, messageSource, UNTRUSTED_NOTE, untrusted, type ToolOutputContext } from "./output";
+import { appLinks, counted, EXCERPT_CHARS, excerpt, fencedField, fitItems, iso, messageSource, UNTRUSTED_NOTE, untrusted, type ToolOutputContext } from "./output";
 
 /** Characters of one message body a `detailed` answer keeps. */
 const DETAILED_BODY_CHARS = 4000;
@@ -155,7 +155,7 @@ export const getConversationTool = defineTool({
       followUps: sequence.run ? { status: sequence.run.statusLabel, steps: sequence.run.steps.map((s) => ({ name: s.name, status: s.status, dueAt: s.dueAt.toISOString() })) } : null,
     };
     const summary = [
-      `${person.name ?? person.email ?? "Unknown person"} on ${thread.channel}, ${thread.messages.length} messages${fitted.omitted > 0 ? ` (the oldest ${fitted.omitted} left out)` : ""}. State ${record.workflowState}${record.replyTypeName ? `, reply type ${record.replyTypeName}` : ""}.`,
+      `${person.name ?? person.email ?? "Unknown person"} on ${thread.channel}, ${counted(thread.messages.length, "message")}${fitted.omitted > 0 ? ` (the oldest ${fitted.omitted} left out)` : ""}. State ${record.workflowState}${record.replyTypeName ? `, reply type ${record.replyTypeName}` : ""}.`,
       draft ? `Open draft ${draft.draftId}, ${draft.status}, revision ${draft.revision}.` : "No open draft.",
       UNTRUSTED_NOTE,
     ].join("\n");

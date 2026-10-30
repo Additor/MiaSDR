@@ -130,6 +130,8 @@ Lines to look for:
 - `Email jobs disabled: <reason>`: the Gmail key is missing or malformed. The app still runs.
 - `[auth-email] to=... subject=...`: an auth email (invitation, reset link) printed because `RESEND_API_KEY` and `AUTH_EMAIL_FROM` are not both set. Copy the link from the log.
 - `[auth] <what> email failed:`: Resend refused or was unreachable.
+- `[mcp] <tool> failed for organization <id>`: an MCP tool hit an error it does not classify. The agent got a generic sentence; the stack follows the line.
+- `[mcp] request failed`: the MCP endpoint could not answer a request at all, such as a server it failed to build.
 
 Mailbox errors show in the Mailboxes page as the mailbox's last error.
 

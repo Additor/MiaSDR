@@ -92,3 +92,6 @@ export const fencedExcerpt = (ctx: ToolOutputContext, channel: string | null, te
   text === null ? null : untrusted(ctx, messageSource(channel), excerpt(text));
 
 export const iso = (date: Date | null): string | null => (date ? date.toISOString() : null);
+
+/** "1 item", "3 items"; `many` for a word whose plural is not `one` plus s. */
+export const counted = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;

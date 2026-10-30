@@ -13,7 +13,7 @@ import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastruct
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { defineTool, READ_ONLY } from "./define";
-import { fencedField, iso } from "./output";
+import { counted, fencedField, iso } from "./output";
 
 export const getAnalyticsTool = defineTool({
   name: "get_analytics",
@@ -84,10 +84,11 @@ export const getSendingHealthTool = defineTool({
     };
     const problems = [
       ...(structured.paused.organization || structured.paused.install ? ["Sending is paused."] : []),
+      ...(structured.mailboxes.length === 0 ? ["No mailbox is connected, so no campaign email can send."] : []),
       ...structured.mailboxes.filter((m) => m.status !== "connected").map((m) => `Mailbox ${m.emailAddress} is ${m.status}.`),
       ...(linkedin ?? []).filter((a) => a.status !== "connected").map((a) => `LinkedIn account ${a.name ?? a.id} is ${a.status}.`),
-      ...(exceptions.length > 0 ? [`${exceptions.length} inbound messages wait for a sender decision.`] : []),
-      ...(failed && failed.total > 0 ? [`${failed.total} AI jobs failed.`] : []),
+      ...(exceptions.length > 0 ? [`${counted(exceptions.length, "inbound message")} ${exceptions.length === 1 ? "waits" : "wait"} for a sender decision.`] : []),
+      ...(failed && failed.total > 0 ? [`${counted(failed.total, "AI job")} failed.`] : []),
     ];
     return { summary: problems.length > 0 ? problems.join("\n") : "Sending looks healthy.", structured };
   },

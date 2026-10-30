@@ -4,7 +4,7 @@ import type { QueueItem } from "@/contexts/conversations/actions/application/wor
 import { QUEUE_GROUPS, QUEUE_SCOPES } from "@/contexts/conversations/actions/domain/action-queue";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, DEFAULT_LIST_LIMIT, fencedExcerpt, listLimit, OVERVIEW_LIMIT, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
+import { appLinks, counted, DEFAULT_LIST_LIMIT, fencedExcerpt, listLimit, OVERVIEW_LIMIT, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
 
 const item = z.object({
   recordId: z.string(),
@@ -82,7 +82,7 @@ export const getWorkQueueTool = defineTool({
     const structured = { groups, counts: { total: counts.total, ...counts.byScope } };
     const lines = groups.filter((g) => g.total > 0).map((g) => `${g.group}: ${g.total}${g.nextCursor ? ` (showing ${g.items.length})` : ""}`);
     const summary = [
-      queue.total === 0 ? "Nothing waits under this filter." : `${queue.total} items wait. ${lines.join(", ")}.`,
+      queue.total === 0 ? "Nothing waits under this filter." : `${counted(queue.total, "item")} ${queue.total === 1 ? "waits" : "wait"}. ${lines.join(", ")}.`,
       `Unfiltered: ${counts.byScope.mine} mine, ${counts.byScope.unassigned} unassigned, ${counts.byScope.others} assigned to others.`,
       ...(groups.some((g) => g.items.some((i) => i.lastInbound)) ? [UNTRUSTED_NOTE] : []),
     ].join("\n");

@@ -4,7 +4,7 @@ import { readLeadActivity } from "@/contexts/outreach/application/read-lead-acti
 import { getLead } from "@/contexts/people/application/lead-management";
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, fencedField, iso, untrusted } from "./output";
+import { appLinks, counted, fencedField, iso, untrusted } from "./output";
 
 const tristate = (value: boolean | undefined) => (value === undefined ? undefined : value ? "yes" : "no");
 
@@ -69,7 +69,7 @@ export const searchPeopleTool = defineTool({
       doNotContact: r.doNotContact,
       appUrl: links.person(r.id, r.lifecycle),
     }));
-    const summary = `${result.total} people match. Page ${pastEnd ? input.page : result.page} of ${result.pageCount}: ${people.map((p) => p.name ?? p.email ?? p.personId).join(", ") || "none"}.`;
+    const summary = `${counted(result.total, "person", "people")} ${result.total === 1 ? "matches" : "match"}. Page ${pastEnd ? input.page : result.page} of ${result.pageCount}: ${people.map((p) => p.name ?? p.email ?? p.personId).join(", ") || "none"}.`;
     return { summary, structured: { total: result.total, page: pastEnd ? input.page! : result.page, pageCount: result.pageCount, people } };
   },
 });
@@ -129,7 +129,7 @@ export const getPersonTool = defineTool({
       sends: lead.sends.map((s) => ({ campaignName: s.campaignName, stepNumber: s.stepNumber, channel: s.channel, status: s.status, subject: s.subject, sentAt: iso(s.sentAt) })),
       appUrl: appLinks(out).person(p.id, p.lifecycle),
     };
-    const summary = `${p.fullName ?? p.email ?? p.id}, ${p.lifecycle}${structured.status ? `, ${structured.status}` : ""}. ${lead.enrollments.length} enrollments, ${lead.sends.length} campaign sends.`;
+    const summary = `${p.fullName ?? p.email ?? p.id}, ${p.lifecycle}${structured.status ? `, ${structured.status}` : ""}. ${counted(lead.enrollments.length, "enrollment")}, ${counted(lead.sends.length, "campaign send")}.`;
     return { summary, structured };
   },
 });

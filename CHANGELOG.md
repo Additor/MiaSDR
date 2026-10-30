@@ -18,6 +18,8 @@ First public release.
 - CRM: contacts, companies with merge, deals on a pipeline board.
 - Tables: a spreadsheet with formulas, enrichment and AI columns. Enrichment calls Hunter, ZeroBounce, MillionVerifier, NeverBounce, Findymail, Prospeo, LeadMagic, Apollo and People Data Labs natively, and vendors that share an action line up in a waterfall.
 - Self-hosting with Docker Compose and Postgres 17.
+- AI agents (MCP): an endpoint at `/api/mcp` with eleven read tools for the inbox, work queue, leads, campaigns, pipeline and analytics. People connect agents with personal tokens from Settings, AI agents (MCP), after an owner or admin turns MCP on. See [AI agents (MCP)](docs/guides/mcp.md).
+- Schema: migration 0005 adds `mcp_tokens` and migration 0006 adds `mcp_rate_limits`.
 
 ### Upgrade notes
 

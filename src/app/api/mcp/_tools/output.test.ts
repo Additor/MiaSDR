@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appLinks, estimateTokens, excerpt, fitItems, MAX_RESPONSE_TOKENS, toolOutputContext, untrusted } from "./output";
+import { appLinks, counted, estimateTokens, excerpt, fitItems, MAX_RESPONSE_TOKENS, toolOutputContext, untrusted } from "./output";
 
 const ctx = toolOutputContext("https://app.example.com");
 
@@ -37,5 +37,11 @@ describe("MCP tool output", () => {
     expect(omitted).toBeGreaterThan(0);
     expect(estimateTokens(kept)).toBeLessThanOrEqual(MAX_RESPONSE_TOKENS / 2 + kept.length);
     expect(fitItems([{ text: "x".repeat(100_000) }]).items).toHaveLength(1);
+  });
+
+  it("counts with the noun that fits", () => {
+    expect(counted(1, "item")).toBe("1 item");
+    expect(counted(3, "item")).toBe("3 items");
+    expect(counted(2, "person", "people")).toBe("2 people");
   });
 });

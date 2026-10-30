@@ -60,6 +60,7 @@ Docker Compose runs the app and Postgres 17, with Caddy in front for HTTPS. [Sel
 | [Quick start guide](docs/guides/quick-start.md) | [Gmail](docs/setup/gmail.md) | [Self-hosting](docs/deploy/self-host.md) |
 | [How MiaSDR works](docs/guides/how-it-works.md) | [LinkedIn through Unipile](docs/setup/linkedin-unipile.md) | [Configuration](docs/configuration.md) |
 | [Responsible use](docs/responsible-use.md) | [Enrichment providers](docs/setup/enrichment.md) | [Operations](docs/operations.md) |
+| [AI agents (MCP)](docs/guides/mcp.md) | | |
 
 ## License
 

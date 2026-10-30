@@ -3,7 +3,7 @@ import { INBOX_PAGE_SIZE, listInbox, listScheduledInbox } from "@/contexts/conve
 import { DATE_MODES, INBOX_GROUPS, INBOX_VIEWS, parseInboxParams } from "@/contexts/conversations/domain/inbox-filter";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, fencedExcerpt, messageSource, UNTRUSTED_NOTE, untrusted } from "./output";
+import { appLinks, counted, fencedExcerpt, messageSource, UNTRUSTED_NOTE, untrusted } from "./output";
 
 const conversation = z.object({
   conversationId: z.string(),
@@ -93,7 +93,7 @@ export const listInboxTool = defineTool({
         // `sequence` is the code name of a follow-up after a reply.
         scheduled: rows.map((r) => ({ kind: r.kind === "sequence" ? ("follow_up" as const) : r.kind, personId: r.personId, personName: r.personName, channel: r.channel, sourceName: r.sourceName, stepLabel: r.stepLabel, subject: r.subject, dueAt: r.dueAt.toISOString() })),
       };
-      return { summary: `${total} scheduled sends. Page ${params.page}.`, structured };
+      return { summary: `${counted(total, "scheduled send")}. Page ${params.page}.`, structured };
     }
 
     const { rows, total } = await listInbox(deps, actor, params);
@@ -115,7 +115,7 @@ export const listInboxTool = defineTool({
       appUrl: links.conversation(r.conversationId),
     }));
     const pages = Math.max(1, Math.ceil(total / INBOX_PAGE_SIZE));
-    const summary = [`${total} conversations in ${params.view}. Page ${params.page} of ${pages}.`, ...(conversations.some((c) => c.lastDirection === "inbound") ? [UNTRUSTED_NOTE] : [])].join("\n");
+    const summary = [`${counted(total, "conversation")} in ${params.view}. Page ${params.page} of ${pages}.`, ...(conversations.some((c) => c.lastDirection === "inbound") ? [UNTRUSTED_NOTE] : [])].join("\n");
     return { summary, structured: { ...base, total, conversations, scheduled: [] } };
   },
 });
