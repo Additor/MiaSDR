@@ -3,20 +3,26 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isUuid } from "@/shared/uuid";
 import { REPLY_PAUSE_HOURS } from "../domain/linkedin-reply";
-import { LinkedInReplyError, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore } from "./linkedin-reply-ports";
+import { LinkedInReplyError, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore, type LinkedInSentFinder } from "./linkedin-reply-ports";
 import type { AttemptRow } from "./reply-ports";
 
 /**
  * Replies to a LinkedIn chat from the inbox. Every message is typed or approved by a signed-in member, the ledger row
  * exists before LinkedIn is called, and an unknown outcome is never sent again on a guess. A person settles it.
- * Nothing here runs from a background job except `reconcileLinkedInReplies`, which only looks.
+ * Nothing here runs from a background job except `reconcileLinkedInReplies`, which only looks. Only
+ * `sendLinkedInReply` takes `LinkedInReplySendDeps`; the rest get a port that looks at LinkedIn and cannot send.
  */
 export interface LinkedInReplyDeps {
   store: LinkedInReplyStore;
-  sender: LinkedInReplySender;
+  sender: LinkedInSentFinder;
   now: () => Date;
   /** Whether AI runs for the organization, so the panel can offer "Write a draft" or say what stops it. */
   aiStatus?: (organizationId: string) => Promise<AiStatus>;
+}
+
+/** `LinkedInReplyDeps` with a port that sends. Only `reply-send-composition.ts` builds one. */
+export interface LinkedInReplySendDeps extends LinkedInReplyDeps {
+  sender: LinkedInReplySender;
 }
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
@@ -54,7 +60,7 @@ export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Acto
 }
 
 export async function sendLinkedInReply(
-  deps: LinkedInReplyDeps,
+  deps: LinkedInReplySendDeps,
   actor: Actor,
   conversationId: string,
   input: { text: string; idempotencyKey: string; draftId?: string; revision?: number },

@@ -12,13 +12,20 @@ export class LinkedInReplyError extends Error {
   }
 }
 
-/** Port to LinkedIn for one organization. The adapter lives in infrastructure and maps provider errors to LinkedInReplyError. */
-export interface LinkedInReplySender {
-  /** Null means the organization has no LinkedIn connection. */
+/** Looks at LinkedIn for one organization. It never sends. */
+export interface LinkedInSentFinder {
+  /** False means the organization has no LinkedIn connection. */
   available(organizationId: string): Promise<boolean>;
-  send(input: { organizationId: string; account: string; chat: string; text: string }): Promise<{ messageId: string | null }>;
   /** A message from the account owner in the chat with this text after `since`. Throws when LinkedIn cannot answer. */
   findSent(input: { organizationId: string; account: string; chat: string; text: string; since: Date }): Promise<{ messageId: string | null } | null>;
+}
+
+/**
+ * Port to LinkedIn that also sends. The adapter lives in infrastructure and maps provider errors to
+ * LinkedInReplyError. Only the send deps (`reply-send-composition.ts`) hold one.
+ */
+export interface LinkedInReplySender extends LinkedInSentFinder {
+  send(input: { organizationId: string; account: string; chat: string; text: string }): Promise<{ messageId: string | null }>;
 }
 
 /** What one claimed reply knows. Built from the approval snapshot stored on the ledger row. */

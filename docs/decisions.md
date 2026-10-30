@@ -578,7 +578,7 @@ Code: `src/contexts/conversations`. Ingest entry points are `receiveInbound` and
 
 ### Drafts and approval
 
-- **Approval rule.** `approveAndSendDraft` is the only email reply sender, and LinkedIn replies go through `sendLinkedInReply`. No AI job holds a mailer, and no setting sends without a person. Any member may edit, regenerate, discard, approve and send.
+- **Approval rule.** `approveAndSendDraft` is the only email reply sender, and LinkedIn replies go through `sendLinkedInReply`. Only these two take send deps (`ReplySendDeps`, `LinkedInReplySendDeps`), built in `reply-send-composition.ts`, and only the two Send routes import that module. Every other use case, AI job and MCP tool gets deps whose mail and LinkedIn ports look and cannot send; `reply-send-imports.test.ts` checks the import graph. No setting sends without a person. Any member may edit, regenerate, discard, approve and send.
 - **Knowledge.** Documents are pasted text with versions and tags (`/settings/knowledge`, any member). `selectKnowledge` takes always-included documents first (3,000 characters each, 5,000 together while others compete), then documents by shared step tags, within 8,000 characters. Citations go to `draft_knowledge_citations`.
 - A new draft turns other open drafts of the record and channel `stale`. Regenerate writes a new row and discards the old one. `drafts.revision` counts edits.
 - A draft a person asks for (Write draft, Regenerate) that `insertDraft` stores stale, because the record's version moved while the AI wrote, answers 409 "The thread changed while the draft was written." The jobs keep writing such drafts stale without an error.

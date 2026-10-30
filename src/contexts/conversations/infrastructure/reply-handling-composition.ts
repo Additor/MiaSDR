@@ -4,8 +4,8 @@ import { drizzleInboxStore } from "./drizzle-inbox-store";
 import { ingestInbound, ingestInboundLinkedInMessage } from "./composition";
 
 /**
- * Wires the reply handling use cases. Holds no mailer: the only code that can send a reply is `approveAndSendDraft`,
- * wired in `ai-composition.ts`.
+ * Wires the reply handling use cases. Holds no mailer: the only code that can send a reply is `approveAndSendDraft`
+ * and `sendLinkedInReply`, wired in `reply-send-composition.ts`.
  */
 export const replyHandlingDeps = (): ReplyHandlingDeps => ({
   store: drizzleReplyHandlingStore,

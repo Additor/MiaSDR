@@ -7,7 +7,7 @@ import { aiIsOn, aiOffMessage } from "@/contexts/integrations/domain/ai-status";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { ReplyAiResolver } from "../ai/application/ai-ports";
 import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
-import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext } from "./reply-ports";
+import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext, type SentFinder } from "./reply-ports";
 import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
 import { checkNoneInFlight, checkRecordOpen, replyRefusal } from "../domain/reply-send";
 
@@ -16,17 +16,23 @@ import { checkNoneInFlight, checkRecordOpen, replyRefusal } from "../domain/repl
  * approve and send, override a classification and suppress a sender (decisions.md, "AI replies").
  * Cross-organization ids answer 404 because every store call carries the actor's organization.
  *
- * `approveAndSendDraft` is the only function in the product that sends a reply. The background jobs
- * hold no mailer, and no setting skips this step.
+ * `approveAndSendDraft` is the only function in the product that sends a reply, and the only one that takes
+ * `ReplySendDeps`. The other use cases, the background jobs and the MCP tools get `ReplyDeps`, whose mailer can look
+ * in a mailbox but not send. No setting skips this step.
  */
 
 export interface ReplyDeps {
   store: ReplyStore;
   ai: ReplyAiResolver;
-  mailer: ReplyMailer;
+  mailer: SentFinder;
   now: () => Date;
   /** Random local part for the Message-ID of a reply. The store adds the mailbox's domain. */
   newToken: () => string;
+}
+
+/** `ReplyDeps` with a mailer that sends. Only `reply-send-composition.ts` builds one. */
+export interface ReplySendDeps extends ReplyDeps {
+  mailer: ReplyMailer;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -257,7 +263,7 @@ function replay(attempt: AttemptRow): SendResult {
  * sent again on a guess.
  */
 export async function approveAndSendDraft(
-  deps: ReplyDeps,
+  deps: ReplySendDeps,
   actor: Actor,
   draftId: string,
   input: { revision: number; idempotencyKey: string },

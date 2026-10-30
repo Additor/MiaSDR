@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundLinkedInInput } from "../../application/linkedin-ports";
-import type { LinkedInReplyDeps } from "../../application/linkedin-reply";
+import type { LinkedInReplySendDeps } from "../../application/linkedin-reply";
 import type { LinkedInReplySender } from "../../application/linkedin-reply-ports";
 import type { FakeLinkedInGateway } from "@/contexts/outreach/linkedin/infrastructure/fake-linkedin-gateway";
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
@@ -46,7 +46,7 @@ describeDb("LinkedIn conversation replies", () => {
     };
     const ingested = await composition.ingestInboundLinkedInMessage(input);
     const actor: Actor = { userId: user, organizationId: org, role: "member" };
-    const deps: LinkedInReplyDeps = { store, sender: makeSender(fake), now: () => new Date() };
+    const deps: LinkedInReplySendDeps = { store, sender: makeSender(fake), now: () => new Date() };
     return { org, user, account: account as string, actor, fake, deps, tag, conversationId: ingested.conversationId, personId: ingested.personId, input };
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;

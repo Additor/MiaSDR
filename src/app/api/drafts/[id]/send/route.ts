@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { approveAndSendDraft } from "@/contexts/conversations/application/reply-management";
-import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
+import { replySendDeps } from "@/contexts/conversations/infrastructure/reply-send-composition";
 import { withActor } from "@/app/_lib/api";
 
 const bodySchema = z.object({ revision: z.number().int().min(1), idempotencyKey: z.string().min(8).max(200) });
@@ -10,6 +10,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/drafts/[id]
   const { id } = await ctx.params;
   return withActor(async (actor) => {
     const body = bodySchema.parse(await request.json());
-    return approveAndSendDraft(replyDeps(), actor, id, body);
+    return approveAndSendDraft(replySendDeps(), actor, id, body);
   });
 }

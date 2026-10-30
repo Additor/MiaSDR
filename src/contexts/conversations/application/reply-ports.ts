@@ -319,8 +319,13 @@ export class ReplySendError extends Error {
   }
 }
 
-export interface ReplyMailer {
+/** Sends one reply. Only the send deps (`reply-send-composition.ts`) hold one. */
+export interface ReplySender {
   send(request: ReplySendRequest): Promise<{ providerMessageId: string; threadId: string | null }>;
+}
+
+/** Looks in a mailbox for a reply that may have gone out. It never sends. */
+export interface SentFinder {
   /** `absent` only after an exhaustive scan since `since`; `inconclusive` means the mailbox could not prove either way. */
   findSent(
     mailboxEmail: string,
@@ -333,3 +338,6 @@ export interface ReplyMailer {
     | { status: "inconclusive"; reason: string }
   >;
 }
+
+/** The mail adapter that both sends and looks. */
+export type ReplyMailer = ReplySender & SentFinder;

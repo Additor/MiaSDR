@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundLinkedInInput } from "../../application/linkedin-ports";
-import type { LinkedInReplyDeps } from "../../application/linkedin-reply";
+import type { LinkedInReplySendDeps } from "../../application/linkedin-reply";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
 import { useReplyKit, type ReplyFixture, type ReplyModules } from "./replies-test-kit";
@@ -249,7 +249,7 @@ describeDb("LinkedIn reply send refusals", () => {
     };
     const ingested = await composition.ingestInboundLinkedInMessage(input);
     const actor: Actor = { userId: user, organizationId: org, role: "member" };
-    const deps: LinkedInReplyDeps = { store, sender: makeSender(fake), now: () => new Date() };
+    const deps: LinkedInReplySendDeps = { store, sender: makeSender(fake), now: () => new Date() };
     const [{ record_id: recordId }] = await sql`select record_id from conversations where id = ${ingested.conversationId}`;
     return { org, tag, account: account as string, actor, fake, deps, input, conversationId: ingested.conversationId, recordId: recordId as string };
   }
