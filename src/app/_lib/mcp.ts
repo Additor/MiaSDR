@@ -44,14 +44,15 @@ export const SERVER_ERROR_MESSAGE = "Something went wrong on the server. Try aga
 /**
  * Runs one tool call. A classified error answers with its sentence and `structuredContent.error`
  * (`{ code, message, ...details }`, the same code a JSON route would give); anything else is logged with the tool name
- * and answers `server_error`.
+ * and answers `server_error`. A `SyntaxError` counts as unknown: the SDK parses the request body before the tool runs,
+ * so one thrown here comes from the tool's own code, and the JSON route's "Invalid JSON" would blame the agent.
  */
 export async function runTool<T extends Record<string, unknown>>(tool: string, actor: Actor, run: (actor: Actor) => Promise<ToolOutput<T>>): Promise<ToolResult> {
   try {
     const { summary, structured } = await run(actor);
     return { content: [{ type: "text", text: summary }], structuredContent: structured };
   } catch (error) {
-    const classified = classifyError(error);
+    const classified = error instanceof SyntaxError ? null : classifyError(error);
     if (!classified) {
       console.error(`[mcp] ${tool} failed for organization ${actor.organizationId}`, error);
       return toolError("server_error", SERVER_ERROR_MESSAGE, {});

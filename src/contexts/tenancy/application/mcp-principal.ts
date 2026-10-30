@@ -28,13 +28,17 @@ export interface StoredMcpToken {
   policyEpoch: number;
   expiresAt: Date | null;
   revokedAt: Date | null;
+  lastUsedAt: Date | null;
   /** The person's role in the token's organization, or null when they are no longer a member. */
   role: string | null;
 }
 
+/** How stale `lastUsedAt` may get before a request writes it again. */
+export const TOUCH_INTERVAL_MS = 60_000;
+
 export interface McpPrincipalStore {
   findPersonalToken(tokenHash: string): Promise<StoredMcpToken | null>;
-  /** Records use. The store skips the write when the last one is under a minute old. */
+  /** Records use. The store also skips the write when the last one is under `TOUCH_INTERVAL_MS` old, for two requests that race. */
   touch(tokenId: string, now: Date): Promise<void>;
   settings(organizationId: string): Promise<McpSettings>;
 }
@@ -57,7 +61,8 @@ export async function resolveMcpPrincipal(deps: McpPrincipalDeps, token: string 
   const now = deps.now();
   if (!row || row.revokedAt || row.role === null) return null;
   if (row.expiresAt && row.expiresAt.getTime() <= now.getTime()) return null;
-  await deps.store.touch(row.id, now);
+  // Most requests find a recent `lastUsedAt` and skip the round trip.
+  if (!row.lastUsedAt || now.getTime() - row.lastUsedAt.getTime() >= TOUCH_INTERVAL_MS) await deps.store.touch(row.id, now);
   return {
     tokenId: row.id,
     tokenName: row.name,

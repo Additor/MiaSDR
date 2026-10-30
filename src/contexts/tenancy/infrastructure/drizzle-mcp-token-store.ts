@@ -1,7 +1,7 @@
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { channelSettings, mcpTokens, members } from "@/platform/db/schema";
-import type { McpPrincipalStore } from "../application/mcp-principal";
+import { TOUCH_INTERVAL_MS, type McpPrincipalStore } from "../application/mcp-principal";
 import { MCP_SETTINGS_CHANNEL, readMcpSettings } from "../domain/mcp-settings";
 
 export const drizzleMcpTokenStore: McpPrincipalStore = {
@@ -16,6 +16,7 @@ export const drizzleMcpTokenStore: McpPrincipalStore = {
         policyEpoch: mcpTokens.policyEpoch,
         expiresAt: mcpTokens.expiresAt,
         revokedAt: mcpTokens.revokedAt,
+        lastUsedAt: mcpTokens.lastUsedAt,
         role: members.role,
       })
       .from(mcpTokens)
@@ -29,7 +30,7 @@ export const drizzleMcpTokenStore: McpPrincipalStore = {
     await db
       .update(mcpTokens)
       .set({ lastUsedAt: now })
-      .where(and(eq(mcpTokens.id, tokenId), or(isNull(mcpTokens.lastUsedAt), lt(mcpTokens.lastUsedAt, sql`${now.toISOString()}::timestamptz - interval '1 minute'`))));
+      .where(and(eq(mcpTokens.id, tokenId), or(isNull(mcpTokens.lastUsedAt), lt(mcpTokens.lastUsedAt, new Date(now.getTime() - TOUCH_INTERVAL_MS)))));
   },
 
   async settings(organizationId) {

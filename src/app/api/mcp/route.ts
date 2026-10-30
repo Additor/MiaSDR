@@ -14,12 +14,18 @@ export const maxDuration = 60;
  * The MCP endpoint. The SDK serves 2026-07-28 requests and, statelessly, 2025-11-25 ones from the
  * same server factory, and refuses a request whose `Mcp-Method` or `Mcp-Name` header disagrees with its body (-32020).
  * It verifies no token itself: this handler resolves the bearer token and passes the principal in `authInfo.extra`.
+ * The SDK answers its own failures (a factory that throws, a server error, a refused request) without throwing, and
+ * reports them only to `onerror`, so `onerror` logs them.
  */
-const handler = createMcpHandler(({ authInfo }) => createMcpServer(principalOf(authInfo)), { legacy: "stateless", responseMode: "json" });
+const handler = createMcpHandler(({ authInfo }) => createMcpServer(principalOf(authInfo)), {
+  legacy: "stateless",
+  responseMode: "json",
+  onerror: (error) => console.error("[mcp] request failed", error),
+});
 
 function principalOf(authInfo: AuthInfo | undefined): McpPrincipal {
   const principal = authInfo?.extra?.principal as McpPrincipal | undefined;
-  // The handler below passes a principal on every request, so a missing one is a wiring bug, not a caller's mistake.
+  // The handler below passes a principal on every request, so a missing one means this route is wired wrong.
   if (!principal) throw new Error("MCP request reached the server factory without a principal");
   return principal;
 }

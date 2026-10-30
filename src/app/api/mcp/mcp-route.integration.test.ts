@@ -13,6 +13,7 @@ describeDb("/api/mcp", () => {
   let GET: (request: Request) => Promise<Response>;
   let hash: (token: string) => string;
   const orgs: TestOrg[] = [];
+  const users: string[] = [];
 
   async function token(org: TestOrg, patch: { revoked?: boolean } = {}) {
     const raw = `msdr_pat_${randomBytes(32).toString("base64url")}`;
@@ -36,7 +37,7 @@ describeDb("/api/mcp", () => {
 
   afterAll(async () => {
     try {
-      await dropOrgs(sql, orgs);
+      await dropOrgs(sql, orgs, users);
     } finally {
       await sql.end();
     }
@@ -95,12 +96,12 @@ describeDb("/api/mcp", () => {
   it("stops answering the token of a member removed from the organization", async () => {
     const [on] = orgs;
     const [{ id: userId }] = await sql<{ id: string }[]>`insert into users (name, email) values ('Gone', ${`gone-${randomBytes(4).toString("hex")}@mcp.test`}) returning id`;
+    users.push(userId);
     const [{ id: memberId }] = await sql<{ id: string }[]>`insert into members (organization_id, user_id, role) values (${on.organizationId}, ${userId}, 'member') returning id`;
     const raw = `msdr_pat_${randomBytes(32).toString("base64url")}`;
     await sql`insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, scopes) values (${on.organizationId}, ${userId}, 'pat', 'Gone', ${hash(raw)}, ${["mcp:read"]})`;
     expect((await post({ token: raw, method: "server/discover" })).status).toBe(200);
     await sql`delete from members where id = ${memberId}`;
     expect((await post({ token: raw, method: "server/discover" })).status).toBe(401);
-    await sql`delete from users where id = ${userId}`;
   });
 });

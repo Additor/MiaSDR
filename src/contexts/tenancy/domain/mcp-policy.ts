@@ -50,8 +50,9 @@ export interface AgentSendPolicy {
 }
 
 /**
- * Whether an agent holding this token may send replies and start campaigns now. `installSendEnabled` is the
- * `MCP_SEND_ENABLED` switch. Checks run in a fixed order, so the refusal names the first thing to fix.
+ * Whether an agent holding this token may send replies and start campaigns now. `installSendEnabled` is the install's
+ * switch for agent sending; `src/shared/env.ts` has no variable for it yet, so the caller supplies it. Checks run in a
+ * fixed order, so the refusal names the first thing to fix.
  */
 export function agentSendPolicy(input: { installSendEnabled: boolean; settings: McpSettings; token: PolicyToken; now: Date }): AgentSendPolicy {
   const refuse = (refusal: AgentSendRefusal): AgentSendPolicy => ({ replies: false, campaigns: false, refusal });

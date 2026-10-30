@@ -61,4 +61,11 @@ describe("runTool", () => {
     expect(JSON.stringify(result)).not.toContain("secret_table");
     expect(log).toHaveBeenCalledWith("[mcp] get_inbox failed for organization org-1", expect.any(Error));
   });
+
+  it("treats a SyntaxError from the tool's code as a server error, since the SDK already parsed the request", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const result = await runTool("search", actor, async () => { throw new SyntaxError("Invalid regular expression: /(/: Unterminated group"); });
+    expect(result.structuredContent).toEqual({ error: { code: "server_error", message: SERVER_ERROR_MESSAGE } });
+    expect(log).toHaveBeenCalledWith("[mcp] search failed for organization org-1", expect.any(SyntaxError));
+  });
 });

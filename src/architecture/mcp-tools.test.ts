@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { sourceFiles } from "./context-layers";
 import { parseSource, runtimeSpecifiers, walk } from "./source-ast";
 
 /**
@@ -10,24 +11,20 @@ import { parseSource, runtimeSpecifiers, walk } from "./source-ast";
  * - no file here imports `_lib/api.ts`, whose `toActor` builds a person's actor;
  * - no file here writes an object literal with `userId`, `organizationId` and `role`, which would be an actor without
  *   `via`.
- * Input limits come from the use case's own schema module, so a tool and its JSON route cannot drift: no Zod `min`,
- * `max` or `length` here takes a number written in place.
+ * Input limits come from the use case's own schema module, so a tool and its JSON route cannot drift: no Zod bound
+ * (`min`, `max`, `length`, `gt`, `gte`, `lt`, `lte`, `multipleOf`) here takes a number written in place. `Math.min` and
+ * `Math.max` are arithmetic and pass.
  */
 
 const ROOT = path.resolve(__dirname, "../..");
 const MCP_DIR = path.join(ROOT, "src/app/api/mcp");
 const PERSON_WRAPPERS = new Set(["@/app/_lib/api"]);
 const ACTOR_KEYS = ["userId", "organizationId", "role"];
-const LIMIT_METHODS = new Set(["min", "max", "length"]);
+const LIMIT_METHODS = new Set(["min", "max", "length", "gt", "gte", "lt", "lte", "multipleOf"]);
 
-function sourceFiles(dir: string, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const full = path.join(dir, name);
-    if (statSync(full).isDirectory()) sourceFiles(full, out);
-    else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(full);
-  }
-  return out;
-}
+/** `100` or `-1`. */
+const isNumberLiteral = (node: ts.Node) => ts.isNumericLiteral(node) || (ts.isPrefixUnaryExpression(node) && ts.isNumericLiteral(node.operand));
+const isMath = (node: ts.Expression) => ts.isIdentifier(node) && node.text === "Math";
 
 const propertyName = (p: ts.ObjectLiteralElementLike) => (p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : null);
 
@@ -44,8 +41,8 @@ export function mcpToolProblems(file: string, text: string): string[] {
       const names = new Set(node.properties.map(propertyName));
       if (ACTOR_KEYS.every((key) => names.has(key))) problems.push(`line ${line(node)}: an Actor literal; use mcpActor`);
     }
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && LIMIT_METHODS.has(node.expression.name.text)) {
-      if (node.arguments.some((arg) => ts.isNumericLiteral(arg))) problems.push(`line ${line(node)}: .${node.expression.name.text}() with a number written in place`);
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && LIMIT_METHODS.has(node.expression.name.text) && !isMath(node.expression.expression)) {
+      if (node.arguments.some(isNumberLiteral)) problems.push(`line ${line(node)}: .${node.expression.name.text}() with a number written in place`);
     }
   });
   return problems;
@@ -59,12 +56,16 @@ describe("MCP tools", () => {
       `const input = z.object({ name: z.string().max(100), tags: z.array(z.string()).min(1) });`,
       `import { mcpActor } from "@/app/_lib/mcp";`,
       `const fine = z.string().max(LIMITS.name);`,
+      `const page = z.number().int().gte(-1).lt(50);`,
+      `const capped = Math.min(1, Math.max(0, ratio));`,
     ].join("\n");
     expect(mcpToolProblems("sample.ts", sample)).toEqual([
       "imports @/app/_lib/api",
       "line 2: an Actor literal; use mcpActor",
       "line 3: .max() with a number written in place",
       "line 3: .min() with a number written in place",
+      "line 6: .lt() with a number written in place",
+      "line 6: .gte() with a number written in place",
     ]);
   });
 

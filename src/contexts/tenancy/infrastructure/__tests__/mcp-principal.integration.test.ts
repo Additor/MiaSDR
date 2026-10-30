@@ -110,16 +110,21 @@ describeDb("MCP principal", () => {
     const m = await member(a, "member");
     const owner: Actor = { userId: a.userId, organizationId: a.organizationId, role: "owner" };
     const holder = await sql.reserve();
+    let open = false;
     try {
       await holder`begin`;
+      open = true;
       await holder`select pg_advisory_xact_lock(hashtextextended(${`agent-send:${a.organizationId}`}, 0))`;
       const removal = members.removeMember({ members: memberStore, invitations: { invite: async () => ({ id: "unused" }) } }, owner, m.memberId);
       await waitForLockWaiters(sql, 1, 10_000, "%pg_advisory_xact_lock%");
       const [{ still }] = await sql<{ still: number }[]>`select count(*)::int as still from members where id = ${m.memberId}`;
       expect(still).toBe(1);
       await holder`commit`;
+      open = false;
       await removal;
     } finally {
+      // A failed step must not return a connection to the pool inside a transaction that still holds the lock.
+      if (open) await holder`rollback`;
       holder.release();
     }
     const [{ gone }] = await sql<{ gone: number }[]>`select count(*)::int as gone from members where id = ${m.memberId}`;
