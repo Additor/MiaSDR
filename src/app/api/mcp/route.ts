@@ -1,7 +1,7 @@
 import { createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
 import { connection } from "next/server";
 import { apiError } from "@/app/_lib/api-errors";
-import { resolveMcpPrincipal, type McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
+import { resolveMcpAccess, type McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
 import { bearerToken } from "@/contexts/tenancy/domain/mcp-token";
 import { mcpPrincipalDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { env } from "@/shared/env";
@@ -54,12 +54,10 @@ async function serve(request: Request): Promise<Response> {
   if (!config.MCP_ENABLED) return apiError(404, "Not found");
   if (fromForeignOrigin(request, config.APP_URL)) return apiError(403, "This endpoint does not take requests from other sites.", { code: "foreign_origin" });
 
-  const deps = mcpPrincipalDeps();
-  const principal = await resolveMcpPrincipal(deps, bearerToken(request.headers.get("authorization")));
-  if (!principal) return unauthorized();
-  if (!(await deps.store.settings(principal.organizationId)).enabled) {
-    return apiError(403, "MCP is off in this organization. An owner or admin can turn it on.", { code: "mcp_disabled" });
-  }
+  const access = await resolveMcpAccess(mcpPrincipalDeps(), bearerToken(request.headers.get("authorization")));
+  if (!access) return unauthorized();
+  if ("refusal" in access) return apiError(403, "MCP is off in this organization. An owner or admin can turn it on.", { code: access.refusal });
+  const { principal } = access;
   // The raw token never travels further than this function: `token` carries the token's id.
   const authInfo: AuthInfo = { token: principal.tokenId, clientId: principal.tokenId, scopes: principal.scopes, extra: { principal } };
   return handler.fetch(request, { authInfo });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MCP_SETTINGS, type McpSettings } from "./mcp-settings";
-import { agentSendPolicy, hasScope, readScopes, tokenScopesProblem, type PolicyToken } from "./mcp-policy";
+import { agentSendPolicy, hasScope, readScopes, tokenScopesProblem, usableScopes, type PolicyToken } from "./mcp-policy";
 
 const now = new Date("2026-10-30T12:00:00Z");
 const on: McpSettings = { ...DEFAULT_MCP_SETTINGS, enabled: true, agentSendMode: "replies", agentSendEpoch: 2 };
@@ -13,6 +13,19 @@ describe("MCP scopes", () => {
     expect(readScopes(["mcp:send", "admin", "mcp:read"])).toEqual(["mcp:read", "mcp:send"]);
     expect(hasScope(["mcp:read"], "mcp:write")).toBe(false);
     expect(hasScope(["mcp:read", "mcp:write"], "mcp:write")).toBe(true);
+  });
+});
+
+describe("scopes a token may use now", () => {
+  const all = ["mcp:read", "mcp:write", "mcp:send"];
+
+  it("keeps the stored scopes while the person may still create them", () => {
+    expect(usableScopes({ role: "member", settings: on, scopes: all })).toEqual(all);
+    expect(usableScopes({ role: "admin", settings: { ...on, memberWriteTokens: false }, scopes: all })).toEqual(all);
+  });
+
+  it("drops write and send from a member once member write tokens are off", () => {
+    expect(usableScopes({ role: "member", settings: { ...on, memberWriteTokens: false }, scopes: all })).toEqual(["mcp:read"]);
   });
 });
 

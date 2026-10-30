@@ -6,13 +6,23 @@ import type { Actor } from "@/shared/errors";
 describeDb("MCP principal", () => {
   useTestEnv();
   const sql = testSql({ max: 4 });
-  let resolve: typeof import("../../application/mcp-principal").resolveMcpPrincipal;
+  let resolveAccess: typeof import("../../application/mcp-principal").resolveMcpAccess;
   let deps: import("../../application/mcp-principal").McpPrincipalDeps;
   let hash: (token: string) => string;
   let members: typeof import("../../application/member-management");
   let memberStore: typeof import("../drizzle-member-store").drizzleMemberStore;
   const orgs: TestOrg[] = [];
   const users: string[] = [];
+
+  /** The principal, or null for both a refusal and no access. */
+  const resolve = async (token: string | null) => {
+    const access = await resolveAccess(deps, token);
+    return access && "principal" in access ? access.principal : null;
+  };
+
+  const settings = (org: TestOrg, values: Record<string, unknown>) =>
+    sql`insert into channel_settings (organization_id, channel, values) values (${org.organizationId}, 'mcp', ${sql.json(values as never)})
+        on conflict (organization_id, channel) do update set values = excluded.values`;
 
   const newToken = () => `msdr_pat_${randomBytes(32).toString("base64url")}`;
 
@@ -34,13 +44,15 @@ describeDb("MCP principal", () => {
   }
 
   beforeAll(async () => {
-    ({ resolveMcpPrincipal: resolve } = await import("../../application/mcp-principal"));
+    ({ resolveMcpAccess: resolveAccess } = await import("../../application/mcp-principal"));
     const composition = await import("../mcp-composition");
     deps = composition.mcpPrincipalDeps();
     hash = composition.hashMcpToken;
     members = await import("../../application/member-management");
     memberStore = (await import("../drizzle-member-store")).drizzleMemberStore;
-    orgs.push(await createTestOrg(sql, "MCP A"), await createTestOrg(sql, "MCP B"));
+    orgs.push(await createTestOrg(sql, "MCP A"), await createTestOrg(sql, "MCP B"), await createTestOrg(sql, "MCP off"));
+    await settings(orgs[0], { enabled: true });
+    await settings(orgs[1], { enabled: true });
   });
 
   afterAll(async () => {
@@ -54,7 +66,7 @@ describeDb("MCP principal", () => {
   it("resolves a live token to its organization, owner, role and scopes, and records use", async () => {
     const [a] = orgs;
     const { token, id } = await seed(a, a.userId);
-    const principal = await resolve(deps, token);
+    const principal = await resolve(token);
     expect(principal).toEqual({
       tokenId: id,
       tokenName: "Laptop",
@@ -71,25 +83,45 @@ describeDb("MCP principal", () => {
 
   it("answers null for a malformed, unknown, revoked or expired token", async () => {
     const [a] = orgs;
-    expect(await resolve(deps, null)).toBeNull();
-    expect(await resolve(deps, "msdr_pat_short")).toBeNull();
-    expect(await resolve(deps, newToken())).toBeNull();
-    expect(await resolve(deps, (await seed(a, a.userId, { revokedAt: new Date().toISOString() })).token)).toBeNull();
-    expect(await resolve(deps, (await seed(a, a.userId, { expiresAt: new Date(Date.now() - 1000).toISOString() })).token)).toBeNull();
+    expect(await resolve(null)).toBeNull();
+    expect(await resolve("msdr_pat_short")).toBeNull();
+    expect(await resolve(newToken())).toBeNull();
+    expect(await resolve((await seed(a, a.userId, { revokedAt: new Date().toISOString() })).token)).toBeNull();
+    expect(await resolve((await seed(a, a.userId, { expiresAt: new Date(Date.now() - 1000).toISOString() })).token)).toBeNull();
+  });
+
+  it("refuses a live token of an organization with MCP off and leaves its use unrecorded", async () => {
+    const off = orgs[2];
+    const { token, id } = await seed(off, off.userId);
+    expect(await resolveAccess(deps, token)).toEqual({ refusal: "mcp_disabled" });
+    const [{ last_used_at }] = await sql`select last_used_at from mcp_tokens where id = ${id}`;
+    expect(last_used_at).toBeNull();
+  });
+
+  it("drops write from a member's token once the organization turns member write tokens off", async () => {
+    const [, b] = orgs;
+    const m = await member(b, "member");
+    const { token } = await seed(b, m.userId);
+    expect((await resolve(token))?.scopes).toEqual(["mcp:read", "mcp:write"]);
+    await settings(b, { enabled: true, memberWriteTokens: false });
+    expect((await resolve(token))?.scopes).toEqual(["mcp:read"]);
+    await sql`update members set role = 'admin' where id = ${m.memberId}`;
+    expect((await resolve(token))?.scopes).toEqual(["mcp:read", "mcp:write"]);
+    await settings(b, { enabled: true });
   });
 
   it("reads the role on every call and refuses a person who is not a member of the token's organization", async () => {
     const [a, b] = orgs;
     const m = await member(a, "admin");
     const { token } = await seed(a, m.userId);
-    expect((await resolve(deps, token))?.role).toBe("admin");
+    expect((await resolve(token))?.role).toBe("admin");
     await sql`update members set role = 'member' where id = ${m.memberId}`;
-    expect((await resolve(deps, token))?.role).toBe("member");
+    expect((await resolve(token))?.role).toBe("member");
 
     // A member of B holding a token issued in A after leaving A reaches nothing, not B.
     await sql`insert into members (organization_id, user_id, role) values (${b.organizationId}, ${m.userId}, 'owner')`;
     await sql`delete from members where id = ${m.memberId}`;
-    expect(await resolve(deps, token)).toBeNull();
+    expect(await resolve(token)).toBeNull();
   });
 
   it("revokes the removed member's tokens, so a new invitation does not revive them", async () => {
@@ -102,7 +134,7 @@ describeDb("MCP principal", () => {
     const [{ revoked_at }] = await sql`select revoked_at from mcp_tokens where id = ${id}`;
     expect(revoked_at).not.toBeNull();
     await sql`insert into members (organization_id, user_id, role) values (${a.organizationId}, ${m.userId}, 'member')`;
-    expect(await resolve(deps, token)).toBeNull();
+    expect(await resolve(token)).toBeNull();
   });
 
   it("waits for the agent-send lock before it touches the member rows", async () => {

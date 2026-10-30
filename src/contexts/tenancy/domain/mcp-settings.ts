@@ -55,13 +55,17 @@ function readCaps(raw: unknown): AgentReplyCaps {
   };
 }
 
-/** The stored values with each missing or malformed key replaced by its default. */
+/**
+ * The stored values with each missing or malformed key replaced by its default. A malformed epoch also turns agent
+ * sending off: falling back to 0 would let a send token from before an earlier mode drop match again.
+ */
 export function readMcpSettings(raw: Record<string, unknown> | null | undefined): McpSettings {
   const values = raw ?? {};
+  const epochValid = values.agentSendEpoch === undefined || isWhole(values.agentSendEpoch, Number.MAX_SAFE_INTEGER);
   return {
     enabled: typeof values.enabled === "boolean" ? values.enabled : DEFAULT_MCP_SETTINGS.enabled,
     memberWriteTokens: typeof values.memberWriteTokens === "boolean" ? values.memberWriteTokens : DEFAULT_MCP_SETTINGS.memberWriteTokens,
-    agentSendMode: isMode(values.agentSendMode) ? values.agentSendMode : DEFAULT_MCP_SETTINGS.agentSendMode,
+    agentSendMode: epochValid && isMode(values.agentSendMode) ? values.agentSendMode : "off",
     agentSendEpoch: isWhole(values.agentSendEpoch, Number.MAX_SAFE_INTEGER) ? values.agentSendEpoch : DEFAULT_MCP_SETTINGS.agentSendEpoch,
     agentReplyCaps: readCaps(values.agentReplyCaps),
     agentEnrollCap: isWhole(values.agentEnrollCap, MAX_AGENT_ENROLL_CAP) ? values.agentEnrollCap : DEFAULT_MCP_SETTINGS.agentEnrollCap,

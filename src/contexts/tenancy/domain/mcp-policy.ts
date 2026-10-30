@@ -31,6 +31,17 @@ export function tokenScopesProblem(input: { role: string; settings: McpSettings;
   return null;
 }
 
+/**
+ * The stored scopes a token may use now. A token keeps the scopes it was made with, so a member whose organization
+ * later turned off member write tokens, or an admin demoted to member there, loses write and send on the next call.
+ * The send policy still decides each send.
+ */
+export function usableScopes(input: { role: string; settings: McpSettings; scopes: readonly string[] }): McpScope[] {
+  const scopes = readScopes(input.scopes);
+  if (isOwnerOrAdmin(input.role) || input.settings.memberWriteTokens) return scopes;
+  return scopes.filter((scope) => scope === "mcp:read");
+}
+
 /** The token fields the send policy reads. */
 export interface PolicyToken {
   scopes: readonly string[];

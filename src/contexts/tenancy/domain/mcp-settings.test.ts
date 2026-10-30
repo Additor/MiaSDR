@@ -18,6 +18,13 @@ describe("MCP settings", () => {
     expect(readMcpSettings({ agentReplyCaps: "100" }).agentReplyCaps).toEqual(DEFAULT_MCP_SETTINGS.agentReplyCaps);
   });
 
+  it("turns agent sending off when the stored epoch is malformed", () => {
+    for (const agentSendEpoch of ["3", -1, 1.5, null]) {
+      expect(readMcpSettings({ agentSendMode: "replies_and_campaigns", agentSendEpoch }).agentSendMode, String(agentSendEpoch)).toBe("off");
+    }
+    expect(readMcpSettings({ agentSendMode: "replies" }).agentSendMode).toBe("replies");
+  });
+
   it("accepts a valid patch", () => {
     expect(mcpSettingsProblem({})).toBeNull();
     expect(mcpSettingsProblem({ enabled: true, agentSendMode: "replies_and_campaigns", agentReplyCaps: { org: 0, user: 0, mailbox: 0 }, agentEnrollCap: MAX_AGENT_ENROLL_CAP })).toBeNull();
