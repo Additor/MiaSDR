@@ -1,14 +1,14 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { events } from "@/platform/db/schema";
-import { NotFoundError } from "@/shared/errors";
+import { NotFoundError, viaMeta } from "@/shared/errors";
 import type { AssignmentStore } from "../application/assignment";
 import { ASSIGNED_EVENT, planAssign, planClaim } from "../domain/assignment";
 import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 
 export const drizzleAssignmentStore: AssignmentStore = {
-  async change({ organizationId, recordId, actorUserId, change, now }) {
+  async change({ organizationId, recordId, actorUserId, via, change, now }) {
     return db.transaction(async (tx) => {
       // The same lock the other record writers take, so a claim and a reclassification wait for each other. The row is
       // read through the visibility rule: a record that exists only for a private thread answers 404.
@@ -46,7 +46,7 @@ export const drizzleAssignmentStore: AssignmentStore = {
         actorUserId,
         fromData: side(plan.from),
         toData: side(plan.assignedTo),
-        meta: { source: "human", action: change.kind },
+        meta: { source: "human", action: change.kind, ...viaMeta(via) },
         createdAt: now,
       });
       return { recordId, assignedTo: plan.assignedTo, previousAssignedTo: row.assigned_to, changed: true };

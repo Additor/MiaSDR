@@ -57,6 +57,13 @@
       "when": 1793355505372,
       "tag": "0007_mcp_tool_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793356222290,
+      "tag": "0008_draft_written_via_token",
+      "breakpoints": true
     }
   ]
 }

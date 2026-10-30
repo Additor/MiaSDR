@@ -1,0 +1,2 @@
+ALTER TABLE "drafts" ADD COLUMN "written_via_token_id" uuid;--> statement-breakpoint
+ALTER TABLE "drafts" ADD CONSTRAINT "drafts_written_via_token_fk" FOREIGN KEY ("written_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("written_via_token_id") ON UPDATE no action;

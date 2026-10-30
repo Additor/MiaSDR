@@ -91,6 +91,7 @@ export async function requestDraft(deps: ReplyDeps, actor: Actor, conversationId
           provider: provider.name,
           model: provider.model,
           request: { requestedBy: actor.userId, contextVersion: ctx.contextVersion },
+          writtenViaTokenId: actor.via?.tokenId ?? null,
           response: { usage: result.usage ?? null },
           citations: draftCitations(ctx),
         }),
@@ -143,6 +144,7 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
           provider: provider.name,
           model: provider.model,
           request: { regeneratedBy: actor.userId, contextVersion: ctx.contextVersion },
+          writtenViaTokenId: actor.via?.tokenId ?? null,
           response: { usage: result.usage ?? null },
           citations: draftCitations(ctx),
           regeneratesDraftId: draftId,
@@ -209,6 +211,7 @@ export async function createManualDraft(
     bodyText: checked.bodyText,
     cc,
     actorUserId: actor.userId,
+    via: actor.via,
   });
   return { draftId: created.id, revision: created.revision };
 }
@@ -220,13 +223,20 @@ export async function editDraft(deps: ReplyDeps, actor: Actor, draftId: string, 
   const subject = input.subject === undefined || input.subject === null ? null : normalizeSubject(input.subject, MANUAL_SUBJECT_MAX + 1);
   if (subject !== null && (subject === "" || subject.length > MANUAL_SUBJECT_MAX)) throw new ValidationError(`The subject must be 1 to ${MANUAL_SUBJECT_MAX} characters.`);
   const cc = input.cc === undefined ? undefined : await checkCc(deps, actor, { draftId }, input.cc);
-  const draft = await deps.store.updateDraft(actor.organizationId, draftId, { expectedRevision: input.revision, subject, bodyText, ...(cc ? { cc } : {}) });
+  const draft = await deps.store.updateDraft(actor.organizationId, draftId, {
+    expectedRevision: input.revision,
+    subject,
+    bodyText,
+    ...(cc ? { cc } : {}),
+    writtenViaTokenId: actor.via?.tokenId ?? null,
+  });
   return { revision: draft.revision };
 }
 
-export async function discardDraft(deps: ReplyDeps, actor: Actor, draftId: string): Promise<void> {
+/** With `expectedRevision`, a draft edited since the caller read it answers 409 and stays. */
+export async function discardDraft(deps: ReplyDeps, actor: Actor, draftId: string, input: { expectedRevision?: number } = {}): Promise<void> {
   assertId(draftId, "Draft");
-  await deps.store.discardDraft(actor.organizationId, draftId, actor.userId);
+  await deps.store.discardDraft(actor.organizationId, draftId, actor.userId, input.expectedRevision, actor.via);
 }
 
 export type SendResult =

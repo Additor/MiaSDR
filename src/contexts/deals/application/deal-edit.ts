@@ -1,5 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
 import { canDeleteDeal, moveToStage, parseCloseDate, parseDealTitle } from "../domain/deal";
 import type { DealPatch, DealRow, DealsDeps } from "./deal-ports";
 import { isUuid, parseMoney, assertOwner } from "./deal-input";
@@ -43,7 +43,7 @@ export async function moveDealStage(deps: DealsDeps, actor: Actor, dealId: strin
       actorUserId: actor.userId,
       fromData: { stageId: deal.stageId, stageName: from?.name ?? null, stageKind: deal.stageKind },
       toData: { stageId: target.id, stageName: target.name, stageKind: target.kind, lostReason: next.lostReason },
-      meta: moved ? { dealId } : { dealId, fields: ["lostReason"] },
+      meta: { ...(moved ? { dealId } : { dealId, fields: ["lostReason"] }), ...viaMeta(actor.via) },
     });
   });
   return getDeal(deps, actor, dealId);
@@ -85,7 +85,7 @@ export async function updateDeal(deps: DealsDeps, actor: Actor, dealId: string, 
       eventType: "deal.updated",
       actorType: "human",
       actorUserId: actor.userId,
-      meta: { dealId, fields },
+      meta: { dealId, fields, ...viaMeta(actor.via) },
     });
   });
   return getDeal(deps, actor, dealId);

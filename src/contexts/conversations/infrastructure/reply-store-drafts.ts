@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { conversations, draftKnowledgeCitations, drafts, events, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
-import { ConflictError, NotFoundError } from "@/shared/errors";
+import { conversations, draftKnowledgeCitations, drafts, events, mcpTokens, messages, people, records, sendAttempts, replyTypes } from "@/platform/db/schema";
+import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports";
 import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, HANDLING_CLOSED, REPLY_REFUSALS } from "../domain/reply-send";
 import { buildDraftContext, excerptHash } from "./thread-context";
@@ -52,6 +52,7 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
           model: input.model,
           request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
           response: input.response,
+          writtenViaTokenId: input.writtenViaTokenId ?? null,
         })
         .returning({ id: drafts.id });
     return { id: stale.id, stale: true };
@@ -72,6 +73,7 @@ export async function insertDraftTx(tx: DbTx, input: AiDraft, held?: (tx: DbTx) 
       model: input.model,
       request: { ...(input.request as object), regeneratedFrom: input.regeneratesDraftId, feedback: input.feedback ?? undefined },
       response: input.response,
+      writtenViaTokenId: input.writtenViaTokenId ?? null,
     })
     .returning({ id: drafts.id });
   if (input.regeneratesDraftId) {
@@ -134,7 +136,10 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
     let draft: PanelData["draft"] = null;
     if (draftRow) {
       const [attempt] = await db.select().from(sendAttempts).where(eq(sendAttempts.draftId, draftRow.id)).orderBy(desc(sendAttempts.createdAt)).limit(1);
-      draft = { ...toDraftRow(draftRow), attempt: attempt ? toAttempt(attempt) : null };
+      const [token] = draftRow.writtenViaTokenId
+        ? await db.select({ name: mcpTokens.name }).from(mcpTokens).where(and(eq(mcpTokens.id, draftRow.writtenViaTokenId), eq(mcpTokens.organizationId, organizationId)))
+        : [];
+      draft = { ...toDraftRow(draftRow), writtenVia: token?.name ?? null, attempt: attempt ? toAttempt(attempt) : null };
     }
 
     const suppressed = await isSuppressed(db, organizationId, head.email);
@@ -251,6 +256,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
           status: "awaiting_review",
           provider: "manual",
           request: { source: "manual", createdBy: input.actorUserId, contextVersion: head.version },
+          writtenViaTokenId: input.via?.tokenId ?? null,
         })
         .returning({ id: drafts.id, revision: drafts.revision });
       // One reviewable draft per record: older open ones are superseded.
@@ -265,7 +271,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         eventType: "draft.created_manual",
         actorType: "human",
         actorUserId: input.actorUserId,
-        meta: { draftId: created.id, conversationId: input.conversationId },
+        meta: { draftId: created.id, conversationId: input.conversationId, ...viaMeta(input.via) },
       });
       return created;
     });
@@ -285,17 +291,24 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       const bodyText = checkReplyText(input.bodyText, linkedin ? "linkedin" : "email");
       const [updated] = await tx
         .update(drafts)
-        .set({ editedBodyText: bodyText, subject: linkedin ? null : (input.subject ?? row.subject), ...(input.cc && !linkedin ? { cc: input.cc } : {}), revision: row.revision + 1, error: null })
+        .set({
+          editedBodyText: bodyText,
+          subject: linkedin ? null : (input.subject ?? row.subject),
+          ...(input.cc && !linkedin ? { cc: input.cc } : {}),
+          revision: row.revision + 1,
+          error: null,
+          writtenViaTokenId: input.writtenViaTokenId,
+        })
         .where(eq(drafts.id, draftId))
         .returning();
       return toDraftRow(updated);
     });
   },
 
-  async discardDraft(organizationId, draftId, actorUserId) {
+  async discardDraft(organizationId, draftId, actorUserId, expectedRevision, via) {
     await db.transaction(async (tx) => {
       const [row] = await tx
-        .select({ id: drafts.id, status: drafts.status, recordId: drafts.recordId, personId: records.personId })
+        .select({ id: drafts.id, status: drafts.status, revision: drafts.revision, recordId: drafts.recordId, personId: records.personId })
         .from(drafts)
         .innerJoin(records, eq(records.id, drafts.recordId))
         .where(and(eq(drafts.id, draftId), eq(drafts.organizationId, organizationId)))
@@ -304,8 +317,9 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       if (!canMoveDraft(row.status as DraftStatus, "discarded")) {
         throw new ConflictError(`A draft that is ${row.status.replace(/_/g, " ")} cannot be discarded.`);
       }
+      if (expectedRevision !== undefined && row.revision !== expectedRevision) throw new ConflictError("The draft changed since you opened it. Reload and review it again.");
       await tx.update(drafts).set({ status: "discarded" }).where(and(eq(drafts.id, draftId), draftCanBecome("discarded")));
-      await tx.insert(events).values({ organizationId, personId: row.personId, recordId: row.recordId, eventType: "draft.discarded", actorType: "human", actorUserId, meta: { draftId } });
+      await tx.insert(events).values({ organizationId, personId: row.personId, recordId: row.recordId, eventType: "draft.discarded", actorType: "human", actorUserId, meta: { draftId, ...viaMeta(via) } });
     });
   },
 };

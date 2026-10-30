@@ -42,6 +42,7 @@ export const toDraftRow = (d: typeof drafts.$inferSelect): DraftRow => {
     updatedAt: d.updatedAt,
     regeneratedFrom: meta.regeneratedFrom ?? null,
     feedback: meta.feedback ?? null,
+    writtenViaTokenId: d.writtenViaTokenId,
   };
 };
 

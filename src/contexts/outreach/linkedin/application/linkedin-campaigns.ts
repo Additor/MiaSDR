@@ -1,3 +1,4 @@
+import { enrollUnder, type EnrollOptions } from "../../application/enroll-options";
 import type { DbHandle } from "@/platform/db/client";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCampaignType, canArchive, canTransition, stepsEditable, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
@@ -226,11 +227,20 @@ export async function deleteLinkedInCampaign(deps: LinkedInCampaignDeps, actor: 
   await deps.campaigns.delete(actor.organizationId, id);
 }
 
-export async function enrollLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean }, tx?: DbHandle): Promise<LinkedInEnrollResult> {
+export async function enrollLinkedInLeads(
+  deps: LinkedInCampaignDeps,
+  actor: Actor,
+  id: string,
+  input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean },
+  options: EnrollOptions = {},
+  tx?: DbHandle,
+): Promise<LinkedInEnrollResult> {
   const campaign = await load(deps, actor, id, tx);
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   const limit = Math.min(Math.max(1, Math.floor(input.limit ?? 5000)), 5000);
-  return deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, collectIds: input.collectIds, dryRun: input.dryRun }, tx);
+  return enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
+    deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, collectIds: input.collectIds, dryRun: input.dryRun }, t),
+  );
 }
 
 /** Renders one step the way it would go out, with a real lead from the campaign when there is one. Unsaved edits can be passed in. */
@@ -273,12 +283,21 @@ export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, acto
 }
 
 /** Enrolls the people a person ticked. Ids of another organization count as not found. */
-export async function enrollPickedLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, personIds: string[], tx?: DbHandle): Promise<PickedEnrollCounts & LinkedInEnrollResult> {
+export async function enrollPickedLinkedInLeads(
+  deps: LinkedInCampaignDeps,
+  actor: Actor,
+  id: string,
+  personIds: string[],
+  options: EnrollOptions = {},
+  tx?: DbHandle,
+): Promise<PickedEnrollCounts & LinkedInEnrollResult> {
   const campaign = await load(deps, actor, id, tx);
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   if (personIds.length === 0) throw new ValidationError("Pick at least one lead.");
   if (personIds.length > MAX_PICKED_IDS) throw new ValidationError(`Add up to ${MAX_PICKED_IDS} leads at a time.`);
-  const counts = await adminStore(deps).enrollPicked(actor.organizationId, id, "linkedin", personIds, tx);
+  const counts = await enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
+    adminStore(deps).enrollPicked(actor.organizationId, id, "linkedin", personIds, t),
+  );
   return { ...counts, alreadyEnrolled: counts.skippedDuplicate, skippedNoProfile: counts.skippedMissingIdentity };
 }
 

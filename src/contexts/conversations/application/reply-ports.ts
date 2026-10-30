@@ -1,3 +1,4 @@
+import type { AgentVia } from "@/shared/errors";
 import type { AiPersonContext, DraftChannel, ReplyTypeChange, ReplyType, ThreadEntry } from "../ai/domain/ai-contract";
 import type { FailureKind } from "../ai/domain/ai-job-requeue";
 import type { SystemRole, TypeRules } from "../domain/reply-type";
@@ -88,6 +89,8 @@ export interface DraftContext {
 
 export interface NewDraft {
   organizationId: string;
+  /** The MCP token whose agent asked for the draft. */
+  writtenViaTokenId?: string | null;
   recordId: string;
   conversationId: string;
   replyForMessageId: string | null;
@@ -131,6 +134,9 @@ export interface DraftRow {
   /** Draft this one was regenerated from, and the reviewer's note. */
   regeneratedFrom: string | null;
   feedback: string | null;
+  /** The MCP token whose agent wrote the current text or asked for it, and the token's name where the panel reads it. */
+  writtenViaTokenId: string | null;
+  writtenVia?: string | null;
 }
 
 export interface AttemptRow {
@@ -210,15 +216,17 @@ export interface ReplyStore {
    * Older open drafts of the record turn `stale`. Refuses a conversation that is not an open email thread, a suppressed
    * address, a do-not-contact person, and a thread with a send in flight. 404 when the conversation is not in this organization.
    */
-  createManualDraft(input: { organizationId: string; conversationId: string; subject: string; bodyText: string; cc: string[]; actorUserId: string }): Promise<{ id: string; revision: number }>;
+  createManualDraft(input: { organizationId: string; conversationId: string; subject: string; bodyText: string; cc: string[]; actorUserId: string; via?: AgentVia }): Promise<{ id: string; revision: number }>;
   /** Like `ccContext`, for a conversation that has no draft yet. */
   ccContextForConversation(organizationId: string, conversationId: string): Promise<{ known: string[]; mailbox: string; lead: string | null } | null>;
-  updateDraft(organizationId: string, draftId: string, input: { expectedRevision: number; subject: string | null; bodyText: string; cc?: string[] }): Promise<DraftRow>;
+  /** `writtenViaTokenId` replaces the draft's: an agent's edit sets it, a person's clears it. */
+  updateDraft(organizationId: string, draftId: string, input: { expectedRevision: number; subject: string | null; bodyText: string; cc?: string[]; writtenViaTokenId: string | null }): Promise<DraftRow>;
   /** What a CC choice is checked against. Null when the draft does not exist in this organization. */
   ccContext(organizationId: string, draftId: string): Promise<{ known: string[]; mailbox: string; lead: string | null } | null>;
   /** Which of these addresses are suppressed or belong to a do-not-contact person. */
   blockedAddresses(organizationId: string, emails: string[]): Promise<Array<{ email: string; reason: "suppressed" | "do_not_contact" }>>;
-  discardDraft(organizationId: string, draftId: string, actorUserId: string): Promise<void>;
+  /** With `expectedRevision`, a draft edited since answers 409 and stays. */
+  discardDraft(organizationId: string, draftId: string, actorUserId: string, expectedRevision?: number, via?: AgentVia): Promise<void>;
 
   beginSend(input: { organizationId: string; draftId: string; expectedRevision: number; idempotencyKey: string; actorUserId: string; messageIdToken: string }): Promise<BeginSend>;
   checkBlockers(send: SendContext): Promise<SendBlocker | null>;

@@ -1,4 +1,4 @@
-import { NotFoundError, type Actor } from "@/shared/errors";
+import { NotFoundError, type Actor, type AgentVia } from "@/shared/errors";
 
 /**
  * Who handles the replies of a reply-handling record. Any member of the organization may take an unassigned conversation
@@ -18,7 +18,7 @@ export interface AssignmentResult {
 
 export interface AssignmentStore {
   /** Locks the visible record, applies the domain plan and writes the event. Throws NotFound, Conflict or Validation. */
-  change(input: { organizationId: string; recordId: string; actorUserId: string; change: AssignmentChange; now: Date }): Promise<AssignmentResult>;
+  change(input: { organizationId: string; recordId: string; actorUserId: string; via?: AgentVia; change: AssignmentChange; now: Date }): Promise<AssignmentResult>;
 }
 
 export interface AssignmentDeps {
@@ -34,7 +34,7 @@ const assertId = (id: string) => {
 /** Takes an unassigned conversation. Taking one you already hold changes nothing; one someone else holds answers 409. */
 export async function claimRecord(deps: AssignmentDeps, actor: Actor, recordId: string) {
   assertId(recordId);
-  return deps.store.change({ organizationId: actor.organizationId, recordId, actorUserId: actor.userId, change: { kind: "claim" }, now: deps.now() });
+  return deps.store.change({ organizationId: actor.organizationId, recordId, actorUserId: actor.userId, via: actor.via, change: { kind: "claim" }, now: deps.now() });
 }
 
 /**
@@ -47,6 +47,7 @@ export async function assignRecord(deps: AssignmentDeps, actor: Actor, recordId:
     organizationId: actor.organizationId,
     recordId,
     actorUserId: actor.userId,
+    via: actor.via,
     change: { kind: "assign", target: input.assignedTo, expected: input.expectedAssignedTo },
     now: deps.now(),
   });

@@ -15,7 +15,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
-import { members } from "@/contexts/tenancy/infrastructure/schema";
+import { mcpTokens, members } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
@@ -444,12 +444,16 @@ export const drafts = pgTable(
     request: jsonb("request").$type<unknown>(),
     response: jsonb("response").$type<unknown>(),
     error: text("error"),
+    /** The MCP token whose agent wrote the current text or asked for it. A person's edit clears it. */
+    writtenViaTokenId: uuid("written_via_token_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.conversationId, t.organizationId], foreignColumns: [conversations.id, conversations.organizationId] }).onDelete("restrict"),
+    // The migration writes `ON DELETE SET NULL (written_via_token_id)`.
+    foreignKey({ name: "drafts_written_via_token_fk", columns: [t.writtenViaTokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("set null"),
     // The migration writes `ON DELETE SET NULL (reply_for_message_id)`.
     foreignKey({ name: "drafts_reply_message_fk", columns: [t.replyForMessageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("set null"),
     unique("drafts_id_org_uq").on(t.id, t.organizationId),

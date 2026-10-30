@@ -1,3 +1,4 @@
+import { enrollUnder, type EnrollOptions } from "./enroll-options";
 import type { DbHandle } from "@/platform/db/client";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { canArchive, canTransition, emptyFirstSubjectMessage, type ArchiveFilter, stepsEditable, stepsWithPlaceholders, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
@@ -149,11 +150,20 @@ export async function deleteCampaign(deps: CampaignDeps, actor: Actor, id: strin
 
 export const MAX_ENROLL_BATCH = 5000;
 
-export async function enrollLeads(deps: CampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; dryRun?: boolean }, tx?: DbHandle): Promise<EnrollResult> {
+export async function enrollLeads(
+  deps: CampaignDeps,
+  actor: Actor,
+  id: string,
+  input: { query?: string; limit?: number; dryRun?: boolean },
+  options: EnrollOptions = {},
+  tx?: DbHandle,
+): Promise<EnrollResult> {
   const campaign = await load(deps, actor, id, tx);
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   const limit = Math.min(Math.max(1, Math.floor(input.limit ?? MAX_ENROLL_BATCH)), MAX_ENROLL_BATCH);
-  return deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, dryRun: input.dryRun }, tx);
+  return enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
+    deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, dryRun: input.dryRun }, t),
+  );
 }
 
 /** Renders one step the way it would go out, with a real lead from the campaign when there is one. */
@@ -195,12 +205,21 @@ export async function getCampaignDetail(deps: CampaignDeps, actor: Actor, id: st
 }
 
 /** Enrolls the people a person ticked. Ids of another organization count as not found. */
-export async function enrollPickedLeads(deps: CampaignDeps, actor: Actor, id: string, personIds: string[], tx?: DbHandle): Promise<PickedEnrollCounts & EnrollResult> {
+export async function enrollPickedLeads(
+  deps: CampaignDeps,
+  actor: Actor,
+  id: string,
+  personIds: string[],
+  options: EnrollOptions = {},
+  tx?: DbHandle,
+): Promise<PickedEnrollCounts & EnrollResult> {
   const campaign = await load(deps, actor, id, tx);
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   if (personIds.length === 0) throw new ValidationError("Pick at least one lead.");
   if (personIds.length > MAX_PICKED_IDS) throw new ValidationError(`Add up to ${MAX_PICKED_IDS} leads at a time.`);
-  const counts = await adminStore(deps).enrollPicked(actor.organizationId, id, "email", personIds, tx);
+  const counts = await enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
+    adminStore(deps).enrollPicked(actor.organizationId, id, "email", personIds, t),
+  );
   return { ...counts, alreadyEnrolled: counts.skippedDuplicate, skippedNoEmail: counts.skippedMissingIdentity };
 }
 

@@ -1,11 +1,11 @@
 # AI agents (MCP)
 
-MiaSDR serves the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/mcp`. An agent such as Claude Code, Cursor or VS Code connects with a personal token and reads your organization's inbox, work queue, leads, campaigns, pipeline and analytics. In this version every tool reads. No tool changes data or sends a message.
+MiaSDR serves the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/mcp`. An agent such as Claude Code, Cursor or VS Code connects with a personal token and reads your organization's inbox, work queue, leads, campaigns, pipeline and analytics. A token that makes changes also lets the agent draft replies, sort and assign conversations, manage tasks, prepare campaigns, move deals and import leads. No tool sends an email or a LinkedIn message: a person reviews each reply and sends it in MiaSDR.
 
 ## Turn it on
 
 1. An owner or admin opens Settings, AI agents (MCP) and chooses Turn on MCP. Until then a token answers 403 and nobody can create one.
-2. Each person who wants an agent creates a token on the same page under Your tokens. Name it after the machine or the agent that uses it.
+2. Each person who wants an agent creates a token on the same page under Your tokens. Name it after the machine or the agent that uses it, and choose Read only or Read and make changes. Members can create tokens that make changes unless an owner or admin limits them to read-only tokens.
 3. Copy the token when it appears. MiaSDR keeps only its hash and shows it once. If you lose it, revoke it and create another.
 
 The server administrator can turn the endpoint off for the whole install with `MCP_ENABLED=false` ([Configuration](../configuration.md#mcp)).
@@ -52,6 +52,19 @@ The agent acts as the person who created the token, in the token's organization 
 | `get_pipeline` | The deal board, or one deal |
 | `get_sending_health` | Pause state, mailbox and account status, unmatched senders and, for an owner or admin, failed AI jobs |
 
+A token that makes changes adds these tools. Each acts as its person would in MiaSDR, with that person's permissions.
+
+| Tool | Changes |
+|---|---|
+| `write_reply_draft` | Has the AI write a reply draft, saves the agent's own email draft, edits, regenerates or discards one. The answer gives `reviewUrl`, where a person reviews and sends it |
+| `set_reply_type` | Changes a conversation's reply type, or confirms or undoes an AI pick |
+| `update_conversation` | Adds a note, takes or assigns a conversation, closes or reopens it |
+| `manage_task` | Lists, creates, edits and completes tasks |
+| `pause_sending` | Pauses a campaign, a conversation's follow-ups or, for an owner or admin, all sending. It never resumes |
+| `draft_campaign` | Creates a draft campaign, edits its steps and senders, and adds leads to a draft or paused campaign |
+| `update_deal` | Moves a deal to another stage or edits its fields |
+| `import_leads` | Previews a CSV import of up to 500 rows, then commits it |
+
 Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on it. An answer stays under about 10,000 tokens. A request that would return more fails with `answer_too_large`; narrow it with a filter, a page or a shorter date range.
 
 ## Text from outside your organization
@@ -62,9 +75,14 @@ A lead's email or LinkedIn message, the From header, and values from imports or 
 
 - A token lasts 90 days. A person holds at most 10 live tokens.
 - A token makes at most 60 requests a minute. Request 61 answers 429 with `Retry-After`.
+- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour and imports at most 10 times an hour. A call past a limit fails with `rate_limited` and the seconds to wait.
 - With `TRUST_PROXY_HOPS` set, a client IP that sends 20 unknown tokens in a minute waits until the minute ends.
 - A person revokes their own tokens on the settings page; an owner or admin revokes anyone's, or all of them with Revoke all. A revoked token fails on its next request.
 - Removing a member revokes their tokens, and inviting them again does not bring the tokens back. A role change applies to the next request.
 - Turning MCP off stops every token until it is turned on again. The tokens themselves stay.
 
 Each token change and each switch of MCP writes a row to the audit log under the MCP area.
+
+## Agent activity
+
+Owners and admins see each agent call under Agent activity on the same page: the tool, the person and token, and a link to the conversation or deal. Changes show by default; Show reads adds the reads. The list keeps the ids a call named and never its text, and drops calls older than `RETENTION_MCP_TOOL_CALLS_DAYS` (90 days by default). A draft an agent wrote shows "Written by an agent" with the token's name until a person edits it, and a conversation's history reads "{person} via {token}" beside each change an agent made.

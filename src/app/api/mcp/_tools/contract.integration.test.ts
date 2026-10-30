@@ -12,7 +12,16 @@ vi.mock("next/server", async (original) => (await import("@/test-support/route-c
  * counted as one token per three characters, more tokens than a tokenizer finds for JSON, so it errs toward failing.
  */
 const DEFINITION_TOKEN_BUDGET = 6_500;
+/** A write token loads the eight write tools too. Measured at 7,916 when they shipped. */
+const WRITE_DEFINITION_TOKEN_BUDGET = 8_500;
 const CHARS_PER_TOKEN = 3;
+
+/**
+ * Code names an agent must not learn from the definitions: the product says follow-ups, reply handling and AI picks.
+ * Identifiers in backticks (`recordId`) and tool names are exempt.
+ */
+const CODE_NAMES = /\b(sequences?|records?|classifications?)\b/i;
+const prose = (text: string) => text.replace(/`[^`]*`/g, "").replace(/\b[a-z]+(?:_[a-z]+)+\b/g, "");
 
 interface ListedTool {
   name: string;
@@ -28,14 +37,19 @@ describeDb("MCP contract", () => {
   let POST: (request: Request) => Promise<Response>;
   const orgs: TestOrg[] = [];
   let caller: McpCaller;
+  let writer: McpCaller;
   let tools: ListedTool[];
+  let writeTools: ListedTool[];
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
     orgs.push(await createTestOrg(sql, "Contract"));
     await enableMcp(sql, orgs[0].organizationId);
     caller = await mcpCaller(sql, POST, orgs[0]);
-    tools = ((await callMcp(POST, { era: "modern", token: caller.token, method: "tools/list" })).body as { result: { tools: ListedTool[] } }).result.tools;
+    writer = await mcpCaller(sql, POST, orgs[0], ["mcp:read", "mcp:write"]);
+    const list = async (token: string) => ((await callMcp(POST, { era: "modern", token, method: "tools/list" })).body as { result: { tools: ListedTool[] } }).result.tools;
+    tools = await list(caller.token);
+    writeTools = await list(writer.token);
   });
 
   afterAll(async () => {
@@ -69,5 +83,29 @@ describeDb("MCP contract", () => {
     const tokens = Math.ceil(JSON.stringify(tools).length / CHARS_PER_TOKEN);
     expect(tokens).toBeLessThanOrEqual(DEFINITION_TOKEN_BUDGET);
     expect(tools).toMatchSnapshot();
+  });
+
+  it("keeps code names out of the server instructions and every tool's title and description", async () => {
+    const { serverInstructions } = await import("./instructions");
+    const texts = [serverInstructions("read"), serverInstructions("write"), ...writeTools.flatMap((t) => [t.name, (t as ListedTool & { title?: string }).title ?? "", t.description])];
+    expect(texts.filter((text) => CODE_NAMES.test(prose(text)))).toEqual([]);
+  });
+
+  it("gives a write token the eight write tools, none read-only, with instructions that say no tool sends", async () => {
+    const { serverInstructions } = await import("./instructions");
+    const legacy = await callMcp(POST, { era: "legacy", token: writer.token, method: "initialize", params: legacyInitialize });
+    expect((legacy.body as { result: { instructions: string } }).result.instructions).toBe(serverInstructions("write"));
+    expect(serverInstructions("write")).toMatchSnapshot();
+
+    const reads = new Set(tools.map((t) => t.name));
+    const writes = writeTools.filter((t) => !reads.has(t.name));
+    expect(writes.map((t) => t.name)).toEqual(["draft_campaign", "import_leads", "manage_task", "pause_sending", "set_reply_type", "update_conversation", "update_deal", "write_reply_draft"]);
+    for (const tool of writes) {
+      expect(tool.annotations, tool.name).toMatchObject({ readOnlyHint: false });
+      expect(tool.inputSchema.type, tool.name).toBe("object");
+    }
+    const tokens = Math.ceil(JSON.stringify(writeTools).length / CHARS_PER_TOKEN);
+    expect(tokens).toBeLessThanOrEqual(WRITE_DEFINITION_TOKEN_BUDGET);
+    expect(writes).toMatchSnapshot();
   });
 });

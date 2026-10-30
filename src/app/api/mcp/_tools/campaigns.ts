@@ -11,7 +11,7 @@ import { defineTool, READ_ONLY } from "./define";
 import type { Actor } from "@/shared/errors";
 import { appLinks, DEFAULT_LIST_LIMIT, fencedField, fitItems, iso, UNTRUSTED_NOTE, untrusted } from "./output";
 
-const CHANNELS = ["email", "linkedin"] as const;
+export const CHANNELS = ["email", "linkedin"] as const;
 
 const summaryRow = z.object({
   campaignId: z.string(),
@@ -67,13 +67,13 @@ type EnrollmentQuery = ReturnType<typeof parseEnrollmentListQuery>;
 type Step = { stepNumber: number; kind: string; subject?: string; body: string; waitDays: number };
 type Row = { enrollmentId: string; personId: string; personName: string | null; status: string; currentStep: number; nextSendAt: Date | null; lastSentAt: Date | null; stopReason: string | null; inboxConversationId: string | null };
 
-/** What get_campaign reads of one channel. Both channels answer in the same shape. */
+/** What get_campaign and pause_sending read of one channel. Both channels answer in the same shape. */
 interface ChannelReads {
   detail(actor: Actor, id: string, query: EnrollmentQuery): Promise<{ campaign: { name: string; status: string; steps: Step[] }; enrollments: { total: number; rows: Row[] } }>;
   preview(actor: Actor, id: string, stepNumber: number): Promise<{ subject: string | null; body: string; leadName: string | null; usedSampleLead: boolean; unresolved: UnresolvedToken[] }>;
 }
 
-const READS: Record<(typeof CHANNELS)[number], ChannelReads> = {
+export const READS: Record<(typeof CHANNELS)[number], ChannelReads> = {
   email: {
     detail: (actor, id, query) => getCampaignDetail(campaignDeps(), actor, id, query),
     preview: async (actor, id, stepNumber) => {

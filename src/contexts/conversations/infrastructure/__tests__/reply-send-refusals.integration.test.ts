@@ -382,9 +382,9 @@ describeDb("LinkedIn reply send refusals", () => {
       const f = await fixture();
       const draft = await draftFor(f);
       const replyStore = (await import("../drizzle-reply-store")).drizzleReplyStore;
-      const saved = await replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: draft.revision, subject: null, bodyText: "  Tuesday\r\nworks.  " });
+      const saved = await replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: draft.revision, subject: null, bodyText: "  Tuesday\r\nworks.  ", writtenViaTokenId: null });
       expect(saved.editedBodyText).toBe("Tuesday\nworks.");
-      expect(await refusal(replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: saved.revision, subject: null, bodyText: " \n " }))).toEqual({ status: 422, error: "The reply cannot be empty.", issues: [] });
+      expect(await refusal(replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: saved.revision, subject: null, bodyText: " \n ", writtenViaTokenId: null }))).toEqual({ status: 422, error: "The reply cannot be empty.", issues: [] });
     });
 
     it("answers 409 for a revision other than the current one", async () => {

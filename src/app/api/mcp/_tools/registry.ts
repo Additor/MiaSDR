@@ -1,17 +1,25 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
+import { hasScope } from "@/contexts/tenancy/domain/mcp-policy";
 import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
 import { recordMcpToolCall } from "@/contexts/tenancy/application/mcp-tool-calls";
 import { mcpRateLimitDeps, mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import pkg from "../../../../../package.json";
+import { draftCampaignTool } from "./campaign-drafts";
 import { getCampaignTool, listCampaignsTool } from "./campaigns";
 import { getConversationTool } from "./conversation";
+import { updateDealTool } from "./deals";
 import { registerTools, type ToolDefinition, type ToolHooks } from "./define";
+import { setReplyTypeTool, updateConversationTool } from "./handling";
+import { importLeadsTool } from "./import";
 import { listInboxTool } from "./inbox";
-import { SERVER_INSTRUCTIONS } from "./instructions";
+import { serverInstructions } from "./instructions";
+import { pauseSendingTool } from "./pause";
 import { getPersonTool, searchPeopleTool } from "./people";
 import { getPipelineTool } from "./pipeline";
+import { writeReplyDraftTool } from "./reply-draft";
 import { getAnalyticsTool, getSendingHealthTool } from "./reports";
+import { manageTaskTool } from "./tasks";
 import { getWorkQueueTool } from "./work-queue";
 import { getWorkspace } from "./workspace";
 
@@ -19,7 +27,27 @@ import { getWorkspace } from "./workspace";
 export const TOOL_LIST_TTL_MS = 300_000;
 
 /** Every tool. `registerTools` keeps the ones the token's scopes allow. */
-export const TOOLS: readonly ToolDefinition[] = [getWorkspace, getWorkQueueTool, listInboxTool, getConversationTool, searchPeopleTool, getPersonTool, listCampaignsTool, getCampaignTool, getAnalyticsTool, getPipelineTool, getSendingHealthTool];
+export const TOOLS: readonly ToolDefinition[] = [
+  getWorkspace,
+  getWorkQueueTool,
+  listInboxTool,
+  getConversationTool,
+  searchPeopleTool,
+  getPersonTool,
+  listCampaignsTool,
+  getCampaignTool,
+  getAnalyticsTool,
+  getPipelineTool,
+  getSendingHealthTool,
+  writeReplyDraftTool,
+  setReplyTypeTool,
+  updateConversationTool,
+  manageTaskTool,
+  pauseSendingTool,
+  draftCampaignTool,
+  updateDealTool,
+  importLeadsTool,
+];
 
 /**
  * One server per request, built for the principal: the tools it registers depend on the token's scopes, so a token
@@ -28,7 +56,7 @@ export const TOOLS: readonly ToolDefinition[] = [getWorkspace, getWorkQueueTool,
 export function createMcpServer(principal: McpPrincipal, appUrl: string): McpServer {
   const server = new McpServer(
     { name: "miasdr", version: pkg.version },
-    { instructions: SERVER_INSTRUCTIONS, cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
+    { instructions: serverInstructions(hasScope(principal.scopes, "mcp:write") ? "write" : "read"), cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
   );
   registerTools(server, principal, appUrl, TOOLS, toolHooks(principal));
   return server;

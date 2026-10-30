@@ -112,8 +112,9 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
       async (input, extra) => {
         const started = hooks.now();
         const clientName = clientNameFrom(extra.mcpReq.envelope);
+        const buckets = bucketsOf(tool, input);
         const result = await runTool(tool.name, mcpActor(principal, clientName), async (actor) => {
-          await takeBuckets(hooks, bucketsOf(tool, input));
+          await takeBuckets(hooks, buckets);
           return withinBudget(() => checkedOutput(tool, () => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never)));
         });
         const error = result.isError ? (result.structuredContent?.error as { code?: unknown } | undefined) : undefined;
@@ -123,7 +124,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
             tokenId: principal.tokenId,
             tool: tool.name,
             action: actionOf(input),
-            kind: tool.scope === "mcp:read" ? "read" : "write",
+            kind: buckets.includes("write") ? "write" : "read",
             target: callTarget(input),
             errorCode: result.isError ? (typeof error?.code === "string" ? error.code : "server_error") : null,
             clientName,
