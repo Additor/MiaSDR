@@ -2,10 +2,12 @@ import { createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
 import { connection } from "next/server";
 import { apiError } from "@/app/_lib/api-errors";
 import { resolveMcpAccess, type McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
-import { bearerToken } from "@/contexts/tenancy/domain/mcp-token";
-import { mcpPrincipalDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
+import { bearerToken, isMcpTokenFormat } from "@/contexts/tenancy/domain/mcp-token";
+import { mcpPrincipalDeps, mcpRateLimitDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { env } from "@/shared/env";
 import { createMcpServer } from "./_tools/registry";
+import { BadTokenLimiter, clientIp } from "./bad-token-limiter";
 
 /** Hosted platforms read it; a standalone server ignores it. */
 export const maxDuration = 60;
@@ -45,6 +47,12 @@ function fromForeignOrigin(request: Request, appOrigin: string): boolean {
   }
 }
 
+const badTokens = new BadTokenLimiter();
+
+/** A 429 with `Retry-After`. */
+const tooManyRequests = (retryAfterSeconds: number, message: string) =>
+  apiError(429, message, { retryAfterSeconds }, { headers: { "Retry-After": String(retryAfterSeconds) } });
+
 /** A 401 that tells an MCP client to send a bearer token. */
 const unauthorized = () => apiError(401, "Send a valid MiaSDR MCP token as a bearer token.", {}, { headers: { "WWW-Authenticate": 'Bearer realm="miasdr"' } });
 
@@ -54,10 +62,26 @@ async function serve(request: Request): Promise<Response> {
   if (!config.MCP_ENABLED) return apiError(404, "Not found");
   if (fromForeignOrigin(request, config.APP_URL)) return apiError(403, "This endpoint does not take requests from other sites.", { code: "foreign_origin" });
 
-  const access = await resolveMcpAccess(mcpPrincipalDeps(), bearerToken(request.headers.get("authorization")));
-  if (!access) return unauthorized();
+  const token = bearerToken(request.headers.get("authorization"));
+  // Only a well-formed token costs a lookup, so only a failed one counts against the client's IP. A missing or
+  // malformed token answers 401 at no cost and is not counted.
+  const guess = token !== null && isMcpTokenFormat(token);
+  const ip = guess ? clientIp(request.headers.get("x-forwarded-for"), config.TRUST_PROXY_HOPS) : null;
+  const now = new Date();
+  const wait = ip ? badTokens.retryAfter(ip, now) : null;
+  if (wait) return tooManyRequests(wait, "Too many requests with an unknown MCP token. Wait, then send a valid one.");
+
+  const access = await resolveMcpAccess(mcpPrincipalDeps(), token);
+  if (!access) {
+    if (ip) badTokens.record(ip, now);
+    return unauthorized();
+  }
   if ("refusal" in access) return apiError(403, "MCP is off in this organization. An owner or admin can turn it on.", { code: access.refusal });
   const { principal } = access;
+  // Phase 1 serves read tools only, so every request counts as a read. The write and send buckets will read the tool
+  // name from the body.
+  const limited = await takeMcpRequest(mcpRateLimitDeps(), principal, "read");
+  if (limited) return tooManyRequests(limited.retryAfterSeconds, "This MCP token sent too many requests this minute. Wait, then try again.");
   // The raw token never travels further than this function: `token` carries the token's id.
   const authInfo: AuthInfo = { token: principal.tokenId, clientId: principal.tokenId, scopes: principal.scopes, extra: { principal } };
   return handler.fetch(request, { authInfo });

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 import { callMcp, legacyInitialize, MODERN_VERSION, type McpCallOptions } from "@/test-support/mcp-client";
 
@@ -33,6 +33,10 @@ describeDb("/api/mcp", () => {
     hash = (await import("@/contexts/tenancy/infrastructure/mcp-composition")).hashMcpToken;
     orgs.push(await createTestOrg(sql, "MCP on"), await createTestOrg(sql, "MCP off"));
     await enable(orgs[0], true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   afterAll(async () => {
@@ -103,5 +107,28 @@ describeDb("/api/mcp", () => {
     expect((await post({ token: raw, method: "server/discover" })).status).toBe(200);
     await sql`delete from members where id = ${memberId}`;
     expect((await post({ token: raw, method: "server/discover" })).status).toBe(401);
+  });
+
+  it("answers 429 with Retry-After once a token passes 60 requests in a minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T12:00:15Z"));
+    const live = await token(orgs[0]);
+    const [{ id }] = await sql<{ id: string }[]>`select id from mcp_tokens where token_hash = ${hash(live)}`;
+    await sql`insert into mcp_rate_limits (organization_id, token_id, bucket, window_start, count)
+              values (${orgs[0].organizationId}, ${id}, 'read', ${new Date("2026-10-30T12:00:00Z")}, 60)`;
+    const refused = await post({ token: live, method: "server/discover" });
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("retry-after")).toBe("45");
+    expect(refused.body).toMatchObject({ code: "rate_limited", retryAfterSeconds: 45 });
+
+    vi.setSystemTime(new Date("2026-10-30T12:01:00Z"));
+    expect((await post({ token: live, method: "server/discover" })).status).toBe(200);
+  });
+
+  it("keeps no IP limit without TRUST_PROXY_HOPS", async () => {
+    for (let i = 0; i < 25; i++) {
+      const result = await post({ token: `msdr_pat_${randomBytes(32).toString("base64url")}`, method: "server/discover", headers: { "x-forwarded-for": "203.0.113.9" } });
+      expect(result.status).toBe(401);
+    }
   });
 });

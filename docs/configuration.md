@@ -60,6 +60,9 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `MCP_ENABLED` | `true` | Serves the MCP endpoint for AI agents at `/api/mcp`. A request needs a personal MCP token, and the token's organization must have MCP turned on. Set `false` to turn the endpoint off for the whole install; it then answers 404. |
+| `TRUST_PROXY_HOPS` | none | Proxies in front of the app that append to `X-Forwarded-For`, 1 to 10. The MCP endpoint then reads the client IP that many entries from the right and refuses a client with 429 after 20 failed guesses at a well-formed token in a minute. Unset, it reads no client IP and keeps no IP limit. A value higher than the real number of proxies lets a client choose the IP it is counted under. |
+
+Each MCP token may make 60 requests a minute. Request 61 answers 429 with `Retry-After`, the seconds until the minute ends.
 
 ## Retention
 

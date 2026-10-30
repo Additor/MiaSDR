@@ -43,6 +43,13 @@
       "when": 1793345958024,
       "tag": "0005_mcp_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793350165410,
+      "tag": "0006_mcp_rate_limits",
+      "breakpoints": true
     }
   ]
 }

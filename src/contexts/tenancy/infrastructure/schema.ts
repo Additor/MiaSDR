@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { createdAt, users } from "@/contexts/identity/infrastructure/schema";
 
 /**
@@ -136,6 +136,8 @@ export const mcpTokens = pgTable(
   (t) => [
     unique("mcp_tokens_token_hash_uq").on(t.tokenHash),
     unique("mcp_tokens_oauth_grant_uq").on(t.oauthGrantId),
+    // The target of the organization-paired foreign keys from tables that point at a token.
+    unique("mcp_tokens_id_org_uq").on(t.id, t.organizationId),
     index("mcp_tokens_org_user_idx").on(t.organizationId, t.userId),
     check("mcp_tokens_kind_ck", sql`${t.kind} in ('pat', 'oauth')`),
     check(
@@ -144,5 +146,27 @@ export const mcpTokens = pgTable(
     ),
     check("mcp_tokens_name_ck", sql`length(btrim(${t.name})) between 1 and 100`),
     check("mcp_tokens_policy_epoch_ck", sql`${t.policyEpoch} >= 0`),
+  ],
+);
+
+/**
+ * MCP request counts: one fixed one-minute window per token and bucket (`tenancy/domain/mcp-rate-limit.ts`). A request
+ * updates its row in place, so the table holds at most one row per token and bucket and needs no prune.
+ */
+export const mcpRateLimits = pgTable(
+  "mcp_rate_limits",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tokenId: uuid("token_id").notNull(),
+    bucket: text("bucket").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.tokenId, t.bucket] }),
+    foreignKey({ name: "mcp_rate_limits_token_fk", columns: [t.tokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("cascade"),
+    check("mcp_rate_limits_count_ck", sql`${t.count} >= 1`),
   ],
 );
