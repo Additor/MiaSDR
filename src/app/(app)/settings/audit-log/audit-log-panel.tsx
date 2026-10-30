@@ -71,6 +71,8 @@ const ACTION_LABEL: Record<string, string> = {
   "person.deleted": "Deleted a person",
   "mcp.enabled": "Turned on MCP",
   "mcp.disabled": "Turned off MCP",
+  "mcp.member_write_on": "Let members create MCP tokens that make changes",
+  "mcp.member_write_off": "Stopped members from creating MCP tokens that make changes",
   "mcp.token_created": "Created an MCP token",
   "mcp.token_revoked": "Revoked an MCP token",
   "mcp.tokens_revoked_all": "Revoked every MCP token",

@@ -134,4 +134,19 @@ describeDb("MCP tokens", () => {
     expect((await auditOf(off, "mcp.enabled")).length).toBe(1);
     expect((await auditOf(off, "mcp.disabled")).length).toBe(1);
   });
+
+  it("issues write tokens to members only while the organization allows it, and drops write when it stops", async () => {
+    const [on] = orgs;
+    const { actor } = await member(on, "member");
+    const writer = await tokens.createMcpToken(deps, actor, { name: "Writer", access: "write" });
+    expect(writer.scopes).toEqual(["mcp:read", "mcp:write"]);
+    expect((await auditOf(on, "mcp.token_created")).some((e) => e.meta.scopes === "mcp:read mcp:write")).toBe(true);
+
+    expect(await tokens.updateMcpSettings(deps, actorOf(on), { memberWriteTokens: false })).toMatchObject({ memberWriteTokens: false });
+    expect((await auditOf(on, "mcp.member_write_off")).length).toBe(1);
+    await expect(tokens.createMcpToken(deps, actor, { name: "Writer 2", access: "write" })).rejects.toThrow(/Only owners and admins/);
+    expect((await tokens.createMcpToken(deps, actorOf(on), { name: "Admin writer", access: "write" })).scopes).toContain("mcp:write");
+    expect((await tokens.createMcpToken(deps, actor, { name: "Reader" })).scopes).toEqual(["mcp:read"]);
+    await tokens.updateMcpSettings(deps, actorOf(on), { memberWriteTokens: true });
+  });
 });

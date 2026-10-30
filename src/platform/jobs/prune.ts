@@ -16,9 +16,10 @@ export interface RetentionDays {
   inboundDone: number;
   inboundFailed: number;
   aiJobs: number;
+  mcpToolCalls: number;
 }
 
-export const DEFAULT_RETENTION: RetentionDays = { jobRuns: 30, inboundDone: 30, inboundFailed: 90, aiJobs: 30 };
+export const DEFAULT_RETENTION: RetentionDays = { jobRuns: 30, inboundDone: 30, inboundFailed: 90, aiJobs: 30, mcpToolCalls: 90 };
 
 export function retentionFromEnv(): RetentionDays {
   const e = env();
@@ -27,6 +28,7 @@ export function retentionFromEnv(): RetentionDays {
     inboundDone: e.RETENTION_INBOUND_EVENTS_DAYS,
     inboundFailed: e.RETENTION_INBOUND_FAILED_DAYS,
     aiJobs: e.RETENTION_AI_JOBS_DAYS,
+    mcpToolCalls: e.RETENTION_MCP_TOOL_CALLS_DAYS,
   };
 }
 
@@ -67,7 +69,7 @@ async function deleteBatches(table: string, where: ReturnType<typeof sql>, o: Re
 
 /**
  * Prune finished history. Touches only operational logs: job claims, terminal
- * provider events, finished AI jobs, expired auth rows. Better Auth deletes an
+ * provider events, finished AI jobs, MCP agent activity, expired auth rows. Better Auth deletes an
  * expired session or verification only when it is read again, so abandoned
  * ones pile up and are removed here.
  */
@@ -83,6 +85,7 @@ export async function pruneHistory(options: PruneOptions): Promise<PruneResult> 
     ["inbound_events_done", sql`status in ('done', 'skipped') and coalesce(processed_at, created_at) < ${before(retention.inboundDone)}::timestamptz`],
     ["inbound_events_failed", sql`status = 'failed' and coalesce(processed_at, created_at) < ${before(retention.inboundFailed)}::timestamptz`],
     ["ai_jobs", sql`status = 'succeeded' and completed_at < ${before(retention.aiJobs)}::timestamptz`],
+    ["mcp_tool_calls", sql`created_at < ${before(retention.mcpToolCalls)}::timestamptz`],
     ["sessions", sql`expires_at < ${authCutoff}::timestamptz`],
     ["verifications", sql`expires_at < ${authCutoff}::timestamptz`],
   ];

@@ -959,6 +959,7 @@ Code: `src/contexts/grid` (README in `grid/README.md`), pages under `src/app/(ap
 | `inbound_events` with status `done` or `skipped` | 30 days | `RETENTION_INBOUND_EVENTS_DAYS` |
 | `inbound_events` with status `failed` (dead letters) | 90 days | `RETENTION_INBOUND_FAILED_DAYS` |
 | `ai_jobs` with status `succeeded` | 30 days | `RETENTION_AI_JOBS_DAYS` |
+| `mcp_tool_calls` | 90 days | `RETENTION_MCP_TOOL_CALLS_DAYS` |
 | `sessions` and `verifications` past expiry | 1 day | none |
 
 Each variable takes whole days of at least 1. Better Auth deletes an expired row only when it reads it, so abandoned rows pile up without the prune. The prune never touches sends, messages, enrollments, suppression, people, pending or processing events, failed or queued AI jobs, or grid jobs and ledger rows. `events`, `audit_log` and `messages` are append-only by trigger.

@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT, mcpTokenHint, mcpTokenNameProblem } from "../domain/mcp-token";
-import type { McpScope } from "../domain/mcp-policy";
+import { tokenScopesProblem, type McpScope } from "../domain/mcp-policy";
 import { mcpSettingsProblem, type McpSettings, type McpSettingsPatch } from "../domain/mcp-settings";
 import { isOwnerOrAdmin } from "../domain/roles";
 import type { AuditEntry } from "./audit-log";
@@ -65,10 +65,12 @@ export interface McpTokenDeps {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Phase 1 serves read tools only, so a token reads. The scope input arrives with the write tools. */
-const ISSUED_SCOPES: McpScope[] = ["mcp:read"];
-/** Keys this version lets a person save. The member write switch and agent sending arrive with the tools they govern. */
-const EDITABLE_SETTINGS = new Set(["enabled"]);
+/** What a new token may do. Sending arrives with the send tools. */
+export const MCP_TOKEN_ACCESS = ["read", "write"] as const;
+export type McpTokenAccess = (typeof MCP_TOKEN_ACCESS)[number];
+const SCOPES_OF: Record<McpTokenAccess, McpScope[]> = { read: ["mcp:read"], write: ["mcp:read", "mcp:write"] };
+/** Keys this version lets a person save. Agent sending and its limits arrive with the send tools. */
+const EDITABLE_SETTINGS = new Set(["enabled", "memberWriteTokens"]);
 
 const audit = (actor: Actor, action: string, entityId: string | undefined, meta: Record<string, unknown>): AuditEntry => ({
   organizationId: actor.organizationId,
@@ -95,6 +97,9 @@ export async function updateMcpSettings(deps: Pick<McpTokenDeps, "store">, actor
   const current = await deps.store.settings(actor.organizationId);
   const entries: AuditEntry[] = [];
   if (typeof patch.enabled === "boolean" && patch.enabled !== current.enabled) entries.push(audit(actor, patch.enabled ? "mcp.enabled" : "mcp.disabled", undefined, {}));
+  if (typeof patch.memberWriteTokens === "boolean" && patch.memberWriteTokens !== current.memberWriteTokens) {
+    entries.push(audit(actor, patch.memberWriteTokens ? "mcp.member_write_on" : "mcp.member_write_off", undefined, {}));
+  }
   if (entries.length > 0) await deps.store.saveSettings(actor.organizationId, patch as McpSettingsPatch, actor.userId, entries);
   return deps.store.settings(actor.organizationId);
 }
@@ -105,12 +110,18 @@ export async function listMcpTokens(deps: Pick<McpTokenDeps, "store">, actor: Ac
   return deps.store.list(actor.organizationId, scope === "mine" ? actor.userId : null);
 }
 
-/** Creates a token for the caller. The answer carries the secret, which is never shown again. */
-export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { name: string }): Promise<McpTokenView & { token: string }> {
+/**
+ * Creates a token for the caller, read-only unless `access` is `write`. A member creates a write token only while the
+ * organization allows it. The answer carries the secret, which is never shown again.
+ */
+export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { name: string; access?: McpTokenAccess }): Promise<McpTokenView & { token: string }> {
   const problem = mcpTokenNameProblem(input.name);
   if (problem) throw new ValidationError(problem);
   const settings = await deps.store.settings(actor.organizationId);
   if (!settings.enabled) throw new ConflictError("MCP is off in this organization. An owner or admin can turn it on.", { code: "mcp_disabled" });
+  const scopes = SCOPES_OF[input.access ?? "read"];
+  const refused = tokenScopesProblem({ role: actor.role, settings, scopes });
+  if (refused) throw new ForbiddenError(refused);
 
   const now = deps.now();
   const token = deps.newSecret();
@@ -126,11 +137,11 @@ export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { 
         name,
         tokenHash: deps.hash(token),
         tokenHint: mcpTokenHint(token),
-        scopes: ISSUED_SCOPES,
+        scopes,
         policyEpoch: settings.agentSendEpoch,
         expiresAt: new Date(now.getTime() + MCP_TOKEN_DAYS * DAY_MS),
       },
-      audit(actor, "mcp.token_created", undefined, { name, scopes: ISSUED_SCOPES.join(" ") }),
+      audit(actor, "mcp.token_created", undefined, { name, scopes: scopes.join(" ") }),
     );
   });
   // The session found the member a moment ago; null means a removal committed in between.

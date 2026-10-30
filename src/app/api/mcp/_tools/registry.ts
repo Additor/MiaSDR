@@ -1,9 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
+import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
+import { recordMcpToolCall } from "@/contexts/tenancy/application/mcp-tool-calls";
+import { mcpRateLimitDeps, mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import pkg from "../../../../../package.json";
 import { getCampaignTool, listCampaignsTool } from "./campaigns";
 import { getConversationTool } from "./conversation";
-import { registerTools, type ToolDefinition } from "./define";
+import { registerTools, type ToolDefinition, type ToolHooks } from "./define";
 import { listInboxTool } from "./inbox";
 import { SERVER_INSTRUCTIONS } from "./instructions";
 import { getPersonTool, searchPeopleTool } from "./people";
@@ -27,6 +30,12 @@ export function createMcpServer(principal: McpPrincipal, appUrl: string): McpSer
     { name: "miasdr", version: pkg.version },
     { instructions: SERVER_INSTRUCTIONS, cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
   );
-  registerTools(server, principal, appUrl, TOOLS);
+  registerTools(server, principal, appUrl, TOOLS, toolHooks(principal));
   return server;
 }
+
+const toolHooks = (principal: McpPrincipal): ToolHooks => ({
+  take: async (bucket) => (await takeMcpRequest(mcpRateLimitDeps(), principal, bucket))?.retryAfterSeconds ?? null,
+  record: (entry) => recordMcpToolCall(mcpToolCallDeps(), entry),
+  now: () => performance.now(),
+});

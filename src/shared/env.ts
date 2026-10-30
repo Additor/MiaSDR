@@ -107,6 +107,7 @@ const schema = z.object({
   /** Dead-lettered (`failed`) provider events stay longer so a person can review them. */
   RETENTION_INBOUND_FAILED_DAYS: z.coerce.number().int().min(1).default(90),
   RETENTION_AI_JOBS_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_MCP_TOOL_CALLS_DAYS: z.coerce.number().int().min(1).default(90),
 
   /** Comma list of email domains tenants may connect as mailboxes. Required when AUTH_SIGNUP=open. */
   MAILBOX_ALLOWED_DOMAINS: z.string().optional(),

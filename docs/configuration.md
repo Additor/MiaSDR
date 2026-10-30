@@ -74,6 +74,7 @@ Only logs are pruned. Sends, messages, enrollments and suppression are kept.
 | `RETENTION_INBOUND_EVENTS_DAYS` | `30` | Days to keep finished provider events. |
 | `RETENTION_INBOUND_FAILED_DAYS` | `90` | Days to keep dead-lettered provider events. |
 | `RETENTION_AI_JOBS_DAYS` | `30` | Days to keep finished AI jobs. |
+| `RETENTION_MCP_TOOL_CALLS_DAYS` | `90` | Days to keep the MCP agent activity log. |
 
 ## Compose-only variables
 

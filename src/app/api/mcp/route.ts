@@ -78,8 +78,8 @@ async function serve(request: Request): Promise<Response> {
   }
   if ("refusal" in access) return apiError(403, "MCP is off in this organization. An owner or admin can turn it on.", { code: access.refusal });
   const { principal } = access;
-  // Phase 1 serves read tools only, so every request counts as a read. The write and send buckets will read the tool
-  // name from the body.
+  // Every request counts in `read`. A tool that changes data counts its own buckets once its input is parsed
+  // (`registerTools`), so a refusal there reaches the agent as a tool error it can read.
   const limited = await takeMcpRequest(mcpRateLimitDeps(), principal, "read");
   if (limited) return tooManyRequests(limited.retryAfterSeconds, "This MCP token sent too many requests this minute. Wait, then try again.");
   // The raw token never travels further than this function: `token` carries the token's id.

@@ -17,6 +17,7 @@ export interface McpRateLimitDeps {
  */
 export async function takeMcpRequest(deps: McpRateLimitDeps, principal: Pick<McpPrincipal, "organizationId" | "tokenId">, bucket: McpRateBucket): Promise<{ retryAfterSeconds: number } | null> {
   const now = deps.now();
-  const count = await deps.store.hit({ organizationId: principal.organizationId, tokenId: principal.tokenId, bucket, windowStart: rateWindowStart(now) });
-  return count > MCP_RATE_LIMITS[bucket] ? { retryAfterSeconds: rateRetryAfterSeconds(now) } : null;
+  const { limit, windowMs } = MCP_RATE_LIMITS[bucket];
+  const count = await deps.store.hit({ organizationId: principal.organizationId, tokenId: principal.tokenId, bucket, windowStart: rateWindowStart(now, windowMs) });
+  return count > limit ? { retryAfterSeconds: rateRetryAfterSeconds(now, windowMs) } : null;
 }

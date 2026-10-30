@@ -50,6 +50,13 @@
       "when": 1793350165410,
       "tag": "0006_mcp_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793355505372,
+      "tag": "0007_mcp_tool_calls",
+      "breakpoints": true
     }
   ]
 }

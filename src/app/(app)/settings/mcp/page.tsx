@@ -4,9 +4,10 @@ import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getMcpSettings, listMcpTokens } from "@/contexts/tenancy/application/mcp-tokens";
+import { listMcpToolCalls } from "@/contexts/tenancy/application/mcp-tool-calls";
 import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT } from "@/contexts/tenancy/domain/mcp-token";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { mcpTokenDeps, mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { toActor } from "@/app/_lib/api";
 import { env } from "@/shared/env";
 import { McpPanel } from "./mcp-panel";
@@ -29,16 +30,18 @@ async function Mcp() {
   const actor = toActor(ctx);
   const deps = mcpTokenDeps();
   const canManage = isOwnerOrAdmin(ctx.role);
-  const [settings, mine, everyone] = await Promise.all([
+  const [settings, mine, everyone, activity] = await Promise.all([
     getMcpSettings(deps, actor),
     listMcpTokens(deps, actor, "mine"),
     canManage ? listMcpTokens(deps, actor, "organization") : Promise.resolve([]),
+    canManage ? listMcpToolCalls(mcpToolCallDeps(), actor, { writesOnly: true, before: null }) : Promise.resolve(null),
   ]);
   const { MCP_ENABLED, APP_URL } = env();
   return (
     <McpPanel
       installEnabled={MCP_ENABLED}
       enabled={settings.enabled}
+      memberWriteTokens={settings.memberWriteTokens}
       canManage={canManage}
       currentUserId={ctx.user.id}
       endpoint={`${APP_URL}/api/mcp`}
@@ -46,6 +49,7 @@ async function Mcp() {
       tokenLimit={MCP_TOKEN_LIMIT}
       mine={JSON.parse(JSON.stringify(mine))}
       everyone={JSON.parse(JSON.stringify(everyone))}
+      activity={activity && JSON.parse(JSON.stringify(activity))}
     />
   );
 }

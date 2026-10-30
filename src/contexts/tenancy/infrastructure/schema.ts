@@ -150,7 +150,7 @@ export const mcpTokens = pgTable(
 );
 
 /**
- * MCP request counts: one fixed one-minute window per token and bucket (`tenancy/domain/mcp-rate-limit.ts`). A request
+ * MCP request counts: one fixed window per token and bucket (`tenancy/domain/mcp-rate-limit.ts`). A request
  * updates its row in place, so the table holds at most one row per token and bucket and needs no prune.
  */
 export const mcpRateLimits = pgTable(
@@ -168,5 +168,39 @@ export const mcpRateLimits = pgTable(
     primaryKey({ columns: [t.organizationId, t.tokenId, t.bucket] }),
     foreignKey({ name: "mcp_rate_limits_token_fk", columns: [t.tokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("cascade"),
     check("mcp_rate_limits_count_ck", sql`${t.count} >= 1`),
+  ],
+);
+
+/**
+ * One row per MCP tool call, for the activity list on Settings, AI agents (MCP). `target` holds the ids the call named
+ * (`recordId`, `personId` and the like), never text from the call, so the log keeps no copy of a lead's data. The
+ * history prune deletes rows older than `RETENTION_MCP_TOOL_CALLS_DAYS`.
+ */
+export const mcpToolCalls = pgTable(
+  "mcp_tool_calls",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tokenId: uuid("token_id").notNull(),
+    tool: text("tool").notNull(),
+    /** The tool's `action` input, for tools that take one. */
+    action: text("action"),
+    /** `read` for a read tool, `write` for one that can change data. */
+    kind: text("kind").$type<"read" | "write">().notNull(),
+    target: jsonb("target").$type<Record<string, string>>().notNull().default({}),
+    /** Null when the call succeeded; else the error code the agent got. */
+    errorCode: text("error_code"),
+    clientName: text("client_name"),
+    durationMs: integer("duration_ms").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({ name: "mcp_tool_calls_token_fk", columns: [t.tokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("cascade"),
+    index("mcp_tool_calls_org_created_idx").on(t.organizationId, t.createdAt),
+    index("mcp_tool_calls_created_idx").on(t.createdAt),
+    check("mcp_tool_calls_kind_ck", sql`${t.kind} in ('read', 'write')`),
+    check("mcp_tool_calls_duration_ck", sql`${t.durationMs} >= 0`),
   ],
 );

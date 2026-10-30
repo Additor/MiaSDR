@@ -129,6 +129,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "settings/mcp/tokens": { handlers: { GET: ok(), POST: ok({ name: "Laptop" }) } },
   "settings/mcp/tokens/[id]": { ids: { id: "mcp_tokens" }, handlers: { DELETE: ok() } },
   "settings/mcp/tokens/revoke-all": { handlers: { POST: admin() } },
+  "settings/mcp/activity": { handlers: { GET: admin() } },
   "suppressions": { handlers: { GET: ok(), POST: admin({ text: "matrix-suppressed@example.com" }) } },
   "suppressions/[id]": { ids: { id: { table: "suppression_list", force: { reason: "manual", added_in_settings: true } } }, handlers: { DELETE: admin() } },
   "settings/replies/ai-instructions": { handlers: { GET: ok(), PUT: admin() } },

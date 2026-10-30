@@ -8,18 +8,21 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { AdminNotice } from "../admin-notice";
+import { AgentActivity, type ActivityCall } from "./agent-activity";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface Token {
   id: string;
   name: string;
   hint: string | null;
+  scopes: string[];
   ownerUserId: string;
   ownerName: string;
   createdAt: string;
@@ -32,6 +35,8 @@ interface Props {
   installEnabled: boolean;
   /** The organization's own switch. */
   enabled: boolean;
+  /** Members may create tokens that make changes. Owners and admins always may. */
+  memberWriteTokens: boolean;
   canManage: boolean;
   currentUserId: string;
   endpoint: string;
@@ -39,6 +44,8 @@ interface Props {
   tokenLimit: number;
   mine: Token[];
   everyone: Token[];
+  /** The first page of agent activity, for an owner or admin; null for a member. */
+  activity: { calls: ActivityCall[]; more: boolean } | null;
 }
 
 /** The client setups the page shows, each with the token in place. */
@@ -59,16 +66,19 @@ const copy = (text: string, what: string) =>
     () => toast.error(`Copy failed. Select the ${what.toLowerCase()} and copy it.`),
   );
 
-export function McpPanel({ installEnabled, enabled, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone }: Props) {
+export function McpPanel({ installEnabled, enabled, memberWriteTokens, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
   const { isBusy, run } = useApiAction();
   const [switching, setSwitching] = useState(false);
+  const [switchingWrite, setSwitchingWrite] = useState(false);
+  const [access, setAccess] = useState<"read" | "write">("read");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ name: string; token: string } | null>(null);
   const [revoking, setRevoking] = useState<Token | null>(null);
   const [revokingAll, setRevokingAll] = useState(false);
   const usable = installEnabled && enabled;
+  const canWrite = canManage || memberWriteTokens;
   // The limit counts live tokens; an expired one stays listed until someone revokes it.
   const live = mine.filter((t) => !isExpired(t)).length;
 
@@ -78,9 +88,10 @@ export function McpPanel({ installEnabled, enabled, canManage, currentUserId, en
     const name = String(new FormData(form).get("name"));
     void run("create", async () => {
       setError(null);
-      const result = await runApiAction(callApi<{ token: string; name: string }>("/api/settings/mcp/tokens", "POST", { name }), { refresh, expectData: true });
+      const result = await runApiAction(callApi<{ token: string; name: string }>("/api/settings/mcp/tokens", "POST", { name, access: canWrite ? access : "read" }), { refresh, expectData: true });
       if (!result.ok) return setError(result.error);
       form.reset();
+      setAccess("read");
       setCreated({ name: result.data.name, token: result.data.token });
     });
   }
@@ -100,10 +111,10 @@ export function McpPanel({ installEnabled, enabled, canManage, currentUserId, en
       <SettingsSection
         id="access"
         title="Access"
-        description="MCP lets an AI agent, such as Claude Code, Cursor or VS Code, read this organization's inbox, leads, campaigns, deals and analytics. Each person connects with a personal token, and the agent sees what that person sees."
+        description="MCP lets an AI agent, such as Claude Code, Cursor or VS Code, work in this organization's inbox, leads, campaigns, deals and analytics. Each person connects with a personal token, and the agent sees and changes what that person can. No agent sends email or LinkedIn messages."
       >
         {enabled ? (
-          <p className="text-sm">MCP is on. Agents with a live token can read this organization.</p>
+          <p className="text-sm">MCP is on. Agents with a live token can work in this organization.</p>
         ) : (
           <p className="text-sm">MCP is off. Agents cannot connect, and nobody can create a token.</p>
         )}
@@ -116,13 +127,25 @@ export function McpPanel({ installEnabled, enabled, canManage, currentUserId, en
         ) : (
           !enabled && <AdminNotice action="turn on MCP" />
         )}
+        <p className="text-sm">
+          {memberWriteTokens
+            ? "Members can create tokens that make changes, such as drafting replies, adding notes or moving deals."
+            : "Only owners and admins can create tokens that make changes. Members' tokens read only."}
+        </p>
+        {canManage && (
+          <div>
+            <Button variant="outline" onClick={() => setSwitchingWrite(true)}>
+              {memberWriteTokens ? "Limit members to read-only tokens" : "Let members create tokens that make changes"}
+            </Button>
+          </div>
+        )}
       </SettingsSection>
 
       <SettingsSection
         id="tokens"
         title="Your tokens"
         count={mine.length > 0 ? `${live} of ${tokenLimit} live` : undefined}
-        description={`A token reads what you can read here. It lasts ${tokenDays} days. Revoke a token you no longer use, or one you think someone else has.`}
+        description={`A token reads what you can read here, and a token that makes changes also changes what you can change. It lasts ${tokenDays} days. Revoke a token you no longer use, or one you think someone else has.`}
       >
         {usable && (
           <form onSubmit={create}>
@@ -136,6 +159,23 @@ export function McpPanel({ installEnabled, enabled, canManage, currentUserId, en
                   {isBusy("create") ? "Creating…" : "Create token"}
                 </Button>
               </div>
+              {canWrite && (
+                <FieldSet>
+                  <FieldLegend variant="label" id="token-access-legend">
+                    Access
+                  </FieldLegend>
+                  <RadioGroup aria-labelledby="token-access-legend" value={access} onValueChange={(v) => setAccess(v as "read" | "write")} className="flex flex-wrap gap-x-6">
+                    <Field orientation="horizontal" className="w-auto">
+                      <RadioGroupItem value="read" id="token-access-read" />
+                      <FieldLabel htmlFor="token-access-read">Read only</FieldLabel>
+                    </Field>
+                    <Field orientation="horizontal" className="w-auto">
+                      <RadioGroupItem value="write" id="token-access-write" />
+                      <FieldLabel htmlFor="token-access-write">Read and make changes</FieldLabel>
+                    </Field>
+                  </RadioGroup>
+                </FieldSet>
+              )}
               {error && <FieldError>{error}</FieldError>}
             </FieldGroup>
           </form>
@@ -169,6 +209,8 @@ export function McpPanel({ installEnabled, enabled, canManage, currentUserId, en
         </SettingsSection>
       )}
 
+      {activity && <AgentActivity initial={activity} />}
+
       <ConfirmDialog
         open={switching}
         onOpenChange={setSwitching}
@@ -182,6 +224,25 @@ export function McpPanel({ installEnabled, enabled, canManage, currentUserId, en
         cancelLabel={enabled ? "Keep on" : "Keep off"}
         pendingLabel={enabled ? "Turning off…" : "Turning on…"}
         onConfirm={async () => toastOrThrow(await runApiAction(callApi("/api/settings/mcp", "PATCH", { enabled: !enabled }), { refresh }), enabled ? "MCP turned off." : "MCP turned on.")}
+      />
+      <ConfirmDialog
+        open={switchingWrite}
+        onOpenChange={setSwitchingWrite}
+        title={memberWriteTokens ? "Limit members to read-only tokens?" : "Let members create tokens that make changes?"}
+        description={
+          memberWriteTokens
+            ? "Members' agents stop making changes on their next request and keep reading. Owners and admins keep their tokens as they are."
+            : "Members can then create tokens whose agents draft replies, add notes, move deals and change campaigns that have not started, as the member could."
+        }
+        confirmLabel={memberWriteTokens ? "Limit to read-only" : "Allow changes"}
+        cancelLabel="Cancel"
+        pendingLabel="Saving…"
+        onConfirm={async () =>
+          toastOrThrow(
+            await runApiAction(callApi("/api/settings/mcp", "PATCH", { memberWriteTokens: !memberWriteTokens }), { refresh }),
+            memberWriteTokens ? "Members' tokens read only now." : "Members can create tokens that make changes.",
+          )
+        }
       />
       <ConfirmDialog
         open={revoking !== null}
@@ -262,6 +323,7 @@ function TokenList({ tokens, showOwner, currentUserId, onRevoke }: { tokens: Tok
                 {token.ownerUserId === currentUserId && " (you)"}
               </span>
             )}
+            {token.scopes.includes("mcp:write") && <Badge variant="secondary">Makes changes</Badge>}
             {expired && <Badge variant="outline">Expired</Badge>}
             <span className="text-muted-foreground">
               {token.lastUsedAt ? (

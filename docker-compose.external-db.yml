@@ -55,6 +55,7 @@ services:
       RETENTION_INBOUND_EVENTS_DAYS: ${RETENTION_INBOUND_EVENTS_DAYS:-}
       RETENTION_INBOUND_FAILED_DAYS: ${RETENTION_INBOUND_FAILED_DAYS:-}
       RETENTION_AI_JOBS_DAYS: ${RETENTION_AI_JOBS_DAYS:-}
+      RETENTION_MCP_TOOL_CALLS_DAYS: ${RETENTION_MCP_TOOL_CALLS_DAYS:-}
     # To use the file variant, uncomment and set GOOGLE_SERVICE_ACCOUNT_FILE=/run/secrets/google-service-account.json in .env.
     # volumes:
     #   - ./secrets/google-service-account.json:/run/secrets/google-service-account.json:ro

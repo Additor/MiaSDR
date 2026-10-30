@@ -32,6 +32,7 @@ test("an admin turns on MCP, creates a token an agent can use once, and revokes 
   await expect(page.getByText("MCP is on.")).toBeVisible();
 
   await page.getByLabel("Token name").fill("E2E laptop");
+  await page.getByLabel("Read and make changes").check();
   await page.getByRole("button", { name: "Create token" }).click();
   const secret = page.getByLabel("New token");
   await expect(secret).toHaveValue(/^msdr_pat_[A-Za-z0-9_-]{43}$/);
@@ -44,6 +45,7 @@ test("an admin turns on MCP, creates a token an agent can use once, and revokes 
   const mine = page.getByRole("list", { name: "Your tokens" });
   const row = mine.getByRole("listitem").filter({ hasText: "E2E laptop" });
   await expect(row).toContainText(`…${token.slice(-4)}`);
+  await expect(row).toContainText("Makes changes");
   await row.getByRole("button", { name: "Revoke" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Revoke token" }).click();
   // The open dialog hides the page from the accessibility tree, so wait for it to close before reading the list.
