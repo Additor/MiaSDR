@@ -70,3 +70,12 @@ export function fitItems<T>(items: readonly T[], budget = MAX_RESPONSE_TOKENS / 
   }
   return { items: kept, omitted: items.length - kept.length };
 }
+
+/** Items a list tool answers when the agent names no limit. The use case's own maximum still applies. */
+export const DEFAULT_LIST_LIMIT = 20;
+
+/** A message excerpt from the other side of a conversation, fenced by its channel. */
+export const fencedExcerpt = (ctx: ToolOutputContext, channel: string | null, text: string | null): string | null =>
+  text === null ? null : untrusted(ctx, channel === "linkedin" ? "linkedin" : "email", excerpt(text));
+
+export const iso = (date: Date | null): string | null => (date ? date.toISOString() : null);

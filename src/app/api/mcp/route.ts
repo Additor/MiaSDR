@@ -19,7 +19,7 @@ export const maxDuration = 60;
  * The SDK answers its own failures (a factory that throws, a server error, a refused request) without throwing, and
  * reports them only to `onerror`, so `onerror` logs them.
  */
-const handler = createMcpHandler(({ authInfo }) => createMcpServer(principalOf(authInfo)), {
+const handler = createMcpHandler(({ authInfo }) => createMcpServer(principalOf(authInfo), env().APP_URL), {
   legacy: "stateless",
   responseMode: "json",
   onerror: (error) => console.error("[mcp] request failed", error),
