@@ -123,6 +123,17 @@ describeDb("inbox filters, views and search", () => {
       expect((await list(f, { leadIds: ["00000000-0000-4000-8000-000000000000"] })).total).toBe(0);
     });
 
+    it("names each row's record and its assignee", async () => {
+      const f = await fixture();
+      const t = await inboundThread(f);
+      const [rec] = await sql<{ id: string }[]>`select record_id as id from conversations where id = ${t.conversationId}`;
+      expect((await list(f)).rows[0]).toMatchObject({ conversationId: t.conversationId, recordId: rec.id, assignedTo: null });
+      // The fixture's actor is a placeholder; the organization's owner is a real member.
+      const owner = orgs.find((o) => o.organizationId === f.org)!.userId;
+      await sql`update records set assigned_to = ${owner}, assigned_source = 'human' where id = ${rec.id}`;
+      expect((await list(f)).rows[0].assignedTo).toBe(owner);
+    });
+
     it("filters by campaign through the person's enrollment", async () => {
       const f = await fixture();
       const ann = await inboundThread(f, { email: "ann@acme.test" });

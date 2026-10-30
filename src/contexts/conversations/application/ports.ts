@@ -112,6 +112,10 @@ export interface InboxFilterOptions {
 
 export interface InboxRow {
   conversationId: string;
+  /** The record the conversation belongs to: the tools that note, assign or close take it. */
+  recordId: string;
+  /** The member the record is assigned to, or null. */
+  assignedTo: string | null;
   channel: string;
   accountRef: string;
   personId: string;

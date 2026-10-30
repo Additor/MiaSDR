@@ -16,6 +16,8 @@ const POSSIBLE_BOUNCE = sql`coalesce(m.raw->>'possibleBounce', 'false') = 'true'
 
 interface ListRow {
   conversation_id: string;
+  record_id: string;
+  assigned_to: string | null;
   channel: string;
   account_ref: string;
   person_id: string;
@@ -94,7 +96,7 @@ function conversationFilters(organizationId: string, f: InboxFilter): SQL[] {
 /** One row per conversation with the latest message and the per-row facts every view filters on. */
 function conversationSource(organizationId: string, f: InboxFilter): SQL {
   return sql`
-    select c.id as conversation_id, c.channel, c.account_ref, p.id as person_id, p.full_name, p.first_name, p.email,
+    select c.id as conversation_id, r.id as record_id, r.assigned_to, c.channel, c.account_ref, p.id as person_id, p.full_name, p.first_name, p.email,
            r.group_key, s.key as reply_type_key, s.name as reply_type_name,
            lm.subject, lm.body_text, lm.sent_at, lm.direction, lm.auto_reply, lm.possible_bounce,
            (lm.direction = 'inbound' and (lm.auto_reply or lm.possible_bounce or lm.by_pattern)) as automated,
@@ -154,6 +156,8 @@ export const drizzleInboxStore: InboxStore = {
 
     const mapped: InboxRow[] = rows.map((r) => ({
       conversationId: r.conversation_id,
+      recordId: r.record_id,
+      assignedTo: r.assigned_to,
       channel: r.channel,
       accountRef: r.account_ref,
       personId: r.person_id,
