@@ -1,6 +1,7 @@
 import { and, count, eq, ilike, inArray, isNotNull, isNull, or, sql, type Column, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { companies, contactPolicies, people } from "@/platform/db/schema";
+import type { Actor } from "@/shared/errors";
 import { DEFAULT_LEAD_SORT, lifecycleOf, type LeadFilter, type LeadSort } from "../domain/lead-filter";
 import { normalizeLinkedinSlug } from "../domain/normalize";
 
@@ -127,13 +128,13 @@ export function leadOrderBy(sort: LeadSort): SQL[] {
 }
 
 export type ListLeads = (
-  organizationId: string,
+  actor: Pick<Actor, "organizationId">,
   options: { filter?: LeadFilter; sort?: LeadSort; page?: number; pageSize?: number },
 ) => Promise<{ rows: LeadRow[]; total: number; page: number; pageCount: number; pageSize: number }>;
 
 /** The lead list: one page of the filtered leads in the list order, and the total. */
-export const createListLeads = (activity: ActivityCondition): ListLeads => async (organizationId, options) => {
-  const where = leadFilterWhere(organizationId, options.filter ?? {}, activity);
+export const createListLeads = (activity: ActivityCondition): ListLeads => async (actor, options) => {
+  const where = leadFilterWhere(actor.organizationId, options.filter ?? {}, activity);
 
   const [{ total }] = await db
     .select({ total: count() })

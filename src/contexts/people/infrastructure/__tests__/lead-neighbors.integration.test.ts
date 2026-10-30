@@ -32,7 +32,7 @@ describeDb("lead page neighbors", () => {
   }
 
   /** The list's own order for a filter and a sort: the truth the neighbors must agree with. */
-  const listOrder = async (orgId: string, filter: LeadFilter, sort: LeadSort) => (await q.listLeads(orgId, { filter, sort, pageSize: 200 })).rows.map((r) => r.id);
+  const listOrder = async (orgId: string, filter: LeadFilter, sort: LeadSort) => (await q.listLeads({ organizationId: orgId }, { filter, sort, pageSize: 200 })).rows.map((r) => r.id);
 
   beforeAll(async () => {
     neighbors = await import("@/composition/leads");

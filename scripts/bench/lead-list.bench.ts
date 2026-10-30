@@ -46,12 +46,12 @@ describeDb("lead list benchmark", () => {
 
   it("reads the lead status of a page and the filtered lists", async () => {
     const o = org.organizationId;
-    const page = await q.listLeads(o, { pageSize: 200 });
+    const page = await q.listLeads({ organizationId: o }, { pageSize: 200 });
     const batch = await timed(() => reads.readLeadStatuses(o, page.rows.map((r) => r.id)));
     expect(batch.value.size).toBe(200);
-    const replied = await timed(() => q.listLeads(o, { filter: { replied: true }, pageSize: 200 }));
-    const lastFrom = await timed(() => q.listLeads(o, { filter: { lastContactFrom: day(-20) }, pageSize: 200 }));
-    const lastTo = await timed(() => q.listLeads(o, { filter: { lastContactTo: day(-40) }, pageSize: 200 }));
+    const replied = await timed(() => q.listLeads({ organizationId: o }, { filter: { replied: true }, pageSize: 200 }));
+    const lastFrom = await timed(() => q.listLeads({ organizationId: o }, { filter: { lastContactFrom: day(-20) }, pageSize: 200 }));
+    const lastTo = await timed(() => q.listLeads({ organizationId: o }, { filter: { lastContactTo: day(-40) }, pageSize: 200 }));
     console.table([
       { read: "lead status, 200 ids", ms: Math.round(batch.ms), rows: batch.value.size },
       { read: "replied filter", ms: Math.round(replied.ms), rows: replied.value.total },

@@ -74,7 +74,7 @@ async function People({ actor, params }: { actor: Actor; params: Params }) {
   filter.ids = undefined;
   const sort = parseLeadSort(first(params.sort), first(params.dir));
   const [{ rows, total, page, pageCount, pageSize }, options, deals] = await Promise.all([
-    listLeads(organizationId, { filter, sort, page: Number(first(params.page)) || 1, pageSize: Number(first(params.size)) || undefined }),
+    listLeads(actor, { filter, sort, page: Number(first(params.page)) || 1, pageSize: Number(first(params.size)) || undefined }),
     leadFilterOptions(organizationId),
     dealDialogData(actor),
   ]);
