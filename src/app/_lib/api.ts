@@ -3,23 +3,18 @@
  * map domain errors to status codes and the error body of `./api-errors.ts`. `./api-client.ts` reads that body in the browser.
  */
 import { NextResponse, connection } from "next/server";
-import { ZodError } from "zod";
 import { apiOrgContext, apiUser, type OrgContext, type SessionUser } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { apiError } from "./api-errors";
-import { ConflictError, ForbiddenError, NotFoundError, PayloadTooLargeError, ValidationError, type Actor } from "@/shared/errors";
+import { classifyError } from "./classify-error";
+import { ForbiddenError, type Actor } from "@/shared/errors";
 
 export const toActor = (ctx: OrgContext): Actor => ({ userId: ctx.user.id, organizationId: ctx.organization.id, role: ctx.role });
 
-function isInvalidUuid(error: unknown): boolean {
-  const code = (error as { code?: string; cause?: { code?: string } } | null);
-  return code?.code === "22P02" || code?.cause?.code === "22P02";
-}
-
 /**
  * A `Response` from `run` (a CSV file, a redirect) goes out as it is; any other value is the JSON body. An application
- * error becomes the body `{ error, code, ...details }` of `./api-errors.ts`: 403 `forbidden`, 404 `not_found`, 409
- * `conflict`, 413 `payload_too_large`, 422 `validation`, 400 `bad_request`. A 403 or 409 that names its own code keeps it.
+ * error becomes the body `{ error, code, ...details }` of `./api-errors.ts` through `classifyError`; anything it does
+ * not classify is rethrown and answers 500.
  */
 async function answer(run: () => Promise<unknown>, status: number): Promise<Response> {
   try {
@@ -27,23 +22,10 @@ async function answer(run: () => Promise<unknown>, status: number): Promise<Resp
     if (result instanceof Response) return result;
     return result === undefined ? new NextResponse(null, { status: 204 }) : NextResponse.json(result, { status });
   } catch (error) {
-    if (error instanceof NotFoundError) return apiError(404, error.message);
-    if (error instanceof ForbiddenError) return apiError(403, error.message, ownCode(error));
-    if (error instanceof ConflictError) return apiError(409, error.message, error.details);
-    if (error instanceof PayloadTooLargeError) return apiError(413, error.message);
-    if (error instanceof ValidationError) return apiError(422, error.message, { issues: error.issues });
-    if (error instanceof ZodError) return apiError(400, "Invalid input", { issues: error.issues.map((i) => ({ message: `${i.path.join(".")}: ${i.message}` })) });
-    if (error instanceof SyntaxError) return apiError(400, "Invalid JSON");
-    // A path id that is not a UUID reaches Postgres as 22P02. No row can match it, so it is a 404, not a server error.
-    if (isInvalidUuid(error)) return apiError(404, "Not found");
-    throw error;
+    const classified = classifyError(error);
+    if (!classified) throw error;
+    return apiError(classified.status, classified.message, classified.details);
   }
-}
-
-/** The `code` a refusal class names for itself, such as `PersonalCampaignError`'s `personal_campaign`. */
-function ownCode(error: Error): { code?: string } {
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? { code } : {};
 }
 
 /** The 401 of a request without a session. */
