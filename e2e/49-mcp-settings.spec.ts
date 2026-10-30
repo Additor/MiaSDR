@@ -32,7 +32,7 @@ test("an admin turns on MCP, creates a token an agent can use once, and revokes 
   await expect(page.getByText("MCP is on.")).toBeVisible();
 
   await page.getByLabel("Token name").fill("E2E laptop");
-  await page.getByLabel("Read and make changes").check();
+  await page.getByRole("radio", { name: "Read and make changes" }).click();
   await page.getByRole("button", { name: "Create token" }).click();
   const secret = page.getByLabel("New token");
   await expect(secret).toHaveValue(/^msdr_pat_[A-Za-z0-9_-]{43}$/);
