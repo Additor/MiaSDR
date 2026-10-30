@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
 import pkg from "../../../../../package.json";
+import { getConversationTool } from "./conversation";
 import { registerTools, type ToolDefinition } from "./define";
 import { listInboxTool } from "./inbox";
 import { getWorkQueueTool } from "./work-queue";
@@ -10,7 +11,7 @@ import { getWorkspace } from "./workspace";
 export const TOOL_LIST_TTL_MS = 300_000;
 
 /** Every tool. `registerTools` keeps the ones the token's scopes allow. */
-export const TOOLS: readonly ToolDefinition[] = [getWorkspace, getWorkQueueTool, listInboxTool];
+export const TOOLS: readonly ToolDefinition[] = [getWorkspace, getWorkQueueTool, listInboxTool, getConversationTool];
 
 /**
  * One server per request, built for the principal: the tools it registers depend on the token's scopes, so a token
