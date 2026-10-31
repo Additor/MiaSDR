@@ -8,6 +8,7 @@ const settings = z.object({
   dailyInviteLimit: z.number().optional(),
   dailyMessageLimit: z.number().optional(),
   isPremium: z.boolean().optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
   workingHours: z.object({ timeZone: z.string(), days: z.record(z.string(), z.array(window)) }).nullable().optional(),
 });
 

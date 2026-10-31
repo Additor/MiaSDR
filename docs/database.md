@@ -66,9 +66,12 @@ The organization's `agent-send:<organization id>` advisory lock (`tenancy/infras
 | --- | --- |
 | Agent email reply | conversation `FOR UPDATE`, draft `FOR UPDATE`, then `agent-send` exclusive; the policy and the counts follow in later statements |
 | Agent LinkedIn reply | conversation, draft, account, then `agent-send` exclusive |
+| Agent campaign start or resume | campaign `FOR UPDATE`, then `agent-send` shared |
+| Agent enroll | campaign `FOR SHARE`, `agent-send` shared, then `agent-enroll:<organization id>` exclusive; the day's count follows |
+| Emptying a campaign's senders | campaign `FOR KEY SHARE` before the delete |
 | Member change (role change, removal), MCP token revoke, MCP settings save | `agent-send` exclusive before any row lock; a removal then locks members |
 
-An agent action that starts after one of the changes answers sees the new state; one that already holds the lock finishes first. A person's send takes no advisory lock, and no send locks members. A removal revokes the person's MCP tokens in the same transaction. Token creation locks the creator's member row `FOR UPDATE`, so it waits for a removal in progress and then finds no member row.
+An agent action that starts after one of the changes answers sees the new state; one that already holds the lock finishes first. A person's send or enroll takes no advisory lock, and no send locks members. A person's enroll takes no campaign lock; its insert's foreign key check waits for a start that holds the campaign. A removal revokes the person's MCP tokens in the same transaction. Token creation locks the creator's member row `FOR UPDATE`, so it waits for a removal in progress and then finds no member row.
 
 ## Append-only tables
 

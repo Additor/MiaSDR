@@ -69,6 +69,9 @@ export function mailboxProvider(): MailboxProvider {
 }
 
 /** The organization's email channel settings. */
+/** The onboarding checklist's campaign counts, which tenancy reads through a port. */
+export { onboardingCampaignFacts } from "./onboarding-campaign-facts";
+
 export const emailRulesDeps = (): EmailRulesDeps => ({ settings: drizzleChannelSettingsStore });
 
 /** The organization's sending pause, which writes an audit row on each change. */

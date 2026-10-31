@@ -161,6 +161,9 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
 
   async replaceSenders(organizationId, campaignId, channel, ids, handle) {
     await inTransaction(handle, async (tx) => {
+      // An emptied list inserts nothing, so no foreign key check would make it wait for an agent's launch that holds the
+      // campaign row; the key share stands in for one, and the launch then reads the list the change left.
+      if (ids.length === 0) await tx.select({ id: campaigns.id }).from(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, campaignId))).for("key share");
       await tx.delete(campaignSenders).where(and(eq(campaignSenders.organizationId, organizationId), eq(campaignSenders.campaignId, campaignId)));
       if (ids.length === 0) return;
       await tx

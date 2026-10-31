@@ -21,7 +21,8 @@ export interface LinkedInConnectStore {
   /** By id only: the public callback does not know the organization until the secret has matched. */
   find(id: string): Promise<ConnectLink | null>;
   /** Moves a pending link to completed. False when it was not pending (a repeat callback). */
-  complete(id: string, input: { providerAccountId: string; now: Date }): Promise<boolean>;
+  /** With `claimOwner`, a new account with no owner yet becomes the link creator's. */
+  complete(id: string, input: { providerAccountId: string; now: Date; claimOwner: boolean }): Promise<boolean>;
   fail(id: string, error: string): Promise<boolean>;
   /** Records a retryable problem (the sync failed) and leaves the link pending. */
   noteError(id: string, error: string): Promise<void>;

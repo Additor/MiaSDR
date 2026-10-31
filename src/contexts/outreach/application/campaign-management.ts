@@ -86,11 +86,14 @@ export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: strin
 /** Leads checked for an empty first subject when a campaign launches. */
 export const SUBJECT_SAMPLE = 20;
 
-/** `emptySubjectLeads` of the `sampled` leads render an empty subject and will be skipped at send time. */
-export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id: string, to: CampaignStatus): Promise<{ emptySubjectLeads: number; sampled: number }> {
+/**
+ * `emptySubjectLeads` of the `sampled` leads render an empty subject and will be skipped at send time. With `tx`, the
+ * change joins the caller's transaction: an agent's launch holds the campaign row there.
+ */
+export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id: string, to: CampaignStatus, tx?: DbHandle): Promise<{ emptySubjectLeads: number; sampled: number }> {
   let emptySubjectLeads = 0;
   let sampled = 0;
-  const campaign = await load(deps, actor, id);
+  const campaign = await load(deps, actor, id, tx);
   if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
   if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
   if (to === "active") {
@@ -122,7 +125,7 @@ export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id:
       throw new ValidationError("Connect a mailbox in Settings before starting a campaign.");
     }
   }
-  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps }))) {
+  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps, startedViaTokenId: actor.via?.tokenId ?? null }, tx))) {
     throw new ConflictError("The campaign changed while you were saving. Reload it and try again.");
   }
   return { emptySubjectLeads, sampled };

@@ -71,6 +71,13 @@
       "when": 1793453306943,
       "tag": "0009_send_attempt_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793455381268,
+      "tag": "0010_agent_campaigns",
+      "breakpoints": true
     }
   ]
 }

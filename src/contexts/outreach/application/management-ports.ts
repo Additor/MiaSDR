@@ -88,7 +88,7 @@ export interface CampaignStore {
   /** A patch with steps applies only while the campaign is in `STEPS_EDITABLE`. Returns false when it no longer is. */
   update(organizationId: string, id: string, patch: { name?: string; steps?: StepInput[] }, tx?: DbHandle): Promise<boolean>;
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
-  setStatus(organizationId: string, id: string, change: CampaignStatusChange<StepInput>): Promise<boolean>;
+  setStatus(organizationId: string, id: string, change: CampaignStatusChange<StepInput>, tx?: DbHandle): Promise<boolean>;
   delete(organizationId: string, id: string): Promise<void>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;

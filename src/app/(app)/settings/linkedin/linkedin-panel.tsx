@@ -12,7 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
@@ -43,6 +44,7 @@ interface Account {
   limitReachedUntil: string | null;
   invitesToday: number;
   workingHours: StoredHours | null;
+  ownerUserId: string | null;
 }
 
 interface ConnectLinkRow {
@@ -70,7 +72,7 @@ interface WebhookSetup {
   webhooks: Array<{ name: string; source: string; event: string; requestUrl: string }>;
 }
 
-export function LinkedInPanel({ state, canManage, zones }: { state: State | null; canManage: boolean; zones: string[] }) {
+export function LinkedInPanel({ state, canManage, zones, members }: { state: State | null; canManage: boolean; zones: string[]; members: Array<{ userId: string; name: string }> }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
@@ -312,7 +314,7 @@ export function LinkedInPanel({ state, canManage, zones }: { state: State | null
           ) : (
             <ul className={RULED_LIST}>
               {state.accounts.map((account) => (
-                <AccountRow key={account.id} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} reconnecting={linking === account.id} linkOpening={linking !== null} onReconnect={() => void startHostedAuth(account.id)} onChanged={() => router.refresh()} />
+                <AccountRow key={account.id} account={account} limits={{ invites: state.limits.invites, messages: state.limits.messages }} zones={zones} members={members} reconnecting={linking === account.id} linkOpening={linking !== null} onReconnect={() => void startHostedAuth(account.id)} onChanged={() => router.refresh()} />
               ))}
             </ul>
           )}
@@ -365,10 +367,14 @@ function WebhookBadge({ webhooks }: { webhooks: StoredWebhookStatus | null }) {
   );
 }
 
+/** The owner select's value for an account nobody owns. */
+const NO_OWNER = "none";
+
 function AccountRow({
   account,
   limits,
   zones,
+  members,
   reconnecting,
   linkOpening,
   onReconnect,
@@ -377,6 +383,7 @@ function AccountRow({
   account: Account;
   limits: State["limits"];
   zones: string[];
+  members: Array<{ userId: string; name: string }>;
   reconnecting: boolean;
   /** True while any connection link opens; one opens at a time. */
   linkOpening: boolean;
@@ -384,12 +391,14 @@ function AccountRow({
   onChanged: () => void;
 }) {
   const orgTimeZone = useOrgTimeZone();
-  const saved = { invites: String(account.dailyInviteLimit), messages: String(account.dailyMessageLimit), premium: account.isPremium, hours: hoursDraft(account.workingHours, orgTimeZone) };
+  const saved = { invites: String(account.dailyInviteLimit), messages: String(account.dailyMessageLimit), premium: account.isPremium, hours: hoursDraft(account.workingHours, orgTimeZone), owner: account.ownerUserId ?? NO_OWNER };
   const [values, setValues] = useState(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const saving = isBusy("save");
-  const dirty = Number(values.invites) !== account.dailyInviteLimit || Number(values.messages) !== account.dailyMessageLimit || values.premium !== account.isPremium || !sameHours(values.hours, saved.hours);
+  const dirty =
+    Number(values.invites) !== account.dailyInviteLimit || Number(values.messages) !== account.dailyMessageLimit || values.premium !== account.isPremium || !sameHours(values.hours, saved.hours) || values.owner !== saved.owner;
+  const ownerItems = [{ value: NO_OWNER, label: "No owner" }, ...members.map((m) => ({ value: m.userId, label: m.name }))];
   useLeaveGuard(dirty);
 
   const inviteNumber = Number(values.invites);
@@ -403,7 +412,13 @@ function AccountRow({
     if (values.hours.days.length === 0) return setError("Pick at least one sending day.");
     void run("save", async () => {
       setError(null);
-      const body = { dailyInviteLimit: inviteNumber, dailyMessageLimit: messageNumber, isPremium: values.premium, workingHours: toStoredHours(values.hours) };
+      const body = {
+        dailyInviteLimit: inviteNumber,
+        dailyMessageLimit: messageNumber,
+        isPremium: values.premium,
+        workingHours: toStoredHours(values.hours),
+        ...(values.owner !== saved.owner ? { ownerUserId: values.owner === NO_OWNER ? null : values.owner } : {}),
+      };
       const result = await runApiAction(callApi<{ warnings: string[] }>(`/api/linkedin/accounts/${account.id}`, "PATCH", body), { refresh: onChanged });
       if (!result.ok) return setError(result.error);
       toast.success(`${name} saved.`);
@@ -449,6 +464,22 @@ function AccountRow({
             <Field orientation="horizontal" className="min-h-8 w-auto">
               <Checkbox id={`premium-${account.id}`} checked={values.premium} onCheckedChange={(v) => setValues({ ...values, premium: v === true })} />
               <FieldLabel htmlFor={`premium-${account.id}`}>Paid LinkedIn plan</FieldLabel>
+            </Field>
+            <Field className="w-auto">
+              <FieldLabel htmlFor={`owner-${account.id}`}>Owner</FieldLabel>
+              <Select items={ownerItems} value={values.owner} onValueChange={(v) => v && setValues({ ...values, owner: v })}>
+                <SelectTrigger id={`owner-${account.id}`} className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ownerItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>Agents start a Personal campaign only from accounts their person owns.</FieldDescription>
             </Field>
           </div>
           {(inviteWarning || messageWarning) && (

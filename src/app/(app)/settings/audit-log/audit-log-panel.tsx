@@ -63,6 +63,7 @@ const ACTION_LABEL: Record<string, string> = {
   "linkedin.webhooks_replayed": "Replayed LinkedIn deliveries",
   "linkedin.daily_counters_reset": "Reset the LinkedIn daily counters",
   "linkedin.limits_changed": "Changed LinkedIn account limits",
+  "linkedin.owner_changed": "Changed a LinkedIn account's owner",
   "linkedin.account_connected": "Connected a LinkedIn account",
   "ai_jobs.requeued": "Requeued AI jobs",
   "ai_jobs.auto_requeued": "Requeued AI jobs automatically",

@@ -141,7 +141,7 @@ export async function receiveConnectNotify(deps: LinkedInManagementDeps, input: 
     await deps.connectLinks.noteError(link.id, explain(error));
     return { status: 502 };
   }
-  const done = await deps.connectLinks.complete(link.id, { providerAccountId: body.accountId, now });
+  const done = await deps.connectLinks.complete(link.id, { providerAccountId: body.accountId, now, claimOwner: body.status === "CREATION_SUCCESS" });
   if (done) {
     await deps.audit.record({
       organizationId: link.organizationId,

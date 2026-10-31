@@ -217,6 +217,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
           workingHours: hours,
           invitesToday: n,
           messagesToday,
+          ownerUserId: row.ownerUserId,
         };
       }),
     );
@@ -228,6 +229,7 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
       ...(patch.dailyMessageLimit !== undefined ? { dailyMessageLimit: patch.dailyMessageLimit } : {}),
       ...(patch.isPremium !== undefined ? { isPremium: patch.isPremium } : {}),
       ...(patch.workingHours !== undefined ? { workingHours: patch.workingHours } : {}),
+      ...(patch.ownerUserId !== undefined ? { ownerUserId: patch.ownerUserId } : {}),
     };
     const returning = { dailyInviteLimit: linkedinAccounts.dailyInviteLimit, dailyMessageLimit: linkedinAccounts.dailyMessageLimit, isPremium: linkedinAccounts.isPremium };
     const where = and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.id, id));
@@ -240,3 +242,8 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
     return row ?? null;
   },
 };
+
+/** Clears the owner of every account the member owned in the organization. */
+export async function clearLinkedInOwner(organizationId: string, userId: string): Promise<void> {
+  await db.update(linkedinAccounts).set({ ownerUserId: null }).where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.ownerUserId, userId)));
+}

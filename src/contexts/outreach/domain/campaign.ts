@@ -84,6 +84,8 @@ export interface CampaignStatusChange<Step> {
   from: CampaignStatus;
   to: CampaignStatus;
   checkedSteps: readonly Step[];
+  /** On a move to `active`: the MCP token of the agent that starts it, or null for a person. Stored as `started_via_token_id`. */
+  startedViaTokenId?: string | null;
 }
 
 /** Starter templates mark what the author must write as [[like this]]. */

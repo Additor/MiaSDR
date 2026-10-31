@@ -109,7 +109,7 @@ export interface LinkedInCampaignStore {
   /** A patch with steps applies only while the campaign is in `STEPS_EDITABLE`. Returns false when it no longer is. */
   update(organizationId: string, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[] }, tx?: DbHandle): Promise<boolean>;
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
-  setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>): Promise<boolean>;
+  setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>, tx?: DbHandle): Promise<boolean>;
   delete(organizationId: string, id: string): Promise<void>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
@@ -188,8 +188,9 @@ export async function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: 
   });
 }
 
-export async function changeLinkedInCampaignStatus(deps: LinkedInCampaignDeps, actor: Actor, id: string, to: CampaignStatus): Promise<void> {
-  const campaign = await load(deps, actor, id);
+/** With `tx`, the change joins the caller's transaction: an agent's launch holds the campaign row there. */
+export async function changeLinkedInCampaignStatus(deps: LinkedInCampaignDeps, actor: Actor, id: string, to: CampaignStatus, tx?: DbHandle): Promise<void> {
+  const campaign = await load(deps, actor, id, tx);
   if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
   if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
   if (to === "active") {
@@ -202,7 +203,7 @@ export async function changeLinkedInCampaignStatus(deps: LinkedInCampaignDeps, a
       throw new ValidationError("Connect a LinkedIn account in Settings before starting a campaign.");
     }
   }
-  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps }))) {
+  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps, startedViaTokenId: actor.via?.tokenId ?? null }, tx))) {
     throw new ConflictError("The campaign changed while you were saving. Reload it and try again.");
   }
 }

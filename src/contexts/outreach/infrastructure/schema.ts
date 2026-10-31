@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "@/contexts/identity/infrastructure/schema";
+import { mcpTokens } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { ENROLLMENT_STATUSES, type EnrollmentStatus } from "../domain/enrollment-status";
@@ -93,6 +94,12 @@ export const linkedinAccounts = pgTable(
     searchLeaseUntil: tstz("search_lease_until"),
     workingHours: jsonb("working_hours").$type<WorkingHours>(),
     nextAllowedRunAt: tstz("next_allowed_run_at"),
+    /**
+     * The member whose LinkedIn this is. Set when they connect it through a link; null for an account that arrived by
+     * sync or before owners existed, until an admin picks one. An agent starts a personal campaign only from accounts
+     * its token's person owns.
+     */
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -163,11 +170,15 @@ export const campaigns = pgTable(
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     /** Set when a completed campaign is archived. Null means visible in the default list. */
     archivedAt: tstz("archived_at"),
+    /** The MCP token of the agent that last started or resumed the campaign; null when a person did. */
+    startedViaTokenId: uuid("started_via_token_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     unique("campaigns_id_org_uq").on(t.id, t.organizationId),
+    // The migration writes `ON DELETE SET NULL (started_via_token_id)`.
+    foreignKey({ name: "campaigns_started_via_token_fk", columns: [t.startedViaTokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("set null"),
     check("campaigns_channel_ck", sql`${t.channel} in ('email', 'linkedin')`),
     check("campaigns_status_ck", sql`${t.status} in ('draft', 'active', 'paused', 'completed')`),
     check("campaigns_type_ck", sql`${t.type} in ('regular', 'personal')`),
@@ -216,11 +227,16 @@ export const campaignEnrollments = pgTable(
     /** Per-enrollment merge fields on top of the person's own data. */
     mergeFields: jsonb("merge_fields").$type<Record<string, string>>().default({}).notNull(),
     stopReason: text("stop_reason"),
+    /** The MCP token of the agent that enrolled the person; null when a person did. The agent enroll limit counts these. */
+    enrolledViaTokenId: uuid("enrolled_via_token_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     foreignKey({ columns: [t.campaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }).onDelete("cascade"),
+    // The migration writes `ON DELETE SET NULL (enrolled_via_token_id)`.
+    foreignKey({ name: "campaign_enrollments_enrolled_via_token_fk", columns: [t.enrolledViaTokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("set null"),
+    index("campaign_enrollments_agent_idx").on(t.organizationId, t.createdAt).where(sql`${t.enrolledViaTokenId} is not null`),
     foreignKey({ columns: [t.personId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("restrict"),
     foreignKey({ columns: [t.mailboxId, t.organizationId], foreignColumns: [mailboxes.id, mailboxes.organizationId] }),
     foreignKey({ columns: [t.linkedinAccountId, t.organizationId], foreignColumns: [linkedinAccounts.id, linkedinAccounts.organizationId] }),

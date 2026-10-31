@@ -42,6 +42,8 @@ export interface InvitationGateway {
 export interface MemberDeps {
   members: MemberStore;
   invitations: InvitationGateway;
+  /** What other contexts let go of once a member is removed, such as the LinkedIn accounts they owned. */
+  released?: (organizationId: string, userId: string) => Promise<void>;
 }
 
 function requireAdmin(actor: Actor) {
@@ -105,5 +107,6 @@ export async function removeMember(deps: MemberDeps, actor: Actor, memberId: str
     enforce(canManageMember(actor.role, target.role));
     enforce(keepsAnOwner(all, memberId, null));
     await tx.remove(memberId);
-  });
+    return target.userId;
+  }).then((userId) => deps.released?.(actor.organizationId, userId));
 }

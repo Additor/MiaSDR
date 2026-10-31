@@ -6,6 +6,7 @@ import { recordMcpToolCall } from "@/contexts/tenancy/application/mcp-tool-calls
 import { mcpRateLimitDeps, mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import pkg from "../../../../../package.json";
 import { draftCampaignTool } from "./campaign-drafts";
+import { launchCampaignTool, previewCampaignLaunchTool } from "./campaign-launch";
 import { getCampaignTool, listCampaignsTool } from "./campaigns";
 import { getConversationTool } from "./conversation";
 import { updateDealTool } from "./deals";
@@ -49,6 +50,8 @@ export const TOOLS: readonly ToolDefinition[] = [
   updateDealTool,
   importLeadsTool,
   sendReplyTool,
+  previewCampaignLaunchTool,
+  launchCampaignTool,
 ];
 
 /**

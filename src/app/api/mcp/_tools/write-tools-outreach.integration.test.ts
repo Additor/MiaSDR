@@ -57,7 +57,8 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
 
     await sql`update campaigns set status = 'active' where id = ${campaignId}`;
     const running = await owner.tool("draft_campaign", { action: "add_leads", channel: "email", campaignId, query: "acme" });
-    expect(running.structured.error).toMatchObject({ code: "campaign_status" });
+    // A write token cannot send, so a running campaign takes no leads from it.
+    expect(running.structured.error).toMatchObject({ code: "agent_campaigns_off" });
     const senders = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, senderIds: [] });
     expect(senders.structured.error).toMatchObject({ code: "agent_sender_change_active" });
 

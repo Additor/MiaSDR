@@ -14,6 +14,8 @@ vi.mock("next/server", async (original) => (await import("@/test-support/route-c
 const DEFINITION_TOKEN_BUDGET = 6_500;
 /** A write token loads the eight write tools too. Measured at 7,916 when they shipped. */
 const WRITE_DEFINITION_TOKEN_BUDGET = 8_500;
+/** A send token with agent campaigns on loads three more: send_reply, preview_campaign_launch and launch_campaign. */
+const SEND_DEFINITION_TOKEN_BUDGET = 10_000;
 const CHARS_PER_TOKEN = 3;
 
 /**
@@ -40,6 +42,7 @@ describeDb("MCP contract", () => {
   let writer: McpCaller;
   let tools: ListedTool[];
   let writeTools: ListedTool[];
+  let sendTools: ListedTool[];
 
   beforeAll(async () => {
     ({ POST } = await import("../route"));
@@ -50,6 +53,8 @@ describeDb("MCP contract", () => {
     const list = async (token: string) => ((await callMcp(POST, { era: "modern", token, method: "tools/list" })).body as { result: { tools: ListedTool[] } }).result.tools;
     tools = await list(caller.token);
     writeTools = await list(writer.token);
+    await sql`update channel_settings set values = values || ${sql.json({ agentSendMode: "replies_and_campaigns", agentSendEpoch: 0 })} where organization_id = ${orgs[0].organizationId} and channel = 'mcp'`;
+    sendTools = await list((await mcpCaller(sql, POST, orgs[0], ["mcp:read", "mcp:write", "mcp:send"])).token);
   });
 
   afterAll(async () => {
@@ -107,5 +112,18 @@ describeDb("MCP contract", () => {
     const tokens = Math.ceil(JSON.stringify(writeTools).length / CHARS_PER_TOKEN);
     expect(tokens).toBeLessThanOrEqual(WRITE_DEFINITION_TOKEN_BUDGET);
     expect(writes).toMatchSnapshot();
+  });
+
+  it("gives a send token the three send tools within budget, the launch preview read-only", async () => {
+    const { serverInstructions } = await import("./instructions");
+    const writes = new Set(writeTools.map((t) => t.name));
+    const sends = sendTools.filter((t) => !writes.has(t.name));
+    expect(sends.map((t) => t.name)).toEqual(["launch_campaign", "preview_campaign_launch", "send_reply"]);
+    expect(sends.find((t) => t.name === "preview_campaign_launch")?.annotations).toMatchObject({ readOnlyHint: true });
+    expect(sends.find((t) => t.name === "send_reply")?.annotations).toMatchObject({ readOnlyHint: false, idempotentHint: true, openWorldHint: true });
+    const texts = [serverInstructions("send"), ...sends.flatMap((t) => [t.name, (t as ListedTool & { title?: string }).title ?? "", t.description])];
+    expect(texts.filter((text) => CODE_NAMES.test(prose(text)))).toEqual([]);
+    expect(Math.ceil(JSON.stringify(sendTools).length / CHARS_PER_TOKEN)).toBeLessThanOrEqual(SEND_DEFINITION_TOKEN_BUDGET);
+    expect(sends).toMatchSnapshot();
   });
 });

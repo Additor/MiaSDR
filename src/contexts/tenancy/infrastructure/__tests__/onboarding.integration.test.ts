@@ -32,8 +32,6 @@ describeDb("onboarding store", () => {
       totalMailboxes: 0,
       connectedLinkedInAccounts: 0,
       leads: 0,
-      campaigns: 0,
-      activeCampaigns: 0,
     });
   });
 
@@ -60,9 +58,24 @@ describeDb("onboarding store", () => {
       totalMailboxes: 2,
       connectedLinkedInAccounts: 0,
       leads: 2,
-      campaigns: 2,
-      activeCampaigns: 1,
     });
+    const { onboardingCampaignFacts } = await import("@/contexts/outreach/infrastructure/composition");
+    expect(await onboardingCampaignFacts(a)).toEqual({ campaigns: 2, activeCampaigns: 1 });
+  });
+
+  it("counts a running campaign only when a person started it", async () => {
+    const a = await org("agent-started");
+    const [{ id: user }] = await sql`insert into users (name, email) values ('S', ${`s-${tag}@onb.test`}) returning id`;
+    try {
+      const [{ id: token }] = await sql`insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, token_hint, scopes) values (${a}, ${user}, 'pat', 'T', ${`hs-${tag}`}, 'abcd', ${["mcp:read"]}) returning id`;
+      await sql`insert into campaigns (organization_id, channel, name, status, started_via_token_id) values (${a}, 'email', 'Agent', 'active', ${token}), (${a}, 'email', 'Person', 'active', null)`;
+      const { onboardingCampaignFacts } = await import("@/contexts/outreach/infrastructure/composition");
+      expect(await onboardingCampaignFacts(a)).toEqual({ campaigns: 2, activeCampaigns: 1 });
+    } finally {
+      await dropOrgs(sql, [{ organizationId: a }]);
+      orgs.splice(orgs.indexOf(a), 1);
+      await sql`delete from users where id = ${user}`;
+    }
   });
 
   it("counts waiting drafts and the replies a person sent, not an agent's", async () => {

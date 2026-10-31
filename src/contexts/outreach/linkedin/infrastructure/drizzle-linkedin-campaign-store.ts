@@ -173,8 +173,9 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     });
   },
 
-  async setStatus(organizationId, id, change) {
-    const rows = await db.update(campaigns).set({ status: change.to }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
+  async setStatus(organizationId, id, change, handle = db) {
+    const started = change.to === "active" ? { startedViaTokenId: change.startedViaTokenId ?? null } : {};
+    const rows = await handle.update(campaigns).set({ status: change.to, ...started }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
     return rows.length > 0;
   },
 

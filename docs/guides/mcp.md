@@ -61,7 +61,7 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 | `update_conversation` | Adds a note, takes or assigns a conversation, closes or reopens it |
 | `manage_task` | Lists, creates, edits and completes tasks |
 | `pause_sending` | Pauses a campaign, a conversation's follow-ups or, for an owner or admin, all sending. It never resumes |
-| `draft_campaign` | Creates a draft campaign, edits its steps and senders, and adds leads to a draft or paused campaign |
+| `draft_campaign` | Creates a draft campaign, edits its steps and senders, and adds leads to a draft or paused campaign, or to a running one with a token that sends |
 | `update_deal` | Moves a deal to another stage or edits its fields |
 | `import_leads` | Previews a CSV import of up to 500 rows, then commits it |
 
@@ -88,13 +88,15 @@ With Replies on, a person can create a token that sends. Its agent gets one more
 
 Every rule of a person's send applies too: suppression, do not contact, closed reply handling, a newer message, and the LinkedIn account's limits. The answer's `status` is `sent`, `delivery_uncertain` (it may have gone out; do not send again, a person checks), `failed` or `blocked` (nothing went out; `retryable` says whether a new key may try again). The same key never sends twice.
 
+With Replies and campaigns, a token that sends also gets `preview_campaign_launch` and `launch_campaign`. The agent previews a start, a resume or an enroll into a running campaign, shows the preview to the person, and passes its `launchToken` to `launch_campaign` (or to `draft_campaign` `add_leads` for a running campaign). A launch refuses when the campaign changed since the preview (`launch_token_stale`), when the organization allows replies only (`agent_campaigns_off`), while sending is paused, and for a Personal campaign unless it names its senders and the token's person owns each one (`agent_sender_not_owned`). Agents enroll at most 200 leads a day across both channels by default, drafts included (`agent_enroll_cap`); an owner or admin changes the limit in the same card. An admin sets who owns each LinkedIn account under Settings, LinkedIn; a member who connects an account through MiaSDR owns it.
+
 Turning agent sending off stops every token that sends at once, and turning it on later needs new tokens. A message an agent sent shows "Sent by an agent ({token name})" in the thread, and the history reads "{person} via {token}".
 
 ## Limits and revoking
 
 - A token lasts 90 days. A person holds at most 10 live tokens.
 - A token makes at most 60 requests a minute. Request 61 answers 429 with `Retry-After`.
-- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour, imports at most 10 times an hour and sends at most 10 replies a minute. A call past a limit fails with `rate_limited` and the seconds to wait.
+- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour, imports at most 10 times an hour, sends at most 10 replies a minute and starts at most 10 campaigns an hour. A call past a limit fails with `rate_limited` and the seconds to wait.
 - With `TRUST_PROXY_HOPS` set, a client IP that sends 20 unknown tokens in a minute waits until the minute ends.
 - A person revokes their own tokens on the settings page; an owner or admin revokes anyone's, or all of them with Revoke all. A revoked token fails on its next request.
 - Removing a member revokes their tokens, and inviting them again does not bring the tokens back. A role change applies to the next request.

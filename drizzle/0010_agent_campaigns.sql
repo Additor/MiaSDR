@@ -1,0 +1,7 @@
+ALTER TABLE "campaign_enrollments" ADD COLUMN "enrolled_via_token_id" uuid;--> statement-breakpoint
+ALTER TABLE "campaigns" ADD COLUMN "started_via_token_id" uuid;--> statement-breakpoint
+ALTER TABLE "linkedin_accounts" ADD COLUMN "owner_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "campaign_enrollments" ADD CONSTRAINT "campaign_enrollments_enrolled_via_token_fk" FOREIGN KEY ("enrolled_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("enrolled_via_token_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_started_via_token_fk" FOREIGN KEY ("started_via_token_id","organization_id") REFERENCES "public"."mcp_tokens"("id","organization_id") ON DELETE SET NULL ("started_via_token_id") ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "linkedin_accounts" ADD CONSTRAINT "linkedin_accounts_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "campaign_enrollments_agent_idx" ON "campaign_enrollments" USING btree ("organization_id","created_at") WHERE "campaign_enrollments"."enrolled_via_token_id" is not null;

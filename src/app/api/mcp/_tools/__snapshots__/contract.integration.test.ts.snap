@@ -1,5 +1,206 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`MCP contract > gives a send token the three send tools within budget, the launch preview read-only 1`] = `
+[
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
+    "description": "Starts a draft campaign (\`action: start\`) or resumes a paused one (\`resume\`), as the token's person, with the \`launchToken\` from preview_campaign_launch for the same action. Campaign steps then send on their own to every waiting lead. A refusal names its \`code\`; \`launch_token_stale\` means the campaign changed, so preview again. Launch only when the person asked for it.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "enum": [
+            "start",
+            "resume",
+          ],
+          "type": "string",
+        },
+        "campaignId": {
+          "type": "string",
+        },
+        "channel": {
+          "enum": [
+            "email",
+            "linkedin",
+          ],
+          "type": "string",
+        },
+        "launchToken": {
+          "type": "string",
+        },
+      },
+      "required": [
+        "channel",
+        "campaignId",
+        "action",
+        "launchToken",
+      ],
+      "type": "object",
+    },
+    "name": "launch_campaign",
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "appUrl": {},
+        "campaignId": {},
+        "channel": {},
+        "emptySubjectLeads": {},
+        "status": {},
+      },
+      "required": [
+        "channel",
+        "campaignId",
+        "status",
+        "emptySubjectLeads",
+        "appUrl",
+      ],
+      "type": "object",
+    },
+    "title": "Launch campaign",
+  },
+  {
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+    },
+    "description": "Checks what starting (\`purpose: start\`), resuming (\`resume\`) or adding leads to a running campaign (\`enroll\`) would do, and answers a \`launchToken\` for launch_campaign or draft_campaign add_leads. Pass \`channel\` and \`campaignId\`. The answer lists \`problems\` that would stop it, the senders, waiting leads, today's remaining agent enrolls and step 1 as it would go out. Show it to the person before you launch. Changes nothing.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "campaignId": {
+          "type": "string",
+        },
+        "channel": {
+          "enum": [
+            "email",
+            "linkedin",
+          ],
+          "type": "string",
+        },
+        "purpose": {
+          "enum": [
+            "start",
+            "resume",
+            "enroll",
+          ],
+          "type": "string",
+        },
+      },
+      "required": [
+        "channel",
+        "campaignId",
+        "purpose",
+      ],
+      "type": "object",
+    },
+    "name": "preview_campaign_launch",
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "agentEnrollsLeftToday": {},
+        "allAccounts": {},
+        "appUrl": {},
+        "campaignId": {},
+        "channel": {},
+        "emptySubjectLeads": {},
+        "estimatedDays": {},
+        "firstStep": {},
+        "launchToken": {},
+        "pendingLeads": {},
+        "problems": {},
+        "purpose": {},
+        "senders": {},
+        "status": {},
+      },
+      "required": [
+        "channel",
+        "campaignId",
+        "purpose",
+        "status",
+        "problems",
+        "senders",
+        "allAccounts",
+        "pendingLeads",
+        "agentEnrollsLeftToday",
+        "launchToken",
+        "firstStep",
+        "emptySubjectLeads",
+        "estimatedDays",
+        "appUrl",
+      ],
+      "type": "object",
+    },
+    "title": "Preview campaign launch",
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
+    "description": "Sends a conversation's reviewed draft as it is saved, by email or LinkedIn, as the token's person. Pass \`conversationId\`, \`draftId\`, \`revision\` from the last read, and an \`idempotencyKey\` (8 to 200 characters) you keep for this one send; the same key never sends twice. Agents reply only where a campaign reached the person or a person already replied, without CC, at most once a day per reply handling and within the organization's daily limits; a refusal names its \`code\`. Send only when the person asked for it or their standing instructions cover it.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+        },
+        "draftId": {
+          "type": "string",
+        },
+        "idempotencyKey": {
+          "type": "string",
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer",
+        },
+      },
+      "required": [
+        "conversationId",
+        "draftId",
+        "revision",
+        "idempotencyKey",
+      ],
+      "type": "object",
+    },
+    "name": "send_reply",
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "appUrl": {},
+        "attemptId": {},
+        "conversationId": {},
+        "error": {},
+        "replayed": {},
+        "retryable": {},
+        "status": {},
+      },
+      "required": [
+        "conversationId",
+        "status",
+        "attemptId",
+        "replayed",
+        "retryable",
+        "error",
+        "appUrl",
+      ],
+      "type": "object",
+    },
+    "title": "Send reply",
+  },
+]
+`;
+
 exports[`MCP contract > gives a write token the eight write tools, none read-only, with instructions that say no tool sends 1`] = `
 "MiaSDR is a sales outreach workspace: email and LinkedIn campaigns, an inbox of lead replies with AI reply-type picks and drafts, leads and contacts, and a deal pipeline.
 This connection acts as one person of one organization, with that person's permissions. Tools that change data act as that person, and MiaSDR lists each call under Agent activity. No tool sends an email or LinkedIn message: write_reply_draft saves a draft that a person reviews and sends in MiaSDR. Unless the person asked for a change, describe it and let them confirm before you make it.
@@ -17,7 +218,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Prepares a campaign that a person starts in MiaSDR; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages). \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500) into a draft or paused campaign; call it with \`dryRun: true\` first to see the counts.",
+    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages). \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -41,6 +242,9 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
         },
         "dryRun": {
           "type": "boolean",
+        },
+        "launchToken": {
+          "type": "string",
         },
         "name": {
           "type": "string",

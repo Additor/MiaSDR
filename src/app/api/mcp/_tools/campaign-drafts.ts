@@ -6,7 +6,10 @@ import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
 import { createLinkedInCampaign, enrollLinkedInLeads, enrollPickedLinkedInLeads, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import type { LinkedInStep } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
+import { agentEnroll, checkAgentSenderChange } from "@/contexts/outreach/application/agent-campaigns";
+import { agentCampaignDeps } from "@/contexts/outreach/infrastructure/agent-campaign-composition";
+import type { DbHandle } from "@/platform/db/client";
+import { ValidationError, type Actor } from "@/shared/errors";
 import { campaignStatus, CHANNELS } from "./campaigns";
 import { CHANGES, defineTool } from "./define";
 import { appLinks } from "./output";
@@ -14,8 +17,11 @@ import { appLinks } from "./output";
 type Channel = (typeof CHANNELS)[number];
 const ACTIONS = ["create", "update", "add_leads"] as const;
 
-/** An agent adds leads only to a campaign that is not sending. Adding to a running one arrives with agent sending. */
-const AGENT_ENROLL: EnrollOptions = { allowedStatuses: ["draft", "paused"] };
+/**
+ * The statuses an agent enrolls into. A running campaign also needs the campaign policy and an `enroll` launch token,
+ * which `agentEnroll` checks under the campaign lock before this runs.
+ */
+const AGENT_ENROLL: EnrollOptions = { allowedStatuses: ["draft", "paused", "active"] };
 
 /** People one add_leads call may name. */
 const MAX_AGENT_PICKED = 500;
@@ -27,22 +33,22 @@ const counted = async (result: Promise<object>): Promise<Counts> => (await resul
 interface ChannelWrites {
   create(actor: Actor, input: { name: string; personal: boolean; senderIds?: string[] }): Promise<{ id: string }>;
   update(actor: Actor, id: string, patch: { name?: string; steps?: unknown[]; senderIds?: string[] }): Promise<void>;
-  byQuery(actor: Actor, id: string, query: string, dryRun: boolean): Promise<Counts>;
-  picked(actor: Actor, id: string, personIds: string[], dryRun: boolean): Promise<Counts>;
+  byQuery(actor: Actor, id: string, query: string, dryRun: boolean, tx: DbHandle): Promise<Counts>;
+  picked(actor: Actor, id: string, personIds: string[], dryRun: boolean, tx: DbHandle): Promise<Counts>;
 }
 
 const WRITES: Record<Channel, ChannelWrites> = {
   email: {
     create: (actor, input) => createCampaign(campaignDeps(), actor, { name: input.name, senderIds: input.senderIds }),
     update: (actor, id, patch) => updateCampaign(campaignDeps(), actor, id, { ...patch, steps: patch.steps as StepInput[] | undefined }),
-    byQuery: (actor, id, query, dryRun) => counted(enrollLeads(campaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL)),
-    picked: (actor, id, personIds, dryRun) => counted(enrollPickedLeads(campaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun })),
+    byQuery: (actor, id, query, dryRun, tx) => counted(enrollLeads(campaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL, tx)),
+    picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLeads(campaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
   },
   linkedin: {
     create: (actor, input) => createLinkedInCampaign(linkedinCampaignDeps(), actor, { name: input.name, type: input.personal ? "personal" : undefined, senderIds: input.senderIds }),
     update: (actor, id, patch) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps: patch.steps as LinkedInStep[] | undefined }),
-    byQuery: (actor, id, query, dryRun) => counted(enrollLinkedInLeads(linkedinCampaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL)),
-    picked: (actor, id, personIds, dryRun) => counted(enrollPickedLinkedInLeads(linkedinCampaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun })),
+    byQuery: (actor, id, query, dryRun, tx) => counted(enrollLinkedInLeads(linkedinCampaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL, tx)),
+    picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLinkedInLeads(linkedinCampaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
   },
 };
 
@@ -62,9 +68,10 @@ export const draftCampaignTool = defineTool({
   name: "draft_campaign",
   title: "Draft campaign",
   description: [
-    "Prepares a campaign that a person starts in MiaSDR; nothing here sends. `create` makes a draft (`channel`, `name`, optional `senderIds`; LinkedIn `personal`).",
+    "Prepares a campaign; nothing here sends. `create` makes a draft (`channel`, `name`, optional `senderIds`; LinkedIn `personal`).",
     "`update` changes `name`, `steps` or `senderIds` of a draft or paused campaign; `steps` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages).",
-    "`add_leads` enrolls leads by Leads search `query` or `personIds` (up to 500) into a draft or paused campaign; call it with `dryRun: true` first to see the counts.",
+    "`add_leads` enrolls leads by Leads search `query` or `personIds` (up to 500); call it with `dryRun: true` first to see the counts. Agents enroll a limited number of leads a day (`agent_enroll_cap`).",
+    "Adding to a running campaign needs a token that sends, agent campaigns allowed, and `launchToken` from preview_campaign_launch with `purpose: enroll`.",
   ].join(" "),
   scope: "mcp:write",
   annotations: CHANGES,
@@ -79,6 +86,7 @@ export const draftCampaignTool = defineTool({
     query: z.string().optional(),
     personIds: z.array(z.string()).max(MAX_AGENT_PICKED).optional(),
     dryRun: z.boolean().optional(),
+    launchToken: z.string().optional(),
   }),
   output: z.object({
     action: z.enum(ACTIONS),
@@ -96,21 +104,21 @@ export const draftCampaignTool = defineTool({
     if (input.action === "create") {
       if (!input.name) throw new ValidationError("create needs name.");
       const { id } = await writes.create(actor, { name: input.name, personal: input.personal === true, senderIds: input.senderIds });
-      return answer(id, `Created draft campaign ${id}. Set its steps with update, then a person starts it in MiaSDR.`);
+      return answer(id, `Created draft campaign ${id}. Set its steps with update; a person starts it in MiaSDR, or launch_campaign where agents may start campaigns.`);
     }
     const campaignId = input.campaignId;
     if (!campaignId) throw new ValidationError(`${input.action} needs campaignId.`);
     if (input.action === "update") {
       if (input.name === undefined && input.steps === undefined && input.senderIds === undefined) throw new ValidationError("update needs name, steps or senderIds.");
-      if (input.senderIds !== undefined) {
-        if ((await campaignStatus(actor, input.channel, campaignId)) === "active") throw new ConflictError("Pause the campaign before an agent changes its senders.", { code: "agent_sender_change_active" });
-      }
+      if (input.senderIds !== undefined) checkAgentSenderChange(await campaignStatus(actor, input.channel, campaignId));
       await writes.update(actor, campaignId, { name: input.name, steps: input.steps, senderIds: input.senderIds });
       return answer(campaignId, "Saved the campaign.");
     }
     if ((input.query === undefined) === (input.personIds === undefined)) throw new ValidationError("add_leads needs query or personIds, not both.");
     const dryRun = input.dryRun === true;
-    const counts = input.personIds ? await writes.picked(actor, campaignId, input.personIds, dryRun) : await writes.byQuery(actor, campaignId, input.query ?? "", dryRun);
+    const counts = await agentEnroll(agentCampaignDeps(), actor, { channel: input.channel, campaignId, launchToken: input.launchToken, dryRun }, (tx) =>
+      input.personIds ? writes.picked(actor, campaignId, input.personIds, dryRun, tx) : writes.byQuery(actor, campaignId, input.query ?? "", dryRun, tx),
+    );
     const skipped = Object.fromEntries(SKIP_KEYS.flatMap((key) => (counts[key] ? [[key.replace(/^skipped/, "").replace(/^./, (c) => c.toLowerCase()), counts[key] as number]] : [])));
     const added = counts.added ?? 0;
     const wouldAdd = dryRun ? (counts.wouldAdd ?? added) : null;

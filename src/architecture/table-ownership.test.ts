@@ -25,7 +25,7 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-campaign-store.ts": ["conversations"],
   "src/contexts/outreach/linkedin/infrastructure/drizzle-personal-thread-store.ts": ["conversations", "messages", "records"],
   "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "records"],
-  "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["campaigns", "linkedinAccounts", "mailboxes", "people"],
+  "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["linkedinAccounts", "mailboxes", "people"],
   "src/platform/db/columns.ts": ["organizations"],
   "src/platform/db/conversation-visibility.ts": ["conversations", "records"],
 };

@@ -1,3 +1,4 @@
+import { memberRemovalDeps } from "@/composition/members";
 import { z } from "zod";
 import { changeMemberRole, removeMember } from "@/contexts/tenancy/application/member-management";
 import { memberDeps } from "@/contexts/tenancy/infrastructure/member-composition";
@@ -14,5 +15,5 @@ export const PATCH = async (request: Request, { params }: RouteContext<"/api/mem
 
 export const DELETE = async (_request: Request, { params }: RouteContext<"/api/members/[id]">) => {
   const { id } = await params;
-  return withActor((actor) => removeMember(memberDeps(), actor, id));
+  return withActor((actor) => removeMember(memberRemovalDeps(), actor, id));
 };
