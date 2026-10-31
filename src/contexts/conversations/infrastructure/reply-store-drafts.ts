@@ -216,6 +216,8 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
           email: people.email,
           channel: conversations.channel,
           status: conversations.status,
+          chat: conversations.providerThreadId,
+          accountRef: conversations.accountRef,
         })
         .from(conversations)
         .innerJoin(records, eq(records.id, conversations.recordId))
@@ -224,12 +226,13 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         // Serializes typed drafts with each other and with AI draft writes, which lock the record too.
         .for("no key update", { of: records });
       if (!head) throw new NotFoundError("Conversation not found");
+      const { channel } = input;
       // A typed draft is not a send, but one written where a send is refused could never go out (docs/decisions.md,
       // "Reply send rules").
-      checkRecordOpen(head, "email");
-      checkThreadWritable(head, "email");
+      checkRecordOpen(head, channel);
+      checkThreadWritable(head, channel);
 
-      if (await isSuppressed(tx, input.organizationId, head.email)) throw new ConflictError("This address is on the suppression list. A reply cannot be written.");
+      if (channel === "email" && (await isSuppressed(tx, input.organizationId, head.email))) throw new ConflictError("This address is on the suppression list. A reply cannot be written.");
       if (await isDoNotContact(tx, input.organizationId, head.personId)) throw new ConflictError("This person is marked do not contact. A reply cannot be written.");
 
       // The send rule's unit: the conversation. A reply in flight on another conversation of the record leaves this one free.
@@ -238,7 +241,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         .from(drafts)
         .where(and(eq(drafts.conversationId, input.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
-      checkNoneInFlight(inFlight, null, "email");
+      checkNoneInFlight(inFlight, null, channel);
 
       const [created] = await tx
         .insert(drafts)
@@ -248,7 +251,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
           conversationId: input.conversationId,
           replyForMessageId: head.latest,
           expectedContextVersion: head.version,
-          channel: "email",
+          channel,
           subject: input.subject,
           aiBodyText: null,
           editedBodyText: input.bodyText,
@@ -263,7 +266,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       await tx
         .update(drafts)
         .set({ status: "stale" })
-        .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, "email"), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
+        .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, channel), draftIn(UNSENT_DRAFT_STATUSES), sql`${drafts.id} <> ${created.id}`));
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: head.personId,

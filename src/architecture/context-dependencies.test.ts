@@ -190,6 +190,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "tenancy/infrastructure/audit",
   // The member directory: assignee and owner checks and pickers.
   "tenancy/infrastructure/drizzle-member-directory",
+  // The agent send policy, which conversations and outreach read inside their send and start transactions.
+  "tenancy/infrastructure/mcp-policy-reader",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
   // Reachability: the read model, and the one writer of do not contact and the suppression list.

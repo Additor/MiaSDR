@@ -7,18 +7,19 @@ import { aiIsOn, aiOffMessage } from "@/contexts/integrations/domain/ai-status";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { ReplyAiResolver } from "../ai/application/ai-ports";
 import { draftCitations, produceDraft } from "../ai/application/ai-jobs";
-import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendContext, type SentFinder } from "./reply-ports";
+import { ReplySendError, type AttemptRow, type PanelData, type ReplyMailer, type ReplyStore, type SendBlocker, type SendContext, type SentFinder } from "./reply-ports";
 import { IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES } from "../domain/draft-status";
-import { checkNoneInFlight, checkRecordOpen, replyRefusal } from "../domain/reply-send";
+import { checkNoneInFlight, checkRecordOpen, checkReplyText, replyRefusal, type ReplyChannel } from "../domain/reply-send";
 
 /**
  * Human actions on drafts. Permissions: any member of the organization may edit, regenerate, discard,
  * approve and send, override a classification and suppress a sender (decisions.md, "AI replies").
  * Cross-organization ids answer 404 because every store call carries the actor's organization.
  *
- * `approveAndSendDraft` is the only function in the product that sends a reply, and the only one that takes
- * `ReplySendDeps`. The other use cases, the background jobs and the MCP tools get `ReplyDeps`, whose mailer can look
- * in a mailbox but not send. No setting skips this step.
+ * `approveAndSendDraft` is the only function in the product that sends an email reply, and the only one that takes
+ * `ReplySendDeps`. A person calls it with Send; an agent calls it with `send_reply` where the organization allows agent
+ * sending, and the store then adds the agent rules (docs/decisions.md, "Agent sends"). The other use cases, the
+ * background jobs and the other MCP tools get `ReplyDeps`, whose mailer can look in a mailbox but not send.
  */
 
 export interface ReplyDeps {
@@ -198,17 +199,28 @@ export async function createManualDraft(
   deps: ReplyDeps,
   actor: Actor,
   conversationId: string,
-  input: { subject: string | null | undefined; bodyText: string; cc?: string[] },
+  input: { subject: string | null | undefined; bodyText: string; cc?: string[]; channel?: ReplyChannel },
 ): Promise<{ draftId: string; revision: number }> {
   assertId(conversationId, "Conversation");
-  const checked = checkManualReply(input);
-  if (!checked.ok) throw new ValidationError(checked.error);
+  const channel = input.channel ?? "email";
+  let subject: string | null = null;
+  let bodyText: string;
+  if (channel === "linkedin") {
+    if (input.cc && input.cc.length > 0) throw new ValidationError("A LinkedIn reply has no CC.");
+    bodyText = checkReplyText(input.bodyText, "linkedin");
+  } else {
+    const checked = checkManualReply(input);
+    if (!checked.ok) throw new ValidationError(checked.error);
+    subject = checked.subject;
+    bodyText = checked.bodyText;
+  }
   const cc = input.cc && input.cc.length > 0 ? await checkCc(deps, actor, { conversationId }, input.cc) : [];
   const created = await deps.store.createManualDraft({
     organizationId: actor.organizationId,
     conversationId,
-    subject: checked.subject,
-    bodyText: checked.bodyText,
+    channel,
+    subject,
+    bodyText,
     cc,
     actorUserId: actor.userId,
     via: actor.via,
@@ -243,7 +255,7 @@ export type SendResult =
   | { status: "sent"; attemptId: string; replayed: boolean }
   | { status: "delivery_uncertain"; attemptId: string; replayed: boolean; error: string | null }
   | { status: "failed"; attemptId: string; replayed: boolean; error: string }
-  | { status: "blocked"; attemptId: string; replayed: false; error: string }
+  | { status: "blocked"; attemptId: string; replayed: false; error: string; reason: SendBlocker }
   | { status: "in_progress"; attemptId: string; replayed: true };
 
 const BLOCK_TEXT = {
@@ -268,7 +280,7 @@ function replay(attempt: AttemptRow): SendResult {
 }
 
 /**
- * The approval gate. A person approves one revision of one draft. The ledger row exists before the
+ * The send gate. A person, or an agent the organization allows, sends one revision of one draft. The ledger row exists before the
  * provider is called, so a crash can never lose track of an attempt, and an unknown outcome is never
  * sent again on a guess.
  */
@@ -289,6 +301,8 @@ export async function approveAndSendDraft(
     idempotencyKey: key,
     actorUserId: actor.userId,
     messageIdToken: deps.newToken(),
+    now: deps.now(),
+    via: actor.via,
   });
   if (begun.kind === "replay") return replay(begun.attempt);
   const send = begun.send;
@@ -297,7 +311,7 @@ export async function approveAndSendDraft(
   const blocker = await deps.store.checkBlockers(send);
   if (blocker) {
     await deps.store.markFailed(send, BLOCK_TEXT[blocker], blocker === "mailbox_unavailable" || blocker === "cc_blocked" ? "awaiting_review" : "failed");
-    return { status: "blocked", attemptId: send.attempt.id, replayed: false, error: BLOCK_TEXT[blocker] };
+    return { status: "blocked", attemptId: send.attempt.id, replayed: false, error: BLOCK_TEXT[blocker], reason: blocker };
   }
 
   try {

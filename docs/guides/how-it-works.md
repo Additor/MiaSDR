@@ -62,7 +62,7 @@ You change a conversation's type with Change type on the thread. The dialog says
 Each email campaign has a setting, Follow-ups after a reply, on its Settings tab.
 
 - **Off, hand to the Inbox** (default). The campaign writes nothing more for the lead. You answer from the Inbox. The AI still drafts a first reply for reply types set to Write one.
-- **AI drafts, you approve.** The campaign has one flow. Step 1, "Reply to their answer", is the draft the AI pick already queued. Each "Follow-up" step waits a number of days, then the AI writes a draft from the step's Goal. A person approves every message. A follow-up flow only creates drafts.
+- **AI drafts, you approve.** The campaign has one flow. Step 1, "Reply to their answer", is the draft the AI pick already queued. Each "Follow-up" step waits a number of days, then the AI writes a draft from the step's Goal. A person approves each message, unless an owner or admin let MCP agents send. A follow-up flow only creates drafts.
 
 The campaign that most recently emailed the lead owns the conversation. Its flow starts when a reply type whose Follow-ups rule is Keep going applies to the reply, whether the AI applied it, a person accepted it or a person picked it. A type set to Don't write a reply draft skips step 1, and the later steps still run. A reply, do-not-contact, unsubscribe, bounce, closing reply handling and the lead becoming a contact stop the follow-ups, and so does a move to a reply type set to Stop. The campaign lists those types under "Stops for these reply types". The starter types that stop are Customer question, the Not interested types (Asked to stop, Not now, Already has a tool), Wrong person, Referred someone else, Left company and Out of office. The Inbox thread has Pause follow-ups, Resume, Skip step, Stop follow-ups and Restart follow-ups for one conversation, in its Follow-ups section. A contact gets no follow-ups: for a contact the section shows the controls disabled with "The person is a contact, so follow-ups do not apply." Follow-ups in progress are listed on the campaign's Settings tab, each with a link to its Inbox thread.
 
@@ -88,7 +88,7 @@ Every recipient also gets the unsubscribe link, which points at your own `APP_UR
 
 ## Who approves what
 
-The AI picks reply types and writes drafts. Only a person can approve and send a reply. Follow-ups after a reply write drafts, and a person approves each one. Campaign emails you write yourself send on their own once you start the campaign.
+The AI picks reply types and writes drafts. A person approves and sends each reply in the Inbox. An owner or admin can also let AI agents connected over MCP send replies, under Settings, Organization, "Agents can send"; it is off until they turn it on, and agents then reply only to people a campaign or a person already reached, within daily limits ([MCP](mcp.md)). Follow-ups after a reply write drafts, and a person or such an agent sends each one. Campaign emails you write yourself send on their own once you start the campaign.
 
 ## Limits you can rely on
 

@@ -1,3 +1,4 @@
+import type { AgentVia } from "@/shared/errors";
 import type { AttemptRow } from "./reply-ports";
 
 /** A gateway failure as the reply path sees it. definite: LinkedIn refused, nothing was sent. unknown: it may have gone out. */
@@ -83,7 +84,11 @@ export interface LinkedInReplyStore {
    * LinkedIn draft of this conversation, 409 when it is no longer `awaiting_review`, was edited since, or was written
    * before a newer message arrived (it turns `stale`). Without `draft` the text goes out as a typed reply.
    */
-  begin(input: { organizationId: string; conversationId: string; text: string; idempotencyKey: string; actorUserId: string; now: Date; draft?: { id: string; revision: number } }): Promise<BeginLinkedInReply>;
+  /**
+   * Claims the reply for sending and writes the ledger row. A person's `text` replaces the open draft's. With `via`, an
+   * agent sends `draft` as saved, `text` is ignored, and the agent rules run after the person's.
+   */
+  begin(input: { organizationId: string; conversationId: string; text?: string; idempotencyKey: string; actorUserId: string; now: Date; draft?: { id: string; revision: number }; via?: AgentVia }): Promise<BeginLinkedInReply>;
   checkBlockers(send: LinkedInReplyContext, now: Date): Promise<{ reason: LinkedInReplyBlocker; message: string } | null>;
   markSent(send: LinkedInReplyContext, sent: { providerMessageId: string | null }, now: Date, note?: string): Promise<void>;
   /** Definite refusal: the draft goes back to review with its text. */

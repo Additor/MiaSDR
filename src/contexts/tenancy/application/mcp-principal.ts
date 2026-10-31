@@ -1,5 +1,5 @@
 import { isMcpTokenFormat } from "../domain/mcp-token";
-import { usableScopes, type McpScope } from "../domain/mcp-policy";
+import { agentSendPolicy, usableScopes, type McpScope } from "../domain/mcp-policy";
 import type { McpSettings } from "../domain/mcp-settings";
 
 /**
@@ -18,6 +18,11 @@ export interface McpPrincipal {
   /** The organization's `agentSendEpoch` when the token was made. */
   policyEpoch: number;
   expiresAt: Date | null;
+  /**
+   * What the send policy allowed when the request arrived, which decides whether `tools/list` offers the send tools.
+   * Each send reads the policy again under the agent-send lock.
+   */
+  send: { replies: boolean; campaigns: boolean };
 }
 
 export interface StoredMcpToken {
@@ -49,6 +54,8 @@ export interface McpPrincipalDeps {
   /** Hex SHA-256 of a token. */
   hash: (token: string) => string;
   now: () => Date;
+  /** `MCP_SEND_ENABLED`: the install lets agents send at all. */
+  installSendEnabled: () => boolean;
 }
 
 /** A principal, or the organization's refusal. A token that resolves to nobody gives null. */
@@ -70,6 +77,8 @@ export async function resolveMcpAccess(deps: McpPrincipalDeps, token: string | n
   if (!settings.enabled) return { refusal: "mcp_disabled" };
   // Most requests find a recent `lastUsedAt` and skip the round trip.
   if (!row.lastUsedAt || now.getTime() - row.lastUsedAt.getTime() >= TOUCH_INTERVAL_MS) await deps.store.touch(row.id, now);
+  const scopes = usableScopes({ role: row.role, settings, scopes: row.scopes });
+  const policy = agentSendPolicy({ installSendEnabled: deps.installSendEnabled(), settings, token: { scopes, policyEpoch: row.policyEpoch, revokedAt: row.revokedAt, expiresAt: row.expiresAt }, now });
   return {
     principal: {
       tokenId: row.id,
@@ -77,9 +86,10 @@ export async function resolveMcpAccess(deps: McpPrincipalDeps, token: string | n
       userId: row.userId,
       organizationId: row.organizationId,
       role: row.role,
-      scopes: usableScopes({ role: row.role, settings, scopes: row.scopes }),
+      scopes,
       policyEpoch: row.policyEpoch,
       expiresAt: row.expiresAt,
+      send: { replies: policy.replies, campaigns: policy.campaigns },
     },
   };
 }

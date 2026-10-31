@@ -5,7 +5,7 @@ import type { OutreachHalt } from "@/contexts/outreach/domain/enrollment-status"
 /**
  * Pure rules for a campaign's Follow-ups after a reply flow. The flow has versions; a published version is immutable and a
  * run pins the version it started on. Step 1 is the reply, later steps are timed follow-ups. Nothing here
- * reads or writes data, and nothing here can send: a step only ever asks for a draft a person approves.
+ * reads or writes data, and nothing here can send: a step only ever asks for a draft, which a person or an allowed agent sends.
  */
 
 export const MAX_STEPS = 30;

@@ -17,6 +17,9 @@ export { drizzleKnowledgeStore as knowledgeStore } from "../ai/infrastructure/dr
 /** The unread badge counts store. `unreadCounts` takes it directly. */
 export { drizzleUnreadStore as unreadStore } from "./drizzle-unread-store";
 
+/** The onboarding checklist's reply counts, which tenancy reads through a port. */
+export { onboardingReplyFacts } from "./onboarding-reply-facts";
+
 export const inboxDeps = (): InboxDeps => ({ store: drizzleInboxStore, now: () => new Date(), timeZone: organizationTimeZone });
 
 /** Parks a message no person can be found for. Reviewed at /inbox/unmatched. */

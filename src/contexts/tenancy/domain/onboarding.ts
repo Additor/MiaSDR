@@ -114,7 +114,7 @@ export function deriveChecklist(facts: OnboardingFacts): OnboardingChecklist {
     {
       id: "approve",
       title: "Approve your first message",
-      description: "Nothing is sent until a person approves it. Review a draft and send it.",
+      description: "Review a draft and send it. Replies wait for a person unless an owner or admin lets agents send.",
       optional: false,
       status: facts.messagesApproved > 0 ? "done" : "todo",
       detail:

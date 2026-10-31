@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { channelSettings, conversations, drafts, events, linkedinAccounts, mcpTokens, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
-import { ConflictError, NotFoundError } from "@/shared/errors";
+import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import type { AttemptRow } from "../application/reply-ports";
 import { ATTEMPT_COUNTED, ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
@@ -14,6 +14,7 @@ import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { isUuid } from "@/shared/uuid";
+import { attemptOrigin, attemptVia, checkAgentReply } from "./agent-reply-gate";
 import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 type Tx = DbTx;
@@ -85,6 +86,7 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
   const [attempt] = await tx.select().from(sendAttempts).where(eq(sendAttempts.id, attemptId)).for("update");
   if (!attempt || !canMoveAttempt(attempt.status as AttemptStatus, note ? "reconciled" : "sent")) return;
   const snap = attempt.request as Snapshot;
+  const via = await attemptVia(tx, attempt);
   await tx
     .update(sendAttempts)
     .set({ status: note ? "reconciled" : "sent", providerMessageId: sent.providerMessageId, error: null, ...(note ? { reconciledAt: now, reconciliationNote: note } : {}) })
@@ -106,7 +108,7 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
       fromAddress: account?.name ?? account?.username ?? "LinkedIn account",
       toAddress: person?.name ?? person?.first ?? null,
       bodyText: snap.text,
-      raw: { draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId },
+      raw: { draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId, ...(via ? { sentVia: via.tokenName } : {}) },
       sentAt: now,
     })
     .onConflictDoNothing();
@@ -129,7 +131,7 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
     eventType: note ? "draft.delivery_reconciled" : "draft.sent",
     actorType: "human",
     actorUserId: attempt.actorUserId,
-    meta: { draftId: attempt.draftId, attemptId: attempt.id, channel: "linkedin", note: note ?? null },
+    meta: { draftId: attempt.draftId, attemptId: attempt.id, channel: "linkedin", note: note ?? null, ...viaMeta(via) },
   });
 }
 
@@ -185,14 +187,32 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         }
         target = row;
       }
-      const text = checkReplyText(input.text, "linkedin");
+      // An agent sends the saved draft as it stands; a person sends the text in the composer.
+      if (input.via && !target) throw new NotFoundError("Draft not found");
+      const text = checkReplyText(input.via ? (target?.editedBodyText ?? target?.aiBodyText ?? "") : (input.text ?? ""), "linkedin");
 
       const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, conv.accountRef), eq(linkedinAccounts.organizationId, input.organizationId))).for("update");
       if (!account) throw replyRefusal("no_account", "linkedin");
       const used = await usage(tx, account.id, input.now);
       checkAccountReady(replyBlock(input.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: await gapFor(tx, input.organizationId) }));
+      if (input.via) {
+        await checkAgentReply(tx, {
+          organizationId: input.organizationId,
+          via: input.via,
+          actorUserId: input.actorUserId,
+          channel: "linkedin",
+          conversationId: conv.id,
+          recordId: conv.recordId,
+          personId: record.personId,
+          threadId: chat,
+          accountRef: account.id,
+          cc: [],
+          now: input.now,
+        });
+      }
 
-      // A refused earlier attempt left its text in an open draft. The new text replaces it.
+      // A refused earlier attempt left its text in an open draft. The new text replaces it. An agent's draft goes out
+      // unchanged, at the revision it was approved at.
       const [open] = target
         ? [target]
         : await tx
@@ -204,7 +224,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
             .for("update");
       let draftId: string;
       let revision: number;
-      if (open) {
+      if (input.via && target) {
+        draftId = target.id;
+        revision = target.revision;
+      } else if (open) {
         const [updated] = await tx.update(drafts).set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: record.version }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
         draftId = open.id;
         revision = updated.revision;
@@ -241,7 +264,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       };
       const [attempt] = await tx
         .insert(sendAttempts)
-        .values({ organizationId: input.organizationId, draftId, idempotencyKey: input.idempotencyKey, status: "sending", actorUserId: input.actorUserId, provider: "linkedin", accountRef: account.id, request: snapshot })
+        .values({ organizationId: input.organizationId, draftId, idempotencyKey: input.idempotencyKey, status: "sending", actorUserId: input.actorUserId, ...attemptOrigin(input.via), provider: "linkedin", accountRef: account.id, request: snapshot })
         .returning();
       await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draftId), draftCanBecome("sending")));
       return { kind: "started" as const, attempt };

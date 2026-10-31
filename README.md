@@ -6,7 +6,7 @@
 
 An AI SDR for email and LinkedIn that runs on your server and sends from your own accounts.
 
-- **The AI drafts, your team sends.** No AI-written message leaves until a person approves it.
+- **The AI drafts, your team sends.** No AI-written message leaves until a person approves it, unless an admin lets your own MCP agents send within daily limits.
 - **A reply anywhere stops everything.** Someone answers on LinkedIn and their email sequence stops too.
 - **Your leads stay yours.** Leads, conversations and deals live in your Postgres, not a vendor's.
 
@@ -50,7 +50,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 
 Docker Compose runs the app and Postgres 17, with Caddy in front for HTTPS. [Self-hosting](docs/deploy/self-host.md) covers the server, backups and upgrades.
 
-- `PAUSE_OUTBOUND=true` holds every campaign send, email and LinkedIn, until you turn it off. Replies you approve still send.
+- `PAUSE_OUTBOUND=true` holds every campaign send, email and LinkedIn, and every agent reply, until you turn it off. Replies you approve still send.
 - LinkedIn prohibits automation and can restrict accounts, and CAN-SPAM, GDPR and CASL limit who you may contact. Read [Responsible use](docs/responsible-use.md) before you send to real people.
 
 ## Docs

@@ -19,6 +19,7 @@ import { getPersonTool, searchPeopleTool } from "./people";
 import { getPipelineTool } from "./pipeline";
 import { writeReplyDraftTool } from "./reply-draft";
 import { getAnalyticsTool, getSendingHealthTool } from "./reports";
+import { sendReplyTool } from "./send-reply";
 import { manageTaskTool } from "./tasks";
 import { getWorkQueueTool } from "./work-queue";
 import { getWorkspace } from "./workspace";
@@ -26,7 +27,7 @@ import { getWorkspace } from "./workspace";
 /** How long a client may reuse the tool list. A mode change or a revoke still applies at the next call. */
 export const TOOL_LIST_TTL_MS = 300_000;
 
-/** Every tool. `registerTools` keeps the ones the token's scopes allow. */
+/** Every tool. `registerTools` keeps the ones the token's scopes and the send policy allow. */
 export const TOOLS: readonly ToolDefinition[] = [
   getWorkspace,
   getWorkQueueTool,
@@ -47,6 +48,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   draftCampaignTool,
   updateDealTool,
   importLeadsTool,
+  sendReplyTool,
 ];
 
 /**
@@ -56,11 +58,16 @@ export const TOOLS: readonly ToolDefinition[] = [
 export function createMcpServer(principal: McpPrincipal, appUrl: string): McpServer {
   const server = new McpServer(
     { name: "miasdr", version: pkg.version },
-    { instructions: serverInstructions(hasScope(principal.scopes, "mcp:write") ? "write" : "read"), cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
+    { instructions: serverInstructions(accessOf(principal)), cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
   );
   registerTools(server, principal, appUrl, TOOLS, toolHooks(principal));
   return server;
 }
+
+const accessOf = (principal: McpPrincipal) => {
+  if (principal.send.replies || principal.send.campaigns) return "send";
+  return hasScope(principal.scopes, "mcp:write") ? "write" : "read";
+};
 
 const toolHooks = (principal: McpPrincipal): ToolHooks => ({
   take: async (bucket) => (await takeMcpRequest(mcpRateLimitDeps(), principal, bucket))?.retryAfterSeconds ?? null,

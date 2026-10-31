@@ -36,12 +36,13 @@ async function Mcp() {
     canManage ? listMcpTokens(deps, actor, "organization") : Promise.resolve([]),
     canManage ? listMcpToolCalls(mcpToolCallDeps(), actor, { writesOnly: true, before: null }) : Promise.resolve(null),
   ]);
-  const { MCP_ENABLED, APP_URL, RETENTION_MCP_TOOL_CALLS_DAYS } = env();
+  const { MCP_ENABLED, MCP_SEND_ENABLED, APP_URL, RETENTION_MCP_TOOL_CALLS_DAYS } = env();
   return (
     <McpPanel
       installEnabled={MCP_ENABLED}
       enabled={settings.enabled}
       memberWriteTokens={settings.memberWriteTokens}
+      agentSendMode={MCP_SEND_ENABLED ? settings.agentSendMode : "off"}
       canManage={canManage}
       currentUserId={ctx.user.id}
       endpoint={`${APP_URL}/api/mcp`}

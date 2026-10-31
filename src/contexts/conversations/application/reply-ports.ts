@@ -1,4 +1,5 @@
 import type { AgentVia } from "@/shared/errors";
+import type { ReplyChannel } from "../domain/reply-send";
 import type { AiPersonContext, DraftChannel, ReplyTypeChange, ReplyType, ThreadEntry } from "../ai/domain/ai-contract";
 import type { FailureKind } from "../ai/domain/ai-job-requeue";
 import type { SystemRole, TypeRules } from "../domain/reply-type";
@@ -216,7 +217,8 @@ export interface ReplyStore {
    * Older open drafts of the record turn `stale`. Refuses a conversation that is not an open email thread, a suppressed
    * address, a do-not-contact person, and a thread with a send in flight. 404 when the conversation is not in this organization.
    */
-  createManualDraft(input: { organizationId: string; conversationId: string; subject: string; bodyText: string; cc: string[]; actorUserId: string; via?: AgentVia }): Promise<{ id: string; revision: number }>;
+  /** Saves a typed draft on a conversation of `channel`; a conversation of the other channel answers `wrong_channel`. LinkedIn drafts have no subject or CC. */
+  createManualDraft(input: { organizationId: string; conversationId: string; channel: ReplyChannel; subject: string | null; bodyText: string; cc: string[]; actorUserId: string; via?: AgentVia }): Promise<{ id: string; revision: number }>;
   /** Like `ccContext`, for a conversation that has no draft yet. */
   ccContextForConversation(organizationId: string, conversationId: string): Promise<{ known: string[]; mailbox: string; lead: string | null } | null>;
   /** `writtenViaTokenId` replaces the draft's: an agent's edit sets it, a person's clears it. */
@@ -228,7 +230,11 @@ export interface ReplyStore {
   /** With `expectedRevision`, a draft edited since answers 409 and stays. */
   discardDraft(organizationId: string, draftId: string, actorUserId: string, expectedRevision?: number, via?: AgentVia): Promise<void>;
 
-  beginSend(input: { organizationId: string; draftId: string; expectedRevision: number; idempotencyKey: string; actorUserId: string; messageIdToken: string }): Promise<BeginSend>;
+  /**
+   * Claims the draft for sending and writes the ledger row. With `via`, an agent sends: the agent rules run after the
+   * person's (docs/decisions.md, "Agent sends") and the row records the token.
+   */
+  beginSend(input: { organizationId: string; draftId: string; expectedRevision: number; idempotencyKey: string; actorUserId: string; messageIdToken: string; now: Date; via?: AgentVia }): Promise<BeginSend>;
   checkBlockers(send: SendContext): Promise<SendBlocker | null>;
   markSent(send: SendContext, sent: { providerMessageId: string; threadId: string | null }, now: Date, note?: string): Promise<void>;
   /** A definite refusal: nothing was sent. The draft goes back to review (or to `failed` for a blocker). */

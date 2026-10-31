@@ -227,7 +227,7 @@ test.describe("the Actions queue as a list to work through", () => {
     expect(groupsShown).toBeLessThan(5);
     expect(linked.length).toBeLessThan(6);
     // Help sits on info marks, and only where a group's name needs it.
-    await expect(page.getByText("Drafts waiting for your review. Nothing is sent until you approve.", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Drafts waiting for your review before anyone sends them.", { exact: true })).toHaveCount(0);
   });
 });
 

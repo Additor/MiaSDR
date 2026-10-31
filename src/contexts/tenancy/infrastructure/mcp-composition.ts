@@ -3,6 +3,7 @@ import type { McpPrincipalDeps } from "../application/mcp-principal";
 import type { McpRateLimitDeps } from "../application/mcp-rate-limit";
 import type { McpTokenDeps } from "../application/mcp-tokens";
 import type { McpToolCallDeps } from "../application/mcp-tool-calls";
+import { env } from "@/shared/env";
 import { MCP_TOKEN_PREFIX } from "../domain/mcp-token";
 import { drizzleMcpRateLimitStore } from "./drizzle-mcp-rate-limit-store";
 import { drizzleMcpTokenAdminStore } from "./drizzle-mcp-token-admin-store";
@@ -15,7 +16,7 @@ export const hashMcpToken = (token: string): string => createHash("sha256").upda
 const newMcpSecret = (): string => `${MCP_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
 
 /** Resolves the principal of an MCP request from its bearer token. */
-export const mcpPrincipalDeps = (): McpPrincipalDeps => ({ store: drizzleMcpTokenStore, hash: hashMcpToken, now: () => new Date() });
+export const mcpPrincipalDeps = (): McpPrincipalDeps => ({ store: drizzleMcpTokenStore, hash: hashMcpToken, now: () => new Date(), installSendEnabled: () => env().MCP_SEND_ENABLED });
 
 /** Settings > MCP: the organization's switch and the tokens. */
 export const mcpTokenDeps = (): McpTokenDeps => ({ store: drizzleMcpTokenAdminStore, newSecret: newMcpSecret, hash: hashMcpToken, now: () => new Date() });

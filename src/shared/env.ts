@@ -59,6 +59,8 @@ const schema = z.object({
   PAUSE_OUTBOUND: z.string().optional(),
   /** Serves the MCP endpoint at `/api/mcp`. Each organization still turns MCP on for itself. Set false to turn it off for the whole install. Default true. */
   MCP_ENABLED: flagSchema(true),
+  /** Lets agents send replies and start campaigns where an organization allows it. Set false to refuse every agent send in the install, whatever the organizations chose. Default true. */
+  MCP_SEND_ENABLED: flagSchema(true),
   /** Proxies in front of the app that append to `X-Forwarded-For`. Set it to let the MCP endpoint limit failed token guesses per client IP; unset, it reads no client IP and keeps no IP limit. */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(1).max(10).optional(),
   /** Two-letter country (ISO 3166-1 alpha-2) for phone numbers written without a country code, such as `KR` for `010-...`. An organization setting overrides it. Read from the process environment at call time. */

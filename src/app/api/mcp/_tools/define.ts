@@ -29,6 +29,8 @@ export interface ToolDefinition<I extends AnyObject = AnyObject, O extends AnyOb
   title: string;
   description: string;
   scope: McpScope;
+  /** For a `mcp:send` tool: the part of the send policy it needs, so `tools/list` leaves it out while the policy refuses. */
+  sends?: "replies" | "campaigns";
   annotations: ToolAnnotations;
   input: I;
   output: O;
@@ -92,6 +94,8 @@ const LIMIT_WORDS: Record<McpRateBucket, string> = {
   write: "changes this minute",
   ai: "AI drafts this hour",
   import: "imports this hour",
+  send: "sent replies this minute",
+  launch: "campaign starts this hour",
 };
 
 /** Counts the call in each of its buckets, all of them even after one refuses, so a client that keeps retrying stays refused. */
@@ -116,7 +120,7 @@ const actionOf = (input: unknown): string | null => {
 };
 
 /**
- * Registers the tools the token's scopes allow, by name, so `tools/list` comes out in the same order every time. Each
+ * Registers the tools the token's scopes and the send policy allow, by name, so `tools/list` comes out in the same order every time. Each
  * call runs through `runTool` with the person's actor and a fresh output context: its rate buckets first, then the
  * tool within the response budget. Every call, refused or not, writes one row to the activity log; a failed write
  * there is logged and never fails the call.
@@ -124,6 +128,7 @@ const actionOf = (input: unknown): string | null => {
 export function registerTools(server: McpServer, principal: McpPrincipal, appUrl: string, tools: readonly ToolDefinition[], hooks: ToolHooks): void {
   for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
     if (!hasScope(principal.scopes, tool.scope)) continue;
+    if (tool.sends && !principal.send[tool.sends]) continue;
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.input, outputSchema: publishedOutput(tool.output), annotations: tool.annotations },
@@ -136,6 +141,10 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
           return withinBudget(() => checkedOutput(tool, () => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never)));
         });
         const error = result.isError ? (result.structuredContent?.error as { code?: unknown } | undefined) : undefined;
+        // Operators watch refused agent sends in the logs (docs/operations.md).
+        if (typeof error?.code === "string" && error.code.startsWith("agent_")) {
+          console.warn(`[mcp] agent send refused ${JSON.stringify({ code: error.code, tool: tool.name, organizationId: principal.organizationId, tokenId: principal.tokenId })}`);
+        }
         await hooks
           .record({
             organizationId: principal.organizationId,

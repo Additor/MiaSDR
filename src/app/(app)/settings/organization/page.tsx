@@ -12,6 +12,10 @@ import { toActor } from "@/app/_lib/api";
 import { AdminNotice } from "../admin-notice";
 import { timeZoneOptions } from "../time-zone-options";
 import { OrganizationForm } from "./organization-form";
+import { getMcpSettings } from "@/contexts/tenancy/application/mcp-tokens";
+import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
+import { env } from "@/shared/env";
+import { AgentSendSection } from "./agent-send-section";
 import { SendPauseSection } from "./send-pause-section";
 
 export const metadata: Metadata = { title: "Organization" };
@@ -30,7 +34,8 @@ async function Organization() {
   await connection();
   const ctx = await requireOrgContext();
   const actor = toActor(ctx);
-  const [org, pause] = await Promise.all([getOrganization(organizationDeps(), actor), getSendPause(emailRulesDeps(), actor)]);
+  const [org, pause, mcp] = await Promise.all([getOrganization(organizationDeps(), actor), getSendPause(emailRulesDeps(), actor), getMcpSettings(mcpTokenDeps(), actor)]);
+  const { MCP_ENABLED, MCP_SEND_ENABLED } = env();
   const zones = timeZoneOptions(Intl.supportedValuesOf("timeZone"), org.timeZone);
   const canEditZone = isOwnerOrAdmin(ctx.role);
   return (
@@ -47,6 +52,14 @@ async function Organization() {
         canEditZone={canEditZone}
       />
       <SendPauseSection pause={pause} canManage={canEditZone} />
+      {/* Agents reach MiaSDR only through MCP, so the card shows only where MCP runs. */}
+      {MCP_ENABLED && mcp.enabled && (
+        <AgentSendSection
+          settings={{ agentSendMode: mcp.agentSendMode, agentReplyCaps: mcp.agentReplyCaps, agentEnrollCap: mcp.agentEnrollCap }}
+          installEnabled={MCP_SEND_ENABLED}
+          canManage={canEditZone}
+        />
+      )}
     </>
   );
 }

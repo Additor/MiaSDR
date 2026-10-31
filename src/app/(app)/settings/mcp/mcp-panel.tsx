@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { runApiAction } from "@/app/_lib/api-action";
@@ -37,6 +37,8 @@ interface Props {
   enabled: boolean;
   /** Members may create tokens that make changes. Owners and admins always may. */
   memberWriteTokens: boolean;
+  /** What agents may send in this organization; a token that sends needs it on. Settings, Organization changes it. */
+  agentSendMode: "off" | "replies" | "replies_and_campaigns";
   canManage: boolean;
   currentUserId: string;
   endpoint: string;
@@ -68,13 +70,13 @@ const copy = (text: string, what: string) =>
     () => toast.error(`Copy failed. Select the ${what.toLowerCase()} and copy it.`),
   );
 
-export function McpPanel({ installEnabled, enabled, memberWriteTokens, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays }: Props) {
+export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSendMode, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
   const { isBusy, run } = useApiAction();
   const [switching, setSwitching] = useState(false);
   const [switchingWrite, setSwitchingWrite] = useState(false);
-  const [access, setAccess] = useState<"read" | "write">("read");
+  const [access, setAccess] = useState<"read" | "write" | "send">("read");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ name: string; token: string } | null>(null);
   const [revoking, setRevoking] = useState<Token | null>(null);
@@ -166,7 +168,7 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, canManage
                   <FieldLegend variant="label" id="token-access-legend">
                     Access
                   </FieldLegend>
-                  <RadioGroup aria-labelledby="token-access-legend" value={access} onValueChange={(v) => setAccess(v as "read" | "write")} className="flex flex-wrap gap-x-6">
+                  <RadioGroup aria-labelledby="token-access-legend" value={access} onValueChange={(v) => setAccess(v as "read" | "write" | "send")} className="flex flex-wrap gap-x-6">
                     <Field orientation="horizontal" className="w-auto">
                       <RadioGroupItem value="read" id="token-access-read" />
                       <FieldLabel htmlFor="token-access-read">Read only</FieldLabel>
@@ -175,7 +177,20 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, canManage
                       <RadioGroupItem value="write" id="token-access-write" />
                       <FieldLabel htmlFor="token-access-write">Read and make changes</FieldLabel>
                     </Field>
+                    <Field orientation="horizontal" className="w-auto" data-disabled={agentSendMode === "off" || undefined}>
+                      <RadioGroupItem value="send" id="token-access-send" disabled={agentSendMode === "off"} />
+                      <FieldLabel htmlFor="token-access-send">Read, make changes and send</FieldLabel>
+                    </Field>
                   </RadioGroup>
+                  {agentSendMode === "off" ? (
+                    <FieldDescription>Agents cannot send in this organization. An owner or admin turns it on under Settings, Organization.</FieldDescription>
+                  ) : (
+                    access === "send" && (
+                      <FieldDescription>
+                        An agent with this token sends {agentSendMode === "replies" ? "replies" : "replies and starts campaigns"} as you, with no one reviewing first, within the organization&apos;s agent limits.
+                      </FieldDescription>
+                    )
+                  )}
                 </FieldSet>
               )}
               {error && <FieldError>{error}</FieldError>}
@@ -325,7 +340,7 @@ function TokenList({ tokens, showOwner, currentUserId, onRevoke }: { tokens: Tok
                 {token.ownerUserId === currentUserId && " (you)"}
               </span>
             )}
-            {token.scopes.includes("mcp:write") && <Badge variant="secondary">Makes changes</Badge>}
+            {token.scopes.includes("mcp:send") ? <Badge variant="secondary">Sends</Badge> : token.scopes.includes("mcp:write") && <Badge variant="secondary">Makes changes</Badge>}
             {expired && <Badge variant="outline">Expired</Badge>}
             <span className="text-muted-foreground">
               {token.lastUsedAt ? (

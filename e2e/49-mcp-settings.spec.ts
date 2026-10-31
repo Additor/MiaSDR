@@ -58,3 +58,47 @@ test("an admin turns on MCP, creates a token an agent can use once, and revokes 
   await page.getByRole("dialog").getByRole("button", { name: "Turn off" }).click();
   await expect(page.getByText("MCP is off.")).toBeVisible();
 });
+
+test("an admin lets agents send replies, creates a token that sends, and turns agent sending off again", async ({ page }) => {
+  await signInAdmin(page);
+  await page.goto("/settings/mcp");
+  await expect(page.getByRole("button", { name: /^Turn (on|off) MCP$/ })).toBeVisible();
+  if (await page.getByText("MCP is off.").isVisible()) {
+    await page.getByRole("button", { name: "Turn on MCP" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Turn on" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+  }
+  // Agent sending starts off, so a token that sends cannot be chosen yet.
+  await expect(page.getByRole("radio", { name: "Read, make changes and send" })).toBeDisabled();
+
+  await page.goto("/settings/organization");
+  const card = page.getByRole("region", { name: "Agents can send" });
+  await card.getByRole("radio", { name: "Replies", exact: true }).click();
+  await card.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Let agents send" }).click();
+  await expect(page.getByText("Agent sending saved.")).toBeVisible();
+
+  await page.goto("/settings/mcp");
+  await page.getByLabel("Token name").fill("E2E sender");
+  await page.getByRole("radio", { name: "Read, make changes and send" }).click();
+  await expect(page.getByText(/sends replies as you, with no one reviewing first/)).toBeVisible();
+  await page.getByRole("button", { name: "Create token" }).click();
+  await expect(page.getByLabel("New token")).toHaveValue(/^msdr_pat_/);
+  await page.getByRole("button", { name: "I copied it" }).click();
+  const row = page.getByRole("list", { name: "Your tokens" }).getByRole("listitem").filter({ hasText: "E2E sender" });
+  await expect(row).toContainText("Sends");
+
+  await page.goto("/settings/organization");
+  await card.getByRole("radio", { name: "Off", exact: true }).click();
+  await card.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Stop agent sending" }).click();
+  await expect(page.getByText("Agent sending saved.")).toBeVisible();
+
+  await page.goto("/settings/mcp");
+  await row.getByRole("button", { name: "Revoke" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Revoke token" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await page.getByRole("button", { name: "Turn off MCP" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Turn off" }).click();
+  await expect(page.getByText("MCP is off.")).toBeVisible();
+});

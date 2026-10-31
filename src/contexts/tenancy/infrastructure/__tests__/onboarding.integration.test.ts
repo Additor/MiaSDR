@@ -34,8 +34,6 @@ describeDb("onboarding store", () => {
       leads: 0,
       campaigns: 0,
       activeCampaigns: 0,
-      draftsAwaiting: 0,
-      messagesApproved: 0,
     });
   });
 
@@ -56,17 +54,6 @@ describeDb("onboarding store", () => {
     await sql`insert into people (organization_id, email) values (${a}, ${`p1-${tag}@onb.test`}), (${a}, ${`p2-${tag}@onb.test`}), (${b}, ${`p3-${tag}@onb.test`})`;
     await sql`insert into campaigns (organization_id, channel, name, status) values (${a}, 'email', 'One', 'active'), (${a}, 'email', 'Two', 'draft'), (${b}, 'email', 'Other', 'active')`;
 
-    const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${a}, 'default', true) returning id`;
-    const [{ id: person }] = await sql`select id from people where organization_id = ${a} limit 1`;
-    const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${a}, ${person}, ${pipeline}) returning id`;
-    const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${a}, ${record}, 'email', 'a@sender.test') returning id`;
-    await sql`
-      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject, status)
-      values (${a}, ${record}, ${conversation}, 0, 'email', 'One', 'awaiting_review'),
-             (${a}, ${record}, ${conversation}, 0, 'email', 'Two', 'awaiting_review'),
-             (${a}, ${record}, ${conversation}, 0, 'email', 'Three', 'sent'),
-             (${a}, ${record}, ${conversation}, 0, 'email', 'Four', 'discarded')`;
-
     expect(await store.facts(a)).toEqual({
       timeZoneSaved: true,
       connectedMailboxes: 1,
@@ -75,9 +62,38 @@ describeDb("onboarding store", () => {
       leads: 2,
       campaigns: 2,
       activeCampaigns: 1,
-      draftsAwaiting: 2,
-      messagesApproved: 1,
     });
+  });
+
+  it("counts waiting drafts and the replies a person sent, not an agent's", async () => {
+    const a = await org("replies");
+    const [{ id: user }] = await sql`insert into users (name, email) values ('R', ${`r-${tag}@onb.test`}) returning id`;
+    try {
+      const [{ id: person }] = await sql`insert into people (organization_id, email) values (${a}, ${`rp-${tag}@onb.test`}) returning id`;
+      const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${a}, 'default', true) returning id`;
+      const [{ id: record }] = await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${a}, ${person}, ${pipeline}) returning id`;
+      const [{ id: conversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${a}, ${record}, 'email', 'a@sender.test') returning id`;
+      const [{ id: other }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id) values (${a}, ${record}, 'email', 'a@sender.test', 'second') returning id`;
+      const ids = await sql<{ id: string; subject: string }[]>`
+        insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, subject, status)
+        values (${a}, ${record}, ${conversation}, 0, 'email', 'One', 'awaiting_review'),
+               (${a}, ${record}, ${conversation}, 0, 'email', 'Two', 'sent'),
+               (${a}, ${record}, ${other}, 0, 'email', 'Three', 'sent'),
+               (${a}, ${record}, ${conversation}, 0, 'email', 'Four', 'discarded')
+        returning id, subject`;
+      const draft = (subject: string) => ids.find((d) => d.subject === subject)!.id;
+      const [{ id: token }] = await sql`insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, token_hint, scopes) values (${a}, ${user}, 'pat', 'T', ${`h-${tag}`}, 'abcd', ${["mcp:read"]}) returning id`;
+      await sql`
+        insert into send_attempts (organization_id, draft_id, idempotency_key, status, actor_user_id, origin, mcp_token_id)
+        values (${a}, ${draft("Two")}, ${`person-${tag}`}, 'sent', ${user}, 'person', null),
+               (${a}, ${draft("Three")}, ${`agent-${tag}`}, 'sent', ${user}, 'agent', ${token})`;
+      const { onboardingReplyFacts } = await import("@/contexts/conversations/infrastructure/composition");
+      expect(await onboardingReplyFacts(a)).toEqual({ draftsAwaiting: 1, messagesApproved: 1 });
+    } finally {
+      await dropOrgs(sql, [{ organizationId: a }]);
+      orgs.splice(orgs.indexOf(a), 1);
+      await sql`delete from users where id = ${user}`;
+    }
   });
 
   it("stores dismissal per organization and keeps it idempotent", async () => {

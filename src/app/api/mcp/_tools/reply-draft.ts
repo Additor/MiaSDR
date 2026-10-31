@@ -4,7 +4,7 @@ import { getThread } from "@/contexts/conversations/application/inbox";
 import { getLinkedInReplyPanel } from "@/contexts/conversations/application/linkedin-reply";
 import { createManualDraft, discardDraft, editDraft, getReplyPanel, regenerateDraft, requestDraft } from "@/contexts/conversations/application/reply-management";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
-import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { NotFoundError, type Actor } from "@/shared/errors";
 import { defineTool, need, type ToolContext } from "./define";
 import { appLinks } from "./output";
 
@@ -35,7 +35,7 @@ export const writeReplyDraftTool = defineTool({
   title: "Write reply draft",
   description: [
     "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent.",
-    "`request_ai` has the AI write one (`conversationId`); `create_manual` saves your text as the draft (`conversationId`, `bodyText`, and `subject` for email; email only for now);",
+    "`request_ai` has the AI write one (`conversationId`); `create_manual` saves your text as the draft (`conversationId`, `bodyText`, and `subject` for email);",
     "`edit` replaces the draft's text (`draftId`, `revision`, `bodyText`, optional `subject`); `regenerate` has the AI write it again (`draftId`, optional `note`); `discard` drops it (`draftId`, `revision`).",
     "Take `revision` from get_conversation or the last answer. The answer gives the draft and `reviewUrl`, where the person reviews and sends it.",
   ].join(" "),
@@ -63,8 +63,7 @@ export const writeReplyDraftTool = defineTool({
         conversationId = need(input.conversationId, "conversationId", "create_manual");
         // The thread alone tells the channel; the draft is read once, after the write.
         const { channel } = await getThread(inboxDeps(), actor, conversationId);
-        if (channel === "linkedin") throw new ValidationError("An agent cannot type a LinkedIn draft yet. Use request_ai, or edit the draft the AI wrote.");
-        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject, bodyText: need(input.bodyText, "bodyText", "create_manual") });
+        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject, bodyText: need(input.bodyText, "bodyText", "create_manual"), channel: channel === "linkedin" ? "linkedin" : "email" });
         break;
       }
       case "edit": {

@@ -347,6 +347,7 @@ export const drizzleInboxStore: InboxStore = {
       ...stored.map((m): ThreadMessage => {
         const autoReply = (m.raw as { autoReply?: boolean } | null)?.autoReply === true;
         const possibleBounce = (m.raw as { possibleBounce?: boolean } | null)?.possibleBounce === true;
+        const sentVia = (m.raw as { sentVia?: unknown } | null)?.sentVia;
         return {
           id: m.id,
           direction: m.direction as "inbound" | "outbound",
@@ -361,6 +362,7 @@ export const drizzleInboxStore: InboxStore = {
           possibleBounce,
           unread: m.direction === "inbound" && m.openedAt === null && !autoReply,
           important: m.important,
+          ...(typeof sentVia === "string" ? { sentVia } : {}),
         };
       }),
       ...linkedinSequence

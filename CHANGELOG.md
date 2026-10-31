@@ -20,7 +20,9 @@ First public release.
 - Self-hosting with Docker Compose and Postgres 17.
 - AI agents (MCP): an endpoint at `/api/mcp` with eleven read tools for the inbox, work queue, leads, campaigns, pipeline and analytics. People connect agents with personal tokens from Settings, AI agents (MCP), after an owner or admin turns MCP on. See [AI agents (MCP)](docs/guides/mcp.md).
 - MCP write tokens: a token can also make changes through eight tools that write reply drafts, set reply types, assign, note and close conversations, manage tasks, pause sending, draft campaigns, move deals and import leads. No tool sends a message. Owners and admins choose whether members may create write tokens, and read each agent call under Agent activity.
-- Schema: migration 0005 adds `mcp_tokens`, migration 0006 adds `mcp_rate_limits`, migration 0007 adds `mcp_tool_calls` and migration 0008 adds `drafts.written_via_token_id`.
+- Agent sending: an owner or admin can let MCP agents send replies under Settings, Organization, Agents can send. It is off by default. A token that sends gets `send_reply`, which sends a saved draft by email or LinkedIn with every person's rule plus agent rules: only to people a campaign or a person already reached, no CC, one reply a day per reply handling, and daily limits per organization, person and mailbox. The thread marks each agent send. `MCP_SEND_ENABLED=false` refuses every agent send in the install.
+- The product principle changes from "a person approves every reply" to "every send has someone answerable for it": a person who pressed Send, or an agent working with a send token a person created where an admin allowed it.
+- Schema: migration 0005 adds `mcp_tokens`, migration 0006 adds `mcp_rate_limits`, migration 0007 adds `mcp_tool_calls`, migration 0008 adds `drafts.written_via_token_id` and migration 0009 adds `send_attempts.origin`, `mcp_token_id` and `client_name`.
 
 ### Upgrade notes
 
@@ -29,6 +31,7 @@ For a server that ran a build from before this release:
 - Back up the database before you upgrade ([Backups](docs/deploy/self-host.md#backups)).
 - Migrations run when the app boots, unless you set `RUN_MIGRATIONS=false` and run `scripts/migrate.mjs` yourself.
 - You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. A migration that waits more than 30 seconds for a table lock fails and rolls back. [Operations](docs/operations.md#upgrades-that-change-the-reply-tables) says how to find the session that holds it.
+- Agent sending starts off in every organization. Nothing an agent does sends a message until an owner or admin turns it on.
 - Out of office now ends a follow-up run already going. Before, it only kept a new run from starting.
 - The stage rank is gone, so the AI may move a person to an earlier reply type. To review such moves, set the type's Check to Before it applies in Settings > Reply handling.
 - If your organization archived Asked to stop, the upgrade restores it. Every AI pick of it waits for a person.

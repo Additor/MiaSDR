@@ -156,6 +156,8 @@ export interface ThreadMessage {
   unread: boolean;
   /** A person starred this message. Only stored messages carry the flag. */
   important: boolean;
+  /** The token name when an agent sent this reply over MCP. */
+  sentVia?: string;
 }
 
 export interface ThreadDetail {

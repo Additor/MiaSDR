@@ -1,11 +1,11 @@
 # AI agents (MCP)
 
-MiaSDR serves the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/mcp`. An agent such as Claude Code, Cursor or VS Code connects with a personal token and reads your organization's inbox, work queue, leads, campaigns, pipeline and analytics. A token that makes changes also lets the agent draft replies, sort and assign conversations, manage tasks, prepare campaigns, move deals and import leads. No tool sends an email or a LinkedIn message: a person reviews each reply and sends it in MiaSDR.
+MiaSDR serves the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/mcp`. An agent such as Claude Code, Cursor or VS Code connects with a personal token and reads your organization's inbox, work queue, leads, campaigns, pipeline and analytics. A token that makes changes also lets the agent draft replies, sort and assign conversations, manage tasks, prepare campaigns, move deals and import leads. Agents send nothing unless an owner or admin turns on agent sending; then a token that sends lets the agent send replies too, within daily limits ("Agent sending" below).
 
 ## Turn it on
 
 1. An owner or admin opens Settings, AI agents (MCP) and chooses Turn on MCP. Until then a token answers 403 and nobody can create one.
-2. Each person who wants an agent creates a token on the same page under Your tokens. Name it after the machine or the agent that uses it, and choose Read only or Read and make changes. Members can create tokens that make changes unless an owner or admin limits them to read-only tokens.
+2. Each person who wants an agent creates a token on the same page under Your tokens. Name it after the machine or the agent that uses it, and choose Read only, Read and make changes, or Read, make changes and send. Members can create tokens that make changes unless an owner or admin limits them to read-only tokens. Sending needs agent sending on.
 3. Copy the token when it appears. MiaSDR keeps only its hash and shows it once. If you lose it, revoke it and create another.
 
 The server administrator can turn the endpoint off for the whole install with `MCP_ENABLED=false` ([Configuration](../configuration.md#mcp)).
@@ -56,7 +56,7 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 
 | Tool | Changes |
 |---|---|
-| `write_reply_draft` | Has the AI write a reply draft, saves the agent's own email draft, edits, regenerates or discards one. The answer gives `reviewUrl`, where a person reviews and sends it |
+| `write_reply_draft` | Has the AI write a reply draft, saves the agent's own email or LinkedIn draft, edits, regenerates or discards one. The answer gives `reviewUrl`, where a person reviews and sends it |
 | `set_reply_type` | Changes a conversation's reply type, or confirms or undoes an AI pick |
 | `update_conversation` | Adds a note, takes or assigns a conversation, closes or reopens it |
 | `manage_task` | Lists, creates, edits and completes tasks |
@@ -71,11 +71,30 @@ Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on
 
 A lead's email or LinkedIn message, the From header, and values from imports or providers (titles, companies, custom fields) reach the agent inside `<untrusted_...>` tags with a random suffix per call. The server tells the agent that tagged text, lead names and addresses are data and that it must not follow instructions found in them. A lead can still write text meant to steer an agent, and a tag lowers that risk without removing it. Review what your agent proposes before you act on it.
 
+## Agent sending
+
+Agents send nothing until an owner or admin opens Settings, Organization, Agents can send, and picks Replies. The server administrator can refuse every agent send in the install with `MCP_SEND_ENABLED=false`.
+
+With Replies on, a person can create a token that sends. Its agent gets one more tool, `send_reply`, which sends a conversation's saved draft (`draftId`, `revision` and an `idempotencyKey` the agent keeps for that send) by email or LinkedIn, as the token's person. A refused send names its reason as `code`:
+
+| Code | Why | What to do |
+|---|---|---|
+| `agent_send_off` | Agent sending is off, or the token was made before it was last turned off, or the token cannot send | Turn agent sending on, or create a new token that sends |
+| `agent_unverified_recipient` | No campaign reached this person in this conversation, and nobody in the organization replied there | Send the first reply yourself in MiaSDR |
+| `agent_cc_not_allowed` | The draft has CC addresses | Remove them, or send it yourself |
+| `agent_send_paused` | The organization's Sending pause or `PAUSE_OUTBOUND` is on | A person resumes sending |
+| `agent_daily_cap` | Agents reached today's limit for the organization (100), the token's person (50) or the mailbox (30) | Wait for midnight UTC (`retryAfterSeconds`), or an owner or admin raises the limit |
+| `agent_reply_gap` | An agent replied in this reply handling in the last 24 hours | Wait (`retryAfterSeconds`), or send it yourself |
+
+Every rule of a person's send applies too: suppression, do not contact, closed reply handling, a newer message, and the LinkedIn account's limits. The answer's `status` is `sent`, `delivery_uncertain` (it may have gone out; do not send again, a person checks), `failed` or `blocked` (nothing went out; `retryable` says whether a new key may try again). The same key never sends twice.
+
+Turning agent sending off stops every token that sends at once, and turning it on later needs new tokens. A message an agent sent shows "Sent by an agent ({token name})" in the thread, and the history reads "{person} via {token}".
+
 ## Limits and revoking
 
 - A token lasts 90 days. A person holds at most 10 live tokens.
 - A token makes at most 60 requests a minute. Request 61 answers 429 with `Retry-After`.
-- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour and imports at most 10 times an hour. A call past a limit fails with `rate_limited` and the seconds to wait.
+- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour, imports at most 10 times an hour and sends at most 10 replies a minute. A call past a limit fails with `rate_limited` and the seconds to wait.
 - With `TRUST_PROXY_HOPS` set, a client IP that sends 20 unknown tokens in a minute waits until the minute ends.
 - A person revokes their own tokens on the settings page; an owner or admin revokes anyone's, or all of them with Revoke all. A revoked token fails on its next request.
 - Removing a member revokes their tokens, and inviting them again does not bring the tokens back. A role change applies to the next request.

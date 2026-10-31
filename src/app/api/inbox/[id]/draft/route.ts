@@ -6,11 +6,13 @@ import { withActor } from "@/app/_lib/api";
 /**
  * Without a body, asks the AI for a draft. With `bodyText`, saves a reply a person typed (no AI, no key needed).
  * An empty request body keeps the old "Write a draft" call working; a body that is present must be valid JSON.
+ * `channel: "linkedin"` saves a typed LinkedIn draft, with no subject or CC.
  */
 const manual = z.object({
   subject: z.string().max(5000).nullable().optional(),
   bodyText: z.string().max(100_000).optional(),
   cc: z.array(z.string().max(320)).max(50).optional(),
+  channel: z.enum(["email", "linkedin"]).optional(),
 });
 
 export async function POST(request: Request, ctx: RouteContext<"/api/inbox/[id]/draft">) {
@@ -19,6 +21,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/inbox/[id]/
     const raw = await request.text();
     const body = manual.parse(raw.trim() === "" ? {} : JSON.parse(raw));
     if (body.bodyText === undefined) return requestDraft(replyDeps(), actor, id);
-    return createManualDraft(replyDeps(), actor, id, { subject: body.subject, bodyText: body.bodyText, ...(body.cc ? { cc: body.cc } : {}) });
+    return createManualDraft(replyDeps(), actor, id, { subject: body.subject, bodyText: body.bodyText, ...(body.cc ? { cc: body.cc } : {}), ...(body.channel ? { channel: body.channel } : {}) });
   }, 201);
 }

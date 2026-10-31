@@ -4,8 +4,8 @@ import { MAX_LINKEDIN_REPLY, type ReplyBlock } from "./linkedin-reply";
 import { MANUAL_BODY_MAX } from "./manual-reply";
 
 /**
- * The rules that decide whether a person may send a reply, or write a typed one, on a conversation (docs/decisions.md,
- * "Reply send rules"). Each store locks its rows in its own order and calls the checks its channel needs, in the order
+ * The rules that decide whether a person or an agent may send a reply, or write a typed one, on a conversation
+ * (docs/decisions.md, "Reply send rules" and "Agent sends"). Each store locks its rows in its own order and calls the checks its channel needs, in the order
  * the decision lists. A check throws its row of `REPLY_REFUSALS`. No I/O.
  */
 
@@ -44,7 +44,18 @@ export const REPLY_REFUSALS = {
   draft_changed: { error: ConflictError, text: () => "The draft changed since you reviewed it. Reload and approve the current text." },
   empty_text: { error: ValidationError, text: () => "The reply cannot be empty." },
   text_too_long: { error: ValidationError, text: (channel: ReplyChannel) => `The reply is longer than ${REPLY_TEXT_MAX[channel]} characters.` },
-} as const satisfies Record<string, { error: typeof ConflictError | typeof ValidationError; text: (channel: ReplyChannel, detail: Detail) => string }>;
+  // An agent's send (`send_reply` over MCP) meets these too, after every rule above. Each carries its reason as `code`.
+  agent_send_off: { error: ConflictError, code: "agent_send_off", text: () => "Agents cannot send replies in this organization with this token. An owner or admin turns agent sending on under Settings, Organization; a token made before it was last turned off needs replacing." },
+  agent_unverified_recipient: {
+    error: ConflictError,
+    code: "agent_unverified_recipient",
+    text: () => "An agent replies only to a person a campaign reached in this conversation, or one a person here already answered. Reply yourself in MiaSDR first.",
+  },
+  agent_cc_not_allowed: { error: ConflictError, code: "agent_cc_not_allowed", text: () => "An agent cannot send a reply with CC. Remove the CC addresses from the draft, or send it yourself in MiaSDR." },
+  agent_send_paused: { error: ConflictError, code: "agent_send_paused", text: () => "Sending is paused for this organization. Agents send nothing until a person resumes it." },
+  agent_daily_cap: { error: ConflictError, code: "agent_daily_cap", text: () => "Agents reached today's reply limit for this organization, this person or this mailbox. It resets at midnight UTC." },
+  agent_reply_gap: { error: ConflictError, code: "agent_reply_gap", text: () => "An agent already replied in this reply handling in the last 24 hours. Wait, or send this one yourself in MiaSDR." },
+} as const satisfies Record<string, { error: typeof ConflictError | typeof ValidationError; code?: string; text: (channel: ReplyChannel, detail: Detail) => string }>;
 
 export type ReplyRefusalReason = keyof typeof REPLY_REFUSALS;
 
@@ -54,9 +65,16 @@ const sentence = (text: string | null | undefined) => {
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 };
 
-/** The error of one refusal row, for a store that reaches the reason outside the checks below. */
-export function replyRefusal(reason: ReplyRefusalReason, channel: ReplyChannel, detail: Detail = {}): ConflictError | ValidationError {
-  const row = REPLY_REFUSALS[reason];
+/** The refusals only an agent's send meets. */
+export type AgentReplyRefusal = Extract<ReplyRefusalReason, `agent_${string}`>;
+
+/**
+ * The error of one refusal row, for a store that reaches the reason outside the checks below. An `agent_*` row puts its
+ * code, and the wait when it has one, in the details; the other rows answer the body they always did.
+ */
+export function replyRefusal(reason: ReplyRefusalReason, channel: ReplyChannel, detail: Detail = {}, wait?: { retryAfterSeconds: number }): ConflictError | ValidationError {
+  const row: { error: typeof ConflictError | typeof ValidationError; code?: string; text: (channel: ReplyChannel, detail: Detail) => string } = REPLY_REFUSALS[reason];
+  if (row.code) return new ConflictError(row.text(channel, detail), { code: row.code, ...wait });
   return new row.error(row.text(channel, detail));
 }
 

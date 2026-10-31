@@ -9,10 +9,10 @@ Who MiaSDR is for, what it promises and the words the screens use. Design toolin
 web
 
 ## Users
-Small sales teams that run outbound themselves. The people in the app are SDRs and sales leads working inside one organization, with owner, admin and member roles. They import leads, run email and LinkedIn campaigns, review replies, and approve AI drafts before anything sends.
+Small sales teams that run outbound themselves. The people in the app are SDRs and sales leads working inside one organization, with owner, admin and member roles. They import leads, run email and LinkedIn campaigns, review replies, and approve AI drafts before anything sends, or let their own AI agents send within limits an admin sets.
 
 ## Product Purpose
-MiaSDR is a self-hosted AI SDR. It imports leads, runs email sequences from the team's own Google Workspace mailboxes, and stops a sequence when a lead replies, bounces or unsubscribes. Success is outreach that reaches real people within strict send rules, with a person approving every AI-written message.
+MiaSDR is a self-hosted AI SDR. It imports leads, runs email sequences from the team's own Google Workspace mailboxes, and stops a sequence when a lead replies, bounces or unsubscribes. Success is outreach that reaches real people within strict send rules, with a person answerable for every AI-written message.
 
 ## Positioning
 Self-hosted (Docker Compose is the supported path), with each organization using its own mailboxes and its own AI provider key (Anthropic, Vercel AI Gateway or OpenRouter). Email, LinkedIn, campaigns with AI follow-ups after a reply, an Inbox, analytics and enrichment tables live in one app, together with a minimal CRM: a Pipeline of deals, Contacts and Companies. A person enters the CRM as a contact: Add contact creates one, and a lead becomes one when you create a deal from it or make it a contact.
@@ -24,7 +24,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 - **Campaign:** the container for Leads, a Sequence and Settings.
 - **Sequence:** the tab and the campaign's own ordered outbound steps. They send automatically at their time. A reply, bounce or unsubscribe stops them.
 - **Step:** one message in the Sequence.
-- **Follow-ups after a reply:** a campaign setting, either "Off, hand to the Inbox" (default) or "AI drafts, you approve". With AI drafts, step 1 "Reply to their answer" answers the reply and the later steps follow up, each as a draft a person approves. Under it, "Stops for these reply types" lists the types whose Follow-ups rule is Stop. The code calls the setting `after-reply`.
+- **Follow-ups after a reply:** a campaign setting, either "Off, hand to the Inbox" (default) or "AI drafts, you approve". With AI drafts, step 1 "Reply to their answer" answers the reply and the later steps follow up, each as a draft a person approves or an allowed agent sends. Under it, "Stops for these reply types" lists the types whose Follow-ups rule is Stop. The code calls the setting `after-reply`.
 - **Follow-ups in progress:** the runs of Follow-ups after a reply that have not ended.
 - **Lead status:** where a lead stands in outreach. One of New (in no campaign), Queued (waits for its first step), In sequence (inside the campaign's steps), Paused (its campaign is not running), Replied, Finished (every step went out, no reply) or Stopped (a bounce, a suppression, a failure or a cancellation cut it short). Leads only: a contact has no lead status.
 - **In sequence:** the lead status for a lead inside the campaign's steps.
@@ -75,7 +75,7 @@ Teams operate it through routes such as `/leads`, `/campaigns`, `/inbox`, `/acti
 
 ## Capabilities and Constraints
 - Stack: Next.js 16.4 (App Router), React 19, Tailwind CSS 4.
-- AI picks a reply type for each reply and drafts responses; a human approves before sending. A follow-up flow only writes drafts.
+- AI picks a reply type for each reply and drafts responses; a person approves before sending, unless an owner or admin turned on agent sending for MCP agents. A follow-up flow only writes drafts.
 - LinkedIn outreach is built and tested against a local stand-in. Profile lookups ran once against a real Unipile account; a full campaign has not.
 - WhatsApp, calls, domain qualification and teams are out of scope for the MVP.
 - `docs/decisions.md` records scope and design choices.
@@ -87,7 +87,7 @@ Brand color is lavender `#b9aaff`, used for counts of work that waits for a pers
 README.md and `docs/` describe features, routes and decisions. The project has no testimonials, customer logos or benchmarks yet, so pages and copy cite none.
 
 ## Product Principles
-- A person approves every message an AI writes before it sends.
+- Every message has someone answerable for it: a person who approves it, or an agent acting on a token a person created, where an owner or admin allowed agent sending.
 - A reply, bounce or unsubscribe stops outreach to that lead.
 - The team owns its data, mailboxes and keys.
 - Send rules and responsible-use limits stay visible, not hidden.

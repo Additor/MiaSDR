@@ -231,6 +231,7 @@ function MessageTitle({ message: m, channel, person }: { message: Message; chann
         <span className="min-w-0 break-all">{m.direction === "outbound" ? "You" : (m.from ?? "Sender")}</span>
       )}
       {m.source === "sequence" && <Badge variant="outline">{channel === "linkedin" ? "Sequence message" : "Sequence email"}</Badge>}
+      {m.sentVia && <Badge variant="outline">Sent by an agent ({m.sentVia})</Badge>}
       {m.possibleBounce ? (
         <span className="inline-flex items-center gap-1 text-xs font-normal">
           <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-warning" />

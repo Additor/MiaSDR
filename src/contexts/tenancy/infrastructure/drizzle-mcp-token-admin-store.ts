@@ -1,9 +1,9 @@
-import { and, count, desc, eq, gt, isNull, or } from "drizzle-orm";
-import { db } from "@/platform/db/client";
-import { mcpTokens, members, users } from "@/platform/db/schema";
+import { and, count, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { db, type DbHandle } from "@/platform/db/client";
+import { channelSettings, mcpTokens, members, users } from "@/platform/db/schema";
 import type { McpTokenStore, McpTokenView } from "../application/mcp-tokens";
 import { readScopes } from "../domain/mcp-policy";
-import { MCP_SETTINGS_CHANNEL } from "../domain/mcp-settings";
+import { MCP_SETTINGS_CHANNEL, readMcpSettings } from "../domain/mcp-settings";
 import { lockAgentSend, revokeMcpTokensTx } from "./agent-send-lock";
 import { recordAudit } from "./audit";
 import { mergeChannelSettings } from "./channel-settings";
@@ -20,6 +20,14 @@ const viewColumns = {
   expiresAt: mcpTokens.expiresAt,
   lastUsedAt: mcpTokens.lastUsedAt,
 };
+
+async function settingsIn(tx: DbHandle, organizationId: string) {
+  const [row] = await tx
+    .select({ values: channelSettings.values })
+    .from(channelSettings)
+    .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, MCP_SETTINGS_CHANNEL)));
+  return readMcpSettings(row?.values);
+}
 
 const toView = (row: Omit<McpTokenView, "scopes"> & { scopes: string[] }): McpTokenView => ({ ...row, scopes: readScopes(row.scopes) });
 
@@ -96,7 +104,22 @@ export const drizzleMcpTokenAdminStore: McpTokenStore = {
     await db.transaction(async (tx) => {
       // A policy change: agent actions that start after it answers see the new settings.
       await lockAgentSend(tx, organizationId);
+      const current = await settingsIn(tx, organizationId);
       await mergeChannelSettings(tx, organizationId, MCP_SETTINGS_CHANNEL, patch, userId);
+      // Turning agent sending off retires every send token made before: the epoch moves past the stored one and past
+      // every token's, so turning it back on later does not revive them.
+      if (patch.agentSendMode === "off" && current.agentSendMode !== "off") {
+        const where = and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, MCP_SETTINGS_CHANNEL));
+        await tx
+          .update(channelSettings)
+          .set({
+            values: sql`jsonb_set(${channelSettings.values}, '{agentSendEpoch}', to_jsonb(greatest(
+              ${current.agentSendEpoch}::bigint,
+              (select coalesce(max(${mcpTokens.policyEpoch}), 0) from ${mcpTokens} where ${mcpTokens.organizationId} = ${organizationId})
+            ) + 1))`,
+          })
+          .where(where);
+      }
       for (const entry of audit) await recordAudit(tx, entry);
     });
   },

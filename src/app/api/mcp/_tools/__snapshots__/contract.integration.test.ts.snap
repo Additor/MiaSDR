@@ -617,7 +617,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent. \`request_ai\` has the AI write one (\`conversationId\`); \`create_manual\` saves your text as the draft (\`conversationId\`, \`bodyText\`, and \`subject\` for email; email only for now); \`edit\` replaces the draft's text (\`draftId\`, \`revision\`, \`bodyText\`, optional \`subject\`); \`regenerate\` has the AI write it again (\`draftId\`, optional \`note\`); \`discard\` drops it (\`draftId\`, \`revision\`). Take \`revision\` from get_conversation or the last answer. The answer gives the draft and \`reviewUrl\`, where the person reviews and sends it.",
+    "description": "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent. \`request_ai\` has the AI write one (\`conversationId\`); \`create_manual\` saves your text as the draft (\`conversationId\`, \`bodyText\`, and \`subject\` for email); \`edit\` replaces the draft's text (\`draftId\`, \`revision\`, \`bodyText\`, optional \`subject\`); \`regenerate\` has the AI write it again (\`draftId\`, optional \`note\`); \`discard\` drops it (\`draftId\`, \`revision\`). Take \`revision\` from get_conversation or the last answer. The answer gives the draft and \`reviewUrl\`, where the person reviews and sends it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {

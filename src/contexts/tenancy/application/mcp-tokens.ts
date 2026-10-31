@@ -65,12 +65,12 @@ export interface McpTokenDeps {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** What a new token may do. Sending arrives with the send tools. */
-export const MCP_TOKEN_ACCESS = ["read", "write"] as const;
+/** What a new token may do. `send` also needs the organization's agent sending on. */
+export const MCP_TOKEN_ACCESS = ["read", "write", "send"] as const;
 export type McpTokenAccess = (typeof MCP_TOKEN_ACCESS)[number];
-const SCOPES_OF: Record<McpTokenAccess, McpScope[]> = { read: ["mcp:read"], write: ["mcp:read", "mcp:write"] };
-/** Keys this version lets a person save. Agent sending and its limits arrive with the send tools. */
-const EDITABLE_SETTINGS = new Set(["enabled", "memberWriteTokens"]);
+const SCOPES_OF: Record<McpTokenAccess, McpScope[]> = { read: ["mcp:read"], write: ["mcp:read", "mcp:write"], send: ["mcp:read", "mcp:write", "mcp:send"] };
+/** Keys a person may save. The epoch is not one: only a mode change to off writes it, inside the database. */
+const EDITABLE_SETTINGS = new Set(["enabled", "memberWriteTokens", "agentSendMode", "agentReplyCaps", "agentEnrollCap"]);
 
 const audit = (actor: Actor, action: string, entityId: string | undefined, meta: Record<string, unknown>): AuditEntry => ({
   organizationId: actor.organizationId,
@@ -99,6 +99,15 @@ export async function updateMcpSettings(deps: Pick<McpTokenDeps, "store">, actor
   if (typeof patch.enabled === "boolean" && patch.enabled !== current.enabled) entries.push(audit(actor, patch.enabled ? "mcp.enabled" : "mcp.disabled", undefined, {}));
   if (typeof patch.memberWriteTokens === "boolean" && patch.memberWriteTokens !== current.memberWriteTokens) {
     entries.push(audit(actor, patch.memberWriteTokens ? "mcp.member_write_on" : "mcp.member_write_off", undefined, {}));
+  }
+  if (typeof patch.agentSendMode === "string" && patch.agentSendMode !== current.agentSendMode) {
+    entries.push(audit(actor, "mcp.agent_send_mode", undefined, { from: current.agentSendMode, to: patch.agentSendMode }));
+  }
+  const caps = patch.agentReplyCaps as McpSettings["agentReplyCaps"] | undefined;
+  const capsChanged = caps !== undefined && (caps.org !== current.agentReplyCaps.org || caps.user !== current.agentReplyCaps.user || caps.mailbox !== current.agentReplyCaps.mailbox);
+  const enrollChanged = typeof patch.agentEnrollCap === "number" && patch.agentEnrollCap !== current.agentEnrollCap;
+  if (capsChanged || enrollChanged) {
+    entries.push(audit(actor, "mcp.agent_limits", undefined, { replies: caps ?? current.agentReplyCaps, enroll: enrollChanged ? patch.agentEnrollCap : current.agentEnrollCap }));
   }
   if (entries.length > 0) await deps.store.saveSettings(actor.organizationId, patch as McpSettingsPatch, actor.userId, entries);
   return deps.store.settings(actor.organizationId);

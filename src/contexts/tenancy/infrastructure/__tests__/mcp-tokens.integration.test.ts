@@ -120,11 +120,12 @@ describeDb("MCP tokens", () => {
     expect(entry.meta).toEqual({ count: all.length });
   });
 
-  it("lets an admin turn MCP on and off and refuses the settings whose tools have not shipped", async () => {
+  it("lets an admin turn MCP on and off and refuses settings it cannot read", async () => {
     const [, off] = orgs;
     const { actor } = await member(off, "member");
     await expect(tokens.updateMcpSettings(deps, actor, { enabled: true })).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(tokens.updateMcpSettings(deps, actorOf(off), { agentSendMode: "replies" })).rejects.toThrow(/cannot be changed yet/);
+    await expect(tokens.updateMcpSettings(deps, actorOf(off), { agentSendMode: "always" })).rejects.toThrow(/Agent sending must be one of/);
+    await expect(tokens.updateMcpSettings(deps, actorOf(off), { agentSendEpoch: 9 })).rejects.toThrow(/not an MCP setting/);
     await expect(tokens.updateMcpSettings(deps, actorOf(off), { enabled: "yes" })).rejects.toThrow(/true or false/);
 
     expect(await tokens.updateMcpSettings(deps, actorOf(off), { enabled: true })).toMatchObject({ enabled: true });

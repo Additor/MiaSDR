@@ -31,8 +31,9 @@ import { AI_JOB_STATUSES, type AiJobStatus } from "../ai/domain/ai-job-status";
  * `people`, with no second email model for the CRM. A sender we do
  * not know gets a `people` row (source `inbound`), not a second contact table.
  *
- * Nothing is sent without human approval. That rule lives in the domain and
- * in `send_attempts`; there is no setting to turn it off.
+ * Every send has someone answerable: a person's approval, or an agent's
+ * token where the organization allows agent sending. `send_attempts`
+ * records which (`origin`, `mcp_token_id`).
  *
  * The Follow-ups after a reply flow keeps its tables in `after-reply/infrastructure/sequences-schema.ts`.
  */
@@ -494,11 +495,24 @@ export const sendAttempts = pgTable(
     error: text("error"),
     reconciledAt: tstz("reconciled_at"),
     reconciliationNote: text("reconciliation_note"),
+    /** `person` for a Send in MiaSDR, `agent` for `send_reply` over MCP. Agent sends count against the agent limits. */
+    origin: text("origin").$type<"person" | "agent">().notNull().default("person"),
+    /** The MCP token an agent sent with. Null for a person; set null if the token row goes. */
+    mcpTokenId: uuid("mcp_token_id"),
+    /** The agent client's own name, when the protocol carried one. */
+    clientName: text("client_name"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     foreignKey({ columns: [t.draftId, t.organizationId], foreignColumns: [drafts.id, drafts.organizationId] }).onDelete("restrict"),
+    // The migration writes `ON DELETE SET NULL (mcp_token_id)`.
+    foreignKey({ name: "send_attempts_mcp_token_fk", columns: [t.mcpTokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("set null"),
+    check("send_attempts_origin_ck", sql`${t.origin} in ('person', 'agent') and (${t.origin} = 'agent' or (${t.mcpTokenId} is null and ${t.clientName} is null))`),
+    // The agent limits count today's agent sends per organization, per person and per mailbox.
+    index("send_attempts_agent_org_idx").on(t.organizationId, t.createdAt).where(sql`${t.origin} = 'agent'`),
+    index("send_attempts_agent_user_idx").on(t.organizationId, t.actorUserId, t.createdAt).where(sql`${t.origin} = 'agent'`),
+    index("send_attempts_agent_account_idx").on(t.organizationId, t.accountRef, t.createdAt).where(sql`${t.origin} = 'agent'`),
     check("send_attempts_status_ck", inList(t.status, ["prepared", "sending", "sent", "failed", "delivery_uncertain", "reconciled"])),
     check("send_attempts_reconciled_ck", sql`${t.status} <> 'reconciled' or ${t.reconciliationNote} is not null`),
     check(

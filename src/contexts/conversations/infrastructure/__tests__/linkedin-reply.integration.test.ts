@@ -438,4 +438,52 @@ describeDb("LinkedIn conversation replies", () => {
       expect(await count("messages", f.org, "direction = 'outbound'")).toBe(attempt === "sent" ? 1 : 0);
     });
   });
+
+  describe("agent sends", () => {
+    /** Agent sending on, a send token for the fixture's person, and optionally a campaign message that reached the lead. */
+    async function agentFixture(opts: { reached: boolean }) {
+      const f = await fixture();
+      await sql`insert into channel_settings (organization_id, channel, values) values (${f.org}, 'mcp', ${sql.json({ enabled: true, agentSendMode: "replies", agentSendEpoch: 0 })})`;
+      const [{ id: tokenId }] = await sql`
+        insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, token_hint, scopes)
+        values (${f.org}, ${f.user}, 'pat', 'Agent laptop', ${"hash-" + f.tag}, 'abcd', ${["mcp:read", "mcp:write", "mcp:send"]}) returning id`;
+      if (opts.reached) {
+        const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${f.org}, 'linkedin', 'c', 'active', ${sql.json([])}) returning id`;
+        const [{ id: enrollment }] = await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel) values (${f.org}, ${campaign}, ${f.personId}, 'linkedin') returning id`;
+        await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, body, sent_at) values (${f.org}, ${enrollment}, 1, 'linkedin', 'sent', ${f.account}, 'Hi Ada', now() - interval '1 day')`;
+      }
+      const agent: Actor = { ...f.actor, via: { kind: "agent", tokenId: tokenId as string, tokenName: "Agent laptop", clientName: "claude-code" } };
+      const created = await resolveApp.createManualDraft({ store: replyStore } as never, agent, f.conversationId, { subject: null, bodyText: "Here is the deck.", channel: "linkedin" });
+      return { ...f, agent, tokenId: tokenId as string, draft: created };
+    }
+
+    it("sends the saved draft as it stands, at its revision, and records the token", async () => {
+      const f = await agentFixture({ reached: true });
+      const result = await app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { text: "ignored", draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() });
+      expect(result.status).toBe("sent");
+      expect(f.fake.messages.map((m) => m.text)).toEqual(["Here is the deck."]);
+      expect(await one("select revision, status, written_via_token_id from drafts where id = $1", [f.draft.draftId])).toMatchObject({ revision: f.draft.revision, status: "sent", written_via_token_id: f.tokenId });
+      expect(await one("select origin, mcp_token_id, client_name from send_attempts where draft_id = $1", [f.draft.draftId])).toEqual({ origin: "agent", mcp_token_id: f.tokenId, client_name: "claude-code" });
+      expect((await one("select meta from events where organization_id = $1 and event_type = 'draft.sent'", [f.org])).meta).toMatchObject({ via: { tokenName: "Agent laptop" } });
+    });
+
+    it("refuses an agent send without a draft, with another conversation's draft, or to a stranger", async () => {
+      const f = await agentFixture({ reached: true });
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { idempotencyKey: key() })).rejects.toThrow(/saved draft/);
+      const other = await agentFixture({ reached: true });
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: other.draft.draftId, revision: 1, idempotencyKey: key() })).rejects.toBeInstanceOf(NotFoundError);
+
+      const stranger = await agentFixture({ reached: false });
+      await expect(app.sendLinkedInReply(stranger.deps, stranger.agent, stranger.conversationId, { draftId: stranger.draft.draftId, revision: stranger.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({
+        details: { code: "agent_unverified_recipient" },
+      });
+      expect(stranger.fake.messages).toEqual([]);
+    });
+
+    it("refuses an empty saved draft", async () => {
+      const f = await agentFixture({ reached: true });
+      await sql`update drafts set edited_body_text = '   ' where id = ${f.draft.draftId}`;
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toThrow(/cannot be empty/);
+    });
+  });
 });

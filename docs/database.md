@@ -60,7 +60,15 @@ A row lock that serializes writers on `records` or `conversations` takes `FOR NO
 
 One order for the conflicting locks: the record before its conversations. Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its public conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). A LinkedIn message that makes a chat private locks the record before it updates the conversation, since the detach that follows writes the record; updating the conversation first deadlocked with a close (`reply-send-refusals.integration.test.ts`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes records, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
-A member change (a role change or a removal), an MCP token revoke and an MCP settings save take the organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) before any row lock. A removal revokes the person's MCP tokens in the same transaction. Token creation locks the creator's member row `FOR UPDATE`, so it waits for a removal in progress and then finds no member row.
+The organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
+
+| Path | Order |
+| --- | --- |
+| Agent email reply | conversation `FOR UPDATE`, draft `FOR UPDATE`, then `agent-send` exclusive; the policy and the counts follow in later statements |
+| Agent LinkedIn reply | conversation, draft, account, then `agent-send` exclusive |
+| Member change (role change, removal), MCP token revoke, MCP settings save | `agent-send` exclusive before any row lock; a removal then locks members |
+
+An agent action that starts after one of the changes answers sees the new state; one that already holds the lock finishes first. A person's send takes no advisory lock, and no send locks members. A removal revokes the person's MCP tokens in the same transaction. Token creation locks the creator's member row `FOR UPDATE`, so it waits for a removal in progress and then finds no member row.
 
 ## Append-only tables
 
@@ -142,7 +150,7 @@ A reference to a row that does not exist is left to the foreign key, so its own 
 
 ## Organization-scoped indexes
 
-`grid_jobs_org_status_idx`, `sends_org_status_idx`, `ai_jobs_org_failed_idx` (partial, `status = 'failed'`), `contact_policies_org_dnc_idx` (partial, `do_not_contact`), `linkedin_search_batches_org_created_idx` and `linkedin_search_queries_org_created_idx` each serve a query that filters one organization without a parent key. The 13 tables in `INDEX_DEBT` (`src/platform/db/schema-audit.ts`) are reached through an indexed parent key. Only an organization delete would scan them, and organization deletion is disabled in `auth.ts`. The audit test pins that list. `send_attempts` stays there: the LinkedIn daily `usage()` count filters by `account_ref` and joins `drafts` by `draft_id`, so no query reads it by organization alone.
+`grid_jobs_org_status_idx`, `sends_org_status_idx`, `ai_jobs_org_failed_idx` (partial, `status = 'failed'`), `contact_policies_org_dnc_idx` (partial, `do_not_contact`), `linkedin_search_batches_org_created_idx` and `linkedin_search_queries_org_created_idx` each serve a query that filters one organization without a parent key. The 12 tables in `INDEX_DEBT` (`src/platform/db/schema-audit.ts`) are reached through an indexed parent key. Only an organization delete would scan them, and organization deletion is disabled in `auth.ts`. The audit test pins that list. `send_attempts` left it with the agent limit indexes (`send_attempts_agent_org_idx`, `_user_idx`, `_account_idx`, partial on `origin = 'agent'`), which count one organization's agent sends of the day.
 
 Write cost: each index adds one btree insert per row written. `sends` and `grid_jobs` take the most writes. The two partial indexes touch only rows in the matching state.
 

@@ -76,6 +76,8 @@ const ACTION_LABEL: Record<string, string> = {
   "mcp.token_created": "Created an MCP token",
   "mcp.token_revoked": "Revoked an MCP token",
   "mcp.tokens_revoked_all": "Revoked every MCP token",
+  "mcp.agent_send_mode": "Changed what agents can send",
+  "mcp.agent_limits": "Changed the agent sending limits",
 };
 
 const actionLabel = (action: string) => ACTION_LABEL[action] ?? humanizeToken(action.replace(".", " "));

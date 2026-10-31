@@ -48,7 +48,6 @@ export const INDEX_DEBT: Record<string, string> = Object.fromEntries(
     "linkedin_search_results",
     "notes",
     "reply_handling_settings",
-    "send_attempts",
     "sequence_step_runs",
   ].map((table) => [table, INDEX_DEBT_REASON]),
 );

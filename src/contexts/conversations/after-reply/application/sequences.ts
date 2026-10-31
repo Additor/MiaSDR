@@ -6,7 +6,7 @@ import type { RecordSequenceState, RunSource, RunStore, StartFacts } from "./seq
 /**
  * Use cases for the follow-ups of one record. The flow itself belongs to a campaign (see after-reply.ts); a run
  * pins the newest published version of the flow of the campaign that most recently emailed the person.
- * Nothing here sends: a run only schedules steps, and the job turns a due step into a draft a person approves.
+ * Nothing here sends: a run only schedules steps, and the job turns a due step into a draft a person approves or an allowed agent sends.
  */
 
 export interface SequenceDeps {
