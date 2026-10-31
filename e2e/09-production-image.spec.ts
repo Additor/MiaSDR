@@ -45,6 +45,31 @@ test.describe("the production image keeps the test routes off", () => {
     await api.dispose();
   });
 
+  test("the MCP endpoint lists its tools in the production image", async () => {
+    // The SDK ships in the standalone output only when the build traces it, so the real image is the place to check.
+    const api = await signedIn(prodUrl);
+    expect((await api.patch("/api/settings/mcp", { data: { enabled: true } })).status()).toBe(200);
+    const created = await api.post("/api/settings/mcp/tokens", { data: { name: "Image smoke", access: "write" } });
+    expect(created.status()).toBe(201);
+    const { token } = (await created.json()) as { token: string };
+    const meta = {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": { name: "e2e", version: "1" },
+      "io.modelcontextprotocol/clientCapabilities": {},
+    };
+    const listed = await api.post("/api/mcp", {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/list" },
+      data: { jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: meta } },
+    });
+    expect(listed.status()).toBe(200);
+    const names = ((await listed.json()) as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
+    expect(names).toContain("get_workspace");
+    expect(names).toContain("write_reply_draft");
+    // Agent sending starts off, so the send tools stay out.
+    expect(names).not.toContain("send_reply");
+    await api.dispose();
+  });
+
   test("the same requests work on the test build, so the check can fail", async ({ request, baseURL }) => {
     expect(baseURL).not.toBe(prodUrl);
     const api = await signedIn(baseURL ?? "");

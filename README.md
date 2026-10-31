@@ -42,7 +42,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 - **Tables**: a spreadsheet with formulas, AI columns and a waterfall across nine enrichment vendors, one step from a campaign.
 - **Analytics**: sends, replies, bounces and the LinkedIn funnel per campaign.
 
-<p align="center"><img src="docs/images/how-it-works.jpg" alt="Four steps: import leads, send campaign steps within your limits, the AI reads replies and drafts answers, a person approves each draft" width="100%"></p>
+<p align="center"><img src="docs/images/how-it-works.jpg" alt="Four steps: import leads, send campaign steps within your limits, the AI reads replies and drafts answers, a person approves each draft or lets an agent send it" width="100%"></p>
 
 [How MiaSDR works](docs/guides/how-it-works.md) covers the jobs, the send engine and the inbox.
 

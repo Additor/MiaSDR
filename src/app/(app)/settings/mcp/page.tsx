@@ -1,3 +1,4 @@
+import { agentSendsOverview } from "@/read-models/agent-sends";
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -36,6 +37,8 @@ async function Mcp() {
     canManage ? listMcpTokens(deps, actor, "organization") : Promise.resolve([]),
     canManage ? listMcpToolCalls(mcpToolCallDeps(), actor, { writesOnly: true, before: null }) : Promise.resolve(null),
   ]);
+  // What agents sent and started; owners and admins only.
+  const sends = canManage ? await agentSendsOverview(actor.organizationId, new Date()) : null;
   const { MCP_ENABLED, MCP_SEND_ENABLED, APP_URL, RETENTION_MCP_TOOL_CALLS_DAYS } = env();
   return (
     <McpPanel
@@ -52,6 +55,7 @@ async function Mcp() {
       everyone={JSON.parse(JSON.stringify(everyone))}
       activity={activity && JSON.parse(JSON.stringify(activity))}
       activityDays={RETENTION_MCP_TOOL_CALLS_DAYS}
+      agentSends={sends && JSON.parse(JSON.stringify({ ...sends, limits: { replies: settings.agentReplyCaps.org, enrolls: settings.agentEnrollCap } }))}
     />
   );
 }

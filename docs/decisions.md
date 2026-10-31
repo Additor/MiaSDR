@@ -502,6 +502,7 @@ Agents start, resume and fill campaigns through `outreach/application/agent-camp
 - **Enroll limit.** Every agent enroll, in any status and either channel, counts against `agentEnrollCap` (200 a UTC day); a batch that would pass it is refused whole, dry runs included (`agent_enroll_cap`, `retryAfterSeconds` to midnight UTC).
 - **Locks.** A launch locks the campaign `FOR UPDATE`, then takes `agent-send` shared; the status change runs in the same transaction. An enroll locks the campaign `FOR SHARE`, takes `agent-send` shared, then `agent-enroll:<organization id>` exclusive before it counts. A person's enroll takes no campaign lock: its insert's foreign key check waits for a start that holds the row.
 - **Records.** `campaigns.started_via_token_id` names the agent's token on its start or resume, and a person's start clears it. `campaign_enrollments.enrolled_via_token_id` marks agent enrolls; the limit counts them. Onboarding counts only campaigns a person started.
+- **Watching agents.** Settings > MCP shows owners and admins an Agent sends section (`read-models/agent-sends.ts`): the day's agent replies and enrolls against the limits, with a notice once one is reached, the latest agent replies, and the campaigns agents started. Pause campaigns agents started (`POST /api/settings/mcp/pause-agent-campaigns`, owner or admin) pauses every running one through the person's pause. An agent's unconfirmed send shows in Actions under Problems with the token's name.
 
 ### Enrollment outcomes
 

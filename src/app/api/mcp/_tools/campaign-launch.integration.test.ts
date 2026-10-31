@@ -199,4 +199,23 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     const started = await agent.tool("launch_campaign", { channel: "linkedin", campaignId, action: "start", launchToken: seen.structured.launchToken as string });
     expect(started.structured.status, started.text).toBe("active");
   });
+
+  it("lists what agents started and pauses every running campaign an agent started in one step", async () => {
+    const campaignId = await campaign();
+    await addLeads(campaignId, await leads(1));
+    await launch(campaignId, (await preview(campaignId, "start")).structured.launchToken as string);
+
+    const { agentSendsOverview } = await import("@/read-models/agent-sends");
+    const overview = await agentSendsOverview(org.organizationId, new Date());
+    expect(overview.campaigns.find((c) => c.campaignId === campaignId)).toMatchObject({ status: "active", tokenName: "Test agent", enrolledByAgents: 1 });
+    expect(overview.today.enrolls).toBeGreaterThan(0);
+
+    const { pauseAgentStartedCampaigns } = await import("@/contexts/outreach/application/agent-campaigns");
+    const { agentCampaignDeps } = await import("@/contexts/outreach/infrastructure/agent-campaign-composition");
+    const { ForbiddenError } = await import("@/shared/errors");
+    await expect(pauseAgentStartedCampaigns(agentCampaignDeps(), { userId: org.userId, organizationId: org.organizationId, role: "member" })).rejects.toBeInstanceOf(ForbiddenError);
+    const { paused } = await pauseAgentStartedCampaigns(agentCampaignDeps(), { userId: org.userId, organizationId: org.organizationId, role: "owner" });
+    expect(paused).toBeGreaterThan(0);
+    expect(await sql`select 1 from campaigns where organization_id = ${org.organizationId} and status = 'active' and started_via_token_id is not null`).toHaveLength(0);
+  });
 });

@@ -97,6 +97,14 @@ export const drizzleAgentCampaignStore: AgentCampaignStore = {
     return row.n;
   },
 
+  async agentStartedActive(organizationId) {
+    const rows = await db
+      .select({ id: campaigns.id, channel: campaigns.channel })
+      .from(campaigns)
+      .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.status, "active"), isNotNull(campaigns.startedViaTokenId)));
+    return rows.map((r) => ({ id: r.id, channel: r.channel as "email" | "linkedin" }));
+  },
+
   async markEnrolledVia(tx, campaignId, tokenId) {
     // Rows this transaction inserted carry its start time, `now()`, as their creation time.
     const rows = await tx

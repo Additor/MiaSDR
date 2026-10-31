@@ -90,6 +90,8 @@ Every rule of a person's send applies too: suppression, do not contact, closed r
 
 With Replies and campaigns, a token that sends also gets `preview_campaign_launch` and `launch_campaign`. The agent previews a start, a resume or an enroll into a running campaign, shows the preview to the person, and passes its `launchToken` to `launch_campaign` (or to `draft_campaign` `add_leads` for a running campaign). A launch refuses when the campaign changed since the preview (`launch_token_stale`), when the organization allows replies only (`agent_campaigns_off`), while sending is paused, and for a Personal campaign unless it names its senders and the token's person owns each one (`agent_sender_not_owned`). Agents enroll at most 200 leads a day across both channels by default, drafts included (`agent_enroll_cap`); an owner or admin changes the limit in the same card. An admin sets who owns each LinkedIn account under Settings, LinkedIn; a member who connects an account through MiaSDR owns it.
 
+Owners and admins see agents' sends under Agent sends on the settings page: today's counts against the limits, the latest agent replies, and the campaigns agents started, with Pause campaigns agents started to stop all of those at once. An agent's send with an unconfirmed outcome shows in Actions under Problems, naming the token.
+
 Turning agent sending off stops every token that sends at once, and turning it on later needs new tokens. A message an agent sent shows "Sent by an agent ({token name})" in the thread, and the history reads "{person} via {token}".
 
 ## Limits and revoking

@@ -15,6 +15,7 @@ import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { toastOrThrow, useApiAction } from "@/app/_lib/use-api-action";
 import { AdminNotice } from "../admin-notice";
+import { AgentSends, type AgentSendsData } from "./agent-sends";
 import { AgentActivity, type ActivityCall } from "./agent-activity";
 import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
@@ -50,6 +51,8 @@ interface Props {
   activity: { calls: ActivityCall[]; more: boolean } | null;
   /** `RETENTION_MCP_TOOL_CALLS_DAYS`: how long the activity list keeps a call. */
   activityDays: number;
+  /** What agents sent and started, for an owner or admin; null for a member. */
+  agentSends: AgentSendsData | null;
 }
 
 /** The client setups the page shows, each with the token in place. */
@@ -70,7 +73,7 @@ const copy = (text: string, what: string) =>
     () => toast.error(`Copy failed. Select the ${what.toLowerCase()} and copy it.`),
   );
 
-export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSendMode, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays }: Props) {
+export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSendMode, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays, agentSends }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
   const { isBusy, run } = useApiAction();
@@ -226,6 +229,7 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
         </SettingsSection>
       )}
 
+      {agentSends && (agentSendMode !== "off" || agentSends.sends.length > 0 || agentSends.campaigns.length > 0) && <AgentSends data={agentSends} />}
       {activity && <AgentActivity initial={activity} retentionDays={activityDays} />}
 
       <ConfirmDialog

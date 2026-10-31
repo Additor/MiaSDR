@@ -1,5 +1,6 @@
 import type { DbHandle } from "@/platform/db/client";
-import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
+import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import { ConflictError, ForbiddenError, NotFoundError, type Actor } from "@/shared/errors";
 import { agentCampaignRefusal, launchToken, launchTokenMatches, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
 import { canTransition, emptyFirstSubjectMessage, stepsWithPlaceholders, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
 import { validateLinkedInSteps, type LinkedInStep } from "../linkedin/domain/linkedin";
@@ -56,6 +57,8 @@ export interface AgentCampaignStore {
   agentEnrolledSince(tx: DbHandle, organizationId: string, since: Date): Promise<number>;
   /** Marks the enrollments this transaction inserted with the token. Answers how many. */
   markEnrolledVia(tx: DbHandle, campaignId: string, tokenId: string): Promise<number>;
+  /** Running campaigns an agent started or resumed last. */
+  agentStartedActive(organizationId: string): Promise<Array<{ id: string; channel: AgentChannel }>>;
 }
 
 export interface AgentCampaignDeps {
@@ -245,6 +248,25 @@ export async function agentEnroll<T extends { added?: number; wouldAdd?: number 
     if (!input.dryRun && adding > 0) await deps.store.markEnrolledVia(tx, row.id, tokenId);
     return result;
   });
+}
+
+/**
+ * Pauses every running campaign an agent started, for an owner or admin who wants agents' outreach stopped at once.
+ * A campaign that moved in the meantime is left as it is. Answers how many it paused.
+ */
+export async function pauseAgentStartedCampaigns(deps: AgentCampaignDeps, actor: Actor): Promise<{ paused: number }> {
+  if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can pause the campaigns agents started.");
+  let paused = 0;
+  for (const row of await deps.store.agentStartedActive(actor.organizationId)) {
+    try {
+      if (row.channel === "email") await changeCampaignStatus(deps.email, actor, row.id, "paused");
+      else await changeLinkedInCampaignStatus(deps.linkedin, actor, row.id, "paused");
+      paused += 1;
+    } catch (error) {
+      if (!(error instanceof ConflictError)) throw error;
+    }
+  }
+  return { paused };
 }
 
 /** Refuses an agent's sender change on a running campaign. A person may change senders at any time. */

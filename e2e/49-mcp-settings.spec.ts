@@ -79,6 +79,10 @@ test("an admin lets agents send replies, creates a token that sends, and turns a
   await expect(page.getByText("Agent sending saved.")).toBeVisible();
 
   await page.goto("/settings/mcp");
+  // With agent sending on, owners and admins see what agents sent against the day's limits.
+  const sends = page.getByRole("region", { name: "Agent sends" });
+  await expect(sends).toContainText("Today: 0 of 100 agent replies, 0 of 200 leads enrolled by agents.");
+  await expect(sends.getByText("No agent replies yet")).toBeVisible();
   await page.getByLabel("Token name").fill("E2E sender");
   await page.getByRole("radio", { name: "Read, make changes and send" }).click();
   await expect(page.getByText(/sends replies as you, with no one reviewing first/)).toBeVisible();
