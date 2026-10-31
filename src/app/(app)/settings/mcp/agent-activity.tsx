@@ -44,7 +44,7 @@ function targetLink(target: Record<string, string>) {
 }
 
 /** What agents did in this organization, newest first. Owners and admins see it; reads are hidden until asked for. */
-export function AgentActivity({ initial }: { initial: Page }) {
+export function AgentActivity({ initial, retentionDays }: { initial: Page; retentionDays: number }) {
   const [page, setPage] = useState(initial);
   const [reads, setReads] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -67,7 +67,7 @@ export function AgentActivity({ initial }: { initial: Page }) {
     <SettingsSection
       id="activity"
       title="Agent activity"
-      description="Each call an agent made with a token of this organization, kept 90 days. Changes show by default."
+      description={`Each call an agent made with a token of this organization, kept ${retentionDays} days. Changes show by default.`}
       action={
         <div className="flex items-center gap-2">
           <Checkbox

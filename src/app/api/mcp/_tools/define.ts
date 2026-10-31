@@ -5,7 +5,7 @@ import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal"
 import { callTarget, type McpToolCallEntry } from "@/contexts/tenancy/application/mcp-tool-calls";
 import { hasScope, type McpScope } from "@/contexts/tenancy/domain/mcp-policy";
 import type { McpRateBucket } from "@/contexts/tenancy/domain/mcp-rate-limit";
-import { ConflictError, type Actor } from "@/shared/errors";
+import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
 import { estimateTokens, MAX_RESPONSE_TOKENS, toolOutputContext, type ToolOutputContext } from "./output";
 
 /** Reads this organization's data and changes nothing (the plan's "RO, CW"). */
@@ -42,6 +42,12 @@ export interface ToolDefinition<I extends AnyObject = AnyObject, O extends AnyOb
 
 /** Keeps the input and output types of one definition tied together. */
 export const defineTool = <I extends AnyObject, O extends AnyObject>(definition: ToolDefinition<I, O>): ToolDefinition => definition as unknown as ToolDefinition;
+
+/** An input an action of a tool requires: "edit needs draftId." when the agent left it out. */
+export const need = <T>(value: T | undefined, what: string, action: string): T => {
+  if (value === undefined) throw new ValidationError(`${action} needs ${what}.`);
+  return value;
+};
 
 /**
  * Runs a tool and holds its answer to the response budget. Tools trim their own lists; this is the check that no tool
@@ -80,15 +86,27 @@ export interface ToolHooks {
 
 const bucketsOf = (tool: ToolDefinition, input: unknown): McpRateBucket[] => tool.buckets?.(input as never) ?? (tool.scope === "mcp:read" ? [] : ["write"]);
 
+/** What a token ran out of, by bucket, for the refusal's sentence. */
+const LIMIT_WORDS: Record<McpRateBucket, string> = {
+  read: "requests this minute",
+  write: "changes this minute",
+  ai: "AI drafts this hour",
+  import: "imports this hour",
+};
+
 /** Counts the call in each of its buckets, all of them even after one refuses, so a client that keeps retrying stays refused. */
 async function takeBuckets(hooks: ToolHooks, buckets: McpRateBucket[]): Promise<void> {
   let wait: number | null = null;
+  const refused: McpRateBucket[] = [];
   for (const bucket of buckets) {
     const seconds = await hooks.take(bucket);
-    if (seconds !== null) wait = Math.max(wait ?? 0, seconds);
+    if (seconds === null) continue;
+    refused.push(bucket);
+    wait = Math.max(wait ?? 0, seconds);
   }
   if (wait !== null) {
-    throw new ConflictError(`This token made too many changes for now. Try again in ${wait} seconds.`, { code: "rate_limited", retryAfterSeconds: wait });
+    const what = refused.map((bucket) => LIMIT_WORDS[bucket]).join(" and ");
+    throw new ConflictError(`This token made too many ${what}. Try again in ${wait} seconds.`, { code: "rate_limited", retryAfterSeconds: wait });
   }
 }
 

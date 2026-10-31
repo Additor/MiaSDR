@@ -61,7 +61,16 @@ export interface LinkedInReplyPanel {
    * The newest open draft: an AI draft or text kept after a refusal, a send in flight, one waiting for a person's check,
    * or a `stale` draft written before a newer message arrived (it cannot be sent).
    */
-  draft: { id: string; status: string; text: string; error: string | null; revision: number; source: "ai" | "manual" } | null;
+  draft: {
+    id: string;
+    status: string;
+    text: string;
+    error: string | null;
+    revision: number;
+    source: "ai" | "manual";
+    /** The name of the MCP token whose agent wrote the current text or asked for it, or null. */
+    writtenVia: string | null;
+  } | null;
 }
 
 export interface LinkedInReplyStore {

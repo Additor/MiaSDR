@@ -2,13 +2,12 @@ import { z } from "zod";
 import type { EnrollOptions } from "@/contexts/outreach/application/enroll-options";
 import { createCampaign, enrollLeads, enrollPickedLeads, updateCampaign } from "@/contexts/outreach/application/campaign-management";
 import type { StepInput } from "@/contexts/outreach/domain/campaign";
-import { parseEnrollmentListQuery } from "@/contexts/outreach/domain/enrollment-list";
 import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
 import { createLinkedInCampaign, enrollLinkedInLeads, enrollPickedLinkedInLeads, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import type { LinkedInStep } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
-import { CHANNELS, READS } from "./campaigns";
+import { campaignStatus, CHANNELS } from "./campaigns";
 import { CHANGES, defineTool } from "./define";
 import { appLinks } from "./output";
 
@@ -104,8 +103,7 @@ export const draftCampaignTool = defineTool({
     if (input.action === "update") {
       if (input.name === undefined && input.steps === undefined && input.senderIds === undefined) throw new ValidationError("update needs name, steps or senderIds.");
       if (input.senderIds !== undefined) {
-        const { campaign } = await READS[input.channel].detail(actor, campaignId, parseEnrollmentListQuery({ size: "1" }));
-        if (campaign.status === "active") throw new ConflictError("Pause the campaign before an agent changes its senders.", { code: "agent_sender_change_active" });
+        if ((await campaignStatus(actor, input.channel, campaignId)) === "active") throw new ConflictError("Pause the campaign before an agent changes its senders.", { code: "agent_sender_change_active" });
       }
       await writes.update(actor, campaignId, { name: input.name, steps: input.steps, senderIds: input.senderIds });
       return answer(campaignId, "Saved the campaign.");

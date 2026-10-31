@@ -123,6 +123,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
           Reply on LinkedIn
           {draft?.source === "ai" && draft.status === "awaiting_review" && <Badge variant="outline">AI draft</Badge>}
+          {draft?.writtenVia && <Badge variant="outline">Written by an agent ({draft.writtenVia})</Badge>}
           {stale && (
             // Out of date is uncertain, not an error: the warning hue on its icon, never a red fill.
             <Badge variant="outline">

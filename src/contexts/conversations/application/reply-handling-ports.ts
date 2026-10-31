@@ -196,6 +196,8 @@ export interface ReplyTypeChangeResult {
   draftsRetired: number;
   /** A follow-up run of the owning campaign started for the new type. */
   runStarted: boolean;
+  /** The change ended a follow-up run of the old type. */
+  runEnded: boolean;
 }
 
 /** What an undo retired, so the client can say it. */

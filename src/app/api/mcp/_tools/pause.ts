@@ -3,12 +3,11 @@ import { pauseSequenceRun, getRecordSequence } from "@/contexts/conversations/af
 import { sequenceDeps } from "@/contexts/conversations/after-reply/infrastructure/sequence-composition";
 import { changeCampaignStatus } from "@/contexts/outreach/application/campaign-management";
 import { getSendPause, setSendPause } from "@/contexts/outreach/application/send-pause";
-import { parseEnrollmentListQuery } from "@/contexts/outreach/domain/enrollment-list";
 import { campaignDeps, emailRulesDeps, sendPauseDeps } from "@/contexts/outreach/infrastructure/composition";
 import { changeLinkedInCampaignStatus } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { ValidationError, type Actor } from "@/shared/errors";
-import { CHANNELS, READS } from "./campaigns";
+import { campaignStatus, CHANNELS } from "./campaigns";
 import { defineTool } from "./define";
 
 const TARGETS = ["campaign", "follow_ups", "organization"] as const;
@@ -28,10 +27,10 @@ const SUMMARY: Record<Outcome, string> = {
 };
 
 async function pauseCampaign(actor: Actor, channel: (typeof CHANNELS)[number], campaignId: string): Promise<Outcome> {
-  const { campaign } = await READS[channel].detail(actor, campaignId, parseEnrollmentListQuery({ size: "1" }));
-  if (campaign.status === "draft") return "not_started";
-  if (campaign.status === "paused") return "already_paused";
-  if (campaign.status !== "active") return "nothing_to_pause";
+  const status = await campaignStatus(actor, channel, campaignId);
+  if (status === "draft") return "not_started";
+  if (status === "paused") return "already_paused";
+  if (status !== "active") return "nothing_to_pause";
   await PAUSE[channel](actor, campaignId);
   return "paused";
 }

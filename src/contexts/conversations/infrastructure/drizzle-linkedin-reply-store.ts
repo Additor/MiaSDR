@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { channelSettings, conversations, drafts, events, linkedinAccounts, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
+import { channelSettings, conversations, drafts, events, linkedinAccounts, mcpTokens, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import type { AttemptRow } from "../application/reply-ports";
@@ -351,6 +351,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       .orderBy(desc(drafts.createdAt))
       .limit(1);
     const draft = newest && ["awaiting_review", "sending", "delivery_uncertain", "stale"].includes(newest.status) ? newest : null;
+    // The agent's token, named as the email panel names it, until a person edits the text.
+    const [token] = draft?.writtenViaTokenId
+      ? await db.select({ name: mcpTokens.name }).from(mcpTokens).where(and(eq(mcpTokens.id, draft.writtenViaTokenId), eq(mcpTokens.organizationId, organizationId)))
+      : [];
     return {
       conversationId,
       recipient: head.name ?? head.firstName,
@@ -361,7 +365,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,
       draft: draft
-        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: (draft.request as { manual?: boolean } | null)?.manual === true ? "manual" : "ai" }
+        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: (draft.request as { manual?: boolean } | null)?.manual === true ? "manual" : "ai", writtenVia: token?.name ?? null }
         : null,
     };
   },

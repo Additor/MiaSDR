@@ -4,7 +4,7 @@ import { taskDeps } from "@/contexts/conversations/actions/infrastructure/task-c
 import { getOrganization } from "@/contexts/tenancy/application/organization-settings";
 import { organizationDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
 import { ValidationError, type Actor } from "@/shared/errors";
-import { CHANGES, defineTool } from "./define";
+import { CHANGES, defineTool, need } from "./define";
 import { DEFAULT_LIST_LIMIT, fitItems, iso, listLimit } from "./output";
 
 const ACTIONS = ["list", "create", "update", "complete"] as const;
@@ -21,11 +21,6 @@ const task = z.object({
   personId: z.string(),
   personName: z.string().nullable(),
 });
-
-const need = <T>(value: T | undefined, what: string, action: string): T => {
-  if (value === undefined) throw new ValidationError(`${action} needs ${what}.`);
-  return value;
-};
 
 /** A due day falls at the end of that day in the organization's zone unless the call names another. */
 async function zoneFor(actor: Actor, asked: string | undefined): Promise<string> {

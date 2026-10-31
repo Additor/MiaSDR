@@ -36,7 +36,7 @@ async function Mcp() {
     canManage ? listMcpTokens(deps, actor, "organization") : Promise.resolve([]),
     canManage ? listMcpToolCalls(mcpToolCallDeps(), actor, { writesOnly: true, before: null }) : Promise.resolve(null),
   ]);
-  const { MCP_ENABLED, APP_URL } = env();
+  const { MCP_ENABLED, APP_URL, RETENTION_MCP_TOOL_CALLS_DAYS } = env();
   return (
     <McpPanel
       installEnabled={MCP_ENABLED}
@@ -50,6 +50,7 @@ async function Mcp() {
       mine={JSON.parse(JSON.stringify(mine))}
       everyone={JSON.parse(JSON.stringify(everyone))}
       activity={activity && JSON.parse(JSON.stringify(activity))}
+      activityDays={RETENTION_MCP_TOOL_CALLS_DAYS}
     />
   );
 }

@@ -304,11 +304,6 @@ const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<st
   // The classification validator wants the message to belong to the classification's record. The foreign key walk
   // seeds an unrelated record, so point record_id at the record of the seeded message's conversation.
   // Positions are unique per organization (checked at commit), so each seeded stage goes after the last one.
-  mcp_tokens: {
-    before: async (_sql, values) => {
-      values.token_hash = crypto.randomUUID();
-    },
-  },
   deal_stages: {
     before: async (sql, values) => {
       const [row] = await sql`select coalesce(max(position), 0) + 1 as next from deal_stages where organization_id = ${values.organization_id as string}`;
@@ -319,6 +314,12 @@ const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<st
     before: async (sql, values) => {
       const [row] = await sql`select c.record_id from messages m join conversations c on c.id = m.conversation_id where m.id = ${values.message_id as string}`;
       if (row) values.record_id = row.record_id;
+    },
+  },
+  // `token_hash` is unique, so each seeded token gets its own.
+  mcp_tokens: {
+    before: async (_sql, values) => {
+      values.token_hash = crypto.randomUUID();
     },
   },
 };

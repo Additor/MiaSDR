@@ -67,13 +67,13 @@ type EnrollmentQuery = ReturnType<typeof parseEnrollmentListQuery>;
 type Step = { stepNumber: number; kind: string; subject?: string; body: string; waitDays: number };
 type Row = { enrollmentId: string; personId: string; personName: string | null; status: string; currentStep: number; nextSendAt: Date | null; lastSentAt: Date | null; stopReason: string | null; inboxConversationId: string | null };
 
-/** What get_campaign and pause_sending read of one channel. Both channels answer in the same shape. */
+/** What get_campaign and `campaignStatus` read of one channel. Both channels answer in the same shape. */
 interface ChannelReads {
   detail(actor: Actor, id: string, query: EnrollmentQuery): Promise<{ campaign: { name: string; status: string; steps: Step[] }; enrollments: { total: number; rows: Row[] } }>;
   preview(actor: Actor, id: string, stepNumber: number): Promise<{ subject: string | null; body: string; leadName: string | null; usedSampleLead: boolean; unresolved: UnresolvedToken[] }>;
 }
 
-export const READS: Record<(typeof CHANNELS)[number], ChannelReads> = {
+const READS: Record<(typeof CHANNELS)[number], ChannelReads> = {
   email: {
     detail: (actor, id, query) => getCampaignDetail(campaignDeps(), actor, id, query),
     preview: async (actor, id, stepNumber) => {
@@ -89,6 +89,10 @@ export const READS: Record<(typeof CHANNELS)[number], ChannelReads> = {
     },
   },
 };
+
+/** A campaign's status for the write tools that check it first. A foreign or wrong-channel id answers not found. */
+export const campaignStatus = async (actor: Actor, channel: (typeof CHANNELS)[number], campaignId: string): Promise<string> =>
+  (await READS[channel].detail(actor, campaignId, parseEnrollmentListQuery({ size: "1" }))).campaign.status;
 
 export const getCampaignTool = defineTool({
   name: "get_campaign",

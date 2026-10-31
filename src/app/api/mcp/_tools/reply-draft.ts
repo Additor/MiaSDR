@@ -5,7 +5,7 @@ import { getLinkedInReplyPanel } from "@/contexts/conversations/application/link
 import { createManualDraft, discardDraft, editDraft, getReplyPanel, regenerateDraft, requestDraft } from "@/contexts/conversations/application/reply-management";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { defineTool, type ToolContext } from "./define";
+import { defineTool, need, type ToolContext } from "./define";
 import { appLinks } from "./output";
 
 const ACTIONS = ["request_ai", "create_manual", "edit", "regenerate", "discard"] as const;
@@ -13,19 +13,14 @@ const ACTIONS = ["request_ai", "create_manual", "edit", "regenerate", "discard"]
 const draftView = z.object({ draftId: z.string(), status: z.string(), revision: z.number(), subject: z.string().nullable(), text: z.string() });
 
 /** The conversation's open draft as `get_conversation` shows it, or null when it has none. */
-async function readDraft(actor: Actor, conversationId: string): Promise<{ channel: string; draft: z.infer<typeof draftView> | null }> {
+async function readDraft(actor: Actor, conversationId: string): Promise<z.infer<typeof draftView> | null> {
   const thread = await getThread(inboxDeps(), actor, conversationId);
   if (thread.channel === "linkedin") {
-    const panel = await getLinkedInReplyPanel(linkedinReplyDeps(), actor, conversationId);
-    const d = panel?.draft;
-    return { channel: thread.channel, draft: d ? { draftId: d.id, status: d.status, revision: d.revision, subject: null, text: d.text } : null };
+    const d = (await getLinkedInReplyPanel(linkedinReplyDeps(), actor, conversationId))?.draft;
+    return d ? { draftId: d.id, status: d.status, revision: d.revision, subject: null, text: d.text } : null;
   }
-  const panel = await getReplyPanel(replyDeps(), actor, conversationId);
-  const d = panel?.draft;
-  return {
-    channel: thread.channel,
-    draft: d ? { draftId: d.id, status: d.status, revision: d.revision, subject: d.subject, text: d.editedBodyText ?? d.aiBodyText ?? "" } : null,
-  };
+  const d = (await getReplyPanel(replyDeps(), actor, conversationId))?.draft;
+  return d ? { draftId: d.id, status: d.status, revision: d.revision, subject: d.subject, text: d.editedBodyText ?? d.aiBodyText ?? "" } : null;
 }
 
 /** The conversation a draft belongs to; another organization's draft answers not found. */
@@ -34,11 +29,6 @@ async function conversationOfDraft(actor: Actor, draftId: string): Promise<strin
   if (!draft) throw new NotFoundError("Draft not found");
   return draft.conversationId;
 }
-
-const need = <T>(value: T | undefined, what: string, action: string): T => {
-  if (value === undefined) throw new ValidationError(`${action} needs ${what}.`);
-  return value;
-};
 
 export const writeReplyDraftTool = defineTool({
   name: "write_reply_draft",
@@ -71,7 +61,8 @@ export const writeReplyDraftTool = defineTool({
         break;
       case "create_manual": {
         conversationId = need(input.conversationId, "conversationId", "create_manual");
-        const { channel } = await readDraft(actor, conversationId);
+        // The thread alone tells the channel; the draft is read once, after the write.
+        const { channel } = await getThread(inboxDeps(), actor, conversationId);
         if (channel === "linkedin") throw new ValidationError("An agent cannot type a LinkedIn draft yet. Use request_ai, or edit the draft the AI wrote.");
         await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject, bodyText: need(input.bodyText, "bodyText", "create_manual") });
         break;
@@ -95,7 +86,7 @@ export const writeReplyDraftTool = defineTool({
         break;
       }
     }
-    const { draft } = await readDraft(actor, conversationId);
+    const draft = await readDraft(actor, conversationId);
     const reviewUrl = appLinks(out).conversation(conversationId);
     const summary =
       input.action === "discard"

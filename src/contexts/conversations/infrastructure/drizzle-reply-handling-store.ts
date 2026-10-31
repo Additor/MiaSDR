@@ -327,7 +327,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         })
         .where(eq(records.id, before.id));
       // The old type's run and drafts end, the version goes up, and the new type's sequence starts, all in this commit.
-      const { contextVersion: version, draftsRetired, runStarted } = await restartRecordWorkTx(tx, {
+      const { contextVersion: version, draftsRetired, runsEnded, runStarted } = await restartRecordWorkTx(tx, {
         organizationId: input.organizationId,
         recordId: before.id,
         reason: "stage_moved",
@@ -348,7 +348,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && !replyTypeLocked, rules, ...viaMeta(input.via) },
         contextVersion: version,
       });
-      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted };
+      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted, runEnded: runsEnded > 0 };
     });
   },
 

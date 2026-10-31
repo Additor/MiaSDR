@@ -63,9 +63,10 @@ const output = z.object({
 
 /** A message as the answer carries it: ours as written, the lead's fenced; `concise` keeps an excerpt of each. */
 function toMessage(ctx: ToolOutputContext, channel: string, m: ThreadMessage, detailed: boolean): z.infer<typeof message> {
-  const limit = detailed ? DETAILED_BODY_CHARS : EXCERPT_CHARS;
-  const truncated = m.bodyText.length > limit;
-  const body = detailed ? (truncated ? `${m.bodyText.slice(0, limit)}…` : m.bodyText) : excerpt(m.bodyText);
+  // `excerpt` folds whitespace before it measures, so a concise body is cut only when its one-line form is too long.
+  const measured = detailed ? m.bodyText : m.bodyText.replace(/\s+/g, " ").trim();
+  const truncated = measured.length > (detailed ? DETAILED_BODY_CHARS : EXCERPT_CHARS);
+  const body = detailed ? (truncated ? `${m.bodyText.slice(0, DETAILED_BODY_CHARS)}…` : m.bodyText) : excerpt(m.bodyText);
   const source = messageSource(channel);
   const inbound = m.direction === "inbound";
   return {

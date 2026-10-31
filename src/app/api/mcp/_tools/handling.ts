@@ -4,12 +4,7 @@ import { assignmentDeps } from "@/contexts/conversations/actions/infrastructure/
 import { acknowledgeReplyTypePick, addRecordNote, changeReplyType, closeRecord, reopenRecord, undoReplyTypePick } from "@/contexts/conversations/application/reply-handling";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { ValidationError } from "@/shared/errors";
-import { CHANGES, defineTool } from "./define";
-
-const need = <T>(value: T | undefined, what: string, action: string): T => {
-  if (value === undefined) throw new ValidationError(`${action} needs ${what}.`);
-  return value;
-};
+import { CHANGES, defineTool, need } from "./define";
 
 const REPLY_TYPE_ACTIONS = ["change", "confirm_pick", "undo_pick"] as const;
 
@@ -53,10 +48,11 @@ export const setReplyTypeTool = defineTool({
       });
       const parts = [`Set to ${result.replyTypeKey ?? result.groupKey}, version ${result.contextVersion}.`];
       if (result.draftsRetired > 0) parts.push(`${result.draftsRetired} open draft(s) retired.`);
+      if (result.runEnded) parts.push("Follow-ups of the old type ended.");
       if (result.runStarted) parts.push("Follow-ups started.");
       return {
         summary: parts.join(" "),
-        structured: { action: input.action, recordId: result.recordId, contextVersion: result.contextVersion, draftsRetired: result.draftsRetired, followUpsStarted: result.runStarted, followUpsEnded: false },
+        structured: { action: input.action, recordId: result.recordId, contextVersion: result.contextVersion, draftsRetired: result.draftsRetired, followUpsStarted: result.runStarted, followUpsEnded: result.runEnded },
       };
     }
     const pickId = need(input.replyTypePickId, "replyTypePickId", input.action);

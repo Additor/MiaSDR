@@ -46,6 +46,8 @@ interface Props {
   everyone: Token[];
   /** The first page of agent activity, for an owner or admin; null for a member. */
   activity: { calls: ActivityCall[]; more: boolean } | null;
+  /** `RETENTION_MCP_TOOL_CALLS_DAYS`: how long the activity list keeps a call. */
+  activityDays: number;
 }
 
 /** The client setups the page shows, each with the token in place. */
@@ -66,7 +68,7 @@ const copy = (text: string, what: string) =>
     () => toast.error(`Copy failed. Select the ${what.toLowerCase()} and copy it.`),
   );
 
-export function McpPanel({ installEnabled, enabled, memberWriteTokens, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity }: Props) {
+export function McpPanel({ installEnabled, enabled, memberWriteTokens, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
   const { isBusy, run } = useApiAction();
@@ -209,7 +211,7 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, canManage
         </SettingsSection>
       )}
 
-      {activity && <AgentActivity initial={activity} />}
+      {activity && <AgentActivity initial={activity} retentionDays={activityDays} />}
 
       <ConfirmDialog
         open={switching}
