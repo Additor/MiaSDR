@@ -10,6 +10,8 @@ export interface StepInput {
 
 export const MAX_STEPS = 10;
 export const MAX_WAIT_DAYS = 60;
+export const STEP_SUBJECT_MAX = 300;
+export const STEP_BODY_MAX = 20_000;
 
 export interface StepIssue {
   step: number | null;
@@ -32,6 +34,8 @@ export function validateSteps(steps: StepInput[]): StepIssue[] {
     const n = index + 1;
     if (step.stepNumber !== n) issues.push({ step: n, message: "Steps must be numbered 1, 2, 3 in order." });
     if (step.body.trim() === "") issues.push({ step: n, message: "The message is empty." });
+    if (step.body.length > STEP_BODY_MAX) issues.push({ step: n, message: `The message is longer than ${STEP_BODY_MAX} characters.` });
+    if ((step.subject ?? "").length > STEP_SUBJECT_MAX) issues.push({ step: n, message: `The subject is longer than ${STEP_SUBJECT_MAX} characters.` });
     if (index === 0 && (step.subject ?? "").trim() === "") issues.push({ step: n, message: "The first step needs a subject." });
     if (!Number.isInteger(step.waitDays) || step.waitDays < 0 || step.waitDays > MAX_WAIT_DAYS) {
       issues.push({ step: n, message: `Wait must be a whole number of days from 0 to ${MAX_WAIT_DAYS}.` });

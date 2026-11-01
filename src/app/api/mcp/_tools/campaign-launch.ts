@@ -4,7 +4,7 @@ import { LAUNCH_PURPOSES } from "@/contexts/outreach/domain/agent-campaign";
 import { agentCampaignDeps } from "@/contexts/outreach/infrastructure/agent-campaign-composition";
 import { CHANNELS } from "./campaigns";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks } from "./output";
+import { appLinks, clip, fencedField, LONG_TEXT_CHARS, UNTRUSTED_NOTE, untrusted } from "./output";
 
 const sender = z.object({ id: z.string(), name: z.string(), status: z.string(), dailyInviteLimit: z.number().nullable(), limitReachedUntil: z.string().nullable() });
 
@@ -30,7 +30,7 @@ export const previewCampaignLaunchTool = defineTool({
     pendingLeads: z.number(),
     agentEnrollsLeftToday: z.number(),
     launchToken: z.string(),
-    firstStep: z.object({ subject: z.string().nullable(), bodyText: z.string(), leadName: z.string().nullable() }),
+    firstStep: z.object({ subject: z.string().nullable(), bodyText: z.string(), truncated: z.boolean(), leadName: z.string().nullable() }),
     emptySubjectLeads: z.number().nullable(),
     estimatedDays: z.number().nullable(),
     appUrl: z.string(),
@@ -39,9 +39,12 @@ export const previewCampaignLaunchTool = defineTool({
     const preview = await previewLaunch(agentCampaignDeps(), actor, input);
     const appUrl = appLinks(out).campaign(preview.campaignId);
     const verdict = preview.problems.length === 0 ? "Nothing stops it." : `${preview.problems.length} problem(s): ${preview.problems.join(" ")}`;
+    // The rendered step carries a lead's own values, so it comes fenced like get_campaign's preview.
+    const body = clip(preview.firstStep.bodyText, LONG_TEXT_CHARS);
+    const firstStep = { subject: fencedField(out, preview.firstStep.subject), bodyText: untrusted(out, "field", body.text), truncated: body.truncated, leadName: preview.firstStep.leadName };
     return {
-      summary: `${preview.status} campaign, ${preview.pendingLeads} lead(s) waiting, ${preview.senders.length} sender(s). ${verdict}`,
-      structured: { ...preview, appUrl },
+      summary: `${preview.status} campaign, ${preview.pendingLeads} lead(s) waiting, ${preview.senders.length} sender(s). ${verdict}\n${UNTRUSTED_NOTE}`,
+      structured: { ...preview, firstStep, appUrl },
     };
   },
 });

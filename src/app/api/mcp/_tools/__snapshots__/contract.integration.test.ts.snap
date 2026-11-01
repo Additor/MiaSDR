@@ -218,7 +218,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages). \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`.",
+    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks \`truncated\` whole with \`previewStep\` before you send it back. \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -341,7 +341,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Imports leads from CSV text, as the Leads import does. \`preview\` takes \`csvText\` (a header row, up to 500 rows and 256 KB) and \`mapping\` from each header to a field (email, first_name, last_name, full_name, title, phone, linkedin, company_domain, company_name, company_linkedin), \`custom:<name>\` or \`skip\`, and optional \`defaultCountry\` for phone numbers. It answers what the import would create, update and skip, and a \`previewToken\`. \`commit\` imports that preview with its \`previewToken\` within 10 minutes. Existing leads match by email or LinkedIn profile.",
+    "description": "Imports leads from CSV text, as the Leads import does. \`preview\` takes \`csvText\` (a header row, up to 500 rows and 256 KB) and \`mapping\` from each header to a field (email, first_name, last_name, full_name, title, phone, linkedin, company_domain, company_name, company_linkedin), \`custom:<name>\` or \`skip\`, and optional \`defaultCountry\` for phone numbers. It answers what the import would create, update and skip, and a \`previewToken\`. \`commit\` imports that preview with its \`previewToken\` within 10 minutes; a person holds 3 previews at once, and a fourth replaces the oldest. Existing leads match by email or LinkedIn profile.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -964,7 +964,7 @@ exports[`MCP contract > keeps the definitions within the token budget and unchan
       "openWorldHint": false,
       "readOnlyHint": true,
     },
-    "description": "One campaign: its steps, senders, and one page of its leads by \`tab\` (\`all\`, \`queued\`, \`in_sequence\`, \`paused\`, \`replied\`, \`finished\`, \`stopped\`, \`removed\`) and \`search\`. With \`previewStep\`, it also renders that step the way it would go out, with a lead of the campaign, or sample values while it has none (\`usedSampleLead\`).",
+    "description": "One campaign: its steps, senders, and one page of its leads by \`tab\` (\`all\`, \`queued\`, \`in_sequence\`, \`paused\`, \`replied\`, \`finished\`, \`stopped\`, \`removed\`) and \`search\`. Step bodies keep 300 characters and mark a longer one \`truncated\`. With \`previewStep\`, that step's body comes whole, and the answer renders it the way it would go out, with a lead of the campaign, or sample values while it has none (\`usedSampleLead\`).",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -1046,7 +1046,7 @@ exports[`MCP contract > keeps the definitions within the token budget and unchan
       "openWorldHint": false,
       "readOnlyHint": true,
     },
-    "description": "One conversation with its lead, reply handling state, messages, the open draft, AI reply-type picks, notes, open tasks and follow-ups. Pass \`conversationId\`, or \`recordId\` for the main conversation of that reply handling. \`response_format\` \`concise\` (default) gives a 200-character excerpt of each message; \`detailed\` gives each body up to 4,000 characters and marks a longer one \`truncated\`. Long threads keep the newest messages. Write tools take \`contextVersion\`, the draft's \`revision\` and \`assignedTo\` from this answer.",
+    "description": "One conversation with its lead, reply handling state, messages, the open draft, AI reply-type picks, notes, open tasks and follow-ups. Pass \`conversationId\`, or \`recordId\` for the main conversation of that reply handling. \`response_format\` \`concise\` (default) gives a 200-character excerpt of each message; \`detailed\` gives each body up to 4,000 characters and marks a longer one \`truncated\`. Long threads keep the newest messages. The draft text keeps 12,000 characters and marks a longer one \`truncated\`; \`edit\` replaces the whole text, so rewrite a truncated draft in full or leave it to the person. Write tools take \`contextVersion\`, the draft's \`revision\` and \`assignedTo\` from this answer.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {

@@ -13,10 +13,12 @@ export const MAX_AGENT_CSV_BYTES = 256 * 1024;
 export const MAX_AGENT_IMPORT_ROWS = 500;
 /** How long a preview waits for its commit. */
 export const PREVIEW_TTL_MS = 10 * 60_000;
-/** Previews held at once across the process; the oldest goes first. */
-const MAX_PREVIEWS = 50;
+/** Previews one person holds at once; a new one replaces their oldest. */
+export const MAX_PREVIEWS_PER_PERSON = 3;
+/** Previews held at once across the process. A full store refuses a new preview rather than drop someone else's. */
+export const MAX_PREVIEWS = 50;
 
-interface Preview {
+export interface Preview {
   organizationId: string;
   userId: string;
   headers: string[];
@@ -31,23 +33,33 @@ interface Preview {
  * Previews kept between `preview` and `commit`, in this process's memory, so the agent sends the CSV once. A commit that
  * reaches another process, or comes after a restart or ten minutes, finds no preview and asks for a new one.
  */
-const previews = new Map<string, Preview>();
-
-function keep(token: string, preview: Preview, now: number) {
-  for (const [key, held] of previews) if (held.expiresAt <= now) previews.delete(key);
-  while (previews.size >= MAX_PREVIEWS) previews.delete(previews.keys().next().value as string);
-  previews.set(token, preview);
+export function previewStore(limits = { perPerson: MAX_PREVIEWS_PER_PERSON, total: MAX_PREVIEWS }) {
+  const previews = new Map<string, Preview>();
+  return {
+    keep(token: string, preview: Preview, now: number) {
+      for (const [key, held] of previews) if (held.expiresAt <= now) previews.delete(key);
+      const mine = [...previews].flatMap(([key, held]) => (held.organizationId === preview.organizationId && held.userId === preview.userId ? [key] : []));
+      if (mine.length >= limits.perPerson) previews.delete(mine[0] as string);
+      else if (previews.size >= limits.total) {
+        const soonest = Math.min(...[...previews.values()].map((held) => held.expiresAt));
+        const wait = Math.max(1, Math.ceil((soonest - now) / 1000));
+        throw new ConflictError(`MiaSDR holds all the import previews it can right now. Try again in ${wait} seconds.`, { code: "import_busy", retryAfterSeconds: wait });
+      }
+      previews.set(token, preview);
+    },
+    /** The preview behind a token, for the same person in the same organization only. Taking it removes it. */
+    take(token: string, actor: Actor, now: number): Preview {
+      const preview = previews.get(token);
+      if (!preview || preview.expiresAt <= now || preview.organizationId !== actor.organizationId || preview.userId !== actor.userId) {
+        throw new ConflictError("This preview expired or is unknown. Run preview again, then commit with its new previewToken.", { code: "preview_expired" });
+      }
+      previews.delete(token);
+      return preview;
+    },
+  };
 }
 
-/** The preview behind a token, for the same person in the same organization only. Taking it removes it. */
-function take(token: string, actor: Actor, now: number): Preview {
-  const preview = previews.get(token);
-  if (!preview || preview.expiresAt <= now || preview.organizationId !== actor.organizationId || preview.userId !== actor.userId) {
-    throw new ConflictError("This preview expired or is unknown. Run preview again, then commit with its new previewToken.", { code: "preview_expired" });
-  }
-  previews.delete(token);
-  return preview;
-}
+const previews = previewStore();
 
 const target = z.union([z.literal("skip"), z.enum(CORE_TARGETS), z.string().regex(/^custom:.+$/)]);
 const ACTIONS = ["preview", "commit"] as const;
@@ -58,7 +70,7 @@ export const importLeadsTool = defineTool({
   description: [
     "Imports leads from CSV text, as the Leads import does. `preview` takes `csvText` (a header row, up to 500 rows and 256 KB) and `mapping` from each header to a field",
     `(${CORE_TARGETS.join(", ")}), \`custom:<name>\` or \`skip\`, and optional \`defaultCountry\` for phone numbers. It answers what the import would create, update and skip, and a \`previewToken\`.`,
-    "`commit` imports that preview with its `previewToken` within 10 minutes. Existing leads match by email or LinkedIn profile.",
+    "`commit` imports that preview with its `previewToken` within 10 minutes; a person holds 3 previews at once, and a fourth replaces the oldest. Existing leads match by email or LinkedIn profile.",
   ].join(" "),
   scope: "mcp:write",
   annotations: CHANGES,
@@ -90,14 +102,14 @@ export const importLeadsTool = defineTool({
       const summary = await previewImport(leadImportDeps(), { organizationId: actor.organizationId, headers, rows, mapping, defaultCountry, role: actor.role });
       const previewToken = randomBytes(18).toString("base64url");
       const csvHash = createHash("sha256").update(bytes).digest("hex");
-      keep(previewToken, { organizationId: actor.organizationId, userId: actor.userId, headers, rows, mapping, defaultCountry, csvHash, expiresAt: now + PREVIEW_TTL_MS }, now);
+      previews.keep(previewToken, { organizationId: actor.organizationId, userId: actor.userId, headers, rows, mapping, defaultCountry, csvHash, expiresAt: now + PREVIEW_TTL_MS }, now);
       return {
         summary: `Would create ${summary.created}, update ${summary.updated} and leave ${summary.unchanged} unchanged of ${summary.totalRows} row(s). Commit with the previewToken within 10 minutes.`,
         structured: { action: input.action, previewToken, summary, report: null },
       };
     }
     if (!input.previewToken) throw new ValidationError("commit needs the previewToken from preview.");
-    const preview = take(input.previewToken, actor, now);
+    const preview = previews.take(input.previewToken, actor, now);
     // The preview holds the organization and the person `take` matched to the actor.
     const report = await importLeads(leadImportDeps(), { ...preview, filename: `agent import ${preview.csvHash.slice(0, 8)}.csv`, role: actor.role });
     const { stats } = report;

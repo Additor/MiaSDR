@@ -18,6 +18,7 @@ export interface LinkedInStep {
 export const INVITE_NOTE_MAX = 300;
 export const MAX_LINKEDIN_STEPS = 6;
 export const MAX_LINKEDIN_WAIT_DAYS = 60;
+export const LINKEDIN_STEP_BODY_MAX = 5_000;
 /** An invitation nobody accepted after this many days ends the sequence. */
 export const INVITE_EXPIRES_DAYS = 30;
 export const MAX_RESOLVE_ATTEMPTS = 3;
@@ -43,6 +44,7 @@ export function validateLinkedInSteps(steps: LinkedInStep[]): LinkedInStepIssue[
     const expected = index === 0 ? "invitation" : "message";
     if (step.kind !== expected) issues.push({ step: n, message: index === 0 ? "The first step is the connection request." : "Steps after the first are messages." });
     if (index > 0 && step.body.trim() === "") issues.push({ step: n, message: "The message is empty." });
+    if (step.body.length > LINKEDIN_STEP_BODY_MAX) issues.push({ step: n, message: `The message is longer than ${LINKEDIN_STEP_BODY_MAX} characters.` });
     if (index === 0 && step.body.length > INVITE_NOTE_MAX * 2) issues.push({ step: n, message: `The note template is too long. LinkedIn allows ${INVITE_NOTE_MAX} characters after merge fields are filled.` });
     if (!Number.isInteger(step.waitDays) || step.waitDays < 0 || step.waitDays > MAX_LINKEDIN_WAIT_DAYS) {
       issues.push({ step: n, message: `Wait must be a whole number of days from 0 to ${MAX_LINKEDIN_WAIT_DAYS}.` });

@@ -69,7 +69,7 @@ export const draftCampaignTool = defineTool({
   title: "Draft campaign",
   description: [
     "Prepares a campaign; nothing here sends. `create` makes a draft (`channel`, `name`, optional `senderIds`; LinkedIn `personal`).",
-    "`update` changes `name`, `steps` or `senderIds` of a draft or paused campaign; `steps` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages).",
+    "`update` changes `name`, `steps` or `senderIds` of a draft or paused campaign; `steps` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks `truncated` whole with `previewStep` before you send it back.",
     "`add_leads` enrolls leads by Leads search `query` or `personIds` (up to 500); call it with `dryRun: true` first to see the counts. Agents enroll a limited number of leads a day (`agent_enroll_cap`).",
     "Adding to a running campaign needs a token that sends, agent campaigns allowed, and `launchToken` from preview_campaign_launch with `purpose: enroll`.",
   ].join(" "),

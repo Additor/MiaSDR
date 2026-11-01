@@ -39,6 +39,14 @@ export const messageSource = (channel: string | null): UntrustedSource => (chann
 /** An imported or provider-filled value, fenced, or null when there is none. */
 export const fencedField = (ctx: ToolOutputContext, value: string | null): string | null => (value === null || value === "" ? value : untrusted(ctx, "field", value));
 
+/** Characters of a long text an answer keeps, such as a reply draft or a rendered campaign step. */
+export const LONG_TEXT_CHARS = 12_000;
+
+/** `text` as written up to `max` characters, ending with "…" when it was longer. */
+export function clip(text: string, max: number): { text: string; truncated: boolean } {
+  return text.length > max ? { text: `${text.slice(0, max)}…`, truncated: true } : { text, truncated: false };
+}
+
 /** The first `max` characters of `text` on one line, cut at a word when one ends near the limit. */
 export function excerpt(text: string, max = EXCERPT_CHARS): string {
   const line = text.replace(/\s+/g, " ").trim();

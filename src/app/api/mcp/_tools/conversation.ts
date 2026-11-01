@@ -13,7 +13,7 @@ import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { NotFoundError, ValidationError } from "@/shared/errors";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, counted, EXCERPT_CHARS, excerpt, fencedField, fitItems, iso, messageSource, UNTRUSTED_NOTE, untrusted, type ToolOutputContext } from "./output";
+import { appLinks, clip, counted, EXCERPT_CHARS, excerpt, fencedField, fitItems, iso, LONG_TEXT_CHARS, messageSource, UNTRUSTED_NOTE, untrusted, type ToolOutputContext } from "./output";
 
 /** Characters of one message body a `detailed` answer keeps. */
 const DETAILED_BODY_CHARS = 4000;
@@ -54,7 +54,19 @@ const output = z.object({
   }),
   messages: z.array(message),
   messagesOmitted: z.number(),
-  draft: z.object({ draftId: z.string(), status: z.string(), revision: z.number(), source: z.string(), subject: z.string().nullable(), text: z.string(), error: z.string().nullable() }).nullable(),
+  draft: z
+    .object({
+      draftId: z.string(),
+      status: z.string(),
+      revision: z.number(),
+      source: z.string(),
+      subject: z.string().nullable(),
+      text: z.string(),
+      /** The draft was longer than the answer keeps; `text` ends with "…". */
+      truncated: z.boolean(),
+      error: z.string().nullable(),
+    })
+    .nullable(),
   aiPicks: z.array(z.object({ replyTypePickId: z.string(), status: z.string(), proposed: z.string().nullable(), applied: z.string().nullable(), confidence: z.number().nullable() })),
   notes: z.array(z.object({ title: z.string().nullable(), text: z.string(), author: z.string().nullable(), at: z.string() })),
   tasks: z.array(z.object({ taskId: z.string(), name: z.string(), dueAt: z.string().nullable(), assigneeName: z.string().nullable() })),
@@ -64,9 +76,7 @@ const output = z.object({
 /** A message as the answer carries it: ours as written, the lead's fenced; `concise` keeps an excerpt of each. */
 function toMessage(ctx: ToolOutputContext, channel: string, m: ThreadMessage, detailed: boolean): z.infer<typeof message> {
   // `excerpt` folds whitespace before it measures, so a concise body is cut only when its one-line form is too long.
-  const measured = detailed ? m.bodyText : m.bodyText.replace(/\s+/g, " ").trim();
-  const truncated = measured.length > (detailed ? DETAILED_BODY_CHARS : EXCERPT_CHARS);
-  const body = detailed ? (truncated ? `${m.bodyText.slice(0, DETAILED_BODY_CHARS)}…` : m.bodyText) : excerpt(m.bodyText);
+  const { text: body, truncated } = detailed ? clip(m.bodyText, DETAILED_BODY_CHARS) : { text: excerpt(m.bodyText), truncated: m.bodyText.replace(/\s+/g, " ").trim().length > EXCERPT_CHARS };
   const source = messageSource(channel);
   const inbound = m.direction === "inbound";
   return {
@@ -87,6 +97,7 @@ export const getConversationTool = defineTool({
   description: [
     "One conversation with its lead, reply handling state, messages, the open draft, AI reply-type picks, notes, open tasks and follow-ups. Pass `conversationId`, or `recordId` for the main conversation of that reply handling.",
     "`response_format` `concise` (default) gives a 200-character excerpt of each message; `detailed` gives each body up to 4,000 characters and marks a longer one `truncated`. Long threads keep the newest messages.",
+    "The draft text keeps 12,000 characters and marks a longer one `truncated`; `edit` replaces the whole text, so rewrite a truncated draft in full or leave it to the person.",
     "Write tools take `contextVersion`, the draft's `revision` and `assignedTo` from this answer.",
   ].join(" "),
   scope: "mcp:read",
@@ -123,8 +134,8 @@ export const getConversationTool = defineTool({
     const fitted = fitItems(newestFirst);
     const draft = panel?.draft
       ? "aiBodyText" in panel.draft
-        ? { draftId: panel.draft.id, status: panel.draft.status, revision: panel.draft.revision, source: panel.draft.source, subject: panel.draft.subject, text: panel.draft.editedBodyText ?? panel.draft.aiBodyText ?? "", error: panel.draft.error }
-        : { draftId: panel.draft.id, status: panel.draft.status, revision: panel.draft.revision, source: panel.draft.source, subject: null, text: panel.draft.text, error: panel.draft.error }
+        ? { draftId: panel.draft.id, status: panel.draft.status, revision: panel.draft.revision, source: panel.draft.source, subject: panel.draft.subject, ...clip(panel.draft.editedBodyText ?? panel.draft.aiBodyText ?? "", LONG_TEXT_CHARS), error: panel.draft.error }
+        : { draftId: panel.draft.id, status: panel.draft.status, revision: panel.draft.revision, source: panel.draft.source, subject: null, ...clip(panel.draft.text, LONG_TEXT_CHARS), error: panel.draft.error }
       : null;
     const { record, person } = detail;
 
@@ -157,7 +168,7 @@ export const getConversationTool = defineTool({
     };
     const summary = [
       `${person.name ?? person.email ?? "Unknown person"} on ${thread.channel}, ${counted(thread.messages.length, "message")}${fitted.omitted > 0 ? ` (the oldest ${fitted.omitted} left out)` : ""}. State ${record.workflowState}${record.replyTypeName ? `, reply type ${record.replyTypeName}` : ""}.`,
-      draft ? `Open draft ${draft.draftId}, ${draft.status}, revision ${draft.revision}.` : "No open draft.",
+      draft ? `Open draft ${draft.draftId}, ${draft.status}, revision ${draft.revision}${draft.truncated ? ", text cut at 12,000 characters" : ""}.` : "No open draft.",
       UNTRUSTED_NOTE,
     ].join("\n");
     return { summary, structured };

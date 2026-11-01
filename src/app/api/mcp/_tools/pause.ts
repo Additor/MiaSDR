@@ -6,6 +6,8 @@ import { getSendPause, setSendPause } from "@/contexts/outreach/application/send
 import { campaignDeps, emailRulesDeps, sendPauseDeps } from "@/contexts/outreach/infrastructure/composition";
 import { changeLinkedInCampaignStatus } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
+import { listMemberChoices } from "@/contexts/tenancy/application/member-directory";
+import { memberDirectoryDeps } from "@/contexts/tenancy/infrastructure/member-composition";
 import { ValidationError, type Actor } from "@/shared/errors";
 import { campaignStatus, CHANNELS } from "./campaigns";
 import { defineTool } from "./define";
@@ -44,9 +46,16 @@ async function pauseFollowUps(actor: Actor, recordId: string): Promise<Outcome> 
   return "paused";
 }
 
+/** The name the pause banner shows: the person, and the agent token that acted for them. */
+async function pausedBy(actor: Actor): Promise<string | null> {
+  if (!actor.via) return null;
+  const person = (await listMemberChoices(memberDirectoryDeps(), actor)).find((m) => m.userId === actor.userId)?.name;
+  return person ? `${person}'s agent (${actor.via.tokenName})` : `${actor.via.tokenName} (agent)`;
+}
+
 async function pauseOrganization(actor: Actor): Promise<Outcome> {
   if (await getSendPause(emailRulesDeps(), actor)) return "already_paused";
-  const byName = actor.via ? `${actor.via.tokenName} (agent)` : null;
+  const byName = await pausedBy(actor);
   await setSendPause(sendPauseDeps(), actor, { paused: true, byName, now: new Date() });
   return "paused";
 }

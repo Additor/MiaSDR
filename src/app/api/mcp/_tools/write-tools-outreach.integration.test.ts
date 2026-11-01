@@ -74,7 +74,8 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     expect((await owner.tool("pause_sending", { target: "organization" })).structured.outcome).toBe("paused");
     expect((await owner.tool("pause_sending", { target: "organization" })).structured.outcome).toBe("already_paused");
     const [general] = await sql<{ values: { sendingPaused: { byName: string } } }[]>`select values from channel_settings where organization_id = ${orgs[0].organizationId} and channel = 'general'`;
-    expect(general.values.sendingPaused.byName).toBe("Test agent (agent)");
+    const [{ name }] = await sql<{ name: string }[]>`select name from users where id = ${orgs[0].userId}`;
+    expect(general.values.sendingPaused.byName).toBe(`${name}'s agent (Test agent)`);
     const [{ id: recordId }] = await sql<{ id: string }[]>`select gen_random_uuid() as id`;
     expect((await owner.tool("pause_sending", { target: "follow_ups", recordId })).structured.error).toMatchObject({ code: "not_found" });
   });

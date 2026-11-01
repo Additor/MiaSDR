@@ -81,6 +81,22 @@ describeDb("get_conversation", () => {
     expect(lead.truncated).toBe(false);
   });
 
+  it("cuts a long draft so the conversation still fits one answer", async () => {
+    const { createManualDraft } = await import("@/contexts/conversations/application/reply-management");
+    const { replyDeps } = await import("@/contexts/conversations/ai/infrastructure/ai-composition");
+    const actor = { userId: orgs[0].userId, organizationId: orgs[0].organizationId, role: "owner" as const };
+    const long = await inbound(orgs[0], 3, "Send me the long version.");
+    await createManualDraft(replyDeps(), actor, long.conversationId, { subject: "Re: pricing", bodyText: `${"A long paragraph about pricing tiers. ".repeat(2000)}The end.` });
+
+    const result = await caller.tool("get_conversation", { conversationId: long.conversationId });
+    expect(result.isError, result.text).toBe(false);
+    const draft = result.structured.draft as { text: string; truncated: boolean };
+    expect(draft.truncated).toBe(true);
+    expect(draft.text).toHaveLength(12_001);
+    expect(draft.text.endsWith("…")).toBe(true);
+    expect(result.text).toContain("text cut at 12,000 characters");
+  });
+
   it("answers not found for another organization's conversation, and refuses both ids at once", async () => {
     const foreign = await caller.tool("get_conversation", { conversationId: theirs });
     expect(foreign.isError).toBe(true);

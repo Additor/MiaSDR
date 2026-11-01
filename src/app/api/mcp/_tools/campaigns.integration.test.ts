@@ -51,6 +51,25 @@ describeDb("list_campaigns and get_campaign", () => {
     expect((await caller.tool("list_campaigns", { channel: "linkedin" })).structured).toMatchObject({ campaigns: [expect.anything()], omitted: 0 });
   });
 
+  it("get_campaign cuts long step bodies, except the step it previews", async () => {
+    const { createCampaign, updateCampaign } = await import("@/contexts/outreach/application/campaign-management");
+    const { campaignDeps } = await import("@/contexts/outreach/infrastructure/composition");
+    const { id } = await createCampaign(campaignDeps(), actorOf(orgs[0]), { name: "Long steps" });
+    const body = (n: number) => `Step ${n}. ${"Here is a long paragraph about the offer. ".repeat(400)}`;
+    const steps = Array.from({ length: 10 }, (_, i) => ({ stepNumber: i + 1, kind: "email" as const, subject: i === 0 ? "Hello" : undefined, body: body(i + 1), waitDays: i === 0 ? 0 : 2 }));
+    await updateCampaign(campaignDeps(), actorOf(orgs[0]), id, { steps });
+
+    const result = await caller.tool("get_campaign", { channel: "email", campaignId: id, previewStep: 3 });
+    expect(result.isError, result.text).toBe(false);
+    const read = result.structured.steps as Array<{ stepNumber: number; body: string; truncated: boolean }>;
+    expect(read.find((s) => s.stepNumber === 3)).toMatchObject({ body: body(3), truncated: false });
+    expect(read.find((s) => s.stepNumber === 1)).toMatchObject({ truncated: true });
+    expect(read.find((s) => s.stepNumber === 1)?.body).toHaveLength(301);
+    expect(result.structured.preview).toMatchObject({ stepNumber: 3, truncated: true });
+
+    await expect(updateCampaign(campaignDeps(), actorOf(orgs[0]), id, { steps: [{ ...steps[0], body: "x".repeat(20_001) }] })).rejects.toThrow();
+  });
+
   it("get_campaign gives steps, leads and a rendered step, and answers not found across organizations", async () => {
     const result = await caller.tool("get_campaign", { channel: "email", campaignId: emailId, previewStep: 1 });
     expect(result.isError, result.text).toBe(false);

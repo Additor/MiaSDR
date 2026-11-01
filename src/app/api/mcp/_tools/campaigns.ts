@@ -9,9 +9,14 @@ import { getLinkedInCampaignDetail, listLinkedInCampaigns, previewLinkedInStep }
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { defineTool, READ_ONLY } from "./define";
 import type { Actor } from "@/shared/errors";
-import { appLinks, DEFAULT_LIST_LIMIT, fencedField, fitItems, iso, UNTRUSTED_NOTE, untrusted } from "./output";
+import { appLinks, clip, DEFAULT_LIST_LIMIT, fencedField, fitItems, iso, UNTRUSTED_NOTE, untrusted } from "./output";
 
 export const CHANNELS = ["email", "linkedin"] as const;
+
+/** Characters of a step body get_campaign keeps, except the step it previews, which comes whole. */
+const STEP_BODY_CHARS = 300;
+/** Characters of a rendered step preview an answer keeps. */
+const PREVIEW_CHARS = 4000;
 
 const summaryRow = z.object({
   campaignId: z.string(),
@@ -94,12 +99,18 @@ const READS: Record<(typeof CHANNELS)[number], ChannelReads> = {
 export const campaignStatus = async (actor: Actor, channel: (typeof CHANNELS)[number], campaignId: string): Promise<string> =>
   (await READS[channel].detail(actor, campaignId, parseEnrollmentListQuery({ size: "1" }))).campaign.status;
 
+/** A step body as written: cut to an excerpt, or whole for the previewed step. */
+const bodyOf = (body: string, whole: boolean): { body: string; truncated: boolean } => {
+  const { text, truncated } = whole ? { text: body, truncated: false } : clip(body, STEP_BODY_CHARS);
+  return { body: text, truncated };
+};
+
 export const getCampaignTool = defineTool({
   name: "get_campaign",
   title: "Get campaign",
   description: [
     "One campaign: its steps, senders, and one page of its leads by `tab` (`all`, `queued`, `in_sequence`, `paused`, `replied`, `finished`, `stopped`, `removed`) and `search`.",
-    "With `previewStep`, it also renders that step the way it would go out, with a lead of the campaign, or sample values while it has none (`usedSampleLead`).",
+    "Step bodies keep 300 characters and mark a longer one `truncated`. With `previewStep`, that step's body comes whole, and the answer renders it the way it would go out, with a lead of the campaign, or sample values while it has none (`usedSampleLead`).",
   ].join(" "),
   scope: "mcp:read",
   annotations: READ_ONLY,
@@ -116,11 +127,11 @@ export const getCampaignTool = defineTool({
     channel: z.enum(CHANNELS),
     name: z.string(),
     status: z.string(),
-    steps: z.array(z.object({ stepNumber: z.number(), kind: z.string(), subject: z.string().nullable(), body: z.string(), waitDays: z.number() })),
+    steps: z.array(z.object({ stepNumber: z.number(), kind: z.string(), subject: z.string().nullable(), body: z.string(), truncated: z.boolean(), waitDays: z.number() })),
     senders: z.array(z.object({ id: z.string(), label: z.string(), connected: z.boolean() })),
     enrollments: z.object({ total: z.number(), page: z.number(), pageSize: z.number(), rows: z.array(enrollment) }),
     preview: z
-      .object({ stepNumber: z.number(), subject: z.string().nullable(), body: z.string(), leadName: z.string().nullable(), usedSampleLead: z.boolean(), unresolved: z.array(z.object({ token: z.string(), reason: z.enum(["empty", "unknown"]) })) })
+      .object({ stepNumber: z.number(), subject: z.string().nullable(), body: z.string(), truncated: z.boolean(), leadName: z.string().nullable(), usedSampleLead: z.boolean(), unresolved: z.array(z.object({ token: z.string(), reason: z.enum(["empty", "unknown"]) })) })
       .nullable(),
     appUrl: z.string(),
   }),
@@ -134,12 +145,13 @@ export const getCampaignTool = defineTool({
     const step = input.previewStep;
     const inRange = step !== undefined && step >= 1 && step <= steps.length;
     const [senders, preview] = await Promise.all([listAssignedSenders(campaignDeps(), actor, input.channel, input.campaignId), inRange ? reads.preview(actor, input.campaignId, step) : null]);
+    const rendered = preview ? clip(preview.body, PREVIEW_CHARS) : null;
     const structured = {
       campaignId: input.campaignId,
       channel: input.channel,
       name: detail.campaign.name,
       status: detail.campaign.status,
-      steps: steps.map((s) => ({ stepNumber: s.stepNumber, kind: s.kind, subject: s.subject ?? null, body: s.body, waitDays: s.waitDays })),
+      steps: steps.map((s) => ({ stepNumber: s.stepNumber, kind: s.kind, subject: s.subject ?? null, ...bodyOf(s.body, s.stepNumber === step), waitDays: s.waitDays })),
       senders,
       enrollments: {
         total: detail.enrollments.total,
@@ -158,7 +170,7 @@ export const getCampaignTool = defineTool({
         })),
       },
       // The rendered text carries a lead's own values, so it comes fenced like any imported field.
-      preview: preview && step !== undefined ? { stepNumber: step, subject: fencedField(out, preview.subject), body: untrusted(out, "field", preview.body), leadName: preview.leadName, usedSampleLead: preview.usedSampleLead, unresolved: preview.unresolved } : null,
+      preview: preview && rendered && step !== undefined ? { stepNumber: step, subject: fencedField(out, preview.subject), body: untrusted(out, "field", rendered.text), truncated: rendered.truncated, leadName: preview.leadName, usedSampleLead: preview.usedSampleLead, unresolved: preview.unresolved } : null,
       appUrl: appLinks(out).campaign(input.campaignId),
     };
     const lines = [`${structured.name} (${input.channel}, ${structured.status}): ${steps.length} steps, ${senders.length} senders, ${structured.enrollments.total} leads in ${query.tab}.`];

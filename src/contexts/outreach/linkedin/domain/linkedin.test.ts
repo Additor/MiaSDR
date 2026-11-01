@@ -38,6 +38,9 @@ describe("validateLinkedInSteps", () => {
     expect(validateLinkedInSteps([{ ...steps({})[0], stepNumber: 2 }])).toHaveLength(1);
     expect(validateLinkedInSteps(steps({ body: "Hi {{firstName" }))).toHaveLength(1);
   });
+  it("bounds a message's length", () => {
+    expect(validateLinkedInSteps(steps({}, { body: "b".repeat(5001) }))).toEqual([{ step: 2, message: "The message is longer than 5000 characters." }]);
+  });
   it("limits the number of steps", () => {
     expect(validateLinkedInSteps(steps(...Array.from({ length: 7 }, () => ({}))))[0].step).toBeNull();
     expect(validateLinkedInSteps([])).toHaveLength(1);

@@ -60,12 +60,12 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 | `set_reply_type` | Changes a conversation's reply type, or confirms or undoes an AI pick |
 | `update_conversation` | Adds a note, takes or assigns a conversation, closes or reopens it |
 | `manage_task` | Lists, creates, edits and completes tasks |
-| `pause_sending` | Pauses a campaign, a conversation's follow-ups or, for an owner or admin, all sending. It never resumes |
+| `pause_sending` | Pauses a campaign, a conversation's follow-ups or, for an owner or admin, all sending. It never resumes. The Sending paused banner names the person and the token, such as "Ana's agent (Work laptop)" |
 | `draft_campaign` | Creates a draft campaign, edits its steps and senders, and adds leads to a draft or paused campaign, or to a running one with a token that sends |
 | `update_deal` | Moves a deal to another stage or edits its fields |
-| `import_leads` | Previews a CSV import of up to 500 rows, then commits it |
+| `import_leads` | Previews a CSV import of up to 500 rows, then commits it. A person holds three previews at once; when the server holds its limit, a preview waits (`import_busy`) |
 
-Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on it. An answer stays under about 10,000 tokens. A request that would return more fails with `answer_too_large`; narrow it with a filter, a page or a shorter date range.
+Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on it. An answer stays under about 10,000 tokens. A request that would return more fails with `answer_too_large`; narrow it with a filter, a page or a shorter date range. Long text comes cut and marked `truncated`: a reply draft keeps 12,000 characters, and `get_campaign` keeps 300 of each step body except the step named in `previewStep`, which comes whole.
 
 ## Text from outside your organization
 

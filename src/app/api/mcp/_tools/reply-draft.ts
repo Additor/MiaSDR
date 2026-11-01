@@ -6,21 +6,21 @@ import { createManualDraft, discardDraft, editDraft, getReplyPanel, regenerateDr
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { NotFoundError, type Actor } from "@/shared/errors";
 import { defineTool, need, type ToolContext } from "./define";
-import { appLinks } from "./output";
+import { appLinks, clip, LONG_TEXT_CHARS } from "./output";
 
 const ACTIONS = ["request_ai", "create_manual", "edit", "regenerate", "discard"] as const;
 
-const draftView = z.object({ draftId: z.string(), status: z.string(), revision: z.number(), subject: z.string().nullable(), text: z.string() });
+const draftView = z.object({ draftId: z.string(), status: z.string(), revision: z.number(), subject: z.string().nullable(), text: z.string(), truncated: z.boolean() });
 
-/** The conversation's open draft as `get_conversation` shows it, or null when it has none. */
+/** The conversation's open draft as `get_conversation` shows it, text cut the same way, or null when it has none. */
 async function readDraft(actor: Actor, conversationId: string): Promise<z.infer<typeof draftView> | null> {
   const thread = await getThread(inboxDeps(), actor, conversationId);
   if (thread.channel === "linkedin") {
     const d = (await getLinkedInReplyPanel(linkedinReplyDeps(), actor, conversationId))?.draft;
-    return d ? { draftId: d.id, status: d.status, revision: d.revision, subject: null, text: d.text } : null;
+    return d ? { draftId: d.id, status: d.status, revision: d.revision, subject: null, ...clip(d.text, LONG_TEXT_CHARS) } : null;
   }
   const d = (await getReplyPanel(replyDeps(), actor, conversationId))?.draft;
-  return d ? { draftId: d.id, status: d.status, revision: d.revision, subject: d.subject, text: d.editedBodyText ?? d.aiBodyText ?? "" } : null;
+  return d ? { draftId: d.id, status: d.status, revision: d.revision, subject: d.subject, ...clip(d.editedBodyText ?? d.aiBodyText ?? "", LONG_TEXT_CHARS) } : null;
 }
 
 /** The conversation a draft belongs to; another organization's draft answers not found. */
