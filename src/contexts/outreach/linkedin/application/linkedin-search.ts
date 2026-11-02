@@ -16,7 +16,9 @@ export interface CreateSearchInput {
   campaignId?: string | null;
 }
 
-export async function createLinkedInSearch(deps: LinkedInSearchDeps, actor: Actor, input: CreateSearchInput): Promise<{ id: string }> {
+export const createLinkedInSearch = (deps: LinkedInSearchDeps, actor: Actor, input: CreateSearchInput): Promise<{ id: string }> => prepareAndCreate(deps, actor, input);
+
+async function prepareAndCreate(deps: LinkedInSearchDeps, actor: Actor, input: CreateSearchInput & { agent?: { accountIds: string[]; tokenId: string } }): Promise<{ id: string }> {
   const name = input.name.trim();
   if (name === "" || name.length > 120) throw new ValidationError("Give the search a name of up to 120 characters.");
   const url = normalizeSearchUrl(input.url);
@@ -30,7 +32,32 @@ export async function createLinkedInSearch(deps: LinkedInSearchDeps, actor: Acto
     if (!campaign) throw new NotFoundError("Campaign not found");
     if (campaign.status === "completed") throw new ConflictError("That campaign is completed. Pick another one or none.");
   }
-  return { id: await deps.searches.create(actor.organizationId, { name, url: url.value.url, maxResults, campaignId }) };
+  return { id: await deps.searches.create(actor.organizationId, { name, url: url.value.url, maxResults, campaignId, agent: input.agent }) };
+}
+
+/** Results one agent search may ask for. A person's limit is higher; the daily limit counts each agent search whole. */
+export const MAX_AGENT_SEARCH_RESULTS = 500;
+export const DEFAULT_AGENT_SEARCH_RESULTS = 100;
+
+/**
+ * An agent's search: leads only, never a campaign, because a search that enrolls would pass the enroll limit and the
+ * launch token. It runs on the token's person's accounts and on accounts no member owns, never on another member's
+ * personal LinkedIn.
+ */
+export async function createAgentLinkedInSearch(deps: LinkedInSearchDeps, actor: Actor, input: { name: string; url: string; maxResults: number }): Promise<{ id: string }> {
+  if (!actor.via) throw new Error("An agent search needs an agent actor.");
+  const accountIds = await deps.searches.agentSearchAccounts(actor.organizationId, actor.userId);
+  if (accountIds.length === 0) {
+    throw new ConflictError("No LinkedIn account this token's person owns, or that no member owns, is connected. Connect one, or an admin sets the owner under Settings, LinkedIn.", { code: "agent_no_search_account" });
+  }
+  return prepareAndCreate(deps, actor, { ...input, campaignId: null, agent: { accountIds, tokenId: actor.via.tokenId } });
+}
+
+/** An agent cancels only what an agent created. A person's search stays a person's to end. */
+export async function cancelAgentLinkedInSearch(deps: LinkedInSearchDeps, actor: Actor, id: string): Promise<{ status: string }> {
+  const search = await getLinkedInSearch(deps, actor, id);
+  if (!search.byAgent) throw new ConflictError("A person created this search, so only a person cancels it in MiaSDR.", { code: "agent_search_not_agents" });
+  return changeLinkedInSearch(deps, actor, id, "cancel");
 }
 
 export async function listLinkedInSearches(deps: LinkedInSearchDeps, actor: Actor) {

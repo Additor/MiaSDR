@@ -36,15 +36,20 @@ let dbNames = [];
 
 const log = (m) => console.log(`[e2e] ${m}`);
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.once("error", reject);
-    s.listen(0, "127.0.0.1", () => {
-      const { port } = s.address();
-      s.close(() => resolve(port));
-    });
-  });
+/** Holds each listener until all are bound: a port closed early can come back for the next call, and two servers then share it. */
+async function freePorts(count) {
+  const listeners = await Promise.all(
+    Array.from({ length: count }, () =>
+      new Promise((resolve, reject) => {
+        const s = net.createServer();
+        s.once("error", reject);
+        s.listen(0, "127.0.0.1", () => resolve(s));
+      }),
+    ),
+  );
+  const ports = listeners.map((s) => s.address().port);
+  await Promise.all(listeners.map((s) => new Promise((resolve) => s.close(resolve))));
+  return ports;
 }
 
 /** ENV and ARG lines of the Dockerfile stages, so the production check uses the real flags. */
@@ -219,7 +224,7 @@ async function main() {
     await runCommand(process.execPath, [nextBin, "build"], { ...build, ...(flags.build ?? {}), NEXT_DIST_DIR: distDirOf("next-prod") }, "next build (prod)").finally(restoreTsconfig);
   }
 
-  const [portA, portB] = [await freePort(), await freePort()];
+  const [portA, portB] = await freePorts(2);
   const dbA = `miasdr_e2e_a2_${runId}`;
   const dbB = `miasdr_e2e_a2p_${runId}`;
   await createDatabase(dbA);

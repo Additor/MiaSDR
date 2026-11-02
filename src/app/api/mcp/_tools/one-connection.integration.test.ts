@@ -100,6 +100,18 @@ describeDb("MCP calls on a one-connection pool", () => {
     expect((await spender.tool("stop_enrichment", { tableId })).isError).toBe(false);
   });
 
+  it("creates, lists and cancels a LinkedIn search without waiting on itself", { timeout: 20_000 }, async () => {
+    const [org] = orgs;
+    await sql`update channel_settings set values = values || ${sql.json({ agentSearchLeadsPerDay: 500 })} where organization_id = ${org.organizationId} and channel = 'mcp'`;
+    const spender = await mcpCaller(sql, POST, org, ["mcp:read", "mcp:write", "mcp:spend"]);
+    const tag = randomBytes(4).toString("hex");
+    await sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, name, status, owner_user_id) values (${org.organizationId}, ${`acc-${tag}`}, ${`ACo-${tag}`}, 'Mine', 'connected', ${org.userId})`;
+    const created = await spender.tool("create_linkedin_search", { name: "Pool", url: `https://www.linkedin.com/search/results/people/?keywords=${tag}` });
+    expect(created.isError, created.text).toBe(false);
+    expect((await spender.tool("list_linkedin_searches")).isError).toBe(false);
+    expect((await spender.tool("cancel_linkedin_search", { searchId: created.structured.searchId })).isError).toBe(false);
+  });
+
   it("edits and starts a LinkedIn campaign without waiting on itself", { timeout: 20_000 }, async () => {
     const [{ id: accountId }] = await sql<{ id: string }[]>`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, name, status) values (${orgs[0].organizationId}, ${`acc-${randomBytes(4).toString("hex")}`}, ${`ACo-${randomBytes(4).toString("hex")}`}, 'Sender', 'connected') returning id`;
     const created = await agent.tool("draft_campaign", { action: "create", channel: "linkedin", name: "Pool of one, LinkedIn" });

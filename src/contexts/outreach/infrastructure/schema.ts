@@ -438,6 +438,8 @@ export const linkedinSearchQueries = pgTable(
     leaseUntil: tstz("lease_until"),
     startedAt: tstz("started_at"),
     completedAt: tstz("completed_at"),
+    /** The MCP token of the agent that created the search; null when a person did. Agents cancel only these. */
+    createdViaTokenId: uuid("created_via_token_id"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -446,6 +448,8 @@ export const linkedinSearchQueries = pgTable(
     foreignKey({ name: "linkedin_search_queries_batch_fk", columns: [t.batchId, t.organizationId], foreignColumns: [linkedinSearchBatches.id, linkedinSearchBatches.organizationId] }).onDelete("cascade"),
     // The migration writes `ON DELETE SET NULL (target_campaign_id)`.
     foreignKey({ name: "linkedin_search_queries_target_campaign_fk", columns: [t.targetCampaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }).onDelete("set null"),
+    // The migration writes `ON DELETE SET NULL (created_via_token_id)`.
+    foreignKey({ name: "linkedin_search_queries_created_via_token_fk", columns: [t.createdViaTokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("set null"),
     unique("linkedin_search_queries_id_org_uq").on(t.id, t.organizationId),
     check("linkedin_search_queries_status_ck", inList(t.status, SEARCH_STATUSES)),
     index("linkedin_search_queries_claim_idx").on(t.status, t.leaseUntil),

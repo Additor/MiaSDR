@@ -515,6 +515,8 @@ Agents start, resume and fill campaigns through `outreach/application/agent-camp
 - **Reservation holds.** The worst case is reserved and not refunded after a run, even when cells miss. `requestRun` gets it as `maxCostCents`, so rows that changed since the plan refuse.
 - **What it does not hold.** A provider that reports more than its price, a column a person adds mid-run, and cells queued before a limit dropped. The last is deliberate: stopping is what `stop_enrichment` is for.
 
+An agent's LinkedIn search (`composition/agent-linkedin-search.ts`) reserves `maxResults` against `agentSearchLeadsPerDay` and has no campaign input: a search with a `campaignId` enrolls what it finds when a page lands, past the enroll limit and the launch token. It has no resume for the same reason, because a person's search may carry a campaign. The batch's `account_ids` holds the token's person's accounts and unowned ones, since an empty list means every connected account, another member's personal LinkedIn included. `created_via_token_id` marks what agents may cancel.
+
 ### Agent actions no one can undo
 
 `composition/agent-irreversible.ts` runs a person's use case for completing a campaign and for deleting a lead, contact, deal or draft campaign. The rules on top:
