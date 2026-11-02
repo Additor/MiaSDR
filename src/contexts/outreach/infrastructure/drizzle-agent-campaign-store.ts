@@ -6,7 +6,7 @@ import { isOutboundPaused } from "@/shared/outbound-pause";
 import type { AgentCampaignStore, AgentCampaignRow, AgentSender } from "../application/agent-campaigns";
 import { readSendPause } from "../domain/send-pause";
 
-const ROW = { id: campaigns.id, channel: campaigns.channel, type: campaigns.type, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, personPaused: campaigns.personPaused };
+const ROW = { id: campaigns.id, name: campaigns.name, channel: campaigns.channel, type: campaigns.type, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, personPaused: campaigns.personPaused };
 
 async function lockCampaign(tx: DbHandle, organizationId: string, campaignId: string, mode: "update" | "share"): Promise<AgentCampaignRow | null> {
   const [row] = await tx

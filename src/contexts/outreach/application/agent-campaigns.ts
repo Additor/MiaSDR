@@ -1,13 +1,14 @@
 import type { DbHandle } from "@/platform/db/client";
 import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { actionToken, actionTokenMatches, actionTokenStale } from "@/shared/action-token";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
 import { UTC_DAY_MS, utcDayStart } from "@/shared/utc-day";
-import { agentCampaignRefusal, launchToken, launchTokenMatches, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
+import { AGENT_CAMPAIGN_REFUSALS, agentCampaignRefusal, launchToken, launchTokenMatches, type AgentCampaignRefusal, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
 import { canTransition, type CampaignStatus } from "../domain/campaign";
-import { changeLinkedInCampaignStatus, linkedInStartProblems, previewLinkedInStep, type LinkedInCampaignDeps } from "../linkedin/application/linkedin-campaigns";
+import { changeLinkedInCampaignStatus, deleteLinkedInCampaign, linkedInStartProblems, previewLinkedInStep, type LinkedInCampaignDeps } from "../linkedin/application/linkedin-campaigns";
 import type { UnresolvedToken } from "../domain/variables";
-import { campaignStartProblems, changeCampaignStatus, previewStep, type CampaignDeps } from "./campaign-management";
+import { campaignStartProblems, changeCampaignStatus, deleteCampaign, previewStep, type CampaignDeps } from "./campaign-management";
 
 /**
  * Agents starting and resuming campaigns and enrolling leads (docs/decisions.md, "Agent campaigns"). Each function
@@ -20,6 +21,7 @@ export type AgentChannel = "email" | "linkedin";
 
 export interface AgentCampaignRow {
   id: string;
+  name: string;
   channel: AgentChannel;
   type: string;
   status: CampaignStatus;
@@ -214,6 +216,77 @@ export async function launchCampaign(
     await changeLinkedInCampaignStatus(deps.linkedin, actor, row.id, "active", tx);
     return { status: "active" as const, emptySubjectLeads: null };
   });
+}
+
+export type AgentCampaignEnd = "complete_campaign" | "delete_draft_campaign";
+
+/** What a preview hands out in its token: the state an agent decides on. Any change since then makes the token stale. */
+const endState = (row: AgentCampaignRow) => ({ name: row.name, status: row.status, personPaused: row.personPaused });
+
+/** Why an agent may not end this campaign, as refusal codes or a person's rule. Empty when it may. */
+function endRefusals(actor: Actor, kind: AgentCampaignEnd, row: AgentCampaignRow, senders: { assigned: boolean; senders: AgentSender[] }): Array<{ code: string; message: string }> {
+  const refusals: Array<{ code: string; message: string }> = [];
+  const refuse = (code: AgentCampaignRefusal) => refusals.push({ code, message: AGENT_CAMPAIGN_REFUSALS[code] });
+  if (kind === "complete_campaign") {
+    if (row.status === "draft") refusals.push({ code: "campaign_not_started", message: "A draft campaign cannot be completed. Delete it instead." });
+    if (row.personPaused) refuse("agent_complete_person_paused");
+  }
+  if (kind === "delete_draft_campaign" && row.status !== "draft") refusals.push({ code: "campaign_not_draft", message: "Only a draft campaign can be deleted. Pause it or complete it instead." });
+  if (ownershipProblem(actor, row, senders)) refuse("agent_sender_not_owned");
+  return refusals;
+}
+
+export interface AgentCampaignEndPreview {
+  name: string;
+  status: CampaignStatus;
+  alreadyCompleted: boolean;
+  refusals: Array<{ code: string; message: string }>;
+  /** Null when a refusal stands or there is nothing to do. */
+  actionToken: string | null;
+}
+
+/** What ending this campaign would do, read at one moment. It changes nothing. */
+export async function previewAgentCampaignEnd(deps: AgentCampaignDeps, actor: Actor, input: { kind: AgentCampaignEnd; channel: AgentChannel; campaignId: string }): Promise<AgentCampaignEndPreview> {
+  return deps.store.snapshot(actor.organizationId, input.campaignId, async (tx) => {
+    const row = await find(deps.store.campaign(tx, actor.organizationId, input.campaignId), input.channel);
+    const alreadyCompleted = input.kind === "complete_campaign" && row.status === "completed";
+    const refusals = alreadyCompleted ? [] : endRefusals(actor, input.kind, row, await deps.store.senders(tx, actor.organizationId, row));
+    return { name: row.name, status: row.status, alreadyCompleted, refusals, actionToken: alreadyCompleted || refusals.length > 0 ? null : actionToken(input.kind, input.campaignId, endState(row)) };
+  });
+}
+
+/**
+ * An agent marks a running or paused campaign completed, which no one can undo. It stops sending, so the send policy has
+ * no say. A person's pause keeps the decision with a person. The caller has reserved against the daily limit.
+ */
+export async function agentCompleteCampaign(deps: AgentCampaignDeps, actor: Actor, input: { channel: AgentChannel; campaignId: string; token: string }): Promise<void> {
+  await deps.store.transaction(async (tx) => {
+    const row = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
+    if (!actionTokenMatches(input.token, "complete_campaign", input.campaignId, endState(row))) throw actionTokenStale();
+    const [refusal] = endRefusals(actor, "complete_campaign", row, await deps.store.senders(tx, actor.organizationId, row));
+    if (refusal) throw new ConflictError(refusal.message, { code: refusal.code });
+    if (row.channel === "email") await changeCampaignStatus(deps.email, actor, row.id, "completed", tx);
+    else await changeLinkedInCampaignStatus(deps.linkedin, actor, row.id, "completed", tx);
+  });
+}
+
+/**
+ * An agent deletes a draft campaign. Draft enrollments go with it. The person's own delete has no record, so this one
+ * writes who asked. The delete itself holds to `status = 'draft'`, so a start in between leaves the campaign, and the
+ * read after it answers stale.
+ */
+export async function agentDeleteDraftCampaign(deps: AgentCampaignDeps, actor: Actor, input: { channel: AgentChannel; campaignId: string; token: string }): Promise<void> {
+  const row = await deps.store.transaction(async (tx) => {
+    const found = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
+    if (!actionTokenMatches(input.token, "delete_draft_campaign", input.campaignId, endState(found))) throw actionTokenStale();
+    const [refusal] = endRefusals(actor, "delete_draft_campaign", found, await deps.store.senders(tx, actor.organizationId, found));
+    if (refusal) throw new ConflictError(refusal.message, { code: refusal.code });
+    return found;
+  });
+  if (row.channel === "email") await deleteCampaign(deps.email, actor, row.id);
+  else await deleteLinkedInCampaign(deps.linkedin, actor, row.id);
+  if (await deps.store.transaction((tx) => deps.store.campaign(tx, actor.organizationId, row.id))) throw actionTokenStale();
+  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: row.id, meta: { name: row.name, channel: row.channel, ...viaMeta(actor.via) } });
 }
 
 /**

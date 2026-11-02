@@ -115,6 +115,13 @@ export async function personOutreachBlockers(tx: DbHandle, actor: Actor, personI
  * inserts the send under that lock, so while a delete holds these rows no claim takes them, and a claim that holds one makes
  * the delete wait until it commits and then shows in the blockers. Returns how many it locked.
  */
+/** The people among `personIds` a person took out of a campaign. Re-enrolling skips them, and only while the row stays. */
+export async function peopleRemovedFromCampaigns(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<string[]> {
+  if (personIds.length === 0) return [];
+  const rows = rowsOf<{ person_id: string }>(await tx.execute(sql`select distinct e.person_id from campaign_enrollments e where e.organization_id = ${organizationId} and e.person_id in ${uuidList(personIds)} and e.status = 'removed'`));
+  return rows.map((row) => row.person_id);
+}
+
 export async function lockEnrollmentsOfPeopleTx(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<number> {
   if (personIds.length === 0) return 0;
   const rows = rowsOf<{ id: string }>(

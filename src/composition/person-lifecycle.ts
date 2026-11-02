@@ -1,24 +1,26 @@
-import { appendPersonEvent, lockPersonForDelete, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
+import { appendPersonEvent, lockPersonForDelete, peopleWhoAskedToStop, peopleWithHistory, personHandlingBlockers, personHandlingCounts } from "@/contexts/conversations/infrastructure/person-handling";
 import { purgePersonHandling } from "@/contexts/conversations/infrastructure/person-purge";
 import type { AddContactWithDealDeps } from "@/contexts/deals/application/deal-ports";
 import { crmRead } from "@/contexts/deals/infrastructure/crm-read";
 import { conversionDeps, dealsDeps } from "@/composition/deals";
 import { leadDeleteStore, leadRepository } from "@/composition/leads";
-import { dealCountsOfPerson, dealTitleParts, deleteClosedDealsOfPerson, lockDealsOfPerson } from "@/contexts/deals/infrastructure/person-deals";
+import { dealCountsOfPerson, dealTitleParts, deleteClosedDealsOfPerson, listDealsOfPerson, lockDealsOfPerson } from "@/contexts/deals/infrastructure/person-deals";
 import { addContact, type AddContactDeps, type AddContactInput, type AddContactResult } from "@/contexts/people/application/add-contact";
 import type { CompanyLifecycleDeps, CompanyMergePreviewDeps } from "@/contexts/people/application/company-lifecycle";
 import type { ContactDeleteDeps } from "@/contexts/people/application/contact-delete";
-import type { LeadDeleteDeps } from "@/contexts/people/application/lead-ports";
+import type { AgentProtected, LeadDeleteDeps } from "@/contexts/people/application/lead-ports";
 import type { MakeContactDeps } from "@/contexts/people/application/make-contact";
 import { drizzleCompanyLifecycleStore } from "@/contexts/people/infrastructure/drizzle-company-lifecycle-store";
 import { drizzleContactDeleteStore } from "@/contexts/people/infrastructure/drizzle-contact-delete-store";
 import { drizzleContactStore, personTransaction } from "@/contexts/people/infrastructure/drizzle-contact-store";
 import { drizzleLeadsAudit } from "@/contexts/people/infrastructure/drizzle-leads-audit";
+import { peopleMarkedTx } from "@/contexts/people/infrastructure/reachability";
 import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
 import {
   leadOutreachBlockers,
   leadsInRunningCampaigns,
   lockEnrollmentsOfPeopleTx,
+  peopleRemovedFromCampaigns,
   personOutreachBlockers,
   personOutreachCounts,
   purgePersonOutreach,
@@ -70,6 +72,10 @@ export const companyMergePreviewDeps: CompanyMergePreviewDeps = {
   },
 };
 
+/** The people an agent may not delete, by the facts of the three contexts (`AGENT_DELETE_PROTECTED`). */
+const agentProtected: AgentProtected = async (tx, organizationId, ids, options) =>
+  new Set([...(await peopleMarkedTx(tx, organizationId, ids, options)), ...(await peopleWhoAskedToStop(tx, organizationId, ids)), ...(await peopleRemovedFromCampaigns(tx, organizationId, ids))]);
+
 /** Contact delete: each context deletes its own rows, in the order the leads use case holds. */
 export const contactDeleteDeps: ContactDeleteDeps = {
   people: drizzleContactDeleteStore,
@@ -80,8 +86,7 @@ export const contactDeleteDeps: ContactDeleteDeps = {
     purge: purgePersonHandling,
   },
   deals: {
-    list: async (_tx, organizationId, personId) =>
-      (await crmRead.dealsOfPeople(organizationId, [personId])).map((deal) => ({ id: deal.id, title: deal.title, stageName: deal.stageName, stageKind: deal.stageKind })),
+    list: listDealsOfPerson,
     lock: lockDealsOfPerson,
     counts: dealCountsOfPerson,
     deleteClosed: deleteClosedDealsOfPerson,
@@ -92,6 +97,7 @@ export const contactDeleteDeps: ContactDeleteDeps = {
     blockers: personOutreachBlockers,
     purge: purgePersonOutreach,
   },
+  agentProtected,
   audit: drizzleLeadsAudit,
   transaction: personTransaction,
 };
@@ -102,6 +108,8 @@ export const leadDeleteDeps: LeadDeleteDeps = {
   people: leadDeleteStore,
   outreach: { lockEnrollments: lockEnrollmentsOfPeopleTx, blockers: leadOutreachBlockers, purge: purgeUnsentEnrollments },
   handling: { peopleWithHistory },
+  agentProtected,
+  audit: drizzleLeadsAudit,
   transaction: personTransaction,
 };
 

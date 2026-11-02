@@ -1,3 +1,4 @@
+import type { LeadsAudit } from "./leads-audit";
 import type { DbHandle } from "@/platform/db/client";
 import type { Actor } from "@/shared/errors";
 import type { LeadCurrent, LeadEditPlan } from "../domain/lead-edit";
@@ -206,6 +207,11 @@ export interface LeadDeleteDeps {
   people: LeadDeleteStore;
   outreach: LeadDeleteOutreach;
   handling: LeadDeleteHandling;
+  /** The people among `ids` an agent may not delete. With `lock`, holds their do not contact rows first. */
+  agentProtected: AgentProtected;
+  audit: LeadsAudit;
   /** One transaction with `lock_timeout` set to `CONVERSION_LOCK_TIMEOUT`. */
   transaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T>;
 }
+
+export type AgentProtected = (tx: DbHandle, organizationId: string, ids: readonly string[], options: { lock: boolean }) => Promise<ReadonlySet<string>>;

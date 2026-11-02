@@ -13,6 +13,7 @@ export const AGENT_CAMPAIGN_REFUSALS = {
   agent_sender_not_owned: "An agent starts a Personal campaign only from LinkedIn accounts its token's person owns, named as the campaign's senders. The account's owner starts it, or an admin sets the owner under Settings, LinkedIn.",
   agent_sender_change_active: "An agent changes the senders of a campaign only while it is not running. Pause it first.",
   agent_resume_person_paused: "A person paused this campaign, so only a person resumes it in MiaSDR.",
+  agent_complete_person_paused: "A person paused this campaign, so only a person completes it in MiaSDR.",
 } as const;
 
 export type AgentCampaignRefusal = keyof typeof AGENT_CAMPAIGN_REFUSALS;

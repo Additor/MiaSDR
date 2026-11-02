@@ -16,6 +16,7 @@ import { registerTools, toolVisible, type ToolDefinition, type ToolHooks } from 
 import { setReplyTypeTool, updateConversationTool } from "./handling";
 import { importLeadsTool } from "./import";
 import { listInboxTool } from "./inbox";
+import { applyIrreversibleTool, previewIrreversibleTool } from "./irreversible";
 import { serverInstructions } from "./instructions";
 import { pauseSendingTool } from "./pause";
 import { getPersonTool, searchPeopleTool } from "./people";
@@ -54,6 +55,8 @@ export const TOOLS: readonly ToolDefinition[] = [
   sendReplyTool,
   previewCampaignLaunchTool,
   launchCampaignTool,
+  previewIrreversibleTool,
+  applyIrreversibleTool,
 ];
 
 /**

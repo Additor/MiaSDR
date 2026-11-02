@@ -52,6 +52,32 @@ describeDb("MCP calls on a one-connection pool", () => {
     expect(started.isError, started.text).toBe(false);
   });
 
+  it("takes each action no one can undo without waiting on itself", { timeout: 30_000 }, async () => {
+    const [org] = orgs;
+    const { createDealForContact } = await import("@/contexts/deals/application/deal-create");
+    const { dealsDeps } = await import("@/composition/deals");
+    const owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
+    await sql`update channel_settings set values = values || ${sql.json({ agentIrreversiblePerDay: 20 })} where organization_id = ${org.organizationId} and channel = 'mcp'`;
+    const irreversible = await mcpCaller(sql, POST, org, ["mcp:read", "mcp:write", "mcp:irreversible"]);
+    const someone = async (lifecycle: "lead" | "contact") =>
+      (await sql<{ id: string }[]>`insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${org.organizationId}, ${`p-${randomBytes(4).toString("hex")}@acme.test`}, 'Ada', ${lifecycle}, ${lifecycle === "contact" ? new Date() : null}) returning id`)[0].id;
+    const campaign = async (status: string) => (await sql<{ id: string }[]>`insert into campaigns (organization_id, channel, name, status, steps) values (${org.organizationId}, 'email', ${`C-${randomBytes(4).toString("hex")}`}, ${status}, ${sql.json([])}) returning id`)[0].id;
+    const { dealId } = await createDealForContact(dealsDeps(), owner, await someone("contact"), { title: "Pool deal", idempotencyKey: `deal-${randomBytes(6).toString("hex")}` });
+    const targets = [
+      { kind: "delete_lead", personId: await someone("lead") },
+      { kind: "delete_contact", personId: await someone("contact") },
+      { kind: "delete_deal", dealId },
+      { kind: "delete_draft_campaign", channel: "email", campaignId: await campaign("draft") },
+      { kind: "complete_campaign", channel: "email", campaignId: await campaign("active") },
+    ];
+    for (const target of targets) {
+      const preview = await irreversible.tool("preview_irreversible", target);
+      expect(preview.isError, preview.text).toBe(false);
+      const applied = await irreversible.tool("apply_irreversible", { ...target, actionToken: preview.structured.actionToken });
+      expect(applied.isError, `${target.kind}: ${applied.text}`).toBe(false);
+    }
+  });
+
   it("edits and starts a LinkedIn campaign without waiting on itself", { timeout: 20_000 }, async () => {
     const [{ id: accountId }] = await sql<{ id: string }[]>`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, name, status) values (${orgs[0].organizationId}, ${`acc-${randomBytes(4).toString("hex")}`}, ${`ACo-${randomBytes(4).toString("hex")}`}, 'Sender', 'connected') returning id`;
     const created = await agent.tool("draft_campaign", { action: "create", channel: "linkedin", name: "Pool of one, LinkedIn" });

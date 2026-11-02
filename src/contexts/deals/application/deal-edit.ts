@@ -105,7 +105,7 @@ export async function deleteDeal(deps: DealsDeps, actor: Actor, dealId: string, 
       eventType: "deal.deleted",
       actorType: "human",
       actorUserId: actor.userId,
-      meta: { dealId, title: deal.title },
+      meta: { dealId, title: deal.title, ...viaMeta(actor.via) },
     });
   });
 }

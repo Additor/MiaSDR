@@ -16,6 +16,8 @@ const DEFINITION_TOKEN_BUDGET = 6_500;
 const WRITE_DEFINITION_TOKEN_BUDGET = 8_500;
 /** A send token with agent campaigns on loads three more: send_reply, preview_campaign_launch and launch_campaign. */
 const SEND_DEFINITION_TOKEN_BUDGET = 10_000;
+/** A token that takes actions no one can undo loads a preview and an apply on top of the write tools. */
+const IRREVERSIBLE_DEFINITION_TOKEN_BUDGET = 10_000;
 const CHARS_PER_TOKEN = 3;
 
 /**
@@ -127,6 +129,23 @@ describeDb("MCP contract", () => {
     const tokens = Math.ceil(JSON.stringify(writeTools).length / CHARS_PER_TOKEN);
     expect(tokens).toBeLessThanOrEqual(WRITE_DEFINITION_TOKEN_BUDGET);
     expect(writes).toMatchSnapshot();
+  });
+
+  it("gives an irreversible token its two tools within budget, the preview read-only, and only while the limit is above 0", async () => {
+    const list = async (token: string) => ((await callMcp(POST, { era: "modern", token, method: "tools/list" })).body as { result: { tools: ListedTool[] } }).result.tools;
+    const holder = await mcpCaller(sql, POST, orgs[0], ["mcp:read", "mcp:write", "mcp:irreversible"]);
+    expect((await list(holder.token)).map((t) => t.name)).not.toContain("apply_irreversible");
+    await sql`update channel_settings set values = values || ${sql.json({ agentIrreversiblePerDay: 5 })} where organization_id = ${orgs[0].organizationId} and channel = 'mcp'`;
+    const all = await list(holder.token);
+    const writes = new Set(writeTools.map((t) => t.name));
+    const added = all.filter((t) => !writes.has(t.name));
+    expect(added.map((t) => t.name)).toEqual(["apply_irreversible", "preview_irreversible"]);
+    expect(added[1].annotations).toMatchObject({ readOnlyHint: true });
+    expect(added[0].annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(added.flatMap((t) => [t.name, (t as ListedTool & { title?: string }).title ?? "", t.description]).filter((text) => CODE_NAMES.test(prose(text)))).toEqual([]);
+    expect(Math.ceil(JSON.stringify(all).length / CHARS_PER_TOKEN)).toBeLessThanOrEqual(IRREVERSIBLE_DEFINITION_TOKEN_BUDGET);
+    expect(added).toMatchSnapshot();
+    await sql`update channel_settings set values = values || ${sql.json({ agentIrreversiblePerDay: 0 })} where organization_id = ${orgs[0].organizationId} and channel = 'mcp'`;
   });
 
   it("gives a send token the three send tools within budget, the launch preview read-only", async () => {
