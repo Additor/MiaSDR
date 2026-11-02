@@ -6,7 +6,7 @@ import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundConversationStore, InboundEmailInput } from "../application/ports";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
-import { staleOpenDraftsTx } from "./stale-drafts-sql";
+import { recordInboundTx } from "./record-context";
 import { findOrCreateLeadByEmailTx } from "@/contexts/people/infrastructure/inbound-leads";
 
 export type Tx = DbTx;
@@ -175,21 +175,7 @@ export const drizzleConversationStore: InboundConversationStore = {
           .set({ lastInteractionAt: sql`greatest(coalesce(${records.lastInteractionAt}, ${at}), ${at})` })
           .where(eq(records.id, conversation.recordId));
       } else {
-        const newest = sql`${records.lastInboundAt} is null or ${records.lastInboundAt} <= ${at}`;
-        await tx
-          .update(records)
-          .set({
-            workflowState: "action_required",
-            activeChannel: "email",
-            contextVersion: sql`${records.contextVersion} + 1`,
-            latestInboundMessageId: sql`case when ${newest} then ${message.id}::uuid else ${records.latestInboundMessageId} end`,
-            lastInboundAt: sql`greatest(coalesce(${records.lastInboundAt}, ${at}), ${at})`,
-            lastInteractionAt: sql`greatest(coalesce(${records.lastInteractionAt}, ${at}), ${at})`,
-          })
-          .where(eq(records.id, conversation.recordId));
-        // A draft written before this message answers an older state of the thread. It turns stale here, so the panel shows
-        // "out of date" and nobody reviews it for nothing. Send would refuse it anyway.
-        await staleOpenDraftsTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, reason: "A newer message arrived after this draft was written.", now: new Date() });
+        await recordInboundTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, channel: "email", messageId: message.id, at, now: new Date() });
         // A genuine reply ends all outreach to the person, on every channel and campaign, in the same transaction. The
         // sender's address is matched too, so mail without thread headers from a lead still stops their enrollments.
         const stop = await stopPersonOutreachOnReplyTx(tx, { organizationId: input.organizationId, personId: record.personId, senderEmail: input.from.email, channel: "email", now: new Date() });

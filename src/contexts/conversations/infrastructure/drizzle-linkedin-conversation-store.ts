@@ -6,7 +6,7 @@ import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/
 import { defaultReplyTypeSetId, findOrCreateRecord, type Tx } from "./drizzle-conversation-store";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
-import { staleOpenDraftsTx } from "./stale-drafts-sql";
+import { recordInboundTx } from "./record-context";
 import { detachPrivateThreadTx } from "./private-thread-detach";
 
 /**
@@ -130,19 +130,7 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
       // classification job, draft, task or stage movement can follow. Only the outreach stop below still runs.
       if (!isPrivate) {
         const at = sql`${input.receivedAt.toISOString()}::timestamptz`;
-        const newest = sql`${records.lastInboundAt} is null or ${records.lastInboundAt} <= ${at}`;
-        await tx
-          .update(records)
-          .set({
-            workflowState: "action_required",
-            activeChannel: "linkedin",
-            contextVersion: sql`${records.contextVersion} + 1`,
-            latestInboundMessageId: sql`case when ${newest} then ${message.id}::uuid else ${records.latestInboundMessageId} end`,
-            lastInboundAt: sql`greatest(coalesce(${records.lastInboundAt}, ${at}), ${at})`,
-            lastInteractionAt: sql`greatest(coalesce(${records.lastInteractionAt}, ${at}), ${at})`,
-          })
-          .where(eq(records.id, conversation.recordId));
-        await staleOpenDraftsTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, reason: "A newer message arrived after this draft was written.", now: new Date() });
+        await recordInboundTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, channel: "linkedin", messageId: message.id, at, now: new Date() });
         await autoAssignTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, personId: owner.personId });
       }
       // A reply ends all outreach to the person, on every channel and campaign, in the same transaction.

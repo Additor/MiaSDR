@@ -3,10 +3,8 @@ import { startRun } from "../after-reply/application/sequences";
 import { createRunOn, loadStartOn } from "../after-reply/infrastructure/drizzle-sequence-store";
 import type { DbTx as Tx } from "@/platform/db/client";
 import { aiJobs } from "@/platform/db/schema";
-import { rowsOf } from "@/platform/db/sql-values";
-import { interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
 import { decideReplyType, type ReplyTypeDecision, type ReplyType, type FollowUpsOutcome } from "../domain/reply-type";
-import { staleOpenDraftsTx } from "./stale-drafts-sql";
+import { advanceRecordContextTx } from "./record-context";
 import { followUpModeFactsTx } from "./follow-up-mode-facts";
 import { replyAskedToStop } from "./stop-requested-sql";
 
@@ -14,15 +12,12 @@ import { replyAskedToStop } from "./stop-requested-sql";
  * A person changed what the record is: a type change off the thread, or their own pick for the latest reply. Work that
  * was prepared for the old type ends in the same transaction, and the owning campaign's flow starts from the new one.
  *
- * 1. Open drafts retire (`stale`), so nobody sends a reply written for the old type.
- * 2. The active or paused sequence run ends as `interrupted` with `reason`.
- * 3. An AI pick held for a check retires (`stale`), so Actions, the history and the reply counts stop showing it as waiting.
- * 4. `context_version` goes up by one, so draft and classification jobs queued for the old version skip.
- * 5. A new run starts only when the person's decision says follow-ups keep going (`followUps` of `decideReplyType`)
+ * 1. `advanceRecordContextTx` bumps the version, retires open drafts and any AI pick held for a check, and ends the active
+ *    or paused sequence run as `interrupted` with `reason`.
+ * 2. A new run starts only when the person's decision says follow-ups keep going (`followUps` of `decideReplyType`)
  *    and the campaign that most recently emailed the person has Follow-ups after a reply on; otherwise no run starts.
  *
- * The caller holds the record's lock and has already written the new type. Undo only ends work, so it calls
- * `interruptRecordRunsTx` and retires drafts itself.
+ * The caller holds the record's lock and has already written the new type.
  */
 export type RestartReason = "stage_moved" | "classification_corrected";
 
@@ -37,16 +32,15 @@ export async function restartRecordWorkTx(
   tx: Tx,
   input: { organizationId: string; recordId: string; reason: RestartReason; draftReason: string; followUps: FollowUpsOutcome; now: Date; actorUserId: string },
 ): Promise<RestartResult> {
-  const draftsRetired = await staleOpenDraftsTx(tx, { organizationId: input.organizationId, recordId: input.recordId, reason: input.draftReason, now: input.now });
-  const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, input.recordId, input.reason, input.now);
-  // A held AI pick can no longer be accepted once the version goes up. A person's own pick settled it before this call.
-  await tx.execute(sql`
-    update reply_type_picks set status = 'stale'
-    where organization_id = ${input.organizationId} and record_id = ${input.recordId} and status = 'proposed'`);
-  const [bumped] = rowsOf<{ context_version: number }>(
-    await tx.execute(sql`update records set context_version = context_version + 1 where id = ${input.recordId} and organization_id = ${input.organizationId} returning context_version`),
-  );
-  if (input.followUps !== "continue") return { contextVersion: bumped.context_version, draftsRetired, runsEnded, runStarted: false };
+  const { contextVersion, draftsRetired, runsEnded } = await advanceRecordContextTx(tx, {
+    organizationId: input.organizationId,
+    recordId: input.recordId,
+    now: input.now,
+    drafts: { reason: input.draftReason },
+    runs: input.reason,
+    personDecided: true,
+  });
+  if (input.followUps !== "continue") return { contextVersion, draftsRetired, runsEnded, runStarted: false };
 
   // The same code that starts a run for a new reply, bound to this transaction, so a failed start rolls the change back.
   const started = await startRun(
@@ -59,7 +53,7 @@ export async function restartRecordWorkTx(
     },
     { organizationId: input.organizationId, recordId: input.recordId, source: "ai_assignment", actorUserId: input.actorUserId },
   );
-  return { contextVersion: bumped.context_version, draftsRetired, runsEnded, runStarted: Boolean(started?.created) };
+  return { contextVersion, draftsRetired, runsEnded, runStarted: Boolean(started?.created) };
 }
 
 /**
