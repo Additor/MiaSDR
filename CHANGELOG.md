@@ -2,12 +2,13 @@
 
 MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can change behavior or the database schema; the release notes say when.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-02)
 
 First public release.
 
 - Leads: CSV and XLSX import with column mapping, custom fields, filters, export and do-not-contact.
 - Campaigns: email sequences from Google Workspace mailboxes and LinkedIn steps through Unipile, with working hours, daily limits and a send pause.
+- Merge fields: `{{first_name}}` and `{{First Name}}` fill the same field as `{{firstName}}`. A campaign with a field no lead in the organization has does not start or resume, and the refusal names the field and its step. You cannot rename or delete a field a running campaign reads until you pause that campaign.
 - Replies stop outreach on every channel. The AI picks a reply type for each reply and drafts an answer that a person approves.
 - Reply types: each type sits in one of four groups (Interested, Existing customer, Not interested, Other) and carries three rules: Check, Reply draft and Follow-ups. You edit them in Settings > Reply handling. A type set to Don't write skips step 1 of follow-ups after a reply.
 - Confidence floor: an AI pick below it waits for a person, whatever its type's Check says.
@@ -33,6 +34,8 @@ This release adds the endpoint and its first tools. From here on, an answer only
 - Send: `send_reply`, `preview_campaign_launch`, `launch_campaign`, listed only while the organization allows them.
 - OAuth: apps such as claude.ai and ChatGPT connect by signing in, on an HTTPS address. Adds migration 0013 and `MCP_OAUTH_DCR`.
 - Cards: a client that supports MCP Apps shows `write_reply_draft` and `preview_campaign_launch` answers as a card.
+- Merge fields: `get_workspace` lists them in `mergeFields`, `draft_campaign` answers `unknownFields` after a save, and `preview_campaign_launch` lists what step 1 leaves blank in `firstStep.unresolved`. `preview_campaign_launch` also lists a field no lead has under `problems`, and `launch_campaign` refuses it.
+- Client names: a client on protocol 2025-11-25 gets its name in `Mcp-Session-Id` on the answer to `initialize` and returns it with each request, so the activity log names it. The id grants nothing, and the name is whatever the client reports.
 - One JSON-RPC message per request: the endpoint answers a batch `400 batch_not_supported`.
 - A tool's published output schema lists its top-level keys as optional, plus `error`, so a client that checks results keeps a refusal.
 
@@ -43,6 +46,7 @@ For a server that ran a build from before this release:
 - Back up the database before you upgrade ([Backups](docs/deploy/self-host.md#backups)).
 - Migrations run when the app boots, unless you set `RUN_MIGRATIONS=false` and run `scripts/migrate.mjs` yourself.
 - You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. A migration that waits more than 30 seconds for a table lock fails and rolls back. [Operations](docs/operations.md#upgrades-that-change-the-reply-tables) says how to find the session that holds it.
+- A campaign that uses a field no lead has sent those fields as blanks before. It now refuses to start or resume until you change its steps. A running campaign keeps running.
 - Campaigns paused at upgrade time count as paused by a person, so only a person resumes them.
 - Agent sending starts off in every organization. Nothing an agent does sends a message until an owner or admin turns it on.
 - Existing LinkedIn accounts have no owner after the upgrade. Set owners under Settings, LinkedIn before agents start Personal campaigns.
