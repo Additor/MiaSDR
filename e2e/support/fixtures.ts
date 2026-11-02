@@ -532,20 +532,11 @@ export async function chooseFromMoreMenu(page: Page, item: string): Promise<void
   await page.getByRole("menuitem", { name: item }).click();
 }
 
+/** Finds the element anew on each try: React can replace the one the server sent, and that one never hydrates. */
 export async function waitForHydrated(locator: Locator): Promise<void> {
-  await locator.evaluate(
-    (el) =>
-      new Promise<void>((resolve) => {
-        const ready = () => Object.keys(el).some((k) => k.startsWith("__reactProps$"));
-        if (ready()) return resolve();
-        const timer = setInterval(() => {
-          if (ready()) {
-            clearInterval(timer);
-            resolve();
-          }
-        }, 50);
-      }),
-  );
+  await expect
+    .poll(() => locator.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps$"))), { message: "the element hydrates", timeout: 30_000, intervals: [50, 100, 250] })
+    .toBe(true);
 }
 
 /** Opens a list's Filters panel. The button is a client toggle, so it waits for hydration: a click before that opens nothing. */
