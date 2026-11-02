@@ -6,6 +6,8 @@ const LEAD_TEXT = `<img src=x onerror="window.top.__hacked = true">Please call m
 
 /** A host as the MCP Apps protocol describes one: a sandboxed frame, the handshake, then the tool's answer. */
 async function showCard(page: Page, html: string, result: Record<string, unknown>) {
+  // Leave the app first, so its React does not write to a document this replaces.
+  await page.goto("about:blank");
   await page.setContent(`<!doctype html><title>Host</title><iframe id="view" sandbox="allow-scripts" style="width:600px;height:500px"></iframe>`);
   await page.evaluate(
     ({ html, result }) => {
