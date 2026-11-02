@@ -115,6 +115,8 @@ export function appLinks(ctx: ToolOutputContext) {
     conversation: (conversationId: string) => at(`/inbox/${conversationId}`),
     campaign: (campaignId: string) => at(`/campaigns/${campaignId}`),
     deal: (dealId: string) => at(`/crm/deals/${dealId}`),
+    /** A table opens inside its workbook. */
+    workbook: (workbookId: string) => at(`/tables/${workbookId}`),
     /** A contact opens in the CRM; a lead in Leads. */
     person: (personId: string, lifecycle: string) => at(lifecycle === "contact" ? `/crm/contacts/${personId}` : `/leads/${personId}`),
   };

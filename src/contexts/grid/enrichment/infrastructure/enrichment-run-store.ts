@@ -104,14 +104,14 @@ export const drizzleGridRunStore: GridRunStore = {
     return db.transaction((tx) => markSkippedIn(tx, organizationId, tableId, cells, now));
   },
 
-  async cancel(organizationId, tableId) {
+  async cancel(organizationId, tableId, stoppedBy) {
     return db.transaction(async (tx) => {
       const deleted = await tx
         .delete(gridJobs)
         .where(and(eq(gridJobs.organizationId, organizationId), eq(gridJobs.tableId, tableId), inArray(gridJobs.status, ["queued", "waiting"])))
         .returning({ rowId: gridJobs.rowId, columnKey: gridJobs.columnKey });
       for (let i = 0; i < deleted.length; i += CHUNK) {
-        await tx.insert(gridCellRuns).values(deleted.slice(i, i + CHUNK).map((d) => ({ organizationId, tableId, rowId: d.rowId, columnKey: d.columnKey, provider: null, outcome: "cancelled", costCents: "0", response: { reason: "Stopped by a person." } })));
+        await tx.insert(gridCellRuns).values(deleted.slice(i, i + CHUNK).map((d) => ({ organizationId, tableId, rowId: d.rowId, columnKey: d.columnKey, provider: null, outcome: "cancelled", costCents: "0", response: { reason: stoppedBy === "agent" ? "Stopped by an agent." : "Stopped by a person." } })));
       }
       const keysByRow = new Map<string, string[]>();
       for (const d of deleted) keysByRow.set(d.rowId, [...(keysByRow.get(d.rowId) ?? []), d.columnKey]);

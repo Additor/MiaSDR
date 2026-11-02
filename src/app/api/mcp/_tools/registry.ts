@@ -13,6 +13,7 @@ import { getCampaignTool, listCampaignsTool } from "./campaigns";
 import { getConversationTool } from "./conversation";
 import { updateDealTool } from "./deals";
 import { registerTools, toolVisible, type ToolDefinition, type ToolHooks } from "./define";
+import { runEnrichmentTool, stopEnrichmentTool } from "./enrichment";
 import { setReplyTypeTool, updateConversationTool } from "./handling";
 import { importLeadsTool } from "./import";
 import { listInboxTool } from "./inbox";
@@ -25,6 +26,7 @@ import { writeReplyDraftTool } from "./reply-draft";
 import { getAnalyticsTool, getSendingHealthTool } from "./reports";
 import { sendReplyTool } from "./send-reply";
 import { manageTaskTool } from "./tasks";
+import { getTableTool, listTablesTool } from "./tables";
 import { getWorkQueueTool } from "./work-queue";
 import { getWorkspace } from "./workspace";
 
@@ -44,6 +46,8 @@ export const TOOLS: readonly ToolDefinition[] = [
   getAnalyticsTool,
   getPipelineTool,
   getSendingHealthTool,
+  listTablesTool,
+  getTableTool,
   writeReplyDraftTool,
   setReplyTypeTool,
   updateConversationTool,
@@ -52,9 +56,11 @@ export const TOOLS: readonly ToolDefinition[] = [
   draftCampaignTool,
   updateDealTool,
   importLeadsTool,
+  stopEnrichmentTool,
   sendReplyTool,
   previewCampaignLaunchTool,
   launchCampaignTool,
+  runEnrichmentTool,
   previewIrreversibleTool,
   applyIrreversibleTool,
 ];

@@ -8,16 +8,18 @@ vi.mock("next/server", async (original) => (await import("@/test-support/route-c
 
 /**
  * The definitions every agent loads before its first call: names, descriptions, annotations and schemas. A change to
- * any of them shows in the snapshot, so it is reviewed as a contract change. The budget is 6,500 tokens,
+ * any of them shows in the snapshot, so it is reviewed as a contract change. The budget is 7,500 tokens,
  * counted as one token per three characters, more tokens than a tokenizer finds for JSON, so it errs toward failing.
  */
-const DEFINITION_TOKEN_BUDGET = 6_500;
-/** A write token loads the eight write tools too. Measured at 7,916 when they shipped. */
-const WRITE_DEFINITION_TOKEN_BUDGET = 8_500;
+const DEFINITION_TOKEN_BUDGET = 7_500;
+/** A write token loads the nine write tools too. */
+const WRITE_DEFINITION_TOKEN_BUDGET = 10_000;
 /** A send token with agent campaigns on loads three more: send_reply, preview_campaign_launch and launch_campaign. */
-const SEND_DEFINITION_TOKEN_BUDGET = 10_000;
+const SEND_DEFINITION_TOKEN_BUDGET = 11_500;
 /** A token that takes actions no one can undo loads a preview and an apply on top of the write tools. */
-const IRREVERSIBLE_DEFINITION_TOKEN_BUDGET = 10_000;
+const IRREVERSIBLE_DEFINITION_TOKEN_BUDGET = 11_500;
+/** A token that spends loads run_enrichment on top of the write tools. */
+const SPEND_DEFINITION_TOKEN_BUDGET = 11_500;
 const CHARS_PER_TOKEN = 3;
 
 /**
@@ -76,9 +78,9 @@ describeDb("MCP contract", () => {
     expect(SERVER_INSTRUCTIONS).toMatchSnapshot();
   });
 
-  it("lists the eleven read tools by name, each read-only with object schemas", () => {
+  it("lists the thirteen read tools by name, each read-only with object schemas", () => {
     expect(tools.map((t) => t.name)).toEqual([...tools.map((t) => t.name)].sort());
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(13);
     for (const tool of tools) {
       expect(tool.annotations, tool.name).toMatchObject({ readOnlyHint: true, openWorldHint: false });
       expect(tool.inputSchema.type, tool.name).toBe("object");
@@ -113,7 +115,7 @@ describeDb("MCP contract", () => {
     expect(texts.filter((text) => CODE_NAMES.test(prose(text)))).toEqual([]);
   });
 
-  it("gives a write token the eight write tools, none read-only, with instructions that say no tool sends", async () => {
+  it("gives a write token the nine write tools, none read-only, with instructions that say no tool sends", async () => {
     const { serverInstructions } = await import("./instructions");
     const legacy = await callMcp(POST, { era: "legacy", token: writer.token, method: "initialize", params: legacyInitialize });
     expect((legacy.body as { result: { instructions: string } }).result.instructions).toBe(serverInstructions("write"));
@@ -121,7 +123,7 @@ describeDb("MCP contract", () => {
 
     const reads = new Set(tools.map((t) => t.name));
     const writes = writeTools.filter((t) => !reads.has(t.name));
-    expect(writes.map((t) => t.name)).toEqual(["draft_campaign", "import_leads", "manage_task", "pause_sending", "set_reply_type", "update_conversation", "update_deal", "write_reply_draft"]);
+    expect(writes.map((t) => t.name)).toEqual(["draft_campaign", "import_leads", "manage_task", "pause_sending", "set_reply_type", "stop_enrichment", "update_conversation", "update_deal", "write_reply_draft"]);
     for (const tool of writes) {
       expect(tool.annotations, tool.name).toMatchObject({ readOnlyHint: false });
       expect(tool.inputSchema.type, tool.name).toBe("object");
@@ -146,6 +148,23 @@ describeDb("MCP contract", () => {
     expect(Math.ceil(JSON.stringify(all).length / CHARS_PER_TOKEN)).toBeLessThanOrEqual(IRREVERSIBLE_DEFINITION_TOKEN_BUDGET);
     expect(added).toMatchSnapshot();
     await sql`update channel_settings set values = values || ${sql.json({ agentIrreversiblePerDay: 0 })} where organization_id = ${orgs[0].organizationId} and channel = 'mcp'`;
+  });
+
+  it("gives a spend token run_enrichment within budget, only while the enrichment limit is above 0", async () => {
+    const list = async (token: string) => ((await callMcp(POST, { era: "modern", token, method: "tools/list" })).body as { result: { tools: ListedTool[] } }).result.tools;
+    const holder = await mcpCaller(sql, POST, orgs[0], ["mcp:read", "mcp:write", "mcp:spend"]);
+    expect((await list(holder.token)).map((t) => t.name)).not.toContain("run_enrichment");
+    await sql`update channel_settings set values = values || ${sql.json({ agentSpendCentsPerDay: 500 })} where organization_id = ${orgs[0].organizationId} and channel = 'mcp'`;
+    const all = await list(holder.token);
+    const writes = new Set(writeTools.map((t) => t.name));
+    const added = all.filter((t) => !writes.has(t.name));
+    expect(added.map((t) => t.name)).toEqual(["run_enrichment"]);
+    expect(added[0].annotations).toMatchObject({ readOnlyHint: false, openWorldHint: true });
+    expect((added[0].inputSchema as unknown as { additionalProperties?: boolean }).additionalProperties).toBe(false);
+    expect(added.flatMap((t) => [t.name, (t as ListedTool & { title?: string }).title ?? "", t.description]).filter((text) => CODE_NAMES.test(prose(text)))).toEqual([]);
+    expect(Math.ceil(JSON.stringify(all).length / CHARS_PER_TOKEN)).toBeLessThanOrEqual(SPEND_DEFINITION_TOKEN_BUDGET);
+    expect(added).toMatchSnapshot();
+    await sql`update channel_settings set values = values || ${sql.json({ agentSpendCentsPerDay: 0 })} where organization_id = ${orgs[0].organizationId} and channel = 'mcp'`;
   });
 
   it("gives a send token the three send tools within budget, the launch preview read-only", async () => {

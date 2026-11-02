@@ -230,7 +230,7 @@ export async function previewEnrichment(deps: RunDeps, actor: Actor, tableId: st
 /** The Stop button. Queued cells go back to idle, each with a `cancelled` ledger row. A cell that is mid-call finishes. */
 export async function cancelRun(deps: RunDeps, actor: Actor, tableId: string): Promise<{ cancelled: number; jobs: JobCounts }> {
   await requireTable(deps, actor, tableId);
-  const cancelled = await deps.store.cancel(actor.organizationId, tableId);
+  const cancelled = await deps.store.cancel(actor.organizationId, tableId, actor.via ? "agent" : "person");
   return { cancelled, jobs: await deps.store.counts(actor.organizationId, tableId) };
 }
 
