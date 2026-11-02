@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftingAbove, regenerateControl, reloadsAfter, sendKeyAfter } from "./reply-panel";
+import { draftingAbove, regenerateControl, sendKeyAfter } from "./reply-panel";
 
 const base = { status: "stale", decisionWaiting: false, drafting: false, busy: false, aiConfigured: true };
 
@@ -30,14 +30,6 @@ describe("regenerateControl", () => {
   it("is off while a request runs or the AI is off", () => {
     expect(regenerateControl({ ...base, busy: true }).disabled).toBe(true);
     expect(regenerateControl({ ...base, aiConfigured: false }).disabled).toBe(true);
-  });
-});
-
-describe("reloadsAfter", () => {
-  it("reloads the thread after a conflict only", () => {
-    expect(reloadsAfter({ ok: false, status: 409 })).toBe(true);
-    expect(reloadsAfter({ ok: false, status: 422 })).toBe(false);
-    expect(reloadsAfter({ ok: true, status: 201 })).toBe(false);
   });
 });
 

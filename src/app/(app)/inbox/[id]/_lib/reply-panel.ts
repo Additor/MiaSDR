@@ -25,9 +25,6 @@ export function regenerateControl(input: { status: string; decisionWaiting: bool
   };
 }
 
-/** The 409 a person's draft request answers when the thread moved while the AI wrote: the page reloads to show what changed. */
-export const reloadsAfter = (result: { ok: boolean; status: number }): boolean => !result.ok && result.status === 409;
-
 /**
  * The key the next Send uses. The same key replays a send, so it stays while the first send may have gone out: no answer, a
  * server error, a send still running or one the provider did not confirm. A refusal wrote nothing and a finished send is done,
