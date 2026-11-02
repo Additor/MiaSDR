@@ -6,6 +6,7 @@ import {
   restoreCustomColumn,
 } from "@/contexts/people/application/custom-columns";
 import { customColumnStore } from "@/contexts/people/infrastructure/composition";
+import { runningFieldUse } from "@/contexts/outreach/infrastructure/composition";
 import { withAdmin } from "@/app/_lib/api";
 
 const DENIED = "Only an owner or admin can manage custom fields.";
@@ -16,7 +17,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/leads/colu
   const { id } = await ctx.params;
   return withAdmin(DENIED, async (actor) => {
     const body = patch.parse(await request.json());
-    if (body.name !== undefined) await renameCustomColumn(customColumnStore, actor, id, body.name);
+    if (body.name !== undefined) await renameCustomColumn(customColumnStore, runningFieldUse(), actor, id, body.name);
     if (body.archived === true) await archiveCustomColumn(customColumnStore, actor, id);
     if (body.archived === false) await restoreCustomColumn(customColumnStore, actor, id);
     return { ok: true };
@@ -26,5 +27,5 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/leads/colu
 /** Permanent. The column must be archived; its values leave every row. */
 export async function DELETE(_request: Request, ctx: RouteContext<"/api/leads/columns/[id]">) {
   const { id } = await ctx.params;
-  return withAdmin(DENIED, async (actor) => ({ ok: true, ...(await deleteCustomColumn(customColumnStore, actor, id)) }));
+  return withAdmin(DENIED, async (actor) => ({ ok: true, ...(await deleteCustomColumn(customColumnStore, runningFieldUse(), actor, id)) }));
 }

@@ -8,6 +8,9 @@ vi.mock("next/headers", async () => (await import("@/test-support/route-client")
 vi.mock("next/server", async (original) => (await import("@/test-support/route-client")).nextServerStandIn(await original()));
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
+/** No running campaign reads any field. */
+const noUse = { runningCampaignsLosing: async () => [] };
+
 describeDb("lead edit: new fields against the column registry", () => {
   useTestEnv();
   let world: World;
@@ -54,7 +57,7 @@ describeDb("lead edit: new fields against the column registry", () => {
         const id = await person({ [gone.key]: "v" });
         const results = await Promise.allSettled([
           updateLead(leadDeps(), owner(), id, { title: `t${round}`, newCustom: [{ label: `Fresh ${round}`, value: "x" }] }),
-          uc.deleteCustomColumn(store, owner(), gone.id),
+          uc.deleteCustomColumn(store, noUse, owner(), gone.id),
         ]);
         for (const r of results) if (r.status === "rejected" && (r.reason as { code?: string; cause?: { code?: string } }).cause?.code === "40P01") failures.push(r.reason);
         for (const r of results) if (r.status === "rejected" && !(r.reason instanceof ConflictError)) failures.push(r.reason);

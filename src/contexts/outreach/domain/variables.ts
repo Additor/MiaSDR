@@ -140,3 +140,11 @@ export function unknownFields(steps: ReadonlyArray<{ stepNumber: number; subject
 
 /** The names every lead has, whatever the organization's own columns are. */
 export const standardFieldNames = (): string[] => Object.keys(sampleVariables());
+
+/** Whether a step fills a token from `name` and could not from `renamedTo`, or at all when it is null. */
+export function stepsLoseField(steps: ReadonlyArray<{ stepNumber: number; subject?: string | null; body: string }>, name: string, renamedTo: string | null): boolean {
+  const before = unknownFields(steps, [name]);
+  const after = unknownFields(steps, renamedTo === null ? [] : [renamedTo]);
+  const fills = (list: UnknownField[], step: number, token: string) => !list.some((u) => u.step === step && u.token === token);
+  return after.some((u) => fills(before, u.step, u.token));
+}

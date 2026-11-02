@@ -3,6 +3,9 @@ import { ConflictError, ForbiddenError, NotFoundError, type Actor } from "@/shar
 import { describeDb, dropOrgs, testSql, useTestEnv } from "@/test-support/db";
 
 /** Needs TEST_DATABASE_URL pointing at a migrated Postgres. */
+/** No running campaign reads any field. */
+const noUse = { runningCampaignsLosing: async () => [] };
+
 describeDb("custom column registry", () => {
   useTestEnv();
   const sql = testSql({ max: 3 });
@@ -76,7 +79,7 @@ describeDb("custom column registry", () => {
     const { id, admin } = await org();
     const col = await uc.createCustomColumn(store, admin, { entity: "people", name: "Tier" });
     const p = await person(id, 1, { [col.key]: "gold" });
-    await uc.renameCustomColumn(store, admin, col.id, "Customer tier");
+    await uc.renameCustomColumn(store, noUse, admin, col.id, "Customer tier");
     const [after] = await uc.listCustomColumns(store, admin, { entity: "people", includeArchived: false });
     expect(after).toMatchObject({ key: col.key, name: "Customer tier", usedBy: 1 });
     expect(await customOf("people", p)).toEqual({ [col.key]: "gold" });
@@ -86,8 +89,8 @@ describeDb("custom column registry", () => {
     const { admin } = await org();
     const a = await uc.createCustomColumn(store, admin, { entity: "people", name: "Alpha" });
     await uc.createCustomColumn(store, admin, { entity: "people", name: "Beta" });
-    await expect(uc.renameCustomColumn(store, admin, a.id, "BETA")).rejects.toBeInstanceOf(ConflictError);
-    await uc.renameCustomColumn(store, admin, a.id, "ALPHA");
+    await expect(uc.renameCustomColumn(store, noUse, admin, a.id, "BETA")).rejects.toBeInstanceOf(ConflictError);
+    await uc.renameCustomColumn(store, noUse, admin, a.id, "ALPHA");
     expect(await names(admin)).toContain("ALPHA");
   });
 
@@ -119,7 +122,7 @@ describeDb("custom column registry", () => {
   it("deletes only an archived column", async () => {
     const { admin } = await org();
     const col = await uc.createCustomColumn(store, admin, { entity: "people", name: "Live" });
-    await expect(uc.deleteCustomColumn(store, admin, col.id)).rejects.toBeInstanceOf(ConflictError);
+    await expect(uc.deleteCustomColumn(store, noUse, admin, col.id)).rejects.toBeInstanceOf(ConflictError);
     expect(await names(admin)).toEqual(["Live"]);
   });
 
@@ -133,7 +136,7 @@ describeDb("custom column registry", () => {
     const without = await person(a.id, 5, { [other.key]: "4" });
     const foreign = await person(b.id, 6, { [col.key]: "same key, other tenant" });
     await uc.archiveCustomColumn(store, a.admin, col.id);
-    expect(await uc.deleteCustomColumn(store, a.admin, col.id)).toEqual({ strippedRows: 2 });
+    expect(await uc.deleteCustomColumn(store, noUse, a.admin, col.id)).toEqual({ strippedRows: 2 });
     expect(await customOf("people", withBoth)).toEqual({ [other.key]: "2" });
     expect(await customOf("people", withOne)).toEqual({});
     expect(await customOf("people", without)).toEqual({ [other.key]: "4" });
@@ -147,7 +150,7 @@ describeDb("custom column registry", () => {
     const co = await company(id, { [col.key]: "SaaS" });
     const p = await person(id, 7, { [col.key]: "a person value with the same key" });
     await uc.archiveCustomColumn(store, admin, col.id);
-    await uc.deleteCustomColumn(store, admin, col.id);
+    await uc.deleteCustomColumn(store, noUse, admin, col.id);
     expect(await customOf("companies", co)).toEqual({});
     expect(await customOf("people", p)).toEqual({ [col.key]: "a person value with the same key" });
   });
@@ -162,13 +165,13 @@ describeDb("custom column registry", () => {
     await sql.unsafe(`create function ${fn}() returns trigger language plpgsql as $$ begin raise exception 'blocked'; end $$`);
     await sql.unsafe(`create trigger ${fn} before delete on entity_columns for each row when (old.id = '${col.id}') execute function ${fn}()`);
     try {
-      await expect(uc.deleteCustomColumn(store, admin, col.id)).rejects.toThrow();
+      await expect(uc.deleteCustomColumn(store, noUse, admin, col.id)).rejects.toThrow();
       expect(await customOf("people", p)).toEqual({ [col.key]: "precious" });
       expect(await names(admin, "people", true)).toEqual(["Doomed"]);
     } finally {
       await sql.unsafe(`drop trigger ${fn} on entity_columns`);
     }
-    await uc.deleteCustomColumn(store, admin, col.id);
+    await uc.deleteCustomColumn(store, noUse, admin, col.id);
     expect(await customOf("people", p)).toEqual({});
   });
 
@@ -177,10 +180,10 @@ describeDb("custom column registry", () => {
     const b = await org();
     const col = await uc.createCustomColumn(store, a.admin, { entity: "people", name: "Private" });
     expect(await names(b.admin)).toEqual([]);
-    await expect(uc.renameCustomColumn(store, b.admin, col.id, "Hijack")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(uc.renameCustomColumn(store, noUse, b.admin, col.id, "Hijack")).rejects.toBeInstanceOf(NotFoundError);
     await expect(uc.archiveCustomColumn(store, b.admin, col.id)).rejects.toBeInstanceOf(NotFoundError);
     await expect(uc.restoreCustomColumn(store, b.admin, col.id)).rejects.toBeInstanceOf(NotFoundError);
-    await expect(uc.deleteCustomColumn(store, b.admin, col.id)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(uc.deleteCustomColumn(store, noUse, b.admin, col.id)).rejects.toBeInstanceOf(NotFoundError);
     await expect(uc.reorderCustomColumns(store, b.admin, { entity: "people", ids: [col.id] })).rejects.toBeInstanceOf(ConflictError);
     // The same name is free in another organization.
     await expect(uc.createCustomColumn(store, b.admin, { entity: "people", name: "Private" })).resolves.toMatchObject({ key: "x_private" });
@@ -192,11 +195,11 @@ describeDb("custom column registry", () => {
     const col = await uc.createCustomColumn(store, admin, { entity: "people", name: "Visible" });
     expect(await names(member)).toEqual(["Visible"]);
     await expect(uc.createCustomColumn(store, member, { entity: "people", name: "X" })).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(uc.renameCustomColumn(store, member, col.id, "Y")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(uc.renameCustomColumn(store, noUse, member, col.id, "Y")).rejects.toBeInstanceOf(ForbiddenError);
     await expect(uc.reorderCustomColumns(store, member, { entity: "people", ids: [col.id] })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(uc.archiveCustomColumn(store, member, col.id)).rejects.toBeInstanceOf(ForbiddenError);
     await expect(uc.restoreCustomColumn(store, member, col.id)).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(uc.deleteCustomColumn(store, member, col.id)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(uc.deleteCustomColumn(store, noUse, member, col.id)).rejects.toBeInstanceOf(ForbiddenError);
     expect(await names(admin)).toEqual(["Visible"]);
   });
 
@@ -243,7 +246,7 @@ describeDb("custom column registry", () => {
     it("import reuses a renamed column instead of creating a second one with the same name", async () => {
       const { id, admin } = await org();
       const plan = await uc.createCustomColumn(store, admin, { entity: "people", name: "Plan" });
-      await uc.renameCustomColumn(store, admin, plan.id, "Account Plan");
+      await uc.renameCustomColumn(store, noUse, admin, plan.id, "Account Plan");
       await runImport(admin, "Account Plan", [["a@imp.test", "Pro"]]);
       const columns = await columnsOf(id);
       expect(columns.map((c) => c.name)).toEqual(["Account Plan"]);
@@ -296,7 +299,7 @@ describeDb("custom column registry", () => {
       const { leadDeps } = await import("@/composition/leads");
       const { mapRawField } = await import("../../application/lead-management");
       const plan = await uc.createCustomColumn(store, admin, { entity: "people", name: "Plan" });
-      await uc.renameCustomColumn(store, admin, plan.id, "Account Plan");
+      await uc.renameCustomColumn(store, noUse, admin, plan.id, "Account Plan");
       await sql`insert into people (organization_id, email, raw) values (${id}, 'r@imp.test', ${sql.json({ tier: "Gold" })})`;
       const first = await mapRawField(leadDeps(), admin, { rawKey: "tier", name: "Account Plan" });
       expect(first).toMatchObject({ key: plan.key, name: "Account Plan", updated: 1 });
@@ -341,7 +344,7 @@ describeDb("custom column registry", () => {
     it("a label equal to a renamed column's new name reuses that column", async () => {
       const { id, admin } = await org();
       const plan = await uc.createCustomColumn(store, admin, { entity: "people", name: "Plan" });
-      await uc.renameCustomColumn(store, admin, plan.id, "Account Plan");
+      await uc.renameCustomColumn(store, noUse, admin, plan.id, "Account Plan");
       const personId = await person(id, 3, {});
       await edit(admin, personId, [{ label: "account plan", value: "Team" }]);
       expect((await columnsOf(id)).map((c) => c.name)).toEqual(["Account Plan"]);
@@ -373,5 +376,32 @@ describeDb("custom column registry", () => {
       ]);
       expect((await columnsOf(id)).map((c) => c.name)).toEqual(["Region", "Segment", "Tier"]);
     });
+  });
+
+  it("refuses a rename or delete that would blank a running campaign, and leaves other changes alone", async () => {
+    const { drizzleRunningFieldUse: use, drizzleMergeFieldSource: source } = await import("@/contexts/outreach/infrastructure/drizzle-merge-fields");
+    const { id, admin } = await org();
+    const col = await uc.createCustomColumn(store, admin, { entity: "people", name: "Fav Color" });
+    const steps = [{ stepNumber: 1, kind: "email", subject: "Hello", body: "Is {{favColor}} still right?", waitDays: 0 }];
+    const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${id}, 'email', 'Spring push', 'active', ${sql.json(steps)}) returning id`;
+
+    await expect(uc.renameCustomColumn(store, use, admin, col.id, "Colour")).rejects.toThrow(/"Spring push" use this field/);
+    // The same words still fill the token.
+    await uc.renameCustomColumn(store, use, admin, col.id, "FAV color");
+
+    await uc.archiveCustomColumn(store, admin, col.id);
+    expect(await source.fieldNames(id)).toContain("FAV color");
+    await expect(uc.deleteCustomColumn(store, use, admin, col.id)).rejects.toBeInstanceOf(ConflictError);
+
+    await sql`update campaigns set status = 'paused' where id = ${campaign}`;
+    await uc.deleteCustomColumn(store, use, admin, col.id);
+    expect(await source.fieldNames(id)).not.toContain("FAV color");
+  });
+
+  it("offers a company's source column in the picker's list", async () => {
+    const { drizzleMergeFieldSource: source } = await import("@/contexts/outreach/infrastructure/drizzle-merge-fields");
+    const { id } = await org();
+    await sql`insert into companies (organization_id, name, domain, raw) values (${id}, 'Acme', 'acme.test', ${sql.json({ hq_city: "Oslo" })})`;
+    expect(await source.sourceKeys(id)).toContain("hq_city");
   });
 });

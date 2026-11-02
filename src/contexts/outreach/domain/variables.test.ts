@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildVariables, sampleVariables, standardFieldNames, unknownFields, unresolvedTokens } from "./variables";
+import { buildVariables, sampleVariables, standardFieldNames, stepsLoseField, unknownFields, unresolvedTokens } from "./variables";
 
 const person = {
   firstName: "Ann", lastName: "Lee", fullName: "Ann Lee", title: "CTO", phone: null, email: "ann@acme.com",
@@ -107,5 +107,17 @@ describe("unknownFields", () => {
   });
   it("matches a name in other words", () => {
     expect(unknownFields(steps, [...standardFieldNames(), "region", "NOPE"])).toEqual([]);
+  });
+});
+
+describe("stepsLoseField", () => {
+  const steps = [{ stepNumber: 1, subject: "Hi", body: "{{favColor}} and {{firstName}}" }];
+  it("is true when a rename or delete leaves a token unfilled", () => {
+    expect(stepsLoseField(steps, "Fav Color", "Colour")).toBe(true);
+    expect(stepsLoseField(steps, "Fav Color", null)).toBe(true);
+  });
+  it("is false when the same words still fill it, or no step reads the field", () => {
+    expect(stepsLoseField(steps, "Fav Color", "FAV color")).toBe(false);
+    expect(stepsLoseField(steps, "Region", null)).toBe(false);
   });
 });

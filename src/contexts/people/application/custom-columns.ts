@@ -51,6 +51,25 @@ export interface CustomColumnStore {
   transact<T>(organizationId: string, entity: ColumnEntity, fn: (tx: ColumnTx) => Promise<T>): Promise<T>;
 }
 
+/** What outreach says about a people column: the running campaigns a change would blank. */
+export interface RunningFieldUse {
+  /** Names of the running campaigns that fill a step from `name` and would not from `renamedTo`, or at all once it is deleted (null). */
+  runningCampaignsLosing(organizationId: string, name: string, renamedTo: string | null): Promise<string[]>;
+}
+
+/**
+ * A running campaign's steps cannot change, and its next send would reach leads with a blank. A paused or draft
+ * campaign needs no check here: starting it refuses a field no lead has.
+ */
+async function refuseIfRunningCampaignsLose(use: RunningFieldUse, actor: Actor, column: CustomColumn, renamedTo: string | null): Promise<void> {
+  if (column.entity !== "people") return;
+  const names = await use.runningCampaignsLosing(actor.organizationId, column.name, renamedTo);
+  if (names.length === 0) return;
+  const shown = names.slice(0, 3).map((name) => `"${name}"`).join(", ");
+  const more = names.length > 3 ? ` and ${names.length - 3} more` : "";
+  throw new ConflictError(`${shown}${more} use this field and are running, so leads would get a blank. Pause them first, and update their steps before you resume.`);
+}
+
 function requireAdmin(actor: Actor): void {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can manage custom fields.");
 }
@@ -75,11 +94,12 @@ export async function createCustomColumn(store: CustomColumnStore, actor: Actor,
 }
 
 /** Changes the label only. The key and every stored value stay as they are. */
-export async function renameCustomColumn(store: CustomColumnStore, actor: Actor, id: string, name: string): Promise<void> {
+export async function renameCustomColumn(store: CustomColumnStore, use: RunningFieldUse, actor: Actor, id: string, name: string): Promise<void> {
   requireAdmin(actor);
   const checked = cleanColumnName(name);
   if (!checked.ok) throw new ValidationError(checked.problem);
   const found = await locate(store, actor, id);
+  await refuseIfRunningCampaignsLose(use, actor, found, checked.name);
   await store.transact(actor.organizationId, found.entity, async (tx) => {
     const all = await tx.all();
     const current = all.find((c) => c.id === id);
@@ -126,9 +146,10 @@ export async function restoreCustomColumn(store: CustomColumnStore, actor: Actor
 }
 
 /** Removes an archived column and its values from every row, in one transaction. */
-export async function deleteCustomColumn(store: CustomColumnStore, actor: Actor, id: string): Promise<{ strippedRows: number }> {
+export async function deleteCustomColumn(store: CustomColumnStore, use: RunningFieldUse, actor: Actor, id: string): Promise<{ strippedRows: number }> {
   requireAdmin(actor);
   const found = await locate(store, actor, id);
+  await refuseIfRunningCampaignsLose(use, actor, found, null);
   return store.transact(actor.organizationId, found.entity, async (tx) => {
     const current = (await tx.all()).find((c) => c.id === id);
     if (!current) throw new NotFoundError("Column not found");
