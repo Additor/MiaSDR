@@ -117,7 +117,7 @@ Agents complete campaigns and delete records only when all of these hold:
 
 1. The server allows it. `MCP_IRREVERSIBLE_ENABLED=false` refuses it for the whole install.
 2. An owner or admin sets a daily limit above 0 under Settings, Organization, Agents can spend and delete.
-3. An owner or admin creates a token, or connects an app, with Complete campaigns and delete records ticked. Members cannot, and an admin demoted to member loses it on the next request.
+3. An owner or admin creates a token, or connects an app, with Complete campaigns and delete leads, contacts and deals ticked. Members cannot, and an admin demoted to member loses it on the next request.
 
 Such a token gets two tools:
 
