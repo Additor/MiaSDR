@@ -4,7 +4,18 @@ MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ve
 
 ## Unreleased
 
+### MCP
+
+Agents can now take actions a person cannot undo. All of it stays off until an owner or admin sets a daily limit under Settings, Organization and creates a token with the option ticked. Connected apps need to connect again to ask for the new permissions.
+
+- `preview_irreversible` and `apply_irreversible` complete a campaign, or delete a lead, contact, deal or draft campaign, one target per call. A token from the preview catches a change in between.
+- An agent never deletes someone marked do not contact, on the suppression list, who asked to stop, or who was removed from a campaign. A person still can.
+- `draft_campaign` takes a `remove_lead` action, which a person can restore.
+- New settings and switches: `agentSpendCentsPerDay`, `agentSearchLeadsPerDay`, `agentIrreversiblePerDay`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`. The database gains `mcp_agent_usage` and two columns on `mcp_tokens`, both with defaults.
+
 ### Fixed
+
+- The contact delete preview no longer waits on its own database connection when the pool holds one connection.
 
 - The OAuth consent route now refuses access the app did not ask for. Before, a person who edited their own consent request could grant more than the page offered.
 

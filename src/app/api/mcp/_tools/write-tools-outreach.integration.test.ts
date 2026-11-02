@@ -56,6 +56,26 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     expect((await save("Hi {{first_name}}")).structured.unknownFields).toEqual([]);
   });
 
+  it("removes a lead from a campaign, stops its steps, and add_leads cannot bring it back", async () => {
+    const created = await owner.tool("draft_campaign", { action: "create", channel: "email", name: "Remove" });
+    const campaignId = created.structured.campaignId as string;
+    const [{ id: lead }] = await sql<{ id: string }[]>`insert into people (organization_id, email, first_name) values (${orgs[0].organizationId}, ${`rm-${randomBytes(4).toString("hex")}@acme.test`}, 'Rae') returning id`;
+    await owner.tool("draft_campaign", { action: "add_leads", channel: "email", campaignId, personIds: [lead] });
+    const [{ id: enrollmentId }] = await sql<{ id: string }[]>`select id from campaign_enrollments where campaign_id = ${campaignId} and person_id = ${lead}`;
+
+    expect((await owner.tool("draft_campaign", { action: "remove_lead", channel: "email", campaignId })).structured.error).toMatchObject({ code: "validation" });
+    const removed = await owner.tool("draft_campaign", { action: "remove_lead", channel: "email", campaignId, enrollmentIds: [enrollmentId] });
+    expect(removed.isError, removed.text).toBe(false);
+    expect(removed.structured.removal).toEqual({ requested: 1, removed: 1, alreadyRemoved: 0, skippedFinal: 0, notFound: 0 });
+    expect((await sql`select status, next_send_at from campaign_enrollments where id = ${enrollmentId}`)[0]).toMatchObject({ status: "removed", next_send_at: null });
+
+    expect((await owner.tool("draft_campaign", { action: "remove_lead", channel: "email", campaignId, enrollmentIds: [enrollmentId] })).structured.removal).toMatchObject({ removed: 0, alreadyRemoved: 1 });
+    const again = await owner.tool("draft_campaign", { action: "add_leads", channel: "email", campaignId, personIds: [lead] });
+    expect(again.structured.enroll).toMatchObject({ added: 0, skipped: { removed: 1 } });
+    const other = await owner.tool("draft_campaign", { action: "create", channel: "email", name: "Other" });
+    expect((await owner.tool("draft_campaign", { action: "remove_lead", channel: "email", campaignId: other.structured.campaignId as string, enrollmentIds: [enrollmentId] })).structured.removal).toMatchObject({ removed: 0, notFound: 1 });
+  });
+
   it("refuses steps that carry a body get_campaign cut", async () => {
     const created = await owner.tool("draft_campaign", { action: "create", channel: "email", name: "Long steps" });
     const campaignId = created.structured.campaignId as string;
