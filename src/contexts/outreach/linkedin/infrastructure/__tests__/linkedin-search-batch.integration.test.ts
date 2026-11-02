@@ -148,9 +148,11 @@ describeDb("linkedin search batch upload", () => {
     const f = await fixture({ accounts: 2, people: 5 });
     const { id } = await upload(f, [searchUrl(1), searchUrl(2), searchUrl(3)]);
 
-    const claims = await Promise.all([engineStore.claimPage({ now: current, random: () => 0 }), engineStore.claimPage({ now: current, random: () => 0 })]);
-    expect(claims.filter(Boolean)).toHaveLength(2);
-    const [a, b] = claims as NonNullable<(typeof claims)[number]>[];
+    const claim = () => engineStore.claimPage({ now: current, random: () => 0 });
+    const claims = (await Promise.all([claim(), claim()])).filter((c) => c !== null);
+    // A claim holds every search it looked at, so the other worker can find them all locked. It tries again on its next tick.
+    if (claims.length < 2) claims.push((await claim())!);
+    const [a, b] = claims;
     expect(a.searchId).not.toBe(b.searchId);
     expect(a.account.id).not.toBe(b.account.id);
     // Hand the claims back so the loop below can run them.
