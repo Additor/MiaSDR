@@ -119,11 +119,16 @@ function asValidation(error: unknown) {
   return error;
 }
 
-export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: string, input: { note?: string }): Promise<{ draftId: string }> {
+/** The refusal when a draft moved on since the caller read it. */
+const draftChanged = () => new ConflictError("The draft changed since you opened it. Reload and review it again.", { code: "stale_version" });
+
+/** With `expectedRevision`, a draft edited since the caller read it, or while the model wrote the new one, answers 409 and stays. */
+export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: string, input: { note?: string; expectedRevision?: number }): Promise<{ draftId: string }> {
   assertId(draftId, "Draft");
   const provider = await requireProvider(deps, actor);
   const ctx = await deps.store.draftContextForDraft(actor.organizationId, draftId);
   if (!ctx) throw new NotFoundError("Draft not found");
+  if (input.expectedRevision !== undefined && ctx.draft.revision !== input.expectedRevision) throw draftChanged();
   if (!["awaiting_review", "failed", "stale"].includes(ctx.draft.status)) {
     throw new ConflictError(`A draft that is ${ctx.draft.status.replace(/_/g, " ")} cannot be regenerated.`);
   }
@@ -131,6 +136,7 @@ export async function regenerateDraft(deps: ReplyDeps, actor: Actor, draftId: st
   const note = input.note?.trim().slice(0, 2000) || null;
   try {
     const result = await produceDraft(provider, ctx, { feedback: note, previousDraft: ctx.draft.editedBodyText ?? ctx.draft.aiBodyText });
+    if (input.expectedRevision !== undefined && (await deps.store.getDraft(actor.organizationId, draftId))?.revision !== input.expectedRevision) throw draftChanged();
     return {
       draftId: personDraftId(
         await deps.store.insertDraft({

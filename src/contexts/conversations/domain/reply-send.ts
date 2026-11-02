@@ -51,6 +51,7 @@ export const REPLY_REFUSALS = {
     code: "agent_unverified_recipient",
     text: () => "An agent replies only to a person a campaign reached in this conversation, or one a person here already answered. Reply yourself in MiaSDR first.",
   },
+  agent_stop_requested: { error: ConflictError, code: "agent_stop_requested", text: () => "This person's latest message may ask to stop. A person reviews it in MiaSDR before an agent can reply." },
   agent_cc_not_allowed: { error: ConflictError, code: "agent_cc_not_allowed", text: () => "An agent cannot send a reply with CC. Remove the CC addresses from the draft, or send it yourself in MiaSDR." },
   agent_send_paused: { error: ConflictError, code: "agent_send_paused", text: () => "Sending is paused for this organization. Agents send nothing until a person resumes it." },
   agent_daily_cap: { error: ConflictError, code: "agent_daily_cap", text: () => "Agents reached today's reply limit for this organization, this person or this mailbox. It resets at midnight UTC." },

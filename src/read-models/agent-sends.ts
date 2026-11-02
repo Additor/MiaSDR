@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { utcDayStart } from "@/shared/utc-day";
 import { campaignEnrollments, campaigns, drafts, mcpTokens, sendAttempts, users } from "@/platform/db/schema";
@@ -30,17 +30,18 @@ export interface AgentCampaignRow {
 export interface AgentSendsOverview {
   sends: AgentSendRow[];
   campaigns: AgentCampaignRow[];
-  /** Running campaigns an agent started, all of them: what Pause campaigns agents started would pause. */
+  /** What Pause campaigns agents started would stop: running campaigns an agent started, and campaigns an agent paused and could resume. */
   running: number;
-  /** Today, from midnight UTC: what the daily limits count. */
-  today: { replies: number; enrolls: number };
+  /** Today, from midnight UTC: what the daily limits count. `busiestUser` and `busiestMailbox` are the highest count against those two limits. */
+  today: { replies: number; enrolls: number; busiestUser: number; busiestMailbox: number };
 }
 
 const SHOWN = 20;
 
 export async function agentSendsOverview(organizationId: string, now: Date): Promise<AgentSendsOverview> {
   const dayStart = utcDayStart(now);
-  const [sends, started, [running], [replies], [enrolls]] = await Promise.all([
+  const counted = and(eq(sendAttempts.organizationId, organizationId), eq(sendAttempts.origin, "agent"), sql`${sendAttempts.status} <> 'failed'`, gte(sendAttempts.createdAt, dayStart));
+  const [sends, started, [running], [replies], [enrolls], [busiestUser], [busiestMailbox]] = await Promise.all([
     db
       .select({
         attemptId: sendAttempts.id,
@@ -75,20 +76,28 @@ export async function agentSendsOverview(organizationId: string, now: Date): Pro
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(campaigns)
-      .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.status, "active"), isNotNull(campaigns.startedViaTokenId))),
+      .where(and(eq(campaigns.organizationId, organizationId), or(and(eq(campaigns.status, "active"), isNotNull(campaigns.startedViaTokenId)), and(eq(campaigns.status, "paused"), eq(campaigns.personPaused, false))))),
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(sendAttempts)
-      .where(and(eq(sendAttempts.organizationId, organizationId), eq(sendAttempts.origin, "agent"), sql`${sendAttempts.status} <> 'failed'`, gte(sendAttempts.createdAt, dayStart))),
+      .where(counted),
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(campaignEnrollments)
       .where(and(eq(campaignEnrollments.organizationId, organizationId), isNotNull(campaignEnrollments.enrolledViaTokenId), gte(campaignEnrollments.createdAt, dayStart))),
+    db.select({ n: sql<number>`count(*)::int` }).from(sendAttempts).where(counted).groupBy(sendAttempts.actorUserId).orderBy(sql`count(*) desc`).limit(1),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(sendAttempts)
+      .where(and(counted, eq(sendAttempts.provider, "mailbox")))
+      .groupBy(sendAttempts.accountRef)
+      .orderBy(sql`count(*) desc`)
+      .limit(1),
   ]);
   return {
     sends: sends.map(({ provider, ...row }): AgentSendRow => ({ ...row, channel: provider === "linkedin" ? "linkedin" : "email" })),
     campaigns: started,
     running: running?.n ?? 0,
-    today: { replies: replies?.n ?? 0, enrolls: enrolls?.n ?? 0 },
+    today: { replies: replies?.n ?? 0, enrolls: enrolls?.n ?? 0, busiestUser: busiestUser?.n ?? 0, busiestMailbox: busiestMailbox?.n ?? 0 },
   };
 }

@@ -32,6 +32,8 @@ export interface LaunchSender {
 
 export interface LaunchState {
   channel: "email" | "linkedin";
+  /** The campaign: a token from one campaign means nothing on another with the same steps. */
+  id: string;
   status: string;
   steps: unknown;
   /** The senders the campaign sends from: its own list, or every account of the channel when the list is empty. */
@@ -43,7 +45,7 @@ const VERSION = "lt1";
 function digest(purpose: LaunchPurpose, state: LaunchState, pending: number | null): string {
   const senders = [...state.senders].map((s) => `${s.id}:${s.status}`).sort();
   return createHash("sha256")
-    .update(JSON.stringify([purpose, state.channel, state.status, state.steps, senders, pending]))
+    .update(JSON.stringify([purpose, state.id, state.channel, state.status, state.steps, senders, pending]))
     .digest("base64url")
     .slice(0, 32);
 }

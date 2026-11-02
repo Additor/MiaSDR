@@ -122,10 +122,11 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
     });
   },
 
-  async listSenders(organizationId, campaignId, channel) {
+  async listSenders(organizationId, campaignId, channel, tx) {
     const cols = senderLabel(channel);
+    const handle = tx ?? db;
     if (channel === "email") {
-      const rows = await db
+      const rows = await handle
         .select(cols)
         .from(campaignSenders)
         .innerJoin(mailboxes, eq(mailboxes.id, campaignSenders.mailboxId))
@@ -133,7 +134,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
         .orderBy(asc(mailboxes.emailAddress));
       return rows.map(toRef);
     }
-    const rows = await db
+    const rows = await handle
       .select(cols)
       .from(campaignSenders)
       .innerJoin(linkedinAccounts, eq(linkedinAccounts.id, campaignSenders.linkedinAccountId))
@@ -142,12 +143,13 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
     return rows.map(toRef);
   },
 
-  async findSenders(organizationId, channel, ids) {
+  async findSenders(organizationId, channel, ids, tx) {
     if (ids.length === 0) return [];
+    const handle = tx ?? db;
     const rows =
       channel === "email"
-        ? await db.select(senderLabel("email")).from(mailboxes).where(and(eq(mailboxes.organizationId, organizationId), inArray(mailboxes.id, ids)))
-        : await db.select(senderLabel("linkedin")).from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), inArray(linkedinAccounts.id, ids)));
+        ? await handle.select(senderLabel("email")).from(mailboxes).where(and(eq(mailboxes.organizationId, organizationId), inArray(mailboxes.id, ids)))
+        : await handle.select(senderLabel("linkedin")).from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), inArray(linkedinAccounts.id, ids)));
     return rows.map(toRef);
   },
 

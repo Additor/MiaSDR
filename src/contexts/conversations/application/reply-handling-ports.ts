@@ -162,7 +162,7 @@ export interface RecordDetail {
   person: { id: string; name: string | null; email: string | null; linkedinUrl: string | null; phone: string | null; title: string | null; company: string | null };
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
   suppressed: boolean;
-  conversations: Array<{ id: string; channel: string; accountRef: string; status: string }>;
+  conversations: Array<{ id: string; channel: string; accountRef: string; status: string; updatedAt: Date }>;
   replyTypePicks: ReplyTypePickEntry[];
   drafts: DraftEntry[];
   events: EventEntry[];

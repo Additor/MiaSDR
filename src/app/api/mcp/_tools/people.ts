@@ -3,8 +3,17 @@ import { leadActivityDeps, leadDeps, listLeads } from "@/composition/leads";
 import { readLeadActivity } from "@/contexts/outreach/application/read-lead-activity";
 import { getLead } from "@/contexts/people/application/lead-management";
 import { LIFECYCLE_FILTERS, parseLeadFilter } from "@/contexts/people/domain/lead-filter";
+import { ValidationError } from "@/shared/errors";
+import { isUuid } from "@/shared/uuid";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, counted, fencedField, iso, untrusted } from "./output";
+import { appLinks, counted, fencedField, iso } from "./output";
+
+/** The page's URL reader drops an id it cannot read, which would answer every lead as if the campaign filter had applied. */
+function refuseUnreadable(what: string, value: string | undefined, words: readonly string[]): void {
+  if (value !== undefined && !words.includes(value) && !isUuid(value)) {
+    throw new ValidationError(`${what} takes ${[...words, "a campaign id"].join(" or ")}, not "${String(value).slice(0, 60)}". Take ids from list_campaigns.`);
+  }
+}
 
 const tristate = (value: boolean | undefined) => (value === undefined ? undefined : value ? "yes" : "no");
 
@@ -42,7 +51,9 @@ export const searchPeopleTool = defineTool({
   }),
   output: z.object({ total: z.number(), page: z.number(), pageCount: z.number(), people: z.array(person) }),
   async run({ actor, out }, input) {
-    // The Leads page's own URL reader drops values that do not parse, so the tool filters as the page does.
+    refuseUnreadable("campaign", input.campaign, ["any", "none"]);
+    refuseUnreadable("notInCampaignId", input.notInCampaignId, []);
+    // The Leads page's own URL reader builds the filter, so the tool filters as the page does.
     const params: Record<string, string | undefined> = {
       q: input.query,
       lifecycle: input.lifecycle,
@@ -97,6 +108,8 @@ export const getPersonTool = defineTool({
     customFields: z.record(z.string(), z.unknown()),
     conversationId: z.string().nullable(),
     enrollments: z.array(z.object({ campaignId: z.string(), campaignName: z.string(), channel: z.string(), status: z.string(), currentStep: z.number(), nextSendAt: z.string().nullable() })),
+    /** Other people's Personal campaigns also sent to this person; those sends stay out of `sends`. */
+    hiddenSends: z.boolean(),
     sends: z.array(z.object({ campaignName: z.string(), stepNumber: z.number().nullable(), channel: z.string(), status: z.string(), subject: z.string().nullable(), sentAt: z.string().nullable() })),
     appUrl: z.string(),
   }),
@@ -109,7 +122,7 @@ export const getPersonTool = defineTool({
     const customFields = Object.fromEntries(
       Object.entries(p.custom)
         .filter(([key]) => labels.has(key))
-        .map(([key, value]) => [labels.get(key)!, typeof value === "string" ? untrusted(out, "field", value) : value]),
+        .map(([key, value]) => [labels.get(key)!, typeof value === "string" ? fencedField(out, value) : value]),
     );
     const structured = {
       personId: p.id,
@@ -126,7 +139,8 @@ export const getPersonTool = defineTool({
       customFields,
       conversationId: lead.conversationId,
       enrollments: lead.enrollments.map((e) => ({ campaignId: e.campaignId, campaignName: e.campaignName, channel: e.channel, status: e.status, currentStep: e.currentStep, nextSendAt: iso(e.nextSendAt) })),
-      sends: lead.sends.map((s) => ({ campaignName: s.campaignName, stepNumber: s.stepNumber, channel: s.channel, status: s.status, subject: s.subject, sentAt: iso(s.sentAt) })),
+      sends: lead.sends.map((s) => ({ campaignName: s.campaignName, stepNumber: s.stepNumber, channel: s.channel, status: s.status, subject: fencedField(out, s.subject), sentAt: iso(s.sentAt) })),
+      hiddenSends: lead.hiddenSends,
       appUrl: appLinks(out).person(p.id, p.lifecycle),
     };
     const summary = `${p.fullName ?? p.email ?? p.id}, ${p.lifecycle}${structured.status ? `, ${structured.status}` : ""}. ${counted(lead.enrollments.length, "enrollment")}, ${counted(lead.sends.length, "campaign send")}.`;

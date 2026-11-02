@@ -107,5 +107,14 @@ export const drizzleAgentCampaignStore: AgentCampaignStore = {
     return rows.map((r) => ({ id: r.id, channel: r.channel as "email" | "linkedin" }));
   },
 
+  async holdAgentPaused(organizationId) {
+    // A paused campaign a person did not pause is one an agent paused: `statusMarks` sets the mark on every pause.
+    const rows = await db
+      .update(campaigns)
+      .set({ personPaused: true })
+      .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.status, "paused"), eq(campaigns.personPaused, false)))
+      .returning({ id: campaigns.id });
+    return rows.length;
+  },
 
 };

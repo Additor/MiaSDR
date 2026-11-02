@@ -65,7 +65,7 @@ The organization's `agent-send:<organization id>` advisory lock (`tenancy/infras
 | Path | Order |
 | --- | --- |
 | Agent email reply | conversation `FOR UPDATE`, draft `FOR UPDATE`, then `agent-send` exclusive; the policy and the counts follow in later statements |
-| Agent LinkedIn reply | conversation, draft, account, then `agent-send` exclusive |
+| Agent LinkedIn reply | conversation, draft, `agent-send` exclusive, then account: a member removal takes `agent-send`, then the account |
 | Agent campaign start or resume | campaign `FOR UPDATE`, then `agent-send` shared |
 | Agent enroll | campaign `FOR SHARE`, `agent-send` shared, then `agent-enroll:<organization id>` exclusive; the day's count follows |
 | Emptying a campaign's senders | campaign `FOR KEY SHARE` before the delete |

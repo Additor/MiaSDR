@@ -7,6 +7,9 @@ import type { McpSettings } from "../domain/mcp-settings";
 import { mcpSettingsIn } from "./mcp-settings-reader";
 import { lockAgentSend } from "./agent-send-lock";
 
+/** Published for a reply that must hold this lock before a row a member change also locks. */
+export { lockAgentSend };
+
 export interface AgentSendGate {
   policy: AgentSendPolicy;
   settings: McpSettings;
@@ -31,6 +34,8 @@ export async function readAgentSendGate(tx: DbHandle, input: { organizationId: s
     .from(mcpTokens)
     .leftJoin(members, and(eq(members.organizationId, mcpTokens.organizationId), eq(members.userId, mcpTokens.userId)))
     .where(and(eq(mcpTokens.id, input.tokenId), eq(mcpTokens.organizationId, input.organizationId)));
+  // The route checked `enabled` before the lock; a person may have turned MCP off while this request waited.
+  if (!settings.enabled) return { policy: { replies: false, campaigns: false, refusal: "mcp_off" }, settings };
   const policy = agentSendPolicy({
     installSendEnabled: env().MCP_SEND_ENABLED,
     settings,

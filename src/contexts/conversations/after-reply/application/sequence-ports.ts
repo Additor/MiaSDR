@@ -1,3 +1,4 @@
+import type { AgentVia } from "@/shared/errors";
 import type { AfterReplyMode } from "../domain/after-reply";
 import type { FollowUpsRule, SystemRole } from "../../domain/reply-type";
 import type { InterruptFacts, InterruptReason, RunStatus, StepInput, StepRunStatus, StepType } from "../domain/sequences";
@@ -179,6 +180,8 @@ export interface RunEvent {
   organizationId: string;
   recordId: string;
   actorUserId: string | null;
+  /** The agent behind the action, when one took it. */
+  via?: AgentVia;
 }
 
 /** Everything the manual run controls persist. */

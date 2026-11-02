@@ -4,7 +4,7 @@ import type { QueueItem } from "@/contexts/conversations/actions/application/wor
 import { QUEUE_GROUPS, QUEUE_SCOPES } from "@/contexts/conversations/actions/domain/action-queue";
 import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/work-queue-composition";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, counted, DEFAULT_LIST_LIMIT, fencedExcerpt, listLimit, OVERVIEW_LIMIT, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
+import { appLinks, counted, DEFAULT_LIST_LIMIT, fencedExcerpt, fencedField, listLimit, OVERVIEW_LIMIT, UNTRUSTED_NOTE, type ToolOutputContext } from "./output";
 
 const item = z.object({
   recordId: z.string(),
@@ -39,7 +39,7 @@ function toItem(ctx: ToolOutputContext, i: QueueItem): z.infer<typeof item> {
     assignee: i.assignee,
     waitingSince: i.waitingSince.at.toISOString(),
     lastInbound: fencedExcerpt(ctx, i.channel, i.snippet),
-    draft: i.draft && { draftId: i.draft.draftId, status: i.draft.status, subject: i.draft.subject },
+    draft: i.draft && { draftId: i.draft.draftId, status: i.draft.status, subject: fencedField(ctx, i.draft.subject) },
     aiPick: i.classification && {
       replyTypePickId: i.classification.replyTypePickId,
       kind: i.classification.kind,
@@ -84,7 +84,7 @@ export const getWorkQueueTool = defineTool({
     const summary = [
       queue.total === 0 ? "Nothing waits under this filter." : `${counted(queue.total, "item")} ${queue.total === 1 ? "waits" : "wait"}. ${lines.join(", ")}.`,
       `Unfiltered: ${counts.byScope.mine} mine, ${counts.byScope.unassigned} unassigned, ${counts.byScope.others} assigned to others.`,
-      ...(groups.some((g) => g.items.some((i) => i.lastInbound)) ? [UNTRUSTED_NOTE] : []),
+      ...(groups.some((g) => g.items.some((i) => i.lastInbound || i.draft?.subject)) ? [UNTRUSTED_NOTE] : []),
     ].join("\n");
     return { summary, structured };
   },

@@ -234,6 +234,32 @@ describeDb("MCP send_reply: agent email replies", () => {
     expect(await sql`select 1 from send_attempts where draft_id = ${draft.draftId}`).toHaveLength(0);
   });
 
+  it("refuses a reply while the lead's latest message may ask to stop, until a person reviews it", async () => {
+    const thread = await conversation({ campaign: true });
+    const [{ message_id }] = await sql<{ message_id: string }[]>`select latest_inbound_message_id as message_id from records where id = ${thread.recordId}`;
+    const [{ id: pick }] = await sql<{ id: string }[]>`
+      insert into reply_type_picks (organization_id, record_id, message_id, status, confidence, response, expected_context_version)
+      select organization_id, id, ${message_id}, 'proposed', 0.9, ${sql.json({ stopRequested: true })}, context_version from records where id = ${thread.recordId} returning id`;
+    const draft = await draftOn(thread.conversationId);
+    expect(codeOf(await send(thread.conversationId, draft))).toBe("agent_stop_requested");
+    const read = await agent.tool("get_conversation", { conversationId: thread.conversationId });
+    expect(read.structured.aiPicks).toContainEqual(expect.objectContaining({ replyTypePickId: pick, stopRequested: true }));
+    await sql`update reply_type_picks set status = 'rejected' where id = ${pick}`;
+    expect((await send(thread.conversationId, draft)).structured.status).toBe("sent");
+  });
+
+  it("shows an agent's unconfirmed send to a person even when the record waits on no one", async () => {
+    const thread = await conversation({ campaign: true });
+    const draft = await draftOn(thread.conversationId);
+    await sql`update drafts set status = 'delivery_uncertain', error = 'timeout' where id = ${draft.draftId}`;
+    await sql`insert into send_attempts (organization_id, draft_id, idempotency_key, provider, account_ref, status, origin, mcp_token_id, actor_user_id)
+              values (${org.organizationId}, ${draft.draftId}, ${`k-${randomBytes(6).toString("hex")}`}, 'mailbox', ${mailbox}, 'delivery_uncertain', 'agent', ${agent.tokenId}, ${org.userId})`;
+    await sql`update records set workflow_state = 'idle', next_action_at = null where id = ${thread.recordId}`;
+    const queue = await agent.tool("get_work_queue", { group: "problem" });
+    const items = (queue.structured.groups as Array<{ items: Array<{ recordId: string; problem: { message: string } | null }> }>)[0].items;
+    expect(items.find((i) => i.recordId === thread.recordId)?.problem?.message).toContain("An agent sent this with Test agent");
+  });
+
   it("sends where a person already replied, and waits a day before the agent replies there again", async () => {
     const thread = await conversation();
     const { approveAndSendDraft } = await import("@/contexts/conversations/application/reply-management");

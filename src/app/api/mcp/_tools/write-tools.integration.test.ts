@@ -102,18 +102,38 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
 
   it("refuses an edit that carries the cut copy of a long draft", async () => {
     const long = `${"Pricing tiers explained at length. ".repeat(500)}The end.`;
-    const created = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, subject: "Re: pricing", bodyText: long });
+    // The test before left an AI draft open, and a new draft replaces it only with its revision.
+    const open = (await writer.tool("get_conversation", { conversationId: thread.conversationId })).structured.draft as { revision: number };
+    const blind = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, subject: "Re: pricing", bodyText: long });
+    expect(blind.structured.error).toMatchObject({ code: "draft_open" });
+    const created = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, subject: "Re: pricing", bodyText: long, revision: open.revision });
     const draft = created.structured.draft as { draftId: string; revision: number; text: string; truncated: boolean };
     expect(draft.truncated).toBe(true);
 
     const cut = await writer.tool("write_reply_draft", { action: "edit", draftId: draft.draftId, revision: draft.revision, bodyText: draft.text });
     expect(cut.structured.error).toMatchObject({ code: "truncated_text" });
+    const copied = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, bodyText: draft.text, revision: draft.revision });
+    expect(copied.structured.error).toMatchObject({ code: "truncated_text" });
     const [row] = await sql<{ edited_body_text: string }[]>`select edited_body_text from drafts where id = ${draft.draftId}`;
     expect(row.edited_body_text).toBe(long);
 
     const rewritten = await writer.tool("write_reply_draft", { action: "edit", draftId: draft.draftId, revision: draft.revision, bodyText: "A short answer instead." });
     expect(rewritten.isError, rewritten.text).toBe(false);
     await writer.tool("write_reply_draft", { action: "discard", draftId: draft.draftId, revision: draft.revision + 1 });
+    // The file together writes more than one minute's write limit allows.
+    await sql`delete from mcp_rate_limits where token_id = ${writer.tokenId}`;
+  });
+
+  it("refuses to regenerate a draft a person edited since the agent read it", async () => {
+    const created = await writer.tool("write_reply_draft", { action: "request_ai", conversationId: thread.conversationId });
+    const draft = created.structured.draft as { draftId: string; revision: number };
+    await sql`update drafts set revision = revision + 1, edited_body_text = 'A person wrote this.' where id = ${draft.draftId}`;
+    const stale = await writer.tool("write_reply_draft", { action: "regenerate", draftId: draft.draftId, revision: draft.revision });
+    expect(stale.structured.error).toMatchObject({ code: "stale_version" });
+    const [row] = await sql<{ status: string; edited_body_text: string }[]>`select status, edited_body_text from drafts where id = ${draft.draftId}`;
+    expect(row).toEqual({ status: "awaiting_review", edited_body_text: "A person wrote this." });
+    await writer.tool("write_reply_draft", { action: "discard", draftId: draft.draftId, revision: draft.revision + 1 });
+    await sql`delete from mcp_rate_limits where token_id = ${writer.tokenId}`;
   });
 
   it("assigns, notes, closes and reopens a reply handling, each event marked with the token", async () => {

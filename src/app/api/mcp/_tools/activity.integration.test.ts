@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
+import { callMcp } from "@/test-support/mcp-client";
 import { enableMcp, mcpCaller, type McpCaller } from "@/test-support/mcp-fixture";
 import type { Actor } from "@/shared/errors";
 
@@ -59,5 +60,16 @@ describeDb("MCP agent activity", () => {
     const older = await calls.listMcpToolCalls(deps, owner, { writesOnly: false, before: logged[0].id });
     expect(older.calls.map((c) => c.tool)).toEqual(["get_conversation", "get_workspace"]);
     await expect(calls.listMcpToolCalls(deps, member, { writesOnly: false, before: null })).rejects.toThrow(/owner or admin/);
+  });
+
+  it("logs a call to a tool the token cannot see, a call with bad input, and values Postgres would refuse", async () => {
+    const agent = await mcpCaller(sql, POST, orgs[0]);
+    const call = (params: Record<string, unknown>) => callMcp(POST, { era: "modern", token: agent.token, method: "tools/call", params });
+    await call({ name: "send_reply", arguments: { conversationId: "c" } });
+    await call({ name: "get_person", arguments: { personId: 7 } });
+    await agent.tool("get_person", { personId: "nul\u0000-\ud83d" }).catch(() => null);
+    const rows = await sql<{ tool: string; error_code: string; target: Record<string, string> }[]>`select tool, error_code, target from mcp_tool_calls where token_id = ${agent.tokenId} and tool in ('send_reply', 'get_person') order by created_at`;
+    expect(rows.slice(0, 2)).toMatchObject([{ tool: "send_reply", error_code: "unknown_tool" }, { tool: "get_person", error_code: "invalid_input" }]);
+    expect(rows[2]?.target.personId).not.toContain("\u0000");
   });
 });

@@ -57,8 +57,17 @@ export function callTarget(input: unknown): Record<string, string> {
   return target;
 }
 
+/** Text Postgres can store: a client writes these values, and a NUL or half a surrogate pair would lose the whole row. */
+const storable = (text: string): string => text.replaceAll("\0", "").toWellFormed();
+
 export async function recordMcpToolCall(deps: McpToolCallDeps, entry: McpToolCallEntry): Promise<void> {
-  await deps.store.insert(entry);
+  await deps.store.insert({
+    ...entry,
+    tool: storable(entry.tool),
+    action: entry.action && storable(entry.action),
+    clientName: entry.clientName && storable(entry.clientName),
+    target: Object.fromEntries(Object.entries(entry.target).map(([key, value]) => [key, storable(value)])),
+  });
 }
 
 /** The organization's agent activity, newest first. Owners and admins only. */

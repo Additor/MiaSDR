@@ -61,7 +61,8 @@ export const getPipelineTool = defineTool({
       const d = await getDeal(dealsDeps(), actor, input.dealId);
       const deal = {
         dealId: d.id,
-        title: d.title,
+        // A deal's default title repeats the lead's name and company.
+        title: fencedField(out, d.title) ?? "",
         version: d.version,
         stage: { stageId: d.stage.id, name: d.stage.name, kind: d.stage.kind },
         owner: d.owner?.name ?? null,
@@ -74,7 +75,7 @@ export const getPipelineTool = defineTool({
         person: { personId: d.person.id, name: d.person.name, email: d.person.email, company: fencedField(out, d.person.companyName) },
         appUrl: links.deal(d.id),
       };
-      return { summary: `${d.title}: ${d.stage.name}, version ${d.version}.`, structured: { columns: [], deal } };
+      return { summary: `Deal ${d.id}: ${d.stage.name}, version ${d.version}.`, structured: { columns: [], deal } };
     }
     const limit = input.stageId ? DEFAULT_LIST_LIMIT : OVERVIEW_LIMIT;
     const result = await board(dealsDeps(), actor, { stage: input.stageId, owner: input.owner, q: input.query, limit, cursor: input.cursor, showAll: input.showAll });
@@ -85,7 +86,7 @@ export const getPipelineTool = defineTool({
       total: c.total,
       amounts: c.amounts,
       nextCursor: c.nextCursor,
-      deals: c.cards.map((k) => ({ dealId: k.id, title: k.title, version: k.version, personId: k.personId, personName: k.personName, company: fencedField(out, k.companyName), amountMinor: k.amountMinor, currency: k.currency, owner: k.owner?.name ?? null, expectedCloseOn: k.expectedCloseOn, appUrl: links.deal(k.id) })),
+      deals: c.cards.map((k) => ({ dealId: k.id, title: fencedField(out, k.title) ?? "", version: k.version, personId: k.personId, personName: k.personName, company: fencedField(out, k.companyName), amountMinor: k.amountMinor, currency: k.currency, owner: k.owner?.name ?? null, expectedCloseOn: k.expectedCloseOn, appUrl: links.deal(k.id) })),
     }));
     return { summary: columns.map((c) => `${c.name}: ${c.total}`).join(", "), structured: { columns, deal: null } };
   },

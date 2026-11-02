@@ -13,7 +13,19 @@ import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastruct
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { defineTool, READ_ONLY } from "./define";
-import { counted, fencedField, iso } from "./output";
+import { counted, fencedField, fitItems, iso, MAX_RESPONSE_TOKENS } from "./output";
+
+/** A report's top-level lists cut to share the answer's budget, since an organization with many campaigns or days has long ones. */
+function fitLists(data: Record<string, unknown>): { data: Record<string, unknown>; omitted: number } {
+  const lists = Object.entries(data).filter(([, value]) => Array.isArray(value));
+  let omitted = 0;
+  const fitted = lists.map(([key, value]) => {
+    const fit = fitItems(value as unknown[], MAX_RESPONSE_TOKENS / 2 / lists.length);
+    omitted += fit.omitted;
+    return [key, fit.items];
+  });
+  return { data: { ...data, ...Object.fromEntries(fitted) }, omitted };
+}
 
 export const getAnalyticsTool = defineTool({
   name: "get_analytics",
@@ -43,9 +55,10 @@ export const getAnalyticsTool = defineTool({
   async run({ actor }, input) {
     const { view, ...request } = input;
     const result = await getAnalytics(analyticsDeps(), actor, view, request);
-    const data = JSON.parse(JSON.stringify(result.data)) as Record<string, unknown>;
+    const { data, omitted } = fitLists(JSON.parse(JSON.stringify(result.data)) as Record<string, unknown>);
     const structured = { view, from: result.scope.range.from, to: result.scope.range.to, timeZone: result.scope.timeZone, data };
-    return { summary: `The ${view} report from ${structured.from} to ${structured.to} (${structured.timeZone}).`, structured };
+    const cut = omitted > 0 ? ` ${omitted} rows left out to fit one answer; narrow it with a campaign or a shorter date range.` : "";
+    return { summary: `The ${view} report from ${structured.from} to ${structured.to} (${structured.timeZone}).${cut}`, structured };
   },
 });
 

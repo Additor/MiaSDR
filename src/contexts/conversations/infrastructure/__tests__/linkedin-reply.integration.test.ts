@@ -467,6 +467,14 @@ describeDb("LinkedIn conversation replies", () => {
       expect((await one("select meta from events where organization_id = $1 and event_type = 'draft.sent'", [f.org])).meta).toMatchObject({ via: { tokenName: "Agent laptop" } });
     });
 
+    it("refuses a key that already sent another draft of the conversation", async () => {
+      const f = await agentFixture({ reached: true });
+      const k = key();
+      expect((await app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { text: "ignored", draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: k })).status).toBe("sent");
+      const other = await resolveApp.createManualDraft({ store: replyStore } as never, f.agent, f.conversationId, { subject: null, bodyText: "A second one.", channel: "linkedin" });
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { text: "ignored", draftId: other.draftId, revision: other.revision, idempotencyKey: k })).rejects.toThrow("another draft");
+    });
+
     it("refuses an agent send without a draft, with another conversation's draft, or to a stranger", async () => {
       const f = await agentFixture({ reached: true });
       await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { idempotencyKey: key() })).rejects.toThrow(/saved draft/);

@@ -31,6 +31,8 @@ This release adds the endpoint and its first tools. From here on, an answer only
 - Read: 11 tools, `get_workspace` among them. A token with no write scope sees only these.
 - Change: `write_reply_draft`, `set_reply_type`, `update_conversation`, `manage_task`, `pause_sending`, `update_deal`, `draft_campaign`, `import_leads`.
 - Send: `send_reply`, `preview_campaign_launch`, `launch_campaign`, listed only while the organization allows them.
+- One JSON-RPC message per request: the endpoint answers a batch `400 batch_not_supported`.
+- A tool's published output schema lists its top-level keys as optional, plus `error`, so a client that checks results keeps a refusal.
 
 ### Upgrade notes
 

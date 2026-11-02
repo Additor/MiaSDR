@@ -9,7 +9,7 @@ import { getLinkedInCampaignDetail, listLinkedInCampaigns, previewLinkedInStep }
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { defineTool, READ_ONLY } from "./define";
 import type { Actor } from "@/shared/errors";
-import { appLinks, clip, DEFAULT_LIST_LIMIT, fencedField, fitItems, iso, UNTRUSTED_NOTE, untrusted } from "./output";
+import { appLinks, bodyReadToken, clip, DEFAULT_LIST_LIMIT, fencedField, fitItems, iso, UNTRUSTED_NOTE, untrusted } from "./output";
 
 export const CHANNELS = ["email", "linkedin"] as const;
 
@@ -100,9 +100,9 @@ export const campaignStatus = async (actor: Actor, channel: (typeof CHANNELS)[nu
   (await READS[channel].detail(actor, campaignId, parseEnrollmentListQuery({ size: "1" }))).campaign.status;
 
 /** A step body as written: cut to an excerpt, or whole for the previewed step. */
-const bodyOf = (body: string, whole: boolean): { body: string; truncated: boolean } => {
+const bodyOf = (body: string, whole: boolean): { body: string; truncated: boolean; readToken: string | null } => {
   const { text, truncated } = whole ? { text: body, truncated: false } : clip(body, STEP_BODY_CHARS);
-  return { body: text, truncated };
+  return { body: text, truncated, readToken: whole && body.length > STEP_BODY_CHARS ? bodyReadToken(body) : null };
 };
 
 export const getCampaignTool = defineTool({
@@ -110,7 +110,7 @@ export const getCampaignTool = defineTool({
   title: "Get campaign",
   description: [
     "One campaign: its steps, senders, and one page of its leads by `tab` (`all`, `queued`, `in_sequence`, `paused`, `replied`, `finished`, `stopped`, `removed`) and `search`.",
-    "Step bodies keep 300 characters and mark a longer one `truncated`. With `previewStep`, that step's body comes whole, and the answer renders it the way it would go out, with a lead of the campaign, or sample values while it has none (`usedSampleLead`).",
+    "Step bodies keep 300 characters and mark a longer one `truncated`. With `previewStep`, that step's body comes whole with its `readToken` for draft_campaign update, and the answer renders it the way it would go out, with a lead of the campaign, or sample values while it has none (`usedSampleLead`).",
   ].join(" "),
   scope: "mcp:read",
   annotations: READ_ONLY,
@@ -127,7 +127,7 @@ export const getCampaignTool = defineTool({
     channel: z.enum(CHANNELS),
     name: z.string(),
     status: z.string(),
-    steps: z.array(z.object({ stepNumber: z.number(), kind: z.string(), subject: z.string().nullable(), body: z.string(), truncated: z.boolean(), waitDays: z.number() })),
+    steps: z.array(z.object({ stepNumber: z.number(), kind: z.string(), subject: z.string().nullable(), body: z.string(), truncated: z.boolean(), readToken: z.string().nullable(), waitDays: z.number() })),
     senders: z.array(z.object({ id: z.string(), label: z.string(), connected: z.boolean() })),
     enrollments: z.object({ total: z.number(), page: z.number(), pageSize: z.number(), rows: z.array(enrollment) }),
     preview: z

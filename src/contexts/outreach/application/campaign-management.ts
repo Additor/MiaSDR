@@ -60,18 +60,18 @@ export async function createCampaign(deps: CampaignDeps, actor: Actor, input: { 
   return { id };
 }
 
-/** With `tx`, the edit joins the caller's transaction: an agent's edit holds the campaign row there. */
+/** With `tx`, the edit joins the caller's transaction and reads through it: an agent's edit holds the campaign row there, and a read from the pool could wait on a connection this request holds. */
 export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: StepInput[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
   const campaign = await load(deps, actor, id, tx);
   const next: { name?: string; steps?: StepInput[] } = {};
-  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "email", patch.senderIds);
+  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "email", patch.senderIds, tx);
   if (patch.name !== undefined) next.name = cleanName(patch.name);
 
   if (patch.steps !== undefined) {
     if (!stepsEditable(campaign.status)) throw new ConflictError("Pause the campaign before editing its steps.");
     const issues = validateSteps(patch.steps);
     if (issues.length > 0) throw new ValidationError("Fix the steps and save again.", issues);
-    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id);
+    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id, tx);
     if (patch.steps.length < furthest) {
       throw new ConflictError(`Some leads already received step ${furthest}. The sequence cannot have fewer than ${furthest} steps.`);
     }
@@ -91,7 +91,7 @@ export const SUBJECT_SAMPLE = 20;
  * What stops a person starting or resuming this campaign now, in the order a start checks it. The status change throws
  * the first; an agent's launch preview lists them all. Also answers the sampled leads whose first subject renders empty.
  */
-async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign: Awaited<ReturnType<typeof load>>): Promise<{ problems: ValidationError[]; emptySubjectLeads: number; sampled: number }> {
+async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign: Awaited<ReturnType<typeof load>>, tx?: DbHandle): Promise<{ problems: ValidationError[]; emptySubjectLeads: number; sampled: number }> {
   const problems: ValidationError[] = [];
   let emptySubjectLeads = 0;
   let sampled = 0;
@@ -101,9 +101,9 @@ async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign
   if (unfinished.length > 0) problems.push(new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`));
   // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
   if (campaign.status === "draft") {
-    const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE);
+    const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE, tx);
     if (leads.length === 0) {
-      const emptySubject = emptyFirstSubjectMessage(campaign.steps, (await deps.campaigns.sampleVariables(actor.organizationId, id)) ?? sampleVariables());
+      const emptySubject = emptyFirstSubjectMessage(campaign.steps, (await deps.campaigns.sampleVariables(actor.organizationId, id, tx)) ?? sampleVariables());
       if (emptySubject) problems.push(new ValidationError(emptySubject, [{ step: 1, message: emptySubject }]));
     } else {
       const empty = leads.filter((variables) => emptyFirstSubjectMessage(campaign.steps, variables) !== null).length;
@@ -118,12 +118,12 @@ async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign
     }
   }
   try {
-    await assertAssignedSendersConnected(adminStore(deps), actor, "email", id);
+    await assertAssignedSendersConnected(adminStore(deps), actor, "email", id, tx);
   } catch (error) {
     if (!(error instanceof ValidationError)) throw error;
     problems.push(error);
   }
-  if ((await deps.mailboxes.countConnected(actor.organizationId)) === 0) problems.push(new ValidationError("Connect a mailbox in Settings before starting a campaign."));
+  if ((await deps.mailboxes.countConnected(actor.organizationId, tx)) === 0) problems.push(new ValidationError("Connect a mailbox in Settings before starting a campaign."));
   return { problems, emptySubjectLeads, sampled };
 }
 
@@ -143,7 +143,7 @@ export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id:
   if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
   if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
   if (to === "active") {
-    const check = await startCheck(deps, actor, id, campaign);
+    const check = await startCheck(deps, actor, id, campaign, tx);
     if (check.problems[0]) throw check.problems[0];
     ({ emptySubjectLeads, sampled } = check);
   }

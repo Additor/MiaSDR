@@ -1,4 +1,4 @@
-import { createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
+import { createMcpHandler, readRequestBody, type AuthInfo } from "@modelcontextprotocol/server";
 import { connection } from "next/server";
 import { apiError } from "@/app/_lib/api-errors";
 import { logMcp } from "@/app/_lib/mcp";
@@ -7,7 +7,7 @@ import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
 import { bearerToken, isMcpTokenFormat } from "@/contexts/tenancy/domain/mcp-token";
 import { mcpPrincipalDeps, mcpRateLimitDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { env } from "@/shared/env";
-import { createMcpServer } from "./_tools/registry";
+import { createMcpServer, recordRefusedCall } from "./_tools/registry";
 import { BadTokenLimiter, clientIp } from "./bad-token-limiter";
 
 /** Hosted platforms read it; a standalone server ignores it. */
@@ -90,6 +90,13 @@ async function serve(request: Request): Promise<Response> {
   if (limited) {
     logMcp("rate limited", { bucket: "read", organizationId: principal.organizationId, tokenId: principal.tokenId, retryAfterSeconds: limited.retryAfterSeconds });
     return tooManyRequests(limited.retryAfterSeconds, "This MCP token sent too many requests this minute. Wait, then try again.");
+  }
+  if (request.method === "POST") {
+    // A body over the SDK's limit goes on, and the SDK answers it.
+    const body = await readRequestBody(request.clone());
+    // The limit above counts requests, so a batch would run many tools for one count. The protocol dropped batches in 2025-06-18.
+    if (!body.tooLarge && body.text.trimStart().startsWith("[")) return apiError(400, "Send one JSON-RPC message per request; this endpoint takes no batches.", { code: "batch_not_supported" });
+    if (!body.tooLarge) await recordRefusedCall(principal, body.text);
   }
   // The raw token never travels further than this function: `token` carries the token's id.
   const authInfo: AuthInfo = { token: principal.tokenId, clientId: principal.tokenId, scopes: principal.scopes, extra: { principal } };

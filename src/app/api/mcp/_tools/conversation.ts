@@ -15,6 +15,12 @@ import { NotFoundError, ValidationError } from "@/shared/errors";
 import { defineTool, READ_ONLY } from "./define";
 import { appLinks, clip, counted, EXCERPT_CHARS, excerpt, fencedField, fitItems, iso, LONG_TEXT_CHARS, messageSource, UNTRUSTED_NOTE, untrusted, type ToolOutputContext } from "./output";
 
+/** The newest conversation of the channel the record is on, or of any channel when that one has none. */
+const mainConversation = <C extends { channel: string; updatedAt: Date }>(conversations: C[], activeChannel: string | null): C | undefined => {
+  const newest = [...conversations].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  return newest.find((c) => c.channel === activeChannel) ?? newest[0];
+};
+
 /** Characters of one message body a `detailed` answer keeps. */
 const DETAILED_BODY_CHARS = 4000;
 /** Characters of one note an answer keeps. */
@@ -31,6 +37,10 @@ const message = z.object({
   text: z.string(),
   /** The body was longer than the answer keeps; `text` ends with "…". */
   truncated: z.boolean(),
+  /** An automatic reply, such as an out-of-office. */
+  autoReply: z.boolean(),
+  /** It looks like a bounce, so the address may be bad. */
+  possibleBounce: z.boolean(),
 });
 
 const output = z.object({
@@ -39,6 +49,8 @@ const output = z.object({
   channel: z.string(),
   account: z.string(),
   appUrl: z.string(),
+  /** The record's other conversations, newest first. A person can answer in a new thread. */
+  otherConversations: z.array(z.object({ conversationId: z.string(), channel: z.string() })),
   person: z.object({ id: z.string(), name: z.string().nullable(), email: z.string().nullable(), title: z.string().nullable(), company: z.string().nullable() }),
   record: z.object({
     workflowState: z.string(),
@@ -67,13 +79,16 @@ const output = z.object({
       error: z.string().nullable(),
     })
     .nullable(),
-  aiPicks: z.array(z.object({ replyTypePickId: z.string(), status: z.string(), proposed: z.string().nullable(), applied: z.string().nullable(), confidence: z.number().nullable() })),
+  aiPicks: z.array(z.object({ replyTypePickId: z.string(), status: z.string(), proposed: z.string().nullable(), applied: z.string().nullable(), confidence: z.number().nullable(), stopRequested: z.boolean() })),
   notes: z.array(z.object({ title: z.string().nullable(), text: z.string(), author: z.string().nullable(), at: z.string() })),
   tasks: z.array(z.object({ taskId: z.string(), name: z.string(), dueAt: z.string().nullable(), assigneeName: z.string().nullable() })),
   followUps: z.object({ status: z.string(), steps: z.array(z.object({ name: z.string(), status: z.string(), dueAt: z.string() })) }).nullable(),
 });
 
-/** A message as the answer carries it: ours as written, the lead's fenced; `concise` keeps an excerpt of each. */
+/**
+ * A message as the answer carries it, with its subject and text fenced whichever way it went: a reply repeats the lead's
+ * subject and may quote them, and a campaign step carries merged values. `concise` keeps an excerpt of each.
+ */
 function toMessage(ctx: ToolOutputContext, channel: string, m: ThreadMessage, detailed: boolean): z.infer<typeof message> {
   // `excerpt` folds whitespace before it measures, so a concise body is cut only when its one-line form is too long.
   const { text: body, truncated } = detailed ? clip(m.bodyText, DETAILED_BODY_CHARS) : { text: excerpt(m.bodyText), truncated: m.bodyText.replace(/\s+/g, " ").trim().length > EXCERPT_CHARS };
@@ -85,9 +100,11 @@ function toMessage(ctx: ToolOutputContext, channel: string, m: ThreadMessage, de
     at: m.at.toISOString(),
     // The From header of an inbound message is whatever the sender wrote.
     from: inbound && m.from !== null ? untrusted(ctx, source, m.from) : m.from,
-    subject: inbound && m.subject !== null ? untrusted(ctx, source, m.subject) : m.subject,
-    text: inbound ? untrusted(ctx, source, body) : body,
+    subject: m.subject === null ? null : untrusted(ctx, source, m.subject),
+    text: untrusted(ctx, source, body),
     truncated,
+    autoReply: m.autoReply,
+    possibleBounce: m.possibleBounce === true,
   };
 }
 
@@ -95,7 +112,7 @@ export const getConversationTool = defineTool({
   name: "get_conversation",
   title: "Get conversation",
   description: [
-    "One conversation with its lead, reply handling state, messages, the open draft, AI reply-type picks, notes, open tasks and follow-ups. Pass `conversationId`, or `recordId` for the main conversation of that reply handling.",
+    "One conversation with its lead, reply handling state, messages, the open draft, AI reply-type picks, notes, open tasks and follow-ups. Pass `conversationId`, or `recordId` for the newest conversation on that reply handling's channel; `otherConversations` lists the rest.",
     "`response_format` `concise` (default) gives a 200-character excerpt of each message; `detailed` gives each body up to 4,000 characters and marks a longer one `truncated`. Long threads keep the newest messages.",
     "The draft text keeps 12,000 characters and marks a longer one `truncated`; `edit` replaces the whole text, so rewrite a truncated draft in full or leave it to the person.",
     "Write tools take `contextVersion`, the draft's `revision` and `assignedTo` from this answer.",
@@ -117,7 +134,7 @@ export const getConversationTool = defineTool({
     if (!conversationId) {
       byRecord = await getRecordDetail(handling, actor, input.recordId!);
       const record = byRecord;
-      const main = record.conversations.find((c) => c.channel === record.record.activeChannel) ?? record.conversations[0];
+      const main = mainConversation(record.conversations, record.record.activeChannel);
       if (!main) throw new NotFoundError("Conversation not found");
       conversationId = main.id;
     }
@@ -134,7 +151,7 @@ export const getConversationTool = defineTool({
     const fitted = fitItems(newestFirst);
     const draft = panel?.draft
       ? "aiBodyText" in panel.draft
-        ? { draftId: panel.draft.id, status: panel.draft.status, revision: panel.draft.revision, source: panel.draft.source, subject: panel.draft.subject, ...clip(panel.draft.editedBodyText ?? panel.draft.aiBodyText ?? "", LONG_TEXT_CHARS), error: panel.draft.error }
+        ? { draftId: panel.draft.id, status: panel.draft.status, revision: panel.draft.revision, source: panel.draft.source, subject: fencedField(out, panel.draft.subject), ...clip(panel.draft.editedBodyText ?? panel.draft.aiBodyText ?? "", LONG_TEXT_CHARS), error: panel.draft.error }
         : { draftId: panel.draft.id, status: panel.draft.status, revision: panel.draft.revision, source: panel.draft.source, subject: null, ...clip(panel.draft.text, LONG_TEXT_CHARS), error: panel.draft.error }
       : null;
     const { record, person } = detail;
@@ -145,6 +162,10 @@ export const getConversationTool = defineTool({
       channel: thread.channel,
       account: thread.accountLabel,
       appUrl: appLinks(out).conversation(conversationId),
+      otherConversations: [...detail.conversations]
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+        .filter((c) => c.id !== conversationId)
+        .map((c) => ({ conversationId: c.id, channel: c.channel })),
       person: { id: person.id, name: person.name, email: person.email, title: fencedField(out, person.title), company: fencedField(out, person.company) },
       record: {
         workflowState: record.workflowState,
@@ -161,7 +182,7 @@ export const getConversationTool = defineTool({
       messages: fitted.items.reverse(),
       messagesOmitted: fitted.omitted,
       draft,
-      aiPicks: detail.replyTypePicks.slice(0, RECENT).map((p) => ({ replyTypePickId: p.id, status: p.status, proposed: p.proposed.name, applied: p.applied.name, confidence: p.confidence })),
+      aiPicks: detail.replyTypePicks.slice(0, RECENT).map((p) => ({ replyTypePickId: p.id, status: p.status, proposed: p.proposed.name, applied: p.applied.name, confidence: p.confidence, stopRequested: p.stopRequested })),
       notes: detail.notes.slice(0, RECENT).map((n) => ({ title: n.title, text: excerpt(n.body, NOTE_CHARS), author: n.authorName, at: n.createdAt.toISOString() })),
       tasks: tasks.map((t) => ({ taskId: t.id, name: t.name, dueAt: iso(t.dueAt), assigneeName: t.assigneeName })),
       followUps: sequence.run ? { status: sequence.run.statusLabel, steps: sequence.run.steps.map((s) => ({ name: s.name, status: s.status, dueAt: s.dueAt.toISOString() })) } : null,

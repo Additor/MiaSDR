@@ -18,8 +18,8 @@ export interface AgentSendsData {
   sends: Array<{ attemptId: string; conversationId: string; channel: "email" | "linkedin"; status: string; tokenName: string; userName: string; createdAt: string }>;
   campaigns: Array<{ campaignId: string; name: string; channel: string; status: string; tokenName: string; enrolledByAgents: number }>;
   running: number;
-  today: { replies: number; enrolls: number };
-  limits: { replies: number; enrolls: number };
+  today: { replies: number; enrolls: number; busiestUser: number; busiestMailbox: number };
+  limits: { replies: number; enrolls: number; user: number; mailbox: number };
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -39,8 +39,11 @@ export function AgentSends({ data }: { data: AgentSendsData }) {
   const [confirming, setConfirming] = useState(false);
   const { running } = data;
   const repliesFull = data.today.replies >= data.limits.replies;
+  // One person or mailbox can reach its own limit while the organization has room, so those replies wait too.
+  const someReplies = !repliesFull && (data.today.busiestUser >= data.limits.user || data.today.busiestMailbox >= data.limits.mailbox);
   const enrollsFull = data.today.enrolls >= data.limits.enrolls;
-  const waiting = repliesFull && enrollsFull ? "Agent replies and enrolls wait" : repliesFull ? "Agent replies wait" : "Agent enrolls wait";
+  const replies = repliesFull ? "Agent replies" : someReplies ? "Some agent replies" : null;
+  const waiting = replies && enrollsFull ? `${replies} and enrolls wait` : replies ? `${replies} wait` : "Agent enrolls wait";
 
   return (
     <SettingsSection
@@ -58,7 +61,7 @@ export function AgentSends({ data }: { data: AgentSendsData }) {
       <p className="text-sm">
         Today: {data.today.replies} of {data.limits.replies} agent replies, {data.today.enrolls} of {data.limits.enrolls} leads enrolled by agents.
       </p>
-      {(repliesFull || enrollsFull) && (
+      {(repliesFull || someReplies || enrollsFull) && (
         <p role="status" className="flex items-start gap-2 text-sm">
           <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
           <span>
@@ -104,7 +107,7 @@ export function AgentSends({ data }: { data: AgentSendsData }) {
         open={confirming}
         onOpenChange={setConfirming}
         title="Pause the campaigns agents started?"
-        description={`${running} running campaign${running === 1 ? "" : "s"} stop sending until a person resumes ${running === 1 ? "it" : "them"}. Nothing else changes.`}
+        description={`${running} campaign${running === 1 ? "" : "s"} agents started or paused stay${running === 1 ? "s" : ""} stopped until a person resumes ${running === 1 ? "it" : "them"}. Nothing else changes.`}
         confirmLabel="Pause campaigns"
         cancelLabel="Keep running"
         pendingLabel="Pausing…"

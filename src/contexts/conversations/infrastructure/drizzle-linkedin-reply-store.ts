@@ -15,6 +15,7 @@ import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { isUuid } from "@/shared/uuid";
+import { lockAgentSend } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
 import { attemptOrigin, attemptVia, checkAgentReply } from "./agent-reply-gate";
 import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
@@ -161,6 +162,8 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         .where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
       if (existing) {
         if (existing.conversationId !== conv.id || existing.attempt.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another conversation.");
+        // A key names one send of one draft, so another draft must not read that send's outcome as its own.
+        if (input.draft && existing.attempt.draftId !== input.draft.id) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing.attempt) };
       }
 
@@ -198,6 +201,8 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       if (input.via && !target) throw new NotFoundError("Draft not found");
       const text = checkReplyText(input.via ? (target?.editedBodyText ?? target?.aiBodyText ?? "") : (input.text ?? ""), "linkedin");
 
+      // A member removal takes this lock, then the account row. An agent's reply takes them in the same order, so the two wait instead of deadlocking.
+      if (input.via) await lockAgentSend(tx, input.organizationId);
       const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, conv.accountRef), eq(linkedinAccounts.organizationId, input.organizationId))).for("update");
       if (!account) throw replyRefusal("no_account", "linkedin");
       const used = await usage(tx, account.id, input.now);

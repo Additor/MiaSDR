@@ -63,16 +63,41 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     const [{ steps: saved }] = await sql<{ steps: Array<{ body: string }> }[]>`select steps from campaigns where id = ${campaignId}`;
     expect(saved[0].body).toBe(long);
 
-    // A changed opening, or a dropped cut mark, is still the cut copy.
+    // A changed opening, a dropped cut mark or a trimmed end is still the cut copy.
     const cut = seen[0].body;
-    for (const body of [`Fresh start. ${cut.slice(20)}`, cut.slice(0, -1), `${cut.slice(0, -1)} And more of my own.`]) {
+    for (const body of [`Fresh start. ${cut.slice(20)}`, cut.slice(0, -1), `${cut.slice(0, -1)} And more of my own.`, cut.slice(0, 252)]) {
       const edited = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...steps[0], body }, steps[1]] });
       expect(edited.structured.error, body).toMatchObject({ code: "truncated_text" });
     }
     // The whole text, read with previewStep and changed elsewhere, saves.
-    const whole = (await owner.tool("get_campaign", { channel: "email", campaignId, previewStep: 1 })).structured.steps as Array<{ body: string }>;
+    const whole = (await owner.tool("get_campaign", { channel: "email", campaignId, previewStep: 1 })).structured.steps as Array<{ body: string; readToken: string | null }>;
     const changed = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...steps[0], body: whole[0].body.replace("The end.", "The real end.") }, steps[1]] });
     expect(changed.isError, changed.text).toBe(false);
+
+    // Text read whole may lose everything past the cut, with the token that proves the read.
+    const reread = (await owner.tool("get_campaign", { channel: "email", campaignId, previewStep: 1 })).structured.steps as Array<{ body: string; readToken: string }>;
+    const shortened = reread[0].body.slice(0, 200);
+    const unproven = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...steps[0], body: shortened }, steps[1]] });
+    expect(unproven.structured.error).toMatchObject({ code: "truncated_text" });
+    const proven = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...steps[0], body: shortened, readToken: reread[0].readToken }, steps[1]] });
+    expect(proven.isError, proven.text).toBe(false);
+  });
+
+  it("refuses a blank search, which would enroll every lead, and steps the channel cannot save", async () => {
+    const campaignId = (await owner.tool("draft_campaign", { action: "create", channel: "email", name: "Careful" })).structured.campaignId as string;
+    for (const query of ["", "   "]) {
+      const blank = await owner.tool("draft_campaign", { action: "add_leads", channel: "email", campaignId, query });
+      expect(blank.isError, query).toBe(true);
+    }
+    expect(await sql`select 1 from campaign_enrollments where campaign_id = ${campaignId}`).toHaveLength(0);
+
+    const wrongKind = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ stepNumber: 1, kind: "invitation", body: "Hi", waitDays: 0 }] });
+    expect(wrongKind.isError).toBe(true);
+    // get_campaign's null subject and tagged text come back clean.
+    const tagged = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ stepNumber: 1, kind: "email", subject: "<untrusted_field_ab>\nHello\n</untrusted_field_ab>", body: "Hi", waitDays: 0 }, { stepNumber: 2, kind: "email", subject: null, body: "Again", waitDays: 2 }] });
+    expect(tagged.isError, tagged.text).toBe(false);
+    const [{ steps }] = await sql<{ steps: Array<{ subject?: string }> }[]>`select steps from campaigns where id = ${campaignId}`;
+    expect(steps[0].subject).toBe("Hello");
   });
 
   it("drafts a campaign, counts a dry run without enrolling, then enrolls, and refuses a running campaign", async () => {
@@ -120,6 +145,8 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     const { dealId } = await createDealForContact(dealsDeps(), actorOf(orgs[0]), personId, { title: "Acme seats", idempotencyKey: `deal-${randomBytes(6).toString("hex")}` });
     const [{ version }] = await sql<{ version: number }[]>`select version from deals where id = ${dealId}`;
     const [stage] = await sql<{ id: string }[]>`select id from deal_stages where organization_id = ${orgs[0].organizationId} and kind = 'open' order by position desc limit 1`;
+    const board = (await owner.tool("get_pipeline", { dealId })).structured.deal as { title: string };
+    expect(board.title).toMatch(/^<untrusted_field_/);
     const moved = await owner.tool("update_deal", { action: "move_stage", dealId, stageId: stage.id, expectedVersion: version });
     expect(moved.isError, moved.text).toBe(false);
     expect(moved.structured).toMatchObject({ dealId, stage: { stageId: stage.id }, appUrl: `http://localhost:3000/crm/deals/${dealId}` });

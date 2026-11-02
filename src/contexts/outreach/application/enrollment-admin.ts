@@ -54,9 +54,9 @@ export interface EnrollmentAdminStore {
    */
   removeEnrollments(organizationId: string, campaignId: string, channel: OutreachChannel, enrollmentIds: string[], now: Date): Promise<RemoveCounts>;
   /** The campaign's assigned senders. Empty means every connected sender of the organization may send. */
-  listSenders(organizationId: string, campaignId: string, channel: OutreachChannel): Promise<SenderRef[]>;
+  listSenders(organizationId: string, campaignId: string, channel: OutreachChannel, tx?: DbHandle): Promise<SenderRef[]>;
   /** The senders of this organization among `ids`. Ids of another organization are left out. */
-  findSenders(organizationId: string, channel: OutreachChannel, ids: string[]): Promise<SenderRef[]>;
+  findSenders(organizationId: string, channel: OutreachChannel, ids: string[], tx?: DbHandle): Promise<SenderRef[]>;
   /** Every sender of the organization on this channel, for a picker. */
   listAvailableSenders(organizationId: string, channel: OutreachChannel): Promise<SenderRef[]>;
   /** Replaces the whole list. An empty list restores the default of sending from every connected sender. */
@@ -72,10 +72,10 @@ export function adminStore(deps: { admin?: EnrollmentAdminStore }): EnrollmentAd
 const NOUN: Record<OutreachChannel, string> = { email: "mailbox", linkedin: "LinkedIn account" };
 
 /** Checks that each id is a sender of the organization and is connected. Returns the ids without duplicates. */
-export async function validateSenderIds(admin: EnrollmentAdminStore, actor: Actor, channel: OutreachChannel, ids: string[]): Promise<string[]> {
+export async function validateSenderIds(admin: EnrollmentAdminStore, actor: Actor, channel: OutreachChannel, ids: string[], tx?: DbHandle): Promise<string[]> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return [];
-  const found = new Map((await admin.findSenders(actor.organizationId, channel, unique)).map((s) => [s.id, s]));
+  const found = new Map((await admin.findSenders(actor.organizationId, channel, unique, tx)).map((s) => [s.id, s]));
   if (unique.some((id) => !found.has(id))) throw new ValidationError(`Pick ${NOUN[channel]}s from this organization.`);
   const offline = unique.map((id) => found.get(id) as SenderRef).filter((s) => !s.connected);
   if (offline.length > 0) throw new ValidationError(`Reconnect or remove ${offline.map((s) => s.label).join(", ")} before assigning ${offline.length === 1 ? "it" : "them"}.`);
@@ -87,8 +87,8 @@ export async function validateSenderIds(admin: EnrollmentAdminStore, actor: Acto
 export const listAssignedSenders = (deps: { admin?: EnrollmentAdminStore }, actor: Actor, channel: OutreachChannel, campaignId: string): Promise<SenderRef[]> =>
   adminStore(deps).listSenders(actor.organizationId, campaignId, channel);
 
-export async function assertAssignedSendersConnected(admin: EnrollmentAdminStore, actor: Actor, channel: OutreachChannel, campaignId: string): Promise<void> {
-  const offline = (await admin.listSenders(actor.organizationId, campaignId, channel)).filter((s) => !s.connected);
+export async function assertAssignedSendersConnected(admin: EnrollmentAdminStore, actor: Actor, channel: OutreachChannel, campaignId: string, tx?: DbHandle): Promise<void> {
+  const offline = (await admin.listSenders(actor.organizationId, campaignId, channel, tx)).filter((s) => !s.connected);
   if (offline.length > 0) {
     throw new ValidationError(`Every assigned ${NOUN[channel]} must be connected before starting. Reconnect or remove ${offline.map((s) => s.label).join(", ")}.`);
   }

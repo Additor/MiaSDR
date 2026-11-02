@@ -105,6 +105,17 @@ describeDb("/api/mcp", () => {
     expect(result.body).toMatchObject({ error: { code: -32020 } });
   });
 
+  it("refuses a JSON-RPC batch, which would run many tools for one count against the limit", async () => {
+    const message = { jsonrpc: "2.0", method: "tools/call", params: { name: "get_workspace", arguments: {} } };
+    const response = await POST(new Request("http://localhost:3000/api/mcp", {
+      method: "POST",
+      headers: { authorization: `Bearer ${await token(orgs[0])}`, "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25" },
+      body: JSON.stringify([{ ...message, id: 1 }, { ...message, id: 2 }]),
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "batch_not_supported" });
+  });
+
   it("stops answering the token of a member removed from the organization", async () => {
     const [on] = orgs;
     const [{ id: userId }] = await sql<{ id: string }[]>`insert into users (name, email) values ('Gone', ${`gone-${randomBytes(4).toString("hex")}@mcp.test`}) returning id`;

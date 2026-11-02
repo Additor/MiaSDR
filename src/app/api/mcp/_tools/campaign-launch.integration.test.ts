@@ -341,6 +341,12 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     const [audited] = await sql<{ meta: { count: number } }[]>`select meta from audit_log where organization_id = ${org.organizationId} and action = 'mcp.agent_campaigns_paused' order by created_at desc limit 1`;
     expect(audited.meta.count).toBe(paused);
 
+    // An admin's stop also holds a campaign the agent had already paused, which it could otherwise resume.
+    await sql`update campaigns set person_paused = false where id = ${campaignId}`;
+    expect((await agentSendsOverview(org.organizationId, new Date())).running).toBe(1);
+    expect((await pauseAgentStartedCampaigns(agentCampaignDeps(), { userId: org.userId, organizationId: org.organizationId, role: "owner" })).paused).toBe(1);
+    expect(await sql`select 1 from campaigns where id = ${campaignId} and person_paused`).toHaveLength(1);
+
     // A person paused it, so the agent may not resume it; one the agent paused itself, it may.
     const seen = await preview(campaignId, "resume");
     expect(seen.structured.problems).toContainEqual(expect.stringContaining("agent_resume_person_paused"));

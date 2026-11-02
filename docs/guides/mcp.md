@@ -81,6 +81,7 @@ With Replies on, a person can create a token that sends. Its agent gets one more
 |---|---|---|
 | `agent_send_off` | Agent sending is off, or the token was made before it was last turned off, or the token cannot send | Turn agent sending on, or create a new token that sends |
 | `agent_unverified_recipient` | No campaign reached this person in this conversation, and nobody in the organization replied there | Send the first reply yourself in MiaSDR |
+| `agent_stop_requested` | The AI read the lead's latest message as a request to stop, and no person reviewed it | A person reviews it in MiaSDR |
 | `agent_cc_not_allowed` | The draft has CC addresses | Remove them, or send it yourself |
 | `agent_send_paused` | The organization's Sending pause or `PAUSE_OUTBOUND` is on | A person resumes sending |
 | `agent_daily_cap` | Agents reached today's limit for the organization (100), the token's person (50) or the mailbox (30) | Wait for midnight UTC (`retryAfterSeconds`), or an owner or admin raises the limit |
@@ -90,7 +91,7 @@ Every rule of a person's send applies too: suppression, do not contact, closed r
 
 With Replies and campaigns, a token that sends also gets `preview_campaign_launch` and `launch_campaign`. The agent previews a start, a resume or an enroll into a running campaign, shows the preview to the person, and passes its `launchToken` to `launch_campaign` (or to `draft_campaign` `add_leads` for a running campaign). A launch refuses when the campaign changed since the preview (`launch_token_stale`), when the organization allows replies only (`agent_campaigns_off`), while sending is paused, and for a Personal campaign unless it names its senders and the token's person owns each one (`agent_sender_not_owned`). Agents enroll at most 200 leads a day across both channels by default, drafts included (`agent_enroll_cap`); an owner or admin changes the limit in the same card. An owner or admin names the owner when connecting a LinkedIn account, or changes it later under Settings, LinkedIn; an account with no owner stays out of agents' Personal campaigns. An agent resumes only a campaign an agent paused: one a person paused, including through Pause campaigns agents started, refuses with `agent_resume_person_paused`.
 
-Owners and admins see agents' sends under Agent sends on the settings page: today's counts against the limits, the latest agent replies, and the campaigns agents started, with Pause campaigns agents started to stop all of those at once. An agent's send with an unconfirmed outcome shows in Actions under Problems, naming the token.
+Owners and admins see agents' sends under Agent sends on the settings page: today's counts against the limits, the latest agent replies, and the campaigns agents started, with Pause campaigns agents started to stop all of those at once. It also holds campaigns an agent paused, so no agent resumes them. An agent's send with an unconfirmed outcome shows in Actions under Problems, naming the token.
 
 Turning agent sending off stops every token that sends at once, and turning it on later needs new tokens. A message an agent sent shows "Sent by an agent ({token name})" in the thread, and the history reads "{person} via {token}".
 

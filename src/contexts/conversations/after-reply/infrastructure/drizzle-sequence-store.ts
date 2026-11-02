@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, max, notExists, or, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { campaigns, drafts, people, records, replyTypes, replyTypeSets } from "@/platform/db/schema";
-import { ConflictError, NotFoundError } from "@/shared/errors";
+import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { AfterReplyStore, FlowRunRow, FlowState, NewRun, RecordSequenceState, RunStore, StartFacts, StepView } from "../application/sequence-ports";
 import { afterReplyFlowName, afterReplyModeOf } from "../domain/after-reply";
 import { ACTIVE_RUN_STATUSES, AFTER_REPLY_OFF, assertPublishable, OPEN_STEP_STATUSES, stepsEqual, stepTypeAt, type RunStatus, type StepInput } from "../domain/sequences";
@@ -556,7 +556,7 @@ export const drizzleRunStore: RunStore = {
         .where(and(eq(sequenceStepRuns.sequenceRunId, run.id), eq(sequenceStepRuns.organizationId, event.organizationId), stepMayBecome("scheduled")));
       await tx.update(sequenceRuns).set({ status: "paused", updatedAt: now }).where(and(eq(sequenceRuns.id, run.id), runMayBecome("paused")));
       await tx.execute(sql`update records set next_action_at = null where id = ${event.recordId} and organization_id = ${event.organizationId} and workflow_state = 'waiting'`);
-      await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.paused", actorUserId: event.actorUserId, to: { sequenceRunId: run.id } });
+      await recordEvent(tx, { organizationId: event.organizationId, recordId: event.recordId, type: "sequence.paused", actorUserId: event.actorUserId, to: { sequenceRunId: run.id }, meta: viaMeta(event.via) });
     });
   },
 

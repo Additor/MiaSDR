@@ -1,8 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/server";
+import { clientNameFrom } from "@/app/_lib/mcp";
 import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
 import { hasScope } from "@/contexts/tenancy/domain/mcp-policy";
 import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
-import { recordMcpToolCall } from "@/contexts/tenancy/application/mcp-tool-calls";
+import { callTarget, recordMcpToolCall } from "@/contexts/tenancy/application/mcp-tool-calls";
 import { mcpRateLimitDeps, mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import pkg from "../../../../../package.json";
 import { draftCampaignTool } from "./campaign-drafts";
@@ -65,6 +66,35 @@ export function createMcpServer(principal: McpPrincipal, appUrl: string): McpSer
   );
   registerTools(server, principal, appUrl, TOOLS, toolHooks(principal));
   return server;
+}
+
+/**
+ * The SDK answers a call to a tool this token cannot see, or with input the tool's schema refuses, before any tool
+ * runs. Those calls still belong in the activity log, so the route shows the request here first. Anything else is left
+ * for the SDK and for `registerTools`, which logs the calls it runs.
+ */
+export async function recordRefusedCall(principal: McpPrincipal, body: string): Promise<void> {
+  let message: { method?: unknown; params?: { name?: unknown; arguments?: unknown; _meta?: unknown } } | null;
+  try {
+    message = JSON.parse(body);
+  } catch {
+    return;
+  }
+  if (message?.method !== "tools/call" || typeof message.params?.name !== "string") return;
+  const { name, arguments: args, _meta } = message.params;
+  const tool = TOOLS.find((t) => t.name === name && hasScope(principal.scopes, t.scope) && (!t.sends || principal.send[t.sends]));
+  if (tool && tool.input.safeParse(args ?? {}).success) return;
+  await recordMcpToolCall(mcpToolCallDeps(), {
+    organizationId: principal.organizationId,
+    tokenId: principal.tokenId,
+    tool: name.slice(0, 100),
+    action: null,
+    kind: tool && !tool.annotations.readOnlyHint ? "write" : "read",
+    target: callTarget(args),
+    errorCode: tool ? "invalid_input" : "unknown_tool",
+    clientName: clientNameFrom(_meta),
+    durationMs: 0,
+  }).catch((cause) => console.error(`[mcp] could not log a refused call for organization ${principal.organizationId}`, cause));
 }
 
 const accessOf = (principal: McpPrincipal) => {

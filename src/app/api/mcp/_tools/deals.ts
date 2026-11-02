@@ -4,7 +4,7 @@ import { moveDealStage, updateDeal } from "@/contexts/deals/application/deal-edi
 import type { DealView } from "@/contexts/deals/application/deal-reads";
 import { ValidationError } from "@/shared/errors";
 import { CHANGES, defineTool } from "./define";
-import { appLinks } from "./output";
+import { appLinks, unfenced } from "./output";
 
 const ACTIONS = ["move_stage", "edit"] as const;
 
@@ -49,10 +49,10 @@ export const updateDealTool = defineTool({
     } else {
       const { title, ownerId, amount, currency, expectedCloseOn } = input;
       if ([title, ownerId, amount, currency, expectedCloseOn].every((v) => v === undefined)) throw new ValidationError("edit needs a field to change.");
-      deal = await updateDeal(dealsDeps(), actor, input.dealId, { expectedVersion: input.expectedVersion, title, ownerId, amount, currency, expectedCloseOn });
+      deal = await updateDeal(dealsDeps(), actor, input.dealId, { expectedVersion: input.expectedVersion, title: title && unfenced(title), ownerId, amount, currency, expectedCloseOn });
     }
     return {
-      summary: `${deal.title}: ${deal.stage.name}, version ${deal.version}.`,
+      summary: `Deal ${deal.id}: ${deal.stage.name}, version ${deal.version}.`,
       structured: {
         action: input.action,
         dealId: deal.id,

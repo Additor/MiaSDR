@@ -23,6 +23,12 @@ const NEXT_STEP: Record<(typeof STATUSES)[number], string> = {
 };
 
 /**
+ * The sentence the agent reads. An uncertain outcome stores whatever the provider call threw, which can be a database
+ * error or a provider's body, so the agent reads the plain step instead; the person sees the stored text in MiaSDR.
+ */
+const agentError = (result: { status: string; error: string | null }): string | null => (result.status === "delivery_uncertain" ? null : result.error);
+
+/**
  * The one tool that sends. It runs the same function as the Send button, with the agent rules on top (docs/decisions.md,
  * "Agent sends"). This module and the two Send routes are the only importers of the send deps
  * (`reply-send-imports.test.ts`).
@@ -63,8 +69,9 @@ export const sendReplyTool = defineTool({
       channel === "linkedin"
         ? await sendLinkedInReply(linkedinReplySendDeps(), actor, input.conversationId, { draftId: draft.id, revision: input.revision, idempotencyKey: input.idempotencyKey })
         : await approveAndSendDraft(replySendDeps(), actor, draft.id, { revision: input.revision, idempotencyKey: input.idempotencyKey });
-    const error = "error" in result ? result.error : null;
-    const retryable = result.status === "failed" || (result.status === "blocked" && RETRYABLE_BLOCKS.has(result.reason));
+    const error = "error" in result ? agentError(result) : null;
+    // A replay answers what this key did before, so a block it reports says nothing about sending now.
+    const retryable = result.status === "failed" || (result.status === "blocked" && !result.replayed && RETRYABLE_BLOCKS.has(result.reason));
     return {
       summary: [error, NEXT_STEP[result.status], result.replayed ? "This key had already sent; nothing new went out." : null].filter(Boolean).join(" "),
       structured: { conversationId: input.conversationId, status: result.status, attemptId: result.attemptId, replayed: result.replayed, retryable, error, appUrl: appLinks(out).conversation(input.conversationId) },

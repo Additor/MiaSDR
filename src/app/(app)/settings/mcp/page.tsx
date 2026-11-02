@@ -55,7 +55,7 @@ async function Mcp() {
       everyone={JSON.parse(JSON.stringify(everyone))}
       activity={activity && JSON.parse(JSON.stringify(activity))}
       activityDays={RETENTION_MCP_TOOL_CALLS_DAYS}
-      agentSends={sends && JSON.parse(JSON.stringify({ ...sends, limits: { replies: settings.agentReplyCaps.org, enrolls: settings.agentEnrollCap } }))}
+      agentSends={sends && JSON.parse(JSON.stringify({ ...sends, limits: { replies: settings.agentReplyCaps.org, user: settings.agentReplyCaps.user, mailbox: settings.agentReplyCaps.mailbox, enrolls: settings.agentEnrollCap } }))}
     />
   );
 }

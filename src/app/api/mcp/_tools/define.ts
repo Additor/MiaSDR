@@ -53,11 +53,13 @@ export const need = <T>(value: T | undefined, what: string, action: string): T =
 
 /**
  * Runs a tool and holds its answer to the response budget. Tools trim their own lists; this is the check that no tool
- * can skip, so an oversize answer becomes a tool error the agent can act on instead of a flood in its context.
+ * can skip, so an oversize answer becomes a tool error the agent can act on instead of a flood in its context. A tool
+ * that changes data has already changed it by now, so its answer goes out as it is: a refusal would read as a failure,
+ * and the agent would run it again.
  */
-export async function withinBudget<T extends Record<string, unknown>>(run: () => Promise<ToolOutput<T>>): Promise<ToolOutput<T>> {
+export async function withinBudget<T extends Record<string, unknown>>(run: () => Promise<ToolOutput<T>>, changesData = false): Promise<ToolOutput<T>> {
   const output = await run();
-  if (estimateTokens(output) > MAX_RESPONSE_TOKENS) {
+  if (!changesData && estimateTokens(output) > MAX_RESPONSE_TOKENS) {
     throw new ConflictError("This answer is too large for one call. Narrow it with the tool's filters, a shorter date range or a later page.", { code: "answer_too_large" });
   }
   return output;
@@ -66,9 +68,11 @@ export async function withinBudget<T extends Record<string, unknown>>(run: () =>
 /**
  * The output schema `tools/list` publishes: the top-level keys only. Full schemas for eleven tools would cost more
  * than the whole definition budget, and an agent reads the structured content itself. `checkedOutput` still holds
- * every answer to the tool's full schema.
+ * every answer to the tool's full schema. Every key is optional and `error` is listed because a refusal answers
+ * `{ error }` alone: a client that checks results against this schema, as the v1 TypeScript SDK does, would otherwise
+ * throw and lose the refusal.
  */
-export const publishedOutput = (output: AnyObject) => z.object(Object.fromEntries(Object.keys(output.shape).map((key) => [key, z.unknown()])));
+export const publishedOutput = (output: AnyObject) => z.object({ ...Object.fromEntries(Object.keys(output.shape).map((key) => [key, z.unknown().optional()])), error: z.unknown().optional() });
 
 /** The answer, checked against the tool's full output schema. A mismatch is a bug here, so it is logged as one. */
 export async function checkedOutput<T extends Record<string, unknown>>(tool: Pick<ToolDefinition, "name" | "output">, run: () => Promise<ToolOutput<T>>): Promise<ToolOutput<T>> {
@@ -139,7 +143,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
         const buckets = bucketsOf(tool, input);
         const result = await runTool(tool.name, mcpActor(principal, clientName), async (actor) => {
           await takeBuckets(hooks, buckets);
-          return withinBudget(() => checkedOutput(tool, () => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never)));
+          return withinBudget(() => checkedOutput(tool, () => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never)), buckets.length > 0);
         });
         const error = result.isError ? (result.structuredContent?.error as { code?: unknown } | undefined) : undefined;
         // Operators watch refused agent sends and rate limits in the logs (docs/operations.md).

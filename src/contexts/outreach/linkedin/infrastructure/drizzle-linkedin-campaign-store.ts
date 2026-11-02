@@ -116,16 +116,16 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     return row.id;
   },
 
-  async furthestStep(organizationId, id) {
-    const [row] = await db
+  async furthestStep(organizationId, id, tx) {
+    const [row] = await (tx ?? db)
       .select({ furthest: sql<number>`coalesce(max(${campaignEnrollments.currentStep}), 0)::int` })
       .from(campaignEnrollments)
       .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.campaignId, id)));
     return row.furthest;
   },
 
-  async hasSends(organizationId, id) {
-    const [row] = await db
+  async hasSends(organizationId, id, tx) {
+    const [row] = await (tx ?? db)
       .select({ n: sql<number>`count(*)::int` })
       .from(sends)
       .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
@@ -265,8 +265,8 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     });
   },
 
-  async countConnectedAccounts(organizationId) {
-    const rows = await db
+  async countConnectedAccounts(organizationId, tx) {
+    const rows = await (tx ?? db)
       .select({ id: linkedinAccounts.id })
       .from(linkedinAccounts)
       .where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.status, "connected")));

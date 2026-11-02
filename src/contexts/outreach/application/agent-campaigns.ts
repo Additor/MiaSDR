@@ -60,6 +60,8 @@ export interface AgentCampaignStore {
   agentEnrolledSince(tx: DbHandle, organizationId: string, since: Date): Promise<number>;
   /** Running campaigns an agent started or resumed last. */
   agentStartedActive(organizationId: string): Promise<Array<{ id: string; channel: AgentChannel }>>;
+  /** Marks every campaign an agent paused as held by a person, so no agent resumes it. Answers how many it marked. */
+  holdAgentPaused(organizationId: string): Promise<number>;
 }
 
 export interface AgentCampaignDeps {
@@ -83,7 +85,7 @@ async function find(load: Promise<AgentCampaignRow | null>, channel: AgentChanne
   return row;
 }
 
-const stateOf = (row: AgentCampaignRow, senders: AgentSender[]): LaunchState => ({ channel: row.channel, status: row.status, steps: row.steps, senders: senders.map((s) => ({ id: s.id, status: s.status })) });
+const stateOf = (row: AgentCampaignRow, senders: AgentSender[]): LaunchState => ({ id: row.id, channel: row.channel, status: row.status, steps: row.steps, senders: senders.map((s) => ({ id: s.id, status: s.status })) });
 
 /** Why the token's person may not send from this Personal campaign's accounts, or null when they may. */
 function ownershipProblem(actor: Actor, row: AgentCampaignRow, senders: { assigned: boolean; senders: AgentSender[] }): string | null {
@@ -243,8 +245,10 @@ export async function agentEnroll<T extends { added?: number; wouldAdd?: number 
 }
 
 /**
- * Pauses every running campaign an agent started, for an owner or admin who wants agents' outreach stopped at once.
- * A campaign that moved in the meantime is left as it is. Answers how many it paused, and the audit log records it.
+ * Stops every campaign agents could still send from, for an owner or admin who wants agents' outreach stopped at once:
+ * it pauses the running ones an agent started, then holds the ones an agent paused, which that agent could otherwise
+ * resume. The hold runs last, so an agent's pause that beat the loop is held too. Answers how many it stopped, and the
+ * audit log records it.
  */
 export async function pauseAgentStartedCampaigns(deps: AgentCampaignDeps, actor: Actor): Promise<{ paused: number }> {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can pause the campaigns agents started.");
@@ -258,8 +262,9 @@ export async function pauseAgentStartedCampaigns(deps: AgentCampaignDeps, actor:
       if (!(error instanceof ConflictError)) throw error;
     }
   }
-  if (paused > 0) await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "mcp.agent_campaigns_paused", meta: { count: paused } });
-  return { paused };
+  const stopped = paused + (await deps.store.holdAgentPaused(actor.organizationId));
+  if (stopped > 0) await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "mcp.agent_campaigns_paused", meta: { count: stopped } });
+  return { paused: stopped };
 }
 
 /**

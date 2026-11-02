@@ -1,6 +1,6 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
-import { ForbiddenError, type Actor } from "@/shared/errors";
+import { ForbiddenError, viaMeta, type Actor } from "@/shared/errors";
 import { readSendPause, type SendPause } from "../domain/send-pause";
 import type { EmailRulesDeps } from "../email/application/email-rules";
 
@@ -30,7 +30,7 @@ export async function setSendPause(deps: SendPauseDeps, actor: Actor, input: { p
     action: input.paused ? "organization.sending_paused" : "organization.sending_resumed",
     entityType: "organization",
     entityId: actor.organizationId,
-    meta: input.paused ? {} : { pausedAt: current?.at ?? null },
+    meta: { ...(input.paused ? {} : { pausedAt: current?.at ?? null }), ...viaMeta(actor.via) },
   });
   return getSendPause(deps, actor);
 }

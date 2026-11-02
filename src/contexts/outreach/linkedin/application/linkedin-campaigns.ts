@@ -103,9 +103,9 @@ export interface LinkedInCampaignStore {
   transaction<T>(fn: (tx: DbHandle) => Promise<T>, within?: DbHandle): Promise<T>;
   get(organizationId: string, id: string, tx?: DbHandle): Promise<LinkedInCampaignRecord | null>;
   create(organizationId: string, input: { name: string; type?: CampaignType; createdBy: string; steps: LinkedInStep[] }, tx?: DbHandle): Promise<string>;
-  furthestStep(organizationId: string, id: string): Promise<number>;
+  furthestStep(organizationId: string, id: string, tx?: DbHandle): Promise<number>;
   /** Whether any send row exists for the campaign, in any status. */
-  hasSends(organizationId: string, id: string): Promise<boolean>;
+  hasSends(organizationId: string, id: string, tx?: DbHandle): Promise<boolean>;
   /** A patch with steps applies only while the campaign is in `STEPS_EDITABLE`. Returns false when it no longer is. */
   update(organizationId: string, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[] }, tx?: DbHandle): Promise<boolean>;
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
@@ -118,7 +118,7 @@ export interface LinkedInCampaignStore {
   /** With `dryRun` nothing is written and `wouldAdd` says how many people the same call would enroll. */
   /** `viaTokenId` names the agent's token on each inserted row (`enrolled_via_token_id`); null for a person. */
   enroll(organizationId: string, id: string, filter: { query?: string; limit: number; collectIds?: boolean; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<LinkedInEnrollResult>;
-  countConnectedAccounts(organizationId: string): Promise<number>;
+  countConnectedAccounts(organizationId: string, tx?: DbHandle): Promise<number>;
   /** `total` counts the rows of the active tab and search. `counts` and `sent` cover the whole campaign. */
   listEnrollments(organizationId: string, id: string, query: EnrollmentListQuery): Promise<{ rows: LinkedInEnrollmentRow[]; total: number; counts: TabCounts; sent: number }>;
   /** Variables of the first enrolled person with a LinkedIn profile, or the first such lead; null when there are none. */
@@ -163,21 +163,21 @@ export async function createLinkedInCampaign(deps: LinkedInCampaignDeps, actor: 
   return { id };
 }
 
-/** With `tx`, the edit joins the caller's transaction: an agent's edit holds the campaign row there. */
+/** With `tx`, the edit joins the caller's transaction and reads through it: an agent's edit holds the campaign row there, and a read from the pool could wait on a connection this request holds. */
 export async function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
   const campaign = await load(deps, actor, id, tx);
   const next: { name?: string; type?: CampaignType; steps?: LinkedInStep[] } = {};
-  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "linkedin", patch.senderIds);
+  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "linkedin", patch.senderIds, tx);
   if (patch.name !== undefined) next.name = cleanName(patch.name);
   if (patch.type !== undefined && patch.type !== campaign.type) {
-    if (!typeEditable(await deps.campaigns.hasSends(actor.organizationId, id))) throw new ConflictError("The campaign type cannot change once the campaign has sent something.");
+    if (!typeEditable(await deps.campaigns.hasSends(actor.organizationId, id, tx))) throw new ConflictError("The campaign type cannot change once the campaign has sent something.");
     next.type = parseCampaignType(patch.type);
   }
   if (patch.steps !== undefined) {
     if (!stepsEditable(campaign.status)) throw new ConflictError("Pause the campaign before editing its steps.");
     const issues = validateLinkedInSteps(patch.steps);
     if (issues.length > 0) throw new ValidationError("Fix the steps and save again.", issues);
-    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id);
+    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id, tx);
     if (patch.steps.length < furthest) throw new ConflictError(`Some leads already completed step ${furthest}. The sequence cannot have fewer than ${furthest} steps.`);
     next.steps = patch.steps;
   }
@@ -189,19 +189,19 @@ export async function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: 
 }
 
 /** What stops a person starting or resuming this campaign now, in the order a start checks it. The status change throws the first. */
-async function startCheck(deps: LinkedInCampaignDeps, actor: Actor, id: string, campaign: Awaited<ReturnType<typeof load>>): Promise<ValidationError[]> {
+async function startCheck(deps: LinkedInCampaignDeps, actor: Actor, id: string, campaign: Awaited<ReturnType<typeof load>>, tx?: DbHandle): Promise<ValidationError[]> {
   const problems: ValidationError[] = [];
   const issues = validateLinkedInSteps(campaign.steps);
   if (issues.length > 0) problems.push(new ValidationError("Fix the steps before starting.", issues));
   const unfinished = stepsWithPlaceholders(campaign.steps);
   if (unfinished.length > 0) problems.push(new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`));
   try {
-    await assertAssignedSendersConnected(adminStore(deps), actor, "linkedin", id);
+    await assertAssignedSendersConnected(adminStore(deps), actor, "linkedin", id, tx);
   } catch (error) {
     if (!(error instanceof ValidationError)) throw error;
     problems.push(error);
   }
-  if ((await deps.campaigns.countConnectedAccounts(actor.organizationId)) === 0) problems.push(new ValidationError("Connect a LinkedIn account in Settings before starting a campaign."));
+  if ((await deps.campaigns.countConnectedAccounts(actor.organizationId, tx)) === 0) problems.push(new ValidationError("Connect a LinkedIn account in Settings before starting a campaign."));
   return problems;
 }
 
@@ -216,7 +216,7 @@ export async function changeLinkedInCampaignStatus(deps: LinkedInCampaignDeps, a
   if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
   if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
   if (to === "active") {
-    const [problem] = await startCheck(deps, actor, id, campaign);
+    const [problem] = await startCheck(deps, actor, id, campaign, tx);
     if (problem) throw problem;
   }
   if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps, viaTokenId: actor.via?.tokenId ?? null }, tx))) {

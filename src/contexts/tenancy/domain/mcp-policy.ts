@@ -51,7 +51,7 @@ export interface PolicyToken {
   expiresAt: Date | null;
 }
 
-export type AgentSendRefusal = "install_off" | "token_revoked" | "token_expired" | "no_send_scope" | "mode_off" | "epoch_changed";
+export type AgentSendRefusal = "mcp_off" | "install_off" | "token_revoked" | "token_expired" | "no_send_scope" | "mode_off" | "epoch_changed";
 
 export interface AgentSendPolicy {
   replies: boolean;

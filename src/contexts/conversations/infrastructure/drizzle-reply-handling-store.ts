@@ -126,7 +126,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
 
     const [convs, cls, draftRows, eventRows, noteRows, enrollmentRows, policy, suppressed] = await Promise.all([
       db
-        .select({ id: conversations.id, channel: conversations.channel, accountRef: conversations.accountRef, status: conversations.status })
+        .select({ id: conversations.id, channel: conversations.channel, accountRef: conversations.accountRef, status: conversations.status, updatedAt: conversations.updatedAt })
         .from(conversations)
         .where(and(eq(conversations.recordId, recordId), eq(conversations.organizationId, organizationId), publicConversation))
         .orderBy(conversations.createdAt),

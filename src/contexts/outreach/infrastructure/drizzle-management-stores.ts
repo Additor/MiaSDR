@@ -171,8 +171,8 @@ export const drizzleCampaignStore: CampaignStore = {
     return row.id;
   },
 
-  async furthestStep(organizationId, id) {
-    const [row] = await db
+  async furthestStep(organizationId, id, tx) {
+    const [row] = await (tx ?? db)
       .select({ furthest: sql<number>`coalesce(max(${campaignEnrollments.currentStep}), 0)::int` })
       .from(campaignEnrollments)
       .where(and(eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.campaignId, id)));
@@ -338,11 +338,12 @@ export const drizzleCampaignStore: CampaignStore = {
     return row.n;
   },
 
-  async sampleVariables(organizationId, id) {
+  async sampleVariables(organizationId, id, tx) {
+    const handle = tx ?? db;
     const pick = async (enrolledIn: string | null) => {
-      const query = db.select(personVariableColumns).from(people).leftJoin(companies, eq(companies.id, people.companyId));
+      const query = handle.select(personVariableColumns).from(people).leftJoin(companies, eq(companies.id, people.companyId));
       const rows = enrolledIn
-        ? await db
+        ? await handle
             .select(enrollmentVariableColumns)
             .from(people)
             .leftJoin(companies, eq(companies.id, people.companyId))
@@ -358,11 +359,11 @@ export const drizzleCampaignStore: CampaignStore = {
     };
     const person = (await pick(id)) ?? (await pick(null));
     if (!person) return null;
-    return buildVariables(person, await columnLabels(organizationId));
+    return buildVariables(person, await columnLabels(organizationId, tx));
   },
 
-  async liveLeadVariables(organizationId, id, limit) {
-    const rows = await db
+  async liveLeadVariables(organizationId, id, limit, tx) {
+    const rows = await (tx ?? db)
       .select(enrollmentVariableColumns)
       .from(campaignEnrollments)
       .innerJoin(people, eq(people.id, campaignEnrollments.personId))
@@ -371,13 +372,13 @@ export const drizzleCampaignStore: CampaignStore = {
       .orderBy(asc(campaignEnrollments.createdAt), asc(campaignEnrollments.id))
       .limit(limit);
     if (rows.length === 0) return [];
-    const labels = await columnLabels(organizationId);
+    const labels = await columnLabels(organizationId, tx);
     return rows.map((row) => buildVariables(row, labels));
   },
 };
 
-async function columnLabels(organizationId: string) {
-  const columns = await db
+async function columnLabels(organizationId: string, tx?: DbHandle) {
+  const columns = await (tx ?? db)
     .select({ key: entityColumns.key, name: entityColumns.name })
     .from(entityColumns)
     .where(and(eq(entityColumns.organizationId, organizationId), eq(entityColumns.entity, "people")));
@@ -497,8 +498,8 @@ export const drizzleMailboxStore: MailboxStore = {
     }
   },
 
-  async countConnected(organizationId) {
-    const [row] = await db
+  async countConnected(organizationId, tx) {
+    const [row] = await (tx ?? db)
       .select({ n: count() })
       .from(mailboxes)
       .where(and(eq(mailboxes.organizationId, organizationId), eq(mailboxes.status, "connected")));

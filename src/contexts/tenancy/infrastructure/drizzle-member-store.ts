@@ -1,3 +1,4 @@
+import { recordAudit } from "./audit";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { invitations, members, users } from "@/platform/db/schema";
@@ -76,14 +77,15 @@ export const drizzleMemberStore: MemberStore = {
         async setRole(memberId, role) {
           await tx.update(members).set({ role }).where(and(eq(members.organizationId, organizationId), eq(members.id, memberId)));
         },
-        async remove(memberId) {
+        async remove(memberId, actorUserId) {
           const [row] = await tx
             .delete(members)
             .where(and(eq(members.organizationId, organizationId), eq(members.id, memberId)))
             .returning({ userId: members.userId });
           if (!row) return;
           await clearActiveOrganizationTx(tx, row.userId, organizationId);
-          await revokeMcpTokensTx(tx, organizationId, { userId: row.userId });
+          const revoked = await revokeMcpTokensTx(tx, organizationId, { userId: row.userId });
+          if (revoked > 0) await recordAudit(tx, { organizationId, actorUserId, action: "mcp.member_tokens_revoked", entityType: "user", entityId: row.userId, meta: { count: revoked } });
         },
       });
     });

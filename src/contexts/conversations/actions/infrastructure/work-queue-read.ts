@@ -70,7 +70,8 @@ const queueRowsSql = (organizationId: string) => sql`
       select d.id, d.status, d.error, d.conversation_id, d.subject, d.updated_at,
         -- The token name when an agent's send is the one left unconfirmed, so the row says who sent it.
         (select t.name from send_attempts sa join mcp_tokens t on t.id = sa.mcp_token_id
-          where sa.draft_id = d.id and sa.origin = 'agent' and sa.status = 'delivery_uncertain' limit 1) as agent_token
+          where sa.draft_id = d.id and sa.origin = 'agent' and sa.status = 'delivery_uncertain' limit 1) as agent_token,
+        exists (select 1 from send_attempts sa where sa.draft_id = d.id and sa.origin = 'agent' and sa.status = 'delivery_uncertain') as agent_uncertain
       from drafts d
       where d.record_id = r.id and d.status in ('failed', 'delivery_uncertain') and ${visibleDraftSql("d")} order by d.updated_at desc limit 1
     ) pd on true
@@ -120,7 +121,8 @@ const queueRowsSql = (organizationId: string) => sql`
       select c.id from conversations c where c.record_id = r.id and ${publicConversationSql("c")} order by (c.channel = r.active_channel) desc, c.updated_at desc limit 1
     ) cv on true
     where r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
-      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()))
+      -- A person checks an agent's unconfirmed send whatever state the record is in: no one else may have seen it.
+      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain)
   ) q
   where not (q.grp = 'next_step' and q.has_task)`;
 

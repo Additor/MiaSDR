@@ -25,7 +25,8 @@ export interface MemberTx {
   handle: DbHandle;
   members(): Promise<MemberView[]>;
   setRole(memberId: string, role: Role): Promise<void>;
-  remove(memberId: string): Promise<void>;
+  /** Removes the member and revokes their MCP tokens; `actorUserId` is who the audit log names for the revoke. */
+  remove(memberId: string, actorUserId: string): Promise<void>;
 }
 
 export interface MemberStore {
@@ -109,7 +110,7 @@ export async function removeMember(deps: MemberDeps, actor: Actor, memberId: str
     if (target.userId === actor.userId) throw new ConflictError("You cannot remove yourself. Ask another owner or admin.");
     enforce(canManageMember(actor.role, target.role));
     enforce(keepsAnOwner(all, memberId, null));
-    await tx.remove(memberId);
+    await tx.remove(memberId, actor.userId);
     await deps.released?.(tx.handle, actor.organizationId, target.userId);
   });
 }

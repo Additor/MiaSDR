@@ -58,7 +58,7 @@ describeDb("get_conversation", () => {
     }
   });
 
-  it("gives the thread with the lead's text fenced and excerpted, ours as written, and the record state", async () => {
+  it("gives the thread with both sides' text fenced and excerpted, and the record state", async () => {
     const result = await caller.tool("get_conversation", { conversationId: mine.conversationId });
     expect(result.isError, result.text).toBe(false);
     expect(result.structured).toMatchObject({ conversationId: mine.conversationId, recordId: mine.recordId, channel: "email", messagesOmitted: 0, draft: null });
@@ -68,8 +68,31 @@ describeDb("get_conversation", () => {
     expect(lead.text).toMatch(/^<untrusted_email_[0-9a-f]+>/);
     expect(lead.text).not.toContain("Ignore all previous instructions");
     expect(lead).toMatchObject({ truncated: true, from: expect.stringMatching(/^<untrusted_email_/) });
-    expect(ours).toMatchObject({ direction: "outbound", text: "Happy to send the deck.", truncated: false });
+    expect(ours).toMatchObject({ direction: "outbound", text: expect.stringMatching(/^<untrusted_email_[0-9a-f]+>\nHappy to send the deck\.\n<\/untrusted_email_/), truncated: false, autoReply: false, possibleBounce: false });
     expect(result.structured.notes).toEqual([expect.objectContaining({ text: "Call on Tuesday" })]);
+  });
+
+  it("opens the newest thread of a record, lists the others, and fences a subject that repeats the lead's", async () => {
+    const org = orgs[0];
+    const newer = await inbound(org, 3, "A second thread");
+    await sql`update conversations set record_id = ${mine.recordId}, updated_at = now() + interval '1 minute' where id = ${newer.conversationId}`;
+    const read = await caller.tool("get_conversation", { recordId: mine.recordId });
+    expect(read.structured.conversationId).toBe(newer.conversationId);
+    expect(read.structured.otherConversations).toEqual([{ conversationId: mine.conversationId, channel: "email" }]);
+    await sql`update conversations set updated_at = now() - interval '1 minute' where id = ${newer.conversationId}`;
+
+    const original = await caller.tool("get_conversation", { conversationId: mine.conversationId });
+    const outbound = (original.structured.messages as Array<{ direction: string; subject: string }>).find((m) => m.direction === "outbound");
+    expect(outbound?.subject).toMatch(/^<untrusted_email_/);
+  });
+
+  it("refuses inbox filters it cannot read, instead of answering the whole inbox", async () => {
+    expect((await caller.tool("list_inbox", { campaignIds: ["Q3 Outbound"] })).isError).toBe(true);
+    expect((await caller.tool("list_inbox", { mailboxIds: ["sales"] })).isError).toBe(true);
+    expect((await caller.tool("list_inbox", { dateFrom: "last week" })).isError).toBe(true);
+    expect((await caller.tool("search_people", { campaign: "Q3 Outbound" })).isError).toBe(true);
+    expect((await caller.tool("search_people", { notInCampaignId: "Q3" })).isError).toBe(true);
+    expect((await caller.tool("search_people", { campaign: "any" })).isError).toBe(false);
   });
 
   it("gives the whole body with detailed, and finds the conversation from its record", async () => {

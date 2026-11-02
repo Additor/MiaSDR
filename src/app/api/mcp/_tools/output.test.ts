@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appLinks, clip, counted, estimateTokens, excerpt, fitItems, isCutCopy, MAX_RESPONSE_TOKENS, toolOutputContext, untrusted } from "./output";
+import { appLinks, clip, counted, estimateTokens, excerpt, fencedField, fitItems, isCutCopy, MAX_RESPONSE_TOKENS, toolOutputContext, unfenced, untrusted } from "./output";
 
 const ctx = toolOutputContext("https://app.example.com");
 
@@ -19,6 +19,24 @@ describe("MCP tool output", () => {
     const repeating = `${"The same line again. ".repeat(40)}The end.`;
     expect(isCutCopy(clip(repeating, 300).text, repeating, 300)).toBe(true);
     expect(isCutCopy(repeating.replace("The end.", "The real end."), repeating, 300)).toBe(false);
+
+    // A trimmed copy, one changed character near the cut, and an edit past the cut of text read whole.
+    expect(isCutCopy(text.slice(0, 252), stored, 300)).toBe(true);
+    expect(isCutCopy(`${text.slice(0, 285)}X${text.slice(286)}`, stored, 300)).toBe(true);
+    const whole = Array.from({ length: 50 }, (_, i) => `line ${i} here.`).join(" ");
+    expect(isCutCopy(`${whole.slice(0, 320)}X${whole.slice(321)}`, whole, 300)).toBe(false);
+  });
+
+  it("never splits a surrogate pair at a cut", () => {
+    const emoji = `${"a".repeat(299)}😀${"b".repeat(50)}`;
+    expect(clip(emoji, 300).text).toBe(`${"a".repeat(299)}…`);
+    expect(clip(emoji, 300).text.isWellFormed()).toBe(true);
+    expect(excerpt(`${"a".repeat(199)}😀 more`).isWellFormed()).toBe(true);
+  });
+
+  it("takes fence tags off text an agent writes back, and keeps a huge field short", () => {
+    expect(unfenced(untrusted(ctx, "email", "Re: pricing"))).toBe("Re: pricing");
+    expect(fencedField(ctx, "x".repeat(10_000))?.length).toBeLessThan(600);
   });
 
   it("fences outside text with a nonce of the call, and a fence inside the text cannot close it", () => {

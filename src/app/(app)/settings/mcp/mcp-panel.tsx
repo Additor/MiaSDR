@@ -76,6 +76,13 @@ const copy = (text: string, what: string) =>
     () => toast.error(`Copy failed. Select the ${what.toLowerCase()} and copy it.`),
   );
 
+/** What agents can send here, said wherever a person decides on access. */
+const SEND_NOTE: Record<"off" | "replies" | "replies_and_campaigns", string> = {
+  off: "No agent sends email or LinkedIn messages.",
+  replies: "Agents with a token that sends can send replies with no one reviewing first.",
+  replies_and_campaigns: "Agents with a token that sends can send replies and start campaigns with no one reviewing first.",
+};
+
 export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSendMode, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays, agentSends }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
@@ -121,7 +128,7 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
       <SettingsSection
         id="access"
         title="Access"
-        description="MCP lets an AI agent, such as Claude Code, Cursor or VS Code, work in this organization's inbox, leads, campaigns, deals and analytics. Each person connects with a personal token, and the agent sees and changes what that person can. No agent sends email or LinkedIn messages."
+        description={`MCP lets an AI agent, such as Claude Code, Cursor or VS Code, work in this organization's inbox, leads, campaigns, deals and analytics. Each person connects with a personal token, and the agent sees and changes what that person can. ${SEND_NOTE[agentSendMode]}`}
       >
         {enabled ? (
           <p className="text-sm">MCP is on. Agents with a live token can work in this organization.</p>
@@ -242,7 +249,7 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
         description={
           enabled
             ? "Every agent loses access on its next request. Tokens stay, so turning MCP back on restores them."
-            : "Members can then create tokens and connect agents that read what they can read."
+            : `Members can then create tokens and connect agents that ${memberWriteTokens ? "read and change" : "read"} what they can. ${SEND_NOTE[agentSendMode]}`
         }
         confirmLabel={enabled ? "Turn off" : "Turn on"}
         cancelLabel={enabled ? "Keep on" : "Keep off"}

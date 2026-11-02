@@ -1,9 +1,21 @@
 import { z } from "zod";
 import { INBOX_PAGE_SIZE, listInbox, listScheduledInbox } from "@/contexts/conversations/application/inbox";
-import { DATE_MODES, INBOX_GROUPS, INBOX_VIEWS, parseInboxParams } from "@/contexts/conversations/domain/inbox-filter";
+import { DATE_MODES, INBOX_GROUPS, INBOX_VIEWS, parseDay, parseInboxParams } from "@/contexts/conversations/domain/inbox-filter";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
+import { ValidationError } from "@/shared/errors";
+import { isUuid } from "@/shared/uuid";
 import { defineTool, READ_ONLY } from "./define";
-import { appLinks, counted, fencedExcerpt, messageSource, UNTRUSTED_NOTE, untrusted } from "./output";
+import { appLinks, counted, fencedExcerpt, fencedField, messageSource, UNTRUSTED_NOTE, untrusted } from "./output";
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The page's URL reader drops what it cannot read, which would answer the unfiltered inbox as if the filter had applied. */
+function refuseUnreadable(input: { campaignIds?: string[]; mailboxIds?: string[]; dateFrom?: string; dateTo?: string }): void {
+  const badId = [...(input.campaignIds ?? []), ...(input.mailboxIds ?? [])].find((id): boolean => !isUuid(id));
+  if (badId !== undefined) throw new ValidationError(`"${badId.slice(0, 60)}" is not a campaign or mailbox id. Take ids from list_campaigns or get_sending_health.`);
+  const badDay = [input.dateFrom, input.dateTo].find((day) => day !== undefined && (!DAY.test(day) || !parseDay(day)));
+  if (badDay !== undefined) throw new ValidationError(`"${badDay.slice(0, 60)}" is not a date. Use YYYY-MM-DD.`);
+}
 
 const conversation = z.object({
   conversationId: z.string(),
@@ -66,7 +78,8 @@ export const listInboxTool = defineTool({
   }),
   output,
   async run({ actor, out }, input) {
-    // The page's own URL reader applies the caps and drops malformed ids, so the tool and the page filter alike.
+    refuseUnreadable(input);
+    // The page's own URL reader applies the caps, so the tool and the page filter alike.
     const params = parseInboxParams({
       view: input.view,
       q: input.query,
@@ -91,7 +104,7 @@ export const listInboxTool = defineTool({
         total,
         conversations: [],
         // `sequence` is the code name of a follow-up after a reply.
-        scheduled: rows.map((r) => ({ kind: r.kind === "sequence" ? ("follow_up" as const) : r.kind, personId: r.personId, personName: r.personName, channel: r.channel, sourceName: r.sourceName, stepLabel: r.stepLabel, subject: r.subject, dueAt: r.dueAt.toISOString() })),
+        scheduled: rows.map((r) => ({ kind: r.kind === "sequence" ? ("follow_up" as const) : r.kind, personId: r.personId, personName: r.personName, channel: r.channel, sourceName: r.sourceName, stepLabel: r.stepLabel, subject: fencedField(out, r.subject), dueAt: r.dueAt.toISOString() })),
       };
       return { summary: `${counted(total, "scheduled send")}. Page ${params.page}.`, structured };
     }
@@ -105,9 +118,9 @@ export const listInboxTool = defineTool({
       personEmail: r.personEmail,
       channel: r.channel,
       assignedTo: r.assignedTo,
-      // Our own last message is not fenced; the lead's subject and text are.
-      subject: r.lastDirection === "inbound" && r.subject !== null ? untrusted(out, messageSource(r.channel), r.subject) : r.subject,
-      lastMessage: r.lastDirection === "inbound" ? (fencedExcerpt(out, r.channel, r.snippet) ?? "") : r.snippet,
+      // Fenced whichever way it went: our own message can repeat the lead's subject or carry merged values.
+      subject: r.subject === null ? null : untrusted(out, messageSource(r.channel), r.subject),
+      lastMessage: fencedExcerpt(out, r.channel, r.snippet) ?? "",
       lastMessageAt: r.lastMessageAt.toISOString(),
       lastDirection: r.lastDirection,
       unreadCount: r.unreadCount,
@@ -115,7 +128,7 @@ export const listInboxTool = defineTool({
       appUrl: links.conversation(r.conversationId),
     }));
     const pages = Math.max(1, Math.ceil(total / INBOX_PAGE_SIZE));
-    const summary = [`${counted(total, "conversation")} in ${params.view}. Page ${params.page} of ${pages}.`, ...(conversations.some((c) => c.lastDirection === "inbound") ? [UNTRUSTED_NOTE] : [])].join("\n");
+    const summary = [`${counted(total, "conversation")} in ${params.view}. Page ${params.page} of ${pages}.`, ...(conversations.length > 0 ? [UNTRUSTED_NOTE] : [])].join("\n");
     return { summary, structured: { ...base, total, conversations, scheduled: [] } };
   },
 });

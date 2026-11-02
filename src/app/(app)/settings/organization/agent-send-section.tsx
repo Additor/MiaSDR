@@ -48,13 +48,15 @@ export function AgentSendSection({ settings, installEnabled, canManage }: { sett
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const whole = (name: string) => Number(data.get(name));
+    const changesMode = mode !== settings.agentSendMode;
+    // The mode goes only when this person changed it: a tab opened before someone else's change must not put the old one back with no dialog.
     const patch = {
-      agentSendMode: mode,
+      ...(changesMode ? { agentSendMode: mode } : {}),
       agentReplyCaps: { org: whole("org"), user: whole("user"), mailbox: whole("mailbox") },
       agentEnrollCap: whole("enroll"),
     };
     // A mode change reaches every agent at once, so it asks first. Limits alone save directly.
-    if (mode !== settings.agentSendMode) setConfirming(patch);
+    if (changesMode) setConfirming(patch);
     else void save(patch);
   }
 

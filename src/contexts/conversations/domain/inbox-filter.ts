@@ -52,7 +52,7 @@ export interface DateRange {
   end: Date | null;
 }
 
-function parseDay(value: string | undefined): Date | null {
+export function parseDay(value: string | undefined): Date | null {
   const m = value ? DAY.exec(value.trim()) : null;
   if (!m) return null;
   const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
