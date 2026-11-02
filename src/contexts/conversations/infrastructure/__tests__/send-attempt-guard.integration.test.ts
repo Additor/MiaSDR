@@ -15,7 +15,7 @@ describeDb("email reply attempt status guard", () => {
     const r = await receive(f);
     const p = await panel(f, r.conversationId);
     const draft = p.draft!;
-    const started = await stores.replies.beginSend({ organizationId: f.org, draftId: draft.id, expectedRevision: draft.revision, idempotencyKey: sendKey(), actorUserId: f.user, messageIdToken: "tok-guard" });
+    const started = await stores.replies.beginSend({ organizationId: f.org, draftId: draft.id, expectedRevision: draft.revision, idempotencyKey: sendKey(), actorUserId: f.user, messageIdToken: "tok-guard", now: new Date() });
     if (started.kind !== "started") throw new Error("claim did not start");
     return { send: started.send, draft };
   }

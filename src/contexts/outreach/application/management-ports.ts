@@ -84,24 +84,25 @@ export interface CampaignStore {
   /** Pass `tx` to make the insert part of the caller's transaction. */
   create(organizationId: string, input: { name: string; createdBy: string; steps: StepInput[] }, tx?: DbHandle): Promise<string>;
   /** The highest step any enrollment has completed. A sequence may not shrink below it. */
-  furthestStep(organizationId: string, id: string): Promise<number>;
+  furthestStep(organizationId: string, id: string, tx?: DbHandle): Promise<number>;
   /** A patch with steps applies only while the campaign is in `STEPS_EDITABLE`. Returns false when it no longer is. */
   update(organizationId: string, id: string, patch: { name?: string; steps?: StepInput[] }, tx?: DbHandle): Promise<boolean>;
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
-  setStatus(organizationId: string, id: string, change: CampaignStatusChange<StepInput>): Promise<boolean>;
+  setStatus(organizationId: string, id: string, change: CampaignStatusChange<StepInput>, tx?: DbHandle): Promise<boolean>;
   delete(organizationId: string, id: string): Promise<void>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** With `dryRun` nothing is written and `wouldAdd` says how many people the same call would enroll. */
-  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean }, tx?: DbHandle): Promise<EnrollResult>;
+  /** `viaTokenId` names the agent's token on each inserted row (`enrolled_via_token_id`); null for a person. */
+  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<EnrollResult>;
   /** `total` counts the rows of the active tab and search. `counts` and `sent` cover the whole campaign. */
   listEnrollments(organizationId: string, id: string, query: EnrollmentListQuery): Promise<{ rows: EnrollmentRow[]; total: number; counts: TabCounts; sent: number }>;
   /** Variables of the first enrolled person, or the first lead with an email; null when there are no leads. */
   /** Active leads of this campaign whose pinned mailbox is disabled, failed or gone. Another mailbox takes them over after the delay. */
   waitingOnUnavailableMailbox(organizationId: string, id: string): Promise<number>;
-  sampleVariables(organizationId: string, id: string): Promise<Record<string, string | null> | null>;
+  sampleVariables(organizationId: string, id: string, tx?: DbHandle): Promise<Record<string, string | null> | null>;
   /** Variables of up to `limit` live (not removed) enrollments, each with its own merge fields applied. */
-  liveLeadVariables(organizationId: string, id: string, limit: number): Promise<Array<Record<string, string | null>>>;
+  liveLeadVariables(organizationId: string, id: string, limit: number, tx?: DbHandle): Promise<Array<Record<string, string | null>>>;
 }
 
 export interface MailboxRecord {
@@ -135,6 +136,6 @@ export interface MailboxStore {
   /** Names of campaigns that are not completed and list this mailbox as their only assigned sender. */
   soleSenderCampaigns(organizationId: string, id: string): Promise<string[]>;
   delete(organizationId: string, id: string): Promise<void>;
-  countConnected(organizationId: string): Promise<number>;
+  countConnected(organizationId: string, tx?: DbHandle): Promise<number>;
   firstConnectedSignature(organizationId: string): Promise<string | null>;
 }

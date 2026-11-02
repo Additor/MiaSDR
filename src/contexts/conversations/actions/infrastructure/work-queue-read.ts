@@ -49,7 +49,7 @@ const queueRowsSql = (organizationId: string) => sql`
            r.assigned_to, au.name as assignee_name,
            coalesce(r.last_inbound_at, r.last_interaction_at, r.created_at) as inbound_at, r.updated_at as r_updated,
            p.full_name, p.first_name, p.email, p.lifecycle, s.name as sub_name,
-           pd.id as pd_id, pd.status as pd_status, pd.error as pd_error, pd.conversation_id as pd_conv, pd.subject as pd_subject, pd.updated_at as pd_updated,
+           pd.id as pd_id, pd.status as pd_status, pd.error as pd_error, pd.conversation_id as pd_conv, pd.subject as pd_subject, pd.updated_at as pd_updated, pd.agent_token as pd_agent,
            rd.id as rd_id, rd.conversation_id as rd_conv, rd.subject as rd_subject, rd.updated_at as rd_updated,
            fj.id as fj_id, fj.last_error as fj_error, fj.failed_at as fj_at,
            nk.id as k_id, nk.kind as k_kind, nk.confidence as k_confidence, nk.ctx as k_ctx, nk.cat as k_cat, nk.sub_name as k_sub, nk.hold_reason as k_hold,
@@ -67,7 +67,12 @@ const queueRowsSql = (organizationId: string) => sql`
     left join reply_types s on s.id = r.reply_type_id
     left join users au on au.id = r.assigned_to
     left join lateral (
-      select d.id, d.status, d.error, d.conversation_id, d.subject, d.updated_at from drafts d
+      select d.id, d.status, d.error, d.conversation_id, d.subject, d.updated_at,
+        -- The token name when an agent's send is the one left unconfirmed, so the row says who sent it.
+        (select t.name from send_attempts sa join mcp_tokens t on t.id = sa.mcp_token_id
+          where sa.draft_id = d.id and sa.origin = 'agent' and sa.status = 'delivery_uncertain' limit 1) as agent_token,
+        exists (select 1 from send_attempts sa where sa.draft_id = d.id and sa.origin = 'agent' and sa.status = 'delivery_uncertain') as agent_uncertain
+      from drafts d
       where d.record_id = r.id and d.status in ('failed', 'delivery_uncertain') and ${visibleDraftSql("d")} order by d.updated_at desc limit 1
     ) pd on true
     left join lateral (
@@ -116,7 +121,8 @@ const queueRowsSql = (organizationId: string) => sql`
       select c.id from conversations c where c.record_id = r.id and ${publicConversationSql("c")} order by (c.channel = r.active_channel) desc, c.updated_at desc limit 1
     ) cv on true
     where r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
-      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()))
+      -- A person checks an agent's unconfirmed send whatever state the record is in: no one else may have seen it.
+      and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain)
   ) q
   where not (q.grp = 'next_step' and q.has_task)`;
 
@@ -189,7 +195,7 @@ function toQueueItem(r: Record<string, unknown>): QueueItem {
   const problemMessage: Record<QueueProblemKind, string> = {
     record_error: "Reply handling is in an error state.",
     draft_failed: (r.pd_error as string | null) ?? "The draft cannot be sent as written.",
-    delivery_uncertain: (r.pd_error as string | null) ?? "The provider never confirmed delivery.",
+    delivery_uncertain: `${r.pd_agent ? `An agent sent this with ${r.pd_agent as string}. ` : ""}${(r.pd_error as string | null) ?? "The provider never confirmed delivery."}`,
     job_failed: (r.fj_error as string | null) ?? "The AI job failed.",
   };
   const draftId = (r.pd_id ?? r.rd_id) as string | null;

@@ -100,6 +100,22 @@ describeDb("linkedin hosted auth, limits and operations", () => {
       expect(f.gateway.hostedLinks[0].notifyUrl).toBeNull();
     });
 
+    it("gives a new account the owner the link names, and leaves a reconnect's owner alone", async () => {
+      const f = await org();
+      const deps = { ...f.deps, members: { isMember: async (_org: string, userId: string) => userId === f.actor.userId } };
+      await expect(connect.createConnectLink(deps, f.actor, { ownerUserId: "00000000-0000-4000-8000-000000000000" })).rejects.toThrow(/must be a member/);
+
+      f.gateway.accounts.push({ ref: "new-" + f.tag, linkedinId: "ACo-new-" + f.tag, name: "New", username: "new-" + f.tag, status: "connected" });
+      await connect.createConnectLink(deps, f.actor, { ownerUserId: f.actor.userId });
+      const parts = notifyParts(f);
+      await connect.receiveConnectNotify(deps, { linkId: parts.link, secret: parts.secret, payload: { status: "CREATION_SUCCESS", account_id: "new-" + f.tag, name: parts.name } });
+      expect(await sql`select owner_user_id from linkedin_accounts where organization_id = ${f.id} and provider_account_id = ${"new-" + f.tag}`).toEqual([{ owner_user_id: f.actor.userId }]);
+
+      const [account] = await sql`select id from linkedin_accounts where organization_id = ${f.id} and provider_account_id = ${"new-" + f.tag}`;
+      await connect.createConnectLink(deps, f.actor, { reconnectAccountId: account.id, ownerUserId: "00000000-0000-4000-8000-000000000000" });
+      expect((await sql`select owner_user_id from linkedin_connect_links where organization_id = ${f.id} order by created_at desc limit 1`)[0].owner_user_id).toBeNull();
+    });
+
     it("builds a reconnect link for an account of this organization only", async () => {
       const f = await org();
       const other = await org();

@@ -3,6 +3,7 @@ import { unsubscribeLinks } from "@/contexts/outreach/email/domain/unsubscribe-t
 import { applySignature, toHtmlBody } from "@/contexts/outreach/domain/render";
 import { ProviderSendError, type MailboxProvider } from "@/contexts/outreach/email/application/ports";
 import { ReplySendError, type ReplyMailer } from "../application/reply-ports";
+import { createSentFinder } from "./sent-finder";
 
 /**
  * Sends a reply through the same MailboxProvider and message path as campaign mail: our own Message-ID
@@ -12,6 +13,7 @@ import { ReplySendError, type ReplyMailer } from "../application/reply-ports";
  */
 export function createReplyMailer(provider: () => MailboxProvider): ReplyMailer {
   return {
+    ...createSentFinder(provider),
     async send(request) {
       const { MAILBOX_PROVIDER, APP_URL, UNSUBSCRIBE_SECRET } = env();
       if (!MAILBOX_PROVIDER) throw new ReplySendError("No mail provider is configured, so nothing was sent.", "definite");
@@ -36,11 +38,6 @@ export function createReplyMailer(provider: () => MailboxProvider): ReplyMailer 
         const message = error instanceof Error ? error.message : String(error);
         throw new ReplySendError(message, error instanceof ProviderSendError && error.kind === "definite" ? "definite" : "unknown");
       }
-    },
-    async findSent(mailboxEmail, rfcMessageId, since, hint) {
-      const found = await provider().findSent({ emailAddress: mailboxEmail }, rfcMessageId, since, hint);
-      if (found.status !== "found") return found;
-      return { status: "found", sent: { providerMessageId: found.sent.providerMessageId, threadId: found.sent.threadId } };
     },
   };
 }

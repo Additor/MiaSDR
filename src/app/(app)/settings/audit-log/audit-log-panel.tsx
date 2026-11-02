@@ -33,6 +33,7 @@ const AREA_LABEL: Record<AuditArea, string> = {
   linkedin: "LinkedIn",
   ai_jobs: "AI jobs",
   search_batch: "LinkedIn searches",
+  mcp: "MCP",
 };
 
 const AREA_ITEMS = [{ value: "all", label: "Everything" }, ...AUDIT_AREAS.map((area) => ({ value: area, label: AREA_LABEL[area] }))];
@@ -62,12 +63,25 @@ const ACTION_LABEL: Record<string, string> = {
   "linkedin.webhooks_replayed": "Replayed LinkedIn deliveries",
   "linkedin.daily_counters_reset": "Reset the LinkedIn daily counters",
   "linkedin.limits_changed": "Changed LinkedIn account limits",
+  "linkedin.owner_changed": "Changed a LinkedIn account's owner",
   "linkedin.account_connected": "Connected a LinkedIn account",
   "ai_jobs.requeued": "Requeued AI jobs",
   "ai_jobs.auto_requeued": "Requeued AI jobs automatically",
   "company.merged": "Merged two companies",
   "company.deleted": "Deleted a company",
   "person.deleted": "Deleted a person",
+  "mcp.enabled": "Turned on MCP",
+  "mcp.disabled": "Turned off MCP",
+  "mcp.member_write_on": "Let members create MCP tokens that make changes",
+  "mcp.member_write_off": "Stopped members from creating MCP tokens that make changes",
+  "mcp.token_created": "Created an MCP token",
+  "mcp.token_revoked": "Revoked an MCP token",
+  "mcp.tokens_revoked_all": "Revoked every MCP token",
+  "mcp.agent_send_mode": "Changed what agents can send",
+  "mcp.agent_limits": "Changed the agent sending limits",
+  "mcp.agent_campaigns_paused": "Paused the campaigns agents started",
+  "mcp.app_connected": "Connected an app over MCP",
+  "mcp.member_tokens_revoked": "Revoked a removed member's MCP tokens",
 };
 
 const actionLabel = (action: string) => ACTION_LABEL[action] ?? humanizeToken(action.replace(".", " "));

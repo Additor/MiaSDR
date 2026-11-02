@@ -1,3 +1,4 @@
+import type { DbHandle } from "@/platform/db/client";
 import { normalizeEmail } from "@/shared/email";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { canGrantRole, canManageMember, isRole, keepsAnOwner, type MemberView } from "../domain/member-rules";
@@ -20,9 +21,12 @@ export interface InvitationRow {
 
 /** Member changes run inside one transaction that holds the organization's member rows, so two requests cannot both pass the last-owner check. */
 export interface MemberTx {
+  /** The transaction itself, for what other contexts let go of in the same commit. */
+  handle: DbHandle;
   members(): Promise<MemberView[]>;
   setRole(memberId: string, role: Role): Promise<void>;
-  remove(memberId: string): Promise<void>;
+  /** Removes the member and revokes their MCP tokens; `actorUserId` is who the audit log names for the revoke. */
+  remove(memberId: string, actorUserId: string): Promise<void>;
 }
 
 export interface MemberStore {
@@ -42,6 +46,8 @@ export interface InvitationGateway {
 export interface MemberDeps {
   members: MemberStore;
   invitations: InvitationGateway;
+  /** What other contexts let go of when a member is removed, such as the LinkedIn accounts they owned. Runs in the removal's transaction. */
+  released?: (tx: DbHandle, organizationId: string, userId: string) => Promise<void>;
 }
 
 function requireAdmin(actor: Actor) {
@@ -104,6 +110,7 @@ export async function removeMember(deps: MemberDeps, actor: Actor, memberId: str
     if (target.userId === actor.userId) throw new ConflictError("You cannot remove yourself. Ask another owner or admin.");
     enforce(canManageMember(actor.role, target.role));
     enforce(keepsAnOwner(all, memberId, null));
-    await tx.remove(memberId);
+    await tx.remove(memberId, actor.userId);
+    await deps.released?.(tx.handle, actor.organizationId, target.userId);
   });
 }

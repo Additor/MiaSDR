@@ -6,7 +6,7 @@ import type { RecordSequenceState, RunSource, RunStore, StartFacts } from "./seq
 /**
  * Use cases for the follow-ups of one record. The flow itself belongs to a campaign (see after-reply.ts); a run
  * pins the newest published version of the flow of the campaign that most recently emailed the person.
- * Nothing here sends: a run only schedules steps, and the job turns a due step into a draft a person approves.
+ * Nothing here sends: a run only schedules steps, and the job turns a due step into a draft a person approves or an allowed agent sends.
  */
 
 export interface SequenceDeps {
@@ -150,7 +150,7 @@ export async function restartSequenceRun(deps: DepsWith<"loadStart" | "createRun
   return outcome.started;
 }
 
-const event = (actor: Actor, recordId: string) => ({ organizationId: actor.organizationId, recordId, actorUserId: actor.userId });
+const event = (actor: Actor, recordId: string) => ({ organizationId: actor.organizationId, recordId, actorUserId: actor.userId, via: actor.via });
 
 export const pauseSequenceRun = (deps: SequenceDeps, actor: Actor, recordId: string) => deps.runs.pause(event(actor, recordId), deps.now());
 

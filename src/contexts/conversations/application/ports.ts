@@ -112,6 +112,10 @@ export interface InboxFilterOptions {
 
 export interface InboxRow {
   conversationId: string;
+  /** The record the conversation belongs to: the tools that note, assign or close take it. */
+  recordId: string;
+  /** The member the record is assigned to, or null. */
+  assignedTo: string | null;
   channel: string;
   accountRef: string;
   personId: string;
@@ -152,6 +156,8 @@ export interface ThreadMessage {
   unread: boolean;
   /** A person starred this message. Only stored messages carry the flag. */
   important: boolean;
+  /** The token name when an agent sent this reply over MCP. */
+  sentVia?: string;
 }
 
 export interface ThreadDetail {

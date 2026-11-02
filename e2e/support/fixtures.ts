@@ -162,8 +162,23 @@ export const MOBILE_DARK = { viewport: { width: 390, height: 844 }, colorScheme:
 export async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   // A fallback font can be wider than the web font, so measure once the web fonts have loaded.
   await page.evaluate(() => document.fonts.ready);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow, "horizontal overflow in px").toBeLessThanOrEqual(0);
+  const measure = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  // Polled: a page still swapping its fallback for its content is wider for a moment, and the rule is about the page at rest.
+  await expect
+    .poll(measure)
+    .toBeLessThanOrEqual(0)
+    .catch(async (error: Error) => {
+      // The innermost elements past the edge, which name the cause; their ancestors only follow it.
+      const culprits = await page.evaluate(() => {
+        const limit = document.documentElement.clientWidth;
+        const past = (el: Element) => el.getBoundingClientRect().right > limit + 0.5;
+        return [...document.querySelectorAll("body *")]
+          .filter((el) => past(el) && ![...el.children].some(past))
+          .slice(0, 5)
+          .map((el) => `<${el.tagName.toLowerCase()} class="${String(el.getAttribute("class") ?? "").slice(0, 60)}"> ${(el.textContent ?? "").slice(0, 40)}`);
+      });
+      throw new Error(`Horizontal overflow past the screen: ${culprits.join(" | ")}\n${error.message}`);
+    });
 }
 
 /** Link-styled buttons (`Button render={<Link/>}`) expose role "button" today. Accept either role. */

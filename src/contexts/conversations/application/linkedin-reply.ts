@@ -3,20 +3,27 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isUuid } from "@/shared/uuid";
 import { REPLY_PAUSE_HOURS } from "../domain/linkedin-reply";
-import { LinkedInReplyError, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore } from "./linkedin-reply-ports";
+import { LinkedInReplyError, type LinkedInReplyBlocker, type LinkedInReplyPanel, type LinkedInReplySender, type LinkedInReplyStore, type LinkedInSentFinder } from "./linkedin-reply-ports";
 import type { AttemptRow } from "./reply-ports";
 
 /**
- * Replies to a LinkedIn chat from the inbox. Every message is typed or approved by a signed-in member, the ledger row
- * exists before LinkedIn is called, and an unknown outcome is never sent again on a guess. A person settles it.
- * Nothing here runs from a background job except `reconcileLinkedInReplies`, which only looks.
+ * Replies to a LinkedIn chat. Every message is typed or approved by a signed-in member, or sent as saved by an agent the
+ * organization allows (docs/decisions.md, "Agent sends"). The ledger row exists before LinkedIn is called, and an
+ * unknown outcome is never sent again on a guess. A person settles it.
+ * Nothing here runs from a background job except `reconcileLinkedInReplies`, which only looks. Only
+ * `sendLinkedInReply` takes `LinkedInReplySendDeps`; the rest get a port that looks at LinkedIn and cannot send.
  */
 export interface LinkedInReplyDeps {
   store: LinkedInReplyStore;
-  sender: LinkedInReplySender;
+  sender: LinkedInSentFinder;
   now: () => Date;
   /** Whether AI runs for the organization, so the panel can offer "Write a draft" or say what stops it. */
   aiStatus?: (organizationId: string) => Promise<AiStatus>;
+}
+
+/** `LinkedInReplyDeps` with a port that sends. Only `reply-send-composition.ts` builds one. */
+export interface LinkedInReplySendDeps extends LinkedInReplyDeps {
+  sender: LinkedInReplySender;
 }
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
@@ -25,7 +32,7 @@ export type LinkedInReplyResult =
   | { status: "sent"; attemptId: string; replayed: boolean }
   | { status: "delivery_uncertain"; attemptId: string; replayed: boolean; error: string | null }
   | { status: "failed"; attemptId: string; replayed: boolean; error: string }
-  | { status: "blocked"; attemptId: string; replayed: false; error: string }
+  | { status: "blocked"; attemptId: string; replayed: false; error: string; reason: LinkedInReplyBlocker }
   | { status: "in_progress"; attemptId: string; replayed: true };
 
 function replay(attempt: AttemptRow): LinkedInReplyResult {
@@ -54,14 +61,17 @@ export async function getLinkedInReplyPanel(deps: LinkedInReplyDeps, actor: Acto
 }
 
 export async function sendLinkedInReply(
-  deps: LinkedInReplyDeps,
+  deps: LinkedInReplySendDeps,
   actor: Actor,
   conversationId: string,
-  input: { text: string; idempotencyKey: string; draftId?: string; revision?: number },
+  input: { text?: string; idempotencyKey: string; draftId?: string; revision?: number },
 ): Promise<LinkedInReplyResult> {
   if (!isUuid(conversationId)) throw new NotFoundError("Conversation not found");
   const key = input.idempotencyKey.trim();
   if (key.length < 8 || key.length > 200) throw new ValidationError("An idempotency key of 8 to 200 characters is required.");
+  // An agent sends a saved draft; a person types or edits the text they send.
+  if (actor.via && input.draftId === undefined) throw new ValidationError("An agent sends a saved draft. Pass its draftId and revision.");
+  if (!actor.via && input.text === undefined) throw new ValidationError("The reply cannot be empty.");
   if (input.draftId !== undefined) {
     if (!isUuid(input.draftId)) throw new NotFoundError("Draft not found");
     if (!Number.isInteger(input.revision) || (input.revision as number) < 1) throw new ValidationError("The draft revision is missing. Reload and try again.");
@@ -75,6 +85,7 @@ export async function sendLinkedInReply(
     idempotencyKey: key,
     actorUserId: actor.userId,
     now,
+    via: actor.via,
     ...(input.draftId !== undefined ? { draft: { id: input.draftId, revision: input.revision as number } } : {}),
   });
   if (begun.kind === "replay") return replay(begun.attempt);
@@ -84,13 +95,13 @@ export async function sendLinkedInReply(
   const blocker = await deps.store.checkBlockers(send, deps.now());
   if (blocker) {
     await deps.store.markFailed(send, blocker.message);
-    return { status: "blocked", attemptId: send.attempt.id, replayed: false, error: blocker.message };
+    return { status: "blocked", attemptId: send.attempt.id, replayed: false, error: blocker.message, reason: blocker.reason };
   }
   if (!(await deps.sender.available(send.organizationId))) {
     // LinkedIn was disconnected between the claim and the call. Nothing went out.
     const text = "LinkedIn is not connected for this organization. The reply was not sent.";
     await deps.store.markFailed(send, text);
-    return { status: "blocked", attemptId: send.attempt.id, replayed: false, error: text };
+    return { status: "blocked", attemptId: send.attempt.id, replayed: false, error: text, reason: "not_connected" };
   }
 
   try {

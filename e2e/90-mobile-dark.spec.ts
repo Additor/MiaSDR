@@ -84,6 +84,7 @@ test.describe("phone width in dark mode", () => {
       { path: "/settings/suppression", ready: (p) => p.getByRole("heading", { name: "Suppressed addresses" }) },
       { path: "/settings/instructions", ready: (p) => p.getByRole("heading", { name: "Drafting instructions" }) },
       { path: "/settings/audit-log" },
+      { path: "/settings/mcp", ready: (p) => p.getByRole("heading", { name: "Your tokens" }) },
     ];
     for (const route of routes) await expectFits(page, route);
   });

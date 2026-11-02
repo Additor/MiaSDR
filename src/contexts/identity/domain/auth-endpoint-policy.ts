@@ -24,6 +24,10 @@ const ALLOWED_MUTATIONS: ReadonlySet<string> = new Set([
   "POST /organization/accept-invitation",
   // Decline button on the same page. Better Auth checks that the invitation is addressed to the signed-in user.
   "POST /organization/reject-invitation",
+  // MCP clients. A client authenticates itself; consent has its own route and stays off this list.
+  "POST /oauth2/token",
+  "POST /oauth2/revoke",
+  "POST /oauth2/register", // Refused unless MCP_OAUTH_DCR is on.
 ]);
 
 /** Methods that do not change state. Better Auth serves its GET endpoints (session, verify-email, OAuth callback) through these. */

@@ -1,3 +1,4 @@
+import type { AgentVia } from "@/shared/errors";
 import type { AiInstructionBlock, ReplyTypeGroup, ReplyHandlingSettingsPatch, ReplyTypeInput, ReplyTypePatch } from "../domain/reply-handling";
 import type { HoldReason, ReplyTypeFacts, SystemRole, TypeRules } from "../domain/reply-type";
 import type { NoteScope } from "../actions/application/tasks-ports";
@@ -161,7 +162,7 @@ export interface RecordDetail {
   person: { id: string; name: string | null; email: string | null; linkedinUrl: string | null; phone: string | null; title: string | null; company: string | null };
   policy: { doNotContact: boolean; reason: string | null; source: string | null; setAt: Date | null; clearedAt: Date | null } | null;
   suppressed: boolean;
-  conversations: Array<{ id: string; channel: string; accountRef: string; status: string }>;
+  conversations: Array<{ id: string; channel: string; accountRef: string; status: string; updatedAt: Date }>;
   replyTypePicks: ReplyTypePickEntry[];
   drafts: DraftEntry[];
   events: EventEntry[];
@@ -174,6 +175,8 @@ export interface RecordDetail {
 export interface ReplyTypeChangeInput {
   organizationId: string;
   actorUserId: string;
+  /** Set when an agent acted; the event's meta records it. */
+  via?: AgentVia;
   recordId: string;
   groupKey: ReplyTypeGroup;
   replyTypeId: string | null;
@@ -193,6 +196,8 @@ export interface ReplyTypeChangeResult {
   draftsRetired: number;
   /** A follow-up run of the owning campaign started for the new type. */
   runStarted: boolean;
+  /** The change ended a follow-up run of the old type. */
+  runEnded: boolean;
 }
 
 /** What an undo retired, so the client can say it. */
@@ -252,12 +257,12 @@ export interface ReplyHandlingStore extends IdentityExceptionIntake {
   typeChangeFacts(organizationId: string, recordId: string): Promise<TypeChangeFacts | null>;
 
   changeReplyType(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
-  undoReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<UndoReplyTypePickResult>;
-  acknowledgeReplyTypePick(input: { organizationId: string; actorUserId: string; replyTypePickId: string; now: Date }): Promise<void>;
+  undoReplyTypePick(input: { organizationId: string; actorUserId: string; via?: AgentVia; replyTypePickId: string; now: Date }): Promise<UndoReplyTypePickResult>;
+  acknowledgeReplyTypePick(input: { organizationId: string; actorUserId: string; via?: AgentVia; replyTypePickId: string; now: Date }): Promise<void>;
   /** Sets or clears the person's do-not-contact flag and stops everything that would contact them. */
   setDoNotContact(input: { organizationId: string; actorUserId: string; personId: string; enabled: boolean; reason: string; now: Date }): Promise<DncResult>;
-  closeRecord(input: { organizationId: string; actorUserId: string; recordId: string; reason: string; now: Date }): Promise<void>;
-  reopenRecord(input: { organizationId: string; actorUserId: string; recordId: string; now: Date }): Promise<void>;
+  closeRecord(input: { organizationId: string; actorUserId: string; via?: AgentVia; recordId: string; reason: string; now: Date }): Promise<void>;
+  reopenRecord(input: { organizationId: string; actorUserId: string; via?: AgentVia; recordId: string; now: Date }): Promise<void>;
   /** NotFoundError when the record or person is not in the organization. */
   addNote(input: { organizationId: string; actorUserId: string; scope: NoteScope; title: string | null; body: string }): Promise<{ id: string }>;
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;

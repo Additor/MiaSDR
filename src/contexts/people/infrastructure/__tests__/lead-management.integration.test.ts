@@ -362,13 +362,13 @@ describeDb("lead management", () => {
       const { id: o } = await org();
       const { listLeads } = await import("@/composition/leads");
       await sql`insert into people (organization_id, email, full_name) select ${o}, 'p' || g || '@list.com', 'P ' || g from generate_series(1, 60) g`;
-      const first = await listLeads(o, { pageSize: 25 });
+      const first = await listLeads({ organizationId: o }, { pageSize: 25 });
       expect(first.rows).toHaveLength(25);
       expect(first.pageCount).toBe(3);
-      expect((await listLeads(o, { pageSize: 7 })).pageSize).toBe(50);
+      expect((await listLeads({ organizationId: o }, { pageSize: 7 })).pageSize).toBe(50);
       const p = first.rows[0].id;
       await markDoNotContact(o, p, "x");
-      expect((await listLeads(o, { pageSize: 25 })).rows.find((r) => r.id === p)?.doNotContact).toBe(true);
+      expect((await listLeads({ organizationId: o }, { pageSize: 25 })).rows.find((r) => r.id === p)?.doNotContact).toBe(true);
     });
   });
 });

@@ -16,8 +16,8 @@ import { drizzleLinkedInReplyStore } from "../../infrastructure/drizzle-linkedin
 import { drizzleReplyStore } from "../../infrastructure/drizzle-reply-store";
 import { FakeReplyAi } from "./fake-reply-ai";
 import { createReplyAi } from "./reply-ai";
-import { createLinkedInReplySender } from "../../infrastructure/linkedin-reply-sender";
-import { createReplyMailer } from "../../infrastructure/reply-mailer";
+import { createLinkedInSentFinder } from "../../infrastructure/linkedin-sent-finder";
+import { createSentFinder } from "../../infrastructure/sent-finder";
 
 const globalForAi = globalThis as unknown as { __miasdrFakeAi?: FakeReplyAi };
 
@@ -34,19 +34,21 @@ export const replyAiResolver: ReplyAiResolver = {
   status: (organizationId) => languageModels.status(organizationId),
 };
 
+/** The reply use cases that do not send. Its mailer looks in a mailbox and cannot send; `reply-send-composition.ts` builds the one that sends. */
 export const replyDeps = (): ReplyDeps => ({
   store: drizzleReplyStore,
   ai: replyAiResolver,
-  mailer: createReplyMailer(mailboxProvider),
+  mailer: createSentFinder(mailboxProvider),
   now: () => new Date(),
   newToken: () => randomUUID(),
 });
 
 export const aiJobOpsDeps = (): AiJobOpsDeps => ({ jobs: drizzleAiJobStore, audit: auditSink, now: () => new Date() });
 
+/** The LinkedIn reply use cases that do not send, with a port that looks at LinkedIn and cannot send. */
 export const linkedinReplyDeps = (): LinkedInReplyDeps => ({
   store: drizzleLinkedInReplyStore,
-  sender: createLinkedInReplySender(linkedinGateways()),
+  sender: createLinkedInSentFinder(linkedinGateways()),
   now: () => new Date(),
   aiStatus: (organizationId) => replyAiResolver.status(organizationId),
 });

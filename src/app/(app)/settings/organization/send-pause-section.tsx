@@ -16,7 +16,7 @@ interface Pause {
   byName: string | null;
 }
 
-/** The organization's own stop switch for campaign emails and LinkedIn actions. Approved replies keep sending. */
+/** The organization's own stop switch for campaign emails, LinkedIn actions and agent replies. Approved replies keep sending. */
 export function SendPauseSection({ pause, canManage }: { pause: Pause | null; canManage: boolean }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -29,7 +29,7 @@ export function SendPauseSection({ pause, canManage }: { pause: Pause | null; ca
     <SettingsSection
       id="sending"
       title="Sending"
-      description="Pause stops every campaign email and LinkedIn action of this organization at once. Replies a person approves still send, and nothing in a campaign changes, so resuming picks up where it stopped."
+      description="Pause stops every campaign email, LinkedIn action and agent reply of this organization at once. Replies a person approves still send, and nothing in a campaign changes, so resuming picks up where it stopped."
     >
       {pause ? (
         // A degraded state: the warning hue on the icon and the lead words only.

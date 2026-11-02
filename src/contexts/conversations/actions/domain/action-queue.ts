@@ -15,7 +15,7 @@ export type QueueGroup = (typeof QUEUE_GROUPS)[number];
 export const isQueueGroup = (value: string): value is QueueGroup => (QUEUE_GROUPS as readonly string[]).includes(value);
 
 export const QUEUE_GROUP_LABELS: Record<QueueGroup, { title: string; description: string }> = {
-  reply: { title: "Replies to approve", description: "Drafts waiting for your review. Nothing is sent until you approve." },
+  reply: { title: "Replies to approve", description: "Drafts waiting for your review before anyone sends them." },
   follow_up: { title: "Follow-ups due", description: "Leads you waited on who are due another touch." },
   classification: { title: "AI picks", description: "Reply types the AI picked that wait for you: a held pick to accept, an applied pick to check, or a possible stop request to review." },
   next_step: { title: "Needs a next step", description: "No draft or AI pick waits on this reply. Write a reply, change the type or add a task." },

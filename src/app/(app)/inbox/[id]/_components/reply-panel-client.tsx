@@ -179,6 +179,7 @@ export function ReplyPanelClient({
               </Badge>
             )}
             {draft?.regeneratedFrom && <Badge variant="outline">Regenerated</Badge>}
+            {draft?.writtenVia && <Badge variant="outline">Written by an agent ({draft.writtenVia})</Badge>}
           </CardTitle>
           <CardDescription>To {panel.recipient ?? "no address"}</CardDescription>
         </CardHeader>

@@ -20,7 +20,7 @@ const senderLabel = (channel: OutreachChannel) =>
 const toRef = (row: { id: string; label: string; status: string }): SenderRef => ({ id: row.id, label: row.label, connected: row.status === "connected" });
 
 export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
-  async enrollPicked(organizationId, campaignId, channel, personIds, handle) {
+  async enrollPicked(organizationId, campaignId, channel, personIds, viaTokenId, handle) {
     const ids = [...new Set(personIds)];
     return inTransaction(handle, async (tx) => {
       const suppressed = sql<boolean>`${suppressedSql("people")}`;
@@ -69,7 +69,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
         const { inserted, skippedContact } = await insertSkippingContacts(tx, organizationId, chunk.map((p) => p.id), (sp, ids) =>
           sp
             .insert(campaignEnrollments)
-            .values(ids.map((personId) => ({ organizationId, campaignId, personId, channel })))
+            .values(ids.map((personId) => ({ organizationId, campaignId, personId, channel, enrolledViaTokenId: viaTokenId })))
             .onConflictDoNothing()
             .returning({ id: campaignEnrollments.id, personId: campaignEnrollments.personId }),
         );
@@ -122,10 +122,11 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
     });
   },
 
-  async listSenders(organizationId, campaignId, channel) {
+  async listSenders(organizationId, campaignId, channel, tx) {
     const cols = senderLabel(channel);
+    const handle = tx ?? db;
     if (channel === "email") {
-      const rows = await db
+      const rows = await handle
         .select(cols)
         .from(campaignSenders)
         .innerJoin(mailboxes, eq(mailboxes.id, campaignSenders.mailboxId))
@@ -133,7 +134,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
         .orderBy(asc(mailboxes.emailAddress));
       return rows.map(toRef);
     }
-    const rows = await db
+    const rows = await handle
       .select(cols)
       .from(campaignSenders)
       .innerJoin(linkedinAccounts, eq(linkedinAccounts.id, campaignSenders.linkedinAccountId))
@@ -142,12 +143,13 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
     return rows.map(toRef);
   },
 
-  async findSenders(organizationId, channel, ids) {
+  async findSenders(organizationId, channel, ids, tx) {
     if (ids.length === 0) return [];
+    const handle = tx ?? db;
     const rows =
       channel === "email"
-        ? await db.select(senderLabel("email")).from(mailboxes).where(and(eq(mailboxes.organizationId, organizationId), inArray(mailboxes.id, ids)))
-        : await db.select(senderLabel("linkedin")).from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), inArray(linkedinAccounts.id, ids)));
+        ? await handle.select(senderLabel("email")).from(mailboxes).where(and(eq(mailboxes.organizationId, organizationId), inArray(mailboxes.id, ids)))
+        : await handle.select(senderLabel("linkedin")).from(linkedinAccounts).where(and(eq(linkedinAccounts.organizationId, organizationId), inArray(linkedinAccounts.id, ids)));
     return rows.map(toRef);
   },
 
@@ -161,6 +163,9 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
 
   async replaceSenders(organizationId, campaignId, channel, ids, handle) {
     await inTransaction(handle, async (tx) => {
+      // An emptied list inserts nothing, so no foreign key check would make it wait for an agent's launch that holds the
+      // campaign row; the key share stands in for one, and the launch then reads the list the change left.
+      if (ids.length === 0) await tx.select({ id: campaigns.id }).from(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, campaignId))).for("key share");
       await tx.delete(campaignSenders).where(and(eq(campaignSenders.organizationId, organizationId), eq(campaignSenders.campaignId, campaignId)));
       if (ids.length === 0) return;
       await tx

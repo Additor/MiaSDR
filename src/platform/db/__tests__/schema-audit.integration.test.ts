@@ -30,7 +30,7 @@ describeDb("schema audit (organization scope)", () => {
   });
 
   it("lists the allow-lists, each entry with a reason", () => {
-    expect(Object.keys(NO_SCOPE).sort()).toEqual(["accounts", "integration_credentials", "organizations", "sessions", "users", "verifications"]);
+    expect(Object.keys(NO_SCOPE).sort()).toEqual(["accounts", "integration_credentials", "jwks", "oauth_access_tokens", "oauth_client_assertions", "oauth_client_resources", "oauth_clients", "oauth_consents", "oauth_refresh_tokens", "oauth_resources", "organizations", "sessions", "users", "verifications"]);
     expect(Object.keys(NULLABLE_SCOPE).sort()).toEqual(["inbound_events", "job_runs"]);
     expect(Object.keys(SCOPED_BY_SIBLING_KEY).sort()).toEqual([
       "knowledge_documents.knowledge_documents_latest_version_fk",
@@ -42,12 +42,12 @@ describeDb("schema audit (organization scope)", () => {
     }
   });
 
-  it("keeps INDEX_DEBT at its 13 tables, each with the shared reason", () => {
+  it("keeps INDEX_DEBT at its 12 tables, each with the shared reason", () => {
     // The audit reports an entry that gained an index, but not a new entry: this list is the only check that INDEX_DEBT does not grow.
     expect(Object.keys(INDEX_DEBT).sort()).toEqual([
       "campaign_senders", "draft_knowledge_citations", "events", "grid_columns", "grid_provider_credentials",
       "grid_user_views", "linkedin_connections", "linkedin_enrollment_details",
-      "linkedin_search_results", "notes", "reply_handling_settings", "send_attempts", "sequence_step_runs",
+      "linkedin_search_results", "notes", "reply_handling_settings", "sequence_step_runs",
     ]);
     for (const reason of Object.values(INDEX_DEBT)) expect(reason).toBe(INDEX_DEBT_REASON);
     expect(INDEX_DEBT_REASON).toContain("organization deletion is disabled");

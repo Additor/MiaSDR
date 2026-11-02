@@ -106,6 +106,16 @@ sdr.example.com {
 
 Then remove the `ports:` mapping on `app` so only Caddy is public. Caddy gets and renews the certificate on its own.
 
+## Connecting apps over MCP
+
+Apps such as claude.ai and ChatGPT connect by signing in. They need `APP_URL` to be a public HTTPS address, because the app reaches your server from outside. On plain HTTP, MCP serves personal tokens only and the sign-in routes answer 404.
+
+- Keep `APP_URL` stable. The server signs each app's access to that address, so after a change every app connects again.
+- `/.well-known/` must reach the app. Caddy forwards it with the rest; check a proxy rule of your own.
+- Set `MCP_OAUTH_DCR=false` to accept only apps that publish a client metadata document. Some apps then cannot connect.
+
+Signing keys live in the `jwks` table, so your database backups cover them.
+
 ## Health check
 
 `GET /api/health` returns `{"ok":true}` or 503. The Dockerfile defines a `HEALTHCHECK` that calls this URL with `node` (the image has no `curl`), so `docker ps` shows the container as healthy or unhealthy. Monitor the URL from outside as well.

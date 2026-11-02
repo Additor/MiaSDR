@@ -240,7 +240,8 @@ test.describe("delete and merge at 390px in the dark theme", () => {
     await dialog.getByRole("button", { name: "Keep contact" }).click();
 
     await page.goto(`/crm/companies/${row.id}`);
-    await expect(page.getByTestId("company-header")).toBeVisible();
+    // A page in the middle of streaming can hold a second, hidden copy of the header for a moment.
+    await expect(page.getByTestId("company-header").filter({ visible: true })).toBeVisible();
     await expectNoHorizontalOverflow(page);
     const more = page.getByRole("button", { name: `More actions for ${company}` });
     await waitForHydrated(more);

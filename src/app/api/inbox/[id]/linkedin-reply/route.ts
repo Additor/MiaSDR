@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { sendLinkedInReply } from "@/contexts/conversations/application/linkedin-reply";
-import { linkedinReplyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
+import { linkedinReplySendDeps } from "@/contexts/conversations/infrastructure/reply-send-composition";
 import { withActor } from "@/app/_lib/api";
 
 const bodySchema = z
@@ -15,6 +15,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/inbox/[id]/
   const { id } = await ctx.params;
   return withActor(async (actor) => {
     const body = bodySchema.parse(await request.json());
-    return sendLinkedInReply(linkedinReplyDeps(), actor, id, body);
+    return sendLinkedInReply(linkedinReplySendDeps(), actor, id, body);
   });
 }

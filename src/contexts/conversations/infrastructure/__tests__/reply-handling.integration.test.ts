@@ -13,7 +13,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
   let deps: import("../../application/reply-handling").ReplyHandlingDeps;
   let workQueue: typeof import("../../actions/application/work-queue");
   let queueDeps: import("../../actions/application/work-queue").WorkQueueDeps;
-  let replyDeps: import("../../application/reply-management").ReplyDeps;
+  let replyDeps: import("../../application/reply-management").ReplySendDeps;
   const orgs: TestOrg[] = [];
   let counter = 0;
 
@@ -92,7 +92,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     deps = (await import("../reply-handling-composition")).replyHandlingDeps();
     workQueue = await import("../../actions/application/work-queue");
     queueDeps = (await import("../../actions/infrastructure/work-queue-composition")).workQueueDeps();
-    replyDeps = (await import("../../ai/infrastructure/ai-composition")).replyDeps();
+    replyDeps = (await import("../reply-send-composition")).replySendDeps();
   });
 
   afterAll(async () => {

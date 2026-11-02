@@ -18,6 +18,23 @@ First public release.
 - CRM: contacts, companies with merge, deals on a pipeline board.
 - Tables: a spreadsheet with formulas, enrichment and AI columns. Enrichment calls Hunter, ZeroBounce, MillionVerifier, NeverBounce, Findymail, Prospeo, LeadMagic, Apollo and People Data Labs natively, and vendors that share an action line up in a waterfall.
 - Self-hosting with Docker Compose and Postgres 17.
+- AI agents (MCP): an endpoint at `/api/mcp` with eleven read tools for the inbox, work queue, leads, campaigns, pipeline and analytics. People connect agents with personal tokens from Settings, AI agents (MCP), after an owner or admin turns MCP on. See [AI agents (MCP)](docs/guides/mcp.md).
+- MCP write tokens: a token can also make changes through eight tools that write reply drafts, set reply types, assign, note and close conversations, manage tasks, pause sending, draft campaigns, move deals and import leads. No tool sends a message. Owners and admins choose whether members may create write tokens, and read each agent call under Agent activity.
+- Agent sending: an owner or admin can let MCP agents send replies under Settings, Organization, Agents can send. It is off by default. A token that sends gets `send_reply`, which sends a saved draft by email or LinkedIn with every person's rule plus agent rules: only to people a campaign or a person already reached, no CC, one reply a day per reply handling, and daily limits per organization, person and mailbox. The thread marks each agent send. With Replies and campaigns, agents also start and resume campaigns and fill running ones through `preview_campaign_launch` and `launch_campaign`, with a launch token that fails when the campaign changed, a daily enroll limit, and Personal campaigns only from accounts the token's person owns. LinkedIn accounts now have an owner, which an owner or admin names when connecting one or later under Settings, LinkedIn. An agent resumes only a campaign an agent paused; one a person paused waits for a person. `MCP_SEND_ENABLED=false` refuses every agent send in the install.
+- The product principle changes from "a person approves every reply" to "every send has someone answerable for it": a person who pressed Send, or an agent working with a send token a person created where an admin allowed it.
+- Schema: migration 0005 adds `mcp_tokens`, migration 0006 adds `mcp_rate_limits`, migration 0007 adds `mcp_tool_calls`, migration 0008 adds `drafts.written_via_token_id` migration 0009 adds `send_attempts.origin`, `mcp_token_id` and `client_name`, migration 0010 adds `campaigns.started_via_token_id`, `campaign_enrollments.enrolled_via_token_id` and `linkedin_accounts.owner_user_id`, migration 0011 adds `campaigns.person_paused`, and migration 0012 adds `linkedin_connect_links.owner_user_id`.
+
+### MCP tools
+
+This release adds the endpoint and its first tools. From here on, an answer only gains fields; a renamed tool or field keeps its old name, hidden, for one minor version, and this section lists each change.
+
+- Read: 11 tools, `get_workspace` among them. A token with no write scope sees only these.
+- Change: `write_reply_draft`, `set_reply_type`, `update_conversation`, `manage_task`, `pause_sending`, `update_deal`, `draft_campaign`, `import_leads`.
+- Send: `send_reply`, `preview_campaign_launch`, `launch_campaign`, listed only while the organization allows them.
+- OAuth: apps such as claude.ai and ChatGPT connect by signing in, on an HTTPS address. Adds migration 0013 and `MCP_OAUTH_DCR`.
+- Cards: a client that supports MCP Apps shows `write_reply_draft` and `preview_campaign_launch` answers as a card.
+- One JSON-RPC message per request: the endpoint answers a batch `400 batch_not_supported`.
+- A tool's published output schema lists its top-level keys as optional, plus `error`, so a client that checks results keeps a refusal.
 
 ### Upgrade notes
 
@@ -26,6 +43,9 @@ For a server that ran a build from before this release:
 - Back up the database before you upgrade ([Backups](docs/deploy/self-host.md#backups)).
 - Migrations run when the app boots, unless you set `RUN_MIGRATIONS=false` and run `scripts/migrate.mjs` yourself.
 - You cannot roll back migrations 0002 and 0003. They rename the reply tables and drop columns, so an old instance fails against the new schema. Stop every old instance before the new version boots. A migration that waits more than 30 seconds for a table lock fails and rolls back. [Operations](docs/operations.md#upgrades-that-change-the-reply-tables) says how to find the session that holds it.
+- Campaigns paused at upgrade time count as paused by a person, so only a person resumes them.
+- Agent sending starts off in every organization. Nothing an agent does sends a message until an owner or admin turns it on.
+- Existing LinkedIn accounts have no owner after the upgrade. Set owners under Settings, LinkedIn before agents start Personal campaigns.
 - Out of office now ends a follow-up run already going. Before, it only kept a new run from starting.
 - The stage rank is gone, so the AI may move a person to an earlier reply type. To review such moves, set the type's Check to Before it applies in Settings > Reply handling.
 - If your organization archived Asked to stop, the upgrade restores it. Every AI pick of it waits for a person.

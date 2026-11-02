@@ -1,6 +1,6 @@
-import { and, desc, eq, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { linkedinAccounts, linkedinConnectLinks } from "@/platform/db/schema";
+import { linkedinAccounts, linkedinConnectLinks, members } from "@/platform/db/schema";
 import type { ConnectLink, LinkedInConnectStore } from "../application/linkedin-connect-ports";
 
 const t = linkedinConnectLinks;
@@ -20,7 +20,7 @@ const toLink = (r: typeof t.$inferSelect): ConnectLink => ({
 
 export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
   async create(link) {
-    await db.insert(t).values({ id: link.id, organizationId: link.organizationId, providerName: link.providerName, secretHash: link.secretHash, expiresAt: link.expiresAt, createdBy: link.createdBy });
+    await db.insert(t).values({ id: link.id, organizationId: link.organizationId, providerName: link.providerName, secretHash: link.secretHash, expiresAt: link.expiresAt, createdBy: link.createdBy, ownerUserId: link.ownerUserId });
   },
 
   async find(id) {
@@ -30,7 +30,7 @@ export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
 
   async complete(id, { providerAccountId, now }) {
     // The account row, when the sync created it, ties the link to it. A missing row leaves the column empty.
-    const [link] = await db.select({ organizationId: t.organizationId }).from(t).where(eq(t.id, id));
+    const [link] = await db.select({ organizationId: t.organizationId, ownerUserId: t.ownerUserId }).from(t).where(eq(t.id, id));
     if (!link) return false;
     const [account] = await db
       .select({ id: linkedinAccounts.id })
@@ -41,6 +41,18 @@ export const drizzleLinkedInConnectStore: LinkedInConnectStore = {
       .set({ status: "completed", completedAt: now, providerAccountId, linkedinAccountId: account?.id ?? null, lastError: null })
       .where(and(eq(t.id, id), eq(t.status, "pending")))
       .returning({ id: t.id });
+    if (rows.length === 1 && account && link.ownerUserId) {
+      await db
+        .update(linkedinAccounts)
+        .set({ ownerUserId: link.ownerUserId })
+        .where(
+          and(
+            eq(linkedinAccounts.id, account.id),
+            isNull(linkedinAccounts.ownerUserId),
+            sql`exists (select 1 from ${members} where ${members.organizationId} = ${link.organizationId} and ${members.userId} = ${link.ownerUserId})`,
+          ),
+        );
+    }
     return rows.length === 1;
   },
 

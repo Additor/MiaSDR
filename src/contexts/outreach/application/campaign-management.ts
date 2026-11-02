@@ -1,3 +1,4 @@
+import { enrollUnder, type EnrollOptions } from "./enroll-options";
 import type { DbHandle } from "@/platform/db/client";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { canArchive, canTransition, emptyFirstSubjectMessage, type ArchiveFilter, stepsEditable, stepsWithPlaceholders, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
@@ -59,69 +60,94 @@ export async function createCampaign(deps: CampaignDeps, actor: Actor, input: { 
   return { id };
 }
 
-export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: StepInput[]; senderIds?: string[] }): Promise<void> {
-  const campaign = await load(deps, actor, id);
+/** With `tx`, the edit joins the caller's transaction and reads through it: an agent's edit holds the campaign row there, and a read from the pool could wait on a connection this request holds. */
+export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: StepInput[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
+  const campaign = await load(deps, actor, id, tx);
   const next: { name?: string; steps?: StepInput[] } = {};
-  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "email", patch.senderIds);
+  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "email", patch.senderIds, tx);
   if (patch.name !== undefined) next.name = cleanName(patch.name);
 
   if (patch.steps !== undefined) {
     if (!stepsEditable(campaign.status)) throw new ConflictError("Pause the campaign before editing its steps.");
     const issues = validateSteps(patch.steps);
     if (issues.length > 0) throw new ValidationError("Fix the steps and save again.", issues);
-    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id);
+    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id, tx);
     if (patch.steps.length < furthest) {
       throw new ConflictError(`Some leads already received step ${furthest}. The sequence cannot have fewer than ${furthest} steps.`);
     }
     next.steps = patch.steps;
   }
   // One transaction: a failed sender replacement must not leave the new name or steps behind.
-  await deps.campaigns.transaction(async (tx) => {
-    if (!(await deps.campaigns.update(actor.organizationId, id, next, tx))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
-    if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "email", senderIds, tx);
-  });
+  await deps.campaigns.transaction(async (t) => {
+    if (!(await deps.campaigns.update(actor.organizationId, id, next, t))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
+    if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "email", senderIds, t);
+  }, tx);
 }
 
 /** Leads checked for an empty first subject when a campaign launches. */
 export const SUBJECT_SAMPLE = 20;
 
-/** `emptySubjectLeads` of the `sampled` leads render an empty subject and will be skipped at send time. */
-export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id: string, to: CampaignStatus): Promise<{ emptySubjectLeads: number; sampled: number }> {
+/**
+ * What stops a person starting or resuming this campaign now, in the order a start checks it. The status change throws
+ * the first; an agent's launch preview lists them all. Also answers the sampled leads whose first subject renders empty.
+ */
+async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign: Awaited<ReturnType<typeof load>>, tx?: DbHandle): Promise<{ problems: ValidationError[]; emptySubjectLeads: number; sampled: number }> {
+  const problems: ValidationError[] = [];
   let emptySubjectLeads = 0;
   let sampled = 0;
-  const campaign = await load(deps, actor, id);
-  if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
-  if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
-  if (to === "active") {
-    const issues = validateSteps(campaign.steps);
-    if (issues.length > 0) throw new ValidationError("Fix the steps before starting.", issues);
-    const unfinished = stepsWithPlaceholders(campaign.steps);
-    if (unfinished.length > 0) {
-      throw new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`);
-    }
-    // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
-    if (campaign.status === "draft") {
-      const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE);
-      if (leads.length === 0) {
-        const emptySubject = emptyFirstSubjectMessage(campaign.steps, (await deps.campaigns.sampleVariables(actor.organizationId, id)) ?? sampleVariables());
-        if (emptySubject) throw new ValidationError(emptySubject, [{ step: 1, message: emptySubject }]);
+  const issues = validateSteps(campaign.steps);
+  if (issues.length > 0) problems.push(new ValidationError("Fix the steps before starting.", issues));
+  const unfinished = stepsWithPlaceholders(campaign.steps);
+  if (unfinished.length > 0) problems.push(new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`));
+  // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
+  if (campaign.status === "draft") {
+    const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE, tx);
+    if (leads.length === 0) {
+      const emptySubject = emptyFirstSubjectMessage(campaign.steps, (await deps.campaigns.sampleVariables(actor.organizationId, id, tx)) ?? sampleVariables());
+      if (emptySubject) problems.push(new ValidationError(emptySubject, [{ step: 1, message: emptySubject }]));
+    } else {
+      const empty = leads.filter((variables) => emptyFirstSubjectMessage(campaign.steps, variables) !== null).length;
+      // Every sampled lead would send a blank subject, so the subject itself is the problem. A few empty ones are a data gap the send-time check skips.
+      if (empty === leads.length) {
+        const message = emptyFirstSubjectMessage(campaign.steps, leads[0]) as string;
+        problems.push(new ValidationError(message, [{ step: 1, message }]));
       } else {
-        const empty = leads.filter((variables) => emptyFirstSubjectMessage(campaign.steps, variables) !== null).length;
-        // Every sampled lead would send a blank subject, so the subject itself is the problem. A few empty ones are a data gap the send-time check skips.
-        if (empty === leads.length) {
-          const message = emptyFirstSubjectMessage(campaign.steps, leads[0]) as string;
-          throw new ValidationError(message, [{ step: 1, message }]);
-        }
         emptySubjectLeads = empty;
         sampled = leads.length;
       }
     }
-    await assertAssignedSendersConnected(adminStore(deps), actor, "email", id);
-    if ((await deps.mailboxes.countConnected(actor.organizationId)) === 0) {
-      throw new ValidationError("Connect a mailbox in Settings before starting a campaign.");
-    }
   }
-  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps }))) {
+  try {
+    await assertAssignedSendersConnected(adminStore(deps), actor, "email", id, tx);
+  } catch (error) {
+    if (!(error instanceof ValidationError)) throw error;
+    problems.push(error);
+  }
+  if ((await deps.mailboxes.countConnected(actor.organizationId, tx)) === 0) problems.push(new ValidationError("Connect a mailbox in Settings before starting a campaign."));
+  return { problems, emptySubjectLeads, sampled };
+}
+
+/** The start problems of a draft or paused campaign, for a preview. Changes nothing. */
+export async function campaignStartProblems(deps: CampaignDeps, actor: Actor, id: string): Promise<{ problems: ValidationError[]; emptySubjectLeads: number }> {
+  return startCheck(deps, actor, id, await load(deps, actor, id));
+}
+
+/**
+ * `emptySubjectLeads` of the `sampled` leads render an empty subject and will be skipped at send time. With `tx`, the
+ * change joins the caller's transaction: an agent's launch holds the campaign row there.
+ */
+export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id: string, to: CampaignStatus, tx?: DbHandle): Promise<{ emptySubjectLeads: number; sampled: number }> {
+  let emptySubjectLeads = 0;
+  let sampled = 0;
+  const campaign = await load(deps, actor, id, tx);
+  if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
+  if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
+  if (to === "active") {
+    const check = await startCheck(deps, actor, id, campaign, tx);
+    if (check.problems[0]) throw check.problems[0];
+    ({ emptySubjectLeads, sampled } = check);
+  }
+  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps, viaTokenId: actor.via?.tokenId ?? null }, tx))) {
     throw new ConflictError("The campaign changed while you were saving. Reload it and try again.");
   }
   return { emptySubjectLeads, sampled };
@@ -149,11 +175,20 @@ export async function deleteCampaign(deps: CampaignDeps, actor: Actor, id: strin
 
 export const MAX_ENROLL_BATCH = 5000;
 
-export async function enrollLeads(deps: CampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; dryRun?: boolean }, tx?: DbHandle): Promise<EnrollResult> {
+export async function enrollLeads(
+  deps: CampaignDeps,
+  actor: Actor,
+  id: string,
+  input: { query?: string; limit?: number; dryRun?: boolean },
+  options: EnrollOptions = {},
+  tx?: DbHandle,
+): Promise<EnrollResult> {
   const campaign = await load(deps, actor, id, tx);
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   const limit = Math.min(Math.max(1, Math.floor(input.limit ?? MAX_ENROLL_BATCH)), MAX_ENROLL_BATCH);
-  return deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, dryRun: input.dryRun }, tx);
+  return enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
+    deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, dryRun: input.dryRun, viaTokenId: actor.via?.tokenId ?? null }, t),
+  );
 }
 
 /** Renders one step the way it would go out, with a real lead from the campaign when there is one. */
@@ -195,12 +230,21 @@ export async function getCampaignDetail(deps: CampaignDeps, actor: Actor, id: st
 }
 
 /** Enrolls the people a person ticked. Ids of another organization count as not found. */
-export async function enrollPickedLeads(deps: CampaignDeps, actor: Actor, id: string, personIds: string[], tx?: DbHandle): Promise<PickedEnrollCounts & EnrollResult> {
+export async function enrollPickedLeads(
+  deps: CampaignDeps,
+  actor: Actor,
+  id: string,
+  personIds: string[],
+  options: EnrollOptions = {},
+  tx?: DbHandle,
+): Promise<PickedEnrollCounts & EnrollResult> {
   const campaign = await load(deps, actor, id, tx);
   if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
   if (personIds.length === 0) throw new ValidationError("Pick at least one lead.");
   if (personIds.length > MAX_PICKED_IDS) throw new ValidationError(`Add up to ${MAX_PICKED_IDS} leads at a time.`);
-  const counts = await adminStore(deps).enrollPicked(actor.organizationId, id, "email", personIds, tx);
+  const counts = await enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
+    adminStore(deps).enrollPicked(actor.organizationId, id, "email", personIds, actor.via?.tokenId ?? null, t),
+  );
   return { ...counts, alreadyEnrolled: counts.skippedDuplicate, skippedNoEmail: counts.skippedMissingIdentity };
 }
 

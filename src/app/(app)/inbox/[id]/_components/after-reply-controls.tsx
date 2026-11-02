@@ -34,7 +34,7 @@ const DONE_MESSAGE: Record<Command, string> = {
 
 /**
  * Follow-ups on one conversation: the campaign that owns them, the run status and steps, and the pause, resume, skip,
- * stop and restart controls. Follow-ups only write drafts, so nothing here sends. A person still approves every draft.
+ * stop and restart controls. Follow-ups only write drafts, so nothing here sends. A person, or an agent the organization allows, sends each draft.
  * `disabledReason` turns every control off and says why (a contact gets no follow-ups). The page shows this only when a
  * run exists or the campaign drafts follow-ups; a campaign that hands replies to the Inbox says so in its Campaigns row.
  * Stop works like the other stops: a quiet button opens the consequence in place, and only the confirm is red.

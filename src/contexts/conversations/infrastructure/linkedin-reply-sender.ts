@@ -1,5 +1,6 @@
 import { LinkedInGatewayError, type LinkedInGatewayProvider } from "@/contexts/outreach/linkedin/application/linkedin-ports";
 import { LinkedInReplyError, type LinkedInReplySender } from "../application/linkedin-reply-ports";
+import { createLinkedInSentFinder } from "./linkedin-sent-finder";
 
 /**
  * Sends a reply through the same gateway the sequence engine uses. The chat already exists (the lead wrote first), so
@@ -7,9 +8,7 @@ import { LinkedInReplyError, type LinkedInReplySender } from "../application/lin
  */
 export function createLinkedInReplySender(gateways: LinkedInGatewayProvider): LinkedInReplySender {
   return {
-    async available(organizationId) {
-      return (await gateways.forOrganization(organizationId)) !== null;
-    },
+    ...createLinkedInSentFinder(gateways),
     async send(input) {
       const gateway = await gateways.forOrganization(input.organizationId);
       if (!gateway) throw new LinkedInReplyError("LinkedIn is not connected for this organization.", "definite", "other");
@@ -22,11 +21,6 @@ export function createLinkedInReplySender(gateways: LinkedInGatewayProvider): Li
         }
         throw error;
       }
-    },
-    async findSent(input) {
-      const gateway = await gateways.forOrganization(input.organizationId);
-      if (!gateway) throw new Error("LinkedIn is not connected");
-      return gateway.findSentMessage({ account: input.account, chat: input.chat, text: input.text, since: input.since });
     },
   };
 }

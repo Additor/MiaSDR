@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  */
 
 /** Identity's auth entry points: the session readers, the Better Auth handler and client, and the sign-up facts. */
-const PUBLIC_INFRASTRUCTURE = new Set(["identity/infrastructure/session", "identity/infrastructure/auth-client", "identity/infrastructure/auth", "identity/infrastructure/signup-facts"]);
+const PUBLIC_INFRASTRUCTURE = new Set(["identity/infrastructure/mcp-oauth", "identity/infrastructure/session", "identity/infrastructure/auth-client", "identity/infrastructure/auth", "identity/infrastructure/signup-facts"]);
 
 /** UI files that still import a private infrastructure module, as the code stood when the rule arrived. Shrink only. */
 const PRIVATE_IMPORTS: Record<string, string[]> = {

@@ -114,6 +114,7 @@ export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, rec
   return deps.store.changeReplyType({
     organizationId: actor.organizationId,
     actorUserId: actor.userId,
+    via: actor.via,
     recordId,
     groupKey: input.groupKey as ReplyTypeGroup,
     replyTypeId: input.replyTypeId,
@@ -131,13 +132,13 @@ export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, rec
  */
 export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<UndoReplyTypePickResult> {
   assertId(replyTypePickId, "AI pick");
-  return deps.store.undoReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
+  return deps.store.undoReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, replyTypePickId, now: deps.now() });
 }
 
 /** Marks an AI classification as seen. A held proposal is not acknowledged, it is accepted or overridden. */
 export async function acknowledgeReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<void> {
   assertId(replyTypePickId, "AI pick");
-  await deps.store.acknowledgeReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, replyTypePickId, now: deps.now() });
+  await deps.store.acknowledgeReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, replyTypePickId, now: deps.now() });
 }
 
 /**
@@ -213,12 +214,12 @@ export async function closeRecord(deps: ReplyHandlingDeps, actor: Actor, recordI
   assertId(recordId, "Reply handling");
   const reason = input.reason.trim();
   if (reason === "" || reason.length > 500) throw new ValidationError("Give a reason of 1 to 500 characters.");
-  await deps.store.closeRecord({ organizationId: actor.organizationId, actorUserId: actor.userId, recordId, reason, now: deps.now() });
+  await deps.store.closeRecord({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, recordId, reason, now: deps.now() });
 }
 
 export async function reopenRecord(deps: ReplyHandlingDeps, actor: Actor, recordId: string): Promise<void> {
   assertId(recordId, "Reply handling");
-  await deps.store.reopenRecord({ organizationId: actor.organizationId, actorUserId: actor.userId, recordId, now: deps.now() });
+  await deps.store.reopenRecord({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, recordId, now: deps.now() });
 }
 
 /** A note on a record (`target` is its id) or on a person without one (`{ personId }`, stored with a null `record_id`). */

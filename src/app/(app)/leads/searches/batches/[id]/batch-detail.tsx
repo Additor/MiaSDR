@@ -360,7 +360,7 @@ export function BatchDetail({ batch, capacity, canManage }: { batch: Detail; cap
         {/* One column that may shrink to the screen: an implicit `auto` column is as wide as the longest search URL. */}
         <ul className="grid grid-cols-1 divide-y border-y">
           {batch.items.map((i) => (
-            <li key={i.id} className="grid gap-2 py-3" data-testid="batch-card">
+            <li key={i.id} className="grid grid-cols-1 gap-2 py-3" data-testid="batch-card">
               <div className="flex items-start gap-3">
                 <Checkbox aria-label={`Select ${itemName(i)}`} checked={selected.has(i.id)} onCheckedChange={(on) => toggle(i.id, on === true)} className="mt-1" />
                 <div className="min-w-0">

@@ -1,7 +1,7 @@
 /**
  * An owner or admin can pause outreach for one organization from Settings, Organization. The pause lives in the
  * organization's `general` channel settings as `sendingPaused`, and both send engines read it inside their claim
- * transaction, so a paused organization claims no campaign email and no LinkedIn action. Replies a person approves
+ * transaction, so a paused organization claims no campaign email and no LinkedIn action, and refuses agent replies. Replies a person approves
  * still send: they do not go through a claim.
  */
 export interface SendPause {

@@ -347,7 +347,7 @@ describeDb("AI classification, drafts and approval", () => {
       const f = await fixture();
       const { draft } = await withDraft(f);
       // The ledger row exists and the process died before the provider call returned.
-      const begun = await stores.replies.beginSend({ organizationId: f.org, draftId: draft.id, expectedRevision: draft.revision, idempotencyKey: sendKey(), actorUserId: f.user, messageIdToken: `tok-stuck-${f.tag}` });
+      const begun = await stores.replies.beginSend({ organizationId: f.org, draftId: draft.id, expectedRevision: draft.revision, idempotencyKey: sendKey(), actorUserId: f.user, messageIdToken: `tok-stuck-${f.tag}`, now: new Date() });
       expect(begun.kind).toBe("started");
       const before = mailbox.delivered.length;
 

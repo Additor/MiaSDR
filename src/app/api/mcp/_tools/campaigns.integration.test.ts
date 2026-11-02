@@ -1,0 +1,97 @@
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
+import { enableMcp, mcpCaller, type McpCaller } from "@/test-support/mcp-fixture";
+import type { Actor } from "@/shared/errors";
+
+vi.mock("server-only", () => ({}));
+vi.mock("next/server", async (original) => (await import("@/test-support/route-client")).nextServerStandIn(await original()));
+
+describeDb("list_campaigns and get_campaign", () => {
+  useTestEnv();
+  const sql = testSql({ max: 3 });
+  let POST: (request: Request) => Promise<Response>;
+  const orgs: TestOrg[] = [];
+  let caller: McpCaller;
+  let emailId: string;
+  let linkedinId: string;
+  let foreignId: string;
+
+  const actorOf = (org: TestOrg): Actor => ({ userId: org.userId, organizationId: org.organizationId, role: "owner" });
+
+  beforeAll(async () => {
+    ({ POST } = await import("../route"));
+    const { createCampaign, enrollPickedLeads } = await import("@/contexts/outreach/application/campaign-management");
+    const { campaignDeps } = await import("@/contexts/outreach/infrastructure/composition");
+    const { createLinkedInCampaign } = await import("@/contexts/outreach/linkedin/application/linkedin-campaigns");
+    const { linkedinCampaignDeps } = await import("@/contexts/outreach/linkedin/infrastructure/linkedin-composition");
+    orgs.push(await createTestOrg(sql, "Campaigns A"), await createTestOrg(sql, "Campaigns B"));
+    for (const org of orgs) await enableMcp(sql, org.organizationId);
+    ({ id: emailId } = await createCampaign(campaignDeps(), actorOf(orgs[0]), { name: "Q4 email" }));
+    ({ id: linkedinId } = await createLinkedInCampaign(linkedinCampaignDeps(), actorOf(orgs[0]), { name: "Q4 LinkedIn" }));
+    ({ id: foreignId } = await createCampaign(campaignDeps(), actorOf(orgs[1]), { name: "Their campaign" }));
+    const [{ id: personId }] = await sql<{ id: string }[]>`insert into people (organization_id, full_name, first_name, email) values (${orgs[0].organizationId}, 'Ada Lovelace', 'Ada', 'ada@acme.test') returning id`;
+    await enrollPickedLeads(campaignDeps(), actorOf(orgs[0]), emailId, [personId]);
+    caller = await mcpCaller(sql, POST, orgs[0]);
+  });
+
+  afterAll(async () => {
+    try {
+      await dropOrgs(sql, orgs);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("list_campaigns lists both channels of the token's organization", async () => {
+    const result = await caller.tool("list_campaigns", {});
+    expect(result.isError, result.text).toBe(false);
+    const campaigns = result.structured.campaigns as Array<Record<string, unknown>>;
+    expect(campaigns.map((c) => [c.campaignId, c.channel]).sort()).toEqual([[emailId, "email"], [linkedinId, "linkedin"]].sort());
+    expect(campaigns.find((c) => c.campaignId === emailId)).toMatchObject({ enrolled: 1, status: "draft", appUrl: `http://localhost:3000/campaigns/${emailId}` });
+    expect((await caller.tool("list_campaigns", { channel: "linkedin" })).structured).toMatchObject({ campaigns: [expect.anything()], omitted: 0 });
+  });
+
+  it("get_campaign cuts long step bodies, except the step it previews", async () => {
+    const { createCampaign, updateCampaign } = await import("@/contexts/outreach/application/campaign-management");
+    const { campaignDeps } = await import("@/contexts/outreach/infrastructure/composition");
+    const { id } = await createCampaign(campaignDeps(), actorOf(orgs[0]), { name: "Long steps" });
+    const body = (n: number) => `Step ${n}. ${"Here is a long paragraph about the offer. ".repeat(400)}`;
+    const steps = Array.from({ length: 10 }, (_, i) => ({ stepNumber: i + 1, kind: "email" as const, subject: i === 0 ? "Hello" : undefined, body: body(i + 1), waitDays: i === 0 ? 0 : 2 }));
+    await updateCampaign(campaignDeps(), actorOf(orgs[0]), id, { steps });
+
+    const result = await caller.tool("get_campaign", { channel: "email", campaignId: id, previewStep: 3 });
+    expect(result.isError, result.text).toBe(false);
+    const read = result.structured.steps as Array<{ stepNumber: number; body: string; truncated: boolean }>;
+    expect(read.find((s) => s.stepNumber === 3)).toMatchObject({ body: body(3), truncated: false });
+    expect(read.find((s) => s.stepNumber === 1)).toMatchObject({ truncated: true });
+    expect(read.find((s) => s.stepNumber === 1)?.body).toHaveLength(301);
+    expect(result.structured.preview).toMatchObject({ stepNumber: 3, truncated: true });
+
+    await expect(updateCampaign(campaignDeps(), actorOf(orgs[0]), id, { steps: [{ ...steps[0], body: "x".repeat(20_001) }] })).rejects.toThrow();
+  });
+
+  it("get_campaign gives steps, leads and a rendered step, and answers not found across organizations", async () => {
+    const result = await caller.tool("get_campaign", { channel: "email", campaignId: emailId, previewStep: 1 });
+    expect(result.isError, result.text).toBe(false);
+    expect(result.structured).toMatchObject({ name: "Q4 email", status: "draft", enrollments: { total: 1, page: 1 } });
+    expect((result.structured.steps as unknown[]).length).toBeGreaterThan(0);
+    expect(result.structured.preview).toMatchObject({ stepNumber: 1, leadName: "Ada Lovelace", usedSampleLead: false, body: expect.stringMatching(/^<untrusted_field_/) });
+    expect(result.structured.senders).toEqual([]);
+
+    const outOfRange = await caller.tool("get_campaign", { channel: "email", campaignId: emailId, previewStep: 99 });
+    expect(outOfRange.isError, outOfRange.text).toBe(false);
+    expect(outOfRange.structured.preview).toBeNull();
+    expect(outOfRange.text).toContain("Step 99 does not exist");
+
+    const linkedin = await caller.tool("get_campaign", { channel: "linkedin", campaignId: linkedinId });
+    expect(linkedin.isError, linkedin.text).toBe(false);
+    expect(linkedin.structured).toMatchObject({ name: "Q4 LinkedIn", enrollments: { total: 0 } });
+    const sample = await caller.tool("get_campaign", { channel: "linkedin", campaignId: linkedinId, previewStep: 1 });
+    expect(sample.structured.preview).toMatchObject({ usedSampleLead: true, leadName: null });
+
+    const foreign = await caller.tool("get_campaign", { channel: "email", campaignId: foreignId });
+    expect(foreign.structured).toMatchObject({ error: { code: "not_found" } });
+    const wrongChannel = await caller.tool("get_campaign", { channel: "linkedin", campaignId: emailId });
+    expect(wrongChannel.isError).toBe(true);
+  });
+});

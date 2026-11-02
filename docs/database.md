@@ -60,6 +60,19 @@ A row lock that serializes writers on `records` or `conversations` takes `FOR NO
 
 One order for the conflicting locks: the record before its conversations. Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its public conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). A LinkedIn message that makes a chat private locks the record before it updates the conversation, since the detach that follows writes the record; updating the conversation first deadlocked with a close (`reply-send-refusals.integration.test.ts`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes records, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
+The organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
+
+| Path | Order |
+| --- | --- |
+| Agent email reply | conversation `FOR UPDATE`, draft `FOR UPDATE`, then `agent-send` exclusive; the policy and the counts follow in later statements |
+| Agent LinkedIn reply | conversation, draft, `agent-send` exclusive, then account: a member removal takes `agent-send`, then the account |
+| Agent campaign start or resume | campaign `FOR UPDATE`, then `agent-send` shared |
+| Agent enroll | campaign `FOR SHARE`, `agent-send` shared, then `agent-enroll:<organization id>` exclusive; the day's count follows |
+| Emptying a campaign's senders | campaign `FOR KEY SHARE` before the delete |
+| Member change (role change, removal), MCP token revoke, MCP settings save | `agent-send` exclusive before any row lock; a removal then locks members |
+
+An agent action that starts after one of the changes answers sees the new state; one that already holds the lock finishes first. A person's send or enroll takes no advisory lock, and no send locks members. A person's enroll takes no campaign lock; its insert's foreign key check waits for a start that holds the campaign. A removal revokes the person's MCP tokens in the same transaction. Token creation locks the creator's member row `FOR UPDATE`, so it waits for a removal in progress and then finds no member row.
+
 ## Append-only tables
 
 `events`, `audit_log` and `messages` are append-only:
@@ -140,7 +153,7 @@ A reference to a row that does not exist is left to the foreign key, so its own 
 
 ## Organization-scoped indexes
 
-`grid_jobs_org_status_idx`, `sends_org_status_idx`, `ai_jobs_org_failed_idx` (partial, `status = 'failed'`), `contact_policies_org_dnc_idx` (partial, `do_not_contact`), `linkedin_search_batches_org_created_idx` and `linkedin_search_queries_org_created_idx` each serve a query that filters one organization without a parent key. The 13 tables in `INDEX_DEBT` (`src/platform/db/schema-audit.ts`) are reached through an indexed parent key. Only an organization delete would scan them, and organization deletion is disabled in `auth.ts`. The audit test pins that list. `send_attempts` stays there: the LinkedIn daily `usage()` count filters by `account_ref` and joins `drafts` by `draft_id`, so no query reads it by organization alone.
+`grid_jobs_org_status_idx`, `sends_org_status_idx`, `ai_jobs_org_failed_idx` (partial, `status = 'failed'`), `contact_policies_org_dnc_idx` (partial, `do_not_contact`), `linkedin_search_batches_org_created_idx` and `linkedin_search_queries_org_created_idx` each serve a query that filters one organization without a parent key. The 12 tables in `INDEX_DEBT` (`src/platform/db/schema-audit.ts`) are reached through an indexed parent key. Only an organization delete would scan them, and organization deletion is disabled in `auth.ts`. The audit test pins that list. `send_attempts` left it with the agent limit indexes (`send_attempts_agent_org_idx`, `_user_idx`, `_account_idx`, partial on `origin = 'agent'`), which count one organization's agent sends of the day.
 
 Write cost: each index adds one btree insert per row written. `sends` and `grid_jobs` take the most writes. The two partial indexes touch only rows in the matching state.
 
@@ -160,7 +173,7 @@ Every table that holds customer data carries `organization_id uuid not null` wit
 Each context declares its tables in `src/contexts/<context>/infrastructure/schema.ts`. Analytics owns no tables and reads the others through its read model.
 
 - identity: `users`, `sessions`, `accounts`, `verifications`
-- tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`
+- tenancy: `organizations`, `members`, `invitations`, `channel_settings`, `audit_log`, `mcp_tokens`, `mcp_rate_limits`, `mcp_tool_calls`
 - people: `companies`, `company_domain_aliases`, `people`, `entity_columns`, `import_runs`, `contact_policies`, `suppression_list`
 - outreach: `mailboxes`, `linkedin_accounts`, `linkedin_connect_links`, `campaigns`, `campaign_senders`, `campaign_enrollments`, `linkedin_enrollment_details`, `sends`, `linkedin_connections`, `linkedin_search_batches`, `linkedin_search_queries`, `linkedin_search_results`, `inbound_events`
 - conversations: `reply_type_sets`, `reply_types`, `reply_handling_settings`, `records`, `conversations`, `messages`, `identity_exceptions`, `lead_ccs`, `events`, `reply_type_picks`, `drafts`, `send_attempts`, `knowledge_documents`, `knowledge_document_versions`, `draft_knowledge_citations`, `ai_jobs`, `notes`, `tasks`

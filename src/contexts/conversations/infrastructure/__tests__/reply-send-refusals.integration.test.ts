@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundLinkedInInput } from "../../application/linkedin-ports";
-import type { LinkedInReplyDeps } from "../../application/linkedin-reply";
+import type { LinkedInReplySendDeps } from "../../application/linkedin-reply";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
 import { useReplyKit, type ReplyFixture, type ReplyModules } from "./replies-test-kit";
@@ -249,7 +249,7 @@ describeDb("LinkedIn reply send refusals", () => {
     };
     const ingested = await composition.ingestInboundLinkedInMessage(input);
     const actor: Actor = { userId: user, organizationId: org, role: "member" };
-    const deps: LinkedInReplyDeps = { store, sender: makeSender(fake), now: () => new Date() };
+    const deps: LinkedInReplySendDeps = { store, sender: makeSender(fake), now: () => new Date() };
     const [{ record_id: recordId }] = await sql`select record_id from conversations where id = ${ingested.conversationId}`;
     return { org, tag, account: account as string, actor, fake, deps, input, conversationId: ingested.conversationId, recordId: recordId as string };
   }
@@ -382,9 +382,9 @@ describeDb("LinkedIn reply send refusals", () => {
       const f = await fixture();
       const draft = await draftFor(f);
       const replyStore = (await import("../drizzle-reply-store")).drizzleReplyStore;
-      const saved = await replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: draft.revision, subject: null, bodyText: "  Tuesday\r\nworks.  " });
+      const saved = await replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: draft.revision, subject: null, bodyText: "  Tuesday\r\nworks.  ", writtenViaTokenId: null });
       expect(saved.editedBodyText).toBe("Tuesday\nworks.");
-      expect(await refusal(replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: saved.revision, subject: null, bodyText: " \n " }))).toEqual({ status: 422, error: "The reply cannot be empty.", issues: [] });
+      expect(await refusal(replyStore.updateDraft(f.org, draft.draftId, { expectedRevision: saved.revision, subject: null, bodyText: " \n ", writtenViaTokenId: null }))).toEqual({ status: 422, error: "The reply cannot be empty.", issues: [] });
     });
 
     it("answers 409 for a revision other than the current one", async () => {

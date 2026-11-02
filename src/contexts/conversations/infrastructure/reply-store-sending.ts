@@ -10,6 +10,7 @@ import { toAttempt, type Snapshot, mailboxFor, sendContextFor, settleSent, block
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
+import { attemptOrigin, checkAgentReply } from "./agent-reply-gate";
 import { checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 const STARTED_FIRST = "Another reply in this thread started sending first. Reload the thread.";
@@ -78,6 +79,9 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       const body = checkReplyText(draft.editedBodyText ?? draft.aiBodyText ?? "", "email");
       // checkThreadWritable refused a conversation without one.
       const to = ctx.email as string;
+      // An agent's send meets the agent rules after the person's (docs/decisions.md, "Agent sends").
+      const { organizationId, actorUserId, via, now } = input;
+      if (via) await checkAgentReply(tx, { organizationId, via, actorUserId, now, channel: "email", conversationId: draft.conversationId, recordId: ctx.recordId, personId: ctx.personId, threadId: ctx.threadId, accountRef: ctx.accountRef, cc: draft.cc });
 
       // Message ids of everything already in the thread, oldest first, for In-Reply-To and References.
       const stored = await tx
@@ -128,6 +132,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
           idempotencyKey: input.idempotencyKey,
           status: "sending",
           actorUserId: input.actorUserId,
+          ...attemptOrigin(input.via),
           provider: "mailbox",
           accountRef: ctx.accountRef,
           request: snapshot,

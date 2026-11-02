@@ -1,11 +1,12 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { channelSettings, conversations, drafts, events, linkedinAccounts, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
-import { ConflictError, NotFoundError } from "@/shared/errors";
+import { channelSettings, conversations, drafts, events, linkedinAccounts, mcpTokens, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
+import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import type { AttemptRow } from "../application/reply-ports";
 import { ATTEMPT_COUNTED, ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
-import { replyBlock, replyGapSeconds, utcDayStart } from "../domain/linkedin-reply";
+import { utcDayStart } from "@/shared/utc-day";
+import { replyBlock, replyGapSeconds } from "../domain/linkedin-reply";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
@@ -14,6 +15,8 @@ import { violatedConstraint } from "@/platform/db/errors";
 import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outreach/linkedin/infrastructure/linkedin-account-state";
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { isUuid } from "@/shared/uuid";
+import { lockAgentSend } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
+import { attemptOrigin, attemptVia, checkAgentReply } from "./agent-reply-gate";
 import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 type Tx = DbTx;
@@ -85,6 +88,7 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
   const [attempt] = await tx.select().from(sendAttempts).where(eq(sendAttempts.id, attemptId)).for("update");
   if (!attempt || !canMoveAttempt(attempt.status as AttemptStatus, note ? "reconciled" : "sent")) return;
   const snap = attempt.request as Snapshot;
+  const via = await attemptVia(tx, attempt);
   await tx
     .update(sendAttempts)
     .set({ status: note ? "reconciled" : "sent", providerMessageId: sent.providerMessageId, error: null, ...(note ? { reconciledAt: now, reconciliationNote: note } : {}) })
@@ -106,7 +110,7 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
       fromAddress: account?.name ?? account?.username ?? "LinkedIn account",
       toAddress: person?.name ?? person?.first ?? null,
       bodyText: snap.text,
-      raw: { draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId },
+      raw: { draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId, ...(via ? { sentVia: via.tokenName } : {}) },
       sentAt: now,
     })
     .onConflictDoNothing();
@@ -129,9 +133,15 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
     eventType: note ? "draft.delivery_reconciled" : "draft.sent",
     actorType: "human",
     actorUserId: attempt.actorUserId,
-    meta: { draftId: attempt.draftId, attemptId: attempt.id, channel: "linkedin", note: note ?? null },
+    meta: { draftId: attempt.draftId, attemptId: attempt.id, channel: "linkedin", note: note ?? null, ...viaMeta(via) },
   });
 }
+
+/** A draft a person or an agent typed. `createManualDraft` marks it `source: "manual"`; older composer drafts carry `manual: true`. */
+const typedDraft = (request: unknown): boolean => {
+  const meta = request as { source?: string; manual?: boolean } | null;
+  return meta?.source === "manual" || meta?.manual === true;
+};
 
 export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   async begin(input) {
@@ -152,6 +162,8 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         .where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
       if (existing) {
         if (existing.conversationId !== conv.id || existing.attempt.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another conversation.");
+        // A key names one send of one draft, so another draft must not read that send's outcome as its own.
+        if (input.draft && existing.attempt.draftId !== input.draft.id) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing.attempt) };
       }
 
@@ -185,14 +197,34 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         }
         target = row;
       }
-      const text = checkReplyText(input.text, "linkedin");
+      // An agent sends the saved draft as it stands; a person sends the text in the composer.
+      if (input.via && !target) throw new NotFoundError("Draft not found");
+      const text = checkReplyText(input.via ? (target?.editedBodyText ?? target?.aiBodyText ?? "") : (input.text ?? ""), "linkedin");
 
+      // A member removal takes this lock, then the account row. An agent's reply takes them in the same order, so the two wait instead of deadlocking.
+      if (input.via) await lockAgentSend(tx, input.organizationId);
       const [account] = await tx.select().from(linkedinAccounts).where(and(eq(linkedinAccounts.id, conv.accountRef), eq(linkedinAccounts.organizationId, input.organizationId))).for("update");
       if (!account) throw replyRefusal("no_account", "linkedin");
       const used = await usage(tx, account.id, input.now);
       checkAccountReady(replyBlock(input.now, { status: account.status, limitReachedUntil: account.limitReachedUntil, dailyMessageLimit: account.dailyMessageLimit }, { ...used, gapSeconds: await gapFor(tx, input.organizationId) }));
+      if (input.via) {
+        await checkAgentReply(tx, {
+          organizationId: input.organizationId,
+          via: input.via,
+          actorUserId: input.actorUserId,
+          channel: "linkedin",
+          conversationId: conv.id,
+          recordId: conv.recordId,
+          personId: record.personId,
+          threadId: chat,
+          accountRef: account.id,
+          cc: [],
+          now: input.now,
+        });
+      }
 
-      // A refused earlier attempt left its text in an open draft. The new text replaces it.
+      // A refused earlier attempt left its text in an open draft. The new text replaces it. An agent's draft goes out
+      // unchanged, at the revision it was approved at.
       const [open] = target
         ? [target]
         : await tx
@@ -204,8 +236,14 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
             .for("update");
       let draftId: string;
       let revision: number;
-      if (open) {
-        const [updated] = await tx.update(drafts).set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: record.version }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
+      if (input.via && target) {
+        draftId = target.id;
+        revision = target.revision;
+      } else if (open) {
+        // The text is the sender's now: a person's replaces an agent's, so the agent badge goes with it.
+        const [updated] = await tx
+          .update(drafts)
+          .set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: record.version, writtenViaTokenId: input.via?.tokenId ?? null }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
         draftId = open.id;
         revision = updated.revision;
       } else {
@@ -220,7 +258,8 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
             editedBodyText: text,
             status: "awaiting_review",
             provider: "human",
-            request: { manual: true, createdBy: input.actorUserId },
+            request: { source: "manual", createdBy: input.actorUserId },
+            writtenViaTokenId: input.via?.tokenId ?? null,
           })
           .returning({ id: drafts.id, revision: drafts.revision });
         draftId = created.id;
@@ -241,7 +280,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       };
       const [attempt] = await tx
         .insert(sendAttempts)
-        .values({ organizationId: input.organizationId, draftId, idempotencyKey: input.idempotencyKey, status: "sending", actorUserId: input.actorUserId, provider: "linkedin", accountRef: account.id, request: snapshot })
+        .values({ organizationId: input.organizationId, draftId, idempotencyKey: input.idempotencyKey, status: "sending", actorUserId: input.actorUserId, ...attemptOrigin(input.via), provider: "linkedin", accountRef: account.id, request: snapshot })
         .returning();
       await tx.update(drafts).set({ status: "sending", error: null }).where(and(eq(drafts.id, draftId), draftCanBecome("sending")));
       return { kind: "started" as const, attempt };
@@ -351,6 +390,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       .orderBy(desc(drafts.createdAt))
       .limit(1);
     const draft = newest && ["awaiting_review", "sending", "delivery_uncertain", "stale"].includes(newest.status) ? newest : null;
+    // The agent's token, named as the email panel names it, until a person edits the text.
+    const [token] = draft?.writtenViaTokenId
+      ? await db.select({ name: mcpTokens.name }).from(mcpTokens).where(and(eq(mcpTokens.id, draft.writtenViaTokenId), eq(mcpTokens.organizationId, organizationId)))
+      : [];
     return {
       conversationId,
       recipient: head.name ?? head.firstName,
@@ -361,7 +404,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,
       draft: draft
-        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: (draft.request as { manual?: boolean } | null)?.manual === true ? "manual" : "ai" }
+        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: typedDraft(draft.request) ? "manual" : "ai", writtenVia: token?.name ?? null }
         : null,
     };
   },

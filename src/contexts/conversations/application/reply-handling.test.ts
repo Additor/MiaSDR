@@ -41,7 +41,7 @@ function fakeStore(over: Partial<ReplyHandlingStore> & { subs?: ReplyTypeRow[]; 
     createReplyType: async (_org: string, input: unknown) => (record("createReplyType", input), { id: id(50) }),
     updateReplyType: async (_org: string, sid: string, patch: unknown) => void record("updateReplyType", { sid, patch }),
     deleteReplyType: async (_org: string, sid: string) => void record("deleteReplyType", sid),
-    changeReplyType: async (input: { personId?: string }) => (record("changeReplyType", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1, runStarted: false }),
+    changeReplyType: async (input: { personId?: string }) => (record("changeReplyType", input), { recordId: id(2), personId: id(3), groupKey: "not_interested", replyTypeKey: "do_not_contact", contextVersion: 4, draftsRetired: 1, runStarted: false, runEnded: false }),
     setDoNotContact: async (input: unknown) => (record("setDoNotContact", input), { changed: true, doNotContact: true, recordsUpdated: 1, draftsRetired: 0, enrollmentsStopped: 2 }),
     closeRecord: async (input: unknown) => void record("closeRecord", input),
     getIdentityException: async (org: string, eid: string) => exceptions.find((e) => e.id === eid && org === ORG) ?? null,

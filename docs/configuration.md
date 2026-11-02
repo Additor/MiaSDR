@@ -2,7 +2,7 @@
 
 Every setting is an environment variable. Copy `.env.example` to `.env`, replace each `CHANGEME`, and restart the app after a change. `src/shared/env.ts` validates the values on first use and names the variable that failed. Empty values count as unset.
 
-Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `PAUSE_OUTBOUND`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS` or `EMBEDDED_SCHEDULER` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
+Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `PAUSE_OUTBOUND`, `MCP_ENABLED`, `MCP_SEND_ENABLED`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `MCP_ENABLED` or `MCP_SEND_ENABLED` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
 
 A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and the schema in step: a variable in one of them and not in the others fails CI.
 
@@ -55,6 +55,17 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 | `GRID_HTTP_ALLOWED_HOSTS` | none | Hosts a Custom HTTP enrichment provider may call. Empty means none. |
 | `GRID_RUN_CONCURRENCY` | `8` | Grid cells run at once per tick, 1 to 16. |
 
+## MCP
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `MCP_ENABLED` | `true` | Serves the MCP endpoint for AI agents at `/api/mcp`. A request needs a personal MCP token, and the token's organization must have MCP turned on. Set `false` to turn the endpoint off for the whole install; it then answers 404. |
+| `MCP_SEND_ENABLED` | `true` | Lets agents send replies and start campaigns in organizations whose owner or admin allowed it under Settings, Organization. Organizations start with agent sending off. Set `false` to refuse every agent send in the install; agents keep their read and write tools. |
+| `MCP_OAUTH_DCR` | `true` | Lets an MCP client register itself for OAuth, for clients that cannot publish a client metadata document. The consent page marks such an app as unverified. |
+| `TRUST_PROXY_HOPS` | none | Proxies in front of the app that append to `X-Forwarded-For`, 1 to 10. The MCP endpoint then reads the client IP that many entries from the right and refuses a client with 429 after 20 failed guesses at a well-formed token in a minute. Unset, it reads no client IP and keeps no IP limit. A value higher than the real number of proxies lets a client choose the IP it is counted under. |
+
+Each MCP token may make 60 requests a minute. Request 61 answers 429 with `Retry-After`, the seconds until the minute ends.
+
 ## Retention
 
 Only logs are pruned. Sends, messages, enrollments and suppression are kept.
@@ -65,6 +76,7 @@ Only logs are pruned. Sends, messages, enrollments and suppression are kept.
 | `RETENTION_INBOUND_EVENTS_DAYS` | `30` | Days to keep finished provider events. |
 | `RETENTION_INBOUND_FAILED_DAYS` | `90` | Days to keep dead-lettered provider events. |
 | `RETENTION_AI_JOBS_DAYS` | `30` | Days to keep finished AI jobs. |
+| `RETENTION_MCP_TOOL_CALLS_DAYS` | `90` | Days to keep the MCP agent activity log. |
 
 ## Compose-only variables
 

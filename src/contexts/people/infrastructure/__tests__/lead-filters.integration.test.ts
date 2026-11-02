@@ -58,7 +58,7 @@ describeDb("lead list filters, sort and companies", () => {
   };
 
   const ids = async (orgId: string, filter: LeadFilter, sort?: LeadSort) => {
-    const result = await q.listLeads(orgId, { filter, sort, pageSize: 200 });
+    const result = await q.listLeads({ organizationId: orgId }, { filter, sort, pageSize: 200 });
     return result.rows.map((r) => r.id).sort();
   };
   const sorted = (...list: string[]) => [...list].sort();
@@ -219,20 +219,20 @@ describeDb("lead list filters, sort and companies", () => {
   describe("sort", () => {
     it("orders by every key in both directions, nulls last, with the id as tie-break", async () => {
       const s = await seed();
-      const names = async (sort: LeadSort) => (await q.listLeads(s.id, { sort, pageSize: 200 })).rows.map((r) => r.fullName);
+      const names = async (sort: LeadSort) => (await q.listLeads({ organizationId: s.id }, { sort, pageSize: 200 })).rows.map((r) => r.fullName);
       expect(await names({ key: "name", dir: "asc" })).toEqual(["Alice Adams", "Bob Brown", "Carol Cruz", "Dan Diaz", "Eve Evans", "Frank Fox"]);
       expect(await names({ key: "name", dir: "desc" })).toEqual(["Frank Fox", "Eve Evans", "Dan Diaz", "Carol Cruz", "Bob Brown", "Alice Adams"]);
       expect(await names({ key: "created", dir: "asc" })).toEqual(["Alice Adams", "Bob Brown", "Carol Cruz", "Dan Diaz", "Eve Evans", "Frank Fox"]);
       expect(await names({ key: "created", dir: "desc" })).toEqual(["Frank Fox", "Eve Evans", "Dan Diaz", "Carol Cruz", "Bob Brown", "Alice Adams"]);
       // Company: Acme (alice, dan, frank) before Zeta (bob, eve); Carol has none and sorts last either way.
-      const byCompany = (await q.listLeads(s.id, { sort: { key: "company", dir: "asc" }, pageSize: 200 })).rows;
+      const byCompany = (await q.listLeads({ organizationId: s.id }, { sort: { key: "company", dir: "asc" }, pageSize: 200 })).rows;
       expect(byCompany.map((r) => r.companyName)).toEqual(["Acme", "Acme", "Acme", "Zeta", "Zeta", null]);
-      const byCompanyDesc = (await q.listLeads(s.id, { sort: { key: "company", dir: "desc" }, pageSize: 200 })).rows;
+      const byCompanyDesc = (await q.listLeads({ organizationId: s.id }, { sort: { key: "company", dir: "desc" }, pageSize: 200 })).rows;
       expect(byCompanyDesc.map((r) => r.companyName)).toEqual(["Zeta", "Zeta", "Acme", "Acme", "Acme", null]);
       // Email: Carol has none and sorts last.
-      const byEmail = (await q.listLeads(s.id, { sort: { key: "email", dir: "asc" }, pageSize: 200 })).rows;
+      const byEmail = (await q.listLeads({ organizationId: s.id }, { sort: { key: "email", dir: "asc" }, pageSize: 200 })).rows;
       expect(byEmail.map((r) => r.email)).toEqual(["alice@acme.com", "bob@zeta.io", "dan@acme.com", "eve@zeta.io", "frank@acme.com", null]);
-      const byTitle = (await q.listLeads(s.id, { sort: { key: "title", dir: "asc" }, pageSize: 200 })).rows;
+      const byTitle = (await q.listLeads({ organizationId: s.id }, { sort: { key: "title", dir: "asc" }, pageSize: 200 })).rows;
       expect(byTitle.slice(0, 2).map((r) => r.title)).toEqual(["CEO", "CTO"]);
       expect(byTitle.slice(2).every((r) => r.title === null)).toBe(true);
     });
@@ -249,7 +249,7 @@ describeDb("lead list filters, sort and companies", () => {
         for (const dir of ["asc", "desc"] as const) {
           const seen: string[] = [];
           for (let page = 1; page <= 3; page += 1) {
-            const result = await q.listLeads(o.id, { sort: { key, dir }, page, pageSize: 25 });
+            const result = await q.listLeads({ organizationId: o.id }, { sort: { key, dir }, page, pageSize: 25 });
             seen.push(...result.rows.map((r) => r.id));
           }
           expect(seen, `${key} ${dir}`).toHaveLength(total);
@@ -263,7 +263,7 @@ describeDb("lead list filters, sort and companies", () => {
 
     it("defaults to newest first", async () => {
       const s = await seed();
-      const result = await q.listLeads(s.id, { pageSize: 200 });
+      const result = await q.listLeads({ organizationId: s.id }, { pageSize: 200 });
       expect(result.rows[0].id).toBe(s.frank);
       expect(result.rows.at(-1)?.id).toBe(s.alice);
     });
@@ -388,7 +388,7 @@ describeDb("lead list filters, sort and companies", () => {
       expect(await ids(w.id, { lifecycle: "all" })).toEqual(sorted(w.lead1, w.lead2, w.contact1, w.contact2));
       expect(await ids(w.id, { lifecycle: "contact" })).toEqual(w.contacts);
       expect(await uc.countLeads(deps, w.actor, { lifecycle: "all" })).toBe(4);
-      const rows = (await q.listLeads(w.id, { filter: { lifecycle: "all" }, pageSize: 200 })).rows;
+      const rows = (await q.listLeads({ organizationId: w.id }, { filter: { lifecycle: "all" }, pageSize: 200 })).rows;
       const byId = new Map(rows.map((r) => [r.id, r]));
       expect(byId.get(w.lead1)).toMatchObject({ lifecycle: "lead", convertedAt: null });
       expect(byId.get(w.contact1)?.lifecycle).toBe("contact");
@@ -662,14 +662,14 @@ describeDb("lead list filters, sort and companies", () => {
       ];
       for (const filter of filters) {
         const label = JSON.stringify(filter);
-        const list = (await q.listLeads(o.id, { filter, pageSize: 200 })).rows.map((r) => r.id);
+        const list = (await q.listLeads({ organizationId: o.id }, { filter, pageSize: 200 })).rows.map((r) => r.id);
         expect(list.length, label).toBeGreaterThan(0);
         expect(await uc.countLeads(deps, o.actor, filter), label).toBe(list.length);
         expect(sorted(...(await uc.listMatchingLeadIds(deps, o.actor, filter, 100)).ids), label).toEqual(sorted(...list));
         expect(sorted(...(await deps.people.idsMatching(o.id, filter))), label).toEqual(sorted(...list));
         const exported: string[] = [];
         for await (const batch of deps.leads.exportBatches(o.id, filter)) exported.push(...batch.map((row) => row.email ?? ""));
-        const emailOf = new Map((await q.listLeads(o.id, { filter, pageSize: 200 })).rows.map((r) => [r.id, r.email ?? ""]));
+        const emailOf = new Map((await q.listLeads({ organizationId: o.id }, { filter, pageSize: 200 })).rows.map((r) => [r.id, r.email ?? ""]));
         expect(sorted(...exported), label).toEqual(sorted(...list.map((id) => emailOf.get(id) ?? "")));
         for (const [i, id] of list.entries()) {
           expect(await readLeadNeighbors(o.id, id, { filter, sort: DEFAULT_LEAD_SORT }), `${label} ${i}`).toEqual({ prevId: list[i - 1] ?? null, nextId: list[i + 1] ?? null });

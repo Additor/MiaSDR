@@ -54,6 +54,13 @@ describe("env schema, .env.example and docs/configuration.md agree", () => {
     expect(diff(docVariables(), known)).toEqual([]);
   });
 
+  it("forwards every schema variable in both Compose files, which pass only what they name", () => {
+    for (const file of ["docker-compose.yml", "docker-compose.external-db.yml"]) {
+      const compose = read(file);
+      expect(ENV_VARIABLES.filter((name) => !new RegExp(`^\\s+${name}:`, "m").test(compose)), file).toEqual([]);
+    }
+  });
+
   it("lists the compose-only variables in both files", () => {
     expect(diff(COMPOSE_ONLY, exampleVariables())).toEqual([]);
     expect(diff(COMPOSE_ONLY, docVariables())).toEqual([]);

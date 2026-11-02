@@ -10,18 +10,8 @@ import { callApi } from "@/app/_lib/api-client";
 import { DNC_REASON_REQUIRED } from "@/app/(app)/_components/person/dnc-control";
 import { saveDraftEdits, unsavedEditsError } from "../_lib/draft-edits";
 
-const OPEN_STOP_EVENT = "miasdr:open-stop-contacting";
 
-/** Opens Stop contacting from elsewhere on the thread, such as Review stop request on the type line. */
-export function openStopContacting() {
-  window.dispatchEvent(new Event(OPEN_STOP_EVENT));
-}
-
-/** Listens for `openStopContacting`. Returns the cleanup. */
-export function onOpenStopContacting(open: () => void) {
-  window.addEventListener(OPEN_STOP_EVENT, open);
-  return () => window.removeEventListener(OPEN_STOP_EVENT, open);
-}
+export { onOpenStopContacting, openStopContacting } from "./open-stop-contacting";
 
 export interface StopTarget {
   recordId: string;

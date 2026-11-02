@@ -68,7 +68,7 @@ async function putAfterReply(campaignId: string, body: unknown): Promise<SaveRes
 
 /**
  * The Follow-ups after a reply form of a campaign: the mode and, for AI drafts, the reply step and the follow-ups. Save stores and
- * publishes in one step. The AI writes each draft and a person approves every message, so nothing here sends.
+ * publishes in one step. The AI writes each draft and a person or an allowed agent sends each message, so nothing here sends.
  */
 export function AfterReplyEditor({
   campaignId,
@@ -200,7 +200,7 @@ export function AfterReplyEditor({
               <RadioGroupItem value="ai_drafts" id={`after-reply-${campaignId}-ai`} disabled={!supported} />
               <FieldContent>
                 <FieldTitle>{AFTER_REPLY_MODE_LABELS.ai_drafts}</FieldTitle>
-                <FieldDescription>The AI writes each draft. You approve every message before it sends.</FieldDescription>
+                <FieldDescription>The AI writes each draft. You approve every message before it sends, unless your organization lets agents send.</FieldDescription>
               </FieldContent>
             </Field>
           </FieldLabel>

@@ -116,6 +116,16 @@ describeDb("member management", () => {
     expect(roles).toEqual({ [t.owner.memberId]: "owner", [second.memberId]: "owner", [admin.memberId]: "admin" });
   });
 
+  it("writes an audit row for the MCP tokens a removal revokes", async () => {
+    const t = await org();
+    const member = await t.join("m", "member");
+    await sql`insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, token_hint, scopes)
+              values (${t.orgId}, ${member.userId}, 'pat', 'Agent', ${`hash-${member.userId}`}, 'abcd', ${["mcp:read"]})`;
+    await uc.removeMember(t.deps, t.owner.actor, member.memberId);
+    const [row] = await sql<{ actor_user_id: string; entity_id: string; meta: { count: number } }[]>`select actor_user_id, entity_id, meta from audit_log where organization_id = ${t.orgId} and action = 'mcp.member_tokens_revoked'`;
+    expect(row).toEqual({ actor_user_id: t.owner.userId, entity_id: member.userId, meta: { count: 1 } });
+  });
+
   it("clears the removed member's active organization on their sessions", async () => {
     const t = await org();
     const member = await t.join("m", "member");
@@ -123,6 +133,22 @@ describeDb("member management", () => {
     await uc.removeMember(t.deps, t.owner.actor, member.memberId);
     const [row] = await sql`select active_organization_id from sessions where token = ${"tok-" + t.tag}`;
     expect(row.active_organization_id).toBeNull();
+  });
+
+  it("clears the LinkedIn accounts a removed member owned in the removal's transaction", async () => {
+    const t = await org();
+    const member = await t.join("li", "member");
+    const [{ id: accountId }] = await sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, username, status, owner_user_id) values (${t.orgId}, ${"pa-" + t.tag}, ${"li-" + t.tag}, ${"u-" + t.tag}, 'connected', ${member.userId}) returning id`;
+    const { releaseLinkedInAccounts } = await import("@/contexts/outreach/linkedin/infrastructure/linkedin-composition");
+    await uc.removeMember({ ...t.deps, released: releaseLinkedInAccounts }, t.owner.actor, member.memberId);
+    expect(await sql`select owner_user_id from linkedin_accounts where id = ${accountId}`).toEqual([{ owner_user_id: null }]);
+
+    // A failing release rolls the removal back, so the member and the owner stay together.
+    const other = await t.join("li2", "member");
+    await sql`update linkedin_accounts set owner_user_id = ${other.userId} where id = ${accountId}`;
+    const failing = { ...t.deps, released: () => Promise.reject(new Error("release failed")) };
+    await expect(uc.removeMember(failing, t.owner.actor, other.memberId)).rejects.toThrow("release failed");
+    expect(await sql`select 1 from members where id = ${other.memberId}`).toHaveLength(1);
   });
 
   it("answers 404 for ids from another organization", async () => {

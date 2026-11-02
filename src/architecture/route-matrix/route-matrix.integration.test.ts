@@ -387,6 +387,12 @@ describeDb("route matrix", () => {
       expect((await call("jobs/tick", "GET", { headers: { authorization: "Bearer nope" } })).status).toBe(401);
     });
 
+    it("mcp answers 401 without a token and with a malformed or unknown one", async () => {
+      expect((await call("mcp", "POST", { json: {} })).status).toBe(401);
+      expect((await call("mcp", "POST", { json: {}, headers: { authorization: "Bearer nope" } })).status).toBe(401);
+      expect((await call("mcp", "POST", { json: {}, headers: { authorization: `Bearer msdr_pat_${"A".repeat(43)}` } })).status).toBe(401);
+    });
+
     it("outreach/unsubscribe answers 400 for a missing or invalid token", async () => {
       expect((await call("outreach/unsubscribe", "POST", { raw: "{}" })).status).toBe(400);
       expect((await call("outreach/unsubscribe", "POST", { raw: "{not json" })).status).toBe(400);

@@ -5,6 +5,8 @@ import type { AttemptRow, DraftRow, KnownCc, SendContext } from "../application/
 import { DRAFT_FROM, type DraftStatus } from "../domain/draft-status";
 import { ATTEMPT_FROM, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
 import { organizationMailboxAddresses } from "./drizzle-conversation-store";
+import { attemptVia } from "./agent-reply-gate";
+import { viaMeta } from "@/shared/errors";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** The drafts row may move to `to` from where it is now (see `DRAFT_FROM`). */
@@ -42,6 +44,7 @@ export const toDraftRow = (d: typeof drafts.$inferSelect): DraftRow => {
     updatedAt: d.updatedAt,
     regeneratedFrom: meta.regeneratedFrom ?? null,
     feedback: meta.feedback ?? null,
+    writtenViaTokenId: d.writtenViaTokenId,
   };
 };
 
@@ -106,6 +109,7 @@ export async function settleSent(tx: Tx, send: SendContext, sent: { providerMess
   const [attempt] = await tx.select().from(sendAttempts).where(eq(sendAttempts.id, send.attempt.id)).for("update");
   if (!attempt || !canMoveAttempt(attempt.status as AttemptStatus, note ? "reconciled" : "sent")) return;
   const snap = attempt.request as Snapshot;
+  const via = await attemptVia(tx, attempt);
   await tx
     .update(sendAttempts)
     .set({
@@ -132,7 +136,7 @@ export async function settleSent(tx: Tx, send: SendContext, sent: { providerMess
       fromAddress: snap.accountRef,
       toAddress: snap.to,
       bodyText: snap.bodyText,
-      raw: { rfcMessageId: snap.rfcMessageId, draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId, cc: snap.cc ?? [] },
+      raw: { rfcMessageId: snap.rfcMessageId, draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId, cc: snap.cc ?? [], ...(via ? { sentVia: via.tokenName } : {}) },
       sentAt: now,
     })
     .onConflictDoNothing();
@@ -155,7 +159,7 @@ export async function settleSent(tx: Tx, send: SendContext, sent: { providerMess
     eventType: note ? "draft.delivery_reconciled" : "draft.sent",
     actorType: "human",
     actorUserId: attempt.actorUserId,
-    meta: { draftId: attempt.draftId, attemptId: attempt.id, note: note ?? null },
+    meta: { draftId: attempt.draftId, attemptId: attempt.id, note: note ?? null, ...viaMeta(via) },
   });
 }
 

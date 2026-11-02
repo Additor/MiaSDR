@@ -41,7 +41,17 @@ function eventDetail(e: EventEntry): string | null {
   return parts.length ? parts.join(". ") : null;
 }
 
-const actorText = (e: EventEntry) => (e.actorType === "human" ? (e.actorName ?? "A person") : e.actorType === "ai" ? "The AI" : humanizeToken(e.actorType));
+/** The token an agent acted with, from the event's `meta.via`, or null for a person's own action. */
+const agentToken = (e: EventEntry): string | null => {
+  const via = (e.meta as { via?: { tokenName?: unknown } } | null)?.via;
+  return typeof via?.tokenName === "string" ? via.tokenName : null;
+};
+
+const actorText = (e: EventEntry) => {
+  if (e.actorType !== "human") return e.actorType === "ai" ? "The AI" : humanizeToken(e.actorType);
+  const token = agentToken(e);
+  return `${e.actorName ?? "A person"}${token ? ` via ${token}` : ""}`;
+};
 
 /**
  * Follow-ups under the reply panel, where the drafts they write are approved. Nothing shows when there is nothing to

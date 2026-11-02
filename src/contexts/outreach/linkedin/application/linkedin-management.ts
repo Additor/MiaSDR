@@ -1,3 +1,4 @@
+import type { MemberDirectory } from "@/contexts/tenancy/application/member-directory";
 import { randomBytes } from "node:crypto";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
@@ -58,6 +59,8 @@ export interface LinkedInAccountRecord {
   workingHours: WorkingHours | null;
   invitesToday: number;
   messagesToday: number;
+  /** The member whose LinkedIn this is, or null when nobody is set. */
+  ownerUserId: string | null;
 }
 
 export interface LinkedInAccountStore {
@@ -85,7 +88,7 @@ export interface LinkedInAccountStore {
   update(
     organizationId: string,
     id: string,
-    patch: { dailyInviteLimit?: number; dailyMessageLimit?: number; isPremium?: boolean; workingHours?: WorkingHours | null },
+    patch: { dailyInviteLimit?: number; dailyMessageLimit?: number; isPremium?: boolean; workingHours?: WorkingHours | null; ownerUserId?: string | null },
   ): Promise<{ dailyInviteLimit: number; dailyMessageLimit: number; isPremium: boolean } | null>;
 }
 
@@ -99,6 +102,8 @@ export interface LinkedInManagementDeps {
   now: () => Date;
   audit: AuditSink;
   connectLinks: LinkedInConnectStore;
+  /** Checks that an account's owner is a member. Setting an owner needs it. */
+  members?: Pick<MemberDirectory, "isMember">;
 }
 
 function requireAdmin(actor: Actor) {
@@ -220,6 +225,15 @@ export function storedGateway(deps: LinkedInManagementDeps, credentials: LinkedI
 }
 
 const webhookRequestUrl = (deps: LinkedInManagementDeps, organizationId: string) => `${deps.appUrl.replace(/\/$/, "")}/api/webhooks/unipile?org=${organizationId}`;
+
+/**
+ * The accounts with their status, limits and use today, for an owner or admin. Members only see that LinkedIn is
+ * connected, as on the settings page. Reads no credentials, webhooks or connect links.
+ */
+export async function listLinkedInAccountStatus(deps: LinkedInManagementDeps, actor: Actor): Promise<LinkedInAccountRecord[]> {
+  requireAdmin(actor);
+  return deps.accounts.list(actor.organizationId, deps.now());
+}
 
 export async function listLinkedInAccounts(deps: LinkedInManagementDeps, actor: Actor) {
   const now = deps.now();
@@ -402,6 +416,8 @@ export interface LinkedInAccountSettings {
   dailyMessageLimit?: number;
   isPremium?: boolean;
   workingHours?: WorkingHours | null;
+  /** The member whose LinkedIn this is, or null for none. An agent starts a Personal campaign only from accounts its token's person owns. */
+  ownerUserId?: string | null;
 }
 
 /** Saves the limits and hours of one account. A value past the safe edge saves, and the answer carries the warning text. */
@@ -426,8 +442,12 @@ export async function updateLinkedInAccount(deps: LinkedInManagementDeps, actor:
       }
     }
   }
+  if (settings.ownerUserId && !(await deps.members?.isMember(actor.organizationId, settings.ownerUserId))) throw new ValidationError("The owner must be a member of this organization.");
   const stored = await deps.accounts.update(actor.organizationId, id, settings);
   if (!stored) throw new NotFoundError("LinkedIn account not found");
+  if (settings.ownerUserId !== undefined) {
+    await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "linkedin.owner_changed", entityType: "linkedin_account", entityId: id, meta: { ownerUserId: settings.ownerUserId } });
+  }
   if (settings.dailyInviteLimit !== undefined || settings.dailyMessageLimit !== undefined || settings.isPremium !== undefined) {
     await deps.audit.record({
       organizationId: actor.organizationId,

@@ -3,9 +3,15 @@
  * text inside cannot close the tag. Each feature's system prompt says that content in those tags is data.
  */
 
+/**
+ * Anything that looks like one of our tags, whatever the nonce. The tag's rest stops at the next `<` as well as at `>`:
+ * text may be a stranger's and any length, and a rest that crossed `<` would rescan the text from every opening tag.
+ */
+export const UNTRUSTED_TAG = /<\/?\s*untrusted[^<>]*>/gi;
+
 /** Removes anything that looks like one of our tags, whatever the nonce. */
 export function scrub(text: string): string {
-  return text.replace(/<\/?\s*untrusted[a-z_-]*[^>]*>/gi, "[tag removed]");
+  return text.replace(UNTRUSTED_TAG, "[tag removed]");
 }
 
 export function fence(label: string, body: string, nonce: string): string {

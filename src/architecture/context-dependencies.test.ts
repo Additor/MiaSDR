@@ -173,6 +173,8 @@ describe("tier dependencies", () => {
 const PUBLISHED_INFRASTRUCTURE = new Set([
   // Session readers and the auth handler.
   "identity/infrastructure/auth",
+  // A revoke in tenancy also ends the app's consent and refresh tokens, which identity owns.
+  "identity/infrastructure/mcp-oauth-grants",
   "identity/infrastructure/session",
   "identity/infrastructure/signup-facts",
   // The Better Auth rows tenancy writes: the first admin, and a removed member's sessions.
@@ -190,6 +192,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "tenancy/infrastructure/audit",
   // The member directory: assignee and owner checks and pickers.
   "tenancy/infrastructure/drizzle-member-directory",
+  // The agent send policy, which conversations and outreach read inside their send and start transactions.
+  "tenancy/infrastructure/mcp-policy-reader",
   // The lead search predicate the enrollment lists filter with.
   "people/infrastructure/queries",
   // Reachability: the read model, and the one writer of do not contact and the suppression list.

@@ -17,10 +17,13 @@ export interface ConnectLink {
 
 /** Pending hosted-auth links (`linkedin_connect_links`). */
 export interface LinkedInConnectStore {
-  create(link: { id: string; organizationId: string; providerName: string; secretHash: string; expiresAt: Date; createdBy: string }): Promise<void>;
+  create(link: { id: string; organizationId: string; providerName: string; secretHash: string; expiresAt: Date; createdBy: string; ownerUserId: string | null }): Promise<void>;
   /** By id only: the public callback does not know the organization until the secret has matched. */
   find(id: string): Promise<ConnectLink | null>;
-  /** Moves a pending link to completed. False when it was not pending (a repeat callback). */
+  /**
+   * Moves a pending link to completed. False when it was not pending (a repeat callback). An account with no owner yet
+   * takes the owner the link names, if that person is still a member.
+   */
   complete(id: string, input: { providerAccountId: string; now: Date }): Promise<boolean>;
   fail(id: string, error: string): Promise<boolean>;
   /** Records a retryable problem (the sync failed) and leaves the link pending. */

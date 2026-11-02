@@ -285,6 +285,8 @@ export const SEED_OVERRIDES: Record<string, Record<string, unknown>> = {
   grid_provider_credentials: { encryption_version: "v1", encrypted_payload: "v1:seed" },
   // A deal's person must be a contact (trigger on `deals`), so the person the foreign key walk seeds is one.
   deals: { parentForce: { people: { lifecycle: "contact", converted_at: new Date("2026-10-16T00:00:00Z") } } },
+  // A personal token; ROW_HOOKS gives each one its own hash, which is unique.
+  mcp_tokens: { kind: "pat", name: "Seeded token", scopes: ["mcp:read"] },
 };
 
 type Tx = postgres.TransactionSql;
@@ -312,6 +314,12 @@ const ROW_HOOKS: Record<string, { before?: (sql: postgres.Sql, values: Record<st
     before: async (sql, values) => {
       const [row] = await sql`select c.record_id from messages m join conversations c on c.id = m.conversation_id where m.id = ${values.message_id as string}`;
       if (row) values.record_id = row.record_id;
+    },
+  },
+  // `token_hash` is unique, so each seeded token gets its own.
+  mcp_tokens: {
+    before: async (_sql, values) => {
+      values.token_hash = crypto.randomUUID();
     },
   },
 };

@@ -57,6 +57,14 @@ const schema = z.object({
   EMBEDDED_SCHEDULER: flagSchema(true),
   /** Emergency brake: while true, automated sequence sends (email and LinkedIn) and test sends are held. Approved replies still send. A lenient string here: `src/shared/outbound-pause.ts` is the only parser and treats an unreadable value as paused. Default false. */
   PAUSE_OUTBOUND: z.string().optional(),
+  /** Serves the MCP endpoint at `/api/mcp`. Each organization still turns MCP on for itself. Set false to turn it off for the whole install. Default true. */
+  MCP_ENABLED: flagSchema(true),
+  /** Lets agents send replies and start campaigns where an organization allows it. Set false to refuse every agent send in the install, whatever the organizations chose. Default true. */
+  MCP_SEND_ENABLED: flagSchema(true),
+  /** Lets an MCP client register itself for OAuth, for clients that cannot publish a client metadata document. The consent page marks such an app as unverified. Default true. */
+  MCP_OAUTH_DCR: flagSchema(true),
+  /** Proxies in front of the app that append to `X-Forwarded-For`. Set it to let the MCP endpoint limit failed token guesses per client IP; unset, it reads no client IP and keeps no IP limit. */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(1).max(10).optional(),
   /** Two-letter country (ISO 3166-1 alpha-2) for phone numbers written without a country code, such as `KR` for `010-...`. An organization setting overrides it. Read from the process environment at call time. */
   DEFAULT_PHONE_COUNTRY: z
     .string()
@@ -103,6 +111,7 @@ const schema = z.object({
   /** Dead-lettered (`failed`) provider events stay longer so a person can review them. */
   RETENTION_INBOUND_FAILED_DAYS: z.coerce.number().int().min(1).default(90),
   RETENTION_AI_JOBS_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_MCP_TOOL_CALLS_DAYS: z.coerce.number().int().min(1).default(90),
 
   /** Comma list of email domains tenants may connect as mailboxes. Required when AUTH_SIGNUP=open. */
   MAILBOX_ALLOWED_DOMAINS: z.string().optional(),

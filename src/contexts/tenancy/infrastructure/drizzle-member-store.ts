@@ -1,8 +1,10 @@
+import { recordAudit } from "./audit";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { invitations, members, users } from "@/platform/db/schema";
 import { clearActiveOrganizationTx } from "@/contexts/identity/infrastructure/user-accounts";
 import type { MemberStore } from "../application/member-management";
+import { lockAgentSend, revokeMcpTokensTx } from "./agent-send-lock";
 
 const invitationColumns = {
   id: invitations.id,
@@ -60,8 +62,11 @@ export const drizzleMemberStore: MemberStore = {
   },
 
   transaction(organizationId, run) {
-    return db.transaction(async (tx) =>
-      run({
+    return db.transaction(async (tx) => {
+      // Before the member rows: a role change or a removal then lands between agent actions, never inside one.
+      await lockAgentSend(tx, organizationId);
+      return run({
+        handle: tx,
         async members() {
           return tx
             .select({ id: members.id, userId: members.userId, role: members.role })
@@ -72,14 +77,17 @@ export const drizzleMemberStore: MemberStore = {
         async setRole(memberId, role) {
           await tx.update(members).set({ role }).where(and(eq(members.organizationId, organizationId), eq(members.id, memberId)));
         },
-        async remove(memberId) {
+        async remove(memberId, actorUserId) {
           const [row] = await tx
             .delete(members)
             .where(and(eq(members.organizationId, organizationId), eq(members.id, memberId)))
             .returning({ userId: members.userId });
-          if (row) await clearActiveOrganizationTx(tx, row.userId, organizationId);
+          if (!row) return;
+          await clearActiveOrganizationTx(tx, row.userId, organizationId);
+          const revoked = await revokeMcpTokensTx(tx, organizationId, { userId: row.userId });
+          if (revoked > 0) await recordAudit(tx, { organizationId, actorUserId, action: "mcp.member_tokens_revoked", entityType: "user", entityId: row.userId, meta: { count: revoked } });
         },
-      }),
-    );
+      });
+    });
   },
 };

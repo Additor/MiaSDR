@@ -23,7 +23,7 @@ import {
   replyTypes,
   users,
 } from "@/platform/db/schema";
-import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
+import { ConflictError, NotFoundError, ValidationError, viaMeta } from "@/shared/errors";
 import type {
   ReplyTypePickEntry,
   ReplyHandlingStore,
@@ -126,7 +126,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
 
     const [convs, cls, draftRows, eventRows, noteRows, enrollmentRows, policy, suppressed] = await Promise.all([
       db
-        .select({ id: conversations.id, channel: conversations.channel, accountRef: conversations.accountRef, status: conversations.status })
+        .select({ id: conversations.id, channel: conversations.channel, accountRef: conversations.accountRef, status: conversations.status, updatedAt: conversations.updatedAt })
         .from(conversations)
         .where(and(eq(conversations.recordId, recordId), eq(conversations.organizationId, organizationId), publicConversation))
         .orderBy(conversations.createdAt),
@@ -327,7 +327,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         })
         .where(eq(records.id, before.id));
       // The old type's run and drafts end, the version goes up, and the new type's sequence starts, all in this commit.
-      const { contextVersion: version, draftsRetired, runStarted } = await restartRecordWorkTx(tx, {
+      const { contextVersion: version, draftsRetired, runsEnded, runStarted } = await restartRecordWorkTx(tx, {
         organizationId: input.organizationId,
         recordId: before.id,
         reason: "stage_moved",
@@ -345,10 +345,10 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         actorUserId: input.actorUserId,
         fromData: { groupKey: before.groupKey, replyTypeId: before.replyTypeId, replyTypeSource: before.replyTypeSource, replyTypeLocked: before.replyTypeLocked },
         toData: { groupKey: input.groupKey, replyTypeId: input.replyTypeId, replyTypeSource: "human", replyTypeLocked },
-        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && !replyTypeLocked, rules },
+        meta: { note: input.note, occurredAt: input.occurredAt.toISOString(), unlockedCustomer: before.replyTypeLocked && !replyTypeLocked, rules, ...viaMeta(input.via) },
         contextVersion: version,
       });
-      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted };
+      return { recordId: before.id, personId: before.personId, groupKey: input.groupKey, replyTypeKey: sub?.key ?? null, contextVersion: version, draftsRetired, runStarted, runEnded: runsEnded > 0 };
     });
   },
 
@@ -409,7 +409,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         actorUserId: input.actorUserId,
         fromData: { groupKey: record.groupKey, replyTypeId: record.replyTypeId },
         toData: { groupKey: previous, replyTypeId: previous ? cls.previousReplyTypeId : null },
-        meta: { replyTypePickId: cls.id, draftsRetired, runsEnded },
+        meta: { replyTypePickId: cls.id, draftsRetired, runsEnded, ...viaMeta(input.via) },
         contextVersion: version,
       });
       return { recordId: record.id, draftsRetired, runEnded: runsEnded > 0, draftJobCancelled: cancelled.length + running.length > 0 };
@@ -435,7 +435,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         eventType: "reply_type_pick.acknowledged",
         actorType: "human",
         actorUserId: input.actorUserId,
-        meta: { replyTypePickId: cls.id },
+        meta: { replyTypePickId: cls.id, ...viaMeta(input.via) },
         contextVersion: record.contextVersion,
       });
     });
@@ -522,7 +522,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         actorUserId: input.actorUserId,
         fromData: { workflowState: record.workflowState },
         toData: { workflowState: "closed" },
-        meta: { reason: input.reason },
+        meta: { reason: input.reason, ...viaMeta(input.via) },
         contextVersion: version,
       });
     });
@@ -544,7 +544,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         actorUserId: input.actorUserId,
         fromData: { workflowState: "closed" },
         toData: { workflowState: next },
-        meta: { reason: "reopened" },
+        meta: { reason: "reopened", ...viaMeta(input.via) },
         contextVersion: version,
       });
     });

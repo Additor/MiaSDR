@@ -6,7 +6,7 @@
 
 An AI SDR for email and LinkedIn that runs on your server and sends from your own accounts.
 
-- **The AI drafts, your team sends.** No AI-written message leaves until a person approves it.
+- **The AI drafts, your team sends.** No AI-written message leaves until a person approves it, unless an admin lets your own MCP agents send within daily limits.
 - **A reply anywhere stops everything.** Someone answers on LinkedIn and their email sequence stops too.
 - **Your leads stay yours.** Leads, conversations and deals live in your Postgres, not a vendor's.
 
@@ -42,7 +42,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 - **Tables**: a spreadsheet with formulas, AI columns and a waterfall across nine enrichment vendors, one step from a campaign.
 - **Analytics**: sends, replies, bounces and the LinkedIn funnel per campaign.
 
-<p align="center"><img src="docs/images/how-it-works.jpg" alt="Four steps: import leads, send campaign steps within your limits, the AI reads replies and drafts answers, a person approves each draft" width="100%"></p>
+<p align="center"><img src="docs/images/how-it-works.jpg" alt="Four steps: import leads, send campaign steps within your limits, the AI reads replies and drafts answers, a person approves each draft or lets an agent send it" width="100%"></p>
 
 [How MiaSDR works](docs/guides/how-it-works.md) covers the jobs, the send engine and the inbox.
 
@@ -50,7 +50,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 
 Docker Compose runs the app and Postgres 17, with Caddy in front for HTTPS. [Self-hosting](docs/deploy/self-host.md) covers the server, backups and upgrades.
 
-- `PAUSE_OUTBOUND=true` holds every campaign send, email and LinkedIn, until you turn it off. Replies you approve still send.
+- `PAUSE_OUTBOUND=true` holds every campaign send, email and LinkedIn, and every agent reply, until you turn it off. Replies you approve still send.
 - LinkedIn prohibits automation and can restrict accounts, and CAN-SPAM, GDPR and CASL limit who you may contact. Read [Responsible use](docs/responsible-use.md) before you send to real people.
 
 ## Docs
@@ -60,6 +60,7 @@ Docker Compose runs the app and Postgres 17, with Caddy in front for HTTPS. [Sel
 | [Quick start guide](docs/guides/quick-start.md) | [Gmail](docs/setup/gmail.md) | [Self-hosting](docs/deploy/self-host.md) |
 | [How MiaSDR works](docs/guides/how-it-works.md) | [LinkedIn through Unipile](docs/setup/linkedin-unipile.md) | [Configuration](docs/configuration.md) |
 | [Responsible use](docs/responsible-use.md) | [Enrichment providers](docs/setup/enrichment.md) | [Operations](docs/operations.md) |
+| [AI agents (MCP)](docs/guides/mcp.md) | | |
 
 ## License
 

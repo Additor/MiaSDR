@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundLinkedInInput } from "../../application/linkedin-ports";
-import type { LinkedInReplyDeps } from "../../application/linkedin-reply";
+import type { LinkedInReplySendDeps } from "../../application/linkedin-reply";
 import type { FakeLinkedInGateway } from "@/contexts/outreach/linkedin/infrastructure/fake-linkedin-gateway";
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
 import type { Job } from "@/platform/jobs/types";
@@ -48,7 +48,7 @@ describeDb("AI drafts for LinkedIn threads", () => {
     const resolver = replyAiResolverOf(async (o: string) => (o === org ? ai : null));
     const clock = () => new Date();
     const [tick] = aiJobsApp.createAiJobs({ jobs: stores.jobs, ai: resolver, now: clock, workerId: "t", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000 }) as [Job];
-    const liDeps: LinkedInReplyDeps = { store: stores.li, sender: makeSender(fake), now: clock, aiStatus: resolver.status };
+    const liDeps: LinkedInReplySendDeps = { store: stores.li, sender: makeSender(fake), now: clock, aiStatus: resolver.status };
     const replyDeps = { store: stores.replies, ai: resolver, mailer: createReplyMailer(mailboxProvider), now: clock, newToken: () => `tok-${Math.random().toString(36).slice(2)}` };
     const replyHandlingDeps = { store: stores.crm, inbox: (await import("../drizzle-inbox-store")).drizzleInboxStore, now: clock, replay: { email: composition.ingestInbound, linkedin: composition.ingestInboundLinkedInMessage } };
     const n = ++counter;

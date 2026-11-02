@@ -261,6 +261,22 @@ describeDb("slot claims, daily rollover and history pruning", () => {
       await sql`delete from users where id = ${ids.oldSession}`;
     });
 
+    it("deletes MCP agent activity older than its retention", async () => {
+      const o = await org();
+      const [{ id: userId }] = await sql`insert into users (name, email, email_verified) values ('u', ${`t-${tag}-mcp@x.test`}, true) returning id`;
+      const [{ id: tokenId }] = await sql`
+        insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, scopes)
+        values (${o}, ${userId}, 'pat', 'Laptop', ${`t-${tag}-hash`}, ${["mcp:read"]}) returning id`;
+      const call = async (daysAgo: number) =>
+        (await sql`insert into mcp_tool_calls (organization_id, token_id, tool, kind, duration_ms, created_at) values (${o}, ${tokenId}, 'get_workspace', 'read', 3, ${ago(daysAgo)}) returning id`)[0].id as string;
+      const old = await call(91);
+      const kept = await call(89);
+      await prune.pruneHistory({ now, retention, deadline: Date.now() + 60_000 });
+      expect(await exists("mcp_tool_calls", old)).toBe(false);
+      expect(await exists("mcp_tool_calls", kept)).toBe(true);
+      await sql`delete from users where id = ${userId}`;
+    });
+
     it("never touches business tables, and honors the retention it is given", async () => {
       const o = await org();
       const [{ id: person }] = await sql`insert into people (organization_id, full_name, source) values (${o}, 'Old Person', 'import') returning id`;

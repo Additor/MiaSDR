@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { ConflictError, ForbiddenError, NotFoundError, type Actor } from "@/shared/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { LinkedInGatewayError } from "./linkedin-ports";
 import { explain, isLocalOrigin, storedGateway, syncWith, type LinkedInManagementDeps } from "./linkedin-management";
@@ -38,8 +38,11 @@ export interface ConnectLinkResult {
  * Creates a Unipile hosted-auth link for the organization. `reconnectAccountId` is one of our LinkedIn account ids and
  * re-authenticates that account in place. The link row is stored before the provider call, so a callback cannot outrun it.
  */
-export async function createConnectLink(deps: LinkedInManagementDeps, actor: Actor, input: { reconnectAccountId?: string | null } = {}): Promise<ConnectLinkResult> {
+export async function createConnectLink(deps: LinkedInManagementDeps, actor: Actor, input: { reconnectAccountId?: string | null; ownerUserId?: string | null } = {}): Promise<ConnectLinkResult> {
   requireAdmin(actor);
+  // A reconnect keeps the owner the account has.
+  const ownerUserId = input.reconnectAccountId ? null : (input.ownerUserId ?? null);
+  if (ownerUserId && !(await deps.members?.isMember(actor.organizationId, ownerUserId))) throw new ValidationError("The owner must be a member of this organization.");
   const credentials = await deps.accounts.getCredentials(actor.organizationId);
   if (!credentials) throw new ConflictError("Connect Unipile first.");
   const gateway = storedGateway(deps, credentials);
@@ -62,7 +65,7 @@ export async function createConnectLink(deps: LinkedInManagementDeps, actor: Act
   const secret = randomBytes(24).toString("base64url");
   const providerName = `mia-${randomBytes(9).toString("base64url")}`;
   const expiresAt = new Date(now.getTime() + CONNECT_LINK_MINUTES * 60_000);
-  await deps.connectLinks.create({ id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId });
+  await deps.connectLinks.create({ id, organizationId: actor.organizationId, providerName, secretHash: sha256(secret), expiresAt, createdBy: actor.userId, ownerUserId });
 
   const base = deps.appUrl.replace(/\/$/, "");
   const notify = !isLocalOrigin(deps.appUrl);

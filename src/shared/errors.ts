@@ -38,4 +38,19 @@ export interface Actor {
   organizationId: string;
   /** Stored role string, possibly comma-separated. */
   role: string;
+  /** Set only by the MCP wrapper (`src/app/_lib/mcp.ts`): an agent acts with this person's token. Absent for a person. */
+  via?: AgentVia;
 }
+
+export interface AgentVia {
+  kind: "agent";
+  tokenId: string;
+  /** The name the person gave the token, shown wherever an agent action is listed. */
+  tokenName: string;
+  /** The client's own name when the protocol carries one (2026-07-28 requests only). */
+  clientName: string | null;
+}
+
+/** What an event's `meta` carries when an agent acted: the token's id and name, never its secret. Empty for a person. */
+export const viaMeta = (via: AgentVia | undefined): { via?: Omit<AgentVia, "kind"> } =>
+  via ? { via: { tokenId: via.tokenId, tokenName: via.tokenName, clientName: via.clientName } } : {};

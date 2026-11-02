@@ -29,6 +29,11 @@ describe("validateSteps", () => {
     expect(validateSteps([step({ body: "Hi {{firstName}" })])[0].message).toMatch(/missing a brace/);
     expect(validateSteps([step({ subject: "Hi {{firstName" })])[0].message).toMatch(/missing a brace/);
   });
+  it("bounds the subject and body length", () => {
+    const messages = validateSteps([step({ subject: "s".repeat(301), body: "b".repeat(20_001) })]).map((i) => i.message);
+    expect(messages).toEqual(["The message is longer than 20000 characters.", "The subject is longer than 300 characters."]);
+    expect(validateSteps([step({ subject: "s".repeat(300), body: "b".repeat(20_000) })])).toEqual([]);
+  });
   it("catches numbering that is out of order", () => {
     expect(validateSteps([step({ stepNumber: 2 })])[0].message).toMatch(/numbered/);
   });
