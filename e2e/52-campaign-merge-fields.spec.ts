@@ -23,8 +23,10 @@ test("a field written in other words fills, and a field no lead has stops the st
     await openCampaignTab(page, "sequence");
     await page.getByLabel("Subject", { exact: true }).fill(subject);
     await page.getByLabel("Message").first().fill(message);
+    // Two saves close together show two toasts, so the answer to this save is the proof.
+    const saved = page.waitForResponse((r) => r.request().method() === "PATCH" && /\/api\/campaigns\/[0-9a-f-]{36}$/.test(r.url()) && r.ok());
     await page.getByRole("button", { name: "Save steps" }).click();
-    await expect(page.getByText("Steps saved.")).toBeVisible();
+    await saved;
   };
 
   await saveSteps("Hello {{first_nmae}}", "Hi {{first_name}}, {{fav_color}}.");
