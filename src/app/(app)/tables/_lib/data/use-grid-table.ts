@@ -355,7 +355,8 @@ export function useGridTable(tableId: string): GridTableState {
   useEffect(() => {
     if (status !== "ready") return;
     const first = setTimeout(() => void refreshJobs(), 0);
-    const handle = activeJobs > 0 ? setInterval(() => void refreshJobs(), 2_000) : undefined;
+    // A hidden tab skips the changes poll, so the count that keeps this running would not drop until the tab shows again.
+    const handle = activeJobs > 0 ? setInterval(() => void (document.visibilityState === "visible" && refreshJobs()), 2_000) : undefined;
     return () => {
       clearTimeout(first);
       if (handle) clearInterval(handle);
