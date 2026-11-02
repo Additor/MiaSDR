@@ -23,7 +23,7 @@ type Extra = "spend" | "irreversible";
 
 const EXTRA_LABEL: Record<Extra, { title: string; detail: string }> = {
   spend: { title: "Spend on enrichment and LinkedIn searches", detail: "Within this organization's daily limits, with no one reviewing first." },
-  irreversible: { title: "Complete campaigns and delete records", detail: "No one can undo these. Deleting a contact erases its conversations." },
+  irreversible: { title: "Complete campaigns and delete leads, contacts and deals", detail: "No one can undo these. Deleting a contact erases its conversations." },
 };
 
 export interface ConsentFormProps {

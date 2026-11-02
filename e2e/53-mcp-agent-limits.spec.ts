@@ -34,7 +34,7 @@ test("an owner sets the limits and ticks what a token may do, and setting a limi
   const form = page.locator("form").filter({ has: page.getByLabel("Token name") });
   await waitForHydrated(form.getByRole("button", { name: "Create token" }));
   await form.getByRole("radio", { name: "Read and make changes" }).click();
-  await expect(page.getByRole("checkbox", { name: "Complete campaigns and delete records" })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Complete campaigns and delete leads, contacts and deals" })).toHaveCount(0);
 
   await saveLimits(page, { spend: "5", search: "100", irreversible: "3" });
   await page.goto("/settings/organization");
@@ -43,9 +43,9 @@ test("an owner sets the limits and ticks what a token may do, and setting a limi
   await page.goto("/settings/mcp");
   await waitForHydrated(form.getByRole("button", { name: "Create token" }));
   // Read only offers nothing more, and neither option starts ticked.
-  await expect(page.getByRole("checkbox", { name: "Complete campaigns and delete records" })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "Complete campaigns and delete leads, contacts and deals" })).toHaveCount(0);
   await form.getByRole("radio", { name: "Read and make changes" }).click();
-  const irreversible = page.getByRole("checkbox", { name: "Complete campaigns and delete records" });
+  const irreversible = page.getByRole("checkbox", { name: "Complete campaigns and delete leads, contacts and deals" });
   await expect(irreversible).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Spend on enrichment and LinkedIn searches" })).not.toBeChecked();
   await irreversible.click();

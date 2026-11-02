@@ -227,7 +227,7 @@ test("an app gets spending and irreversible actions only when a person ticks the
   await waitForHydrated(page.getByRole("button", { name: "Connect" }));
   // Spending has no limit here, so it is not offered. The other starts unticked and goes unless a person ticks it.
   await expect(page.getByLabel(/^Spend on enrichment/)).toHaveCount(0);
-  const tick = page.getByRole("checkbox", { name: /Complete campaigns and delete records/ });
+  const tick = page.getByRole("checkbox", { name: /Complete campaigns and delete leads, contacts and deals/ });
   await expect(tick).not.toBeChecked();
   await tick.click();
   await page.getByRole("button", { name: "Connect" }).click();

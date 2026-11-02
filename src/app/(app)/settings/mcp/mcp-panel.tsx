@@ -245,7 +245,7 @@ export function McpPanel({ oauthAvailable, installEnabled, enabled, memberWriteT
                     <Field orientation="horizontal" className="items-start">
                       <Checkbox id="token-extra-irreversible" checked={extras.includes("irreversible")} onCheckedChange={(on) => setExtras((list) => (on ? [...list, "irreversible"] : list.filter((e) => e !== "irreversible")))} />
                       <div>
-                        <FieldLabel htmlFor="token-extra-irreversible">Complete campaigns and delete records</FieldLabel>
+                        <FieldLabel htmlFor="token-extra-irreversible">Complete campaigns and delete leads, contacts and deals</FieldLabel>
                         <FieldDescription>No one can undo these. Deleting a contact erases its conversations.</FieldDescription>
                       </div>
                     </Field>
