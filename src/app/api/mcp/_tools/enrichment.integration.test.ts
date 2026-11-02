@@ -150,6 +150,15 @@ describeDb("MCP agent enrichment", () => {
     expect(audit.meta).toMatchObject({ reservedCents: 60, via: { tokenId: agent.tokenId } });
   });
 
+  it("rounds a price with a fraction of a cent up against the limit", async () => {
+    await provider(0.5);
+    const t = await table(3);
+    await sql`update grid_providers set default_cost_cents = 12.5 where organization_id = ${org.organizationId} and key = 'fake'`;
+    const result = await run(t.id, await tokenFor(t.id, { firstN: 3 }), { firstN: 3 });
+    expect(result.isError, result.text).toBe(false);
+    expect(await reserved()).toBe(38);
+  });
+
   it("never pays again for a cell that has a value", async () => {
     const t = await table(2);
     await run(t.id, await tokenFor(t.id));

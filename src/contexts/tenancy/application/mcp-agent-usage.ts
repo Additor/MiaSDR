@@ -32,6 +32,8 @@ const refused = (error: unknown) => error instanceof ConflictError || error inst
  */
 export async function withAgentUsage<T>(deps: AgentUsageDeps, actor: Actor, request: { kind: AgentUsageKind; amount: number }, run: () => Promise<T>): Promise<T> {
   if (!actor.via) throw new ForbiddenError("This action counts against an agent's limits, and no agent made this call.");
+  // A negative amount would give back what others reserved.
+  if (!Number.isInteger(request.amount) || request.amount <= 0) throw new ValidationError("This action asks for a whole amount above 0.");
   const now = deps.now();
   const reservation: AgentUsageReservation = { organizationId: actor.organizationId, tokenId: actor.via.tokenId, day: agentUsageDay(now), ...request };
   const refusal = await deps.store.reserve(reservation, now);
