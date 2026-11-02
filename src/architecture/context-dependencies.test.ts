@@ -175,7 +175,6 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "identity/infrastructure/auth",
   // A revoke in tenancy also ends the app's consent and refresh tokens, which identity owns.
   "identity/infrastructure/mcp-oauth-grants",
-  "identity/infrastructure/session",
   "identity/infrastructure/signup-facts",
   // The Better Auth rows tenancy writes: the first admin, and a removed member's sessions.
   "identity/infrastructure/user-accounts",
@@ -208,7 +207,7 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "outreach/infrastructure/suppression-store",
 ]);
 
-/** Context files that import another context's private infrastructure. Every cross-context wiring now lives in src/composition. Keep it empty. */
+/** Context files that import another context's private infrastructure. Keep it empty. A composition is published, so a context may wire from another's. */
 const PRIVATE_CROSS_IMPORTS: Record<string, string[]> = {};
 
 /** Another context's private infrastructure modules that `file` imports, as `<context>/.../infrastructure/<module>`. */
@@ -233,6 +232,18 @@ describe("context interfaces", () => {
       if (hits.length > 0) found[path.relative(ROOT, file).split(path.sep).join("/")] = hits;
     }
     expect(found).toEqual(PRIVATE_CROSS_IMPORTS);
+  });
+
+  it("publishes only infrastructure that another context imports", () => {
+    const imported = new Set<string>();
+    for (const file of sourceFiles(path.join(SRC, "contexts"))) {
+      const own = path.relative(SRC, file).split(path.sep)[1];
+      for (const s of specifiers(readFileSync(file, "utf8"))) {
+        const t = target(file, s)?.match(/^contexts\/(([^/]+)\/.+)$/);
+        if (t && t[2] !== own) imported.add(t[1]);
+      }
+    }
+    expect([...PUBLISHED_INFRASTRUCTURE].filter((module) => !imported.has(module))).toEqual([]);
   });
 
   it("tells a published module, a composition and a schema from a private module", () => {
@@ -284,6 +295,11 @@ describe("context dependencies", () => {
   it("keeps every context free of the composition root and the read models", () => {
     const files = sourceFiles(path.join(SRC, "contexts"));
     expect(files.flatMap((f) => violations(f, readFileSync(f, "utf8"), CONTEXT_FORBIDDEN))).toEqual([]);
+  });
+
+  it("keeps outreach's email and LinkedIn subdomains from importing each other", () => {
+    const across = (dir: string, other: string) => sourceFiles(path.join(SRC, "contexts/outreach", dir)).flatMap((f) => violations(f, readFileSync(f, "utf8"), [`contexts/outreach/${other}`]));
+    expect([...across("email", "linkedin"), ...across("linkedin", "email")]).toEqual([]);
   });
 
   it("catches an alias, a relative, a dynamic and a type-only import", () => {
