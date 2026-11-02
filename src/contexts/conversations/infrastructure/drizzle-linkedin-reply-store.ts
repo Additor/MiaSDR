@@ -163,7 +163,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       if (existing) {
         if (existing.conversationId !== conv.id || existing.attempt.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another conversation.");
         // A key names one send of one draft, so another draft must not read that send's outcome as its own.
-        if (input.draft && existing.attempt.draftId !== input.draft.id) throw new ConflictError("This idempotency key belongs to another draft.");
+        if (input.draft && existing.attempt.draftId !== input.draft.id.toLowerCase()) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing.attempt) };
       }
 
