@@ -23,6 +23,7 @@ import { draftingAbove, regenerateControl, reloadsAfter } from "../_lib/reply-pa
 import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
 import { useSendingWatch } from "./use-sending-watch";
+import { QueueKeys } from "./queue-keys";
 
 type Panel = Omit<ReplyPanel, "draft" | "knownCcs"> & { knownCcs: Array<Omit<ReplyPanel["knownCcs"][number], "lastSeenAt"> & { lastSeenAt: string }>; draft: (Omit<NonNullable<ReplyPanel["draft"]>, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string }) | null };
 
@@ -343,9 +344,13 @@ export function ReplyPanelClient({
                 {/* From Actions the step after a send is the next item of that queue, one tap from here. */}
                 {fromQueue &&
                   (next ? (
-                    <Link href={next.href} className={buttonVariants({ touch: true })} data-testid="sent-next" aria-keyshortcuts="]">
-                      Next: {next.name}
-                    </Link>
+                    <>
+                      {/* The link says `]` works, so the key works from the moment the link shows. */}
+                      <QueueKeys href={next.href} />
+                      <Link href={next.href} className={buttonVariants({ touch: true })} data-testid="sent-next" aria-keyshortcuts="]">
+                        Next: {next.name}
+                      </Link>
+                    </>
                   ) : (
                     <p className="text-muted-foreground">Nothing else waits in this queue.</p>
                   ))}
