@@ -1,13 +1,14 @@
-import { enrollUnder, type EnrollOptions } from "./enroll-options";
+import type { EnrollOptions } from "./enroll-options";
 import type { DbHandle } from "@/platform/db/client";
 import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
-import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
-import { canArchive, canTransition, emptyFirstSubjectMessage, type ArchiveFilter, stepsEditable, stepsWithPlaceholders, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
+import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { emptyFirstSubjectMessage, type ArchiveFilter, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
+import { MAX_ENROLL_BATCH, archiveOn, changeStatusOn, createCampaignOn, deleteOn, enrollOn, enrollPickedOn, loadCampaign, removeLeadOn, removeLeadsOn, sendersOn, startProblemsOn, unarchiveOn, updateCampaignOn, type CampaignChannel, type CampaignLifecycleDeps } from "./campaign-lifecycle";
 import type { EnrollmentListQuery } from "../domain/enrollment-list";
-import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "./enrollment-admin";
+import type { EnrollmentAdminStore, PickedEnrollCounts, RemoveCounts, SenderRef } from "./enrollment-admin";
 import { renderEmail } from "../domain/render";
 import { sampleVariables } from "../domain/variables";
-import { findUnknownFields, unknownFieldsProblem, unresolvedForLead, type MergeFieldSource } from "./merge-fields";
+import { unresolvedForLead, type MergeFieldSource } from "./merge-fields";
 import type { CampaignRecord, CampaignStore, EnrollResult, MailboxStore } from "./management-ports";
 
 export interface CampaignDeps {
@@ -36,100 +37,57 @@ export const DEFAULT_STEPS: StepInput[] = [
   { stepNumber: 2, kind: "email", subject: "", body: "Hi {{firstName}}, following up on my note below. Worth a quick chat?\n\n%signature%", waitDays: 3 },
 ];
 
-const cleanName = (name: string) => {
-  const trimmed = name.trim();
-  if (trimmed === "" || trimmed.length > 120) throw new ValidationError("Give the campaign a name of up to 120 characters.");
-  return trimmed;
-};
+export { MAX_ENROLL_BATCH };
 
-async function load(deps: CampaignDeps, actor: Actor, id: string, tx?: DbHandle): Promise<CampaignRecord> {
-  const campaign = await deps.campaigns.get(actor.organizationId, id, tx);
-  if (!campaign) throw new NotFoundError("Campaign not found");
-  return campaign;
-}
+const lifecycle = (deps: CampaignDeps): CampaignLifecycleDeps<StepInput, CampaignRecord, EnrollResult> => deps;
+
+const email = (deps: CampaignDeps): CampaignChannel<StepInput> => ({
+  channel: "email",
+  validateSteps,
+  tooFewSteps: (furthest) => `Some leads already received step ${furthest}. The sequence cannot have fewer than ${furthest} steps.`,
+  countConnectedSenders: (organizationId, tx) => deps.mailboxes.countConnected(organizationId, tx),
+  noConnectedSender: "Connect a mailbox in Settings before starting a campaign.",
+});
+
+const load = (deps: CampaignDeps, actor: Actor, id: string, tx?: DbHandle): Promise<CampaignRecord> => loadCampaign(deps.campaigns, actor, id, tx);
 
 export function listCampaigns(deps: CampaignDeps, actor: Actor, archived: ArchiveFilter = "hide") {
   return deps.campaigns.list(actor.organizationId, deps.now?.() ?? new Date(), archived);
 }
 
-export async function createCampaign(deps: CampaignDeps, actor: Actor, input: { name: string; senderIds?: string[] }, tx?: DbHandle): Promise<{ id: string }> {
-  const name = cleanName(input.name);
-  const senderIds = await validateSenderIds(adminStore(deps), actor, "email", input.senderIds ?? []);
-  // One transaction: a campaign that fails to take its senders must not exist, or it would send from every mailbox.
-  const id = await deps.campaigns.transaction(async (t) => {
-    const created = await deps.campaigns.create(actor.organizationId, { name, createdBy: actor.userId, steps: DEFAULT_STEPS }, t);
-    if (senderIds.length > 0) await adminStore(deps).replaceSenders(actor.organizationId, created, "email", senderIds, t);
-    return created;
-  }, tx);
-  return { id };
+export function createCampaign(deps: CampaignDeps, actor: Actor, input: { name: string; senderIds?: string[] }, tx?: DbHandle): Promise<{ id: string }> {
+  return createCampaignOn(lifecycle(deps), email(deps), actor, input, (name) => ({ name, createdBy: actor.userId, steps: DEFAULT_STEPS }), tx);
 }
 
-/** With `tx`, the edit joins the caller's transaction and reads through it: an agent's edit holds the campaign row there, and a read from the pool could wait on a connection this request holds. */
-export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: StepInput[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
-  const campaign = await load(deps, actor, id, tx);
-  const next: { name?: string; steps?: StepInput[] } = {};
-  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "email", patch.senderIds, tx);
-  if (patch.name !== undefined) next.name = cleanName(patch.name);
-
-  if (patch.steps !== undefined) {
-    if (!stepsEditable(campaign.status)) throw new ConflictError("Pause the campaign before editing its steps.");
-    const issues = validateSteps(patch.steps);
-    if (issues.length > 0) throw new ValidationError("Fix the steps and save again.", issues);
-    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id, tx);
-    if (patch.steps.length < furthest) {
-      throw new ConflictError(`Some leads already received step ${furthest}. The sequence cannot have fewer than ${furthest} steps.`);
-    }
-    next.steps = patch.steps;
-  }
-  // One transaction: a failed sender replacement must not leave the new name or steps behind.
-  await deps.campaigns.transaction(async (t) => {
-    if (!(await deps.campaigns.update(actor.organizationId, id, next, t))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
-    if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "email", senderIds, t);
-  }, tx);
+export function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: StepInput[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
+  return updateCampaignOn(lifecycle(deps), email(deps), actor, id, patch, tx);
 }
 
 /** Leads checked for an empty first subject when a campaign launches. */
 export const SUBJECT_SAMPLE = 20;
 
-/**
- * What stops a person starting or resuming this campaign now, in the order a start checks it. The status change throws
- * the first; an agent's launch preview lists them all. Also answers the sampled leads whose first subject renders empty.
- */
-async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign: Awaited<ReturnType<typeof load>>, tx?: DbHandle): Promise<{ problems: ValidationError[]; emptySubjectLeads: number; sampled: number }> {
-  const problems: ValidationError[] = [];
+/** The start problems, with the sampled leads whose first subject renders empty. */
+async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign: CampaignRecord, tx?: DbHandle): Promise<{ problems: ValidationError[]; emptySubjectLeads: number; sampled: number }> {
   let emptySubjectLeads = 0;
   let sampled = 0;
-  const issues = validateSteps(campaign.steps);
-  if (issues.length > 0) problems.push(new ValidationError("Fix the steps before starting.", issues));
-  const unfinished = stepsWithPlaceholders(campaign.steps);
-  if (unfinished.length > 0) problems.push(new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`));
-  const unknown = await findUnknownFields(deps.fields, actor.organizationId, campaign.steps, tx);
-  if (unknown.length > 0) problems.push(unknownFieldsProblem(unknown));
-  // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
-  if (campaign.status === "draft") {
+  const problems = await startProblemsOn(lifecycle(deps), email(deps), actor, id, campaign, tx, async () => {
+    // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
+    if (campaign.status !== "draft") return [];
     const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE, tx);
     if (leads.length === 0) {
       const emptySubject = emptyFirstSubjectMessage(campaign.steps, (await deps.campaigns.sampleVariables(actor.organizationId, id, tx)) ?? sampleVariables());
-      if (emptySubject) problems.push(new ValidationError(emptySubject, [{ step: 1, message: emptySubject }]));
-    } else {
-      const empty = leads.filter((variables) => emptyFirstSubjectMessage(campaign.steps, variables) !== null).length;
-      // Every sampled lead would send a blank subject, so the subject itself is the problem. A few empty ones are a data gap the send-time check skips.
-      if (empty === leads.length) {
-        const message = emptyFirstSubjectMessage(campaign.steps, leads[0]) as string;
-        problems.push(new ValidationError(message, [{ step: 1, message }]));
-      } else {
-        emptySubjectLeads = empty;
-        sampled = leads.length;
-      }
+      return emptySubject ? [new ValidationError(emptySubject, [{ step: 1, message: emptySubject }])] : [];
     }
-  }
-  try {
-    await assertAssignedSendersConnected(adminStore(deps), actor, "email", id, tx);
-  } catch (error) {
-    if (!(error instanceof ValidationError)) throw error;
-    problems.push(error);
-  }
-  if ((await deps.mailboxes.countConnected(actor.organizationId, tx)) === 0) problems.push(new ValidationError("Connect a mailbox in Settings before starting a campaign."));
+    const empty = leads.filter((variables) => emptyFirstSubjectMessage(campaign.steps, variables) !== null).length;
+    // Every sampled lead would send a blank subject, so the subject itself is the problem. A few empty ones are a data gap the send-time check skips.
+    if (empty === leads.length) {
+      const message = emptyFirstSubjectMessage(campaign.steps, leads[0]) as string;
+      return [new ValidationError(message, [{ step: 1, message }])];
+    }
+    emptySubjectLeads = empty;
+    sampled = leads.length;
+    return [];
+  });
   return { problems, emptySubjectLeads, sampled };
 }
 
@@ -145,59 +103,22 @@ export async function campaignStartProblems(deps: CampaignDeps, actor: Actor, id
 export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id: string, to: CampaignStatus, tx?: DbHandle): Promise<{ emptySubjectLeads: number; sampled: number }> {
   let emptySubjectLeads = 0;
   let sampled = 0;
-  const campaign = await load(deps, actor, id, tx);
-  if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
-  if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
-  if (to === "active") {
+  await changeStatusOn(lifecycle(deps).campaigns, actor, id, to, async (campaign) => {
     const check = await startCheck(deps, actor, id, campaign, tx);
-    if (check.problems[0]) throw check.problems[0];
     ({ emptySubjectLeads, sampled } = check);
-  }
-  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps, viaTokenId: actor.via?.tokenId ?? null }, tx))) {
-    throw new ConflictError("The campaign changed while you were saving. Reload it and try again.");
-  }
+    return check.problems;
+  }, tx);
   return { emptySubjectLeads, sampled };
 }
 
-/** Hides a completed campaign from the default list. Its sends, enrollments and analytics stay. */
-export async function archiveCampaign(deps: CampaignDeps, actor: Actor, id: string): Promise<void> {
-  const campaign = await load(deps, actor, id);
-  if (campaign.archivedAt) return;
-  if (!canArchive(campaign.status)) throw new ConflictError("Only a completed campaign can be archived. Mark it completed first.");
-  if (!(await deps.campaigns.setArchived(actor.organizationId, id, true))) throw new ConflictError("The campaign changed. Reload and try again.");
-}
+export const archiveCampaign = (deps: CampaignDeps, actor: Actor, id: string): Promise<void> => archiveOn(lifecycle(deps).campaigns, actor, id);
 
-export async function unarchiveCampaign(deps: CampaignDeps, actor: Actor, id: string): Promise<void> {
-  const campaign = await load(deps, actor, id);
-  if (!campaign.archivedAt) return;
-  await deps.campaigns.setArchived(actor.organizationId, id, false);
-}
+export const unarchiveCampaign = (deps: CampaignDeps, actor: Actor, id: string): Promise<void> => unarchiveOn(lifecycle(deps).campaigns, actor, id);
 
-export async function deleteCampaign(deps: CampaignDeps, actor: Actor, id: string): Promise<void> {
-  const campaign = await load(deps, actor, id);
-  const refusal = "Only a draft campaign can be deleted. Pause it or mark it completed instead.";
-  if (campaign.status !== "draft") throw new ConflictError(refusal);
-  // The store deletes a draft only, so a start between the read and the write leaves the campaign and no audit row.
-  if (!(await deps.campaigns.delete(actor.organizationId, id))) throw new ConflictError(refusal);
-  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: id, meta: { name: campaign.name, channel: "email", ...viaMeta(actor.via) } });
-}
+export const deleteCampaign = (deps: CampaignDeps, actor: Actor, id: string): Promise<void> => deleteOn(lifecycle(deps), "email", actor, id);
 
-export const MAX_ENROLL_BATCH = 5000;
-
-export async function enrollLeads(
-  deps: CampaignDeps,
-  actor: Actor,
-  id: string,
-  input: { query?: string; limit?: number; dryRun?: boolean },
-  options: EnrollOptions = {},
-  tx?: DbHandle,
-): Promise<EnrollResult> {
-  const campaign = await load(deps, actor, id, tx);
-  if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
-  const limit = Math.min(Math.max(1, Math.floor(input.limit ?? MAX_ENROLL_BATCH)), MAX_ENROLL_BATCH);
-  return enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
-    deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, dryRun: input.dryRun, viaTokenId: actor.via?.tokenId ?? null }, t),
-  );
+export function enrollLeads(deps: CampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; dryRun?: boolean }, options: EnrollOptions = {}, tx?: DbHandle): Promise<EnrollResult> {
+  return enrollOn(lifecycle(deps).campaigns, actor, id, input, options, tx);
 }
 
 /** Renders one step the way it would go out, with a real lead from the campaign when there is one. */
@@ -238,39 +159,13 @@ export async function getCampaignDetail(deps: CampaignDeps, actor: Actor, id: st
   return { campaign, enrollments, connectedMailboxes, waitingOnUnavailable, unconfirmed };
 }
 
-/** Enrolls the people a person ticked. Ids of another organization count as not found. */
-export async function enrollPickedLeads(
-  deps: CampaignDeps,
-  actor: Actor,
-  id: string,
-  personIds: string[],
-  options: EnrollOptions = {},
-  tx?: DbHandle,
-): Promise<PickedEnrollCounts & EnrollResult> {
-  const campaign = await load(deps, actor, id, tx);
-  if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
-  if (personIds.length === 0) throw new ValidationError("Pick at least one lead.");
-  if (personIds.length > MAX_PICKED_IDS) throw new ValidationError(`Add up to ${MAX_PICKED_IDS} leads at a time.`);
-  const counts = await enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
-    adminStore(deps).enrollPicked(actor.organizationId, id, "email", personIds, actor.via?.tokenId ?? null, t),
-  );
+export async function enrollPickedLeads(deps: CampaignDeps, actor: Actor, id: string, personIds: string[], options: EnrollOptions = {}, tx?: DbHandle): Promise<PickedEnrollCounts & EnrollResult> {
+  const counts = await enrollPickedOn(lifecycle(deps), "email", actor, id, personIds, options, tx);
   return { ...counts, alreadyEnrolled: counts.skippedDuplicate, skippedNoEmail: counts.skippedMissingIdentity };
 }
 
-/** Takes leads out of an email campaign. The enrollment keeps its history and the person stays in Leads. */
-export async function removeLeads(deps: CampaignDeps, actor: Actor, id: string, enrollmentIds: string[]): Promise<RemoveCounts> {
-  await load(deps, actor, id);
-  return removeCampaignEnrollments(deps, actor, "email", id, enrollmentIds);
-}
+export const removeLeads = (deps: CampaignDeps, actor: Actor, id: string, enrollmentIds: string[]): Promise<RemoveCounts> => removeLeadsOn(lifecycle(deps), "email", actor, id, enrollmentIds);
 
-export async function removeLead(deps: CampaignDeps, actor: Actor, id: string, enrollmentId: string): Promise<{ removed: boolean; skippedFinal: boolean }> {
-  await load(deps, actor, id);
-  return removeCampaignEnrollment(deps, actor, "email", id, enrollmentId);
-}
+export const removeLead = (deps: CampaignDeps, actor: Actor, id: string, enrollmentId: string): Promise<{ removed: boolean; skippedFinal: boolean }> => removeLeadOn(lifecycle(deps), "email", actor, id, enrollmentId);
 
-/** The campaign's assigned mailboxes and every mailbox of the organization, for the sender picker. */
-export async function getCampaignSenders(deps: CampaignDeps, actor: Actor, id: string): Promise<{ assigned: SenderRef[]; available: SenderRef[] }> {
-  await load(deps, actor, id);
-  const [assigned, available] = await Promise.all([adminStore(deps).listSenders(actor.organizationId, id, "email"), adminStore(deps).listAvailableSenders(actor.organizationId, "email")]);
-  return { assigned, available };
-}
+export const getCampaignSenders = (deps: CampaignDeps, actor: Actor, id: string): Promise<{ assigned: SenderRef[]; available: SenderRef[] }> => sendersOn(lifecycle(deps), "email", actor, id);

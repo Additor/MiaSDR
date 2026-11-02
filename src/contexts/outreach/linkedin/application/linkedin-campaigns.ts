@@ -1,13 +1,14 @@
-import { enrollUnder, type EnrollOptions } from "../../application/enroll-options";
+import type { EnrollOptions } from "../../application/enroll-options";
 import type { DbHandle } from "@/platform/db/client";
 import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
-import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
-import { parseCampaignType, canArchive, canTransition, stepsEditable, stepsWithPlaceholders, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
-import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "../../application/enrollment-admin";
+import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { parseCampaignType, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
+import { archiveOn, changeStatusOn, createCampaignOn, deleteOn, enrollOn, enrollPickedOn, loadCampaign, removeLeadOn, removeLeadsOn, sendersOn, startProblemsOn, unarchiveOn, updateCampaignOn, type CampaignChannel, type CampaignLifecycleDeps } from "../../application/campaign-lifecycle";
+import type { EnrollmentAdminStore, PickedEnrollCounts, RemoveCounts, SenderRef } from "../../application/enrollment-admin";
 import { DEFAULT_LINKEDIN_STEPS, INVITE_NOTE_MAX, inviteNoteLength, renderLinkedInText, validateLinkedInSteps, type LinkedInStep } from "../domain/linkedin";
 import type { EnrollmentListQuery, TabCounts } from "../../domain/enrollment-list";
 import { sampleVariables } from "../../domain/variables";
-import { findUnknownFields, unknownFieldsProblem, unresolvedForLead, type MergeFieldSource } from "../../application/merge-fields";
+import { unresolvedForLead, type MergeFieldSource } from "../../application/merge-fields";
 import type { LeadCrossContext } from "../../application/cross-campaign-notices";
 export interface LinkedInCampaignRecord {
   id: string;
@@ -139,135 +140,52 @@ export interface LinkedInCampaignDeps {
   now?: () => Date;
 }
 
-const cleanName = (name: string) => {
-  const trimmed = name.trim();
-  if (trimmed === "" || trimmed.length > 120) throw new ValidationError("Give the campaign a name of up to 120 characters.");
-  return trimmed;
-};
+const lifecycle = (deps: LinkedInCampaignDeps): CampaignLifecycleDeps<LinkedInStep, LinkedInCampaignRecord, LinkedInEnrollResult> => deps;
 
-async function load(deps: LinkedInCampaignDeps, actor: Actor, id: string, tx?: DbHandle) {
-  const campaign = await deps.campaigns.get(actor.organizationId, id, tx);
-  if (!campaign) throw new NotFoundError("Campaign not found");
-  return campaign;
-}
+const linkedin = (deps: LinkedInCampaignDeps): CampaignChannel<LinkedInStep> => ({
+  channel: "linkedin",
+  validateSteps: validateLinkedInSteps,
+  tooFewSteps: (furthest) => `Some leads already completed step ${furthest}. The sequence cannot have fewer than ${furthest} steps.`,
+  countConnectedSenders: (organizationId, tx) => deps.campaigns.countConnectedAccounts(organizationId, tx),
+  noConnectedSender: "Connect a LinkedIn account in Settings before starting a campaign.",
+});
+
+const load = (deps: LinkedInCampaignDeps, actor: Actor, id: string, tx?: DbHandle) => loadCampaign(deps.campaigns, actor, id, tx);
 
 export const listLinkedInCampaigns = (deps: LinkedInCampaignDeps, actor: Actor, archived: ArchiveFilter = "hide") => deps.campaigns.list(actor.organizationId, archived);
 
 export const getLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Actor, id: string) => load(deps, actor, id);
 
-export async function createLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, input: { name: string; type?: CampaignType; senderIds?: string[] }, tx?: DbHandle): Promise<{ id: string }> {
-  const name = cleanName(input.name);
-  const type = parseCampaignType(input.type);
-  const senderIds = await validateSenderIds(adminStore(deps), actor, "linkedin", input.senderIds ?? []);
-  // One transaction: a campaign that fails to take its senders must not exist, or it would send from every account.
-  const id = await deps.campaigns.transaction(async (t) => {
-    const created = await deps.campaigns.create(actor.organizationId, { name, type, createdBy: actor.userId, steps: DEFAULT_LINKEDIN_STEPS }, t);
-    if (senderIds.length > 0) await adminStore(deps).replaceSenders(actor.organizationId, created, "linkedin", senderIds, t);
-    return created;
-  }, tx);
-  return { id };
+export function createLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, input: { name: string; type?: CampaignType; senderIds?: string[] }, tx?: DbHandle): Promise<{ id: string }> {
+  return createCampaignOn(lifecycle(deps), linkedin(deps), actor, input, (name) => ({ name, type: parseCampaignType(input.type), createdBy: actor.userId, steps: DEFAULT_LINKEDIN_STEPS }), tx);
 }
 
-/** With `tx`, the edit joins the caller's transaction and reads through it: an agent's edit holds the campaign row there, and a read from the pool could wait on a connection this request holds. */
-export async function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
-  const campaign = await load(deps, actor, id, tx);
-  const next: { name?: string; type?: CampaignType; steps?: LinkedInStep[] } = {};
-  const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "linkedin", patch.senderIds, tx);
-  if (patch.name !== undefined) next.name = cleanName(patch.name);
-  if (patch.type !== undefined && patch.type !== campaign.type) {
+/** The type can change until the campaign has sent something. */
+export function updateLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
+  return updateCampaignOn(lifecycle(deps), linkedin(deps), actor, id, patch, tx, async (campaign) => {
+    if (patch.type === undefined || patch.type === campaign.type) return {};
     if (!typeEditable(await deps.campaigns.hasSends(actor.organizationId, id, tx))) throw new ConflictError("The campaign type cannot change once the campaign has sent something.");
-    next.type = parseCampaignType(patch.type);
-  }
-  if (patch.steps !== undefined) {
-    if (!stepsEditable(campaign.status)) throw new ConflictError("Pause the campaign before editing its steps.");
-    const issues = validateLinkedInSteps(patch.steps);
-    if (issues.length > 0) throw new ValidationError("Fix the steps and save again.", issues);
-    const furthest = await deps.campaigns.furthestStep(actor.organizationId, id, tx);
-    if (patch.steps.length < furthest) throw new ConflictError(`Some leads already completed step ${furthest}. The sequence cannot have fewer than ${furthest} steps.`);
-    next.steps = patch.steps;
-  }
-  // One transaction: a failed sender replacement must not leave the new name or steps behind.
-  await deps.campaigns.transaction(async (t) => {
-    if (!(await deps.campaigns.update(actor.organizationId, id, next, t))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
-    if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "linkedin", senderIds, t);
-  }, tx);
-}
-
-/** What stops a person starting or resuming this campaign now, in the order a start checks it. The status change throws the first. */
-async function startCheck(deps: LinkedInCampaignDeps, actor: Actor, id: string, campaign: Awaited<ReturnType<typeof load>>, tx?: DbHandle): Promise<ValidationError[]> {
-  const problems: ValidationError[] = [];
-  const issues = validateLinkedInSteps(campaign.steps);
-  if (issues.length > 0) problems.push(new ValidationError("Fix the steps before starting.", issues));
-  const unfinished = stepsWithPlaceholders(campaign.steps);
-  if (unfinished.length > 0) problems.push(new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`));
-  const unknown = await findUnknownFields(deps.fields, actor.organizationId, campaign.steps, tx);
-  if (unknown.length > 0) problems.push(unknownFieldsProblem(unknown));
-  try {
-    await assertAssignedSendersConnected(adminStore(deps), actor, "linkedin", id, tx);
-  } catch (error) {
-    if (!(error instanceof ValidationError)) throw error;
-    problems.push(error);
-  }
-  if ((await deps.campaigns.countConnectedAccounts(actor.organizationId, tx)) === 0) problems.push(new ValidationError("Connect a LinkedIn account in Settings before starting a campaign."));
-  return problems;
+    return { type: parseCampaignType(patch.type) };
+  });
 }
 
 /** The start problems of a draft or paused LinkedIn campaign, for a preview. Changes nothing. */
 export async function linkedInStartProblems(deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<ValidationError[]> {
-  return startCheck(deps, actor, id, await load(deps, actor, id));
+  return startProblemsOn(lifecycle(deps), linkedin(deps), actor, id, await load(deps, actor, id));
 }
 
-/** With `tx`, the change joins the caller's transaction: an agent's launch holds the campaign row there. */
-export async function changeLinkedInCampaignStatus(deps: LinkedInCampaignDeps, actor: Actor, id: string, to: CampaignStatus, tx?: DbHandle): Promise<void> {
-  const campaign = await load(deps, actor, id, tx);
-  if (campaign.archivedAt) throw new ConflictError(`An archived campaign cannot be ${to === "active" ? "started" : "changed"}. Unarchive it first.`);
-  if (!canTransition(campaign.status, to)) throw new ConflictError(`A ${campaign.status} campaign cannot become ${to}.`);
-  if (to === "active") {
-    const [problem] = await startCheck(deps, actor, id, campaign, tx);
-    if (problem) throw problem;
-  }
-  if (!(await deps.campaigns.setStatus(actor.organizationId, id, { from: campaign.status, to, checkedSteps: campaign.steps, viaTokenId: actor.via?.tokenId ?? null }, tx))) {
-    throw new ConflictError("The campaign changed while you were saving. Reload it and try again.");
-  }
+export function changeLinkedInCampaignStatus(deps: LinkedInCampaignDeps, actor: Actor, id: string, to: CampaignStatus, tx?: DbHandle): Promise<void> {
+  return changeStatusOn(lifecycle(deps).campaigns, actor, id, to, (campaign) => startProblemsOn(lifecycle(deps), linkedin(deps), actor, id, campaign, tx), tx);
 }
 
-/** Hides a completed campaign from the default list. Its sends, enrollments and analytics stay. */
-export async function archiveLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> {
-  const campaign = await load(deps, actor, id);
-  if (campaign.archivedAt) return;
-  if (!canArchive(campaign.status)) throw new ConflictError("Only a completed campaign can be archived. Mark it completed first.");
-  if (!(await deps.campaigns.setArchived(actor.organizationId, id, true))) throw new ConflictError("The campaign changed. Reload and try again.");
-}
+export const archiveLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> => archiveOn(lifecycle(deps).campaigns, actor, id);
 
-export async function unarchiveLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> {
-  const campaign = await load(deps, actor, id);
-  if (!campaign.archivedAt) return;
-  await deps.campaigns.setArchived(actor.organizationId, id, false);
-}
+export const unarchiveLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> => unarchiveOn(lifecycle(deps).campaigns, actor, id);
 
-export async function deleteLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> {
-  const campaign = await load(deps, actor, id);
-  const refusal = "Only a draft campaign can be deleted. Pause it or mark it completed instead.";
-  if (campaign.status !== "draft") throw new ConflictError(refusal);
-  // The store deletes a draft only, so a start between the read and the write leaves the campaign and no audit row.
-  if (!(await deps.campaigns.delete(actor.organizationId, id))) throw new ConflictError(refusal);
-  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: id, meta: { name: campaign.name, channel: "linkedin", ...viaMeta(actor.via) } });
-}
+export const deleteLinkedInCampaign = (deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> => deleteOn(lifecycle(deps), "linkedin", actor, id);
 
-export async function enrollLinkedInLeads(
-  deps: LinkedInCampaignDeps,
-  actor: Actor,
-  id: string,
-  input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean },
-  options: EnrollOptions = {},
-  tx?: DbHandle,
-): Promise<LinkedInEnrollResult> {
-  const campaign = await load(deps, actor, id, tx);
-  if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
-  const limit = Math.min(Math.max(1, Math.floor(input.limit ?? 5000)), 5000);
-  return enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
-    deps.campaigns.enroll(actor.organizationId, id, { query: input.query?.trim() || undefined, limit, collectIds: input.collectIds, dryRun: input.dryRun, viaTokenId: actor.via?.tokenId ?? null }, t),
-  );
+export function enrollLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, input: { query?: string; limit?: number; collectIds?: boolean; dryRun?: boolean }, options: EnrollOptions = {}, tx?: DbHandle): Promise<LinkedInEnrollResult> {
+  return enrollOn(lifecycle(deps).campaigns, actor, id, input, options, tx);
 }
 
 /** Renders one step the way it would go out, with a real lead from the campaign when there is one. Unsaved edits can be passed in. */
@@ -309,39 +227,13 @@ export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, acto
   return { campaign, enrollments: { total: enrollments.total, counts: enrollments.counts, sent: enrollments.sent, rows }, accounts, connectedAccounts: accounts.filter((a) => a.status === "connected").length };
 }
 
-/** Enrolls the people a person ticked. Ids of another organization count as not found. */
-export async function enrollPickedLinkedInLeads(
-  deps: LinkedInCampaignDeps,
-  actor: Actor,
-  id: string,
-  personIds: string[],
-  options: EnrollOptions = {},
-  tx?: DbHandle,
-): Promise<PickedEnrollCounts & LinkedInEnrollResult> {
-  const campaign = await load(deps, actor, id, tx);
-  if (campaign.status === "completed") throw new ConflictError("This campaign is completed.");
-  if (personIds.length === 0) throw new ValidationError("Pick at least one lead.");
-  if (personIds.length > MAX_PICKED_IDS) throw new ValidationError(`Add up to ${MAX_PICKED_IDS} leads at a time.`);
-  const counts = await enrollUnder(deps.campaigns, async (t) => (await load(deps, actor, id, t)).status, options, tx, (t) =>
-    adminStore(deps).enrollPicked(actor.organizationId, id, "linkedin", personIds, actor.via?.tokenId ?? null, t),
-  );
+export async function enrollPickedLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, personIds: string[], options: EnrollOptions = {}, tx?: DbHandle): Promise<PickedEnrollCounts & LinkedInEnrollResult> {
+  const counts = await enrollPickedOn(lifecycle(deps), "linkedin", actor, id, personIds, options, tx);
   return { ...counts, alreadyEnrolled: counts.skippedDuplicate, skippedNoProfile: counts.skippedMissingIdentity };
 }
 
-/** Takes leads out of a LinkedIn campaign. The enrollment keeps its history and the person stays in Leads. */
-export async function removeLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, enrollmentIds: string[]): Promise<RemoveCounts> {
-  await load(deps, actor, id);
-  return removeCampaignEnrollments(deps, actor, "linkedin", id, enrollmentIds);
-}
+export const removeLinkedInLeads = (deps: LinkedInCampaignDeps, actor: Actor, id: string, enrollmentIds: string[]): Promise<RemoveCounts> => removeLeadsOn(lifecycle(deps), "linkedin", actor, id, enrollmentIds);
 
-export async function removeLinkedInLead(deps: LinkedInCampaignDeps, actor: Actor, id: string, enrollmentId: string): Promise<{ removed: boolean; skippedFinal: boolean }> {
-  await load(deps, actor, id);
-  return removeCampaignEnrollment(deps, actor, "linkedin", id, enrollmentId);
-}
+export const removeLinkedInLead = (deps: LinkedInCampaignDeps, actor: Actor, id: string, enrollmentId: string): Promise<{ removed: boolean; skippedFinal: boolean }> => removeLeadOn(lifecycle(deps), "linkedin", actor, id, enrollmentId);
 
-/** The campaign's assigned accounts and every account of the organization, for the sender picker. */
-export async function getLinkedInCampaignSenders(deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<{ assigned: SenderRef[]; available: SenderRef[] }> {
-  await load(deps, actor, id);
-  const [assigned, available] = await Promise.all([adminStore(deps).listSenders(actor.organizationId, id, "linkedin"), adminStore(deps).listAvailableSenders(actor.organizationId, "linkedin")]);
-  return { assigned, available };
-}
+export const getLinkedInCampaignSenders = (deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<{ assigned: SenderRef[]; available: SenderRef[] }> => sendersOn(lifecycle(deps), "linkedin", actor, id);
