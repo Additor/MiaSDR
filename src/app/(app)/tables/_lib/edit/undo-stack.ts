@@ -1,5 +1,5 @@
 /**
- * Undo and redo for cell edits. Pure data: the hook that owns the grid keeps one stack and sends the requests.
+ * Undo and redo for cell edits. Pure data: `grid-store.ts` keeps one stack and sends the requests.
  *
  * An action is one thing a person did (a typed value, a clear, a paste), however many cells and requests it took.
  * Each cell holds both sides: undo writes `before` and expects `after` to be stored, redo does the reverse. The
