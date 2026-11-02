@@ -11,7 +11,7 @@ vi.mock("next/server", async (original) => (await import("@/test-support/route-c
  * connection in a transaction waits forever, so each call below has to finish.
  */
 describeDb("MCP calls on a one-connection pool", () => {
-  useTestEnv({ DB_POOL_MAX: "1", AI_PROVIDER: "fake", MAILBOX_PROVIDER: "fake" });
+  useTestEnv({ DB_POOL_MAX: "1", AI_PROVIDER: "fake", MAILBOX_PROVIDER: "fake", GRID_PROVIDER: "fake" });
   const sql = testSql({ max: 2 });
   let POST: (request: Request) => Promise<Response>;
   const orgs: TestOrg[] = [];
@@ -76,6 +76,28 @@ describeDb("MCP calls on a one-connection pool", () => {
       const applied = await irreversible.tool("apply_irreversible", { ...target, actionToken: preview.structured.actionToken });
       expect(applied.isError, `${target.kind}: ${applied.text}`).toBe(false);
     }
+  });
+
+  it("reads a table, runs enrichment and stops it without waiting on itself", { timeout: 20_000 }, async () => {
+    const [org] = orgs;
+    const owner = { userId: org.userId, organizationId: org.organizationId, role: "owner" };
+    const { createProvider } = await import("@/contexts/grid/enrichment/application/enrichment-providers");
+    const { createEnrichmentColumns } = await import("@/contexts/grid/enrichment/application/enrichment-columns");
+    const { gridColumnDeps, gridProviderDeps } = await import("@/contexts/grid/enrichment/infrastructure/enrichment-composition");
+    await sql`update channel_settings set values = values || ${sql.json({ agentSpendCentsPerDay: 1000 })} where organization_id = ${org.organizationId} and channel = 'mcp'`;
+    const spender = await mcpCaller(sql, POST, org, ["mcp:read", "mcp:write", "mcp:spend"]);
+    await createProvider(gridProviderDeps(), owner, { adapter: "fake", key: "fake", name: "Fake", credentials: { apiKey: "sk-test-secret-0123456789" }, defaultCostCents: 30 });
+    const [{ id: workbook }] = await sql<{ id: string }[]>`insert into grid_workbooks (organization_id, name) values (${org.organizationId}, 'wb') returning id`;
+    const [{ id: tableId }] = await sql<{ id: string }[]>`insert into grid_tables (organization_id, workbook_id, name, position) values (${org.organizationId}, ${workbook}, 't', 1) returning id`;
+    for (const [i, key] of ["name", "domain"].entries()) await sql`insert into grid_columns (organization_id, table_id, key, name, type, position) values (${org.organizationId}, ${tableId}, ${key}, ${key}, 'text', ${i + 1})`;
+    await sql`insert into grid_rows (organization_id, table_id, position, cells) values (${org.organizationId}, ${tableId}, 1, ${sql.json({ name: "Ada", domain: "acme.com" })})`;
+    await createEnrichmentColumns(gridColumnDeps(), owner, tableId, { providerKey: "fake", actionKey: "find-email", inputs: { fullName: "name", companyDomain: "domain" }, selectedOutputs: ["email"] });
+    for (const [name, args] of [["list_tables", {}], ["get_table", { tableId }]] as const) expect((await spender.tool(name, args)).isError).toBe(false);
+    const dry = await spender.tool("run_enrichment", { tableId, columnKey: "findEmail", firstN: 1, dryRun: true });
+    expect(dry.structured.refusals, dry.text).toEqual([]);
+    const ran = await spender.tool("run_enrichment", { tableId, columnKey: "findEmail", firstN: 1, actionToken: dry.structured.actionToken });
+    expect(ran.isError, ran.text).toBe(false);
+    expect((await spender.tool("stop_enrichment", { tableId })).isError).toBe(false);
   });
 
   it("edits and starts a LinkedIn campaign without waiting on itself", { timeout: 20_000 }, async () => {

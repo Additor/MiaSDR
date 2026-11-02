@@ -57,6 +57,8 @@ The agent acts as the person who created the token, in the token's organization 
 | `get_analytics` | One Analytics report for a date window |
 | `get_pipeline` | The deal board, or one deal |
 | `get_sending_health` | Pause state, mailbox and account status, unmatched senders and, for an owner or admin, failed AI jobs |
+| `list_tables` | Enrichment tables by workbook |
+| `get_table` | One table's columns and a page of its rows |
 
 A token that makes changes adds these tools. Each acts as its person would in MiaSDR, with that person's permissions.
 
@@ -69,6 +71,7 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 | `pause_sending` | Pauses a campaign, a conversation's follow-ups or, for an owner or admin, all sending. It never resumes. The Sending paused banner names the person and the token, such as "Ana's agent (Work laptop)" |
 | `draft_campaign` | Creates a draft campaign, edits its steps and senders, and adds leads to a draft or paused campaign, or to a running one with a token that sends |
 | `update_deal` | Moves a deal to another stage or edits its fields |
+| `stop_enrichment` | Stops a table's queued cells, whoever started them |
 | `import_leads` | Previews a CSV import of up to 500 rows, then commits it. A person holds three previews at once; when the server holds its limit, a preview waits (`import_busy`) |
 
 Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on it. An answer stays under about 10,000 tokens. A request that would return more fails with `answer_too_large`; narrow it with a filter, a page or a shorter date range. Long text comes cut and marked `truncated`: a reply draft keeps 12,000 characters, and `get_campaign` keeps 300 of each step body except the step named in `previewStep`, which comes whole. A write that sends a cut copy back is refused (`truncated_text`), and `send_reply` refuses a draft longer than 12,000 characters (`draft_not_read`).
@@ -111,6 +114,30 @@ Owners and admins see agents' sends under Agent sends on the settings page: toda
 
 Turning agent sending off stops every token that sends at once, and turning it on later needs new tokens. A message an agent sent shows "Sent by an agent ({token name})" in the thread, and the history reads "{person} via {token}".
 
+## Agent spending
+
+Agents run paid enrichment only when the server allows it (`MCP_SPEND_ENABLED`), an owner or admin sets a dollar limit under Settings, Organization, Agents can spend and delete, and an owner or admin creates a token, or connects an app, with Spend on enrichment and LinkedIn searches ticked.
+
+`run_enrichment` fills empty cells of one provider column, on `rowIds` or the `firstN` rows with something to run. It never pays again for a cell that has a value. With `dryRun: true` it states the cells, the worst-case cost and credits and the auto-run columns the run sets off, and hands out an `actionToken`. The real call reserves the worst case against the day's limit.
+
+| Code | Why | What to do |
+|---|---|---|
+| `agent_spend_off` | The limit is 0, the token was made before spending last went off, or the token lacks the option | Set a limit, or create a new token |
+| `agent_spend_cap` | The run's worst case would pass today's limit | Wait for midnight UTC (`retryAfterSeconds`), run fewer rows, or an owner or admin raises it |
+| `action_token_stale` | Rows, columns, prices or auto-run changed since the dry run | Dry-run again |
+| `agent_price_unset` | The column, or one it sets off, has a step with no price | An owner or admin enters the price under Settings, Integrations |
+| `agent_ai_column` | The column is an AI column or sets one off | A person runs it |
+| `agent_column_not_ready` | A provider of the column is off or has no key | Connect it |
+
+The limit is only as good as the prices you enter, and it holds these limits:
+
+- It counts dollars. Credits are reported and not counted.
+- A provider that charges more than its price, or bills failed calls, can pass the limit. Each cell's run records what the provider reported.
+- The reservation is the worst case and stays for the day, even when cells miss or someone stops the run.
+- An auto-run column a person adds during a run spends outside the reservation.
+- Queued cells keep running after the limit drops to 0. `stop_enrichment` and the Stop button end what has not started.
+- The Sending pause does not stop enrichment.
+
 ## Actions no one can undo
 
 Agents complete campaigns and delete records only when all of these hold:
@@ -145,7 +172,7 @@ Setting the limit to 0 stops these tokens at once, and setting it above 0 later 
 
 - A token lasts 90 days. A person holds at most 10 live tokens.
 - A token makes at most 60 requests a minute. Request 61 answers 429 with `Retry-After`.
-- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour, imports at most 10 times an hour, sends at most 10 replies a minute starts at most 10 campaigns an hour, and takes at most 30 actions it cannot undo an hour. A call past a limit fails with `rate_limited` and the seconds to wait.
+- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour, imports at most 10 times an hour, sends at most 10 replies a minute starts at most 10 campaigns an hour, runs at most 20 enrichment runs and searches an hour, and takes at most 30 actions it cannot undo an hour. A call past a limit fails with `rate_limited` and the seconds to wait.
 - With `TRUST_PROXY_HOPS` set, a client IP that sends 20 unknown tokens in a minute waits until the minute ends.
 - A person revokes their own tokens on the settings page; an owner or admin revokes anyone's, or all of them with Revoke all. A revoked token fails on its next request.
 - Removing a member revokes their tokens, and inviting them again does not bring the tokens back. A role change applies to the next request.

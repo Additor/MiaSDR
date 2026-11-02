@@ -6,7 +6,9 @@ MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor ve
 
 ### MCP
 
-Agents can now take actions a person cannot undo. All of it stays off until an owner or admin sets a daily limit under Settings, Organization and creates a token with the option ticked. Connected apps need to connect again to ask for the new permissions.
+Agents can now spend on enrichment and take actions a person cannot undo. All of it stays off until an owner or admin sets a daily limit under Settings, Organization and creates a token with the option ticked. Connected apps need to connect again to ask for the new permissions.
+
+- `list_tables` and `get_table` read enrichment tables. `run_enrichment` fills empty cells of one provider column, after a dry run states the worst case, and reserves that against the daily limit. `stop_enrichment` stops queued cells. A column with no price, and an AI column, refuse.
 
 - `preview_irreversible` and `apply_irreversible` complete a campaign, or delete a lead, contact, deal or draft campaign, one target per call. A token from the preview catches a change in between.
 - An agent never deletes someone marked do not contact, on the suppression list, who asked to stop, or who was removed from a campaign. A person still can.

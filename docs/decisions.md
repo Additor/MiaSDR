@@ -506,6 +506,15 @@ Agents start, resume and fill campaigns through `outreach/application/agent-camp
 - **Records.** `campaigns.started_via_token_id` names the agent's token on its start or resume, and a person's start clears it. `campaign_enrollments.enrolled_via_token_id` is written with each row an agent actor's enroll inserts; the limit counts them. Onboarding counts only campaigns a person started.
 - **Watching agents.** Settings > MCP shows owners and admins an Agent sends section (`read-models/agent-sends.ts`): the day's agent replies and enrolls against the limits, with a notice once one is reached, the latest agent replies, and the campaigns agents started. Pause campaigns agents started (`POST /api/settings/mcp/pause-agent-campaigns`, owner or admin) pauses every running one through the person's pause, then marks every campaign an agent paused as paused by a person, so no agent resumes it. An agent's unconfirmed send shows in Actions under Problems with the token's name.
 
+### Agent spending
+
+`composition/agent-enrichment.ts` joins `grid/enrichment/application/agent-enrichment.ts` and the daily limit. `requestRun` already took `dryRun`, `maxCostCents` and worst-case auto-run columns, so an agent's run is a person's run with these rules on top:
+
+- **A real worst case.** The limit counts cents, so every step must have a price (`agent_price_unset`). Most provider prices default to 0, and a free-looking step would pass any limit. AI columns are refused because their estimate is always 0 and they spend on the organization's AI key (`agent_ai_column`). Auto-run columns the run sets off meet the same checks, with the strict estimate, so a dependent whose key is missing refuses here instead of being left out of the total and spending later.
+- **`onlyEmpty` always, `fresh` never.** The input schema is strict, so an agent cannot ask to pay again for a filled cell.
+- **Reservation holds.** The worst case is reserved and not refunded after a run, even when cells miss. `requestRun` gets it as `maxCostCents`, so rows that changed since the plan refuse.
+- **What it does not hold.** A provider that reports more than its price, a column a person adds mid-run, and cells queued before a limit dropped. The last is deliberate: stopping is what `stop_enrichment` is for.
+
 ### Agent actions no one can undo
 
 `composition/agent-irreversible.ts` runs a person's use case for completing a campaign and for deleting a lead, contact, deal or draft campaign. The rules on top:

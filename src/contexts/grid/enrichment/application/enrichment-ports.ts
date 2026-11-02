@@ -280,8 +280,8 @@ export interface GridRunStore {
    * `runAfter` a vendor asked for. `fresh` starts it over and skips reused answers.
    */
   enqueue(organizationId: string, tableId: string, targets: EnqueueTarget[], options: { priority: number; now: Date; fresh?: boolean }): Promise<number>;
-  /** Removes queued and waiting jobs, clears their cell state and writes a `cancelled` ledger row each. Running jobs finish. */
-  cancel(organizationId: string, tableId: string): Promise<number>;
+  /** Removes queued and waiting jobs, clears their cell state and writes a `cancelled` ledger row each, naming who stopped them. Running jobs finish. */
+  cancel(organizationId: string, tableId: string, stoppedBy: "person" | "agent"): Promise<number>;
   /** Puts failed jobs back in the queue with a fresh attempt count. Succeeded cells are not touched. */
   retryFailed(organizationId: string, tableId: string, options: { columnKey?: string; now: Date }): Promise<number>;
   counts(organizationId: string, tableId: string): Promise<JobCounts>;
