@@ -13,8 +13,8 @@ import { useCellRequest } from "../_lib/data/cell-request";
 import { columnForInput } from "../_lib/data/providers";
 import { delaySecondsOf } from "../_lib/data/run-request";
 import type { GridColumn } from "../_lib/data/types";
-import { CreateFooter, createColumn, RunTiming } from "./enrichment-dialog";
 import { ItemSelect } from "./form-bits";
+import { CreateFooter, createColumn, RunTiming } from "./runner-form-parts";
 
 interface Props {
   tableId: string;
