@@ -1,4 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
+import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { UTC_DAY_MS, utcDayStart } from "@/shared/utc-day";
@@ -43,7 +44,7 @@ export interface AgentCampaignStore {
   /** A read-only repeatable-read transaction, so a preview's checks and token come from one moment. */
   snapshot<T>(organizationId: string, campaignId: string, fn: (tx: DbHandle) => Promise<T>): Promise<T>;
   campaign(tx: DbHandle, organizationId: string, campaignId: string): Promise<AgentCampaignRow | null>;
-  /** The campaign `FOR UPDATE`, for a start or resume. */
+  /** The campaign `FOR UPDATE`, for a start, a resume or an edit. */
   lockForStart(tx: DbHandle, organizationId: string, campaignId: string): Promise<AgentCampaignRow | null>;
   /** The campaign `FOR SHARE`, for an enroll. */
   lockForEnroll(tx: DbHandle, organizationId: string, campaignId: string): Promise<AgentCampaignRow | null>;
@@ -65,6 +66,7 @@ export interface AgentCampaignDeps {
   store: AgentCampaignStore;
   email: CampaignDeps;
   linkedin: LinkedInCampaignDeps;
+  audit: AuditSink;
   now: () => Date;
 }
 
@@ -242,7 +244,7 @@ export async function agentEnroll<T extends { added?: number; wouldAdd?: number 
 
 /**
  * Pauses every running campaign an agent started, for an owner or admin who wants agents' outreach stopped at once.
- * A campaign that moved in the meantime is left as it is. Answers how many it paused.
+ * A campaign that moved in the meantime is left as it is. Answers how many it paused, and the audit log records it.
  */
 export async function pauseAgentStartedCampaigns(deps: AgentCampaignDeps, actor: Actor): Promise<{ paused: number }> {
   if (!isOwnerOrAdmin(actor.role)) throw new ForbiddenError("Only an owner or admin can pause the campaigns agents started.");
@@ -256,11 +258,27 @@ export async function pauseAgentStartedCampaigns(deps: AgentCampaignDeps, actor:
       if (!(error instanceof ConflictError)) throw error;
     }
   }
+  if (paused > 0) await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "mcp.agent_campaigns_paused", meta: { count: paused } });
   return { paused };
 }
 
-/** Refuses an agent's sender change on a running campaign. A person may change senders at any time. */
-export function checkAgentSenderChange(status: string): void {
-  if (status === "active") throw agentCampaignRefusal("agent_sender_change_active");
+/**
+ * An agent's edit of a campaign. The row stays locked from the checks through the write, so a start cannot slip in
+ * between: an agent changes senders only while the campaign is not running, though a person may at any time. `check`
+ * adds what the caller refuses against the saved campaign; `work` runs the person's update use case in this transaction.
+ */
+export async function agentUpdateCampaign(
+  deps: AgentCampaignDeps,
+  actor: Actor,
+  input: { channel: AgentChannel; campaignId: string; changesSenders: boolean },
+  check: (row: AgentCampaignRow) => void,
+  work: (tx: DbHandle) => Promise<void>,
+): Promise<void> {
+  await deps.store.transaction(async (tx) => {
+    const row = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
+    if (input.changesSenders && row.status === "active") throw agentCampaignRefusal("agent_sender_change_active");
+    check(row);
+    await work(tx);
+  });
 }
 

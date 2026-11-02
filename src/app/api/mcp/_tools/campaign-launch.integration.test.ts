@@ -99,6 +99,125 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     expect(codeOf(await launch(more, seen.structured.launchToken as string))).toBe("launch_token_stale");
   });
 
+  it("refuses a launch with no real token, after the named senders changed, and after a new account joined an empty list", async () => {
+    const forged = await campaign();
+    await addLeads(forged, await leads(1));
+    expect(codeOf(await launch(forged, "lt1.start.1.made-up"))).toBe("launch_token_stale");
+
+    await sql`insert into mailboxes (organization_id, email_address, status) values (${org.organizationId}, ${`second-${randomBytes(3).toString("hex")}@corp.test`}, 'connected')`;
+    const named = await campaign();
+    await addLeads(named, await leads(1));
+    const seen = await preview(named, "start");
+    const [mailbox] = await sql`select id from mailboxes where organization_id = ${org.organizationId} limit 1`;
+    expect((await agent.tool("draft_campaign", { action: "update", channel: "email", campaignId: named, senderIds: [mailbox.id] })).isError).toBe(false);
+    expect(codeOf(await launch(named, seen.structured.launchToken as string))).toBe("launch_token_stale");
+
+    const open = await campaign();
+    await addLeads(open, await leads(1));
+    const before = await preview(open, "start");
+    await sql`insert into mailboxes (organization_id, email_address, status) values (${org.organizationId}, ${`new-${randomBytes(3).toString("hex")}@corp.test`}, 'connected')`;
+    expect(codeOf(await launch(open, before.structured.launchToken as string))).toBe("launch_token_stale");
+  });
+
+  it("refuses a stale LinkedIn launch too", async () => {
+    const tag = randomBytes(4).toString("hex");
+    await sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id, name, status) values (${org.organizationId}, ${`stale-${tag}`}, ${`ACo-${tag}`}, 'Jo', 'connected')`;
+    const created = await agent.tool("draft_campaign", { action: "create", channel: "linkedin", name: `Stale ${tag}` });
+    const campaignId = created.structured.campaignId as string;
+    const steps = [{ stepNumber: 1, kind: "invitation", body: "Hi {{firstName}}", waitDays: 0 }];
+    await agent.tool("draft_campaign", { action: "update", channel: "linkedin", campaignId, steps });
+    const seen = await agent.tool("preview_campaign_launch", { channel: "linkedin", campaignId, purpose: "start" });
+    await agent.tool("draft_campaign", { action: "update", channel: "linkedin", campaignId, steps: [{ ...steps[0], body: "Hello {{firstName}}" }] });
+    expect(codeOf(await agent.tool("launch_campaign", { channel: "linkedin", campaignId, action: "start", launchToken: seen.structured.launchToken }))).toBe("launch_token_stale");
+  });
+
+  it("lets a sender change and a start overlap so only one of them lands", async () => {
+    await sql`insert into mailboxes (organization_id, email_address, status) values (${org.organizationId}, ${`race-${randomBytes(3).toString("hex")}@corp.test`}, 'connected')`;
+    const campaignId = await campaign();
+    await addLeads(campaignId, await leads(1));
+    const token = (await preview(campaignId, "start")).structured.launchToken as string;
+    const [mailbox] = await sql`select id from mailboxes where organization_id = ${org.organizationId} limit 1`;
+    const lock = await sql.reserve();
+    try {
+      await lock`begin`;
+      await lock`select 1 from campaigns where id = ${campaignId} for update`;
+      const both = Promise.all([launch(campaignId, token), agent.tool("draft_campaign", { action: "update", channel: "email", campaignId, senderIds: [mailbox.id] })]);
+      await waitForLockWaiters(sql, 2);
+      await lock`commit`;
+      const [started, changed] = await both;
+      // Whichever took the row first wins: the start leaves the change refused, the change leaves the token stale.
+      expect([started.isError, changed.isError].filter(Boolean)).toHaveLength(1);
+      expect([codeOf(started), codeOf(changed)].filter(Boolean)[0]).toMatch(/launch_token_stale|agent_sender_change_active/);
+    } finally {
+      lock.release();
+    }
+  });
+
+  it("lets a person change the senders of a running campaign", async () => {
+    const campaignId = await campaign();
+    await addLeads(campaignId, await leads(1));
+    await launch(campaignId, (await preview(campaignId, "start")).structured.launchToken as string);
+    const { updateCampaign } = await import("@/contexts/outreach/application/campaign-management");
+    const { campaignDeps } = await import("@/contexts/outreach/infrastructure/composition");
+    const [mailbox] = await sql`select id from mailboxes where organization_id = ${org.organizationId} and status = 'connected' limit 1`;
+    await updateCampaign(campaignDeps(), { userId: org.userId, organizationId: org.organizationId, role: "owner" }, campaignId, { senderIds: [mailbox.id] });
+    expect(await sql`select 1 from campaign_senders where campaign_id = ${campaignId}`).toHaveLength(1);
+  });
+
+  it("counts both channels against one enroll limit and refuses the batch that passes it whole", async () => {
+    const tag = randomBytes(4).toString("hex");
+    const email = await campaign();
+    const created = await agent.tool("draft_campaign", { action: "create", channel: "linkedin", name: `Both ${tag}` });
+    const linkedin = created.structured.campaignId as string;
+    const used = (await sql<{ n: number }[]>`select count(*)::int as n from campaign_enrollments where organization_id = ${org.organizationId} and enrolled_via_token_id is not null`)[0].n;
+    await setMcp({ agentEnrollCap: used + 3 });
+    try {
+      expect((await addLeads(email, await leads(2))).structured.enroll).toMatchObject({ added: 2 });
+      const profiles = await sql<{ id: string }[]>`
+        insert into people (organization_id, first_name, linkedin_url, linkedin_slug)
+        select ${org.organizationId}, 'Li', 'https://www.linkedin.com/in/both-' || ${tag} || '-' || g, 'both-' || ${tag} || '-' || g from generate_series(1, 2) g returning id`;
+      const refused = await agent.tool("draft_campaign", { action: "add_leads", channel: "linkedin", campaignId: linkedin, personIds: profiles.map((p) => p.id) });
+      expect(codeOf(refused), refused.text).toBe("agent_enroll_cap");
+      expect(await sql`select 1 from campaign_enrollments where campaign_id = ${linkedin}`).toHaveLength(0);
+    } finally {
+      await setMcp({ agentEnrollCap: 200 });
+    }
+  });
+
+  it("keeps pausing and draft enrolls open with sending off, and a person's open enroll does not hold up a pause", async () => {
+    const campaignId = await campaign();
+    await addLeads(campaignId, await leads(1));
+    await launch(campaignId, (await preview(campaignId, "start")).structured.launchToken as string);
+    const [person] = await leads(1);
+    const lock = await sql.reserve();
+    try {
+      // A person's enroll takes no campaign lock: its open insert leaves the row free for a pause.
+      await lock`begin`;
+      await lock`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel) values (${org.organizationId}, ${campaignId}, ${person}, 'email')`;
+      await setMcp({ agentSendMode: "off" });
+      const paused = await agent.tool("pause_sending", { target: "campaign", channel: "email", campaignId });
+      expect(paused.structured.outcome, paused.text).toBe("paused");
+      await lock`rollback`;
+      const draft = await campaign();
+      expect((await addLeads(draft, await leads(1))).structured.enroll).toMatchObject({ added: 1 });
+    } finally {
+      lock.release();
+      await setMcp({ agentSendMode: "replies_and_campaigns" });
+    }
+  });
+
+  it("holds a start under PAUSE_OUTBOUND", async () => {
+    const campaignId = await campaign();
+    await addLeads(campaignId, await leads(1));
+    const token = (await preview(campaignId, "start")).structured.launchToken as string;
+    vi.stubEnv("PAUSE_OUTBOUND", "true");
+    try {
+      expect(codeOf(await launch(campaignId, token))).toBe("agent_send_paused");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("adds leads to a running campaign only with an enroll token, and an agent may not change its senders", async () => {
     const campaignId = await campaign();
     await addLeads(campaignId, await leads(1));
@@ -219,6 +338,8 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     expect(await sql`select 1 from campaigns where organization_id = ${org.organizationId} and status = 'active' and started_via_token_id is not null`).toHaveLength(0);
     expect(overview.running).toBeGreaterThan(0);
     expect((await agentSendsOverview(org.organizationId, new Date())).running).toBe(0);
+    const [audited] = await sql<{ meta: { count: number } }[]>`select meta from audit_log where organization_id = ${org.organizationId} and action = 'mcp.agent_campaigns_paused' order by created_at desc limit 1`;
+    expect(audited.meta.count).toBe(paused);
 
     // A person paused it, so the agent may not resume it; one the agent paused itself, it may.
     const seen = await preview(campaignId, "resume");

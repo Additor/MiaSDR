@@ -6,11 +6,11 @@ import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
 import { createLinkedInCampaign, enrollLinkedInLeads, enrollPickedLinkedInLeads, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import type { LinkedInStep } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
-import { agentEnroll, checkAgentSenderChange } from "@/contexts/outreach/application/agent-campaigns";
+import { agentEnroll, agentUpdateCampaign } from "@/contexts/outreach/application/agent-campaigns";
 import { agentCampaignDeps } from "@/contexts/outreach/infrastructure/agent-campaign-composition";
 import type { DbHandle } from "@/platform/db/client";
 import { ValidationError, type Actor } from "@/shared/errors";
-import { campaignState, CHANNELS, STEP_BODY_CHARS } from "./campaigns";
+import { CHANNELS, STEP_BODY_CHARS } from "./campaigns";
 import { CHANGES, defineTool } from "./define";
 import { appLinks, cutCopyRefusal, isCutCopy } from "./output";
 
@@ -32,7 +32,7 @@ const counted = async (result: Promise<object>): Promise<Counts> => (await resul
 
 interface ChannelWrites {
   create(actor: Actor, input: { name: string; personal: boolean; senderIds?: string[] }): Promise<{ id: string }>;
-  update(actor: Actor, id: string, patch: { name?: string; steps?: unknown[]; senderIds?: string[] }): Promise<void>;
+  update(actor: Actor, id: string, patch: { name?: string; steps?: unknown[]; senderIds?: string[] }, tx: DbHandle): Promise<void>;
   byQuery(actor: Actor, id: string, query: string, dryRun: boolean, tx: DbHandle): Promise<Counts>;
   picked(actor: Actor, id: string, personIds: string[], dryRun: boolean, tx: DbHandle): Promise<Counts>;
 }
@@ -40,13 +40,13 @@ interface ChannelWrites {
 const WRITES: Record<Channel, ChannelWrites> = {
   email: {
     create: (actor, input) => createCampaign(campaignDeps(), actor, { name: input.name, senderIds: input.senderIds }),
-    update: (actor, id, patch) => updateCampaign(campaignDeps(), actor, id, { ...patch, steps: patch.steps as StepInput[] | undefined }),
+    update: (actor, id, patch, tx) => updateCampaign(campaignDeps(), actor, id, { ...patch, steps: patch.steps as StepInput[] | undefined }, tx),
     byQuery: (actor, id, query, dryRun, tx) => counted(enrollLeads(campaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL, tx)),
     picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLeads(campaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
   },
   linkedin: {
     create: (actor, input) => createLinkedInCampaign(linkedinCampaignDeps(), actor, { name: input.name, type: input.personal ? "personal" : undefined, senderIds: input.senderIds }),
-    update: (actor, id, patch) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps: patch.steps as LinkedInStep[] | undefined }),
+    update: (actor, id, patch, tx) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps: patch.steps as LinkedInStep[] | undefined }, tx),
     byQuery: (actor, id, query, dryRun, tx) => counted(enrollLinkedInLeads(linkedinCampaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL, tx)),
     picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLinkedInLeads(linkedinCampaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
   },
@@ -110,13 +110,17 @@ export const draftCampaignTool = defineTool({
     if (!campaignId) throw new ValidationError(`${input.action} needs campaignId.`);
     if (input.action === "update") {
       if (input.name === undefined && input.steps === undefined && input.senderIds === undefined) throw new ValidationError("update needs name, steps or senderIds.");
-      if (input.senderIds !== undefined || input.steps !== undefined) {
-        const saved = await campaignState(actor, input.channel, campaignId);
-        if (input.senderIds !== undefined) checkAgentSenderChange(saved.status);
-        // `steps` replace every step, so a body get_campaign cut must not come back as the whole step.
-        if (input.steps?.some((s) => saved.steps.some((old) => isCutCopy(s.body, old.body, STEP_BODY_CHARS)))) throw cutCopyRefusal("step body");
-      }
-      await writes.update(actor, campaignId, { name: input.name, steps: input.steps, senderIds: input.senderIds });
+      await agentUpdateCampaign(
+        agentCampaignDeps(),
+        actor,
+        { channel: input.channel, campaignId, changesSenders: input.senderIds !== undefined },
+        (saved) => {
+          // `steps` replace every step, so a body get_campaign cut must not come back as the whole step.
+          const old = saved.steps as Array<{ body: string }>;
+          if (input.steps?.some((s) => old.some((o) => isCutCopy(s.body, o.body, STEP_BODY_CHARS)))) throw cutCopyRefusal("step body");
+        },
+        (tx) => writes.update(actor, campaignId, { name: input.name, steps: input.steps, senderIds: input.senderIds }, tx),
+      );
       return answer(campaignId, "Saved the campaign.");
     }
     if ((input.query === undefined) === (input.personIds === undefined)) throw new ValidationError("add_leads needs query or personIds, not both.");

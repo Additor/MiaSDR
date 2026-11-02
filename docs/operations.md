@@ -133,6 +133,8 @@ Lines to look for:
 - `[mcp] <tool> failed for organization <id>`: an MCP tool hit an error it does not classify. The agent got a generic sentence; the stack follows the line.
 - `[mcp] request failed`: the MCP endpoint could not answer a request at all, such as a server it failed to build.
 - `[mcp] agent send refused {...}`: one line of JSON per refused agent send, with `code` (an `agent_*` reason such as `agent_daily_cap`), `tool`, `organizationId` and `tokenId`.
+- `[mcp] rate limited {...}`: a token passed a limit. The line names the `tool` and `code`, or the `bucket` when the whole request was refused, with `organizationId` and `tokenId`.
+- `[mcp] token refused {...}` and `[mcp] bad token limit {...}`: a request carried a well-formed token that is unknown, revoked or expired, or an IP sent too many of them. `ip` is null without `TRUST_PROXY_HOPS`.
 
 Mailbox errors show in the Mailboxes page as the mailbox's last error.
 

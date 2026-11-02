@@ -60,8 +60,9 @@ export async function createCampaign(deps: CampaignDeps, actor: Actor, input: { 
   return { id };
 }
 
-export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: StepInput[]; senderIds?: string[] }): Promise<void> {
-  const campaign = await load(deps, actor, id);
+/** With `tx`, the edit joins the caller's transaction: an agent's edit holds the campaign row there. */
+export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: string, patch: { name?: string; steps?: StepInput[]; senderIds?: string[] }, tx?: DbHandle): Promise<void> {
+  const campaign = await load(deps, actor, id, tx);
   const next: { name?: string; steps?: StepInput[] } = {};
   const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, "email", patch.senderIds);
   if (patch.name !== undefined) next.name = cleanName(patch.name);
@@ -77,19 +78,15 @@ export async function updateCampaign(deps: CampaignDeps, actor: Actor, id: strin
     next.steps = patch.steps;
   }
   // One transaction: a failed sender replacement must not leave the new name or steps behind.
-  await deps.campaigns.transaction(async (tx) => {
-    if (!(await deps.campaigns.update(actor.organizationId, id, next, tx))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
-    if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "email", senderIds, tx);
-  });
+  await deps.campaigns.transaction(async (t) => {
+    if (!(await deps.campaigns.update(actor.organizationId, id, next, t))) throw new ConflictError("The campaign started while you were editing. Pause it before editing its steps.");
+    if (senderIds !== undefined) await adminStore(deps).replaceSenders(actor.organizationId, id, "email", senderIds, t);
+  }, tx);
 }
 
 /** Leads checked for an empty first subject when a campaign launches. */
 export const SUBJECT_SAMPLE = 20;
 
-/**
- * `emptySubjectLeads` of the `sampled` leads render an empty subject and will be skipped at send time. With `tx`, the
- * change joins the caller's transaction: an agent's launch holds the campaign row there.
- */
 /**
  * What stops a person starting or resuming this campaign now, in the order a start checks it. The status change throws
  * the first; an agent's launch preview lists them all. Also answers the sampled leads whose first subject renders empty.
@@ -135,6 +132,10 @@ export async function campaignStartProblems(deps: CampaignDeps, actor: Actor, id
   return startCheck(deps, actor, id, await load(deps, actor, id));
 }
 
+/**
+ * `emptySubjectLeads` of the `sampled` leads render an empty subject and will be skipped at send time. With `tx`, the
+ * change joins the caller's transaction: an agent's launch holds the campaign row there.
+ */
 export async function changeCampaignStatus(deps: CampaignDeps, actor: Actor, id: string, to: CampaignStatus, tx?: DbHandle): Promise<{ emptySubjectLeads: number; sampled: number }> {
   let emptySubjectLeads = 0;
   let sampled = 0;

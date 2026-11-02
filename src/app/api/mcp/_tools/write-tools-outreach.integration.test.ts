@@ -62,6 +62,17 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     expect(refused.structured.error).toMatchObject({ code: "truncated_text" });
     const [{ steps: saved }] = await sql<{ steps: Array<{ body: string }> }[]>`select steps from campaigns where id = ${campaignId}`;
     expect(saved[0].body).toBe(long);
+
+    // A changed opening, or a dropped cut mark, is still the cut copy.
+    const cut = seen[0].body;
+    for (const body of [`Fresh start. ${cut.slice(20)}`, cut.slice(0, -1), `${cut.slice(0, -1)} And more of my own.`]) {
+      const edited = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...steps[0], body }, steps[1]] });
+      expect(edited.structured.error, body).toMatchObject({ code: "truncated_text" });
+    }
+    // The whole text, read with previewStep and changed elsewhere, saves.
+    const whole = (await owner.tool("get_campaign", { channel: "email", campaignId, previewStep: 1 })).structured.steps as Array<{ body: string }>;
+    const changed = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...steps[0], body: whole[0].body.replace("The end.", "The real end.") }, steps[1]] });
+    expect(changed.isError, changed.text).toBe(false);
   });
 
   it("drafts a campaign, counts a dry run without enrolling, then enrolls, and refuses a running campaign", async () => {

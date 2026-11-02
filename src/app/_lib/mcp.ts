@@ -19,6 +19,9 @@ export function clientNameFrom(envelope: unknown): string | null {
   return parsed.success ? parsed.data.name : null;
 }
 
+/** One structured line an operator can search: a failed token, a rate limit or an agent refusal. Never a token or a message. */
+export const logMcp = (event: string, fields: Record<string, unknown>): void => console.warn(`[mcp] ${event} ${JSON.stringify(fields)}`);
+
 export const mcpActor = (principal: McpPrincipal, clientName: string | null): Actor => ({
   userId: principal.userId,
   organizationId: principal.organizationId,

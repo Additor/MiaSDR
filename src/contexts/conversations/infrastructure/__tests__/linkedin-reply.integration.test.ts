@@ -480,6 +480,32 @@ describeDb("LinkedIn conversation replies", () => {
       expect(stranger.fake.messages).toEqual([]);
     });
 
+    it("ignores the mailbox limit on LinkedIn, and waits a day after an agent's email in the same reply handling", async () => {
+      const f = await agentFixture({ reached: true });
+      await sql`update channel_settings set values = values || ${sql.json({ agentReplyCaps: { org: 100, user: 50, mailbox: 0 } })} where organization_id = ${f.org} and channel = 'mcp'`;
+      const [{ record_id: recordId }] = await sql`select record_id from conversations where id = ${f.conversationId}`;
+      const [{ id: email }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id) values (${f.org}, ${recordId}, 'email', ${"sdr-" + f.tag + "@corp.test"}, ${"thread-" + f.tag}) returning id`;
+      const [{ id: emailDraft }] = await sql`insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, edited_body_text, status) values (${f.org}, ${recordId}, ${email}, 1, 'email', 'Earlier', 'sent') returning id`;
+      const attempt = (createdAt: string) => sql`
+        insert into send_attempts (organization_id, draft_id, idempotency_key, status, actor_user_id, origin, mcp_token_id, provider, account_ref, request, created_at)
+        values (${f.org}, ${emailDraft}, ${key()}, 'sent', ${f.user}, 'agent', ${f.tokenId}, 'mailbox', ${"sdr-" + f.tag + "@corp.test"}, ${sql.json({})}, ${createdAt}::timestamptz)`;
+      await attempt(new Date(Date.now() - 3_600_000).toISOString());
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({ details: { code: "agent_reply_gap" } });
+
+      await sql`update send_attempts set created_at = now() - interval '25 hours' where draft_id = ${emailDraft}`;
+      const sent = await app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() });
+      expect(sent.status).toBe("sent");
+    });
+
+    it("refuses a stranger's DM on an account with campaign history", async () => {
+      const f = await agentFixture({ reached: false });
+      const [{ id: someone }] = await sql`insert into people (organization_id, full_name) values (${f.org}, 'Campaign Lead') returning id`;
+      const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${f.org}, 'linkedin', 'c', 'active', ${sql.json([])}) returning id`;
+      const [{ id: enrollment }] = await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel) values (${f.org}, ${campaign}, ${someone}, 'linkedin') returning id`;
+      await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, body, sent_at) values (${f.org}, ${enrollment}, 1, 'linkedin', 'sent', ${f.account}, 'Hi', now() - interval '1 day')`;
+      await expect(app.sendLinkedInReply(f.deps, f.agent, f.conversationId, { draftId: f.draft.draftId, revision: f.draft.revision, idempotencyKey: key() })).rejects.toMatchObject({ details: { code: "agent_unverified_recipient" } });
+    });
+
     it("marks a typed agent draft manual with the agent named, until a person's text replaces it", async () => {
       const f = await agentFixture({ reached: true });
       expect((await app.getLinkedInReplyPanel(f.deps, f.actor, f.conversationId))?.draft).toMatchObject({ source: "manual", writtenVia: "Agent laptop" });

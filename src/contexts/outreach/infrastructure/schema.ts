@@ -133,6 +133,8 @@ export const linkedinConnectLinks = pgTable(
     linkedinAccountId: uuid("linkedin_account_id"),
     lastError: text("last_error"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    /** The member the person connecting named as the new account's owner, or null for none. */
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
     completedAt: tstz("completed_at"),
     createdAt: createdAt(),
   },

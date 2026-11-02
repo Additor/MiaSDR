@@ -72,10 +72,11 @@ interface WebhookSetup {
   webhooks: Array<{ name: string; source: string; event: string; requestUrl: string }>;
 }
 
-export function LinkedInPanel({ state, canManage, zones, members }: { state: State | null; canManage: boolean; zones: string[]; members: Array<{ userId: string; name: string }> }) {
+export function LinkedInPanel({ state, canManage, zones, members, ownerOnConnect }: { state: State | null; canManage: boolean; zones: string[]; members: Array<{ userId: string; name: string }>; ownerOnConnect: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
+  const [newOwner, setNewOwner] = useState(NO_OWNER);
   const params = useSearchParams();
   const returned = useRef(false);
   const [setup, setSetup] = useState<WebhookSetup | null>(null);
@@ -128,7 +129,7 @@ export function LinkedInPanel({ state, canManage, zones, members }: { state: Sta
   const startHostedAuth = (accountId: string | null) =>
     run("link", async () => {
       setLinking(accountId ?? "new");
-      const result = await runApiAction(callApi<{ url: string }>("/api/linkedin/accounts/hosted-auth", "POST", accountId ? { accountId } : {}), { expectData: true });
+      const result = await runApiAction(callApi<{ url: string }>("/api/linkedin/accounts/hosted-auth", "POST", accountId ? { accountId } : newOwner === NO_OWNER ? {} : { ownerUserId: newOwner }), { expectData: true });
       if (!result.ok) {
         setLinking(null);
         toast.error(result.error);
@@ -211,6 +212,21 @@ export function LinkedInPanel({ state, canManage, zones, members }: { state: Sta
             )}
             {state.connected && !editingCredentials && (
               <>
+                {/* Unipile cannot call a local address back, so a link there never learns the account it made: its owner is set on the row. */}
+                {ownerOnConnect && (
+                  <Select items={ownerChoices(members)} value={newOwner} onValueChange={(v) => v && setNewOwner(v)}>
+                    <SelectTrigger aria-label="Owner of the new account" className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ownerChoices(members).map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Button type="button" onClick={() => void startHostedAuth(null)} disabled={linking !== null}>
                   {linking === "new" ? "Opening Unipile…" : "Connect a LinkedIn account"}
                 </Button>
@@ -370,6 +386,8 @@ function WebhookBadge({ webhooks }: { webhooks: StoredWebhookStatus | null }) {
 /** The owner select's value for an account nobody owns. */
 const NO_OWNER = "none";
 
+const ownerChoices = (members: Array<{ userId: string; name: string }>) => [{ value: NO_OWNER, label: "No owner" }, ...members.map((m) => ({ value: m.userId, label: m.name }))];
+
 function AccountRow({
   account,
   limits,
@@ -398,7 +416,7 @@ function AccountRow({
   const saving = isBusy("save");
   const dirty =
     Number(values.invites) !== account.dailyInviteLimit || Number(values.messages) !== account.dailyMessageLimit || values.premium !== account.isPremium || !sameHours(values.hours, saved.hours) || values.owner !== saved.owner;
-  const ownerItems = [{ value: NO_OWNER, label: "No owner" }, ...members.map((m) => ({ value: m.userId, label: m.name }))];
+  const ownerItems = ownerChoices(members);
   useLeaveGuard(dirty);
 
   const inviteNumber = Number(values.invites);

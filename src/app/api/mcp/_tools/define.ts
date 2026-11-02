@@ -1,6 +1,6 @@
 import type { McpServer, ToolAnnotations } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { clientNameFrom, mcpActor, runTool, type ToolOutput } from "@/app/_lib/mcp";
+import { clientNameFrom, logMcp, mcpActor, runTool, type ToolOutput } from "@/app/_lib/mcp";
 import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
 import { callTarget, type McpToolCallEntry } from "@/contexts/tenancy/application/mcp-tool-calls";
 import { hasScope, type McpScope } from "@/contexts/tenancy/domain/mcp-policy";
@@ -142,9 +142,9 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
           return withinBudget(() => checkedOutput(tool, () => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never)));
         });
         const error = result.isError ? (result.structuredContent?.error as { code?: unknown } | undefined) : undefined;
-        // Operators watch refused agent sends in the logs (docs/operations.md).
-        if (typeof error?.code === "string" && error.code.startsWith("agent_")) {
-          console.warn(`[mcp] agent send refused ${JSON.stringify({ code: error.code, tool: tool.name, organizationId: principal.organizationId, tokenId: principal.tokenId })}`);
+        // Operators watch refused agent sends and rate limits in the logs (docs/operations.md).
+        if (typeof error?.code === "string" && (error.code.startsWith("agent_") || error.code === "rate_limited")) {
+          logMcp(error.code === "rate_limited" ? "rate limited" : "agent send refused", { code: error.code, tool: tool.name, organizationId: principal.organizationId, tokenId: principal.tokenId });
         }
         await hooks
           .record({

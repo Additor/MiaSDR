@@ -1,6 +1,7 @@
 import { createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
 import { connection } from "next/server";
 import { apiError } from "@/app/_lib/api-errors";
+import { logMcp } from "@/app/_lib/mcp";
 import { resolveMcpAccess, type McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
 import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
 import { bearerToken, isMcpTokenFormat } from "@/contexts/tenancy/domain/mcp-token";
@@ -69,11 +70,16 @@ async function serve(request: Request): Promise<Response> {
   const ip = guess ? clientIp(request.headers.get("x-forwarded-for"), config.TRUST_PROXY_HOPS) : null;
   const now = new Date();
   const wait = ip ? badTokens.retryAfter(ip, now) : null;
-  if (wait) return tooManyRequests(wait, "Too many requests with an unknown MCP token. Wait, then send a valid one.");
+  if (wait) {
+    logMcp("bad token limit", { ip, retryAfterSeconds: wait });
+    return tooManyRequests(wait, "Too many requests with an unknown MCP token. Wait, then send a valid one.");
+  }
 
   const access = await resolveMcpAccess(mcpPrincipalDeps(), token);
   if (!access) {
     if (ip) badTokens.record(ip, now);
+    // A request with no token is how a client finds out it needs one; only a token that failed is worth a line.
+    if (guess) logMcp("token refused", { ip });
     return unauthorized();
   }
   if ("refusal" in access) return apiError(403, "MCP is off in this organization. An owner or admin can turn it on.", { code: access.refusal });
@@ -81,7 +87,10 @@ async function serve(request: Request): Promise<Response> {
   // Every request counts in `read`. A tool that changes data counts its own buckets once its input is parsed
   // (`registerTools`), so a refusal there reaches the agent as a tool error it can read.
   const limited = await takeMcpRequest(mcpRateLimitDeps(), principal, "read");
-  if (limited) return tooManyRequests(limited.retryAfterSeconds, "This MCP token sent too many requests this minute. Wait, then try again.");
+  if (limited) {
+    logMcp("rate limited", { bucket: "read", organizationId: principal.organizationId, tokenId: principal.tokenId, retryAfterSeconds: limited.retryAfterSeconds });
+    return tooManyRequests(limited.retryAfterSeconds, "This MCP token sent too many requests this minute. Wait, then try again.");
+  }
   // The raw token never travels further than this function: `token` carries the token's id.
   const authInfo: AuthInfo = { token: principal.tokenId, clientId: principal.tokenId, scopes: principal.scopes, extra: { principal } };
   return handler.fetch(request, { authInfo });

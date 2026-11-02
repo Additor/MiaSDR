@@ -14,6 +14,13 @@ test.describe("linkedin settings and jobs", () => {
     await expect(page.getByText("LinkedIn account connected.")).toBeVisible();
     await expect(page).toHaveURL(/\/settings\/linkedin$/);
     await expect(page.getByText("Hosted Seller", { exact: false }).first()).toBeVisible();
+    // The e2e address is local, where Unipile cannot report back, so the owner is set on the row afterwards.
+    await expect(page.getByLabel("Owner of the new account")).toHaveCount(0);
+    const members = await sql()<{ user_id: string }[]>`select m.user_id from members m join linkedin_connect_links l on l.organization_id = m.organization_id order by l.created_at desc limit 1`;
+    const named = await page.request.post("/api/linkedin/accounts/hosted-auth", { data: { ownerUserId: members[0].user_id } });
+    expect(named.status()).toBe(200);
+    const { linkId } = (await named.json()) as { linkId: string };
+    expect((await sql()<{ owner_user_id: string }[]>`select owner_user_id from linkedin_connect_links where id = ${linkId}`)[0].owner_user_id).toBe(members[0].user_id);
     // The link history is collapsed by default; open it to see the pending link.
     await page.getByText("Recent connection links").click();
     await expect(page.getByText("Pending", { exact: true }).first()).toBeVisible();

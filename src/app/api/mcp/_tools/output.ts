@@ -48,18 +48,25 @@ export function clip(text: string, max: number): { text: string; truncated: bool
   return text.length > max ? { text: `${text.slice(0, max)}…`, truncated: true } : { text, truncated: false };
 }
 
+/** Characters on each side of a cut that tell a cut copy from the whole text. */
+const CUT_EDGE_CHARS = 40;
+
 /**
- * Whether `sent` is a cut copy of `stored`: `stored` is longer than an answer keeps, and `sent` ends with the cut mark
- * after text `stored` starts with. Saving it would drop the rest of `stored`.
+ * Whether `sent` came from an answer that cut `stored` at `max`: it carries the text just before the cut, without the
+ * text that follows it. An edit to the part the agent saw, or words of its own after the cut, still counts: the agent
+ * never read what saving would drop. Text rewritten past the last characters it saw does not match.
  */
 export function isCutCopy(sent: string, stored: string, max: number): boolean {
-  if (stored.length <= max || !sent.endsWith("…")) return false;
-  return stored.startsWith(sent.slice(0, Math.min(EXCERPT_CHARS, sent.length - 1)));
+  if (stored.length <= max) return false;
+  const before = stored.slice(Math.max(0, max - CUT_EDGE_CHARS), max);
+  // Counted, not just looked for: text that repeats has the same words before and after the cut many times over.
+  const across = before + stored.slice(max, max + CUT_EDGE_CHARS);
+  return sent.includes(before) && sent.split(across).length < stored.split(across).length;
 }
 
 /** The refusal a write meets when it carries text an answer cut. */
 export const cutCopyRefusal = (what: string) =>
-  new ConflictError(`The ${what} you sent ends where an answer cut the saved text, so saving it would drop the rest. Read it whole first, or write the full text yourself.`, { code: "truncated_text" });
+  new ConflictError(`The ${what} you sent comes from an answer that cut the saved text, so saving it would drop the rest. Read it whole first, or write the full text yourself.`, { code: "truncated_text" });
 
 /** The first `max` characters of `text` on one line, cut at a word when one ends near the limit. */
 export function excerpt(text: string, max = EXCERPT_CHARS): string {
