@@ -168,7 +168,8 @@ test.describe("batch detail", () => {
     await page.goto(`/leads/searches/batches/${id}`);
 
     await expect(page.getByRole("table")).toBeHidden();
-    const cards = page.getByTestId("batch-card");
+    // While the page streams in, its cards also sit in React's hidden segment, so only the visible ones count.
+    const cards = page.getByTestId("batch-card").filter({ visible: true });
     await expect(cards).toHaveCount(6);
     await expectNoHorizontalOverflow(page);
 
