@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildVariables, sampleVariables, unresolvedTokens } from "./variables";
+import { buildVariables, sampleVariables, standardFieldNames, unknownFields, unresolvedTokens } from "./variables";
 
 const person = {
   firstName: "Ann", lastName: "Lee", fullName: "Ann Lee", title: "CTO", phone: null, email: "ann@acme.com",
@@ -85,7 +85,27 @@ describe("unresolvedTokens", () => {
   it("lists nothing when all fields fill", () => {
     expect(unresolvedTokens(["{{firstName}} at {{company}}"], vars)).toEqual([]);
   });
+  it("reads a field in other words as the rendering does", () => {
+    expect(unresolvedTokens(["{{first_name}} {{job_title}}"], sampleVariables())).toEqual([]);
+  });
   it("sample lead fills the alias variables", () => {
     expect(unresolvedTokens(["{{jobTitle}} {{companyName}} {{linkedinUrl}} {{name}}"], sampleVariables())).toEqual([]);
+  });
+});
+
+describe("unknownFields", () => {
+  const steps = [
+    { stepNumber: 1, subject: "{{firstName}} {{Region}}", body: "{Hi {{nope}}|Hello} {{signature}}" },
+    { stepNumber: 2, subject: null, body: "{{first_name}} {{nope}}" },
+  ];
+  it("names each step's tokens that no name fills, looking in subjects and spin groups", () => {
+    expect(unknownFields(steps, ["firstName"])).toEqual([
+      { step: 1, token: "Region" },
+      { step: 1, token: "nope" },
+      { step: 2, token: "nope" },
+    ]);
+  });
+  it("matches a name in other words", () => {
+    expect(unknownFields(steps, [...standardFieldNames(), "region", "NOPE"])).toEqual([]);
   });
 });

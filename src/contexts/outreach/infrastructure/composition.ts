@@ -86,7 +86,7 @@ export const unsubscribeDeps = (followUps: FollowUpStop): { store: SuppressionSt
 /** Settings, Suppression list: reads the list, and adds through the same suppression that ends follow-up sequences. */
 export const suppressionListDeps = (followUps: FollowUpStop): SuppressionListDeps => ({ list: drizzleSuppressionListStore, suppress: createSuppressionStore(followUps) });
 
-export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, admin: drizzleEnrollmentAdminStore });
+export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore });
 
 function mailboxDomainPolicy(): MailboxDomainPolicy {
   return { allowedDomains: parseAllowedDomains(env().MAILBOX_ALLOWED_DOMAINS), openSignup: env().AUTH_SIGNUP === "open" };

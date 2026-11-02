@@ -1,3 +1,4 @@
+import { drizzleMergeFieldSource } from "../../../infrastructure/drizzle-merge-fields";
 import { drizzleEnrollmentAdminStore } from "../../../infrastructure/drizzle-enrollment-admin";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
@@ -30,7 +31,7 @@ describeDb("linkedin connection and campaigns", () => {
     gateway.accounts = [{ ref: "u-" + tag, linkedinId: "ACo-" + tag, name: "Ada", username: "ada-" + tag, status: "connected" }];
     const deps: import("../../application/linkedin-management").LinkedInManagementDeps = { accounts: accountStore, gatewayFor: () => gateway, appUrl, now: () => new Date("2026-10-14T10:00:00Z"), audit: auditSink, connectLinks: connectStore };
     const actor: Actor = { userId, organizationId: id, role: "owner" };
-    return { id, tag, gateway, deps, actor, member: { ...actor, role: "member" } as Actor, campaignDeps: { campaigns: campaignStore, admin: drizzleEnrollmentAdminStore } };
+    return { id, tag, gateway, deps, actor, member: { ...actor, role: "member" } as Actor, campaignDeps: { campaigns: campaignStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore } };
   }
 
   beforeAll(async () => {
@@ -374,7 +375,7 @@ describeDb("linkedin connection and campaigns", () => {
     await sql`insert into people (organization_id, linkedin_slug, first_name, full_name) values (${t.id}, 'bo-n', null, 'Bo N')`;
     await campaignsUc.enrollLinkedInLeads(t.campaignDeps, t.actor, id, {});
     await sql`update campaign_enrollments set merge_fields = ${sql.json({ pitch: "x".repeat(300) })} where person_id = (select id from people where organization_id = ${t.id} and linkedin_slug = 'ada-n')`;
-    const detail = await campaignsUc.getLinkedInCampaignDetail({ campaigns: campaignStore, admin: drizzleEnrollmentAdminStore }, t.actor, id, { tab: "all", search: "", page: 1, pageSize: 50 });
+    const detail = await campaignsUc.getLinkedInCampaignDetail({ campaigns: campaignStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore }, t.actor, id, { tab: "all", search: "", page: 1, pageSize: 50 });
     const by = Object.fromEntries(detail.enrollments.rows.map((r) => [r.personName, r]));
     expect(by["Ada N"]).toMatchObject({ noteLength: "Hi Ada at Acme. ".length + 300, noteOverLimit: true });
     expect(by["Bo N"]).toMatchObject({ noteLength: "Hi at.".length, noteOverLimit: false });

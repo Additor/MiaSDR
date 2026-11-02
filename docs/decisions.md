@@ -522,7 +522,7 @@ An agent changes a campaign's senders only while it is not `active` (`agent_send
 
 ### Sequence
 
-The campaign's Sequence is its outbound steps in `campaigns.steps`. Merge fields come from `buildVariables`: company raw, person raw, standard fields and aliases, custom columns, then per-enrollment `merge_fields`. An empty merge field takes one adjacent space with it. Preview and send read the same variable columns (`enrollment-variables.ts`) and report unresolved tokens (`empty` or `unknown`).
+The campaign's Sequence is its outbound steps in `campaigns.steps`. Merge fields come from `buildVariables`: company raw, person raw, standard fields and aliases, custom columns, then per-enrollment `merge_fields`. An empty merge field takes one adjacent space with it. Preview and send read the same variable columns (`enrollment-variables.ts`) and report unresolved tokens (`empty` or `unknown`). A template reaches a field by its name in any case or by the same words (`fieldReader`), so `{{first_name}}` fills `firstName`. A token no lead of the organization holds a field for refuses a start or resume, for people and agents alike; a field that only some leads lack stays a warning, since an empty field renders cleanly.
 
 ### Follow-ups after a reply
 

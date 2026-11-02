@@ -1,3 +1,4 @@
+import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
 import { drizzleEnrollmentAdminStore } from "../drizzle-enrollment-admin";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Actor } from "@/shared/errors";
@@ -23,7 +24,7 @@ describeDb("campaign and mailbox management", () => {
     return {
       actor: { userId, organizationId: id, role },
       member: { userId, organizationId: id, role: "member" },
-      campaignDeps: { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, admin: drizzleEnrollmentAdminStore },
+      campaignDeps: { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore },
       mailboxDeps: { mailboxes: stores.drizzleMailboxStore, provider, now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null, openSignup: false } },
     };
   }
@@ -150,6 +151,27 @@ describeDb("campaign and mailbox management", () => {
       await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active")).rejects.toBeInstanceOf(ConflictError);
       await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "paused");
       await expect(campaignsUc.deleteCampaign(t.campaignDeps, t.actor, id)).rejects.toThrow(/Only a draft/);
+    });
+
+    it("will not start or resume a step with a field no lead has, and accepts one any person or company holds", async () => {
+      const t = await org();
+      await mailboxUc.connectMailbox(t.mailboxDeps, t.actor, { emailAddress: `fields${Math.random().toString(36).slice(2, 6)}@corp.test` });
+      const { id } = await campaignsUc.createCampaign(t.campaignDeps, t.actor, { name: "fields" });
+      const withBody = (body: string) => [{ stepNumber: 1, kind: "email" as const, subject: "Hello", body, waitDays: 0 }];
+      await campaignsUc.updateCampaign(t.campaignDeps, t.actor, id, { steps: withBody("Hi {{first_nmae}}") });
+      const refusal = await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active").catch((e: unknown) => e);
+      expect(refusal).toBeInstanceOf(ValidationError);
+      expect((refusal as ValidationError).issues).toEqual([{ step: 1, message: expect.stringContaining("{{first_nmae}}") }]);
+
+      await campaignsUc.updateCampaign(t.campaignDeps, t.actor, id, { steps: withBody("Hi {{first_name}} at {{Fav Color}}") });
+      await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active")).rejects.toThrow(/merge fields/);
+      // One person's source column, written the way an import keeps it, makes the field real for the whole organization.
+      await sql`insert into people (organization_id, email, raw) values (${t.actor.organizationId}, ${`raw${Math.random().toString(36).slice(2, 6)}@corp.test`}, ${sql.json({ fav_color: "teal" })})`;
+      await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active");
+      await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "paused");
+
+      await sql`update campaigns set steps = ${sql.json(withBody("Hi {{nope}}") as never)} where id = ${id}`;
+      await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active")).rejects.toThrow(/merge fields/);
     });
 
     it("a resume and a step edit that race cannot launch unchecked steps", async () => {

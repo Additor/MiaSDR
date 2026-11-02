@@ -1,3 +1,4 @@
+import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
 import { drizzleEnrollmentAdminStore } from "../drizzle-enrollment-admin";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NotFoundError, type Actor } from "@/shared/errors";
@@ -63,7 +64,7 @@ describeDb("campaign lead tables: tabs, search and paging", () => {
 
   const STATUS_CYCLE = ["pending", "active", "replied", "completed", "bounced", "suppressed", "failed", "cancelled", "removed"];
   // Listing reads only the campaign store, so the sender/enroll admin store stays out of these tests.
-  const emailDeps = () => ({ campaigns: emailStore, mailboxes: mailboxStore, admin: drizzleEnrollmentAdminStore }) as unknown as import("../../application/campaign-management").CampaignDeps;
+  const emailDeps = () => ({ campaigns: emailStore, mailboxes: mailboxStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore }) as unknown as import("../../application/campaign-management").CampaignDeps;
   const detail = (actor: Actor, id: string, query: EnrollmentListQuery) => email.getCampaignDetail(emailDeps(), actor, id, query);
 
   describe("email", () => {
@@ -178,7 +179,7 @@ describeDb("campaign lead tables: tabs, search and paging", () => {
     let other: Awaited<ReturnType<typeof org>>;
     let cid: string;
     let ids: string[];
-    const deps = () => ({ campaigns: linkedinStore, admin: drizzleEnrollmentAdminStore }) as unknown as import("../../linkedin/application/linkedin-campaigns").LinkedInCampaignDeps;
+    const deps = () => ({ campaigns: linkedinStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore }) as unknown as import("../../linkedin/application/linkedin-campaigns").LinkedInCampaignDeps;
     const detailOf = (actor: Actor, id: string, query: EnrollmentListQuery) => linkedin.getLinkedInCampaignDetail(deps(), actor, id, query);
 
     beforeAll(async () => {

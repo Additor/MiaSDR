@@ -32,7 +32,7 @@ export const previewCampaignLaunchTool = defineTool({
     pendingLeads: z.number(),
     agentEnrollsLeftToday: z.number(),
     launchToken: z.string(),
-    firstStep: z.object({ subject: z.string().nullable(), bodyText: z.string(), truncated: z.boolean(), leadName: z.string().nullable() }),
+    firstStep: z.object({ subject: z.string().nullable(), bodyText: z.string(), truncated: z.boolean(), leadName: z.string().nullable(), unresolved: z.array(z.object({ token: z.string(), reason: z.enum(["empty", "unknown"]) })) }),
     emptySubjectLeads: z.number().nullable(),
     estimatedDays: z.number().nullable(),
     appUrl: z.string(),
@@ -43,7 +43,7 @@ export const previewCampaignLaunchTool = defineTool({
     const verdict = preview.problems.length === 0 ? "Nothing stops it." : `${preview.problems.length} problem(s): ${preview.problems.join(" ")}`;
     // The rendered step carries a lead's own values, so it comes fenced like get_campaign's preview.
     const body = clip(preview.firstStep.bodyText, LONG_TEXT_CHARS);
-    const firstStep = { subject: fencedField(out, preview.firstStep.subject), bodyText: untrusted(out, "field", body.text), truncated: body.truncated, leadName: preview.firstStep.leadName };
+    const firstStep = { subject: fencedField(out, preview.firstStep.subject), bodyText: untrusted(out, "field", body.text), truncated: body.truncated, leadName: preview.firstStep.leadName, unresolved: preview.firstStep.unresolved };
     return {
       summary: `${preview.status} campaign, ${preview.pendingLeads} lead(s) waiting, ${preview.senders.length} sender(s). ${verdict}\n${UNTRUSTED_NOTE}`,
       structured: { ...preview, firstStep, appUrl },

@@ -1,3 +1,4 @@
+import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Actor } from "@/shared/errors";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
@@ -41,8 +42,8 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
   };
   const engineDeps = (provider: FakeMailboxProvider): EngineDeps => ({ store: emailStore, provider, clock, random: () => 0, appUrl: "https://app.test", unsubscribeSecret: "u".repeat(40) });
   const liDeps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store: liStore, gateways: gateway, clock, random: () => 0 });
-  const emailUc = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, admin, now: () => current });
-  const liUc = () => ({ campaigns: liCampaignStore, admin, now: () => current });
+  const emailUc = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin, now: () => current });
+  const liUc = () => ({ campaigns: liCampaignStore, fields: drizzleMergeFieldSource, admin, now: () => current });
 
   async function newOrg() {
     current = start;
@@ -523,7 +524,7 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
     });
 
     describe("mailbox delete", () => {
-      const mailboxDeps = () => ({ mailboxes: stores.drizzleMailboxStore, provider: new FakeMailboxProvider(), now: () => current, policy: { allowedDomains: null, openSignup: false } });
+      const mailboxDeps = () => ({ mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, provider: new FakeMailboxProvider(), now: () => current, policy: { allowedDomains: null, openSignup: false } });
       let mailboxUc: typeof import("../../email/application/mailbox-management");
       beforeAll(async () => {
         mailboxUc = await import("../../email/application/mailbox-management");
@@ -572,7 +573,7 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
       it("blocks a launch when every sampled lead renders an empty subject", async () => {
         const t = await newOrg();
         await mailbox(t, "a");
-        const c = await subjectCampaign(t, "draft");
+        const c = await subjectCampaign(t, "draft", "{{title}}");
         await lead(t, c, "one", {});
         await lead(t, c, "three", {});
         await expect(email.changeCampaignStatus(emailUc(), t.actor, c, "active")).rejects.toThrow(/subject of step 1 renders empty/);
@@ -609,7 +610,7 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
       it("does not run the subject check on resume", async () => {
         const t = await newOrg();
         await mailbox(t, "a");
-        const c = await subjectCampaign(t, "paused");
+        const c = await subjectCampaign(t, "paused", "{{title}}");
         await lead(t, c, "one", {});
         await email.changeCampaignStatus(emailUc(), t.actor, c, "active");
         expect((await sql`select status from campaigns where id = ${c}`)[0].status).toBe("active");

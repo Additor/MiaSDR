@@ -193,7 +193,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks \`truncated\` whole with \`previewStep\` and send its \`readToken\` with the edited step; text that looks like the cut copy is refused (\`truncated_text\`). \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`.",
+    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks \`truncated\` whole with \`previewStep\` and send its \`readToken\` with the edited step; text that looks like the cut copy is refused (\`truncated_text\`). Steps write merge fields as \`{{token}}\`, with a \`token\` from get_workspace \`mergeFields\`. After a save, \`unknownFields\` names any no lead has a field for: they would reach every lead as a blank, so the campaign cannot start until they change. \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -303,6 +303,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
         "channel": {},
         "enroll": {},
         "error": {},
+        "unknownFields": {},
       },
       "type": "object",
     },
@@ -1215,6 +1216,7 @@ exports[`MCP contract > keeps the definitions within the token budget and unchan
         "linkedinAccounts": {},
         "mailboxes": {},
         "members": {},
+        "mergeFields": {},
         "replyTypes": {},
       },
       "type": "object",

@@ -6,6 +6,7 @@ import { UTC_DAY_MS, utcDayStart } from "@/shared/utc-day";
 import { agentCampaignRefusal, launchToken, launchTokenMatches, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
 import { canTransition, type CampaignStatus } from "../domain/campaign";
 import { changeLinkedInCampaignStatus, linkedInStartProblems, previewLinkedInStep, type LinkedInCampaignDeps } from "../linkedin/application/linkedin-campaigns";
+import type { UnresolvedToken } from "../domain/variables";
 import { campaignStartProblems, changeCampaignStatus, previewStep, type CampaignDeps } from "./campaign-management";
 
 /**
@@ -114,7 +115,8 @@ export interface LaunchPreview {
   pendingLeads: number;
   agentEnrollsLeftToday: number;
   launchToken: string;
-  firstStep: { subject: string | null; bodyText: string; leadName: string | null };
+  /** `unresolved`: the fields step 1 leaves blank for this lead. */
+  firstStep: { subject: string | null; bodyText: string; leadName: string | null; unresolved: UnresolvedToken[] };
   /** Email: sampled leads whose first subject renders empty; they are skipped at send time. */
   emptySubjectLeads: number | null;
   /** LinkedIn: days the waiting leads take at the senders' invitation limits. */
@@ -158,8 +160,8 @@ export async function previewLaunch(deps: AgentCampaignDeps, actor: Actor, input
 
   const firstStep =
     row.channel === "email"
-      ? await previewStep(deps.email, actor, row.id, 1).then((p) => ({ subject: p.subject, bodyText: p.bodyText, leadName: p.leadName })).catch(() => ({ subject: null, bodyText: "", leadName: null }))
-      : await previewLinkedInStep(deps.linkedin, actor, row.id, 1).then((p) => ({ subject: null, bodyText: p.text, leadName: p.leadName })).catch(() => ({ subject: null, bodyText: "", leadName: null }));
+      ? await previewStep(deps.email, actor, row.id, 1).then((p) => ({ subject: p.subject, bodyText: p.bodyText, leadName: p.leadName, unresolved: p.unresolved })).catch(() => ({ subject: null, bodyText: "", leadName: null, unresolved: [] }))
+      : await previewLinkedInStep(deps.linkedin, actor, row.id, 1).then((p) => ({ subject: null, bodyText: p.text, leadName: p.leadName, unresolved: p.unresolved })).catch(() => ({ subject: null, bodyText: "", leadName: null, unresolved: [] }));
   const inviteCapacity = senders.senders.filter((s) => s.status === "connected").reduce((sum, s) => sum + (s.dailyLimit ?? 0), 0);
   return {
     channel: row.channel,

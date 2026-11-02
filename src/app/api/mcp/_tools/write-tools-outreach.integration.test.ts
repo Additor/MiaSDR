@@ -45,6 +45,17 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     }
   });
 
+  it("says which fields no lead has when steps are saved", async () => {
+    const created = await owner.tool("draft_campaign", { action: "create", channel: "email", name: "Fields" });
+    const campaignId = created.structured.campaignId as string;
+    const save = (body: string) => owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ stepNumber: 1, kind: "email", subject: "Hello", body, waitDays: 0 }] });
+    const typo = await save("Hi {{first_nmae}}");
+    expect(typo.isError, typo.text).toBe(false);
+    expect(typo.structured.unknownFields).toEqual([{ step: 1, token: "first_nmae" }]);
+    expect(typo.text).toContain("{{first_nmae}} (step 1)");
+    expect((await save("Hi {{first_name}}")).structured.unknownFields).toEqual([]);
+  });
+
   it("refuses steps that carry a body get_campaign cut", async () => {
     const created = await owner.tool("draft_campaign", { action: "create", channel: "email", name: "Long steps" });
     const campaignId = created.structured.campaignId as string;

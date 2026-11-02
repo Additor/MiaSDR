@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "@/platform/db/client";
+import { db, type DbHandle } from "@/platform/db/client";
 import { entityColumns } from "@/contexts/people/infrastructure/schema";
 import type { MergeFieldSource } from "../application/merge-fields";
 
@@ -24,5 +24,15 @@ export const drizzleMergeFieldSource: MergeFieldSource = {
       order by key
       limit ${SOURCE_KEY_LIMIT}`);
     return [...rows].map((r) => r.key);
+  },
+
+  async fieldNames(organizationId, tx?: DbHandle) {
+    const rows = await (tx ?? db).execute<{ name: string }>(sql`
+      select name from entity_columns where organization_id = ${organizationId} and entity = 'people' and archived_at is null
+      union select jsonb_object_keys(raw) from people where organization_id = ${organizationId} and jsonb_typeof(raw) = 'object'
+      union select jsonb_object_keys(custom) from people where organization_id = ${organizationId} and jsonb_typeof(custom) = 'object'
+      union select jsonb_object_keys(raw) from companies where organization_id = ${organizationId} and jsonb_typeof(raw) = 'object'
+      union select jsonb_object_keys(merge_fields) from campaign_enrollments where organization_id = ${organizationId} and merge_fields <> '{}'::jsonb`);
+    return [...rows].map((r) => r.name);
   },
 };

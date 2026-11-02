@@ -60,12 +60,12 @@ export const TOOLS: readonly ToolDefinition[] = [
  * One server per request, built for the principal: the tools it registers depend on the token's scopes, so a token
  * sees only what it may call. Each tool runs through `runTool` (`src/app/_lib/mcp.ts`).
  */
-export function createMcpServer(principal: McpPrincipal, appUrl: string): McpServer {
+export function createMcpServer(principal: McpPrincipal, appUrl: string, connectionClient: string | null = null): McpServer {
   const server = new McpServer(
     { name: "miasdr", version: pkg.version },
     { instructions: serverInstructions(accessOf(principal)), capabilities: { extensions: { [UI_EXTENSION]: {} } }, cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
   );
-  registerTools(server, principal, appUrl, TOOLS, toolHooks(principal));
+  registerTools(server, principal, appUrl, TOOLS, toolHooks(principal), connectionClient);
   return server;
 }
 
@@ -74,7 +74,7 @@ export function createMcpServer(principal: McpPrincipal, appUrl: string): McpSer
  * runs. Those calls still belong in the activity log, so the route shows the request here first. Anything else is left
  * for the SDK and for `registerTools`, which logs the calls it runs.
  */
-export async function recordRefusedCall(principal: McpPrincipal, body: string): Promise<void> {
+export async function recordRefusedCall(principal: McpPrincipal, body: string, connectionClient: string | null = null): Promise<void> {
   let message: { method?: unknown; params?: { name?: unknown; arguments?: unknown; _meta?: unknown } } | null;
   try {
     message = JSON.parse(body);
@@ -93,7 +93,7 @@ export async function recordRefusedCall(principal: McpPrincipal, body: string): 
     kind: tool && !tool.annotations.readOnlyHint ? "write" : "read",
     target: callTarget(args),
     errorCode: tool ? "invalid_input" : "unknown_tool",
-    clientName: clientNameFrom(_meta),
+    clientName: clientNameFrom(_meta) ?? connectionClient,
     durationMs: 0,
   }).catch((cause) => console.error(`[mcp] could not log a refused call for organization ${principal.organizationId}`, cause));
 }
