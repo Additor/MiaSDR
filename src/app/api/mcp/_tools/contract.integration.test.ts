@@ -90,6 +90,21 @@ describeDb("MCP contract", () => {
     expect(tools).toMatchSnapshot();
   });
 
+  it("links the two cards from their tools, serves them, and never builds a page from answer text", async () => {
+    const { CARDS, DRAFT_CARD_URI } = await import("./cards");
+    const { callMcp } = await import("@/test-support/mcp-client");
+    const draftTool = writeTools.find((t) => t.name === "write_reply_draft") as ListedTool & { _meta?: { ui?: { resourceUri?: string } } };
+    expect(draftTool._meta?.ui?.resourceUri).toBe(DRAFT_CARD_URI);
+    expect(tools.every((t) => !("_meta" in t))).toBe(true);
+    for (const card of Object.values(CARDS)) expect(card.html).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/);
+
+    const read = await callMcp(POST, { era: "modern", token: writer.token, method: "resources/read", params: { uri: DRAFT_CARD_URI } });
+    expect((read.body as { result: { contents: Array<{ mimeType: string; text: string }> } }).result.contents[0]).toMatchObject({ mimeType: "text/html;profile=mcp-app", text: expect.stringContaining("<!doctype html>") });
+    // A read-only token has no tool that names this card, so it has no card either.
+    const refused = await callMcp(POST, { era: "modern", token: caller.token, method: "resources/read", params: { uri: DRAFT_CARD_URI } });
+    expect((refused.body as { error?: unknown }).error).toBeDefined();
+  });
+
   it("keeps code names out of the server instructions and every tool's title and description", async () => {
     const { serverInstructions } = await import("./instructions");
     const texts = [serverInstructions("read"), serverInstructions("write"), ...writeTools.flatMap((t) => [t.name, (t as ListedTool & { title?: string }).title ?? "", t.description])];

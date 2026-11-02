@@ -7,6 +7,7 @@ import { callTarget, recordMcpToolCall } from "@/contexts/tenancy/application/mc
 import { mcpRateLimitDeps, mcpToolCallDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import pkg from "../../../../../package.json";
 import { draftCampaignTool } from "./campaign-drafts";
+import { UI_EXTENSION } from "./cards";
 import { launchCampaignTool, previewCampaignLaunchTool } from "./campaign-launch";
 import { getCampaignTool, listCampaignsTool } from "./campaigns";
 import { getConversationTool } from "./conversation";
@@ -62,7 +63,7 @@ export const TOOLS: readonly ToolDefinition[] = [
 export function createMcpServer(principal: McpPrincipal, appUrl: string): McpServer {
   const server = new McpServer(
     { name: "miasdr", version: pkg.version },
-    { instructions: serverInstructions(accessOf(principal)), cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
+    { instructions: serverInstructions(accessOf(principal)), capabilities: { extensions: { [UI_EXTENSION]: {} } }, cacheHints: { "tools/list": { ttlMs: TOOL_LIST_TTL_MS, cacheScope: "private" } } },
   );
   registerTools(server, principal, appUrl, TOOLS, toolHooks(principal));
   return server;

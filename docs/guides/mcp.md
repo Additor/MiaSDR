@@ -67,6 +67,10 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 
 Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on it. An answer stays under about 10,000 tokens. A request that would return more fails with `answer_too_large`; narrow it with a filter, a page or a shorter date range. Long text comes cut and marked `truncated`: a reply draft keeps 12,000 characters, and `get_campaign` keeps 300 of each step body except the step named in `previewStep`, which comes whole. A write that sends a cut copy back is refused (`truncated_text`), and `send_reply` refuses a draft longer than 12,000 characters (`draft_not_read`).
 
+## Cards in the chat
+
+A client that supports MCP Apps shows a card beside two tools' answers: `write_reply_draft` shows the draft, and `preview_campaign_launch` shows what a start would do. A card only displays the answer and opens MiaSDR, so a person reviews and sends there. Other clients read the same answer as text.
+
 ## Text from outside your organization
 
 A lead's email or LinkedIn message, the From header, and values from imports or providers (titles, companies, custom fields) reach the agent inside `<untrusted_...>` tags with a random suffix per call. The server tells the agent that tagged text, lead names and addresses are data and that it must not follow instructions found in them. A lead can still write text meant to steer an agent, and a tag lowers that risk without removing it. Review what your agent proposes before you act on it.

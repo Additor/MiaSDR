@@ -2,6 +2,7 @@ import { z } from "zod";
 import { launchCampaign, previewLaunch } from "@/contexts/outreach/application/agent-campaigns";
 import { LAUNCH_PURPOSES } from "@/contexts/outreach/domain/agent-campaign";
 import { agentCampaignDeps } from "@/contexts/outreach/infrastructure/agent-campaign-composition";
+import { LAUNCH_CARD_URI } from "./cards";
 import { CHANNELS } from "./campaigns";
 import { defineTool, READ_ONLY } from "./define";
 import { appLinks, clip, fencedField, LONG_TEXT_CHARS, UNTRUSTED_NOTE, untrusted } from "./output";
@@ -18,6 +19,7 @@ export const previewCampaignLaunchTool = defineTool({
   scope: "mcp:send",
   sends: "campaigns",
   annotations: READ_ONLY,
+  card: LAUNCH_CARD_URI,
   input: z.object({ channel: z.enum(CHANNELS), campaignId: z.string(), purpose: z.enum(LAUNCH_PURPOSES) }),
   output: z.object({
     channel: z.enum(CHANNELS),

@@ -5,6 +5,7 @@ import { getLinkedInReplyPanel } from "@/contexts/conversations/application/link
 import { createManualDraft, discardDraft, editDraft, getReplyPanel, regenerateDraft, requestDraft } from "@/contexts/conversations/application/reply-management";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
+import { DRAFT_CARD_URI } from "./cards";
 import { defineTool, need, type ToolContext } from "./define";
 import { appLinks, clip, cutCopyRefusal, fencedField, isCutCopy, LONG_TEXT_CHARS, unfenced, type ToolOutputContext } from "./output";
 
@@ -42,6 +43,7 @@ export const writeReplyDraftTool = defineTool({
   ].join(" "),
   scope: "mcp:write",
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  card: DRAFT_CARD_URI,
   input: z.object({
     action: z.enum(ACTIONS),
     conversationId: z.string().optional(),

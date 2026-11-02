@@ -58,6 +58,11 @@ exports[`MCP contract > gives a send token the three send tools within budget, t
     "title": "Launch campaign",
   },
   {
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://miasdr/campaign-launch.html",
+      },
+    },
     "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true,
@@ -748,6 +753,11 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
     "title": "Update deal",
   },
   {
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://miasdr/reply-draft.html",
+      },
+    },
     "annotations": {
       "destructiveHint": true,
       "openWorldHint": true,

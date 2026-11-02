@@ -6,6 +6,7 @@ import { callTarget, type McpToolCallEntry } from "@/contexts/tenancy/applicatio
 import { hasScope, type McpScope } from "@/contexts/tenancy/domain/mcp-policy";
 import type { McpRateBucket } from "@/contexts/tenancy/domain/mcp-rate-limit";
 import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
+import { CARD_MIME_TYPE, CARDS } from "./cards";
 import { estimateTokens, MAX_RESPONSE_TOKENS, toolOutputContext, type ToolOutputContext } from "./output";
 
 /** Reads this organization's data and changes nothing (the plan's "RO, CW"). */
@@ -32,6 +33,8 @@ export interface ToolDefinition<I extends AnyObject = AnyObject, O extends AnyOb
   /** For a `mcp:send` tool: the part of the send policy it needs, so `tools/list` leaves it out while the policy refuses. */
   sends?: "replies" | "campaigns";
   annotations: ToolAnnotations;
+  /** The MCP Apps card a host that supports them shows beside the answer (`cards.ts`). */
+  card?: string;
   input: I;
   output: O;
   /**
@@ -124,6 +127,14 @@ const actionOf = (input: unknown): string | null => {
   return typeof action === "string" ? action : null;
 };
 
+/** The card of each tool the token sees, so a host can read the one a tool names. The pages hold no data. */
+function registerCards(server: McpServer, tools: readonly ToolDefinition[]): void {
+  for (const uri of new Set(tools.flatMap((tool) => (tool.card ? [tool.card] : [])))) {
+    const card = CARDS[uri];
+    server.registerResource(card.name, uri, { description: card.description, mimeType: CARD_MIME_TYPE }, async () => ({ contents: [{ uri, mimeType: CARD_MIME_TYPE, text: card.html }] }));
+  }
+}
+
 /**
  * Registers the tools the token's scopes and the send policy allow, by name, so `tools/list` comes out in the same order every time. Each
  * call runs through `runTool` with the person's actor and a fresh output context: its rate buckets first, then the
@@ -131,12 +142,12 @@ const actionOf = (input: unknown): string | null => {
  * there is logged and never fails the call.
  */
 export function registerTools(server: McpServer, principal: McpPrincipal, appUrl: string, tools: readonly ToolDefinition[], hooks: ToolHooks): void {
-  for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!hasScope(principal.scopes, tool.scope)) continue;
-    if (tool.sends && !principal.send[tool.sends]) continue;
+  const visible = [...tools].sort((a, b) => a.name.localeCompare(b.name)).filter((tool) => hasScope(principal.scopes, tool.scope) && (!tool.sends || principal.send[tool.sends]));
+  registerCards(server, visible);
+  for (const tool of visible) {
     server.registerTool(
       tool.name,
-      { title: tool.title, description: tool.description, inputSchema: tool.input, outputSchema: publishedOutput(tool.output), annotations: tool.annotations },
+      { title: tool.title, description: tool.description, inputSchema: tool.input, outputSchema: publishedOutput(tool.output), annotations: tool.annotations, ...(tool.card ? { _meta: { ui: { resourceUri: tool.card } } } : {}) },
       async (input, extra) => {
         const started = hooks.now();
         const clientName = clientNameFrom(extra.mcpReq.envelope);

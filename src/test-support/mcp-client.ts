@@ -48,6 +48,7 @@ export function mcpRequest(options: McpCallOptions): Request {
     headers["mcp-protocol-version"] = MODERN_VERSION;
     headers["mcp-method"] = options.method;
     if (typeof params.name === "string") headers["mcp-name"] = params.name;
+    if (typeof params.uri === "string") headers["mcp-name"] = params.uri;
   } else if (options.method !== "initialize") {
     headers["mcp-protocol-version"] = LEGACY_VERSION;
   }

@@ -636,6 +636,12 @@ An agent sends a reply with `send_reply` over MCP. The tool calls `approveAndSen
 - **LinkedIn.** An agent sends a saved draft (`draftId`, `revision`) as it stands: the text is the stored body, the revision stays, and the composer's open-draft path does not run. A call without a draft answers 422. An agent types a LinkedIn draft with `write_reply_draft` `create_manual` (`createManualDraft` with `channel: "linkedin"`).
 - **Records.** `send_attempts.origin` is `agent`, with `mcp_token_id` and `client_name`. The `draft.sent` event carries `meta.via`, the stored message `raw.sentVia` (the token name), and the thread marks it "Sent by an agent ({token name})". `send_reply` answers `retryable` true for a definite failure and for a block that leaves the draft in review; `delivery_uncertain` tells the agent not to send again.
 
+### MCP Apps cards
+
+- `write_reply_draft` and `preview_campaign_launch` name a card (`_tools/cards.ts`) in `_meta.ui.resourceUri`. A token reads a card only while it sees the tool.
+- A card displays the tool's answer and opens MiaSDR. It holds no send or start button, so "Agent sends" stays the only way an agent sends. It builds the page with `textContent`, since an answer carries strangers' text.
+- The pages speak the MCP Apps protocol themselves, in about 50 lines, instead of bundling `@modelcontextprotocol/ext-apps`.
+
 ### LinkedIn replies
 
 - A typed reply is a `drafts` row (`channel = 'linkedin'`, null subject) plus a `send_attempts` row (`provider = 'linkedin'`). Pressing Send is the approval. `POST /api/inbox/[id]/linkedin-reply` takes optional `draftId` and `revision` to send an AI draft with the person's edits.
