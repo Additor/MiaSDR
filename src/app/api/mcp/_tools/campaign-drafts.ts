@@ -1,16 +1,14 @@
 import { z } from "zod";
-import { stepSchema } from "@/app/api/campaigns/step-schema";
-import { linkedinStepSchema } from "@/app/api/linkedin/campaigns/step-schema";
 import type { RemoveCounts } from "@/contexts/outreach/application/enrollment-admin";
 import { noticesForPeople } from "@/contexts/outreach/application/cross-campaign-notices";
 import type { EnrollOptions } from "@/contexts/outreach/application/enroll-options";
 import { findUnknownFields } from "@/contexts/outreach/application/merge-fields";
 import { createCampaign, enrollLeads, enrollPickedLeads, removeLeads, updateCampaign } from "@/contexts/outreach/application/campaign-management";
-import type { StepInput } from "@/contexts/outreach/domain/campaign";
+import { stepSchema } from "@/contexts/outreach/domain/step-schema";
+import { linkedinStepSchema } from "@/contexts/outreach/linkedin/domain/step-schema";
 import type { UnknownField } from "@/contexts/outreach/domain/variables";
 import { campaignDeps, mergeFieldDeps } from "@/contexts/outreach/infrastructure/composition";
 import { createLinkedInCampaign, enrollLinkedInLeads, enrollPickedLinkedInLeads, removeLinkedInLeads, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
-import type { LinkedInStep } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { linkedinCampaignDeps, linkedinNoticeDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { agentEnroll, agentUpdateCampaign } from "@/contexts/outreach/application/agent-campaigns";
 import { agentCampaignDeps } from "@/contexts/outreach/infrastructure/agent-campaign-composition";
@@ -38,7 +36,8 @@ const counted = async (result: Promise<object>): Promise<Counts> => (await resul
 
 interface ChannelWrites {
   create(actor: Actor, input: { name: string; personal: boolean; senderIds?: string[] }): Promise<{ id: string }>;
-  update(actor: Actor, id: string, patch: { name?: string; steps?: unknown[]; senderIds?: string[] }, tx: DbHandle): Promise<void>;
+  /** Checks the agent's steps by the channel's rules, and answers them with the update that saves them. */
+  withSteps(sent: SentStep[] | undefined): { steps: Array<{ stepNumber: number; subject?: string; body: string }> | undefined; update(actor: Actor, id: string, patch: { name?: string; senderIds?: string[] }, tx: DbHandle): Promise<void> };
   byQuery(actor: Actor, id: string, query: string, dryRun: boolean, tx: DbHandle): Promise<Counts>;
   picked(actor: Actor, id: string, personIds: string[], dryRun: boolean, tx: DbHandle): Promise<Counts>;
   remove(actor: Actor, id: string, enrollmentIds: string[]): Promise<RemoveCounts>;
@@ -47,14 +46,20 @@ interface ChannelWrites {
 const WRITES: Record<Channel, ChannelWrites> = {
   email: {
     create: (actor, input) => createCampaign(campaignDeps(), actor, { name: input.name, senderIds: input.senderIds }),
-    update: (actor, id, patch, tx) => updateCampaign(campaignDeps(), actor, id, { ...patch, steps: patch.steps as StepInput[] | undefined }, tx),
+    withSteps: (sent) => {
+      const steps = sent && stepsToSave(stepSchema, sent);
+      return { steps, update: (actor, id, patch, tx) => updateCampaign(campaignDeps(), actor, id, { ...patch, steps }, tx) };
+    },
     byQuery: (actor, id, query, dryRun, tx) => counted(enrollLeads(campaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL, tx)),
     picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLeads(campaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
     remove: (actor, id, enrollmentIds) => removeLeads(campaignDeps(), actor, id, enrollmentIds),
   },
   linkedin: {
     create: (actor, input) => createLinkedInCampaign(linkedinCampaignDeps(), actor, { name: input.name, type: input.personal ? "personal" : undefined, senderIds: input.senderIds }),
-    update: (actor, id, patch, tx) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps: patch.steps as LinkedInStep[] | undefined }, tx),
+    withSteps: (sent) => {
+      const steps = sent && stepsToSave(linkedinStepSchema, sent);
+      return { steps, update: (actor, id, patch, tx) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps }, tx) };
+    },
     byQuery: (actor, id, query, dryRun, tx) => counted(enrollLinkedInLeads(linkedinCampaignDeps(), actor, id, { query, dryRun, collectIds: true }, AGENT_ENROLL, tx)),
     picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLinkedInLeads(linkedinCampaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
     remove: (actor, id, enrollmentIds) => removeLinkedInLeads(linkedinCampaignDeps(), actor, id, enrollmentIds),
@@ -80,8 +85,7 @@ const step = z.object({
 type SentStep = z.infer<typeof step>;
 
 /** The same rules as the campaign page's own save: each channel's step kinds and lengths, with no tag an answer added. */
-function stepsToSave(channel: Channel, steps: SentStep[]): Array<{ stepNumber: number; subject?: string; body: string }> {
-  const schema = channel === "email" ? stepSchema : linkedinStepSchema;
+function stepsToSave<Step>(schema: z.ZodType<Step>, steps: SentStep[]): Step[] {
   // The schema keeps its own keys, so `readToken` stops here.
   return steps.map((s) => {
     const parsed = schema.safeParse({ ...s, subject: s.subject ? unfenced(s.subject) : undefined, body: unfenced(s.body) });
@@ -148,7 +152,7 @@ export const draftCampaignTool = defineTool({
     }
     if (input.action === "update") {
       if (input.name === undefined && input.steps === undefined && input.senderIds === undefined) throw new ValidationError("update needs name, steps or senderIds.");
-      const steps = input.steps && stepsToSave(input.channel, input.steps);
+      const { steps, update } = writes.withSteps(input.steps);
       await agentUpdateCampaign(
         agentCampaignDeps(),
         actor,
@@ -159,7 +163,7 @@ export const draftCampaignTool = defineTool({
           const cut = input.steps?.some((s) => old.some((o) => s.readToken !== bodyReadToken(o.body) && isCutCopy(s.body, o.body, STEP_BODY_CHARS)));
           if (cut) throw cutCopyRefusal("step body", "Read the step whole with get_campaign `previewStep` and send its `readToken` with your edit, or write the full text yourself.");
         },
-        (tx) => writes.update(actor, campaignId, { name: input.name, steps, senderIds: input.senderIds }, tx),
+        (tx) => update(actor, campaignId, { name: input.name, senderIds: input.senderIds }, tx),
       );
       const unknown = steps ? await findUnknownFields(mergeFieldDeps().source, actor.organizationId, steps) : [];
       const warning = unknown.length > 0 ? ` No lead has a field for ${unknown.map((u) => `{{${u.token}}} (step ${u.step})`).join(", ")}, so the campaign cannot start until they change.` : "";

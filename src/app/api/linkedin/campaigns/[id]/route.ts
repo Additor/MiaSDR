@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { MAX_CAMPAIGN_SENDERS } from "@/contexts/outreach/application/enrollment-admin";
 import { deleteLinkedInCampaign, getLinkedInCampaign, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import { linkedinCampaignDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { withActor } from "@/app/_lib/api";
-import { linkedinStepSchema } from "../step-schema";
+import { linkedinStepSchema } from "@/contexts/outreach/linkedin/domain/step-schema";
 
 export async function GET(_request: Request, ctx: RouteContext<"/api/linkedin/campaigns/[id]">) {
   const { id } = await ctx.params;
@@ -12,7 +13,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/linkedin/ca
 export async function PATCH(request: Request, ctx: RouteContext<"/api/linkedin/campaigns/[id]">) {
   const { id } = await ctx.params;
   return withActor(async (actor) => {
-    const body = z.object({ name: z.string().optional(), type: z.enum(["regular", "personal"]).optional(), steps: z.array(linkedinStepSchema).optional(), senderIds: z.array(z.uuid()).max(50).optional() }).parse(await request.json());
+    const body = z.object({ name: z.string().optional(), type: z.enum(["regular", "personal"]).optional(), steps: z.array(linkedinStepSchema).optional(), senderIds: z.array(z.uuid()).max(MAX_CAMPAIGN_SENDERS).optional() }).parse(await request.json());
     await updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, body);
     return { ok: true };
   });

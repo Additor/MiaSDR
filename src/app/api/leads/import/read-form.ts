@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { CORE_TARGETS, type Mapping } from "@/contexts/people/domain/import-plan";
+import type { Mapping } from "@/contexts/people/domain/import-plan";
+import { importTargetSchema } from "@/contexts/people/domain/import-target-schema";
 import { MAX_FILE_BYTES } from "@/platform/files/csv";
 import { normalizePhoneCountry } from "@/contexts/tenancy/domain/phone-country";
 import { PayloadTooLargeError, ValidationError } from "@/shared/errors";
 
-const target = z.union([z.literal("skip"), z.enum(CORE_TARGETS), z.string().regex(/^custom:.+$/)]);
-const mappingSchema = z.record(z.string(), target);
+const mappingSchema = z.record(z.string(), importTargetSchema);
 
 export interface ImportForm {
   file: File;

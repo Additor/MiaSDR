@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Actor } from "@/shared/errors";
-import { MAX_ENROLL_BATCH, archiveOn, deleteOn, enrollOn, updateCampaignOn, type CampaignChannel, type CampaignLifecycleDeps, type CampaignLifecycleStore } from "./campaign-lifecycle";
+import { MAX_ENROLL_BATCH, archiveOn, createCampaignOn, deleteOn, enrollOn, updateCampaignOn, type CampaignChannel, type CampaignLifecycleDeps, type CampaignLifecycleStore } from "./campaign-lifecycle";
 import type { CampaignStatus } from "../domain/campaign";
+import { MAX_CAMPAIGN_SENDERS, type EnrollmentAdminStore } from "./enrollment-admin";
 
 type Step = { stepNumber: number; body: string };
 const actor: Actor = { userId: "u1", organizationId: "org1", role: "owner" };
@@ -49,6 +50,13 @@ describe("campaign lifecycle", () => {
     await enrollOn(deps.campaigns, actor, "c1", { limit: MAX_ENROLL_BATCH + 1 });
     await enrollOn(deps.campaigns, actor, "c1", {});
     expect(limits).toEqual([MAX_ENROLL_BATCH, MAX_ENROLL_BATCH]);
+  });
+
+  it("caps a campaign's senders in the use case, for a caller without the route's schema", async () => {
+    const { deps } = setup("draft");
+    const ids = Array.from({ length: MAX_CAMPAIGN_SENDERS + 1 }, (_, i) => `s${i}`);
+    const admin = { findSenders: async () => ids.map((id) => ({ id, label: id, connected: true })) } as unknown as EnrollmentAdminStore;
+    await expect(createCampaignOn({ ...deps, admin }, channel, actor, { name: "Q4", senderIds: ids }, (name) => ({ name, createdBy: actor.userId, steps: [] }))).rejects.toThrow(`Assign up to ${MAX_CAMPAIGN_SENDERS} senders`);
   });
 
   it("uses the channel's words when an edit would drop a step a lead reached", async () => {
