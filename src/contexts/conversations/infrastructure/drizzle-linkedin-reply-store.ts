@@ -1,10 +1,9 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { channelSettings, conversations, drafts, events, linkedinAccounts, mcpTokens, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
-import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
+import { channelSettings, conversations, drafts, linkedinAccounts, mcpTokens, people, records, sendAttempts, sends } from "@/platform/db/schema";
+import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
-import type { AttemptRow } from "../application/reply-ports";
-import { ATTEMPT_COUNTED, ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
+import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
 import { utcDayStart } from "@/shared/utc-day";
 import { replyBlock, replyGapSeconds } from "../domain/linkedin-reply";
 import { publicConversation } from "@/platform/db/conversation-visibility";
@@ -16,33 +15,13 @@ import { disconnectLinkedInAccount, pauseLinkedInAccount } from "@/contexts/outr
 import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { isUuid } from "@/shared/uuid";
 import { lockAgentSend } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
-import { attemptOrigin, attemptVia, checkAgentReply } from "./agent-reply-gate";
+import { attemptOrigin, checkAgentReply } from "./agent-reply-gate";
+import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt, type LinkedInSnapshot } from "./reply-attempt-ledger";
 import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, REPLY_REFUSALS, replyRefusal, staleDraftRefusal } from "../domain/reply-send";
 
 type Tx = DbTx;
 
-/** What the approval snapshot stores in `send_attempts.request` for a LinkedIn reply. */
-interface Snapshot {
-  channel: "linkedin";
-  text: string;
-  chat: string;
-  accountId: string;
-  providerAccountId: string;
-  conversationId: string;
-  recordId: string;
-  personId: string;
-  revision: number;
-  expectedContextVersion: number;
-}
-
-const toAttempt = (a: typeof sendAttempts.$inferSelect): AttemptRow => ({
-  id: a.id,
-  draftId: a.draftId,
-  status: a.status as AttemptRow["status"],
-  error: a.error,
-  rfcMessageId: null,
-  providerMessageId: a.providerMessageId,
-});
+type Snapshot = LinkedInSnapshot;
 
 function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyContext {
   const snap = attempt.request as Snapshot;
@@ -83,60 +62,6 @@ async function gapFor(tx: Tx | typeof db, organizationId: string): Promise<numbe
   return replyGapSeconds(row?.values ?? null);
 }
 
-/** Marks the attempt and draft delivered, stores the outbound message and moves the record on. Runs inside a transaction. */
-export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { providerMessageId: string | null }, now: Date, note?: string) {
-  const [attempt] = await tx.select().from(sendAttempts).where(eq(sendAttempts.id, attemptId)).for("update");
-  if (!attempt || !canMoveAttempt(attempt.status as AttemptStatus, note ? "reconciled" : "sent")) return;
-  const snap = attempt.request as Snapshot;
-  const via = await attemptVia(tx, attempt);
-  await tx
-    .update(sendAttempts)
-    .set({ status: note ? "reconciled" : "sent", providerMessageId: sent.providerMessageId, error: null, ...(note ? { reconciledAt: now, reconciliationNote: note } : {}) })
-    .where(and(eq(sendAttempts.id, attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM[note ? "reconciled" : "sent"]])));
-  await tx.update(drafts).set({ status: "sent", error: null }).where(and(eq(drafts.id, attempt.draftId), draftCanBecome("sent")));
-
-  const [account] = await tx.select({ name: linkedinAccounts.name, username: linkedinAccounts.username }).from(linkedinAccounts).where(eq(linkedinAccounts.id, snap.accountId));
-  const [person] = await tx.select({ name: people.fullName, first: people.firstName }).from(people).where(eq(people.id, snap.personId));
-  await tx
-    .insert(messages)
-    .values({
-      organizationId: attempt.organizationId,
-      conversationId: snap.conversationId,
-      channel: "linkedin",
-      accountRef: snap.accountId,
-      direction: "outbound",
-      idempotencyKey: `reply:${attempt.id}`,
-      providerMessageId: sent.providerMessageId,
-      fromAddress: account?.name ?? account?.username ?? "LinkedIn account",
-      toAddress: person?.name ?? person?.first ?? null,
-      bodyText: snap.text,
-      raw: { draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId, ...(via ? { sentVia: via.tokenName } : {}) },
-      sentAt: now,
-    })
-    .onConflictDoNothing();
-
-  const at = sql`${now.toISOString()}::timestamptz`;
-  await tx
-    .update(records)
-    .set({
-      // A message that arrived while this reply was going out keeps the record waiting for a person.
-      workflowState: sql`case when ${records.contextVersion} = ${snap.expectedContextVersion} then 'waiting' else ${records.workflowState} end`,
-      lastOutboundAt: at,
-      lastInteractionAt: sql`greatest(coalesce(${records.lastInteractionAt}, ${at}), ${at})`,
-    })
-    .where(eq(records.id, snap.recordId));
-  await tx.update(conversations).set({ updatedAt: now }).where(eq(conversations.id, snap.conversationId));
-  await tx.insert(events).values({
-    organizationId: attempt.organizationId,
-    personId: snap.personId,
-    recordId: snap.recordId,
-    eventType: note ? "draft.delivery_reconciled" : "draft.sent",
-    actorType: "human",
-    actorUserId: attempt.actorUserId,
-    meta: { draftId: attempt.draftId, attemptId: attempt.id, channel: "linkedin", note: note ?? null, ...viaMeta(via) },
-  });
-}
-
 /** A draft a person or an agent typed. `createManualDraft` marks it `source: "manual"`; older composer drafts carry `manual: true`. */
 const typedDraft = (request: unknown): boolean => {
   const meta = request as { source?: string; manual?: boolean } | null;
@@ -163,7 +88,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       if (existing) {
         if (existing.conversationId !== conv.id || existing.attempt.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another conversation.");
         // A key names one send of one draft, so another draft must not read that send's outcome as its own.
-        if (input.draft && existing.attempt.draftId !== input.draft.id.toLowerCase()) throw new ConflictError("This idempotency key belongs to another draft.");
+        if (input.draft && attemptOfAnotherDraft(existing.attempt, input.draft.id)) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing.attempt) };
       }
 
@@ -304,38 +229,15 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   },
 
   async markSent(send, sent, now, note) {
-    await db.transaction((tx) => settleLinkedInSent(tx, send.attempt.id, sent, now, note));
+    await db.transaction((tx) => settleAttemptSentTx(tx, send.attempt.id, sent, now, note));
   },
 
   async markFailed(send, error) {
-    await db.transaction(async (tx) => {
-      // Compare-and-set: a late failure never overwrites sent, reconciled or an earlier failure.
-      const moved = await tx
-        .update(sendAttempts)
-        .set({ status: "failed", error: error.slice(0, 1000) })
-        .where(and(eq(sendAttempts.id, send.attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM_CALL])))
-        .returning({ id: sendAttempts.id });
-      if (moved.length === 0) return;
-      await tx
-        .update(drafts)
-        .set({ status: "awaiting_review", error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.draftId), draftIn(IN_FLIGHT_DRAFT_STATUSES)));
-    });
+    await failAttempt({ id: send.attempt.id, draftId: send.draftId }, error, "awaiting_review");
   },
 
   async markUncertain(send, error) {
-    await db.transaction(async (tx) => {
-      const moved = await tx
-        .update(sendAttempts)
-        .set({ status: "delivery_uncertain", error: error.slice(0, 1000) })
-        .where(and(eq(sendAttempts.id, send.attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM_CALL])))
-        .returning({ id: sendAttempts.id });
-      if (moved.length === 0) return;
-      await tx
-        .update(drafts)
-        .set({ status: "delivery_uncertain", error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.draftId), draftCanBecome("delivery_uncertain")));
-    });
+    await markAttemptUncertain({ id: send.attempt.id, draftId: send.draftId }, error);
   },
 
   async pauseAccount(send, until) {
@@ -410,12 +312,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   },
 
   async listUnsettled(olderThan, limit) {
-    const rows = await db
-      .select()
-      .from(sendAttempts)
-      .where(and(eq(sendAttempts.provider, "linkedin"), inArray(sendAttempts.status, ["sending", "delivery_uncertain"]), sql`${sendAttempts.updatedAt} < ${olderThan.toISOString()}::timestamptz`))
-      .orderBy(sendAttempts.createdAt)
-      .limit(limit);
+    const rows = await listUnsettledAttempts("linkedin", olderThan, limit);
     return rows.map((a) => ({ send: contextFor(a), status: a.status as "sending" | "delivery_uncertain", startedAt: a.createdAt }));
   },
 };
