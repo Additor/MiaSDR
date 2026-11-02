@@ -2,15 +2,44 @@
 
 <p align="center"><img src="docs/images/hero.jpg" alt="MiaSDR: the AI SDR you run on your own server" width="100%"></p>
 
-[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE) ![Next.js 16](https://img.shields.io/badge/Next.js-16-black) ![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-336791) ![Deploy: Docker Compose](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE) ![Next.js 16](https://img.shields.io/badge/Next.js-16-black) ![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-336791) ![Deploy: Docker Compose](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED) ![MCP server built in](https://img.shields.io/badge/MCP-built%20in-6E56CF)
 
-An AI SDR for email and LinkedIn that runs on your server and sends from your own accounts.
+An AI SDR for email and LinkedIn that your agents can run. It lives on your server and sends from your own accounts.
 
+- **Your agent works it from chat.** An MCP server ships inside the app, so Claude Code, Cursor or VS Code can clear the inbox, build campaigns and enrich leads.
 - **The AI drafts, your team sends.** No AI-written message leaves until a person approves it, unless an admin lets your own MCP agents send within daily limits.
 - **A reply anywhere stops everything.** Someone answers on LinkedIn and their email sequence stops too.
 - **Your leads stay yours.** Leads, conversations and deals live in your Postgres, not a vendor's.
 
 Free to run on your own server. You pay only for your AI provider's usage (Anthropic, Vercel AI Gateway or OpenRouter), plus Unipile if you use LinkedIn.
+
+## Built for agents
+
+Every install serves the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/mcp`, with nothing extra to deploy. An owner or admin turns it on in Settings, each person creates a token, and the agent connects:
+
+```bash
+claude mcp add --transport http miasdr https://miasdr.example.com/api/mcp --header "Authorization: Bearer msdr_pat_..."
+```
+
+Then ask for the work in your own words:
+
+- "What's waiting on me today? Draft answers to the replies so I can review them."
+- "Run this LinkedIn search, then build a draft campaign for the people it finds."
+- "Which campaign had the best reply rate last month? Pause the one with the most bounces."
+
+Apps such as claude.ai and ChatGPT sign in with OAuth and skip the token. Answers link to the page in MiaSDR where a person can check the result.
+
+You choose how far each agent goes:
+
+| Access | What the agent can do | Available when |
+|---|---|---|
+| Read | Inbox, work queue, leads, campaigns, pipeline, analytics, tables | An owner or admin turns on MCP |
+| Make changes | Draft replies, sort conversations, manage tasks, prepare campaigns, move deals, import leads | An owner or admin turns on MCP, and can limit members to read only |
+| Send | Send replies and start campaigns, within daily limits | An owner or admin turns on agent sending |
+| Spend | Run paid enrichment and LinkedIn searches, within a daily limit in dollars and results | An owner or admin sets the limit |
+| Complete and delete | Complete a campaign, or delete a lead, contact, deal or draft campaign, one previewed target at a time | An owner or admin sets the daily limit |
+
+An agent acts as the person who made its token, with that person's role, and the thread names the agent on each message it sends. Lead text reaches it tagged as untrusted. No tool changes the unsubscribe or suppression lists. The [MCP guide](docs/guides/mcp.md) lists each tool, limit and refusal.
 
 ## Quick start
 
@@ -58,9 +87,9 @@ Docker Compose runs the app and Postgres 17, with Caddy in front for HTTPS. [Sel
 | Start here | Set up | Run it |
 |---|---|---|
 | [Quick start guide](docs/guides/quick-start.md) | [Gmail](docs/setup/gmail.md) | [Self-hosting](docs/deploy/self-host.md) |
-| [How MiaSDR works](docs/guides/how-it-works.md) | [LinkedIn through Unipile](docs/setup/linkedin-unipile.md) | [Configuration](docs/configuration.md) |
-| [Responsible use](docs/responsible-use.md) | [Enrichment providers](docs/setup/enrichment.md) | [Operations](docs/operations.md) |
-| [AI agents (MCP)](docs/guides/mcp.md) | | |
+| [AI agents (MCP)](docs/guides/mcp.md) | [LinkedIn through Unipile](docs/setup/linkedin-unipile.md) | [Configuration](docs/configuration.md) |
+| [How MiaSDR works](docs/guides/how-it-works.md) | [Enrichment providers](docs/setup/enrichment.md) | [Operations](docs/operations.md) |
+| [Responsible use](docs/responsible-use.md) | | |
 
 ## License
 
