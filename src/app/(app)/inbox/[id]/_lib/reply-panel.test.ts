@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftingAbove, regenerateControl, reloadsAfter } from "./reply-panel";
+import { draftingAbove, regenerateControl, reloadsAfter, sendKeyAfter } from "./reply-panel";
 
 const base = { status: "stale", decisionWaiting: false, drafting: false, busy: false, aiConfigured: true };
 
@@ -38,5 +38,21 @@ describe("reloadsAfter", () => {
     expect(reloadsAfter({ ok: false, status: 409 })).toBe(true);
     expect(reloadsAfter({ ok: false, status: 422 })).toBe(false);
     expect(reloadsAfter({ ok: true, status: 201 })).toBe(false);
+  });
+});
+
+describe("sendKeyAfter", () => {
+  it("keeps the key while the first send may have gone out", () => {
+    expect(sendKeyAfter("k", { ok: false, status: 0 })).toBe("k");
+    expect(sendKeyAfter("k", { ok: false, status: 502 })).toBe("k");
+    expect(sendKeyAfter("k", { ok: true, status: 200, data: { status: "delivery_uncertain" } })).toBe("k");
+    expect(sendKeyAfter("k", { ok: true, status: 200, data: { status: "in_progress" } })).toBe("k");
+  });
+
+  it("makes the next Send a new decision after a refusal or a finished send", () => {
+    expect(sendKeyAfter("k", { ok: false, status: 409 })).toBe("");
+    expect(sendKeyAfter("k", { ok: false, status: 422 })).toBe("");
+    expect(sendKeyAfter("k", { ok: true, status: 200, data: { status: "sent" } })).toBe("");
+    expect(sendKeyAfter("k", { ok: true, status: 200, data: { status: "blocked" } })).toBe("");
   });
 });

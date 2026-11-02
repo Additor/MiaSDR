@@ -19,7 +19,7 @@ import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { draftStatusLabel } from "../../labels";
 import { registerDraftEdits } from "../_lib/draft-edits";
-import { draftingAbove, regenerateControl, reloadsAfter } from "../_lib/reply-panel";
+import { draftingAbove, regenerateControl, reloadsAfter, sendKeyAfter } from "../_lib/reply-panel";
 import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
 import { useSendingWatch } from "./use-sending-watch";
@@ -155,11 +155,10 @@ export function ReplyPanelClient({
     key.current ||= crypto.randomUUID();
     const result = await callApi<{ status: string; error?: string }>(`/api/drafts/${draft.id}/send`, "POST", { revision, idempotencyKey: key.current });
     setBusy(null);
+    key.current = sendKeyAfter(key.current, result);
     if (!result.ok) {
       setError(result.error);
     } else if (result.data && result.data.status !== "sent") {
-      // A refused or blocked send is final for this key; the next click is a new decision.
-      if (result.data.status !== "delivery_uncertain") key.current = "";
       setError(result.data.error ?? (result.data.status === "in_progress" ? "This send is already in progress." : "The reply was not sent."));
     }
     router.refresh();

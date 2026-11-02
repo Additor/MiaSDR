@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { LinkedInReplyPanelView } from "@/contexts/conversations/application/linkedin-reply";
 import { callApi } from "@/app/_lib/api-client";
 import { draftStatusLabel } from "../../labels";
-import { draftingAbove, reloadsAfter } from "../_lib/reply-panel";
+import { draftingAbove, reloadsAfter, sendKeyAfter } from "../_lib/reply-panel";
 import { useSendingWatch } from "./use-sending-watch";
 
 type SendResult = { status: string; error?: string | null };
@@ -80,22 +80,16 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
       ...(draft?.status === "awaiting_review" ? { draftId: draft.id, revision: draft.revision } : {}),
     });
     setBusy(false);
+    key.current = sendKeyAfter(key.current, result);
     if (!result.ok) {
-      // A refusal before the claim wrote nothing, so the next click is a new decision.
-      key.current = "";
       setError(result.error);
+      // Without an answer the send may have gone out: the reload shows it in the thread and empties the box.
+      if (key.current) router.refresh();
       return;
     }
     const data = result.data;
-    if (data?.status === "sent") {
-      key.current = "";
-      setText("");
-    } else if (data?.status === "delivery_uncertain") {
-      setText("");
-    } else {
-      key.current = "";
-      setError(data?.error ?? "The reply was not sent.");
-    }
+    if (data?.status === "sent" || data?.status === "delivery_uncertain") setText("");
+    else setError(data?.error ?? (data?.status === "in_progress" ? "This send is already in progress." : "The reply was not sent."));
     router.refresh();
   }
 
@@ -189,7 +183,17 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
             )}
             <Field>
               <FieldLabel htmlFor="li-reply">Message{panel.recipient ? ` to ${panel.recipient}` : ""}</FieldLabel>
-              <Textarea id="li-reply" className="min-h-32" value={stale ? (draft?.text ?? "") : text} onChange={(e) => setText(e.target.value)} disabled={blocked || busy || stale} />
+              <Textarea
+                id="li-reply"
+                className="min-h-32"
+                value={stale ? (draft?.text ?? "") : text}
+                onChange={(e) => {
+                  // Other words are a new decision: a retry with the old key would replay the old send and drop them.
+                  key.current = "";
+                  setText(e.target.value);
+                }}
+                disabled={blocked || busy || stale}
+              />
             </Field>
             {showRegenerate && (
               <Field>
