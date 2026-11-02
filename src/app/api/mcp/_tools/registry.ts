@@ -12,7 +12,7 @@ import { launchCampaignTool, previewCampaignLaunchTool } from "./campaign-launch
 import { getCampaignTool, listCampaignsTool } from "./campaigns";
 import { getConversationTool } from "./conversation";
 import { updateDealTool } from "./deals";
-import { registerTools, type ToolDefinition, type ToolHooks } from "./define";
+import { registerTools, toolVisible, type ToolDefinition, type ToolHooks } from "./define";
 import { setReplyTypeTool, updateConversationTool } from "./handling";
 import { importLeadsTool } from "./import";
 import { listInboxTool } from "./inbox";
@@ -30,7 +30,7 @@ import { getWorkspace } from "./workspace";
 /** How long a client may reuse the tool list. A mode change or a revoke still applies at the next call. */
 export const TOOL_LIST_TTL_MS = 300_000;
 
-/** Every tool. `registerTools` keeps the ones the token's scopes and the send policy allow. */
+/** Every tool. `registerTools` keeps the ones the token's scopes and the policies allow. */
 export const TOOLS: readonly ToolDefinition[] = [
   getWorkspace,
   getWorkQueueTool,
@@ -83,7 +83,7 @@ export async function recordRefusedCall(principal: McpPrincipal, body: string, c
   }
   if (message?.method !== "tools/call" || typeof message.params?.name !== "string") return;
   const { name, arguments: args, _meta } = message.params;
-  const tool = TOOLS.find((t) => t.name === name && hasScope(principal.scopes, t.scope) && (!t.sends || principal.send[t.sends]));
+  const tool = TOOLS.find((t) => t.name === name && toolVisible(t, principal));
   if (tool && tool.input.safeParse(args ?? {}).success) return;
   await recordMcpToolCall(mcpToolCallDeps(), {
     organizationId: principal.organizationId,
@@ -99,7 +99,7 @@ export async function recordRefusedCall(principal: McpPrincipal, body: string, c
 }
 
 const accessOf = (principal: McpPrincipal) => {
-  if (principal.send.replies || principal.send.campaigns) return "send";
+  if (principal.allows.replies || principal.allows.campaigns) return "send";
   return hasScope(principal.scopes, "mcp:write") ? "write" : "read";
 };
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createMcpToken, listMcpTokens, MCP_TOKEN_ACCESS } from "@/contexts/tenancy/application/mcp-tokens";
+import { createMcpToken, listMcpTokens, MCP_TOKEN_ACCESS, MCP_TOKEN_EXTRAS } from "@/contexts/tenancy/application/mcp-tokens";
 import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { withActor } from "@/app/_lib/api";
 
@@ -9,4 +9,4 @@ export const GET = (request: Request) =>
 
 /** The answer carries `token`, the secret, this once. */
 export const POST = (request: Request) =>
-  withActor(async (actor) => createMcpToken(mcpTokenDeps(), actor, z.object({ name: z.string(), access: z.enum(MCP_TOKEN_ACCESS).optional() }).parse(await request.json())), 201);
+  withActor(async (actor) => createMcpToken(mcpTokenDeps(), actor, z.object({ name: z.string(), access: z.enum(MCP_TOKEN_ACCESS).optional(), extras: z.array(z.enum(MCP_TOKEN_EXTRAS)).optional() }).parse(await request.json())), 201);

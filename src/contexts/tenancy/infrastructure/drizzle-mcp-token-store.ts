@@ -13,6 +13,8 @@ async function findToken(where: SQL) {
       userId: mcpTokens.userId,
       scopes: mcpTokens.scopes,
       policyEpoch: mcpTokens.policyEpoch,
+      spendEpoch: mcpTokens.spendEpoch,
+      irreversibleEpoch: mcpTokens.irreversibleEpoch,
       expiresAt: mcpTokens.expiresAt,
       revokedAt: mcpTokens.revokedAt,
       lastUsedAt: mcpTokens.lastUsedAt,

@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT, MCP_TOKEN_NAME_MAX, mcpGrantId, mcpTokenHint, mcpTokenNameProblem } from "../domain/mcp-token";
-import { tokenAccess, tokenScopesProblem, type McpScope } from "../domain/mcp-policy";
+import { tokenAccess, tokenActions, tokenScopesProblem, type McpScope } from "../domain/mcp-policy";
 import { mcpSettingsProblem, type McpSettings, type McpSettingsPatch } from "../domain/mcp-settings";
 import { isOwnerOrAdmin } from "../domain/roles";
 import type { AuditEntry } from "./audit-log";
@@ -26,6 +26,8 @@ export interface McpTokenRow extends McpTokenView {
   /** The owner's role, or null when they left the organization. */
   ownerRole: string | null;
   policyEpoch: number;
+  spendEpoch: number;
+  irreversibleEpoch: number;
 }
 
 /** A token in the Settings list, with what it does now. */
@@ -33,6 +35,12 @@ export interface McpTokenListItem extends McpTokenView {
   access: "read" | "write" | "send";
   /** A send token that will not send again; a new token sends. */
   sendRetired: boolean;
+  /** It may spend now, within the organization's limits. */
+  spends: boolean;
+  spendRetired: boolean;
+  /** It may take actions a person cannot undo now, within the organization's limit. */
+  irreversible: boolean;
+  irreversibleRetired: boolean;
 }
 
 export interface NewMcpToken {
@@ -43,6 +51,8 @@ export interface NewMcpToken {
   tokenHint: string;
   scopes: McpScope[];
   policyEpoch: number;
+  spendEpoch: number;
+  irreversibleEpoch: number;
   expiresAt: Date;
 }
 
@@ -52,7 +62,7 @@ export interface McpTokenTx {
   liveCount(now: Date): Promise<number>;
   insert(token: NewMcpToken, audit: AuditEntry): Promise<McpTokenView>;
   /** The app's row for this grant, created or brought back to life. */
-  upsertGrant(grant: { organizationId: string; userId: string; name: string; oauthGrantId: string; scopes: McpScope[]; policyEpoch: number }, audit: AuditEntry): Promise<void>;
+  upsertGrant(grant: { organizationId: string; userId: string; name: string; oauthGrantId: string; scopes: McpScope[]; policyEpoch: number; spendEpoch: number; irreversibleEpoch: number }, audit: AuditEntry): Promise<void>;
 }
 
 export interface McpTokenStore {
@@ -82,6 +92,10 @@ export interface McpTokenDeps {
   now: () => Date;
   /** `MCP_SEND_ENABLED`, the install's switch for agent sending. */
   installSendEnabled: boolean;
+  /** `MCP_SPEND_ENABLED`, the install's switch for agent spending. */
+  installSpendEnabled: boolean;
+  /** `MCP_IRREVERSIBLE_ENABLED`, the install's switch for actions agents cannot undo. */
+  installIrreversibleEnabled: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -89,8 +103,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const MCP_TOKEN_ACCESS = ["read", "write", "send"] as const;
 export type McpTokenAccess = (typeof MCP_TOKEN_ACCESS)[number];
 const SCOPES_OF: Record<McpTokenAccess, McpScope[]> = { read: ["mcp:read"], write: ["mcp:read", "mcp:write"], send: ["mcp:read", "mcp:write", "mcp:send"] };
-/** Keys a person may save. The epoch is not one: only a mode change to off writes it, inside the database. */
-const EDITABLE_SETTINGS = new Set(["enabled", "memberWriteTokens", "agentSendMode", "agentReplyCaps", "agentEnrollCap"]);
+/** What a token may do on top of its access, each chosen on its own and each off unless a person ticks it. */
+export const MCP_TOKEN_EXTRAS = ["spend", "irreversible"] as const;
+export type McpTokenExtra = (typeof MCP_TOKEN_EXTRAS)[number];
+const scopesOf = (access: McpTokenAccess, extras: readonly McpTokenExtra[]): McpScope[] => [...SCOPES_OF[access], ...MCP_TOKEN_EXTRAS.filter((extra) => extras.includes(extra)).map((extra) => `mcp:${extra}` as const)];
+/** Keys a person may save. The epochs are not: only the change that retires tokens writes one, inside the database. */
+const EDITABLE_SETTINGS = new Set(["enabled", "memberWriteTokens", "agentSendMode", "agentReplyCaps", "agentEnrollCap", "agentSpendCentsPerDay", "agentSearchLeadsPerDay", "agentIrreversiblePerDay"]);
 
 const audit = (actor: Actor, action: string, entityId: string | undefined, meta: Record<string, unknown>): AuditEntry => ({
   organizationId: actor.organizationId,
@@ -129,31 +147,40 @@ export async function updateMcpSettings(deps: Pick<McpTokenDeps, "store">, actor
   if (capsChanged || enrollChanged) {
     entries.push(audit(actor, "mcp.agent_limits", undefined, { replies: caps ?? current.agentReplyCaps, enroll: enrollChanged ? patch.agentEnrollCap : current.agentEnrollCap }));
   }
+  const ACTION_LIMITS = ["agentSpendCentsPerDay", "agentSearchLeadsPerDay", "agentIrreversiblePerDay"] as const;
+  const actionLimits = ACTION_LIMITS.filter((key) => typeof patch[key] === "number" && patch[key] !== current[key]);
+  if (actionLimits.length > 0) {
+    entries.push(audit(actor, "mcp.agent_action_limits", undefined, Object.fromEntries(ACTION_LIMITS.map((key) => [key, actionLimits.includes(key) ? patch[key] : current[key]]))));
+  }
   if (entries.length > 0) await deps.store.saveSettings(actor.organizationId, patch as McpSettingsPatch, actor.userId, entries);
   return deps.store.settings(actor.organizationId);
 }
 
 /** The caller's own tokens; with `organization`, every member's, which only an owner or admin may read. */
-export async function listMcpTokens(deps: Pick<McpTokenDeps, "store" | "now" | "installSendEnabled">, actor: Actor, scope: "mine" | "organization"): Promise<McpTokenListItem[]> {
+export async function listMcpTokens(deps: Pick<McpTokenDeps, "store" | "now" | "installSendEnabled" | "installSpendEnabled" | "installIrreversibleEnabled">, actor: Actor, scope: "mine" | "organization"): Promise<McpTokenListItem[]> {
   if (scope === "organization") requireAdmin(actor, "Only an owner or admin can see every member's MCP tokens.");
   const [rows, settings] = await Promise.all([deps.store.list(actor.organizationId, scope === "mine" ? actor.userId : null), deps.store.settings(actor.organizationId)]);
   const now = deps.now();
-  return rows.map(({ ownerRole, policyEpoch, ...view }) => ({
-    ...view,
-    ...tokenAccess({ role: ownerRole, installSendEnabled: deps.installSendEnabled, settings, token: { scopes: view.scopes, policyEpoch, revokedAt: null, expiresAt: view.expiresAt }, now }),
-  }));
+  return rows.map(({ ownerRole, policyEpoch, spendEpoch, irreversibleEpoch, ...view }) => {
+    const token = { scopes: view.scopes, policyEpoch, spendEpoch, irreversibleEpoch, revokedAt: null, expiresAt: view.expiresAt };
+    return {
+      ...view,
+      ...tokenAccess({ role: ownerRole, installSendEnabled: deps.installSendEnabled, settings, token, now }),
+      ...tokenActions({ role: ownerRole, installSpendEnabled: deps.installSpendEnabled, installIrreversibleEnabled: deps.installIrreversibleEnabled, settings, token, now }),
+    };
+  });
 }
 
 /**
  * Creates a token for the caller, read-only unless `access` is `write`. A member creates a write token only while the
  * organization allows it. The answer carries the secret, which is never shown again.
  */
-export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { name: string; access?: McpTokenAccess }): Promise<McpTokenView & { token: string }> {
+export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { name: string; access?: McpTokenAccess; extras?: readonly McpTokenExtra[] }): Promise<McpTokenView & { token: string }> {
   const problem = mcpTokenNameProblem(input.name);
   if (problem) throw new ValidationError(problem);
   const settings = await deps.store.settings(actor.organizationId);
   if (!settings.enabled) throw new ConflictError("MCP is off in this organization. An owner or admin can turn it on.", { code: "mcp_disabled" });
-  const scopes = SCOPES_OF[input.access ?? "read"];
+  const scopes = scopesOf(input.access ?? "read", input.extras ?? []);
   const refused = tokenScopesProblem({ role: actor.role, settings, scopes });
   if (refused) throw new ForbiddenError(refused);
 
@@ -173,6 +200,8 @@ export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { 
         tokenHint: mcpTokenHint(token),
         scopes,
         policyEpoch: settings.agentSendEpoch,
+        spendEpoch: settings.agentSpendEpoch,
+        irreversibleEpoch: settings.agentIrreversibleEpoch,
         expiresAt: new Date(now.getTime() + MCP_TOKEN_DAYS * DAY_MS),
       },
       audit(actor, "mcp.token_created", undefined, { name, scopes: scopes.join(" ") }),
@@ -201,20 +230,29 @@ export function consentChoices(settings: McpSettings, role: string, installSendE
 }
 
 /**
+ * What a person may add for an app on top of `access`: what the app asked for, within what this person may grant. The
+ * page offers this list and the route enforces it, as with `consentChoices`.
+ */
+export function consentExtras(settings: McpSettings, role: string, installs: { spend: boolean; irreversible: boolean }, requestedScope: string): McpTokenExtra[] {
+  const requested = requestedScope.split(" ");
+  return MCP_TOKEN_EXTRAS.filter((extra) => requested.includes(`mcp:${extra}`) && installs[extra] && !tokenScopesProblem({ role, settings, scopes: scopesOf("write", [extra]) }));
+}
+
+/**
  * Records that a person lets an app act for them in this organization, on the same rules as creating a token. The
  * `mcp_tokens` row is what the endpoint checks on every call; agreeing again with another access level, or after a
  * revoke, updates the same row. Answers the scopes granted.
  */
-export async function grantMcpAccess(deps: McpTokenDeps, actor: Actor, input: { clientId: string; clientName: string; access: McpTokenAccess }): Promise<McpScope[]> {
+export async function grantMcpAccess(deps: McpTokenDeps, actor: Actor, input: { clientId: string; clientName: string; access: McpTokenAccess; extras?: readonly McpTokenExtra[] }): Promise<McpScope[]> {
   const settings = await deps.store.settings(actor.organizationId);
   if (!settings.enabled) throw new ConflictError("MCP is off in this organization. An owner or admin can turn it on.", { code: "mcp_disabled" });
-  const scopes = SCOPES_OF[input.access];
+  const scopes = scopesOf(input.access, input.extras ?? []);
   const refused = tokenScopesProblem({ role: actor.role, settings, scopes });
   if (refused) throw new ForbiddenError(refused);
   const name = input.clientName.trim().slice(0, MCP_TOKEN_NAME_MAX) || "Connected app";
   const created = await deps.store.forMember(actor.organizationId, actor.userId, async (tx) => {
     await tx.upsertGrant(
-      { organizationId: actor.organizationId, userId: actor.userId, name, oauthGrantId: mcpGrantId(actor.organizationId, actor.userId, input.clientId), scopes, policyEpoch: settings.agentSendEpoch },
+      { organizationId: actor.organizationId, userId: actor.userId, name, oauthGrantId: mcpGrantId(actor.organizationId, actor.userId, input.clientId), scopes, policyEpoch: settings.agentSendEpoch, spendEpoch: settings.agentSpendEpoch, irreversibleEpoch: settings.agentIrreversibleEpoch },
       audit(actor, "mcp.app_connected", undefined, { name, clientId: input.clientId, scopes: scopes.join(" ") }),
     );
     return true;

@@ -76,7 +76,7 @@ describeDb("MCP principal", () => {
       scopes: ["mcp:read", "mcp:write"],
       policyEpoch: 2,
       expiresAt: null,
-      send: { replies: false, campaigns: false },
+      allows: { replies: false, campaigns: false, enrichment: false, search: false, irreversible: false },
     });
     const [{ last_used_at }] = await sql`select last_used_at from mcp_tokens where id = ${id}`;
     expect(last_used_at).not.toBeNull();

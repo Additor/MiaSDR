@@ -10,6 +10,8 @@ export async function register() {
   const embeddedScheduler = flag(process.env.EMBEDDED_SCHEDULER, true, "EMBEDDED_SCHEDULER");
   flag(process.env.MCP_ENABLED, true, "MCP_ENABLED");
   flag(process.env.MCP_SEND_ENABLED, true, "MCP_SEND_ENABLED");
+  flag(process.env.MCP_SPEND_ENABLED, true, "MCP_SPEND_ENABLED");
+  flag(process.env.MCP_IRREVERSIBLE_ENABLED, true, "MCP_IRREVERSIBLE_ENABLED");
   const { isOutboundPauseUnreadable } = await import("./shared/outbound-pause");
   if (isOutboundPauseUnreadable()) {
     console.warn(`PAUSE_OUTBOUND: "${process.env.PAUSE_OUTBOUND}" is not a boolean, so outbound sending is paused. Use one of 1, true, yes, on, 0, false, no, off.`);

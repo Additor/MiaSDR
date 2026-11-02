@@ -2,7 +2,7 @@
 
 Every setting is an environment variable. Copy `.env.example` to `.env`, replace each `CHANGEME`, and restart the app after a change. `src/shared/env.ts` validates the values on first use and names the variable that failed. Empty values count as unset.
 
-Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `PAUSE_OUTBOUND`, `MCP_ENABLED`, `MCP_SEND_ENABLED`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `MCP_ENABLED` or `MCP_SEND_ENABLED` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
+Boolean variables (`RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `PAUSE_OUTBOUND`, `MCP_ENABLED`, `MCP_SEND_ENABLED`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`) accept `1`, `true`, `yes`, `on`, `0`, `false`, `no` and `off`, in any case, with surrounding spaces. Any other word in `RUN_MIGRATIONS`, `EMBEDDED_SCHEDULER`, `MCP_ENABLED`, `MCP_SEND_ENABLED`, `MCP_SPEND_ENABLED` or `MCP_IRREVERSIBLE_ENABLED` stops the start and names the variable. `PAUSE_OUTBOUND` is the exception: a word it cannot read counts as paused, and the server logs a warning at start.
 
 A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and the schema in step: a variable in one of them and not in the others fails CI.
 
@@ -61,6 +61,8 @@ A test (`src/architecture/env-docs.test.ts`) keeps this page, `.env.example` and
 | --- | --- | --- |
 | `MCP_ENABLED` | `true` | Serves the MCP endpoint for AI agents at `/api/mcp`. A request needs a personal MCP token, and the token's organization must have MCP turned on. Set `false` to turn the endpoint off for the whole install; it then answers 404. |
 | `MCP_SEND_ENABLED` | `true` | Lets agents send replies and start campaigns in organizations whose owner or admin allowed it under Settings, Organization. Organizations start with agent sending off. Set `false` to refuse every agent send in the install; agents keep their read and write tools. |
+| `MCP_SPEND_ENABLED` | `true` | Lets agents run paid enrichment and LinkedIn searches in organizations whose owner or admin set a daily limit under Settings, Organization. Organizations start with every limit at 0. Set `false` to refuse them in the whole install. |
+| `MCP_IRREVERSIBLE_ENABLED` | `true` | Lets agents complete campaigns and delete records in organizations whose owner or admin set a daily limit under Settings, Organization. Organizations start with that limit at 0. Set `false` to refuse them in the whole install. |
 | `MCP_OAUTH_DCR` | `true` | Lets an MCP client register itself for OAuth, for clients that cannot publish a client metadata document. The consent page marks such an app as unverified. |
 | `TRUST_PROXY_HOPS` | none | Proxies in front of the app that append to `X-Forwarded-For`, 1 to 10. The MCP endpoint then reads the client IP that many entries from the right and refuses a client with 429 after 20 failed guesses at a well-formed token in a minute. Unset, it reads no client IP and keeps no IP limit. A value higher than the real number of proxies lets a client choose the IP it is counted under. |
 

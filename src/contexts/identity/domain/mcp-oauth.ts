@@ -18,6 +18,6 @@ export const mcpResourceMetadataUrl = (appUrl: string): string => `${appUrl}/.we
 export const MCP_ORG_CLAIM = "org_id";
 
 /** The scopes an MCP client may ask for. `offline_access` lets it refresh without sending the person back here. */
-export const MCP_OAUTH_SCOPES = ["mcp:read", "mcp:write", "mcp:send", "offline_access"] as const;
+export const MCP_OAUTH_SCOPES = ["mcp:read", "mcp:write", "mcp:send", "mcp:spend", "mcp:irreversible", "offline_access"] as const;
 
 export const CONSENT_PAGE = "/oauth/consent";

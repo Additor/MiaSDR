@@ -11,7 +11,7 @@ const principal = {
   scopes: ["mcp:read" as const],
   policyEpoch: 0,
   expiresAt: null,
-  send: { replies: false, campaigns: false },
+  allows: { replies: false, campaigns: false, enrichment: false, search: false, irreversible: false },
 };
 const actor = mcpActor(principal, "claude-code");
 

@@ -43,7 +43,7 @@ export const sendReplyTool = defineTool({
     "Send only when the person asked for it or their standing instructions cover it.",
   ].join(" "),
   scope: "mcp:send",
-  sends: "replies",
+  needs: "replies",
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
   input: z.object({ conversationId: z.string(), draftId: z.string(), revision: z.number().int(), idempotencyKey: z.string() }),
   output: z.object({

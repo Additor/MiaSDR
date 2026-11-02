@@ -15,6 +15,7 @@ import { OrganizationForm } from "./organization-form";
 import { getMcpSettings } from "@/contexts/tenancy/application/mcp-tokens";
 import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { env } from "@/shared/env";
+import { AgentActionsSection } from "./agent-actions-section";
 import { AgentSendSection } from "./agent-send-section";
 import { SendPauseSection } from "./send-pause-section";
 
@@ -35,7 +36,7 @@ async function Organization() {
   const ctx = await requireOrgContext();
   const actor = toActor(ctx);
   const [org, pause, mcp] = await Promise.all([getOrganization(organizationDeps(), actor), getSendPause(emailRulesDeps(), actor), getMcpSettings(mcpTokenDeps(), actor)]);
-  const { MCP_ENABLED, MCP_SEND_ENABLED } = env();
+  const { MCP_ENABLED, MCP_SEND_ENABLED, MCP_SPEND_ENABLED, MCP_IRREVERSIBLE_ENABLED } = env();
   const zones = timeZoneOptions(Intl.supportedValuesOf("timeZone"), org.timeZone);
   const canEditZone = isOwnerOrAdmin(ctx.role);
   return (
@@ -57,6 +58,14 @@ async function Organization() {
         <AgentSendSection
           settings={{ agentSendMode: mcp.agentSendMode, agentReplyCaps: mcp.agentReplyCaps, agentEnrollCap: mcp.agentEnrollCap }}
           installEnabled={MCP_SEND_ENABLED}
+          canManage={canEditZone}
+        />
+      )}
+      {MCP_ENABLED && mcp.enabled && (
+        <AgentActionsSection
+          settings={{ agentSpendCentsPerDay: mcp.agentSpendCentsPerDay, agentSearchLeadsPerDay: mcp.agentSearchLeadsPerDay, agentIrreversiblePerDay: mcp.agentIrreversiblePerDay }}
+          spendInstallEnabled={MCP_SPEND_ENABLED}
+          irreversibleInstallEnabled={MCP_IRREVERSIBLE_ENABLED}
           canManage={canEditZone}
         />
       )}
