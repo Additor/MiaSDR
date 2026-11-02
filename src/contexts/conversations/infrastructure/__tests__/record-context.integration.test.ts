@@ -157,7 +157,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
     expect(await pickStatus(pick)).toBe("proposed");
   });
 
-  describe("a held pick of the latest reply that asks to stop", () => {
+  describe("a held pick that asks to stop", () => {
     const stopPick = async (f: Fx, recordId: string) => holdPick(f, recordId, { stopAsked: true });
 
     it("stays through a close and a reopen, so an agent stays refused until a person reviews it", async () => {
@@ -177,12 +177,12 @@ describeDb("a context version bump retires the picks held for a check", () => {
       expect(await pickStatus(pick)).toBe("proposed");
     });
 
-    it("retires when a newer reply replaces it", async () => {
+    it("stays when a newer reply arrives, since a thread turning private can make its reply the latest again", async () => {
       const f = await fixture();
       const l = await lead(f);
       const pick = await stopPick(f, l.recordId);
       await composition.ingestInbound(mail(f, { bodyText: "Actually, let's talk.", receivedAt: new Date("2026-10-14T12:00:00Z") }));
-      expect(await pickStatus(pick)).toBe("stale");
+      expect(await pickStatus(pick)).toBe("proposed");
     });
 
     it("retires when a person marks the person do not contact, so clearing the mark does not ask again", async () => {

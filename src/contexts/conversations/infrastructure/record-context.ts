@@ -13,8 +13,9 @@ import { staleOpenDraftsTx } from "./stale-drafts-sql";
  *
  * 1. The new version goes in with the caller's other record columns (`set`), so a job that read the old one skips.
  * 2. An AI pick held for a check retires (`stale`): it can no longer be accepted, so Actions, the history, the reply counts
- *    and the draft prompt stop treating it as waiting. A held pick of the latest reply that asks to stop stays until a person
- *    decides (`personDecided`), since the agent send gate reads it (`stopRequestOpen` in `agent-reply-gate.ts`).
+ *    and the draft prompt stop treating it as waiting. A held pick that asks to stop stays until a person decides
+ *    (`personDecided`), since the agent send gate reads it (`stopRequestOpen` in `agent-reply-gate.ts`). A newer reply does
+ *    not end it either: a thread turning private can make the older reply the latest again.
  * 3. With `drafts`, open drafts retire with that reason. With `runs`, the record's sequence run ends with that reason.
  *
  * The caller holds the record's lock when the path needs one, and writes its event with the returned version.
@@ -41,7 +42,6 @@ export async function advanceRecordContextTx(tx: DbTx, input: AdvanceRecordConte
     update reply_type_picks k set status = 'stale'
     where k.organization_id = ${organizationId} and k.record_id = ${recordId} and k.status in ${sqlValues(PICK_FROM.stale)}
       and (${input.personDecided === true}::boolean
-        or k.message_id is distinct from (select r.latest_inbound_message_id from records r where r.id = ${recordId})
         or not (coalesce((k.response->>'stopRequested')::boolean, false)
           or exists (select 1 from reply_types t where t.id = k.proposed_reply_type_id and t.system_role = 'stop_request')))`);
   const draftsRetired = input.drafts ? await staleOpenDraftsTx(tx, { organizationId, recordId, reason: input.drafts.reason, now }) : 0;
