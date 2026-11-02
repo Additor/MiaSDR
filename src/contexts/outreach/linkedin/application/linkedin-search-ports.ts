@@ -22,6 +22,8 @@ export interface LinkedInSearchRecord {
   /** Name of the account whose cursor the search holds. */
   account: string | null;
   nextPageAt: Date | null;
+  /** An agent created it. Agents cancel only these. */
+  byAgent: boolean;
   createdAt: Date;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -31,7 +33,8 @@ export type { SearchAction };
 
 /** Persistence behind the create, list, pause, resume and cancel use cases. */
 export interface LinkedInSearchStore {
-  create(organizationId: string, input: { name: string; url: string; maxResults: number; campaignId: string | null }): Promise<string>;
+  /** `agent` limits the batch to these accounts and names the agent's token. A person's search leaves the batch open to every connected account. */
+  create(organizationId: string, input: { name: string; url: string; maxResults: number; campaignId: string | null; agent?: { accountIds: string[]; tokenId: string } }): Promise<string>;
   /** Searches created one at a time, newest first. Queries of a bulk batch are not listed. */
   list(organizationId: string): Promise<LinkedInSearchRecord[]>;
   /** Bulk batches with the number of searches each holds, newest first. */
@@ -41,6 +44,8 @@ export interface LinkedInSearchStore {
   apply(organizationId: string, id: string, action: SearchAction): Promise<boolean>;
   /** Connected accounts, to warn on the page when there is none. */
   countConnectedAccounts(organizationId: string): Promise<number>;
+  /** Connected accounts this person owns, or that no member owns. An agent's search may use only these. */
+  agentSearchAccounts(organizationId: string, userId: string): Promise<string[]>;
 }
 
 export interface LinkedInSearchDeps {

@@ -19,6 +19,7 @@ import { importLeadsTool } from "./import";
 import { listInboxTool } from "./inbox";
 import { applyIrreversibleTool, previewIrreversibleTool } from "./irreversible";
 import { serverInstructions } from "./instructions";
+import { cancelLinkedInSearchTool, createLinkedInSearchTool, listLinkedInSearchesTool } from "./linkedin-search";
 import { pauseSendingTool } from "./pause";
 import { getPersonTool, searchPeopleTool } from "./people";
 import { getPipelineTool } from "./pipeline";
@@ -48,6 +49,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   getSendingHealthTool,
   listTablesTool,
   getTableTool,
+  listLinkedInSearchesTool,
   writeReplyDraftTool,
   setReplyTypeTool,
   updateConversationTool,
@@ -57,10 +59,12 @@ export const TOOLS: readonly ToolDefinition[] = [
   updateDealTool,
   importLeadsTool,
   stopEnrichmentTool,
+  cancelLinkedInSearchTool,
   sendReplyTool,
   previewCampaignLaunchTool,
   launchCampaignTool,
   runEnrichmentTool,
+  createLinkedInSearchTool,
   previewIrreversibleTool,
   applyIrreversibleTool,
 ];

@@ -59,6 +59,7 @@ The agent acts as the person who created the token, in the token's organization 
 | `get_sending_health` | Pause state, mailbox and account status, unmatched senders and, for an owner or admin, failed AI jobs |
 | `list_tables` | Enrichment tables by workbook |
 | `get_table` | One table's columns and a page of its rows |
+| `list_linkedin_searches` | LinkedIn searches with their status and results and, for an owner or admin, each account's searches left today |
 
 A token that makes changes adds these tools. Each acts as its person would in MiaSDR, with that person's permissions.
 
@@ -72,6 +73,7 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 | `draft_campaign` | Creates a draft campaign, edits its steps and senders, and adds leads to a draft or paused campaign, or to a running one with a token that sends |
 | `update_deal` | Moves a deal to another stage or edits its fields |
 | `stop_enrichment` | Stops a table's queued cells, whoever started them |
+| `cancel_linkedin_search` | Ends a LinkedIn search an agent created. The people it found stay in Leads |
 | `import_leads` | Previews a CSV import of up to 500 rows, then commits it. A person holds three previews at once; when the server holds its limit, a preview waits (`import_busy`) |
 
 Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on it. An answer stays under about 10,000 tokens. A request that would return more fails with `answer_too_large`; narrow it with a filter, a page or a shorter date range. Long text comes cut and marked `truncated`: a reply draft keeps 12,000 characters, and `get_campaign` keeps 300 of each step body except the step named in `previewStep`, which comes whole. A write that sends a cut copy back is refused (`truncated_text`), and `send_reply` refuses a draft longer than 12,000 characters (`draft_not_read`).
@@ -137,6 +139,21 @@ The limit is only as good as the prices you enter, and it holds these limits:
 - An auto-run column a person adds during a run spends outside the reservation.
 - Queued cells keep running after the limit drops to 0. `stop_enrichment` and the Stop button end what has not started.
 - The Sending pause does not stop enrichment.
+
+### LinkedIn searches
+
+With a results limit set and the same token option, an agent gets `create_linkedin_search`: `name`, a LinkedIn search `url` and an optional `maxResults` (100 by default, 500 at most). The search counts `maxResults` against the day's limit when it is created, since results arrive later. A search that finds fewer does not give any back.
+
+The people it finds become leads. It enrolls nobody, and the tool has no campaign input, so reaching a campaign still takes `draft_campaign` and its limits. It uses accounts the token's person owns and accounts no member owns, never another member's personal LinkedIn. Agents can cancel what an agent created. Pausing and resuming stay with a person.
+
+| Code | Why | What to do |
+|---|---|---|
+| `agent_search_cap` | The search would pass today's limit on results asked for | Wait for midnight UTC (`retryAfterSeconds`), or ask for fewer |
+| `agent_no_search_account` | No connected account fits | Connect one, or an admin sets the owner under Settings, LinkedIn |
+| `agent_send_paused` | The organization's Sending pause or `PAUSE_OUTBOUND` is on | A person resumes sending |
+| `agent_search_not_agents` | A person created the search | A person cancels it in MiaSDR |
+
+LinkedIn can still restrict an account for how it is used, and these limits cannot prevent that. Keep them low on accounts you care about.
 
 ## Actions no one can undo
 

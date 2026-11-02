@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { campaigns, channelSettings, linkedinAccounts, linkedinSearchBatches, linkedinSearchQueries, linkedinSearchResults } from "@/platform/db/schema";
 import type { LinkedInSearchEngineStore, LinkedInSearchRecord, LinkedInSearchStore, SearchPageClaim } from "../application/linkedin-search-ports";
@@ -37,6 +37,7 @@ function toRecord(row: {
   campaignName: string | null;
   account: string | null;
   nextPageAt: Date | null;
+  byAgent: boolean;
   createdAt: Date;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -56,6 +57,7 @@ function toRecord(row: {
     targetCampaign: row.campaignId && row.campaignName ? { id: row.campaignId, name: row.campaignName } : null,
     account: row.account,
     nextPageAt: row.nextPageAt,
+    byAgent: row.byAgent,
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     completedAt: row.completedAt,
@@ -77,6 +79,7 @@ const recordColumns = {
   campaignName: campaigns.name,
   account: sql<string | null>`coalesce(${linkedinAccounts.name}, ${linkedinAccounts.username})`,
   nextPageAt: q.nextPageAt,
+  byAgent: sql<boolean>`${q.createdViaTokenId} is not null`,
   createdAt: q.createdAt,
   startedAt: q.startedAt,
   completedAt: q.completedAt,
@@ -97,10 +100,10 @@ const selectRecords = () =>
 export const drizzleLinkedInSearchStore: LinkedInSearchStore = {
   async create(organizationId, input) {
     return db.transaction(async (tx) => {
-      const [batch] = await tx.insert(linkedinSearchBatches).values({ organizationId, name: input.name, kind: SINGLE }).returning({ id: linkedinSearchBatches.id });
+      const [batch] = await tx.insert(linkedinSearchBatches).values({ organizationId, name: input.name, kind: SINGLE, accountIds: input.agent?.accountIds }).returning({ id: linkedinSearchBatches.id });
       const [query] = await tx
         .insert(q)
-        .values({ organizationId, batchId: batch.id, url: input.url, maxResults: input.maxResults, targetCampaignId: input.campaignId })
+        .values({ organizationId, batchId: batch.id, url: input.url, maxResults: input.maxResults, targetCampaignId: input.campaignId, createdViaTokenId: input.agent?.tokenId })
         .returning({ id: q.id });
       return query.id;
     });
@@ -113,6 +116,14 @@ export const drizzleLinkedInSearchStore: LinkedInSearchStore = {
       .orderBy(desc(q.createdAt), desc(q.id))
       .limit(200);
     return rows.map(toRecord);
+  },
+
+  async agentSearchAccounts(organizationId, userId) {
+    const rows = await db
+      .select({ id: linkedinAccounts.id })
+      .from(linkedinAccounts)
+      .where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.status, "connected"), or(eq(linkedinAccounts.ownerUserId, userId), isNull(linkedinAccounts.ownerUserId))));
+    return rows.map((row) => row.id);
   },
 
   async listBatches(organizationId) {

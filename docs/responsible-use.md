@@ -12,6 +12,9 @@ LinkedIn's User Agreement prohibits automated activity such as bots and scripts 
 - Write each invitation note for a person. Many invitations that get ignored or reported make a restriction more likely.
 - Unipile bills separately and has its own terms. Read them.
 
+
+If you let an agent run LinkedIn searches, it reads profiles on your account with no one watching each search. The organization's daily limit and the account's own limits apply, and LinkedIn can still restrict the account. Keep the limit low on an account you depend on.
+
 ## Email: CAN-SPAM (United States)
 
 CAN-SPAM applies to commercial email, including email to business addresses.
@@ -51,3 +54,7 @@ CASL requires consent for commercial electronic messages. Express consent is saf
 | Skip unsubscribed, bounced, suppressed and do-not-contact addresses | Check that you have consent or a legal basis |
 | Stop a sequence on a reply, bounce or unsubscribe | Check the law that applies to a recipient's country |
 | Limit daily volume and pace sends | Make LinkedIn automation permitted by LinkedIn |
+
+## Agents that spend or delete
+
+An agent with these options acts within limits you set, and an instruction planted in a lead's message or a provider's answer could steer it. A limit bounds the loss; it does not prevent it. A contact an agent deletes takes their conversations with them, and no one can get those back. Agents do not delete people marked do not contact, on the suppression list, who asked to stop, or who were removed from a campaign. See [AI agents (MCP)](guides/mcp.md#actions-no-one-can-undo).
