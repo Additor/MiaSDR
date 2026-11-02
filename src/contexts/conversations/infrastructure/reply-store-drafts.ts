@@ -244,6 +244,17 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         .limit(1);
       checkNoneInFlight(inFlight, null, channel);
 
+      if (input.expectedOpenRevision !== undefined) {
+        // An edit holds the draft row, so this waits for one in progress and reads its revision.
+        const open = await tx
+          .select({ revision: drafts.revision })
+          .from(drafts)
+          .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, channel), eq(drafts.status, "awaiting_review")))
+          .for("update");
+        const other = open.find((draft) => draft.revision !== input.expectedOpenRevision);
+        if (other) throw new ConflictError(`This conversation has an open draft at revision ${other.revision}. Read it, then pass that revision to replace it, or use edit.`, { code: "draft_open" });
+      }
+
       const [created] = await tx
         .insert(drafts)
         .values({

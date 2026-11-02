@@ -218,7 +218,11 @@ export interface ReplyStore {
    * address, a do-not-contact person, and a thread with a send in flight. 404 when the conversation is not in this organization.
    */
   /** Saves a typed draft on a conversation of `channel`; a conversation of the other channel answers `wrong_channel`. LinkedIn drafts have no subject or CC. */
-  createManualDraft(input: { organizationId: string; conversationId: string; channel: ReplyChannel; subject: string | null; bodyText: string; cc: string[]; actorUserId: string; via?: AgentVia }): Promise<{ id: string; revision: number }>;
+  /**
+   * The new draft turns the record's open one stale. With `expectedOpenRevision`, that happens only when the open draft is the
+   * one the caller read: null says it read none. Any other open draft answers 409 `draft_open`, checked under the record lock.
+   */
+  createManualDraft(input: { organizationId: string; conversationId: string; channel: ReplyChannel; subject: string | null; bodyText: string; cc: string[]; actorUserId: string; via?: AgentVia; expectedOpenRevision?: number | null }): Promise<{ id: string; revision: number }>;
   /** Like `ccContext`, for a conversation that has no draft yet. */
   ccContextForConversation(organizationId: string, conversationId: string): Promise<{ known: string[]; mailbox: string; lead: string | null } | null>;
   /** `writtenViaTokenId` replaces the draft's: an agent's edit sets it, a person's clears it. */

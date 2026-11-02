@@ -4,7 +4,7 @@ import { getThread } from "@/contexts/conversations/application/inbox";
 import { getLinkedInReplyPanel } from "@/contexts/conversations/application/linkedin-reply";
 import { createManualDraft, discardDraft, editDraft, getReplyPanel, regenerateDraft, requestDraft } from "@/contexts/conversations/application/reply-management";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
-import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
+import { NotFoundError, type Actor } from "@/shared/errors";
 import { DRAFT_CARD_URI } from "./cards";
 import { defineTool, need, type ToolContext } from "./define";
 import { appLinks, clip, cutCopyRefusal, fencedField, isCutCopy, LONG_TEXT_CHARS, unfenced, type ToolOutputContext } from "./output";
@@ -67,13 +67,10 @@ export const writeReplyDraftTool = defineTool({
         // The thread alone tells the channel; the draft is read once, after the write.
         const { channel } = await getThread(inboxDeps(), actor, conversationId);
         const bodyText = unfenced(need(input.bodyText, "bodyText", "create_manual"));
-        // A new draft turns the open one stale, so the agent must have read that one, as `edit` and `discard` require.
         const open = await readDraft(actor, out, conversationId);
-        if (open?.status === "awaiting_review") {
-          if (input.revision !== open.revision) throw new ConflictError(`This conversation has an open draft at revision ${open.revision}. Read it, then pass that revision to replace it, or use edit.`, { code: "draft_open" });
-          if (isCutCopy(bodyText, (await draftOf(actor, open.draftId)).text, LONG_TEXT_CHARS)) throw cutCopyRefusal("draft text");
-        }
-        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject && unfenced(input.subject), bodyText, channel: channel === "linkedin" ? "linkedin" : "email" });
+        if (open?.status === "awaiting_review" && input.revision === open.revision && isCutCopy(bodyText, (await draftOf(actor, open.draftId)).text, LONG_TEXT_CHARS)) throw cutCopyRefusal("draft text");
+        // A new draft turns the open one stale, so the agent must have read that one, as `edit` and `discard` require. The store checks it under the record lock.
+        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject && unfenced(input.subject), bodyText, channel: channel === "linkedin" ? "linkedin" : "email", expectedOpenRevision: input.revision ?? null });
         break;
       }
       case "edit": {
