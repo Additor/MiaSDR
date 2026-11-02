@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, Page, Route } from "@playwright/test";
 import { ADMIN, expect, signInAdmin, test } from "./support/fixtures";
 
 const REDIRECT = "http://127.0.0.1:54399/callback";
@@ -36,11 +36,11 @@ async function discoverAndRegister(request: APIRequestContext, baseURL: string) 
 }
 
 /** Sends the browser to the authorize URL and answers the redirect back to the client with its code. */
-async function authorizeUrl(flow: Awaited<ReturnType<typeof discoverAndRegister>>) {
+async function authorizeUrl(flow: Awaited<ReturnType<typeof discoverAndRegister>>, scope = "mcp:read mcp:write mcp:send offline_access") {
   const verifier = base64url(randomBytes(32));
   const url = new URL(flow.server.authorization_endpoint as string);
   const state = base64url(randomBytes(8));
-  url.search = new URLSearchParams({ response_type: "code", client_id: flow.clientId, redirect_uri: REDIRECT, scope: "mcp:read mcp:write mcp:send offline_access", state, resource: flow.resource, code_challenge: base64url(createHash("sha256").update(verifier).digest()), code_challenge_method: "S256" }).toString();
+  url.search = new URLSearchParams({ response_type: "code", client_id: flow.clientId, redirect_uri: REDIRECT, scope, state, resource: flow.resource, code_challenge: base64url(createHash("sha256").update(verifier).digest()), code_challenge_method: "S256" }).toString();
   return { url: url.toString(), verifier, state };
 }
 
@@ -173,6 +173,34 @@ test("a person who is not signed in signs in on the way to the consent page", as
   await fresh.getByRole("button", { name: /^Sign in$/ }).click();
   await expect(fresh.getByRole("heading", { name: "Connect E2E Agent?" })).toBeVisible();
   await context.close();
+  await page.goto("/settings/mcp");
+  await page.getByRole("button", { name: "Turn off MCP" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Turn off" }).click();
+  await expect(page.getByText("MCP is off.")).toBeVisible();
+});
+
+test("an edited consent request cannot grant more than the app asked for", async ({ page, request, baseURL, watch }) => {
+  watch.tolerate(/response 403: POST .*\/api\/oauth\/consent/, /Failed to load resource.*403/);
+  await signInAdmin(page);
+  await turnOnMcp(page);
+  const flow = await discoverAndRegister(request, baseURL as string);
+  const { url, verifier } = await authorizeUrl(flow, "mcp:read offline_access");
+  await page.goto(url);
+  await expect(page.getByRole("radio", { name: /Read and make changes/ })).toHaveCount(0);
+  // The page's own request goes out with more access than the page offered.
+  const tamper = (access: string) => async (route: Route) => route.continue({ postData: JSON.stringify({ ...(route.request().postDataJSON() as object), access }) });
+  for (const access of ["write", "send"]) {
+    await page.route("**/api/oauth/consent", tamper(access));
+    const refused = page.waitForResponse("**/api/oauth/consent");
+    await page.getByRole("button", { name: "Connect" }).click();
+    expect((await refused).status()).toBe(403);
+    await page.unrouteAll();
+  }
+
+  const back = captureCode(page);
+  await page.getByRole("button", { name: "Connect" }).click();
+  const tokens = await redeem(request, flow, (await back).searchParams.get("code") as string, verifier);
+  expect(tokens.scope.split(" ").sort()).toEqual(["mcp:read", "offline_access"]);
   await page.goto("/settings/mcp");
   await page.getByRole("button", { name: "Turn off MCP" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Turn off" }).click();

@@ -2,6 +2,12 @@
 
 MiaSDR follows [Semantic Versioning](https://semver.org). Before 1.0, a minor version can change behavior or the database schema; the release notes say when.
 
+## Unreleased
+
+### Fixed
+
+- The OAuth consent route now refuses access the app did not ask for. Before, a person who edited their own consent request could grant more than the page offered.
+
 ## 0.1.0 (2026-11-02)
 
 First public release.

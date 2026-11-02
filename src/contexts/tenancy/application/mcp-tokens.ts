@@ -189,6 +189,18 @@ export function grantableAccess(settings: McpSettings, role: string, installSend
 }
 
 /**
+ * The access levels a person may choose for an app: what the app asked for, within what this person may grant. An app
+ * that names no MCP scope gets reading, the least it can do anything with. The consent page offers this list and the
+ * consent route enforces it, so an edited request cannot grant more than the app asked for.
+ */
+export function consentChoices(settings: McpSettings, role: string, installSendEnabled: boolean, requestedScope: string): McpTokenAccess[] {
+  const requested = requestedScope.split(" ");
+  const asked = MCP_TOKEN_ACCESS.filter((access) => requested.includes(`mcp:${access}`));
+  const allowed = grantableAccess(settings, role, installSendEnabled);
+  return (asked.length > 0 ? asked : (["read"] as McpTokenAccess[])).filter((access) => allowed.includes(access));
+}
+
+/**
  * Records that a person lets an app act for them in this organization, on the same rules as creating a token. The
  * `mcp_tokens` row is what the endpoint checks on every call; agreeing again with another access level, or after a
  * revoke, updates the same row. Answers the scopes granted.
