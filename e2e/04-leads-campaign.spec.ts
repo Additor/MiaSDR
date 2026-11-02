@@ -40,7 +40,7 @@ test.describe("leads import to campaign start", () => {
     await page.getByLabel("Name").fill("S4 launch");
     await page.getByRole("button", { name: "Create campaign" }).click();
     await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]{36}$/);
-    await expect(page.getByTestId("campaign-facts")).toHaveText(/Email.*2 steps/);
+    await expect(page.getByTestId("campaign-facts").filter({ visible: true })).toHaveText(/Email.*2 steps/);
     // The status token sits beside the h1, which is the campaign name.
     await expect(page.getByRole("heading", { level: 1, name: "S4 launch" })).toBeVisible();
     await expect(page.getByTestId("campaign-status")).toHaveText("Draft");

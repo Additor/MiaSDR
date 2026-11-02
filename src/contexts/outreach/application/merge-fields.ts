@@ -6,10 +6,11 @@ import { standardFieldNames, unknownFields, unresolvedTokens, type UnknownField,
 export interface MergeFieldSource {
   /** Person custom fields of the organization. */
   customColumns(organizationId: string): Promise<Array<{ key: string; name: string }>>;
-  /** Distinct import column names kept as source data on recent leads and their companies. */
+  /** Distinct import column names kept as source data on recent leads and companies. */
   sourceKeys(organizationId: string): Promise<string[]>;
   /**
-   * Every name a lead of the organization holds a field under: custom columns, custom values, source data of any
+   * Every name a lead of the organization holds a field under: custom columns, archived ones too since a send still
+   * fills them, custom values, source data of any
    * person or company, enrollment overrides. Unlike `sourceKeys` it samples nothing, so a name missing here is missing.
    */
   fieldNames(organizationId: string, tx?: DbHandle): Promise<string[]>;

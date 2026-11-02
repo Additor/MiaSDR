@@ -17,7 +17,8 @@ import type { SuppressionListDeps } from "../application/suppression-list";
 import { drizzleChannelSettingsStore } from "./drizzle-channel-settings-store";
 import { drizzleEnrollmentAdminStore } from "./drizzle-enrollment-admin";
 import { createDrizzleInboundStore } from "../email/infrastructure/drizzle-inbound-store";
-import { drizzleMergeFieldSource } from "./drizzle-merge-fields";
+import { drizzleMergeFieldSource, drizzleRunningFieldUse } from "./drizzle-merge-fields";
+import type { RunningFieldUse } from "@/contexts/people/application/custom-columns";
 import { drizzleOutreachStore } from "../email/infrastructure/drizzle-outreach-store";
 import { createSuppressionStore } from "./suppression-store";
 import { drizzleSuppressionListStore } from "./drizzle-suppression-list-store";
@@ -79,6 +80,8 @@ export const sendPauseDeps = (): SendPauseDeps => ({ settings: drizzleChannelSet
 
 /** Merge fields offered in the sequence editor. */
 export const mergeFieldDeps = (): { source: MergeFieldSource } => ({ source: drizzleMergeFieldSource });
+
+export const runningFieldUse = (): RunningFieldUse => drizzleRunningFieldUse;
 
 /** Public unsubscribe link: the suppression store and the token secret. src/composition passes conversations' follow-up stop. */
 export const unsubscribeDeps = (followUps: FollowUpStop): { store: SuppressionStore; secret: string } => ({ store: createSuppressionStore(followUps), secret: env().UNSUBSCRIBE_SECRET });
