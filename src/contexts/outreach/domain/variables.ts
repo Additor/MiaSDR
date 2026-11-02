@@ -1,5 +1,5 @@
 import { mergeFieldKey } from "@/contexts/people/domain/custom-fields";
-import { mergeTokens } from "./render";
+import { fieldReader, mergeTokens } from "./render";
 
 export interface PersonForVariables {
   firstName: string | null;
@@ -112,15 +112,31 @@ export interface UnresolvedToken {
 
 /** Tokens in the templates that this lead cannot fill. Spin groups count every option. */
 export function unresolvedTokens(templates: string[], variables: Record<string, string | null>): UnresolvedToken[] {
-  const lookup = new Map(Object.entries(variables).map(([k, v]) => [k.toLowerCase(), v]));
+  const read = fieldReader(variables);
   const out = new Map<string, UnresolvedToken>();
   for (const template of templates) {
     for (const token of mergeTokens(template)) {
       const key = token.toLowerCase();
       if (out.has(key)) continue;
-      if (!lookup.has(key)) out.set(key, { token, reason: "unknown" });
-      else if ((lookup.get(key) ?? "") === "") out.set(key, { token, reason: "empty" });
+      const value = read(token);
+      if (value === undefined) out.set(key, { token, reason: "unknown" });
+      else if ((value ?? "") === "") out.set(key, { token, reason: "empty" });
     }
   }
   return [...out.values()];
 }
+
+/** A token in a step that matches none of `names`. */
+export interface UnknownField {
+  step: number;
+  token: string;
+}
+
+/** The tokens of each step that none of `names` fills. */
+export function unknownFields(steps: ReadonlyArray<{ stepNumber: number; subject?: string | null; body: string }>, names: readonly string[]): UnknownField[] {
+  const read = fieldReader(Object.fromEntries(names.map((name) => [name, true])));
+  return steps.flatMap((step) => mergeTokens(`${step.subject ?? ""}\n${step.body}`).filter((token) => read(token) === undefined).map((token) => ({ step: step.stepNumber, token })));
+}
+
+/** The names every lead has, whatever the organization's own columns are. */
+export const standardFieldNames = (): string[] => Object.keys(sampleVariables());

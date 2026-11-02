@@ -1,3 +1,4 @@
+import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { Actor } from "@/shared/errors";
@@ -109,7 +110,7 @@ describeDb("preview and send resolve merge fields alike", () => {
     const [{ id }] = await sql`insert into campaigns (organization_id, channel, name, status, steps) values (${f.org}, 'email', 'e', 'draft', '[]'::jsonb) returning id`;
     await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status, merge_fields)
       select organization_id, ${id}, person_id, 'email', 'pending', ${sql.json({ company: "Acme Corp" } as never)} from campaign_enrollments where id = ${f.enrollment}`;
-    const preview = await uc.previewStep({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, admin }, f.actor, id, 1, [
+    const preview = await uc.previewStep({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin }, f.actor, id, 1, [
       { stepNumber: 1, kind: "email", subject: "Hi {{firstName}}", body: "Teams like {{company}}.", waitDays: 0 },
     ]);
     expect(preview.bodyText).toContain("Teams like Acme Corp.");

@@ -16,6 +16,7 @@ import type { LinkedInEngineDeps, LinkedInGateway, LinkedInGatewayProvider, Link
 import type { NoticeDeps } from "../application/linkedin-enroll-notices";
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
 import { drizzleEnrollmentAdminStore } from "../../infrastructure/drizzle-enrollment-admin";
+import { drizzleMergeFieldSource } from "../../infrastructure/drizzle-merge-fields";
 import { drizzleLinkedInAccountStore } from "./drizzle-linkedin-account-store";
 import { drizzleLinkedInConnectStore } from "./drizzle-linkedin-connect-store";
 import { drizzleLinkedInOperationsStore } from "./drizzle-linkedin-operations-store";
@@ -93,7 +94,7 @@ export function linkedinOperationsDeps(inbox: InboxFiling): LinkedInOperationsDe
 
 export const personalThreadDeps = () => ({ store: drizzlePersonalThreadStore });
 
-export const linkedinCampaignDeps = (): LinkedInCampaignDeps => ({ campaigns: drizzleLinkedInCampaignStore, admin: drizzleEnrollmentAdminStore });
+export const linkedinCampaignDeps = (): LinkedInCampaignDeps => ({ campaigns: drizzleLinkedInCampaignStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore });
 
 export const linkedinNoticeDeps = (): NoticeDeps => ({ ...linkedinCampaignDeps(), notices: drizzleCrossCampaignNotices });
 

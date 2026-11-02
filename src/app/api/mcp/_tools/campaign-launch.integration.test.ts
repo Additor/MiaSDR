@@ -65,6 +65,25 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     }
   });
 
+  it("lists a field no lead has as a problem, refuses the launch, and shows what step 1 leaves blank for its lead", async () => {
+    const campaignId = await campaign();
+    await addLeads(campaignId, await leads(1));
+    const save = (body: string) => agent.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...STEPS[0], body }] });
+    await save("Hi {{first_nmae}}");
+    const typo = await preview(campaignId, "start");
+    expect((typo.structured.problems as string[]).join(" ")).toContain("{{first_nmae}}");
+    expect((typo.structured.firstStep as { unresolved: unknown }).unresolved).toEqual([{ token: "first_nmae", reason: "unknown" }]);
+    const refused = await launch(campaignId, typo.structured.launchToken as string);
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain("merge fields");
+
+    await save("Hi {{first_name}}, {{title}}");
+    const fixed = await preview(campaignId, "start");
+    expect(fixed.structured.problems).toEqual([]);
+    expect((fixed.structured.firstStep as { bodyText: string }).bodyText).toContain("Hi Lee");
+    expect((fixed.structured.firstStep as { unresolved: unknown }).unresolved).toEqual([{ token: "title", reason: "empty" }]);
+  });
+
   it("starts a campaign with the preview's token and records the agent on the campaign and its leads", async () => {
     const campaignId = await campaign();
     expect((await addLeads(campaignId, await leads(2))).structured.enroll).toMatchObject({ added: 2 });

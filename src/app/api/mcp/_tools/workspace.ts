@@ -4,7 +4,8 @@ import { getReplyTypeCatalog } from "@/contexts/conversations/application/reply-
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { listDealStages } from "@/contexts/deals/application/deal-stages";
 import { listMailboxes } from "@/contexts/outreach/email/application/mailbox-management";
-import { mailboxDeps } from "@/contexts/outreach/infrastructure/composition";
+import { listMergeFields } from "@/contexts/outreach/application/merge-fields";
+import { mailboxDeps, mergeFieldDeps } from "@/contexts/outreach/infrastructure/composition";
 import { listLinkedInAccountStatus } from "@/contexts/outreach/linkedin/application/linkedin-management";
 import { linkedinManagementDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { listMembers } from "@/contexts/tenancy/application/member-management";
@@ -19,6 +20,8 @@ const output = z.object({
   mailboxes: z.array(z.object({ id: z.string(), emailAddress: z.string(), displayName: z.string().nullable(), status: z.string(), dailySendLimit: z.number(), sentToday: z.number() })),
   /** Owners and admins only, as on the LinkedIn settings page. */
   linkedinAccounts: z.union([z.array(z.object({ id: z.string(), name: z.string().nullable(), username: z.string().nullable(), status: z.string(), isPremium: z.boolean() })), z.literal("omitted")]),
+  /** What a campaign step can write as `{{token}}`. */
+  mergeFields: z.array(z.object({ token: z.string(), label: z.string(), group: z.string() })),
 });
 
 export const getWorkspace = defineTool({
@@ -31,12 +34,13 @@ export const getWorkspace = defineTool({
   input: z.object({}),
   output,
   async run({ actor }) {
-    const [members, catalog, stages, mailboxes, linkedin] = await Promise.all([
+    const [members, catalog, stages, mailboxes, linkedin, mergeFields] = await Promise.all([
       listMembers(memberDeps(), actor),
       getReplyTypeCatalog(replyHandlingDeps(), actor),
       listDealStages(dealsDeps(), actor),
       listMailboxes(mailboxDeps(), actor),
       isOwnerOrAdmin(actor.role) ? listLinkedInAccountStatus(linkedinManagementDeps(), actor) : null,
+      listMergeFields(mergeFieldDeps(), actor),
     ]);
     const structured = {
       members: members.map((m) => ({ userId: m.userId, name: m.name, email: m.email, role: m.role })),
@@ -45,6 +49,7 @@ export const getWorkspace = defineTool({
       dealStages: stages.stages.map((s) => ({ id: s.id, name: s.name, kind: s.kind })),
       mailboxes: mailboxes.map((m) => ({ id: m.id, emailAddress: m.emailAddress, displayName: m.displayName, status: m.status, dailySendLimit: m.dailySendLimit, sentToday: m.sentToday })),
       linkedinAccounts: linkedin ? linkedin.map((a) => ({ id: a.id, name: a.name, username: a.username, status: a.status, isPremium: a.isPremium })) : ("omitted" as const),
+      mergeFields,
     };
     const summary = [
       `Members (${structured.members.length}): ${structured.members.map((m) => `${m.name} (${m.role})`).join(", ")}.`,

@@ -5,7 +5,8 @@ import { parseCampaignType, canArchive, canTransition, stepsEditable, stepsWithP
 import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "../../application/enrollment-admin";
 import { DEFAULT_LINKEDIN_STEPS, INVITE_NOTE_MAX, inviteNoteLength, renderLinkedInText, validateLinkedInSteps, type LinkedInStep } from "../domain/linkedin";
 import type { EnrollmentListQuery, TabCounts } from "../../domain/enrollment-list";
-import { sampleVariables, unresolvedTokens } from "../../domain/variables";
+import { sampleVariables } from "../../domain/variables";
+import { findUnknownFields, unknownFieldsProblem, unresolvedForLead, type MergeFieldSource } from "../../application/merge-fields";
 import type { LeadCrossContext } from "../../application/cross-campaign-notices";
 export interface LinkedInCampaignRecord {
   id: string;
@@ -128,6 +129,7 @@ export interface LinkedInCampaignStore {
 
 export interface LinkedInCampaignDeps {
   campaigns: LinkedInCampaignStore;
+  fields: MergeFieldSource;
   /** Set by composition. Hand-picked enroll, removal and senders need it. */
   admin?: EnrollmentAdminStore;
   /** Defaults to the system clock. Tests pass a fixed one. */
@@ -195,6 +197,8 @@ async function startCheck(deps: LinkedInCampaignDeps, actor: Actor, id: string, 
   if (issues.length > 0) problems.push(new ValidationError("Fix the steps before starting.", issues));
   const unfinished = stepsWithPlaceholders(campaign.steps);
   if (unfinished.length > 0) problems.push(new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`));
+  const unknown = await findUnknownFields(deps.fields, actor.organizationId, campaign.steps, tx);
+  if (unknown.length > 0) problems.push(unknownFieldsProblem(unknown));
   try {
     await assertAssignedSendersConnected(adminStore(deps), actor, "linkedin", id, tx);
   } catch (error) {
@@ -279,7 +283,7 @@ export async function previewLinkedInStep(deps: LinkedInCampaignDeps, actor: Act
     overLimit: isInvitation && text.length > INVITE_NOTE_MAX,
     usedSampleLead: real === null,
     leadName: (real?.fullName ?? real?.firstName ?? null) as string | null,
-    unresolved: unresolvedTokens([step.body], variables),
+    unresolved: await unresolvedForLead(deps.fields, actor.organizationId, [step.body], variables),
   };
 }
 

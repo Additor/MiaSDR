@@ -1,3 +1,4 @@
+import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
 import { drizzleEnrollmentAdminStore } from "../drizzle-enrollment-admin";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
@@ -54,7 +55,7 @@ describeDb("import to campaign data quality", () => {
     }
   });
 
-  const campaignDeps = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, admin: drizzleEnrollmentAdminStore });
+  const campaignDeps = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore });
 
   it("a file with only Name fills the first-name merge field", async () => {
     const t = await org();
@@ -104,6 +105,8 @@ describeDb("import to campaign data quality", () => {
     await sql`insert into mailboxes (organization_id, email_address, status, working_hours) values (${t.id}, ${`s@${t.tag}.test`}, 'connected', ${sql.json({ timeZone: "UTC", days: ALL_DAY })})`;
     const { id } = await uc.createCampaign(campaignDeps(), t.actor, { name: "c" });
     await uc.updateCampaign(campaignDeps(), t.actor, id, { steps: [{ stepNumber: 1, kind: "email", subject: "{{firstNme}}", body: "Hello", waitDays: 0 }] });
+    await expect(uc.changeCampaignStatus(campaignDeps(), t.actor, id, "active")).rejects.toThrow(/merge fields/);
+    await uc.updateCampaign(campaignDeps(), t.actor, id, { steps: [{ stepNumber: 1, kind: "email", subject: "{{title}}", body: "Hello", waitDays: 0 }] });
     await expect(uc.changeCampaignStatus(campaignDeps(), t.actor, id, "active")).rejects.toThrow(/subject of step 1 renders empty/);
     await expect(uc.changeCampaignStatus(campaignDeps(), t.actor, id, "active")).rejects.toBeInstanceOf(ValidationError);
     await uc.updateCampaign(campaignDeps(), t.actor, id, { steps: [{ stepNumber: 1, kind: "email", subject: "{{firstName}} hi", body: "Hello", waitDays: 0 }] });

@@ -44,6 +44,7 @@ describeDb("get_workspace", () => {
       expect(result.structured.mailboxes).toEqual([expect.objectContaining({ emailAddress: "sdr@a.test", status: "connected" })]);
       expect(JSON.stringify(result.structured)).not.toContain("sdr@b.test");
       expect(result.text).toContain("Members (1)");
+      expect(result.structured.mergeFields).toContainEqual({ token: "firstName", label: "First name", group: "standard" });
     }
   });
 });
