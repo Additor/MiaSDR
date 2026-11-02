@@ -201,8 +201,11 @@ test.describe("grid tables: export and import", () => {
     await page.getByRole("button", { name: "Actions for Mover" }).click();
     await page.getByRole("menuitem", { name: "Move to workbook" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByRole("combobox", { name: "Destination workbook" }).click();
-    await page.getByRole("option", { name: /^S28 move to/ }).click();
+    // The list can open and shut once while the dialog settles, so opening and picking retry together.
+    await expect(async () => {
+      if (!(await page.getByRole("option", { name: /^S28 move to/ }).isVisible())) await dialog.getByRole("combobox", { name: "Destination workbook" }).click();
+      await page.getByRole("option", { name: /^S28 move to/ }).click({ timeout: 2000 });
+    }).toPass({ timeout: 15_000 });
     await dialog.getByRole("button", { name: "Move table" }).click();
     await expect(page.getByText('Moved "Mover" to "S28 move to".')).toBeVisible();
     // The page follows the table: the URL names the destination workbook and the moved table, which is the open tab.
