@@ -8,7 +8,7 @@ vi.mock("next/server", async (original) => (await import("@/test-support/route-c
 
 /**
  * The definitions every agent loads before its first call: names, descriptions, annotations and schemas. A change to
- * any of them shows in the snapshot, so it is reviewed as a contract change. The budget is the plan's 6,500 tokens,
+ * any of them shows in the snapshot, so it is reviewed as a contract change. The budget is 6,500 tokens,
  * counted as one token per three characters, more tokens than a tokenizer finds for JSON, so it errs toward failing.
  */
 const DEFINITION_TOKEN_BUDGET = 6_500;

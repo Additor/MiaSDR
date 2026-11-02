@@ -9,7 +9,7 @@ import { ConflictError, ValidationError, type Actor } from "@/shared/errors";
 import { CARD_MIME_TYPE, CARDS } from "./cards";
 import { estimateTokens, MAX_RESPONSE_TOKENS, toolOutputContext, type ToolOutputContext } from "./output";
 
-/** Reads this organization's data and changes nothing (the plan's "RO, CW"). */
+/** Reads this organization's data and changes nothing. */
 export const READ_ONLY: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
 
 /** Changes this organization's data and reaches nothing outside it. Destructive by the protocol's default. */

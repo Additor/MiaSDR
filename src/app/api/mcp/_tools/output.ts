@@ -3,7 +3,7 @@ import { fence, UNTRUSTED_TAG } from "@/contexts/ai/domain/prompt-fence";
 import { ConflictError } from "@/shared/errors";
 
 /**
- * What every tool answer shares (the "툴 계약" rules of the MCP plan): links into the app, fenced text from outside the
+ * What every tool answer shares: links into the app, fenced text from outside the
  * organization, short excerpts, and a size budget. A tool builds one `ToolOutputContext` per call, so each answer
  * fences its text with a nonce of its own.
  */
