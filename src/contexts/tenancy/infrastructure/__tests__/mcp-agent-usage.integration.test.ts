@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
-import { ConflictError, ForbiddenError, type Actor } from "@/shared/errors";
+import { ConflictError, ForbiddenError, ValidationError, type Actor } from "@/shared/errors";
 
 vi.mock("server-only", () => ({}));
 
@@ -88,6 +88,13 @@ describeDb("agent usage against the daily limits", () => {
     expect((error as ConflictError).details).toMatchObject({ code: "agent_spend_cap", retryAfterSeconds: expect.any(Number) });
     expect(await amountOf("spend_cents")).toBe(500);
     expect(await codeOf(reserve(agent, "spend_cents", 501))).toBe("agent_spend_cap");
+  });
+
+  it("refuses an amount that is not a whole number above 0, and leaves the count alone", async () => {
+    const agent = await newToken(["spend"]);
+    await reserve(agent, "search_leads", 50);
+    for (const amount of [-20, 0, 1.5]) await expect(reserve(agent, "search_leads", amount)).rejects.toBeInstanceOf(ValidationError);
+    expect(await amountOf("search_leads")).toBe(50);
   });
 
   it("does not run an action the limit refuses", async () => {

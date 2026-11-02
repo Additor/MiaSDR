@@ -9,6 +9,7 @@ describeDb("MCP tokens", () => {
   let tokens: typeof import("../../application/mcp-tokens");
   let deps: import("../../application/mcp-tokens").McpTokenDeps;
   let resolveAccess: typeof import("../../application/mcp-principal").resolveMcpAccess;
+  let resolveGrant: typeof import("../../application/mcp-principal").resolveMcpGrant;
   let principalDeps: import("../../application/mcp-principal").McpPrincipalDeps;
   const orgs: TestOrg[] = [];
   const users: string[] = [];
@@ -27,7 +28,7 @@ describeDb("MCP tokens", () => {
 
   beforeAll(async () => {
     tokens = await import("../../application/mcp-tokens");
-    ({ resolveMcpAccess: resolveAccess } = await import("../../application/mcp-principal"));
+    ({ resolveMcpAccess: resolveAccess, resolveMcpGrant: resolveGrant } = await import("../../application/mcp-principal"));
     const composition = await import("../mcp-composition");
     deps = composition.mcpTokenDeps();
     principalDeps = composition.mcpPrincipalDeps();
@@ -41,6 +42,44 @@ describeDb("MCP tokens", () => {
     } finally {
       await sql.end();
     }
+  });
+
+  it("grants an app spending or irreversible actions only to an owner or admin, and narrows them on the next consent", async () => {
+    const [on] = orgs;
+    await tokens.updateMcpSettings(deps, actorOf(on), { agentSpendCentsPerDay: 500, agentIrreversiblePerDay: 3 });
+    const clientId = `https://app-${randomBytes(3).toString("hex")}.test/meta`;
+    const grant = (actor: Actor, extras: Array<"spend" | "irreversible">) => tokens.grantMcpAccess(deps, actor, { clientId, clientName: "App", access: "write", extras });
+    const { actor: memberActor } = await member(on, "member");
+    await expect(grant(memberActor, ["irreversible"])).rejects.toBeInstanceOf(ForbiddenError);
+
+    expect(await grant(actorOf(on), ["spend", "irreversible"])).toEqual(["mcp:read", "mcp:write", "mcp:spend", "mcp:irreversible"]);
+    const resolve = (scopes: string[]) => resolveGrant(principalDeps, { userId: on.userId, organizationId: on.organizationId, clientId, scopes });
+    const all = ["mcp:read", "mcp:write", "mcp:spend", "mcp:irreversible"];
+    const first = await resolve(all);
+    expect(first && "principal" in first && first.principal.allows).toMatchObject({ enrichment: true, irreversible: true });
+    // An access token from before a person narrowed the grant cannot do more than the row says.
+    expect(await grant(actorOf(on), ["spend"])).toEqual(["mcp:read", "mcp:write", "mcp:spend"]);
+    const narrowed = await resolve(all);
+    expect(narrowed && "principal" in narrowed && narrowed.principal.allows).toMatchObject({ enrichment: true, irreversible: false });
+
+    // Dropping the limit retires the grant. A new consent carries the new epoch, an old access token's claims stay narrow.
+    await tokens.updateMcpSettings(deps, actorOf(on), { agentIrreversiblePerDay: 0 });
+    await tokens.updateMcpSettings(deps, actorOf(on), { agentIrreversiblePerDay: 3 });
+    expect(await grant(actorOf(on), ["irreversible"])).toEqual(["mcp:read", "mcp:write", "mcp:irreversible"]);
+    const fresh = await resolve(all);
+    expect(fresh && "principal" in fresh && fresh.principal.allows).toMatchObject({ enrichment: false, irreversible: true });
+    const older = await resolve(["mcp:read", "mcp:write"]);
+    expect(older && "principal" in older && older.principal.allows.irreversible).toBe(false);
+
+    // A demoted admin's grant stops on the next request, whatever the token's claims say.
+    await sql`update members set role = 'member' where organization_id = ${on.organizationId} and user_id = ${on.userId}`;
+    try {
+      const demoted = await resolve(all);
+      expect(demoted && "principal" in demoted && demoted.principal.allows.irreversible).toBe(false);
+    } finally {
+      await sql`update members set role = 'owner' where organization_id = ${on.organizationId} and user_id = ${on.userId}`;
+    }
+    await tokens.updateMcpSettings(deps, actorOf(on), { agentSpendCentsPerDay: 0, agentIrreversiblePerDay: 0 });
   });
 
   it("creates a read token whose secret works once shown and is stored only as a hash", async () => {
