@@ -5,6 +5,7 @@ import { useState } from "react";
 import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -18,6 +19,13 @@ const LABEL: Record<Access, { title: string; detail: string }> = {
   send: { title: "Read, make changes and send", detail: "Also send replies and start campaigns where this organization allows it, with no one reviewing first." },
 };
 
+type Extra = "spend" | "irreversible";
+
+const EXTRA_LABEL: Record<Extra, { title: string; detail: string }> = {
+  spend: { title: "Spend on enrichment and LinkedIn searches", detail: "Within this organization's daily limits, with no one reviewing first." },
+  irreversible: { title: "Complete campaigns and delete leads, contacts and deals", detail: "No one can undo these. Deleting a contact erases its conversations." },
+};
+
 export interface ConsentFormProps {
   clientName: string;
   found: boolean;
@@ -25,6 +33,8 @@ export interface ConsentFormProps {
   redirectHost: string | null;
   mcpOn: boolean;
   choices: Access[];
+  /** What the app asked for on top of its access. A person ticks each one; none starts ticked. */
+  extras: Extra[];
   organizations: Array<{ id: string; name: string }>;
   organizationId: string;
 }
@@ -32,16 +42,17 @@ export interface ConsentFormProps {
 /** Sending stays a choice a person makes: it is never preselected, even when the app asks for it. */
 const firstChoice = (choices: Access[]): Access => (choices.includes("write") ? "write" : (choices[0] ?? "read"));
 
-export function ConsentForm({ clientName, found, verifiedHost, redirectHost, mcpOn, choices, organizations, organizationId }: ConsentFormProps) {
+export function ConsentForm({ clientName, found, verifiedHost, redirectHost, mcpOn, choices, extras, organizations, organizationId }: ConsentFormProps) {
   const router = useRouter();
   const [access, setAccess] = useState<Access>(firstChoice(choices));
+  const [ticked, setTicked] = useState<Extra[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   async function answer(accept: boolean) {
     setPending(true);
     setError(null);
-    const result = await runApiAction(callApi<{ url: string }>("/api/oauth/consent", "POST", { oauthQuery: window.location.search.slice(1), accept, organizationId, access }), { expectData: true });
+    const result = await runApiAction(callApi<{ url: string }>("/api/oauth/consent", "POST", { oauthQuery: window.location.search.slice(1), accept, organizationId, access, extras: access === "read" ? [] : ticked }), { expectData: true });
     if (result.ok) {
       window.location.assign(result.data.url);
       return;
@@ -112,6 +123,16 @@ export function ConsentForm({ clientName, found, verifiedHost, redirectHost, mcp
               </Field>
             ))}
           </RadioGroup>
+          {access !== "read" &&
+            extras.map((extra) => (
+              <Field key={extra} orientation="horizontal" className="items-start">
+                <Checkbox id={`consent-${extra}`} checked={ticked.includes(extra)} onCheckedChange={(on) => setTicked((list) => (on ? [...list, extra] : list.filter((e) => e !== extra)))} />
+                <FieldLabel htmlFor={`consent-${extra}`} className="block font-normal">
+                  {EXTRA_LABEL[extra].title}
+                  <span className="block text-muted-foreground">{EXTRA_LABEL[extra].detail}</span>
+                </FieldLabel>
+              </Field>
+            ))}
         </div>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2">

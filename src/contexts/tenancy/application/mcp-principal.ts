@@ -1,5 +1,5 @@
 import { isMcpTokenFormat, mcpGrantId } from "../domain/mcp-token";
-import { agentSendPolicy, usableScopes, type McpScope } from "../domain/mcp-policy";
+import { agentIrreversiblePolicy, agentSendPolicy, agentSpendPolicy, usableScopes, type McpScope } from "../domain/mcp-policy";
 import type { McpSettings } from "../domain/mcp-settings";
 
 /**
@@ -19,11 +19,13 @@ export interface McpPrincipal {
   policyEpoch: number;
   expiresAt: Date | null;
   /**
-   * What the send policy allowed when the request arrived, which decides whether `tools/list` offers the send tools.
-   * Each send reads the policy again under the agent-send lock.
+   * What the policies allowed when the request arrived, which decides whether `tools/list` offers the tools that need
+   * them. Each action reads its policy again under the agent-send lock.
    */
-  send: { replies: boolean; campaigns: boolean };
+  allows: Record<PrincipalAllowance, boolean>;
 }
+
+export type PrincipalAllowance = "replies" | "campaigns" | "enrichment" | "search" | "irreversible";
 
 export interface StoredMcpToken {
   id: string;
@@ -32,6 +34,8 @@ export interface StoredMcpToken {
   userId: string;
   scopes: string[];
   policyEpoch: number;
+  spendEpoch: number;
+  irreversibleEpoch: number;
   expiresAt: Date | null;
   revokedAt: Date | null;
   lastUsedAt: Date | null;
@@ -57,6 +61,10 @@ export interface McpPrincipalDeps {
   now: () => Date;
   /** `MCP_SEND_ENABLED`: the install lets agents send at all. */
   installSendEnabled: () => boolean;
+  /** `MCP_SPEND_ENABLED`: the install lets agents spend at all. */
+  installSpendEnabled: () => boolean;
+  /** `MCP_IRREVERSIBLE_ENABLED`: the install lets agents take actions a person cannot undo. */
+  installIrreversibleEnabled: () => boolean;
 }
 
 /** A principal, or the organization's refusal. A token that resolves to nobody gives null. */
@@ -92,7 +100,9 @@ async function accessOf(deps: McpPrincipalDeps, row: StoredMcpToken | null): Pro
   // Most requests find a recent `lastUsedAt` and skip the round trip.
   if (!row.lastUsedAt || now.getTime() - row.lastUsedAt.getTime() >= TOUCH_INTERVAL_MS) await deps.store.touch(row.id, now);
   const scopes = usableScopes({ role: row.role, settings, scopes: row.scopes });
-  const policy = agentSendPolicy({ installSendEnabled: deps.installSendEnabled(), settings, token: { scopes, policyEpoch: row.policyEpoch, revokedAt: row.revokedAt, expiresAt: row.expiresAt }, now });
+  const token = { scopes, policyEpoch: row.policyEpoch, spendEpoch: row.spendEpoch, irreversibleEpoch: row.irreversibleEpoch, revokedAt: row.revokedAt, expiresAt: row.expiresAt };
+  const policy = agentSendPolicy({ installSendEnabled: deps.installSendEnabled(), settings, token, now });
+  const spend = agentSpendPolicy({ installEnabled: deps.installSpendEnabled(), settings, token, now });
   return {
     principal: {
       tokenId: row.id,
@@ -103,7 +113,13 @@ async function accessOf(deps: McpPrincipalDeps, row: StoredMcpToken | null): Pro
       scopes,
       policyEpoch: row.policyEpoch,
       expiresAt: row.expiresAt,
-      send: { replies: policy.replies, campaigns: policy.campaigns },
+      allows: {
+        replies: policy.replies,
+        campaigns: policy.campaigns,
+        enrichment: spend.enrichment,
+        search: spend.search,
+        irreversible: agentIrreversiblePolicy({ installEnabled: deps.installIrreversibleEnabled(), settings, token, now }) === null,
+      },
     },
   };
 }

@@ -40,7 +40,7 @@ async function Mcp() {
   ]);
   // What agents sent and started; owners and admins only.
   const sends = canManage ? await agentSendsOverview(actor.organizationId, new Date()) : null;
-  const { MCP_ENABLED, MCP_SEND_ENABLED, APP_URL, RETENTION_MCP_TOOL_CALLS_DAYS } = env();
+  const { MCP_ENABLED, MCP_SEND_ENABLED, MCP_SPEND_ENABLED, MCP_IRREVERSIBLE_ENABLED, APP_URL, RETENTION_MCP_TOOL_CALLS_DAYS } = env();
   return (
     <McpPanel
       oauthAvailable={mcpOAuthAvailable(APP_URL, MCP_ENABLED)}
@@ -48,6 +48,8 @@ async function Mcp() {
       enabled={settings.enabled}
       memberWriteTokens={settings.memberWriteTokens}
       agentSendMode={MCP_SEND_ENABLED ? settings.agentSendMode : "off"}
+      agentSpends={MCP_SPEND_ENABLED && (settings.agentSpendCentsPerDay > 0 || settings.agentSearchLeadsPerDay > 0)}
+      agentIrreversible={MCP_IRREVERSIBLE_ENABLED && settings.agentIrreversiblePerDay > 0}
       canManage={canManage}
       currentUserId={ctx.user.id}
       endpoint={`${APP_URL}/api/mcp`}

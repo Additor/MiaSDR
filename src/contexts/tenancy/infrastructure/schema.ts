@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { check, date, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { createdAt, users } from "@/contexts/identity/infrastructure/schema";
 
 /**
@@ -124,10 +124,14 @@ export const mcpTokens = pgTable(
     tokenHint: text("token_hint"),
     /** The authorization server's grant. `oauth` only. */
     oauthGrantId: text("oauth_grant_id"),
-    /** `mcp:read`, `mcp:write`, `mcp:send` (tenancy/domain/mcp-policy.ts). */
+    /** `mcp:read`, `mcp:write`, `mcp:send`, `mcp:spend`, `mcp:irreversible` (tenancy/domain/mcp-policy.ts). */
     scopes: text("scopes").array().notNull(),
     /** The organization's `agentSendEpoch` when the token was made. A send token from an older epoch cannot send. */
     policyEpoch: integer("policy_epoch").notNull().default(0),
+    /** The organization's `agentSpendEpoch` when the token was made. A spend token from an older epoch cannot spend. */
+    spendEpoch: integer("spend_epoch").notNull().default(0),
+    /** The organization's `agentIrreversibleEpoch` when the token was made. */
+    irreversibleEpoch: integer("irreversible_epoch").notNull().default(0),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -146,6 +150,31 @@ export const mcpTokens = pgTable(
     ),
     check("mcp_tokens_name_ck", sql`length(btrim(${t.name})) between 1 and 100`),
     check("mcp_tokens_policy_epoch_ck", sql`${t.policyEpoch} >= 0`),
+    check("mcp_tokens_spend_epoch_ck", sql`${t.spendEpoch} >= 0`),
+    check("mcp_tokens_irreversible_epoch_ck", sql`${t.irreversibleEpoch} >= 0`),
+  ],
+);
+
+/**
+ * What agents reserved in an organization on one UTC day, against the daily limits in its MCP settings:
+ * `spend_cents`, `search_leads` or `irreversible` (`tenancy/application/mcp-agent-usage.ts`). Pruned after a few days.
+ */
+export const mcpAgentUsage = pgTable(
+  "mcp_agent_usage",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    kind: text("kind").notNull(),
+    amount: integer("amount").notNull(),
+  },
+  (t) => [
+    unique("mcp_agent_usage_org_day_kind_uq").on(t.organizationId, t.day, t.kind),
+    check("mcp_agent_usage_kind_ck", sql`${t.kind} in ('spend_cents', 'search_leads', 'irreversible')`),
+    check("mcp_agent_usage_amount_ck", sql`${t.amount} >= 0`),
+    index("mcp_agent_usage_day_idx").on(t.day),
   ],
 );
 

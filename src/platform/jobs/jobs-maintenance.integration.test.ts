@@ -274,6 +274,13 @@ describeDb("slot claims, daily rollover and history pruning", () => {
       await prune.pruneHistory({ now, retention, deadline: Date.now() + 60_000 });
       expect(await exists("mcp_tool_calls", old)).toBe(false);
       expect(await exists("mcp_tool_calls", kept)).toBe(true);
+      const usage = async (daysAgo: number) =>
+        (await sql`insert into mcp_agent_usage (organization_id, day, kind, amount) values (${o}, ${new Date(ago(daysAgo)).toISOString().slice(0, 10)}, 'irreversible', 1) returning id`)[0].id as string;
+      const oldUsage = await usage(30);
+      const todayUsage = await usage(0);
+      await prune.pruneHistory({ now, retention, deadline: Date.now() + 60_000 });
+      expect(await exists("mcp_agent_usage", oldUsage)).toBe(false);
+      expect(await exists("mcp_agent_usage", todayUsage)).toBe(true);
       await sql`delete from users where id = ${userId}`;
     });
 

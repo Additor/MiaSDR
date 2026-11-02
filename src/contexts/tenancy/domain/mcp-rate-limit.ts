@@ -1,7 +1,8 @@
 /**
  * MCP request limits. Each token counts its requests per bucket in fixed windows. Every request counts in `read`; a
  * tool that changes data also counts in `write`, and the costly actions count in `ai` (a model call on the
- * organization's AI key) or `import` as well. A sent reply counts in `send`, a campaign start or resume in `launch`.
+ * organization's AI key) or `import` as well. A sent reply counts in `send`, a campaign start or resume in `launch`, a
+ * started enrichment or LinkedIn search in `spend`, an action a person cannot undo in `irreversible`.
  */
 export const MCP_RATE_WINDOW_MS = 60_000;
 const HOUR_MS = 60 * MCP_RATE_WINDOW_MS;
@@ -13,6 +14,8 @@ export const MCP_RATE_LIMITS = {
   import: { limit: 10, windowMs: HOUR_MS },
   send: { limit: 10, windowMs: MCP_RATE_WINDOW_MS },
   launch: { limit: 10, windowMs: HOUR_MS },
+  spend: { limit: 20, windowMs: HOUR_MS },
+  irreversible: { limit: 30, windowMs: HOUR_MS },
 } as const;
 export type McpRateBucket = keyof typeof MCP_RATE_LIMITS;
 

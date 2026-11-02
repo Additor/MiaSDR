@@ -10,6 +10,8 @@ export const PRUNE_BATCH_SIZE = 1000;
 export const PRUNE_MAX_BATCHES = 20;
 /** Expired sessions and verifications are kept this long past expiry. */
 export const AUTH_EXPIRED_GRACE_DAYS = 1;
+/** Daily limits look at today's row. The rows stay this long for anyone checking a recent day. */
+const AGENT_USAGE_DAYS = 7;
 
 export interface RetentionDays {
   jobRuns: number;
@@ -86,6 +88,7 @@ export async function pruneHistory(options: PruneOptions): Promise<PruneResult> 
     ["inbound_events_failed", sql`status = 'failed' and coalesce(processed_at, created_at) < ${before(retention.inboundFailed)}::timestamptz`],
     ["ai_jobs", sql`status = 'succeeded' and completed_at < ${before(retention.aiJobs)}::timestamptz`],
     ["mcp_tool_calls", sql`created_at < ${before(retention.mcpToolCalls)}::timestamptz`],
+    ["mcp_agent_usage", sql`day < ${before(AGENT_USAGE_DAYS)}::date`],
     ["sessions", sql`expires_at < ${authCutoff}::timestamptz`],
     ["verifications", sql`expires_at < ${authCutoff}::timestamptz`],
     ["oauth_refresh_tokens", sql`expires_at < ${authCutoff}::timestamptz`],

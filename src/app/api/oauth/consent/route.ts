@@ -3,12 +3,12 @@ import { z } from "zod";
 import { withActor } from "@/app/_lib/api";
 import { mcpOAuthAvailable } from "@/contexts/identity/domain/mcp-oauth";
 import { answerConsent, consentQueryValid, oauthClientFor } from "@/contexts/identity/infrastructure/mcp-oauth";
-import { consentChoices, grantMcpAccess, MCP_TOKEN_ACCESS } from "@/contexts/tenancy/application/mcp-tokens";
+import { consentChoices, consentExtras, grantMcpAccess, MCP_TOKEN_ACCESS, MCP_TOKEN_EXTRAS } from "@/contexts/tenancy/application/mcp-tokens";
 import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { env } from "@/shared/env";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/shared/errors";
 
-const body = z.object({ oauthQuery: z.string().max(8000), accept: z.boolean(), organizationId: z.string(), access: z.enum(MCP_TOKEN_ACCESS).optional() });
+const body = z.object({ oauthQuery: z.string().max(8000), accept: z.boolean(), organizationId: z.string(), access: z.enum(MCP_TOKEN_ACCESS).optional(), extras: z.array(z.enum(MCP_TOKEN_EXTRAS)).optional() });
 
 const EXPIRED = "This request has expired. Start connecting from the app again.";
 
@@ -21,7 +21,7 @@ const EXPIRED = "This request has expired. Start connecting from the app again."
  */
 export const POST = (request: Request) =>
   withActor(async (actor) => {
-    const { APP_URL, MCP_ENABLED, MCP_SEND_ENABLED } = env();
+    const { APP_URL, MCP_ENABLED, MCP_SEND_ENABLED, MCP_SPEND_ENABLED, MCP_IRREVERSIBLE_ENABLED } = env();
     if (!mcpOAuthAvailable(APP_URL, MCP_ENABLED)) throw new NotFoundError("Not found");
     const input = body.parse(await request.json());
     if (!(await consentQueryValid(input.oauthQuery))) throw new ValidationError(EXPIRED);
@@ -36,9 +36,12 @@ export const POST = (request: Request) =>
       const deps = mcpTokenDeps();
       const requestedScope = query.get("scope") ?? "";
       const access = input.access ?? "read";
-      const choices = consentChoices(await deps.store.settings(actor.organizationId), actor.role, MCP_SEND_ENABLED, requestedScope);
-      if (!choices.includes(access)) throw new ForbiddenError("This app did not ask for that access, or you cannot grant it here.");
-      const granted = await grantMcpAccess(deps, actor, { clientId, clientName: client.client_name ?? clientId, access });
+      const settings = await deps.store.settings(actor.organizationId);
+      const choices = consentChoices(settings, actor.role, MCP_SEND_ENABLED, requestedScope);
+      const extras = input.extras ?? [];
+      const offered = consentExtras(settings, actor.role, { spend: MCP_SPEND_ENABLED, irreversible: MCP_IRREVERSIBLE_ENABLED }, requestedScope);
+      if (!choices.includes(access) || extras.some((extra) => !offered.includes(extra))) throw new ForbiddenError("This app did not ask for that access, or you cannot grant it here.");
+      const granted = await grantMcpAccess(deps, actor, { clientId, clientName: client.client_name ?? clientId, access, extras });
       const requested = requestedScope.split(" ");
       scope = [...granted, ...requested.filter((s) => s === "offline_access")].join(" ");
     }

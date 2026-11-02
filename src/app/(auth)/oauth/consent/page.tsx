@@ -8,7 +8,7 @@ import { toActor } from "@/app/_lib/api";
 import { mcpOAuthAvailable } from "@/contexts/identity/domain/mcp-oauth";
 import { oauthClientFor } from "@/contexts/identity/infrastructure/mcp-oauth";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
-import { consentChoices } from "@/contexts/tenancy/application/mcp-tokens";
+import { consentChoices, consentExtras } from "@/contexts/tenancy/application/mcp-tokens";
 import { listMyOrganizations } from "@/contexts/tenancy/application/organization-switching";
 import { mcpTokenDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
 import { switchingDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
@@ -37,7 +37,7 @@ function hostOf(url: string): string | null {
 
 async function Consent({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await connection();
-  const { APP_URL, MCP_ENABLED, MCP_SEND_ENABLED } = env();
+  const { APP_URL, MCP_ENABLED, MCP_SEND_ENABLED, MCP_SPEND_ENABLED, MCP_IRREVERSIBLE_ENABLED } = env();
   if (!mcpOAuthAvailable(APP_URL, MCP_ENABLED)) notFound();
   const ctx = await requireOrgContext();
   const actor = toActor(ctx);
@@ -47,6 +47,7 @@ async function Consent({ searchParams }: { searchParams: Promise<Record<string, 
   const deps = mcpTokenDeps();
   const settings = await deps.store.settings(actor.organizationId);
   const choices = consentChoices(settings, actor.role, MCP_SEND_ENABLED, one(params.scope));
+  const extras = consentExtras(settings, actor.role, { spend: MCP_SPEND_ENABLED, irreversible: MCP_IRREVERSIBLE_ENABLED }, one(params.scope));
   const { organizations } = await listMyOrganizations(switchingDeps(), { userId: actor.userId, activeOrganizationId: actor.organizationId });
   // A metadata document proves the app controls its address. A self-registered app wrote its own name.
   const verifiedHost = clientId.startsWith("https://") ? hostOf(clientId) : null;
@@ -58,6 +59,7 @@ async function Consent({ searchParams }: { searchParams: Promise<Record<string, 
       redirectHost={hostOf(one(params.redirect_uri))}
       mcpOn={settings.enabled}
       choices={choices}
+      extras={extras}
       organizations={organizations.map((o) => ({ id: o.id, name: o.name }))}
       organizationId={actor.organizationId}
     />

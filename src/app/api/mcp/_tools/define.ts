@@ -1,7 +1,7 @@
 import type { McpServer, ToolAnnotations } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { clientNameFrom, logMcp, mcpActor, runTool, type ToolOutput } from "@/app/_lib/mcp";
-import type { McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
+import type { McpPrincipal, PrincipalAllowance } from "@/contexts/tenancy/application/mcp-principal";
 import { callTarget, type McpToolCallEntry } from "@/contexts/tenancy/application/mcp-tool-calls";
 import { hasScope, type McpScope } from "@/contexts/tenancy/domain/mcp-policy";
 import type { McpRateBucket } from "@/contexts/tenancy/domain/mcp-rate-limit";
@@ -30,8 +30,8 @@ export interface ToolDefinition<I extends AnyObject = AnyObject, O extends AnyOb
   title: string;
   description: string;
   scope: McpScope;
-  /** For a `mcp:send` tool: the part of the send policy it needs, so `tools/list` leaves it out while the policy refuses. */
-  sends?: "replies" | "campaigns";
+  /** The part of the policies it needs, so `tools/list` leaves it out while the policy refuses. */
+  needs?: PrincipalAllowance;
   annotations: ToolAnnotations;
   /** The MCP Apps card a host that supports them shows beside the answer (`cards.ts`). */
   card?: string;
@@ -104,6 +104,8 @@ const LIMIT_WORDS: Record<McpRateBucket, string> = {
   import: "imports this hour",
   send: "sent replies this minute",
   launch: "campaign starts this hour",
+  spend: "enrichment runs and searches this hour",
+  irreversible: "actions it cannot undo this hour",
 };
 
 /** Counts the call in each of its buckets, all of them even after one refuses, so a client that keeps retrying stays refused. */
@@ -122,6 +124,9 @@ async function takeBuckets(hooks: ToolHooks, buckets: McpRateBucket[]): Promise<
   }
 }
 
+/** Whether this token sees the tool: its scope, and the policy the tool needs. */
+export const toolVisible = (tool: ToolDefinition, principal: McpPrincipal): boolean => hasScope(principal.scopes, tool.scope) && (!tool.needs || principal.allows[tool.needs]);
+
 const actionOf = (input: unknown): string | null => {
   const action = (input as Record<string, unknown> | null | undefined)?.action;
   return typeof action === "string" ? action : null;
@@ -136,13 +141,13 @@ function registerCards(server: McpServer, tools: readonly ToolDefinition[]): voi
 }
 
 /**
- * Registers the tools the token's scopes and the send policy allow, by name, so `tools/list` comes out in the same order every time. Each
+ * Registers the tools the token's scopes and the policies allow, by name, so `tools/list` comes out in the same order every time. Each
  * call runs through `runTool` with the person's actor and a fresh output context: its rate buckets first, then the
  * tool within the response budget. Every call, refused or not, writes one row to the activity log; a failed write
  * there is logged and never fails the call. `connectionClient` names a client whose requests do not name it.
  */
 export function registerTools(server: McpServer, principal: McpPrincipal, appUrl: string, tools: readonly ToolDefinition[], hooks: ToolHooks, connectionClient: string | null = null): void {
-  const visible = [...tools].sort((a, b) => a.name.localeCompare(b.name)).filter((tool) => hasScope(principal.scopes, tool.scope) && (!tool.sends || principal.send[tool.sends]));
+  const visible = [...tools].sort((a, b) => a.name.localeCompare(b.name)).filter((tool) => toolVisible(tool, principal));
   registerCards(server, visible);
   for (const tool of visible) {
     server.registerTool(
@@ -157,9 +162,9 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
           return withinBudget(() => checkedOutput(tool, () => tool.run({ actor, principal, out: toolOutputContext(appUrl) }, input as never)), buckets.length > 0);
         });
         const error = result.isError ? (result.structuredContent?.error as { code?: unknown } | undefined) : undefined;
-        // Operators watch refused agent sends and rate limits in the logs (docs/operations.md).
+        // Operators watch refused agent actions and rate limits in the logs (docs/operations.md).
         if (typeof error?.code === "string" && (error.code.startsWith("agent_") || error.code === "rate_limited")) {
-          logMcp(error.code === "rate_limited" ? "rate limited" : "agent send refused", { code: error.code, tool: tool.name, organizationId: principal.organizationId, tokenId: principal.tokenId });
+          logMcp(error.code === "rate_limited" ? "rate limited" : "agent action refused", { code: error.code, tool: tool.name, organizationId: principal.organizationId, tokenId: principal.tokenId });
         }
         await hooks
           .record({

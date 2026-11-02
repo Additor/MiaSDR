@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { APIRequestContext, Page, Route } from "@playwright/test";
-import { ADMIN, expect, signInAdmin, test } from "./support/fixtures";
+import { ADMIN, expect, signInAdmin, test, waitForHydrated } from "./support/fixtures";
 
 const REDIRECT = "http://127.0.0.1:54399/callback";
 
@@ -23,7 +23,7 @@ async function discoverAndRegister(request: APIRequestContext, baseURL: string) 
   expect(metadataUrl).toBe(`${baseURL}/.well-known/oauth-protected-resource/api/mcp`);
   const resource = (await (await request.get(metadataUrl)).json()) as { resource: string; authorization_servers: string[]; scopes_supported: string[] };
   expect(resource.resource).toBe(`${baseURL}/api/mcp`);
-  expect(resource.scopes_supported).toEqual(["mcp:read", "mcp:write", "mcp:send"]);
+  expect(resource.scopes_supported).toEqual(["mcp:read", "mcp:write", "mcp:send", "mcp:spend", "mcp:irreversible"]);
   const issuer = new URL(resource.authorization_servers[0]);
   const server = (await (await request.get(`${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`)).json()) as Record<string, string | string[]>;
   expect(server.code_challenge_methods_supported).toEqual(["S256"]);
@@ -201,6 +201,47 @@ test("an edited consent request cannot grant more than the app asked for", async
   await page.getByRole("button", { name: "Connect" }).click();
   const tokens = await redeem(request, flow, (await back).searchParams.get("code") as string, verifier);
   expect(tokens.scope.split(" ").sort()).toEqual(["mcp:read", "offline_access"]);
+  await page.goto("/settings/mcp");
+  await page.getByRole("button", { name: "Turn off MCP" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Turn off" }).click();
+  await expect(page.getByText("MCP is off.")).toBeVisible();
+});
+
+test("an app gets spending and irreversible actions only when a person ticks them", async ({ page, request, baseURL }) => {
+  await signInAdmin(page);
+  await turnOnMcp(page);
+  await page.goto("/settings/organization");
+  const card = page.getByRole("region", { name: "Agents can spend and delete" });
+  await waitForHydrated(card.getByRole("button", { name: "Save" }));
+  await card.getByLabel("Actions agents cannot undo, per day").fill("3");
+  const saved = page.waitForResponse((r) => r.url().endsWith("/api/settings/mcp") && r.request().method() === "PATCH");
+  await card.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save limits" }).click();
+  expect((await saved).status()).toBe(200);
+
+  const flow = await discoverAndRegister(request, baseURL as string);
+  const all = "mcp:read mcp:write mcp:send mcp:spend mcp:irreversible offline_access";
+  const first = await authorizeUrl(flow, all);
+  const back = captureCode(page);
+  await page.goto(first.url);
+  await waitForHydrated(page.getByRole("button", { name: "Connect" }));
+  // Spending has no limit here, so it is not offered. The other starts unticked and goes unless a person ticks it.
+  await expect(page.getByLabel(/^Spend on enrichment/)).toHaveCount(0);
+  const tick = page.getByRole("checkbox", { name: /Complete campaigns and delete leads, contacts and deals/ });
+  await expect(tick).not.toBeChecked();
+  await tick.click();
+  await page.getByRole("button", { name: "Connect" }).click();
+  const tokens = await redeem(request, flow, (await back).searchParams.get("code") as string, first.verifier);
+  expect(tokens.scope.split(" ").sort()).toEqual(["mcp:irreversible", "mcp:read", "mcp:write", "offline_access"]);
+
+  await page.unrouteAll();
+  await page.goto("/settings/organization");
+  await waitForHydrated(card.getByRole("button", { name: "Save" }));
+  await card.getByLabel("Actions agents cannot undo, per day").fill("0");
+  const zero = page.waitForResponse((r) => r.url().endsWith("/api/settings/mcp") && r.request().method() === "PATCH");
+  await card.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save limits" }).click();
+  expect((await zero).status()).toBe(200);
   await page.goto("/settings/mcp");
   await page.getByRole("button", { name: "Turn off MCP" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Turn off" }).click();

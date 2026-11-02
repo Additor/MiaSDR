@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { Time } from "@/components/shell/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -34,6 +35,10 @@ interface Token {
   /** What it does now: a send or write token loses that when the organization's settings change. */
   access: "read" | "write" | "send";
   sendRetired: boolean;
+  spends: boolean;
+  spendRetired: boolean;
+  irreversible: boolean;
+  irreversibleRetired: boolean;
 }
 
 interface Props {
@@ -47,6 +52,10 @@ interface Props {
   memberWriteTokens: boolean;
   /** What agents may send in this organization; a token that sends needs it on. Settings, Organization changes it. */
   agentSendMode: "off" | "replies" | "replies_and_campaigns";
+  /** A daily spending limit is set, so a token can be made to spend. Settings, Organization changes it. */
+  agentSpends: boolean;
+  /** A daily limit on actions agents cannot undo is set, so a token can be made to take them. */
+  agentIrreversible: boolean;
   canManage: boolean;
   currentUserId: string;
   endpoint: string;
@@ -87,13 +96,14 @@ const SEND_NOTE: Record<"off" | "replies" | "replies_and_campaigns", string> = {
   replies_and_campaigns: "Agents with a token that sends can send replies and start campaigns with no one reviewing first.",
 };
 
-export function McpPanel({ oauthAvailable, installEnabled, enabled, memberWriteTokens, agentSendMode, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays, agentSends }: Props) {
+export function McpPanel({ oauthAvailable, installEnabled, enabled, memberWriteTokens, agentSendMode, agentSpends, agentIrreversible, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays, agentSends }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
   const { isBusy, run } = useApiAction();
   const [switching, setSwitching] = useState(false);
   const [switchingWrite, setSwitchingWrite] = useState(false);
   const [access, setAccess] = useState<"read" | "write" | "send">("read");
+  const [extras, setExtras] = useState<Array<"spend" | "irreversible">>([]);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ name: string; token: string } | null>(null);
   const [revoking, setRevoking] = useState<Token | null>(null);
@@ -111,10 +121,11 @@ export function McpPanel({ oauthAvailable, installEnabled, enabled, memberWriteT
     const name = String(new FormData(form).get("name"));
     void run("create", async () => {
       setError(null);
-      const result = await runApiAction(callApi<{ token: string; name: string }>("/api/settings/mcp/tokens", "POST", { name, access: canWrite ? access : "read" }), { refresh, expectData: true });
+      const result = await runApiAction(callApi<{ token: string; name: string }>("/api/settings/mcp/tokens", "POST", { name, access: canWrite ? access : "read", extras: canManage && access !== "read" ? extras : [] }), { refresh, expectData: true });
       if (!result.ok) return setError(result.error);
       form.reset();
       setAccess("read");
+      setExtras([]);
       setCreated({ name: result.data.name, token: result.data.token });
     });
   }
@@ -215,6 +226,29 @@ export function McpPanel({ oauthAvailable, installEnabled, enabled, memberWriteT
                         An agent with this token sends {agentSendMode === "replies" ? "replies" : "replies and starts campaigns"} as you, with no one reviewing first, within the organization&apos;s agent limits.
                       </FieldDescription>
                     )
+                  )}
+                </FieldSet>
+              )}
+              {canManage && access !== "read" && (agentSpends || agentIrreversible) && (
+                <FieldSet>
+                  <FieldLegend variant="label">Also let this token</FieldLegend>
+                  {agentSpends && (
+                    <Field orientation="horizontal" className="items-start">
+                      <Checkbox id="token-extra-spend" checked={extras.includes("spend")} onCheckedChange={(on) => setExtras((list) => (on ? [...list, "spend"] : list.filter((e) => e !== "spend")))} />
+                      <div>
+                        <FieldLabel htmlFor="token-extra-spend">Spend on enrichment and LinkedIn searches</FieldLabel>
+                        <FieldDescription>Within the organization&apos;s daily limits, with no one reviewing first.</FieldDescription>
+                      </div>
+                    </Field>
+                  )}
+                  {agentIrreversible && (
+                    <Field orientation="horizontal" className="items-start">
+                      <Checkbox id="token-extra-irreversible" checked={extras.includes("irreversible")} onCheckedChange={(on) => setExtras((list) => (on ? [...list, "irreversible"] : list.filter((e) => e !== "irreversible")))} />
+                      <div>
+                        <FieldLabel htmlFor="token-extra-irreversible">Complete campaigns and delete leads, contacts and deals</FieldLabel>
+                        <FieldDescription>No one can undo these. Deleting a contact erases its conversations.</FieldDescription>
+                      </div>
+                    </Field>
                   )}
                 </FieldSet>
               )}
@@ -371,6 +405,10 @@ function TokenList({ tokens, label, showOwner, currentUserId, onRevoke }: { toke
             )}
             {token.access === "send" ? <Badge variant="secondary">Sends</Badge> : token.access === "write" && <Badge variant="secondary">Makes changes</Badge>}
             {token.sendRetired && <Badge variant="outline">No longer sends</Badge>}
+            {token.spends && <Badge variant="secondary">Spends</Badge>}
+            {token.spendRetired && <Badge variant="outline">No longer spends</Badge>}
+            {token.irreversible && <Badge variant="secondary">Deletes</Badge>}
+            {token.irreversibleRetired && <Badge variant="outline">No longer deletes</Badge>}
             {expired && <Badge variant="outline">Expired</Badge>}
             <span className="text-muted-foreground">
               {token.lastUsedAt ? (

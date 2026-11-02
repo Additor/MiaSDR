@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
 import { mcpTokens, members } from "@/platform/db/schema";
 import { env } from "@/shared/env";
-import { agentSendPolicy, usableScopes, type AgentSendPolicy } from "../domain/mcp-policy";
+import { agentIrreversiblePolicy, agentSendPolicy, agentSpendPolicy, usableScopes, type AgentActionRefusal, type AgentSendPolicy, type AgentSpendPolicy } from "../domain/mcp-policy";
 import type { McpSettings } from "../domain/mcp-settings";
 import { mcpSettingsIn } from "./mcp-settings-reader";
 import { lockAgentSend } from "./agent-send-lock";
@@ -45,4 +45,34 @@ export async function readAgentSendGate(tx: DbHandle, input: { organizationId: s
     now: input.now,
   });
   return { policy, settings };
+}
+
+export interface AgentActionGate {
+  spend: AgentSpendPolicy;
+  irreversible: AgentActionRefusal | null;
+  settings: McpSettings;
+}
+
+/**
+ * Whether an agent's token may spend or take actions a person cannot undo now, read inside the caller's transaction
+ * under the agent-send lock, shared: reservations against one limit stay safe with a conditional write, and a policy
+ * save or a revoke waits for them.
+ */
+export async function readAgentActionGate(tx: DbHandle, input: { organizationId: string; tokenId: string; now: Date }): Promise<AgentActionGate> {
+  await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtextextended(${`agent-send:${input.organizationId}`}, 0))`);
+  const settings = await mcpSettingsIn(tx, input.organizationId);
+  if (!settings.enabled) return { spend: { enrichment: false, search: false, refusal: "mcp_off" }, irreversible: "mcp_off", settings };
+  const [row] = await tx
+    .select({ scopes: mcpTokens.scopes, spendEpoch: mcpTokens.spendEpoch, irreversibleEpoch: mcpTokens.irreversibleEpoch, revokedAt: mcpTokens.revokedAt, expiresAt: mcpTokens.expiresAt, role: members.role })
+    .from(mcpTokens)
+    .leftJoin(members, and(eq(members.organizationId, mcpTokens.organizationId), eq(members.userId, mcpTokens.userId)))
+    .where(and(eq(mcpTokens.id, input.tokenId), eq(mcpTokens.organizationId, input.organizationId)));
+  const token = row
+    ? { scopes: row.role === null ? [] : usableScopes({ role: row.role, settings, scopes: row.scopes }), spendEpoch: row.spendEpoch, irreversibleEpoch: row.irreversibleEpoch, revokedAt: row.revokedAt, expiresAt: row.expiresAt }
+    : { scopes: [], spendEpoch: settings.agentSpendEpoch, irreversibleEpoch: settings.agentIrreversibleEpoch, revokedAt: input.now, expiresAt: null };
+  return {
+    spend: agentSpendPolicy({ installEnabled: env().MCP_SPEND_ENABLED, settings, token, now: input.now }),
+    irreversible: agentIrreversiblePolicy({ installEnabled: env().MCP_IRREVERSIBLE_ENABLED, settings, token, now: input.now }),
+    settings,
+  };
 }

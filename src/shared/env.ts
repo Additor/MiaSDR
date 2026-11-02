@@ -61,6 +61,8 @@ const schema = z.object({
   MCP_ENABLED: flagSchema(true),
   /** Lets agents send replies and start campaigns where an organization allows it. Set false to refuse every agent send in the install, whatever the organizations chose. Default true. */
   MCP_SEND_ENABLED: flagSchema(true),
+  MCP_SPEND_ENABLED: flagSchema(true),
+  MCP_IRREVERSIBLE_ENABLED: flagSchema(true),
   /** Lets an MCP client register itself for OAuth, for clients that cannot publish a client metadata document. The consent page marks such an app as unverified. Default true. */
   MCP_OAUTH_DCR: flagSchema(true),
   /** Proxies in front of the app that append to `X-Forwarded-For`. Set it to let the MCP endpoint limit failed token guesses per client IP; unset, it reads no client IP and keeps no IP limit. */
