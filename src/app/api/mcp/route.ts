@@ -11,6 +11,7 @@ import { mcpPrincipalDeps, mcpRateLimitDeps } from "@/contexts/tenancy/infrastru
 import { env } from "@/shared/env";
 import { createMcpServer, recordRefusedCall } from "./_tools/registry";
 import { BadTokenLimiter, clientIp } from "./bad-token-limiter";
+import { connectionClient, initializingClient, withConnectionId } from "./legacy-connection";
 
 /** Hosted platforms read it; a standalone server ignores it. */
 export const maxDuration = 60;
@@ -22,7 +23,7 @@ export const maxDuration = 60;
  * The SDK answers its own failures (a factory that throws, a server error, a refused request) without throwing, and
  * reports them only to `onerror`, so `onerror` logs them.
  */
-const handler = createMcpHandler(({ authInfo }) => createMcpServer(principalOf(authInfo), env().APP_URL), {
+const handler = createMcpHandler(({ authInfo }) => createMcpServer(principalOf(authInfo), env().APP_URL, authInfo?.extra?.connectionClient as string | null), {
   legacy: "stateless",
   responseMode: "json",
   onerror: (error) => console.error("[mcp] request failed", error),
@@ -103,19 +104,25 @@ async function serve(request: Request): Promise<Response> {
     logMcp("rate limited", { bucket: "read", organizationId: principal.organizationId, tokenId: principal.tokenId, retryAfterSeconds: limited.retryAfterSeconds });
     return tooManyRequests(limited.retryAfterSeconds, "This MCP token sent too many requests this minute. Wait, then try again.");
   }
+  const client = connectionClient(request.headers.get("mcp-session-id"));
+  let initializing: string | null = null;
   if (request.method === "POST") {
     // A body over the SDK's limit goes on, and the SDK answers it.
     const body = await readRequestBody(request.clone());
     // The limit above counts requests, so a batch would run many tools for one count. The protocol dropped batches in 2025-06-18.
     if (!body.tooLarge && body.text.trimStart().startsWith("[")) return apiError(400, "Send one JSON-RPC message per request; this endpoint takes no batches.", { code: "batch_not_supported" });
-    if (!body.tooLarge) await recordRefusedCall(principal, body.text);
+    if (!body.tooLarge) {
+      await recordRefusedCall(principal, body.text, client);
+      initializing = initializingClient(body.text);
+    }
   }
   // The raw token never travels further than this function: `token` carries the token's id.
-  const authInfo: AuthInfo = { token: principal.tokenId, clientId: principal.tokenId, scopes: principal.scopes, extra: { principal } };
-  return handler.fetch(request, { authInfo });
+  const authInfo: AuthInfo = { token: principal.tokenId, clientId: principal.tokenId, scopes: principal.scopes, extra: { principal, connectionClient: client } };
+  const response = await handler.fetch(request, { authInfo });
+  return initializing && response.ok ? withConnectionId(response, initializing) : response;
 }
 
 export const POST = serve;
-/** The SDK answers 405 to the 2025 session operations; they reach it only with a valid token. */
+/** The SDK answers 405 to the 2025 session operations (the id in `legacy-connection.ts` holds no session to end); they reach it only with a valid token. */
 export const GET = serve;
 export const DELETE = serve;

@@ -99,6 +99,39 @@ describeDb("/api/mcp", () => {
     expect((await callMcp(GET, { era: "legacy", token: live, method: "", httpMethod: "GET" })).status).toBe(405);
   });
 
+  it("names a 2025-11-25 client in the activity log through the session id, per connection and with no id too", async () => {
+    const org = await createTestOrg(sql, "Connections");
+    orgs.push(org);
+    await enable(org, true);
+    const live = await token(org);
+    const open = async (name: string) => {
+      const opened = await post({ era: "legacy", token: live, method: "initialize", params: { ...legacyInitialize, clientInfo: { name, version: "1" } } });
+      expect(opened.status).toBe(200);
+      return opened.headers.get("mcp-session-id") as string;
+    };
+    const call = (headers: Record<string, string>, name = "get_workspace") => post({ era: "legacy", token: live, method: "tools/call", params: { name, arguments: {} }, headers });
+    // One token, two clients at once: each call names its own.
+    const [first, second] = [await open("Claude Code"), await open("Cursor")];
+    expect((await call({ "mcp-session-id": first })).status).toBe(200);
+    expect((await call({ "mcp-session-id": second })).status).toBe(200);
+    expect((await call({ "mcp-session-id": first }, "no_such_tool")).status).toBe(200);
+    expect((await call({ "mcp-session-id": "not-one-of-ours" })).status).toBe(200);
+    expect((await call({})).status).toBe(200);
+    const rows = await sql<{ tool: string; client_name: string | null }[]>`select tool, client_name from mcp_tool_calls where organization_id = ${org.organizationId} order by created_at`;
+    expect(rows.map((r) => [r.tool, r.client_name])).toEqual([
+      ["get_workspace", "Claude Code"],
+      ["get_workspace", "Cursor"],
+      ["no_such_tool", "Claude Code"],
+      ["get_workspace", null],
+      ["get_workspace", null],
+    ]);
+    // A 2026-07-28 client names itself in each request, so it gets no session id, and its own name wins over a stale one.
+    const modern = await post({ token: live, method: "tools/call", params: { name: "get_workspace", arguments: {} }, headers: { "mcp-session-id": first } });
+    expect(modern.headers.get("mcp-session-id")).toBeNull();
+    const [latest] = await sql<{ client_name: string }[]>`select client_name from mcp_tool_calls where organization_id = ${org.organizationId} order by created_at desc limit 1`;
+    expect(latest.client_name).toBe("test-client");
+  });
+
   it("refuses a request whose Mcp-Method header disagrees with its body", async () => {
     const result = await post({ token: await token(orgs[0]), method: "server/discover", headers: { "mcp-method": "tools/list" } });
     expect(result.status).toBe(400);
