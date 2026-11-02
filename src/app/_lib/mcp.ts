@@ -10,14 +10,16 @@ import { STATUS_CODES } from "./api-errors";
 import { classifyError } from "./classify-error";
 import type { Actor } from "@/shared/errors";
 
-/** The client name in a 2026-07-28 request envelope. The client writes it, so it is checked before use. */
+/** The name in a client's `clientInfo`. The client writes it, so it is checked before use. */
 const clientInfo = z.object({ name: z.string().trim().min(1).max(100) });
 
-export function clientNameFrom(envelope: unknown): string | null {
-  const info = (envelope as Record<string, unknown> | null | undefined)?.["io.modelcontextprotocol/clientInfo"];
+export function clientNameOf(info: unknown): string | null {
   const parsed = clientInfo.safeParse(info);
   return parsed.success ? parsed.data.name : null;
 }
+
+/** The client name in a 2026-07-28 request envelope. */
+export const clientNameFrom = (envelope: unknown): string | null => clientNameOf((envelope as Record<string, unknown> | null | undefined)?.["io.modelcontextprotocol/clientInfo"]);
 
 /** One structured line an operator can search: a failed token, a rate limit or an agent refusal. Never a token or a message. */
 export const logMcp = (event: string, fields: Record<string, unknown>): void => console.warn(`[mcp] ${event} ${JSON.stringify(fields)}`);

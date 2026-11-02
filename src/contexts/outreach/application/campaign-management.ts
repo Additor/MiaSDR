@@ -5,12 +5,14 @@ import { canArchive, canTransition, emptyFirstSubjectMessage, type ArchiveFilter
 import type { EnrollmentListQuery } from "../domain/enrollment-list";
 import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "./enrollment-admin";
 import { renderEmail } from "../domain/render";
-import { sampleVariables, unresolvedTokens } from "../domain/variables";
+import { sampleVariables } from "../domain/variables";
+import { findUnknownFields, unknownFieldsProblem, unresolvedForLead, type MergeFieldSource } from "./merge-fields";
 import type { CampaignRecord, CampaignStore, EnrollResult, MailboxStore } from "./management-ports";
 
 export interface CampaignDeps {
   campaigns: CampaignStore;
   mailboxes: MailboxStore;
+  fields: MergeFieldSource;
   /** Set by composition. Hand-picked enroll, removal and senders need it. */
   admin?: EnrollmentAdminStore;
   /** Defaults to the system clock. */
@@ -99,6 +101,8 @@ async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign
   if (issues.length > 0) problems.push(new ValidationError("Fix the steps before starting.", issues));
   const unfinished = stepsWithPlaceholders(campaign.steps);
   if (unfinished.length > 0) problems.push(new ValidationError(`Replace the [[bracketed text]] in step ${unfinished.join(", ")} before starting.`));
+  const unknown = await findUnknownFields(deps.fields, actor.organizationId, campaign.steps, tx);
+  if (unknown.length > 0) problems.push(unknownFieldsProblem(unknown));
   // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
   if (campaign.status === "draft") {
     const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE, tx);
@@ -213,7 +217,7 @@ export async function previewStep(deps: CampaignDeps, actor: Actor, id: string, 
     bodyText: rendered.bodyText,
     usedSampleLead: real === null,
     leadName: (real?.fullName ?? real?.firstName ?? null) as string | null,
-    unresolved: unresolvedTokens([step.subject ?? "", step.body], variables),
+    unresolved: await unresolvedForLead(deps.fields, actor.organizationId, [step.subject ?? "", step.body], variables),
   };
 }
 

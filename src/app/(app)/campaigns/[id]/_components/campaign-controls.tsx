@@ -79,7 +79,7 @@ export function CampaignControls({
     const leaves = method === "DELETE";
     const result = await runApiAction(callApi(url, method, body), leaves ? {} : { refresh: () => router.refresh() });
     if (leaves && !result.ok && (result.status === 404 || result.status === 409)) router.refresh();
-    if (!result.ok) throw new Error([result.error, result.issues[0]?.message].filter(Boolean).join(" "));
+    if (!result.ok) throw new Error([result.error, ...result.issues.map((i) => (i.step ? `Step ${i.step}: ${i.message}` : i.message))].filter(Boolean).join(" "));
     return result.data;
   }
 

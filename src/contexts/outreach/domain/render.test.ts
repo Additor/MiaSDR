@@ -13,6 +13,14 @@ describe("applySpin", () => {
 });
 
 describe("applyMergeFields", () => {
+  it("fills a field written in other words, and leaves a typo blank", () => {
+    const fields = { firstName: "Ann", jobTitle: "CTO" };
+    expect(applyMergeFields("{{first_name}} {{First Name}} {{first-name}} {{FIRSTNAME}} {{job_title}}", fields)).toBe("Ann Ann Ann Ann CTO");
+    expect(applyMergeFields("Hi {{first_nmae}}!", fields)).toBe("Hi!");
+  });
+  it("prefers the exact name over the same words", () => {
+    expect(applyMergeFields("{{first_name}}", { firstName: "Ann", first_name: "Raw" })).toBe("Raw");
+  });
   it("is case-insensitive and blanks missing keys", () => {
     expect(applyMergeFields("Hi {{ FirstName }}, {{missing}}!", { firstName: "Ann" })).toBe("Hi Ann,!");
   });

@@ -139,9 +139,9 @@ function registerCards(server: McpServer, tools: readonly ToolDefinition[]): voi
  * Registers the tools the token's scopes and the send policy allow, by name, so `tools/list` comes out in the same order every time. Each
  * call runs through `runTool` with the person's actor and a fresh output context: its rate buckets first, then the
  * tool within the response budget. Every call, refused or not, writes one row to the activity log; a failed write
- * there is logged and never fails the call.
+ * there is logged and never fails the call. `connectionClient` names a client whose requests do not name it.
  */
-export function registerTools(server: McpServer, principal: McpPrincipal, appUrl: string, tools: readonly ToolDefinition[], hooks: ToolHooks): void {
+export function registerTools(server: McpServer, principal: McpPrincipal, appUrl: string, tools: readonly ToolDefinition[], hooks: ToolHooks, connectionClient: string | null = null): void {
   const visible = [...tools].sort((a, b) => a.name.localeCompare(b.name)).filter((tool) => hasScope(principal.scopes, tool.scope) && (!tool.sends || principal.send[tool.sends]));
   registerCards(server, visible);
   for (const tool of visible) {
@@ -150,7 +150,7 @@ export function registerTools(server: McpServer, principal: McpPrincipal, appUrl
       { title: tool.title, description: tool.description, inputSchema: tool.input, outputSchema: publishedOutput(tool.output), annotations: tool.annotations, ...(tool.card ? { _meta: { ui: { resourceUri: tool.card } } } : {}) },
       async (input, extra) => {
         const started = hooks.now();
-        const clientName = clientNameFrom(extra.mcpReq.envelope);
+        const clientName = clientNameFrom(extra.mcpReq.envelope) ?? connectionClient;
         const buckets = bucketsOf(tool, input);
         const result = await runTool(tool.name, mcpActor(principal, clientName), async (actor) => {
           await takeBuckets(hooks, buckets);

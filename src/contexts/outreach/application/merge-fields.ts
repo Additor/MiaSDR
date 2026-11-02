@@ -1,11 +1,18 @@
 import { mergeFieldKey } from "@/contexts/people/domain/custom-fields";
-import type { Actor } from "@/shared/errors";
+import type { DbHandle } from "@/platform/db/client";
+import { ValidationError, type Actor } from "@/shared/errors";
+import { standardFieldNames, unknownFields, unresolvedTokens, type UnknownField, type UnresolvedToken } from "../domain/variables";
 
 export interface MergeFieldSource {
   /** Person custom fields of the organization. */
   customColumns(organizationId: string): Promise<Array<{ key: string; name: string }>>;
   /** Distinct import column names kept as source data on recent leads and their companies. */
   sourceKeys(organizationId: string): Promise<string[]>;
+  /**
+   * Every name a lead of the organization holds a field under: custom columns, custom values, source data of any
+   * person or company, enrollment overrides. Unlike `sourceKeys` it samples nothing, so a name missing here is missing.
+   */
+  fieldNames(organizationId: string, tx?: DbHandle): Promise<string[]>;
 }
 
 export interface MergeFieldItem {
@@ -50,4 +57,27 @@ export async function listMergeFields(deps: { source: MergeFieldSource }, actor:
     items.push({ token: name, label: name, group: "source" });
   }
   return items;
+}
+
+type StepFields = Parameters<typeof unknownFields>[0];
+
+/** The tokens in these steps that no lead of the organization can fill. Reads the organization's fields only for a token the standard ones miss. */
+export async function findUnknownFields(source: MergeFieldSource, organizationId: string, steps: StepFields, tx?: DbHandle): Promise<UnknownField[]> {
+  const standard = standardFieldNames();
+  if (unknownFields(steps, standard).length === 0) return [];
+  return unknownFields(steps, [...standard, ...(await source.fieldNames(organizationId, tx))]);
+}
+
+/** A start problem for tokens that would reach every lead as a blank. */
+export const unknownFieldsProblem = (unknown: UnknownField[]): ValidationError =>
+  new ValidationError("Fix the merge fields before starting.", unknown.map((u) => ({ step: u.step, message: `No lead has a field called {{${u.token}}}. Check the spelling or pick a field the organization has.` })));
+
+/** What a preview says about one lead: a field other leads have counts as empty here, and only a field none has as unknown. */
+export async function unresolvedForLead(source: MergeFieldSource, organizationId: string, templates: string[], variables: Record<string, string | null>): Promise<UnresolvedToken[]> {
+  const unresolved = unresolvedTokens(templates, variables);
+  const missing = unresolved.filter((u) => u.reason === "unknown");
+  if (missing.length === 0) return unresolved;
+  const steps = [{ stepNumber: 0, body: missing.map((u) => `{{${u.token}}}`).join(" ") }];
+  const unknown = new Set((await findUnknownFields(source, organizationId, steps)).map((u) => u.token));
+  return unresolved.map((u) => (u.reason === "unknown" && !unknown.has(u.token) ? { ...u, reason: "empty" } : u));
 }

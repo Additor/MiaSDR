@@ -3,9 +3,11 @@ import { stepSchema } from "@/app/api/campaigns/step-schema";
 import { linkedinStepSchema } from "@/app/api/linkedin/campaigns/step-schema";
 import { noticesForPeople } from "@/contexts/outreach/application/cross-campaign-notices";
 import type { EnrollOptions } from "@/contexts/outreach/application/enroll-options";
+import { findUnknownFields } from "@/contexts/outreach/application/merge-fields";
 import { createCampaign, enrollLeads, enrollPickedLeads, updateCampaign } from "@/contexts/outreach/application/campaign-management";
 import type { StepInput } from "@/contexts/outreach/domain/campaign";
-import { campaignDeps } from "@/contexts/outreach/infrastructure/composition";
+import type { UnknownField } from "@/contexts/outreach/domain/variables";
+import { campaignDeps, mergeFieldDeps } from "@/contexts/outreach/infrastructure/composition";
 import { createLinkedInCampaign, enrollLinkedInLeads, enrollPickedLinkedInLeads, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import type { LinkedInStep } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { linkedinCampaignDeps, linkedinNoticeDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
@@ -74,7 +76,7 @@ const step = z.object({
 type SentStep = z.infer<typeof step>;
 
 /** The same rules as the campaign page's own save: each channel's step kinds and lengths, with no tag an answer added. */
-function stepsToSave(channel: Channel, steps: SentStep[]): unknown[] {
+function stepsToSave(channel: Channel, steps: SentStep[]): Array<{ stepNumber: number; subject?: string; body: string }> {
   const schema = channel === "email" ? stepSchema : linkedinStepSchema;
   // The schema keeps its own keys, so `readToken` stops here.
   return steps.map((s) => {
@@ -90,6 +92,7 @@ export const draftCampaignTool = defineTool({
   description: [
     "Prepares a campaign; nothing here sends. `create` makes a draft (`channel`, `name`, optional `senderIds`; LinkedIn `personal`).",
     "`update` changes `name`, `steps` or `senderIds` of a draft or paused campaign; `steps` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks `truncated` whole with `previewStep` and send its `readToken` with the edited step; text that looks like the cut copy is refused (`truncated_text`).",
+    "Steps write merge fields as `{{token}}`, with a `token` from get_workspace `mergeFields`. After a save, `unknownFields` names any no lead has a field for: they would reach every lead as a blank, so the campaign cannot start until they change.",
     "`add_leads` enrolls leads by Leads search `query` or `personIds` (up to 500); call it with `dryRun: true` first to see the counts. Agents enroll a limited number of leads a day (`agent_enroll_cap`).",
     "Adding to a running campaign needs a token that sends, agent campaigns allowed, and `launchToken` from preview_campaign_launch with `purpose: enroll`.",
   ].join(" "),
@@ -113,13 +116,14 @@ export const draftCampaignTool = defineTool({
     channel: z.enum(CHANNELS),
     campaignId: z.string(),
     enroll: enrollView.nullable(),
+    unknownFields: z.array(z.object({ step: z.number(), token: z.string() })),
     appUrl: z.string(),
   }),
   async run({ actor, out }, input) {
     const writes = WRITES[input.channel];
-    const answer = (campaignId: string, summary: string, enroll: z.infer<typeof enrollView> | null = null) => ({
+    const answer = (campaignId: string, summary: string, enroll: z.infer<typeof enrollView> | null = null, unknownFields: UnknownField[] = []) => ({
       summary,
-      structured: { action: input.action, channel: input.channel, campaignId, enroll, appUrl: appLinks(out).campaign(campaignId) },
+      structured: { action: input.action, channel: input.channel, campaignId, enroll, unknownFields, appUrl: appLinks(out).campaign(campaignId) },
     });
     if (input.action === "create") {
       if (!input.name) throw new ValidationError("create needs name.");
@@ -143,7 +147,9 @@ export const draftCampaignTool = defineTool({
         },
         (tx) => writes.update(actor, campaignId, { name: input.name, steps, senderIds: input.senderIds }, tx),
       );
-      return answer(campaignId, "Saved the campaign.");
+      const unknown = steps ? await findUnknownFields(mergeFieldDeps().source, actor.organizationId, steps) : [];
+      const warning = unknown.length > 0 ? ` No lead has a field for ${unknown.map((u) => `{{${u.token}}} (step ${u.step})`).join(", ")}, so the campaign cannot start until they change.` : "";
+      return answer(campaignId, `Saved the campaign.${warning}`, null, unknown);
     }
     if ((input.query === undefined) === (input.personIds === undefined)) throw new ValidationError("add_leads needs query or personIds, not both.");
     // The enroll use cases read a blank search as no filter, which would enroll every eligible lead.

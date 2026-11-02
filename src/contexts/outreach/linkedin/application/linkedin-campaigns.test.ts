@@ -17,7 +17,7 @@ import type { EnrollmentAdminStore, SenderRef } from "../../application/enrollme
 const actor: Actor = { userId: "u1", organizationId: "org1", role: "member" };
 const NOW = new Date("2026-10-14T10:00:00Z");
 
-function setup(options: { steps?: LinkedInStep[]; status?: LinkedInCampaignRecord["status"]; lead?: Record<string, string | null> | null; accounts?: LinkedInAccountLimits[]; rows?: LinkedInEnrollmentRow[]; archived?: boolean; senders?: SenderRef[]; type?: LinkedInCampaignRecord["type"] } = {}) {
+function setup(options: { fieldNames?: string[]; steps?: LinkedInStep[]; status?: LinkedInCampaignRecord["status"]; lead?: Record<string, string | null> | null; accounts?: LinkedInAccountLimits[]; rows?: LinkedInEnrollmentRow[]; archived?: boolean; senders?: SenderRef[]; type?: LinkedInCampaignRecord["type"] } = {}) {
   const campaign: LinkedInCampaignRecord = { id: "c1", name: "Q4", type: options.type ?? "regular", createdBy: "u1", status: options.status ?? "draft", steps: options.steps ?? DEFAULT_LINKEDIN_STEPS, archivedAt: options.archived ? NOW : null, createdAt: NOW };
   const calls: string[] = [];
   const store = {
@@ -45,7 +45,7 @@ function setup(options: { steps?: LinkedInStep[]; status?: LinkedInCampaignRecor
       calls.push(`senders:${ids.join(",")}`);
     },
   } as unknown as EnrollmentAdminStore;
-  const deps: LinkedInCampaignDeps = { campaigns: store, admin, now: () => NOW };
+  const deps: LinkedInCampaignDeps = { campaigns: store, fields: { customColumns: async () => [], sourceKeys: async () => [], fieldNames: async () => options.fieldNames ?? [] }, admin, now: () => NOW };
   return { deps, calls };
 }
 
@@ -209,5 +209,18 @@ describe("previewLinkedInStep unresolved tokens", () => {
   it("lists nothing when every field fills", async () => {
     const { deps } = setup({ steps: [step(1, "Hi {{firstName}}")] });
     expect((await previewLinkedInStep(deps, actor, "c1", 1)).unresolved).toEqual([]);
+  });
+});
+
+describe("merge fields at start", () => {
+  const steps: LinkedInStep[] = [{ stepNumber: 1, kind: "invitation", body: "Hi {{first_name}}, {{fav_color}}", waitDays: 0 }];
+  const accounts = [{ status: "connected" }] as never;
+
+  it("refuses a field no lead of the organization has, and accepts one written in other words", async () => {
+    const { deps } = setup({ steps, status: "draft", accounts });
+    const refused = await changeLinkedInCampaignStatus(deps, actor, "c1", "active").catch((e: unknown) => e);
+    expect((refused as ValidationError).issues).toEqual([{ step: 1, message: expect.stringContaining("{{fav_color}}") }]);
+    const known = setup({ steps, status: "draft", accounts, fieldNames: ["Fav Color"] });
+    await expect(changeLinkedInCampaignStatus(known.deps, actor, "c1", "active")).resolves.toBeUndefined();
   });
 });

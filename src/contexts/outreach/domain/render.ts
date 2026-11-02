@@ -3,6 +3,8 @@
  * spin text, merge fields, signature, HTML conversion, unsubscribe footer.
  */
 
+import { mergeFieldKey } from "@/contexts/people/domain/custom-fields";
+
 const SPIN = /\{([^{}]+)\}/g;
 const MERGE = /\{\{\s*([^{}\r\n]+?)\s*\}\}/g;
 const SIGNATURE_PLACEHOLDER = /%\s*signature\s*%/gi;
@@ -35,20 +37,41 @@ export function mergeTokens(template: string): string[] {
   return [...seen.values()];
 }
 
+/**
+ * Reads a field by the name a template wrote: the same name in any case first, then the same words, so `{{first_name}}`
+ * and `{{First Name}}` read `firstName`. Rendering and the field checks share it, so a name they accept always fills.
+ * Answers undefined for a name no field has.
+ */
+export function fieldReader<T>(fields: Record<string, T>): (name: string) => T | undefined {
+  const entries = Object.entries(fields);
+  const byName = new Map(entries.map(([key, value]) => [key.toLowerCase(), value]));
+  const words = (name: string) => mergeFieldKey(name)?.toLowerCase();
+  const byWords = new Map(entries.flatMap(([key, value]): Array<[string, T]> => {
+    const name = words(key);
+    return name ? [[name, value]] : [];
+  }));
+  return (name) => {
+    const lower = name.trim().toLowerCase();
+    if (byName.has(lower)) return byName.get(lower);
+    const spelled = words(lower);
+    return spelled === undefined ? undefined : byWords.get(spelled);
+  };
+}
+
 const EMPTY_MARK = "\u0001";
 const EMPTY_RUN = new RegExp(`([ \\t]*)${EMPTY_MARK}(?:[ \\t]*${EMPTY_MARK})*([ \\t]*)`, "g");
 
 /**
- * `{{ key }}` is replaced from `variables` (case-insensitive). Missing keys become empty. `signature` is kept for the next step.
+ * `{{ key }}` is replaced from `variables` (see `fieldReader`). Missing keys become empty. `signature` is kept for the next step.
  * A field that comes out empty also takes one of the spaces around it, so "Hi {{firstName}} there" does not become "Hi  there"
  * and "Hi {{firstName}}, welcome" does not become "Hi , welcome".
  */
 export function applyMergeFields(text: string, variables: Record<string, string | null | undefined>): string {
-  const lookup = new Map(Object.entries(variables).map(([k, v]) => [k.toLowerCase(), v ?? ""]));
+  const read = fieldReader(variables);
   const filled = text.replace(MERGE, (whole, key: string) => {
     const name = key.trim().toLowerCase();
     if (name === "signature") return whole;
-    const value = (lookup.get(name) ?? "").replaceAll(EMPTY_MARK, "");
+    const value = (read(name) ?? "").replaceAll(EMPTY_MARK, "");
     return value === "" ? EMPTY_MARK : value;
   });
   if (!filled.includes(EMPTY_MARK)) return filled;
