@@ -20,7 +20,7 @@ import { withGridFocus } from "../_lib/edit/history-focus";
 import { layoutPins, pinPhoneNotice, withPin } from "../_lib/view/pin-layout";
 import { filtersNarrow, keepsTableOrder, setSort, toggleHidden, withRunFailures } from "../_lib/view/view";
 import { useIsMobile } from "@/components/hooks/use-mobile";
-import { effectiveColumnType } from "@/contexts/grid/domain/column-types";
+import { effectiveColumnType, RUNNABLE_TYPES } from "@/contexts/grid/domain/column-types";
 import { pasteSummary, type BlockPasteRequest } from "../_lib/edit/paste";
 import type { GridColumn } from "../_lib/data/types";
 import { AiDialog } from "./ai-dialog";
@@ -97,7 +97,7 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
 
   const refocusGrid = useCallback(() => setFocusToken((t) => t + 1), []);
 
-  const runnable = columns.some((c) => ["enrichment", "waterfall", "ai"].includes(c.type));
+  const runnable = columns.some((c) => RUNNABLE_TYPES.has(c.type));
 
   function onColumnAction(column: GridColumn, action: ColumnAction) {
     const index = columns.findIndex((c) => c.id === column.id);

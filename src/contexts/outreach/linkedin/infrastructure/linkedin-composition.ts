@@ -94,7 +94,7 @@ export function linkedinOperationsDeps(inbox: InboxFiling): LinkedInOperationsDe
 
 export const personalThreadDeps = () => ({ store: drizzlePersonalThreadStore });
 
-export const linkedinCampaignDeps = (): LinkedInCampaignDeps => ({ campaigns: drizzleLinkedInCampaignStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore });
+export const linkedinCampaignDeps = (): LinkedInCampaignDeps => ({ campaigns: drizzleLinkedInCampaignStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore });
 
 export const linkedinNoticeDeps = (): NoticeDeps => ({ ...linkedinCampaignDeps(), notices: drizzleCrossCampaignNotices });
 

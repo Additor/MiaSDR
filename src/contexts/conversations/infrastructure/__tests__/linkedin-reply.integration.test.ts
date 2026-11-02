@@ -75,6 +75,20 @@ describeDb("LinkedIn conversation replies", () => {
     await sql.end();
   });
 
+  it("a retry that spells the draft id in uppercase replays the send", async () => {
+    const f = await fixture();
+    const [{ id: recordId, version }] = await sql`select r.id, r.context_version as version from records r join conversations c on c.record_id = r.id where c.id = ${f.conversationId}`;
+    const [{ id: draftId }] = await sql`
+      insert into drafts (organization_id, record_id, conversation_id, expected_context_version, channel, ai_body_text, status)
+      values (${f.org}, ${recordId}, ${f.conversationId}, ${version}, 'linkedin', 'Happy to share more.', 'awaiting_review') returning id`;
+    const k = key();
+    const first = await app.sendLinkedInReply(f.deps, f.actor, f.conversationId, { text: "Happy to share more.", idempotencyKey: k, draftId, revision: 1 });
+    expect(first.status).toBe("sent");
+    const retry = await app.sendLinkedInReply(f.deps, f.actor, f.conversationId, { text: "Happy to share more.", idempotencyKey: k, draftId: (draftId as string).toUpperCase(), revision: 1 });
+    expect(retry).toMatchObject({ status: "sent", replayed: true });
+    expect(f.fake.messages).toHaveLength(1);
+  });
+
   it("claims before the call, sends once, stores the message and moves the record to waiting", async () => {
     const f = await fixture();
     let seenDuringCall: unknown = null;

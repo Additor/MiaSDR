@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { InboundEmailInput } from "../../application/ports";
 import type { FakeMailboxProvider } from "@/contexts/outreach/email/infrastructure/fake-mailbox-provider";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
@@ -73,6 +73,60 @@ describeDb("manual email replies (no AI)", () => {
   afterAll(async () => {
     await dropOrgs(sql, orgs);
     await sql.end();
+  });
+
+  describe("expectedOpenRevision", () => {
+    const write = (f: Fx, expectedOpenRevision: number | null) => mgmt.createManualDraft(f.replyDeps, f.actor, f.conversationId, { subject: "Re: Question about pricing", bodyText: "A new draft.", expectedOpenRevision });
+
+    it("answers draft_open and changes nothing when a person edited the draft after the caller read it", async () => {
+      const f = await fixture();
+      const open = await compose(f);
+      const read = open.revision;
+      await mgmt.editDraft(f.replyDeps, f.actor, open.draftId, { revision: read, bodyText: "A person's edit." });
+      await expect(write(f, read)).rejects.toMatchObject({ details: { code: "draft_open" } });
+      expect(await one("select status, edited_body_text from drafts where id = $1", [open.draftId])).toMatchObject({ status: "awaiting_review", edited_body_text: "A person's edit." });
+      expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
+    });
+
+    it("answers draft_open when another draft at the same revision replaced the one the caller read", async () => {
+      const f = await fixture();
+      const read = await compose(f);
+      const replacement = await compose(f, { bodyText: "A person's newer draft." });
+      expect(replacement.revision).toBe(read.revision);
+      await expect(mgmt.createManualDraft(f.replyDeps, f.actor, f.conversationId, { subject: "Re: Question about pricing", bodyText: "A new draft.", expectedOpenRevision: read.revision, expectedOpenDraftId: read.draftId })).rejects.toMatchObject({ details: { code: "draft_open" } });
+      expect(await one("select status from drafts where id = $1", [replacement.draftId])).toMatchObject({ status: "awaiting_review" });
+    });
+
+    it("answers draft_open when a draft appeared after the caller read none", async () => {
+      const f = await fixture();
+      const open = await compose(f);
+      await expect(write(f, null)).rejects.toMatchObject({ details: { code: "draft_open" } });
+      expect(await one("select status from drafts where id = $1", [open.draftId])).toMatchObject({ status: "awaiting_review" });
+    });
+
+    it("waits for an edit in progress, then refuses on the revision it wrote", async () => {
+      const f = await fixture();
+      const open = await compose(f);
+      let attempt: Promise<unknown> = Promise.resolve();
+      await sql.begin(async (tx) => {
+        await tx`select id from drafts where id = ${open.draftId} for update`;
+        attempt = write(f, open.revision).catch((error: unknown) => error);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await tx`update drafts set revision = revision + 1 where id = ${open.draftId}`;
+      });
+      expect(await attempt).toMatchObject({ details: { code: "draft_open" } });
+      expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
+    });
+
+    it("replaces the draft the caller read, and an open draft when no check is asked for", async () => {
+      const f = await fixture();
+      const open = await compose(f);
+      const replaced = await write(f, open.revision);
+      expect(await one("select status from drafts where id = $1", [open.draftId])).toMatchObject({ status: "stale" });
+      const unchecked = await compose(f, { bodyText: "A person's second draft." });
+      expect(await one("select status from drafts where id = $1", [replaced.draftId])).toMatchObject({ status: "stale" });
+      expect(await one("select status from drafts where id = $1", [unchecked.draftId])).toMatchObject({ status: "awaiting_review" });
+    });
   });
 
   it("creates an awaiting_review manual draft for the current context version, with no AI call", async () => {

@@ -1,8 +1,7 @@
 "use client";
 
-import { CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
+import { TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
@@ -15,14 +14,17 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import type { ReplyPanel } from "@/contexts/conversations/application/reply-management";
+import { runApiAction } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { draftStatusLabel } from "../../labels";
 import { registerDraftEdits } from "../_lib/draft-edits";
-import { draftingAbove, regenerateControl, reloadsAfter } from "../_lib/reply-panel";
+import { draftingAbove, regenerateControl } from "../_lib/reply-panel";
 import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
-import { useSendingWatch } from "./use-sending-watch";
+import { SendingLine } from "./sending-line";
+import { UncertainBox } from "./uncertain-box";
+import { useDraftActions, useSendKey } from "./use-draft-actions";
 import { QueueKeys } from "./queue-keys";
 
 type Panel = Omit<ReplyPanel, "draft" | "knownCcs"> & { knownCcs: Array<Omit<ReplyPanel["knownCcs"][number], "lastSeenAt"> & { lastSeenAt: string }>; draft: (Omit<NonNullable<ReplyPanel["draft"]>, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string }) | null };
@@ -46,9 +48,7 @@ export function ReplyPanelClient({
   drafting: boolean;
   decisionWaiting: boolean;
 }) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const { busy, error, setError, work, change, refresh, requestDraft, regenerate, resolve, discard } = useDraftActions(panel.conversationId);
   const draft = panel.draft;
   const saved = draft ? (draft.editedBodyText ?? draft.aiBodyText ?? "") : "";
   const [body, setBody] = useState(saved);
@@ -60,8 +60,7 @@ export function ReplyPanelClient({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // An out-of-date draft cannot send. "Edit and send anyway" copies its text into the composer as a new draft.
   const [editStale, setEditStale] = useState(false);
-  const key = useRef<string>("");
-  const watchingSend = useSendingWatch(draft?.status === "sending");
+  const sendKey = useSendKey(draft ? `${draft.id}:${draft.revision}:${draft.status}` : "");
   // The thread's mailbox is gone or the conversation closed: a send cannot succeed, so Approve and send stays off and says why.
   const sendBlocked = draft?.status === "awaiting_review" ? panel.mailboxIssue : null;
 
@@ -112,57 +111,31 @@ export function ReplyPanelClient({
   );
   const composer = closedLine || <ReplyComposer conversationId={panel.conversationId} defaultSubject={composerSubject} knownCcs={panel.knownCcs} disabledReason={composerBlocked} />;
 
-  async function run<T>(name: string, call: () => Promise<{ ok: boolean; status: number; data: T | null; error: string | null }>): Promise<T | null> {
-    setBusy(name);
-    setError(null);
-    const result = await call();
-    setBusy(null);
-    if (!result.ok) {
-      setError(result.error);
-      // The thread moved while the AI wrote: the reload shows the out-of-date draft under the message.
-      if (reloadsAfter(result)) router.refresh();
-      return null;
-    }
-    router.refresh();
-    return result.data;
-  }
-
   // Hand-typing starts folded while the AI can write the draft; with no AI, or once asked for, it is open.
   const [composeOpen, setComposeOpen] = useState(false);
   const composerFolded = panel.aiConfigured && !panel.answered && !composeOpen;
 
-  async function discard() {
+  function approve() {
     if (!draft) return;
-    const result = await callApi(`/api/drafts/${draft.id}/discard`, "POST");
-    if (!result.ok) throw new Error(result.error ?? "The draft was not discarded. Try again.");
-    router.refresh();
-  }
-
-  async function approve() {
-    if (!draft) return;
-    setBusy("send");
-    setError(null);
-    let revision = draft.revision;
-    if (dirty) {
-      const saveResult = await callApi<{ revision: number }>(`/api/drafts/${draft.id}`, "PATCH", { revision, subject: subject.trim() || null, bodyText: body, cc });
-      if (!saveResult.ok || !saveResult.data) {
-        setBusy(null);
-        setError(saveResult.error);
-        return;
+    return work("send", async () => {
+      let revision = draft.revision;
+      if (dirty) {
+        const saveResult = await callApi<{ revision: number }>(`/api/drafts/${draft.id}`, "PATCH", { revision, subject: subject.trim() || null, bodyText: body, cc });
+        if (!saveResult.ok || !saveResult.data) {
+          setError(saveResult.error);
+          return;
+        }
+        revision = saveResult.data.revision;
       }
-      revision = saveResult.data.revision;
-    }
-    key.current ||= crypto.randomUUID();
-    const result = await callApi<{ status: string; error?: string }>(`/api/drafts/${draft.id}/send`, "POST", { revision, idempotencyKey: key.current });
-    setBusy(null);
-    if (!result.ok) {
-      setError(result.error);
-    } else if (result.data && result.data.status !== "sent") {
-      // A refused or blocked send is final for this key; the next click is a new decision.
-      if (result.data.status !== "delivery_uncertain") key.current = "";
-      setError(result.data.error ?? (result.data.status === "in_progress" ? "This send is already in progress." : "The reply was not sent."));
-    }
-    router.refresh();
+      const result = await callApi<{ status: string; error?: string }>(`/api/drafts/${draft.id}/send`, "POST", { revision, idempotencyKey: sendKey.take() });
+      sendKey.settle(result);
+      if (!result.ok) {
+        setError(result.error);
+      } else if (result.data && result.data.status !== "sent") {
+        setError(result.data.error ?? (result.data.status === "in_progress" ? "This send is already in progress." : "The reply was not sent."));
+      }
+      refresh();
+    });
   }
 
   return (
@@ -226,7 +199,7 @@ export function ReplyPanelClient({
                   <p>{noDraft ?? "No draft yet."}</p>
                   <div hidden={Boolean(panel.closed)}>
                     {/* A decision on the type line above holds the filled button; a type that writes no draft makes this the rare step. */}
-                    <Button size="sm" touch variant={decisionWaiting || noDraft ? "outline" : "default"} disabled={busy !== null || !panel.canGenerate} onClick={() => run("draft", () => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
+                    <Button size="sm" touch variant={decisionWaiting || noDraft ? "outline" : "default"} disabled={busy !== null || !panel.canGenerate} onClick={requestDraft}>
                       {busy === "draft" ? "Writing…" : "Write a draft"}
                     </Button>
                   </div>
@@ -328,16 +301,7 @@ export function ReplyPanelClient({
 
           {/* One live region, present before its text changes, so "sent" is announced and not only shown. */}
           <div role="status" className="grid justify-items-start gap-2 text-sm empty:hidden" data-testid="reply-status">
-            {draft?.status === "sending" &&
-              (watchingSend ? (
-                // The page refreshes on its own while the send runs, for up to a minute (use-sending-watch.ts).
-                <p className="flex items-center gap-2">
-                  <Spinner />
-                  Sending…
-                </p>
-              ) : (
-                <p>Sending. Reload in a moment to see the result.</p>
-              ))}
+            {draft?.status === "sending" && <SendingLine stopped="Sending. Reload in a moment to see the result." />}
             {draft?.status === "sent" && (
               <>
                 <p>The reply was sent and is in the thread above.</p>
@@ -359,9 +323,10 @@ export function ReplyPanelClient({
           </div>
           {draft?.status === "delivery_uncertain" && (
             <UncertainBox
-              draftId={draft.id}
+              noteId="resolve-note"
+              advice="The mail provider did not confirm this send. It may have gone out, so it will not be retried. Check the Sent folder of the mailbox, then mark what you found."
               busy={busy !== null}
-              onResolve={(outcome, text) => run("resolve", () => callApi(`/api/drafts/${draft.id}/resolve`, "POST", { outcome, note: text }))}
+              onResolve={(outcome, text) => resolve(draft.id, outcome, text)}
             />
           )}
 
@@ -384,7 +349,7 @@ export function ReplyPanelClient({
               <Button
                 variant="outline"
                 disabled={busy !== null}
-                onClick={() => run("save", () => callApi(`/api/drafts/${draft.id}`, "PATCH", { revision: draft.revision, subject: subject.trim() || null, bodyText: body, cc }))}
+                onClick={() => change("save", () => runApiAction(callApi(`/api/drafts/${draft.id}`, "PATCH", { revision: draft.revision, subject: subject.trim() || null, bodyText: body, cc }), { refresh }))}
               >
                 Save edits
               </Button>
@@ -396,7 +361,7 @@ export function ReplyPanelClient({
                 {...regenerateControl({ status: draft.status, decisionWaiting, drafting, busy: busy !== null, aiConfigured: panel.aiConfigured })}
                 onClick={async () => {
                   if (!showRegenerate) return setShowRegenerate(true);
-                  if (await run("regen", () => callApi(`/api/drafts/${draft.id}/regenerate`, "POST", { note }))) {
+                  if (await regenerate(draft.id, note)) {
                     setShowRegenerate(false);
                     setNote("");
                   }
@@ -432,36 +397,9 @@ export function ReplyPanelClient({
           cancelLabel="Keep draft"
           pendingLabel="Discarding…"
           destructive
-          onConfirm={discard}
+          onConfirm={() => discard(draft.id)}
         />
       )}
-    </div>
-  );
-}
-
-function UncertainBox({ busy, onResolve }: { draftId: string; busy: boolean; onResolve: (outcome: "delivered" | "not_delivered", note: string) => void }) {
-  const [text, setText] = useState("");
-  return (
-    // An unconfirmed send is uncertain: the warning hue on the icon and the lead words only, no frame.
-    <div className="grid gap-2 text-sm" data-testid="uncertain-box">
-      <div className="flex items-start gap-2">
-        <CircleHelpIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-        <p>
-          <strong className="font-medium text-warning">Not confirmed.</strong> The mail provider did not confirm this send. It may have gone out, so it will not be retried. Check the Sent folder of the mailbox, then mark what you found.
-        </p>
-      </div>
-      <Field>
-        <FieldLabel htmlFor="resolve-note">How did you check?</FieldLabel>
-        <Input id="resolve-note" value={text} onChange={(e) => setText(e.target.value)} />
-      </Field>
-      <div className="flex gap-2">
-        <Button size="sm" touch disabled={busy || !text.trim()} onClick={() => onResolve("delivered", text)}>
-          Confirm delivered
-        </Button>
-        <Button size="sm" variant="outline" touch disabled={busy || !text.trim()} onClick={() => onResolve("not_delivered", text)}>
-          Not delivered
-        </Button>
-      </div>
     </div>
   );
 }

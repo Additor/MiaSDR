@@ -39,6 +39,7 @@ describe("typeDecision", () => {
   it("holds a proposed pick only while it is current", () => {
     expect(typeDecision(pick({ status: "proposed", holdReason: "low_confidence" }), email, demo)?.kind).toBe("held");
     expect(typeDecision(pick({ status: "proposed", current: false }), email, demo)).toBeNull();
+    expect(typeDecision(pick({ status: "proposed", stopRequested: true, current: false }), email, demo)?.kind).toBe("stop");
   });
 
   it("offers no Accept for a held pick whose type an admin archived since", () => {

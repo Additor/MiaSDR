@@ -1,8 +1,7 @@
 "use client";
 
-import { CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { TriangleAlertIcon } from "lucide-react";
+import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
@@ -15,8 +14,10 @@ import { Textarea } from "@/components/ui/textarea";
 import type { LinkedInReplyPanelView } from "@/contexts/conversations/application/linkedin-reply";
 import { callApi } from "@/app/_lib/api-client";
 import { draftStatusLabel } from "../../labels";
-import { draftingAbove, reloadsAfter } from "../_lib/reply-panel";
-import { useSendingWatch } from "./use-sending-watch";
+import { draftingAbove } from "../_lib/reply-panel";
+import { SendingLine } from "./sending-line";
+import { UncertainBox } from "./uncertain-box";
+import { useDraftActions, useSendKey } from "./use-draft-actions";
 
 type SendResult = { status: string; error?: string | null };
 
@@ -27,12 +28,10 @@ type SendResult = { status: string; error?: string | null };
  * the page is still read.
  */
 export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: LinkedInReplyPanelView; noDraft: string | null; drafting: boolean }) {
-  const router = useRouter();
+  const { busy, error, setError, work, refresh, requestDraft, regenerate, resolve, discard } = useDraftActions(panel.conversationId);
   const draft = panel.draft;
   const [text, setText] = useState(draft?.status === "awaiting_review" ? draft.text : "");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const key = useRef("");
+  const working = busy !== null;
   const blocked = panel.issue !== null || panel.doNotContact;
   const stale = draft?.status === "stale";
   const [note, setNote] = useState("");
@@ -46,74 +45,29 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
     setShowRegenerate(false);
     setNote("");
   }
-  // A send key belongs to one draft state: the next state is a new decision.
-  useEffect(() => {
-    key.current = "";
-  }, [revision]);
+  const sendKey = useSendKey(revision);
   const draftingNext = draftingAbove(draft, drafting);
-  const watchingSend = useSendingWatch(draft?.status === "sending");
 
-  async function run(action: () => Promise<{ ok: boolean; status: number; error?: string | null }>) {
-    setBusy(true);
-    setError(null);
-    const result = await action();
-    setBusy(false);
-    if (!result.ok) {
-      setError(result.error ?? "The request failed.");
-      // The thread moved while the AI wrote: the reload shows the out-of-date draft.
-      if (reloadsAfter(result)) router.refresh();
-      return false;
-    }
-    router.refresh();
-    return true;
-  }
-
-  async function send() {
-    setBusy(true);
-    setError(null);
-    // One key per decision: a double click or a retry after a lost response replays the same send.
-    key.current ||= crypto.randomUUID();
-    const result = await callApi<SendResult>(`/api/inbox/${panel.conversationId}/linkedin-reply`, "POST", {
-      text,
-      idempotencyKey: key.current,
-      // Approving the AI draft names the draft and the revision the person reviewed, so a stale or replaced draft cannot go out.
-      ...(draft?.status === "awaiting_review" ? { draftId: draft.id, revision: draft.revision } : {}),
+  function send() {
+    return work("send", async () => {
+      const result = await callApi<SendResult>(`/api/inbox/${panel.conversationId}/linkedin-reply`, "POST", {
+        text,
+        idempotencyKey: sendKey.take(),
+        // Approving the AI draft names the draft and the revision the person reviewed, so a stale or replaced draft cannot go out.
+        ...(draft?.status === "awaiting_review" ? { draftId: draft.id, revision: draft.revision } : {}),
+      });
+      const keptKey = sendKey.settle(result);
+      if (!result.ok) {
+        setError(result.error);
+        // Without an answer the send may have gone out: the reload shows it in the thread and empties the box.
+        if (keptKey) refresh();
+        return;
+      }
+      const data = result.data;
+      if (data?.status === "sent" || data?.status === "delivery_uncertain") setText("");
+      else setError(data?.error ?? (data?.status === "in_progress" ? "This send is already in progress." : "The reply was not sent."));
+      refresh();
     });
-    setBusy(false);
-    if (!result.ok) {
-      // A refusal before the claim wrote nothing, so the next click is a new decision.
-      key.current = "";
-      setError(result.error);
-      return;
-    }
-    const data = result.data;
-    if (data?.status === "sent") {
-      key.current = "";
-      setText("");
-    } else if (data?.status === "delivery_uncertain") {
-      setText("");
-    } else {
-      key.current = "";
-      setError(data?.error ?? "The reply was not sent.");
-    }
-    router.refresh();
-  }
-
-  async function discard() {
-    if (!draft) return;
-    const result = await callApi(`/api/drafts/${draft.id}/discard`, "POST");
-    if (!result.ok) throw new Error(result.error ?? "The draft was not discarded. Try again.");
-    router.refresh();
-  }
-
-  async function resolve(outcome: "delivered" | "not_delivered", note: string) {
-    if (!draft) return;
-    setBusy(true);
-    setError(null);
-    const result = await callApi(`/api/drafts/${draft.id}/resolve`, "POST", { outcome, note });
-    setBusy(false);
-    if (!result.ok) return setError(result.error);
-    router.refresh();
   }
 
   // overflow-visible on the card lets the action bar stick to the bottom of the screen while the card is taller than the view.
@@ -144,19 +98,16 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
       </CardHeader>
       <CardContent className="grid gap-3">
         {draft?.status === "delivery_uncertain" ? (
-          <UncertainBox busy={busy} onResolve={resolve} />
+          <UncertainBox
+            noteId="li-resolve-note"
+            advice="LinkedIn did not confirm this message. It may have gone out, so it will not be sent again. Open the chat on LinkedIn, then mark what you found."
+            busy={working}
+            onResolve={(outcome, checked) => resolve(draft.id, outcome, checked)}
+          />
         ) : draft?.status === "sending" ? (
-          // The page refreshes on its own while the send runs, for up to a minute (use-sending-watch.ts).
-          <p role="status" className="text-sm">
-            {watchingSend ? (
-              <span className="flex items-center gap-2">
-                <Spinner />
-                Sending…
-              </span>
-            ) : (
-              "A reply is being sent. Reload in a moment to see the result."
-            )}
-          </p>
+          <div role="status" className="text-sm">
+            <SendingLine stopped="A reply is being sent. Reload in a moment to see the result." />
+          </div>
         ) : (
           <div className="stack-group">
             {draftingNext && (
@@ -182,14 +133,24 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
             {!draft && panel.canGenerate && !panel.doNotContact && !drafting && (
               <div className="grid justify-items-start gap-2 text-sm" data-testid="no-draft">
                 {noDraft && <p>{noDraft}</p>}
-                <Button size="sm" variant="outline" touch disabled={busy} onClick={() => run(() => callApi(`/api/inbox/${panel.conversationId}/draft`, "POST"))}>
-                  {busy ? "Writing…" : "Write a draft"}
+                <Button size="sm" variant="outline" touch disabled={working} onClick={requestDraft}>
+                  {busy === "draft" ? "Writing…" : "Write a draft"}
                 </Button>
               </div>
             )}
             <Field>
               <FieldLabel htmlFor="li-reply">Message{panel.recipient ? ` to ${panel.recipient}` : ""}</FieldLabel>
-              <Textarea id="li-reply" className="min-h-32" value={stale ? (draft?.text ?? "") : text} onChange={(e) => setText(e.target.value)} disabled={blocked || busy || stale} />
+              <Textarea
+                id="li-reply"
+                className="min-h-32"
+                value={stale ? (draft?.text ?? "") : text}
+                onChange={(e) => {
+                  // Other words are a new decision: a retry with the old key would replay the old send and drop them.
+                  sendKey.drop();
+                  setText(e.target.value);
+                }}
+                disabled={blocked || working || stale}
+              />
             </Field>
             {showRegenerate && (
               <Field>
@@ -211,8 +172,8 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
       {draft?.status !== "delivery_uncertain" && draft?.status !== "sending" && (
         <CardFooter className="sticky bottom-0 z-10 flex flex-wrap gap-2 bg-card shadow-[0_-1px_0_0_var(--border)]" data-testid="reply-actions">
           {!stale && (
-            <Button disabled={blocked || busy || text.trim() === ""} onClick={send}>
-              {busy ? "Sending…" : "Send"}
+            <Button disabled={blocked || working || text.trim() === ""} onClick={send}>
+              {busy === "send" ? "Sending…" : "Send"}
             </Button>
           )}
           {draft && (
@@ -220,10 +181,10 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
               <Button
                 variant="outline"
                 // While a draft job writes the next draft, Regenerate stays off so it cannot add a second one.
-                disabled={busy || !panel.canGenerate || draftingNext}
+                disabled={working || !panel.canGenerate || draftingNext}
                 onClick={async () => {
                   if (!showRegenerate) return setShowRegenerate(true);
-                  if (await run(() => callApi(`/api/drafts/${draft.id}/regenerate`, "POST", { note }))) {
+                  if (await regenerate(draft.id, note)) {
                     setShowRegenerate(false);
                     setNote("");
                   }
@@ -231,7 +192,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
               >
                 {showRegenerate ? "Regenerate now" : "Regenerate"}
               </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => setConfirmDiscard(true)}>
+              <Button variant="ghost" disabled={working} onClick={() => setConfirmDiscard(true)}>
                 Discard
               </Button>
             </>
@@ -248,36 +209,9 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
           cancelLabel="Keep draft"
           pendingLabel="Discarding…"
           destructive
-          onConfirm={discard}
+          onConfirm={() => discard(draft.id)}
         />
       )}
     </Card>
-  );
-}
-
-function UncertainBox({ busy, onResolve }: { busy: boolean; onResolve: (outcome: "delivered" | "not_delivered", note: string) => void }) {
-  const [note, setNote] = useState("");
-  return (
-    // An unconfirmed send is uncertain: the warning hue on the icon and the lead words only, no frame.
-    <div className="grid gap-2 text-sm" data-testid="uncertain-box">
-      <div className="flex items-start gap-2">
-        <CircleHelpIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
-        <p>
-          <strong className="font-medium text-warning">Not confirmed.</strong> LinkedIn did not confirm this message. It may have gone out, so it will not be sent again. Open the chat on LinkedIn, then mark what you found.
-        </p>
-      </div>
-      <Field>
-        <FieldLabel htmlFor="li-resolve-note">How did you check?</FieldLabel>
-        <Input id="li-resolve-note" value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
-      <div className="flex gap-2">
-        <Button size="sm" touch disabled={busy || !note.trim()} onClick={() => onResolve("delivered", note)}>
-          Confirm delivered
-        </Button>
-        <Button size="sm" variant="outline" touch disabled={busy || !note.trim()} onClick={() => onResolve("not_delivered", note)}>
-          Not delivered
-        </Button>
-      </div>
-    </div>
   );
 }

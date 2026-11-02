@@ -5,6 +5,9 @@ import { rowsOf } from "@/platform/db/sql-values";
 import { RETIRABLE_DRAFT_STATUSES } from "../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import { lockBeforePick } from "../domain/reply-handling";
+import { PICK_FROM } from "../domain/reply-type-pick";
+import type { WorkflowState } from "../domain/workflow-state";
+import { advanceRecordContextTx } from "./record-context";
 
 /**
  * An older public thread turns private when its person answers a personal campaign. The thread already moved the
@@ -14,7 +17,8 @@ import { lockBeforePick } from "../domain/reply-handling";
  *
  * - Open drafts and proposed classifications of the thread turn `stale`; queued AI jobs for its messages fail.
  * - When `latest_inbound_message_id` points into the thread, it moves to the newest inbound message of the record's other
- *   public conversations (or clears), `last_inbound_at` follows, and the context version bumps. A category an AI applied
+ *   public conversations (or clears), `last_inbound_at` follows, and `advanceRecordContextTx` bumps the context version,
+ *   which retires any other held pick of the record. A category an AI applied
  *   to that message goes back to the value it replaced.
  * - A record that was `action_required` because of the thread goes back to `unclassified` (no category) or `idle`, and
  *   its next-action time clears, so the queue and next-step lists drop it.
@@ -22,9 +26,9 @@ import { lockBeforePick } from "../domain/reply-handling";
 export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: string; conversationId: string; recordId: string; now: Date }): Promise<void> {
   const at = sql`${input.now.toISOString()}::timestamptz`;
   const reason = "The conversation became private.";
-  const [record] = rowsOf<{ latest: string | null; state: string; group_key: string | null; reply_type_id: string | null; reply_type_locked: boolean; context_version: number }>(
+  const [record] = rowsOf<{ latest: string | null; state: WorkflowState; group_key: string | null; reply_type_id: string | null; reply_type_locked: boolean }>(
     await tx.execute(sql`
-      select latest_inbound_message_id as latest, workflow_state as state, group_key, reply_type_id, reply_type_locked, context_version
+      select latest_inbound_message_id as latest, workflow_state as state, group_key, reply_type_id, reply_type_locked
       from records where id = ${input.recordId} and organization_id = ${input.organizationId} for no key update`),
   );
   if (!record) return;
@@ -34,7 +38,7 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
     where organization_id = ${input.organizationId} and conversation_id = ${input.conversationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
   await tx.execute(sql`
     update reply_type_picks set status = 'stale'
-    where organization_id = ${input.organizationId} and status = 'proposed'
+    where organization_id = ${input.organizationId} and status in ${sqlValues(PICK_FROM.stale)}
       and message_id in (select id from messages where conversation_id = ${input.conversationId})`);
   await tx.execute(sql`
     update ai_jobs set status = 'failed', failed_at = ${at}, last_error = ${reason}
@@ -75,15 +79,19 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
   const locked = revert && applied ? previous !== null && lockBeforePick(applied.response, previous) : record.reply_type_locked;
   const nextState = record.state === "action_required" ? (remaining ? "action_required" : previous ? "idle" : "unclassified") : record.state;
 
-  await tx.execute(sql`
-    update records set
-      latest_inbound_message_id = ${remaining?.id ?? null},
-      last_inbound_at = ${remaining ? sql`${new Date(remaining.sent_at).toISOString()}::timestamptz` : sql`null`},
-      group_key = ${previous}, reply_type_id = ${previousSub},
-      reply_type_source = case when ${previous}::text is null then null when ${revert}::boolean then 'human' else reply_type_source end,
-      reply_type_locked = ${locked},
-      workflow_state = ${nextState},
-      next_action_at = case when ${nextState}::text = ${record.state}::text then next_action_at else null end,
-      context_version = context_version + 1
-    where id = ${input.recordId} and organization_id = ${input.organizationId}`);
+  await advanceRecordContextTx(tx, {
+    organizationId: input.organizationId,
+    recordId: input.recordId,
+    now: input.now,
+    set: {
+      latestInboundMessageId: remaining?.id ?? null,
+      lastInboundAt: remaining ? new Date(remaining.sent_at) : null,
+      groupKey: previous,
+      replyTypeId: previousSub,
+      replyTypeSource: previous === null ? null : revert ? "human" : undefined,
+      replyTypeLocked: locked,
+      workflowState: nextState,
+      nextActionAt: nextState === record.state ? undefined : null,
+    },
+  });
 }

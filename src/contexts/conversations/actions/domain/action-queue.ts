@@ -44,13 +44,14 @@ export interface QueueFacts {
  * (`typeDecision` in `inbox/[id]/_lib/type-line.ts`); `work-queue-read.ts` computes it in SQL and
  * `action-queue.integration.test.ts` checks that the two agree.
  *
- * - `stop_review`: the reply seems to ask to stop, and the pick is still open (held and current, or applied and not looked
- *   at). Accept would only change the type, so the row offers Review stop request. A person already marked do not contact,
- *   or an email address on the suppression list, has nothing left to stop.
+ * - `stop_review`: the reply seems to ask to stop, and the pick is still open (held, or applied and not looked at). Accept
+ *   would only change the type, so the row offers Review stop request. A held one stays open past a version bump, because it
+ *   keeps refusing agents until a person decides. A person already marked do not contact, or an email address on the
+ *   suppression list, has nothing left to stop.
  * - `held`: a current held pick of a type other than the stop request type. Accept applies it.
  * - `looks_right`: an applied pick nobody looked at, of the record's current type, decided with Check after.
  *
- * Null when nothing waits: the pick is stale, its record version moved on (a type change elsewhere answered it), a person
+ * Null when nothing waits: the pick is stale, a held pick that asks nothing to stop lost its record version, a person
  * already looked at it, or it is a held stop request for someone who can no longer be contacted.
  */
 export type PickReviewKind = "stop_review" | "held" | "looks_right";
@@ -77,7 +78,7 @@ export function pickReviewOf(f: PickReviewFacts): PickReviewKind | null {
   const held = f.status === "proposed" && f.current;
   const applied = f.status === "auto_applied" && !f.acknowledged && f.appliedIsCurrentType;
   const stopAsked = f.stopRequested || f.proposedSystemRole === "stop_request";
-  if ((held || applied) && stopAsked && !f.stopped) return "stop_review";
+  if ((f.status === "proposed" || applied) && stopAsked && !f.stopped) return "stop_review";
   if (held && f.hasProposedType && f.proposedSystemRole !== "stop_request") return "held";
   if (applied && (f.checkMode === null || f.checkMode === "after")) return "looks_right";
   return null;

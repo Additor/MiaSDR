@@ -1,12 +1,12 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { settleLinkedInSent } from "./drizzle-linkedin-reply-store";
 import { conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, sends } from "@/platform/db/schema";
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { BeginSend, ReplyStore } from "../application/reply-ports";
-import { ATTEMPT_FROM, ATTEMPT_FROM_CALL } from "../domain/send-attempt-status";
+import { ATTEMPT_FROM } from "../domain/send-attempt-status";
 import { publicConversation } from "@/platform/db/conversation-visibility";
-import { toAttempt, type Snapshot, mailboxFor, sendContextFor, settleSent, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
+import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt } from "./reply-attempt-ledger";
+import { type Snapshot, mailboxFor, sendContextFor, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 import { violatedConstraint } from "@/platform/db/errors";
@@ -34,7 +34,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
 
       const [existing] = await tx.select().from(sendAttempts).where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
       if (existing) {
-        if (existing.draftId !== seen.id || existing.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another draft.");
+        if (attemptOfAnotherDraft(existing, seen.id) || existing.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing) };
       }
 
@@ -162,53 +162,25 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
   },
 
   async markSent(send, sent, now, note) {
-    await db.transaction((tx) => settleSent(tx, send, sent, now, note));
+    await db.transaction((tx) => settleAttemptSentTx(tx, send.attempt.id, sent, now, note));
   },
 
   async markFailed(send, error, draftStatus) {
-    await db.transaction(async (tx) => {
-      // Compare-and-set: a late failure never overwrites sent, reconciled or an earlier failure.
-      const moved = await tx
-        .update(sendAttempts)
-        .set({ status: "failed", error: error.slice(0, 1000) })
-        .where(and(eq(sendAttempts.id, send.attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM_CALL])))
-        .returning({ id: sendAttempts.id });
-      if (moved.length === 0) return;
-      await tx
-        .update(drafts)
-        .set({ status: draftStatus, error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.attempt.draftId), draftIn(IN_FLIGHT_DRAFT_STATUSES)));
-    });
+    await failAttempt({ id: send.attempt.id, draftId: send.attempt.draftId }, error, draftStatus);
   },
 
   async markUncertain(send, error) {
-    await db.transaction(async (tx) => {
-      const moved = await tx
-        .update(sendAttempts)
-        .set({ status: "delivery_uncertain", error: error.slice(0, 1000) })
-        .where(and(eq(sendAttempts.id, send.attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM_CALL])))
-        .returning({ id: sendAttempts.id });
-      if (moved.length === 0) return;
-      await tx
-        .update(drafts)
-        .set({ status: "delivery_uncertain", error: error.slice(0, 1000) })
-        .where(and(eq(drafts.id, send.attempt.draftId), draftCanBecome("delivery_uncertain")));
-    });
+    await markAttemptUncertain({ id: send.attempt.id, draftId: send.attempt.draftId }, error);
   },
 
   async listUnsettled(olderThan, limit) {
-    const rows = await db
-      .select()
-      .from(sendAttempts)
-      .where(and(sql`${sendAttempts.provider} is distinct from 'linkedin'`, inArray(sendAttempts.status, ["sending", "delivery_uncertain"]), sql`${sendAttempts.updatedAt} < ${olderThan.toISOString()}::timestamptz`))
-      .orderBy(sendAttempts.createdAt)
-      .limit(limit);
+    const rows = await listUnsettledAttempts("email", olderThan, limit);
     return Promise.all(rows.map(async (a) => ({ send: await sendContextFor(a), status: a.status as "sending" | "delivery_uncertain", startedAt: a.createdAt })));
   },
 
   async resolveUncertain(input) {
     await db.transaction(async (tx) => {
-      // Lock order as in settleSent, which the reconcilers run: the attempt, then the draft.
+      // Lock order as in settleAttemptSentTx, which the reconcilers run: the attempt, then the draft.
       const [seen] = await tx.select({ id: drafts.id }).from(drafts).where(and(eq(drafts.id, input.draftId), eq(drafts.organizationId, input.organizationId)));
       if (!seen) throw new NotFoundError("Draft not found");
       const [attempt] = await tx.select().from(sendAttempts).where(and(eq(sendAttempts.draftId, seen.id), eq(sendAttempts.status, "delivery_uncertain"))).for("update");
@@ -218,11 +190,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       if (draft.status !== "delivery_uncertain") throw new ConflictError("Only a send with an uncertain outcome can be resolved.");
       if (!attempt) throw new ConflictError("No uncertain send was found for this draft.");
       if (input.outcome === "delivered") {
-        if (attempt.provider === "linkedin") {
-          await settleLinkedInSent(tx, attempt.id, { providerMessageId: null }, input.now, `Confirmed delivered by a person: ${input.note}`);
-          return;
-        }
-        await settleSent(tx, await sendContextFor(attempt), { providerMessageId: null, threadId: null }, input.now, `Confirmed delivered by a person: ${input.note}`);
+        await settleAttemptSentTx(tx, attempt.id, { providerMessageId: null, threadId: null }, input.now, `Confirmed delivered by a person: ${input.note}`);
         return;
       }
       const snap = attempt.request as Snapshot;

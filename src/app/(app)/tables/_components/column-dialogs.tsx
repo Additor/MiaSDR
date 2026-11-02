@@ -9,6 +9,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { countOf } from "@/shared/format-number";
+import { RUNNABLE_TYPES } from "@/contexts/grid/domain/column-types";
 import { FILTER_OPERATORS, type FilterOperator, type TableView } from "@/contexts/grid/domain/view-query";
 import { gridUrl, type GridResponse } from "../_lib/data/client";
 import { useCellRequest } from "../_lib/data/cell-request";
@@ -185,7 +186,7 @@ function OptionsDialog({ tableId, column, onClose, onChanged }: Shared & { colum
 
 function DeleteDialog({ tableId, column, onClose, onChanged }: Shared & { column: GridColumn }) {
   const cellRequest = useCellRequest();
-  const hasOutputs = ["enrichment", "waterfall", "ai"].includes(column.type);
+  const hasOutputs = RUNNABLE_TYPES.has(column.type);
   const [withOutputs, setWithOutputs] = useState(false);
   const { busy, error, run } = useRequest(onClose, onChanged);
   const submit = () => run(() => cellRequest(`${gridUrl.sub(tableId, "columns")}/${column.id}${withOutputs ? "?withOutputs=1" : ""}`, "DELETE"));

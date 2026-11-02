@@ -1,3 +1,4 @@
+import { pickResponse } from "./reply-type-pick";
 import { ConflictError, ValidationError } from "@/shared/errors";
 import type { WorkflowState } from "./workflow-state";
 import { DEFAULT_TYPE_RULES, isCheckMode, isFollowUpsRule, validateTypeRules, type SystemRole, type TypeRules } from "./reply-type";
@@ -204,8 +205,7 @@ export function lockAfterPersonMove(target: { groupKey: string }): boolean {
  * Existing customer group was locked.
  */
 export function lockBeforePick(response: unknown, previousGroupKey: string | null): boolean {
-  const kept = (response as { previousLocked?: unknown } | null)?.previousLocked;
-  return typeof kept === "boolean" ? kept : previousGroupKey === CUSTOMER_GROUP;
+  return pickResponse(response).previousLocked ?? previousGroupKey === CUSTOMER_GROUP;
 }
 
 /**

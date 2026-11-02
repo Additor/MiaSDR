@@ -194,7 +194,7 @@ export function missingInputHint(column: Pick<GridColumn, "type" | "config">, ce
  * `partial` marks a table with more rows than are loaded.
  */
 export function columnRunSummary(column: GridColumn, rows: readonly GridRow[], partial: boolean): string | null {
-  if (!["enrichment", "waterfall", "ai"].includes(column.type)) return null;
+  if (!RUNNABLE_TYPES.has(column.type)) return null;
   const counts = { found: 0, notFound: 0, failed: 0, waiting: 0, needsInput: 0, notRun: 0 };
   for (const row of rows) {
     const meta = row.cellMeta[column.key];

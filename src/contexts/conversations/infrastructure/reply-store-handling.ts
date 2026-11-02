@@ -1,3 +1,5 @@
+import { pickMayBecome } from "./reply-store-shared";
+import { PICK_FROM } from "../domain/reply-type-pick";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { createSuppressionStore } from "@/contexts/outreach/infrastructure/suppression-store";
 import { followUpStop } from "../after-reply/infrastructure/sequence-stop";
@@ -44,7 +46,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
           and(
             eq(replyTypePicks.messageId, head.latest),
             eq(replyTypePicks.expectedContextVersion, head.version),
-            inArray(replyTypePicks.status, ["proposed", "auto_applied", "accepted", "overridden"]),
+            inArray(replyTypePicks.status, [...PICK_FROM.overridden]),
           ),
         );
 
@@ -93,7 +95,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
               else coalesce(${replyTypePicks.response}, '{}'::jsonb) || jsonb_build_object('previousLocked', ${head.locked}::boolean) end)
               || ${decision.stopRequested ? sql`'{"stopRequested":true}'::jsonb` : sql`'{}'::jsonb`}`,
           })
-          .where(eq(replyTypePicks.id, existing.id));
+          .where(and(eq(replyTypePicks.id, existing.id), pickMayBecome(accepted ? "accepted" : "overridden")));
         replyTypePickId = existing.id;
       }
 

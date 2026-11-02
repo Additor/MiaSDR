@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { importLeads, previewImport } from "@/contexts/people/application/import-leads";
 import { CORE_TARGETS, type Mapping } from "@/contexts/people/domain/import-plan";
+import { importTargetSchema } from "@/contexts/people/domain/import-target-schema";
 import { leadImportDeps } from "@/contexts/people/infrastructure/composition";
 import { normalizePhoneCountry } from "@/contexts/tenancy/domain/phone-country";
 import { parseSpreadsheet } from "@/platform/files/spreadsheet";
@@ -61,7 +62,6 @@ export function previewStore(limits = { perPerson: MAX_PREVIEWS_PER_PERSON, tota
 
 const previews = previewStore();
 
-const target = z.union([z.literal("skip"), z.enum(CORE_TARGETS), z.string().regex(/^custom:.+$/)]);
 const ACTIONS = ["preview", "commit"] as const;
 
 export const importLeadsTool = defineTool({
@@ -77,7 +77,7 @@ export const importLeadsTool = defineTool({
   input: z.object({
     action: z.enum(ACTIONS),
     csvText: z.string().optional(),
-    mapping: z.record(z.string(), target).optional(),
+    mapping: z.record(z.string(), importTargetSchema).optional(),
     defaultCountry: z.string().optional(),
     previewToken: z.string().optional(),
   }),

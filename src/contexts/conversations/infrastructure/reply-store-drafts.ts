@@ -6,7 +6,8 @@ import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports
 import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, HANDLING_CLOSED, REPLY_REFUSALS } from "../domain/reply-send";
 import { buildDraftContext, excerptHash } from "./thread-context";
 import { publicConversation } from "@/platform/db/conversation-visibility";
-import { toDraftRow, toAttempt, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
+import { toAttempt } from "./reply-attempt-ledger";
+import { toDraftRow, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { canMoveDraft, IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
@@ -242,6 +243,19 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         .where(and(eq(drafts.conversationId, input.conversationId), draftIn(IN_FLIGHT_DRAFT_STATUSES)))
         .limit(1);
       checkNoneInFlight(inFlight, null, channel);
+
+      if (input.expectedOpenRevision !== undefined) {
+        // An edit holds the draft row, so this waits for one in progress and reads its revision.
+        const open = await tx
+          .select({ id: drafts.id, conversationId: drafts.conversationId, revision: drafts.revision })
+          .from(drafts)
+          .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, channel), eq(drafts.status, "awaiting_review")))
+          .for("update");
+        const expectedId = input.expectedOpenDraftId?.toLowerCase();
+        const other = open.find((draft) => draft.revision !== input.expectedOpenRevision || (expectedId !== undefined && draft.id !== expectedId));
+        // A record holds one open draft per channel, so the one that goes stale can sit on another conversation of the person.
+        if (other) throw new ConflictError(`${other.conversationId === input.conversationId ? "This conversation" : `Conversation ${other.conversationId} of this person`} has an open draft, ${other.id}, at revision ${other.revision}. Read it, then pass its draftId and revision to replace it, or use edit.`, { code: "draft_open" });
+      }
 
       const [created] = await tx
         .insert(drafts)

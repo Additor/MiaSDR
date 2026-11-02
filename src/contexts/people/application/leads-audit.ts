@@ -13,7 +13,8 @@ export interface LeadsAuditEntry {
   actorUserId: string | null;
   action: LeadsAuditAction;
   entityType: "company" | "person";
-  entityId: string;
+  /** Empty on a row that covers several people, which lists them in `meta.personIds`. */
+  entityId?: string;
   meta: Record<string, unknown>;
 }
 

@@ -45,7 +45,7 @@ function setup(options: { fieldNames?: string[]; steps?: LinkedInStep[]; status?
       calls.push(`senders:${ids.join(",")}`);
     },
   } as unknown as EnrollmentAdminStore;
-  const deps: LinkedInCampaignDeps = { campaigns: store, fields: { customColumns: async () => [], sourceKeys: async () => [], fieldNames: async () => options.fieldNames ?? [] }, admin, now: () => NOW };
+  const deps: LinkedInCampaignDeps = { campaigns: store, fields: { customColumns: async () => [], sourceKeys: async () => [], fieldNames: async () => options.fieldNames ?? [] }, audit: { record: async () => {} }, admin, now: () => NOW };
   return { deps, calls };
 }
 

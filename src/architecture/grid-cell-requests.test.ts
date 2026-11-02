@@ -6,7 +6,7 @@ import { parseSource, walk } from "./source-ast";
 
 /**
  * A request about the open table reads or writes stored cells, so it waits for the queued cell edits ("Edit pipeline
- * and conflicts" in docs/decisions.md). Under `src/app/(app)/tables`, `useGridTable` owns the queue and sends those
+ * and conflicts" in docs/decisions.md). Under `src/app/(app)/tables`, `useGridTable` and its store own the queue and send those
  * requests; components reach them through `cellRequest` (`useCellRequest`) or a hook method. The rule holds at the
  * import: no other file imports `gridRequest` or `callApi`, or calls `fetch`, unless the list below names it with why
  * the call is no request about stored cells or settles the queue itself.

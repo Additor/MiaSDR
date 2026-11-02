@@ -7,6 +7,7 @@ import { Time } from "@/components/shell/time";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/components/ui/utils";
 import { AUDIT_AREAS, type AuditArea } from "@/contexts/tenancy/application/audit-log";
+import { countOf } from "@/shared/format-number";
 import { humanizeToken } from "@/shared/humanize";
 import { RULED_LIST, RULED_ROW } from "../settings-section";
 
@@ -29,6 +30,7 @@ const AREA_LABEL: Record<AuditArea, string> = {
   deal: "Deals",
   company: "Companies",
   person: "People",
+  campaign: "Campaigns",
   enrollment: "Campaign leads",
   linkedin: "LinkedIn",
   ai_jobs: "AI jobs",
@@ -70,6 +72,7 @@ const ACTION_LABEL: Record<string, string> = {
   "company.merged": "Merged two companies",
   "company.deleted": "Deleted a company",
   "person.deleted": "Deleted a person",
+  "campaign.deleted": "Deleted a campaign",
   "mcp.enabled": "Turned on MCP",
   "mcp.disabled": "Turned off MCP",
   "mcp.member_write_on": "Let members create MCP tokens that make changes",
@@ -84,7 +87,11 @@ const ACTION_LABEL: Record<string, string> = {
   "mcp.member_tokens_revoked": "Revoked a removed member's MCP tokens",
 };
 
-const actionLabel = (action: string) => ACTION_LABEL[action] ?? humanizeToken(action.replace(".", " "));
+/** A lead delete of several people writes one row with their `count`. */
+const actionLabel = (action: string, meta: Record<string, unknown>) => {
+  if (action === "person.deleted" && typeof meta.count === "number") return `Deleted ${countOf(meta.count, "person", "people")}`;
+  return ACTION_LABEL[action] ?? humanizeToken(action.replace(".", " "));
+};
 
 /** A short line of the facts in `meta`: "from A to B" first, then simple values. Arrays and objects stay out. */
 function details(meta: Record<string, unknown>): string | null {
@@ -136,7 +143,7 @@ export function AuditLogPanel({ rows, total, page, pageSize, area }: { rows: Row
             return (
               <li key={row.id} className={cn(RULED_ROW, "grid gap-0.5")}>
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium">{actionLabel(row.action)}</span>
+                  <span className="font-medium">{actionLabel(row.action, row.meta)}</span>
                   <span className="text-muted-foreground">
                     {row.actorName ?? "MiaSDR"}, <Time value={row.createdAt} />
                   </span>

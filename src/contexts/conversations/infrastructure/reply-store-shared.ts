@@ -1,21 +1,21 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { db, type DbTx } from "@/platform/db/client";
-import { contactPolicies, conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
-import type { AttemptRow, DraftRow, KnownCc, SendContext } from "../application/reply-ports";
+import { db } from "@/platform/db/client";
+import { contactPolicies, conversations, drafts, mailboxes, people, records, replyTypePicks, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
+import type { DraftRow, KnownCc, SendContext } from "../application/reply-ports";
 import { DRAFT_FROM, type DraftStatus } from "../domain/draft-status";
-import { ATTEMPT_FROM, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
+import { PICK_FROM, type PickStatus } from "../domain/reply-type-pick";
 import { organizationMailboxAddresses } from "./drizzle-conversation-store";
-import { attemptVia } from "./agent-reply-gate";
-import { viaMeta } from "@/shared/errors";
+import { toAttempt } from "./reply-attempt-ledger";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** The drafts row may move to `to` from where it is now (see `DRAFT_FROM`). */
 export const draftCanBecome = (to: DraftStatus) => inArray(drafts.status, [...DRAFT_FROM[to]]);
 
+/** The reply_type_picks row may move to `to` from where it is now (see `PICK_FROM`). */
+export const pickMayBecome = (to: PickStatus) => inArray(replyTypePicks.status, [...PICK_FROM[to]]);
+
 /** The drafts row is in one of the named statuses. */
 export const draftIn = (statuses: readonly DraftStatus[]) => inArray(drafts.status, [...statuses]);
-
-type Tx = DbTx;
 
 interface DraftMeta {
   source?: string;
@@ -47,15 +47,6 @@ export const toDraftRow = (d: typeof drafts.$inferSelect): DraftRow => {
     writtenViaTokenId: d.writtenViaTokenId,
   };
 };
-
-export const toAttempt = (a: typeof sendAttempts.$inferSelect): AttemptRow => ({
-  id: a.id,
-  draftId: a.draftId,
-  status: a.status as AttemptRow["status"],
-  error: a.error,
-  rfcMessageId: ((a.request ?? {}) as { rfcMessageId?: string }).rfcMessageId ?? null,
-  providerMessageId: a.providerMessageId,
-});
 
 /** What the approval snapshot stores in `send_attempts.request`: exactly what the person approved. */
 export interface Snapshot {
@@ -102,65 +93,6 @@ export async function sendContextFor(attempt: typeof sendAttempts.$inferSelect):
     references: snap.references,
     mailbox: await mailboxFor(attempt.organizationId, snap.accountRef),
   };
-}
-
-/** Marks the attempt and draft delivered, stores the outbound message and moves the record on. Runs inside a transaction. */
-export async function settleSent(tx: Tx, send: SendContext, sent: { providerMessageId: string | null; threadId: string | null }, now: Date, note?: string) {
-  const [attempt] = await tx.select().from(sendAttempts).where(eq(sendAttempts.id, send.attempt.id)).for("update");
-  if (!attempt || !canMoveAttempt(attempt.status as AttemptStatus, note ? "reconciled" : "sent")) return;
-  const snap = attempt.request as Snapshot;
-  const via = await attemptVia(tx, attempt);
-  await tx
-    .update(sendAttempts)
-    .set({
-      status: note ? "reconciled" : "sent",
-      providerMessageId: sent.providerMessageId,
-      response: { threadId: sent.threadId },
-      error: null,
-      ...(note ? { reconciledAt: now, reconciliationNote: note } : {}),
-    })
-    .where(and(eq(sendAttempts.id, attempt.id), inArray(sendAttempts.status, [...ATTEMPT_FROM[note ? "reconciled" : "sent"]])));
-  await tx.update(drafts).set({ status: "sent", error: null }).where(and(eq(drafts.id, attempt.draftId), draftCanBecome("sent")));
-
-  await tx
-    .insert(messages)
-    .values({
-      organizationId: attempt.organizationId,
-      conversationId: snap.conversationId,
-      channel: "email",
-      accountRef: snap.accountRef.toLowerCase(),
-      direction: "outbound",
-      idempotencyKey: `reply:${attempt.id}`,
-      providerMessageId: sent.providerMessageId,
-      subject: snap.subject,
-      fromAddress: snap.accountRef,
-      toAddress: snap.to,
-      bodyText: snap.bodyText,
-      raw: { rfcMessageId: snap.rfcMessageId, draftId: attempt.draftId, attemptId: attempt.id, sentBy: attempt.actorUserId, cc: snap.cc ?? [], ...(via ? { sentVia: via.tokenName } : {}) },
-      sentAt: now,
-    })
-    .onConflictDoNothing();
-
-  const at = sql`${now.toISOString()}::timestamptz`;
-  await tx
-    .update(records)
-    .set({
-      // A reply that arrived while this one was going out keeps the record waiting for a person.
-      workflowState: sql`case when ${records.contextVersion} = ${snap.expectedContextVersion} then 'waiting' else ${records.workflowState} end`,
-      lastOutboundAt: at,
-      lastInteractionAt: sql`greatest(coalesce(${records.lastInteractionAt}, ${at}), ${at})`,
-    })
-    .where(eq(records.id, snap.recordId));
-  await tx.update(conversations).set({ updatedAt: now }).where(eq(conversations.id, snap.conversationId));
-  await tx.insert(events).values({
-    organizationId: attempt.organizationId,
-    personId: snap.personId,
-    recordId: snap.recordId,
-    eventType: note ? "draft.delivery_reconciled" : "draft.sent",
-    actorType: "human",
-    actorUserId: attempt.actorUserId,
-    meta: { draftId: attempt.draftId, attemptId: attempt.id, note: note ?? null, ...viaMeta(via) },
-  });
 }
 
 /** Addresses that may not receive mail: on the suppression list, or the email of a person marked do not contact. */

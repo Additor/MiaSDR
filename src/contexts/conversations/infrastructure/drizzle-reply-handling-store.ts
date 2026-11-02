@@ -1,7 +1,9 @@
+import { pickMayBecome } from "./reply-store-shared";
+import { isAppliedPick, pickFlags, pickResponse } from "../domain/reply-type-pick";
 import { violatedConstraint } from "@/platform/db/errors";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { interruptPersonRunsTx, interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
+import { interruptPersonRunsTx } from "../after-reply/infrastructure/sequence-stop";
 import { personTypeDecisionTx, restartRecordWorkTx } from "./restart-record-work";
 import {
   aiJobs,
@@ -43,7 +45,7 @@ import { holdReasonOf, typeRulesOf, type TypeRules } from "../domain/reply-type"
 import { replyTypeOption, typeChangeFactsOf } from "./type-change-facts-read";
 import { defaultReplyTypeSetId, type Tx } from "./drizzle-conversation-store";
 import { onVisibleRecordSql, publicConversation, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
-import { draftCanBecome } from "./reply-store-shared";
+import { advanceRecordContextTx } from "./record-context";
 import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { isSuppressed, writeDoNotContactTx } from "@/contexts/people/infrastructure/reachability";
 import { rowsOf } from "@/platform/db/sql-values";
@@ -82,17 +84,6 @@ async function lockRecord(tx: Tx, organizationId: string, recordId: string) {
     .for("no key update");
   if (!row) throw new NotFoundError("Reply handling not found");
   return row;
-}
-
-/** Drafts written for the old context can no longer be sent; mark them so they leave the review queues. */
-async function retireOpenDrafts(tx: Tx, recordIds: string[], reason: string) {
-  if (recordIds.length === 0) return 0;
-  const retired = await tx
-    .update(drafts)
-    .set({ status: "stale", error: reason })
-    .where(and(inArray(drafts.recordId, recordIds), draftCanBecome("stale")))
-    .returning({ id: drafts.id });
-  return retired.length;
 }
 
 /**
@@ -182,7 +173,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     // record's version (`loadDraftContext`, `insertDraft`), so an undone or outdated pick drafts nothing.
     const ofLatest = cls.filter(({ c }) => c.messageId === record.latestInboundMessageId);
     const latestPick = (ofLatest.find(({ c }) => c.status !== "stale") ?? ofLatest[0])?.c;
-    const pickDrafts = latestPick && ["auto_applied", "accepted", "overridden"].includes(latestPick.status) && latestPick.expectedContextVersion === record.contextVersion;
+    const pickDrafts = latestPick && isAppliedPick(latestPick.status) && latestPick.expectedContextVersion === record.contextVersion;
     const [pendingJob] = pickDrafts
       ? await db
           .select({ id: aiJobs.id })
@@ -193,9 +184,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     const draftJobPending = pendingJob !== undefined;
 
     const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
-      const latest = c.messageId === record.latestInboundMessageId;
-      const applied = ["auto_applied", "accepted", "overridden"].includes(c.status) && c.appliedGroupKey !== null;
-      const response = (c.response ?? {}) as { holdReason?: unknown; stopRequested?: boolean };
+      const response = pickResponse(c.response);
       return {
         id: c.id,
         status: c.status,
@@ -216,10 +205,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
         createdAt: c.createdAt,
-        latest,
-        current: c.expectedContextVersion === record.contextVersion && c.status !== "stale",
-        canUndo: latest && applied,
-        canAcknowledge: c.acknowledgedAt === null && (c.status === "auto_applied" || c.status === "failed"),
+        ...pickFlags(c, record),
       };
     });
 
@@ -362,28 +348,15 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
       if (cls.messageId !== record.latestInboundMessageId) throw new ConflictError("Only the pick of the latest inbound message can be undone.");
-      if (!cls.appliedGroupKey || !["auto_applied", "accepted", "overridden"].includes(cls.status)) throw new ConflictError("This AI pick has no applied change to undo.");
+      if (!cls.appliedGroupKey || !isAppliedPick(cls.status)) throw new ConflictError("This AI pick has no applied change to undo.");
       if (record.groupKey !== cls.appliedGroupKey || record.replyTypeId !== cls.appliedReplyTypeId) {
         throw new ConflictError("A person changed the reply type after this pick. Change the type by hand.");
       }
-      const version = record.contextVersion + 1;
       const previous = cls.previousGroupKey;
       const previousTypeId = previous ? cls.previousReplyTypeId : null;
       // The lock comes back as the record had it before the pick.
       const previousLocked = previous !== null && lockBeforePick(cls.response, previous);
-      await tx
-        .update(records)
-        .set({
-          groupKey: previous,
-          replyTypeId: previousTypeId,
-          replyTypeSource: previous ? "human" : null,
-          replyTypeLocked: previousLocked,
-          workflowState: afterPersonDecision(record.workflowState),
-          nextActionAt: null,
-          contextVersion: version,
-        })
-        .where(eq(records.id, record.id));
-      await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
+      await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(and(eq(replyTypePicks.id, cls.id), pickMayBecome("rejected")));
       // A draft job that has not run yet would write a reply for the classification a person just rejected. A job that
       // already runs read the old version, and `insertDraft` writes its draft as stale once this commit bumps it.
       const cancelled = await tx
@@ -397,9 +370,22 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         .set({ payload: sql`${aiJobs.payload} - 'rerun'` })
         .where(and(eq(aiJobs.organizationId, input.organizationId), eq(aiJobs.kind, "initial_draft"), eq(aiJobs.entityId, cls.id), eq(aiJobs.status, "running")))
         .returning({ id: aiJobs.id });
-      const draftsRetired = await retireOpenDrafts(tx, [record.id], "The classification was undone after this draft was written.");
       // The run started for the classification a person just rejected. It ends in this commit and keeps no follow-up drafting.
-      const runsEnded = await interruptRecordRunsTx(tx, input.organizationId, record.id, "classification_undone", input.now);
+      const { contextVersion: version, draftsRetired, runsEnded } = await advanceRecordContextTx(tx, {
+        organizationId: input.organizationId,
+        recordId: record.id,
+        now: input.now,
+        set: {
+          groupKey: previous,
+          replyTypeId: previousTypeId,
+          replyTypeSource: previous ? "human" : null,
+          replyTypeLocked: previousLocked,
+          workflowState: afterPersonDecision(record.workflowState),
+          nextActionAt: null,
+        },
+        drafts: { reason: "The classification was undone after this draft was written." },
+        runs: "classification_undone",
+      });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: record.personId,
@@ -466,12 +452,17 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
 
       const owned = await tx.select().from(records).where(and(eq(records.personId, input.personId), eq(records.organizationId, input.organizationId))).for("no key update");
       const recordIds = owned.map((r) => r.id);
+      let draftsRetired = 0;
       for (const record of owned) {
-        const version = record.contextVersion + 1;
-        await tx
-          .update(records)
-          .set({ workflowState: afterPersonDecision(record.workflowState), nextActionAt: null, contextVersion: version })
-          .where(eq(records.id, record.id));
+        const advanced = await advanceRecordContextTx(tx, {
+          organizationId: input.organizationId,
+          recordId: record.id,
+          now: input.now,
+          set: { workflowState: afterPersonDecision(record.workflowState), nextActionAt: null },
+          drafts: { reason: "The person was marked do not contact." },
+          personDecided: true,
+        });
+        draftsRetired += advanced.draftsRetired;
         await tx.insert(events).values({
           organizationId: input.organizationId,
           personId: input.personId,
@@ -481,10 +472,9 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           actorUserId: input.actorUserId,
           fromData: { workflowState: record.workflowState },
           meta: { policy: "do_not_contact", reason: input.reason },
-          contextVersion: version,
+          contextVersion: advanced.contextVersion,
         });
       }
-      const draftsRetired = await retireOpenDrafts(tx, recordIds, "The person was marked do not contact.");
       await interruptPersonRunsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
       const stopped = await haltPersonEnrollmentsTx(tx, input.organizationId, [input.personId], "do_not_contact", input.now);
       await tx.insert(events).values({
@@ -509,10 +499,14 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       // waits for one in progress, so the close lands after it, and a send that starts later reads the close
       // (docs/decisions.md, "Reply send rules"). Sends refuse a private conversation, so the lock leaves those out.
       await tx.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.recordId, record.id), publicConversation)).for("share");
-      const version = record.contextVersion + 1;
-      await tx.update(records).set({ workflowState: "closed", closedReason: input.reason, nextActionAt: null, contextVersion: version }).where(eq(records.id, record.id));
-      await retireOpenDrafts(tx, [record.id], MARKED_DONE);
-      await interruptRecordRunsTx(tx, input.organizationId, record.id, "record_closed", input.now);
+      const { contextVersion: version } = await advanceRecordContextTx(tx, {
+        organizationId: input.organizationId,
+        recordId: record.id,
+        now: input.now,
+        set: { workflowState: "closed", closedReason: input.reason, nextActionAt: null },
+        drafts: { reason: MARKED_DONE },
+        runs: "record_closed",
+      });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: record.personId,
@@ -533,8 +527,12 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const record = await lockRecord(tx, input.organizationId, input.recordId);
       if (record.workflowState !== "closed") throw new ConflictError("Reply handling is already open.");
       const next = afterReopen(record.latestInboundMessageId !== null);
-      const version = record.contextVersion + 1;
-      await tx.update(records).set({ workflowState: next, closedReason: null, contextVersion: version }).where(eq(records.id, record.id));
+      const { contextVersion: version } = await advanceRecordContextTx(tx, {
+        organizationId: input.organizationId,
+        recordId: record.id,
+        now: input.now,
+        set: { workflowState: next, closedReason: null },
+      });
       await tx.insert(events).values({
         organizationId: input.organizationId,
         personId: record.personId,

@@ -9,6 +9,7 @@ describe("validateSteps", () => {
   });
   it("needs at least one step and a bounded number of them", () => {
     expect(validateSteps([])[0].message).toMatch(/at least one/);
+    expect(validateSteps([{ ...step(), kind: "invitation" } as never])[0].message).toMatch(/email steps only/);
     const many = Array.from({ length: 11 }, (_, i) => step({ stepNumber: i + 1, waitDays: i === 0 ? 0 : 1 }));
     expect(validateSteps(many)[0].message).toMatch(/at most 10/);
   });

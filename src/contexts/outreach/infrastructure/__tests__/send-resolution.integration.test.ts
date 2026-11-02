@@ -1,4 +1,5 @@
 import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { drizzleEnrollmentAdminStore } from "../drizzle-enrollment-admin";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
@@ -59,7 +60,7 @@ describeDb("resolving unconfirmed email sends", () => {
 
   it("lists the unknown send in the campaign detail and the campaigns list", async () => {
     const f = await fixture();
-    const detail = { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore, now: () => current };
+    const detail = { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore, now: () => current };
     const d = await campaignsUc.getCampaignDetail(detail, f.admin, f.campaign, { tab: "all", search: "", page: 1, pageSize: 50 });
     expect(d.unconfirmed.total).toBe(1);
     expect(d.unconfirmed.rows[0]).toMatchObject({ sendId: f.sendId, stepNumber: 1, personName: "Lee Doe", note: "Request timed out" });

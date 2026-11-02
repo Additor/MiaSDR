@@ -33,6 +33,7 @@ export function validateSteps(steps: StepInput[]): StepIssue[] {
   steps.forEach((step, index) => {
     const n = index + 1;
     if (step.stepNumber !== n) issues.push({ step: n, message: "Steps must be numbered 1, 2, 3 in order." });
+    if (step.kind !== "email") issues.push({ step: n, message: "An email campaign has email steps only." });
     if (step.body.trim() === "") issues.push({ step: n, message: "The message is empty." });
     if (step.body.length > STEP_BODY_MAX) issues.push({ step: n, message: `The message is longer than ${STEP_BODY_MAX} characters.` });
     if ((step.subject ?? "").length > STEP_SUBJECT_MAX) issues.push({ step: n, message: `The subject is longer than ${STEP_SUBJECT_MAX} characters.` });

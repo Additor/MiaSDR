@@ -1,4 +1,4 @@
-import { devFakes, expect, signInAdmin, sql, test } from "./support/fixtures";
+import { alertWith, devFakes, expect, signInAdmin, sql, test } from "./support/fixtures";
 
 /*
  * LinkedIn conversation replies. The lead's message is filed through the dev-fakes helper action `liInbound`, which
@@ -67,6 +67,45 @@ test.describe("LinkedIn replies from the inbox", () => {
 
     await page.reload();
     await expect(page.getByText("Thanks Lia. Here are the details you asked for.").first()).toBeVisible();
+  });
+
+  test("a retry after a lost response replays the send, so the typed message goes out once", async ({ page, watch }) => {
+    watch.tolerate(/requestfailed: POST .*\/linkedin-reply/, /Failed to load resource.*\/linkedin-reply/);
+    await signInAdmin(page);
+    await turnOffReplyGap();
+    await devFakes(page.request, { action: "liBehavior", kind: "message", mode: "ok" });
+    await seedLead(page.request, "e19c", "Nora Quinn", "Could you share pricing?");
+    await page.goto("/inbox");
+    await page.getByRole("link", { name: /Nora Quinn/ }).click();
+    await expect(page.getByTestId("linkedin-reply-panel")).toBeVisible();
+
+    // The server handles the first send, and the browser never hears back. The reload waits, so the box still holds the text.
+    let release = () => {};
+    const reloadHeld = new Promise<void>((resolve) => (release = resolve));
+    await page.route(/_rsc=/, async (route) => {
+      await reloadHeld;
+      await route.continue();
+    });
+    let lost = false;
+    await page.route("**/linkedin-reply", async (route) => {
+      if (lost) return route.continue();
+      lost = true;
+      await route.fetch();
+      await route.abort();
+    });
+
+    const text = "Pricing is on its way, Nora.";
+    await page.getByLabel(/^Message/).fill(text);
+    const send = page.getByRole("button", { name: "Send", exact: true });
+    await send.click();
+    await expect(alertWith(page, "Could not reach the server.")).toBeVisible();
+    await expect(page.getByLabel(/^Message/)).toHaveValue(text);
+
+    await send.click();
+    await expect(page.getByLabel(/^Message/)).toHaveValue("");
+    release();
+    const state = await devFakes<LiState>(page.request, { action: "liState" });
+    expect(state.messages.filter((m) => m.text === text)).toHaveLength(1);
   });
 
   test("a send whose outcome is unknown is not repeated and waits for a person", async ({ page }) => {

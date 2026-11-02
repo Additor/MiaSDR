@@ -4,7 +4,7 @@ import { getThread } from "@/contexts/conversations/application/inbox";
 import { getLinkedInReplyPanel } from "@/contexts/conversations/application/linkedin-reply";
 import { createManualDraft, discardDraft, editDraft, getReplyPanel, regenerateDraft, requestDraft } from "@/contexts/conversations/application/reply-management";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
-import { ConflictError, NotFoundError, type Actor } from "@/shared/errors";
+import { NotFoundError, type Actor } from "@/shared/errors";
 import { DRAFT_CARD_URI } from "./cards";
 import { defineTool, need, type ToolContext } from "./define";
 import { appLinks, clip, cutCopyRefusal, fencedField, isCutCopy, LONG_TEXT_CHARS, unfenced, type ToolOutputContext } from "./output";
@@ -37,7 +37,7 @@ export const writeReplyDraftTool = defineTool({
   title: "Write reply draft",
   description: [
     "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent.",
-    "`request_ai` has the AI write one (`conversationId`); `create_manual` saves your text as the draft (`conversationId`, `bodyText`, and `subject` for email; with an open draft also its `revision`, since it replaces that draft);",
+    "`request_ai` has the AI write one (`conversationId`); `create_manual` saves your text as the draft (`conversationId`, `bodyText`, and `subject` for email; with an open draft also its `draftId` and `revision`, since it replaces that draft);",
     "`edit` replaces the draft's text (`draftId`, `revision`, `bodyText`, optional `subject`); `regenerate` has the AI write it again (`draftId`, `revision`, optional `note`); `discard` drops it (`draftId`, `revision`).",
     "`edit` and `create_manual` refuse text that looks made from an answer that cut the draft (`truncated_text`). Take `revision` from get_conversation or the last answer. The answer gives the draft and `reviewUrl`, where the person reviews and sends it.",
   ].join(" "),
@@ -67,13 +67,11 @@ export const writeReplyDraftTool = defineTool({
         // The thread alone tells the channel; the draft is read once, after the write.
         const { channel } = await getThread(inboxDeps(), actor, conversationId);
         const bodyText = unfenced(need(input.bodyText, "bodyText", "create_manual"));
-        // A new draft turns the open one stale, so the agent must have read that one, as `edit` and `discard` require.
         const open = await readDraft(actor, out, conversationId);
-        if (open?.status === "awaiting_review") {
-          if (input.revision !== open.revision) throw new ConflictError(`This conversation has an open draft at revision ${open.revision}. Read it, then pass that revision to replace it, or use edit.`, { code: "draft_open" });
-          if (isCutCopy(bodyText, (await draftOf(actor, open.draftId)).text, LONG_TEXT_CHARS)) throw cutCopyRefusal("draft text");
-        }
-        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject && unfenced(input.subject), bodyText, channel: channel === "linkedin" ? "linkedin" : "email" });
+        const replaces = open?.status === "awaiting_review" && input.revision === open.revision ? open : null;
+        if (replaces && isCutCopy(bodyText, (await draftOf(actor, replaces.draftId)).text, LONG_TEXT_CHARS)) throw cutCopyRefusal("draft text");
+        // A new draft turns the open one stale, so the agent must have read that one, as `edit` and `discard` require. The store checks it under the record lock.
+        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject && unfenced(input.subject), bodyText, channel: channel === "linkedin" ? "linkedin" : "email", expectedOpenRevision: input.revision ?? null, expectedOpenDraftId: input.draftId ?? replaces?.draftId });
         break;
       }
       case "edit": {

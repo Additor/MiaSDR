@@ -6,6 +6,9 @@ export type OutreachChannel = "email" | "linkedin";
 /** Most people one picked-lead enroll or one bulk remove may name. */
 export const MAX_PICKED_IDS = 500;
 
+/** Most senders one campaign may list. */
+export const MAX_CAMPAIGN_SENDERS = 50;
+
 /** Counts for an enroll of hand-picked people. Every requested id lands in exactly one bucket. */
 export interface PickedEnrollCounts {
   requested: number;
@@ -75,6 +78,7 @@ const NOUN: Record<OutreachChannel, string> = { email: "mailbox", linkedin: "Lin
 export async function validateSenderIds(admin: EnrollmentAdminStore, actor: Actor, channel: OutreachChannel, ids: string[], tx?: DbHandle): Promise<string[]> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return [];
+  if (unique.length > MAX_CAMPAIGN_SENDERS) throw new ValidationError(`Assign up to ${MAX_CAMPAIGN_SENDERS} senders to a campaign.`);
   const found = new Map((await admin.findSenders(actor.organizationId, channel, unique, tx)).map((s) => [s.id, s]));
   if (unique.some((id) => !found.has(id))) throw new ValidationError(`Pick ${NOUN[channel]}s from this organization.`);
   const offline = unique.map((id) => found.get(id) as SenderRef).filter((s) => !s.connected);

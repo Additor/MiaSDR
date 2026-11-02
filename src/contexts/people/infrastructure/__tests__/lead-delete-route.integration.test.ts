@@ -44,6 +44,29 @@ describeDb("lead delete route by filter", () => {
     expect(await remaining()).toBe(0);
   });
 
+  it("leaves one audit row for a person's delete: naming the lead alone, and listing the leads of a batch", async () => {
+    await clean();
+    const rows = async () => world.sql<{ actor_user_id: string; entity_id: string | null; meta: { lifecycle: string; count?: number; personIds?: string[]; via?: unknown } }[]>`
+      select actor_user_id, entity_id, meta from audit_log where organization_id = ${world.orgA.id} and action = 'person.deleted' order by created_at desc`;
+    const before = (await rows()).length;
+
+    const one = await person("one@del-route.test");
+    expect(await callRoute("leads/delete/route.ts", "POST", { json: { ids: [one] }, as: world.admin })).toMatchObject({ status: 200, body: { deleted: 1 } });
+    const [single] = await rows();
+    expect(single.entity_id).toBe(one);
+    expect(single.meta.lifecycle).toBe("lead");
+    expect(single.meta.personIds).toBeUndefined();
+    expect(single.meta.via).toBeUndefined();
+
+    const pair = [await person("two@del-route.test"), await person("three@del-route.test")];
+    expect(await callRoute("leads/delete/route.ts", "POST", { json: { ids: pair }, as: world.admin })).toMatchObject({ status: 200, body: { deleted: 2 } });
+    const after = await rows();
+    expect(after).toHaveLength(before + 2);
+    expect(after[0].entity_id).toBeNull();
+    expect(after[0].meta.count).toBe(2);
+    expect([...(after[0].meta.personIds ?? [])].sort()).toEqual([...pair].sort());
+  });
+
   it("answers 422 for a lifecycle other than lead and 400 for a key the list never sends", async () => {
     await clean();
     await person("c@del-route.test");
