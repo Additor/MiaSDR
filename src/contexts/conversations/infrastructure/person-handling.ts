@@ -1,3 +1,5 @@
+import { detectsStopRequest } from "../domain/stop-request";
+import { stopRequestedSql } from "./stop-requested-sql";
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { db, type DbHandle } from "@/platform/db/client";
@@ -285,6 +287,28 @@ export async function peopleWithHistory(tx: DbHandle, organizationId: string, pe
       select e.person_id from events e where e.organization_id = ${organizationId} and e.person_id in ${ids}`),
   );
   return new Set(rows.map((row) => row.person_id));
+}
+
+/** Replies per call that the check of a stop request reads, newest first. */
+const STOP_CHECK_REPLIES = 500;
+
+/**
+ * The people among `personIds` with a reply that asked to stop: a pick stored the flag, or its own words ask. It reads
+ * every conversation, private ones too, so a person's request counts whoever can see it.
+ */
+export async function peopleWhoAskedToStop(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<string[]> {
+  if (personIds.length === 0) return [];
+  const rows = rowsOf<{ person_id: string; asked: boolean; body: string | null }>(
+    await tx.execute(sql`
+      select r.person_id, ${stopRequestedSql(sql`m.id`)} as asked, m.body_text as body
+      from messages m
+      join conversations c on c.id = m.conversation_id
+      join records r on r.id = c.record_id
+      where r.organization_id = ${organizationId} and r.person_id in ${uuidList(personIds)} and m.direction = 'inbound'
+      order by m.sent_at desc nulls last
+      limit ${STOP_CHECK_REPLIES}`),
+  );
+  return [...new Set(rows.filter((row) => row.asked || detectsStopRequest(row.body ?? "")).map((row) => row.person_id))];
 }
 
 export const personReplyHandling: PersonReplyHandling ={ lockPersonRecords, lockPersonRecordRows, interruptPersonRuns, previewPersonRunStop, appendPersonEvent, activeConversationOfPerson, listPersonEvents };

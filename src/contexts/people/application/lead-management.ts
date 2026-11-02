@@ -1,4 +1,4 @@
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import type { DbHandle } from "@/platform/db/client";
 import { retryOnce, sqlState } from "@/platform/db/errors";
@@ -27,6 +27,7 @@ const KEPT_LINES: Record<BlockReason, (n: number) => string> = {
   linked_records: (n) => `${leads(n)} ${n === 1 ? "has" : "have"} history, such as replies or conversations.`,
   personal_campaign_sends: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in another member's personal campaign. Ask its creator, an owner or an admin.`,
   try_again: (n) => `${leads(n)} ${n === 1 ? "was" : "were"} busy with another change. Try again.`,
+  agent_delete_protected: (n) => `${leads(n)} can be deleted only by a person.`,
 };
 const leads = (n: number) => `${n} ${n === 1 ? "lead" : "leads"}`;
 
@@ -143,13 +144,14 @@ export async function deleteLeads(deps: LeadDeleteDeps, actor: Actor, selection:
  * The reason a lead stays, from the facts of the three contexts. The viewer only picks between `has_sends` and
  * `has_hidden_sends`, and opens `personal_campaign_sends` to the campaign's creator, an owner or an admin.
  */
-async function verdicts(deps: LeadDeleteDeps, tx: DbHandle, actor: Actor, rows: LeadForDelete[]): Promise<Map<string, BlockReason>> {
+async function verdicts(deps: LeadDeleteDeps, tx: DbHandle, actor: Actor, rows: LeadForDelete[], lockPolicies: boolean): Promise<Map<string, BlockReason>> {
   const ids = rows.map((row) => row.id);
+  const shielded = actor.via ? await deps.agentProtected(tx, actor.organizationId, ids, { lock: lockPolicies }) : new Set<string>();
   const outreach = await deps.outreach.blockers(tx, actor, ids);
   const history = await deps.handling.peopleWithHistory(tx, actor.organizationId, ids);
   const blocked = new Map<string, BlockReason>();
   for (const row of rows) {
-    const reason = leadDeleteBlock({ contact: row.contact, history: history.has(row.id), outreach: outreach.get(row.id) ?? [] });
+    const reason = shielded.has(row.id) ? "agent_delete_protected" : leadDeleteBlock({ contact: row.contact, history: history.has(row.id), outreach: outreach.get(row.id) ?? [] });
     if (reason) blocked.set(row.id, reason);
   }
   return blocked;
@@ -169,16 +171,29 @@ function deleteBatch(deps: LeadDeleteDeps, actor: Actor, ids: string[]): Promise
       const rows = await deps.people.lock(tx, organizationId, ids);
       if (rows.length === 0) return { deleted: 0, blocked: [] };
       await deps.outreach.lockEnrollments(tx, organizationId, rows.map((row) => row.id));
-      const blocked = await verdicts(deps, tx, actor, rows);
+      const blocked = await verdicts(deps, tx, actor, rows, true);
       const outcome: DeleteOutcome = { deleted: 0, blocked: rows.flatMap((row) => blockedLead(row, blocked.get(row.id))) };
       const deletable = rows.filter((row) => !blocked.has(row.id)).map((row) => row.id);
       if (deletable.length === 0) return outcome;
       await deps.people.keepSuppressed(tx, organizationId, deletable);
       await deps.outreach.purge(tx, organizationId, deletable);
       outcome.deleted = await deps.people.deletePeople(tx, organizationId, deletable);
+      if (actor.via) {
+        for (const id of deletable) await deps.audit.record(tx, { organizationId, actorUserId: actor.userId, action: "person.deleted", entityType: "person", entityId: id, meta: { lifecycle: "lead", ...viaMeta(actor.via) } });
+      }
       return outcome;
     }),
   );
+}
+
+/** What a delete of one person would meet, as this actor may see it. Null when no such person is in the organization. */
+export async function previewLeadDelete(deps: LeadDeleteDeps, actor: Actor, id: string): Promise<{ id: string; name: string | null; contact: boolean; blocked: BlockReason | null } | null> {
+  return deps.transaction(async (tx) => {
+    const [row] = await deps.people.read(tx, actor.organizationId, [id]);
+    if (!row) return null;
+    const blocked = await verdicts(deps, tx, actor, [row], false);
+    return { ...row, blocked: blocked.get(id) ?? null };
+  });
 }
 
 const blockedLead = (row: LeadForDelete, reason: BlockReason | undefined): BlockedLead[] => (reason ? [{ id: row.id, name: row.name, reason }] : []);
@@ -236,7 +251,7 @@ export async function leadDeleteBlockOf(deps: LeadDeleteDeps, actor: Actor, id: 
   return deps.transaction(async (tx) => {
     const rows = await deps.people.read(tx, actor.organizationId, [id]);
     if (rows.length === 0) return null;
-    return (await verdicts(deps, tx, actor, rows)).get(id) ?? null;
+    return (await verdicts(deps, tx, actor, rows, false)).get(id) ?? null;
   });
 }
 

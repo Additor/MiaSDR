@@ -1,4 +1,4 @@
-import type { BlockReason } from "../domain/person-delete-policy";
+import { AGENT_DELETE_PROTECTED, type BlockReason } from "../domain/person-delete-policy";
 
 /*
  * The words of the lead delete rules, which the lead page and its confirmation show and the delete answers. The module
@@ -12,6 +12,7 @@ export const BLOCK_MESSAGES: Record<BlockReason, string> = {
   personal_campaign_sends: "The lead is in another member's personal campaign. Ask its creator, an owner or an admin to delete it, or mark it do not contact.",
   linked_records: "The lead has history, such as replies or conversations. Mark it do not contact instead of deleting it.",
   try_again: "Another change to this lead was in progress. Try the delete again in a moment.",
+  agent_delete_protected: AGENT_DELETE_PROTECTED,
 };
 
 export interface DeleteQualification {

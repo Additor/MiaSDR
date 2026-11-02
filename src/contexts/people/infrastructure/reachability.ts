@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { contactPolicies, people, suppressionList } from "@/platform/db/schema";
+import { rowsOf } from "@/platform/db/sql-values";
 import { DELETED_WHILE_MARKED_NOTE, reachability, suppressionKey, type Reachability, type ReadReachability, type SuppressionReason } from "../domain/reachability";
 
 /*
@@ -170,4 +171,18 @@ export async function writeDoNotContactTx(
 export async function deleteDoNotContactTx(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<void> {
   if (personIds.length === 0) return;
   await tx.delete(contactPolicies).where(and(eq(contactPolicies.organizationId, organizationId), inArray(contactPolicies.personId, [...personIds])));
+}
+
+/**
+ * The people among `ids` marked do not contact or on the suppression list. With `lock`, holds their do not contact rows
+ * first and reads after: a mark on an existing row commits before this reads it, or waits for the caller to finish.
+ */
+export async function peopleMarkedTx(tx: DbHandle, organizationId: string, ids: readonly string[], options: { lock: boolean }): Promise<string[]> {
+  if (ids.length === 0) return [];
+  if (options.lock) {
+    await tx.select({ id: contactPolicies.personId }).from(contactPolicies).where(and(eq(contactPolicies.organizationId, organizationId), inArray(contactPolicies.personId, [...ids]))).orderBy(contactPolicies.personId).for("update");
+  }
+  const list = sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
+  const rows = rowsOf<{ id: string }>(await tx.execute(sql`select p.id from people p where p.organization_id = ${organizationId} and p.id in (${list}) and (${doNotContactSql("p")} or ${suppressedSql("p")})`));
+  return rows.map((row) => row.id);
 }

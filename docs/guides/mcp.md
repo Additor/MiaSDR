@@ -111,11 +111,41 @@ Owners and admins see agents' sends under Agent sends on the settings page: toda
 
 Turning agent sending off stops every token that sends at once, and turning it on later needs new tokens. A message an agent sent shows "Sent by an agent ({token name})" in the thread, and the history reads "{person} via {token}".
 
+## Actions no one can undo
+
+Agents complete campaigns and delete records only when all of these hold:
+
+1. The server allows it. `MCP_IRREVERSIBLE_ENABLED=false` refuses it for the whole install.
+2. An owner or admin sets a daily limit above 0 under Settings, Organization, Agents can spend and delete.
+3. An owner or admin creates a token, or connects an app, with Complete campaigns and delete leads, contacts and deals ticked. Members cannot, and an admin demoted to member loses it on the next request.
+
+Such a token gets two tools:
+
+| Tool | What it does |
+|---|---|
+| `preview_irreversible` | States what the action would do to one target, what stops it, and an `actionToken`. It changes nothing and counts against no limit |
+| `apply_irreversible` | Runs the action with the preview's token. One target per call. It counts against the daily limit, and a refusal gives the count back |
+
+`kind` picks the action: `complete_campaign`, `delete_draft_campaign`, `delete_lead`, `delete_contact` or `delete_deal`. A person's rules apply as they do in MiaSDR, and each refusal keeps its code, such as `contact_blocked` or `has_sends`. Agents meet these as well:
+
+| Code | Why | What to do |
+|---|---|---|
+| `agent_irreversible_off` | The limit is 0, the token was made before it last went to 0, or the token lacks the option | Set a limit, or create a new token |
+| `agent_irreversible_cap` | Agents reached today's limit | Wait for midnight UTC (`retryAfterSeconds`), or an owner or admin raises it |
+| `action_token_stale` | The target changed since the preview | Preview again and check the new answer |
+| `agent_delete_protected` | The person is marked do not contact, on the suppression list, asked to stop, or was removed from a campaign | A person deletes them in MiaSDR |
+| `agent_complete_person_paused` | A person paused the campaign | A person completes it in MiaSDR |
+| `agent_sender_not_owned` | A Personal campaign sends from another member's accounts | Its owner acts on it |
+
+Deleting a contact erases its conversations, messages, closed deals, notes and tasks, and nobody can get them back. An agent that followed instructions planted in a lead's message could do this within the limit, so keep the limit low and tick the option only on tokens that need it. Agent activity lists each call with its target, and the audit log names the token.
+
+Setting the limit to 0 stops these tokens at once, and setting it above 0 later needs new tokens.
+
 ## Limits and revoking
 
 - A token lasts 90 days. A person holds at most 10 live tokens.
 - A token makes at most 60 requests a minute. Request 61 answers 429 with `Retry-After`.
-- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour, imports at most 10 times an hour, sends at most 10 replies a minute and starts at most 10 campaigns an hour. A call past a limit fails with `rate_limited` and the seconds to wait.
+- A token makes at most 20 changes a minute, asks the AI for at most 60 drafts an hour, imports at most 10 times an hour, sends at most 10 replies a minute starts at most 10 campaigns an hour, and takes at most 30 actions it cannot undo an hour. A call past a limit fails with `rate_limited` and the seconds to wait.
 - With `TRUST_PROXY_HOPS` set, a client IP that sends 20 unknown tokens in a minute waits until the minute ends.
 - A person revokes their own tokens on the settings page; an owner or admin revokes anyone's, or all of them with Revoke all. A revoked token fails on its next request.
 - Removing a member revokes their tokens, and inviting them again does not bring the tokens back. A role change applies to the next request.

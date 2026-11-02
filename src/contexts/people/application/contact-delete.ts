@@ -1,7 +1,8 @@
 import type { DbHandle } from "@/platform/db/client";
 import { retryOnce, sqlState, TRY_AGAIN } from "@/platform/db/errors";
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { mergeContactBlockers } from "../domain/person-delete-policy";
+import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
+import { AGENT_DELETE_PROTECTED, mergeContactBlockers } from "../domain/person-delete-policy";
+import type { AgentProtected } from "./lead-ports";
 import type { LeadsAudit } from "./leads-audit";
 
 /*
@@ -118,6 +119,8 @@ export interface ContactDeleteDeps {
   handling: ContactDeleteHandling;
   deals: ContactDeleteDeals;
   outreach: ContactDeleteOutreach;
+  /** The people among `ids` an agent may not delete. With `lock`, holds their do not contact rows first. */
+  agentProtected: AgentProtected;
   audit: LeadsAudit;
   /** One transaction with `lock_timeout` set to `CONVERSION_LOCK_TIMEOUT`. */
   transaction<T>(fn: (tx: DbHandle) => Promise<T>): Promise<T>;
@@ -134,6 +137,8 @@ export interface ContactDeletePreview {
   linkedinOnlyBlock: boolean;
   /** The counts leave out rows in another member's personal campaign that the actor cannot see. */
   hiddenExcluded: boolean;
+  /** The actor is an agent, and this person is one only a person deletes. */
+  agentProtected: boolean;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -195,7 +200,8 @@ async function countsOf(deps: ContactDeleteDeps, tx: DbHandle, actor: Actor, per
   };
 }
 
-const flatten = (counts: ContactDeleteCounts): ContactDeleteExpected => ({
+/** The counts a delete confirms, from a preview's counts. */
+export const flatten = (counts: ContactDeleteCounts): ContactDeleteExpected => ({
   deals: counts.deals.won + counts.deals.lost,
   notes: counts.notes,
   tasks: counts.tasks,
@@ -231,6 +237,7 @@ export async function previewContactDelete(deps: ContactDeleteDeps, actor: Actor
       suppressionKept: Boolean(person.email?.trim()) && (person.suppressed || person.doNotContact),
       linkedinOnlyBlock: person.doNotContact && Boolean(person.linkedinUrl || person.linkedinSlug),
       hiddenExcluded: hidden,
+      agentProtected: actor.via !== undefined && (await deps.agentProtected(tx, organizationId, [personId], { lock: false })).has(personId),
     };
   });
 }
@@ -254,6 +261,7 @@ export async function deleteContact(deps: ContactDeleteDeps, actor: Actor, perso
         await deps.people.lockDoNotContact(tx, organizationId, personId);
         const deals = await deps.deals.lock(tx, organizationId, personId);
         await deps.outreach.lockEnrollments(tx, organizationId, [personId]);
+        if (actor.via && (await deps.agentProtected(tx, organizationId, [personId], { lock: false })).has(personId)) throw new ConflictError(AGENT_DELETE_PROTECTED, { code: "agent_delete_protected" });
         const blockers = await blockersOf(deps, tx, actor, personId, deals, deps.now?.() ?? new Date());
         if (blockers.length > 0) throw new ConflictError("This contact cannot be deleted.", { code: "contact_blocked", blockers });
 
@@ -276,7 +284,7 @@ export async function deleteContact(deps: ContactDeleteDeps, actor: Actor, perso
           action: "person.deleted",
           entityType: "person",
           entityId: personId,
-          meta: { lifecycle: "contact", counts: { ...counts, deals: { won: counts.deals.won, lost: counts.deals.lost } }, suppressionKept },
+          meta: { lifecycle: "contact", counts: { ...counts, deals: { won: counts.deals.won, lost: counts.deals.lost } }, suppressionKept, ...viaMeta(actor.via) },
         });
         return { deleted: counts };
       }),

@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
 import type { DealStageKind } from "../domain/stages";
 import type { DealTitleParts } from "../application/deal-ports";
@@ -24,14 +24,19 @@ export interface PersonDealLock {
  * Step 4: every deal of the person `FOR UPDATE`, in id order. A deal in an open stage blocks the delete (`open_deals`). A stage
  * move that commits first shows here; one that comes later waits on these rows and then finds no deal.
  */
-export async function lockDealsOfPerson(tx: DbHandle, organizationId: string, personId: string): Promise<PersonDealLock[]> {
+export const lockDealsOfPerson = (tx: DbHandle, organizationId: string, personId: string): Promise<PersonDealLock[]> => dealsOfPersonIn(tx, organizationId, personId, sql`for update of d`);
+
+/** The same deals in the caller's transaction without a lock, for a preview. A read from the pool there would wait on the caller's own connection when the pool holds one. */
+export const listDealsOfPerson = (tx: DbHandle, organizationId: string, personId: string): Promise<PersonDealLock[]> => dealsOfPersonIn(tx, organizationId, personId, sql``);
+
+async function dealsOfPersonIn(tx: DbHandle, organizationId: string, personId: string, lock: SQL): Promise<PersonDealLock[]> {
   const rows = rowsOf<{ id: string; title: string; stage_name: string; stage_kind: string }>(
     await tx.execute(sql`
       select d.id, d.title, s.name as stage_name, d.stage_kind
       from deals d join deal_stages s on s.id = d.stage_id and s.organization_id = d.organization_id
       where d.organization_id = ${organizationId} and d.person_id = ${personId}::uuid
       order by d.id
-      for update of d`),
+      ${lock}`),
   );
   return rows.map((row) => ({ id: row.id, title: row.title, stageName: row.stage_name, stageKind: row.stage_kind as DealStageKind }));
 }

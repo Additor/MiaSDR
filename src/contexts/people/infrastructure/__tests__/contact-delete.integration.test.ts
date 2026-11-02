@@ -223,6 +223,7 @@ describeDb("contact delete", () => {
       suppressionKept: true,
       linkedinOnlyBlock: false,
       hiddenExcluded: false,
+      agentProtected: false,
     });
     // Two seeded lines plus the deals' own history.
     expect(preview.counts.events).toBeGreaterThan(2);

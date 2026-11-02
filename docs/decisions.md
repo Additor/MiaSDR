@@ -470,7 +470,7 @@ Code: `domain/linkedin-search.ts`, `application/linkedin-search.ts`, `run-linked
 
 ## Campaigns
 
-Code: `outreach/application/campaign-management.ts` (email), `linkedin-campaigns.ts` (LinkedIn), `enrollment-admin.ts`, `enrollment-restore.ts`. Any member can create, run and fill campaigns. An agent prepares campaigns with `draft_campaign`, and starts or fills running ones only under "Agent campaigns".
+Code: `outreach/application/campaign-management.ts` (email), `linkedin-campaigns.ts` (LinkedIn), `enrollment-admin.ts`, `enrollment-restore.ts`. Any member can create, run and fill campaigns. An agent prepares campaigns with `draft_campaign`, removes leads with its `remove_lead` action, which a person can restore, and starts or fills running ones only under "Agent campaigns".
 
 ### Lifecycle
 
@@ -505,6 +505,18 @@ Agents start, resume and fill campaigns through `outreach/application/agent-camp
 - **Locks.** A launch locks the campaign `FOR UPDATE`, then takes `agent-send` shared; the status change runs in the same transaction. An enroll locks the campaign `FOR SHARE`, takes `agent-send` shared, then `agent-enroll:<organization id>` exclusive before it counts. A person's enroll takes no campaign lock: its insert's foreign key check waits for a start that holds the row.
 - **Records.** `campaigns.started_via_token_id` names the agent's token on its start or resume, and a person's start clears it. `campaign_enrollments.enrolled_via_token_id` is written with each row an agent actor's enroll inserts; the limit counts them. Onboarding counts only campaigns a person started.
 - **Watching agents.** Settings > MCP shows owners and admins an Agent sends section (`read-models/agent-sends.ts`): the day's agent replies and enrolls against the limits, with a notice once one is reached, the latest agent replies, and the campaigns agents started. Pause campaigns agents started (`POST /api/settings/mcp/pause-agent-campaigns`, owner or admin) pauses every running one through the person's pause, then marks every campaign an agent paused as paused by a person, so no agent resumes it. An agent's unconfirmed send shows in Actions under Problems with the token's name.
+
+### Agent actions no one can undo
+
+`composition/agent-irreversible.ts` runs a person's use case for completing a campaign and for deleting a lead, contact, deal or draft campaign. The rules on top:
+
+- **Who.** `mcp:irreversible` needs `mcp:write` and belongs to owners and admins, whatever `memberWriteTokens` says. It stands apart from `mcp:send`: completing a campaign stops sending, and a stop should not depend on send rights. `agentIrreversiblePerDay` starts at 0; dropping it to 0 moves `agentIrreversibleEpoch` and retires the tokens made before.
+- **Reservation before the use case.** `withAgentUsage` commits one short transaction under `agent-send` shared, then calls the use case. It cannot hold a transaction across the call: a use case opens its own, and a pool of one would wait on itself. A refusal gives the count back; another failure keeps it, because the action may have run.
+- **Protection under the use case's locks.** Deleting a person can erase a promise to leave them alone. Without an email the do not contact mark goes with them, and a stop request or a removal from a campaign goes in any case, so a later import treats them as new. `agentProtected` runs inside the delete, after its locks, only when the actor has `via`. A check before the use case would leave a gap. Its cost is that a person's own delete and an agent's can differ on the same contact; a person reads what it erases first.
+- **Preview token.** `actionToken` catches a change since the preview and carries what the use case needs back (a contact's counts, a deal's version). It is not a guard against forgery; each rule runs again.
+- **Records.** Each action leaves `via`: `person.deleted` and `campaign.deleted` in the audit log, `deal.deleted` in the person's history. A person's lead delete and draft delete still write no row.
+
+Suppression and do not contact changes stay out of reach for agents, including through a delete. Companies, notes and tasks have no agent delete: agents have no id for the first two, and a task can be completed.
 
 ### Enrollment outcomes
 

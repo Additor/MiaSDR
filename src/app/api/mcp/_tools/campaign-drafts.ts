@@ -1,14 +1,15 @@
 import { z } from "zod";
 import { stepSchema } from "@/app/api/campaigns/step-schema";
 import { linkedinStepSchema } from "@/app/api/linkedin/campaigns/step-schema";
+import type { RemoveCounts } from "@/contexts/outreach/application/enrollment-admin";
 import { noticesForPeople } from "@/contexts/outreach/application/cross-campaign-notices";
 import type { EnrollOptions } from "@/contexts/outreach/application/enroll-options";
 import { findUnknownFields } from "@/contexts/outreach/application/merge-fields";
-import { createCampaign, enrollLeads, enrollPickedLeads, updateCampaign } from "@/contexts/outreach/application/campaign-management";
+import { createCampaign, enrollLeads, enrollPickedLeads, removeLeads, updateCampaign } from "@/contexts/outreach/application/campaign-management";
 import type { StepInput } from "@/contexts/outreach/domain/campaign";
 import type { UnknownField } from "@/contexts/outreach/domain/variables";
 import { campaignDeps, mergeFieldDeps } from "@/contexts/outreach/infrastructure/composition";
-import { createLinkedInCampaign, enrollLinkedInLeads, enrollPickedLinkedInLeads, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
+import { createLinkedInCampaign, enrollLinkedInLeads, enrollPickedLinkedInLeads, removeLinkedInLeads, updateLinkedInCampaign } from "@/contexts/outreach/linkedin/application/linkedin-campaigns";
 import type { LinkedInStep } from "@/contexts/outreach/linkedin/domain/linkedin";
 import { linkedinCampaignDeps, linkedinNoticeDeps } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { agentEnroll, agentUpdateCampaign } from "@/contexts/outreach/application/agent-campaigns";
@@ -20,7 +21,7 @@ import { CHANGES, defineTool } from "./define";
 import { appLinks, bodyReadToken, cutCopyRefusal, isCutCopy, unfenced } from "./output";
 
 type Channel = (typeof CHANNELS)[number];
-const ACTIONS = ["create", "update", "add_leads"] as const;
+const ACTIONS = ["create", "update", "add_leads", "remove_lead"] as const;
 
 /**
  * The statuses an agent enrolls into. A running campaign also needs the campaign policy and an `enroll` launch token,
@@ -40,6 +41,7 @@ interface ChannelWrites {
   update(actor: Actor, id: string, patch: { name?: string; steps?: unknown[]; senderIds?: string[] }, tx: DbHandle): Promise<void>;
   byQuery(actor: Actor, id: string, query: string, dryRun: boolean, tx: DbHandle): Promise<Counts>;
   picked(actor: Actor, id: string, personIds: string[], dryRun: boolean, tx: DbHandle): Promise<Counts>;
+  remove(actor: Actor, id: string, enrollmentIds: string[]): Promise<RemoveCounts>;
 }
 
 const WRITES: Record<Channel, ChannelWrites> = {
@@ -48,12 +50,14 @@ const WRITES: Record<Channel, ChannelWrites> = {
     update: (actor, id, patch, tx) => updateCampaign(campaignDeps(), actor, id, { ...patch, steps: patch.steps as StepInput[] | undefined }, tx),
     byQuery: (actor, id, query, dryRun, tx) => counted(enrollLeads(campaignDeps(), actor, id, { query, dryRun }, AGENT_ENROLL, tx)),
     picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLeads(campaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
+    remove: (actor, id, enrollmentIds) => removeLeads(campaignDeps(), actor, id, enrollmentIds),
   },
   linkedin: {
     create: (actor, input) => createLinkedInCampaign(linkedinCampaignDeps(), actor, { name: input.name, type: input.personal ? "personal" : undefined, senderIds: input.senderIds }),
     update: (actor, id, patch, tx) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps: patch.steps as LinkedInStep[] | undefined }, tx),
     byQuery: (actor, id, query, dryRun, tx) => counted(enrollLinkedInLeads(linkedinCampaignDeps(), actor, id, { query, dryRun, collectIds: true }, AGENT_ENROLL, tx)),
     picked: (actor, id, personIds, dryRun, tx) => counted(enrollPickedLinkedInLeads(linkedinCampaignDeps(), actor, id, personIds, { ...AGENT_ENROLL, dryRun }, tx)),
+    remove: (actor, id, enrollmentIds) => removeLinkedInLeads(linkedinCampaignDeps(), actor, id, enrollmentIds),
   },
 };
 
@@ -86,6 +90,8 @@ function stepsToSave(channel: Channel, steps: SentStep[]): Array<{ stepNumber: n
   });
 }
 
+const removalView = z.object({ requested: z.number(), removed: z.number(), alreadyRemoved: z.number(), skippedFinal: z.number(), notFound: z.number() });
+
 export const draftCampaignTool = defineTool({
   name: "draft_campaign",
   title: "Draft campaign",
@@ -95,6 +101,7 @@ export const draftCampaignTool = defineTool({
     "Steps write merge fields as `{{token}}`, with a `token` from get_workspace `mergeFields`. After a save, `unknownFields` names any no lead has a field for: they would reach every lead as a blank, so the campaign cannot start until they change.",
     "`add_leads` enrolls leads by Leads search `query` or `personIds` (up to 500); call it with `dryRun: true` first to see the counts. Agents enroll a limited number of leads a day (`agent_enroll_cap`).",
     "Adding to a running campaign needs a token that sends, agent campaigns allowed, and `launchToken` from preview_campaign_launch with `purpose: enroll`.",
+    "`remove_lead` takes `enrollmentIds` from get_campaign (up to 500) out of the campaign, which stops their steps. A person can restore them in MiaSDR; add_leads cannot bring them back. A lead with a final outcome keeps it.",
   ].join(" "),
   scope: "mcp:write",
   annotations: CHANGES,
@@ -108,6 +115,7 @@ export const draftCampaignTool = defineTool({
     senderIds: z.array(z.string()).optional(),
     query: z.string().optional(),
     personIds: z.array(z.string()).max(MAX_AGENT_PICKED).optional(),
+    enrollmentIds: z.array(z.string()).max(MAX_AGENT_PICKED).optional(),
     dryRun: z.boolean().optional(),
     launchToken: z.string().optional(),
   }),
@@ -116,14 +124,15 @@ export const draftCampaignTool = defineTool({
     channel: z.enum(CHANNELS),
     campaignId: z.string(),
     enroll: enrollView.nullable(),
+    removal: removalView.nullable(),
     unknownFields: z.array(z.object({ step: z.number(), token: z.string() })),
     appUrl: z.string(),
   }),
   async run({ actor, out }, input) {
     const writes = WRITES[input.channel];
-    const answer = (campaignId: string, summary: string, enroll: z.infer<typeof enrollView> | null = null, unknownFields: UnknownField[] = []) => ({
+    const answer = (campaignId: string, summary: string, enroll: z.infer<typeof enrollView> | null = null, unknownFields: UnknownField[] = [], removal: RemoveCounts | null = null) => ({
       summary,
-      structured: { action: input.action, channel: input.channel, campaignId, enroll, unknownFields, appUrl: appLinks(out).campaign(campaignId) },
+      structured: { action: input.action, channel: input.channel, campaignId, enroll, removal, unknownFields, appUrl: appLinks(out).campaign(campaignId) },
     });
     if (input.action === "create") {
       if (!input.name) throw new ValidationError("create needs name.");
@@ -132,6 +141,11 @@ export const draftCampaignTool = defineTool({
     }
     const campaignId = input.campaignId;
     if (!campaignId) throw new ValidationError(`${input.action} needs campaignId.`);
+    if (input.action === "remove_lead") {
+      if (!input.enrollmentIds?.length) throw new ValidationError("remove_lead needs enrollmentIds from get_campaign.");
+      const removal = await writes.remove(actor, campaignId, input.enrollmentIds);
+      return answer(campaignId, `Removed ${removal.removed} lead(s) from the campaign. A person can restore them in MiaSDR.`, null, [], removal);
+    }
     if (input.action === "update") {
       if (input.name === undefined && input.steps === undefined && input.senderIds === undefined) throw new ValidationError("update needs name, steps or senderIds.");
       const steps = input.steps && stepsToSave(input.channel, input.steps);

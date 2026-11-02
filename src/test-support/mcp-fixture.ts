@@ -30,9 +30,18 @@ export async function mcpCaller(sql: postgres.Sql, POST: Handler, member: { orga
     insert into mcp_tokens (organization_id, user_id, kind, name, token_hash, token_hint, scopes)
     values (${member.organizationId}, ${member.userId}, 'pat', 'Test agent', ${createHash("sha256").update(token).digest("hex")}, ${token.slice(-4)}, ${scopes})
     returning id`;
+  return callerOf(POST, token, id);
+}
+
+/** A caller for a token the token API issued, so the test goes through its checks. */
+export function issuedCaller(POST: Handler, created: { token: string; id: string }): McpCaller {
+  return callerOf(POST, created.token, created.id);
+}
+
+function callerOf(POST: Handler, token: string, tokenId: string): McpCaller {
   return {
     token,
-    tokenId: id,
+    tokenId,
     async tool(name, args = {}, era = "modern") {
       const result: McpCallResult = await callMcp(POST, { era, token, method: "tools/call", params: { name, arguments: args } });
       const body = result.body as { result?: { isError?: boolean; content?: Array<{ text: string }>; structuredContent?: Record<string, unknown> }; error?: unknown };
