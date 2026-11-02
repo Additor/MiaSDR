@@ -236,7 +236,9 @@ describe("what an AI pick waits for", () => {
     expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", stopped: true }))).toBeNull();
     expect(pickReviewOf(pick({ stopRequested: true, stopped: true }))).toBe("held");
     expect(pickReviewOf(applied({ stopRequested: true, stopped: true }))).toBe("looks_right");
-    // A stop request whose record moved on is answered.
-    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", current: false }))).toBeNull();
+    // A held stop request outlives a version bump: agents stay refused until a person decides.
+    expect(pickReviewOf(pick({ proposedSystemRole: "stop_request", current: false }))).toBe("stop_review");
+    expect(pickReviewOf(pick({ stopRequested: true, current: false }))).toBe("stop_review");
+    expect(pickReviewOf(pick({ status: "stale", stopRequested: true, current: false }))).toBeNull();
   });
 });

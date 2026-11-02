@@ -96,13 +96,14 @@ const queueRowsSql = (organizationId: string) => sql`
       -- The pick of the latest reply (a stale one only when nothing else exists), and what it waits for: pickReviewOf.
       select lp.id, lp.confidence, lp.ctx, lp.cat, lp.sub_name, lp.hold_reason,
              case
-               when (lp.held or lp.applied) and lp.stop_asked and not lp.stopped then 'stop_review'
+               when (lp.proposed or lp.applied) and lp.stop_asked and not lp.stopped then 'stop_review'
                when lp.held and lp.proposed_role is distinct from 'stop_request' and lp.proposed_name is not null then 'held'
                when lp.applied and coalesce(lp.check_mode, 'after') = 'after' then 'looks_right'
              end as kind
       from (
         select k.id, k.confidence, k.expected_context_version as ctx, coalesce(k.applied_group_key, k.proposed_group_key) as cat, ks.name as sub_name,
                kp.name as proposed_name, kp.system_role as proposed_role, k.rules->>'checkMode' as check_mode, k.response->>'holdReason' as hold_reason,
+               k.status = 'proposed' as proposed,
                k.status = 'proposed' and k.expected_context_version = r.context_version as held,
                k.status = 'auto_applied' and k.acknowledged_at is null
                  and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied,

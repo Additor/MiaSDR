@@ -58,7 +58,8 @@ export function typeDecision<T extends PickFacts>(
   if (!pick || !pick.latest) return null;
   const applied = pick.status === "auto_applied" && !pick.acknowledged && pick.applied.groupKey === record.groupKey && pick.appliedReplyTypeId === record.replyTypeId;
   const unchecked = applied && (pick.rules === null || pick.rules.checkMode === "after");
-  const open = (pick.status === "proposed" && pick.current) || applied;
+  // A held stop request stays open past a version bump: it refuses agents until a person decides.
+  const open = pick.status === "proposed" || applied;
   const stopAsked = pick.stopRequested || pick.proposedSystemRole === "stop_request";
   const stopped = reach.doNotContact || (reach.channel === "email" && reach.suppressed);
   if (open && stopAsked && !stopped) return { kind: "stop", pick };

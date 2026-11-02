@@ -672,6 +672,14 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       },
       { name: "held stop request", facts: { ...base, proposedSystemRole: "stop_request" }, setup: (l) => aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" }) },
       {
+        name: "held stop request, record version moved on",
+        facts: { ...base, current: false, proposedSystemRole: "stop_request" },
+        setup: async (l) => {
+          await aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" });
+          await sql`update records set context_version = context_version + 1 where id = ${l.recordId}`;
+        },
+      },
+      {
         name: "held stop request, person do not contact",
         facts: { ...base, proposedSystemRole: "stop_request", stopped: true },
         setup: async (l) => {
@@ -724,6 +732,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       held: "held",
       "held, record version moved on": null,
       "held stop request": "stop_review",
+      "held stop request, record version moved on": "stop_review",
       "held stop request, person do not contact": null,
       "held stop request, address suppressed": null,
       "applied, Check after": "looks_right",
