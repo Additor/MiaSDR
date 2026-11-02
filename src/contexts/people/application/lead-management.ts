@@ -178,9 +178,16 @@ function deleteBatch(deps: LeadDeleteDeps, actor: Actor, ids: string[]): Promise
       await deps.people.keepSuppressed(tx, organizationId, deletable);
       await deps.outreach.purge(tx, organizationId, deletable);
       outcome.deleted = await deps.people.deletePeople(tx, organizationId, deletable);
-      if (actor.via) {
-        for (const id of deletable) await deps.audit.record(tx, { organizationId, actorUserId: actor.userId, action: "person.deleted", entityType: "person", entityId: id, meta: { lifecycle: "lead", ...viaMeta(actor.via) } });
-      }
+      // One row a batch: a delete by filter has no upper limit, and a row for each lead would add a write per lead under these locks.
+      const [only] = deletable;
+      await deps.audit.record(tx, {
+        organizationId,
+        actorUserId: actor.userId,
+        action: "person.deleted",
+        entityType: "person",
+        entityId: deletable.length === 1 ? only : undefined,
+        meta: { lifecycle: "lead", ...(deletable.length === 1 ? {} : { count: deletable.length, personIds: deletable }), ...viaMeta(actor.via) },
+      });
       return outcome;
     }),
   );

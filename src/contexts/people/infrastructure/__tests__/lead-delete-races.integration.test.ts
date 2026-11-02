@@ -405,7 +405,7 @@ describeDb("person delete races", () => {
     expect(outcome).toEqual({ deleted: 10000, blocked: [] });
     expect(statements).toHaveLength(20);
     expect(new Set(statements).size).toBe(1);
-    expect(statements[0]).toBeLessThanOrEqual(12);
+    expect(statements[0]).toBeLessThanOrEqual(13);
     expect(await kit.count("people", f.org)).toBe(0);
   }, 120_000);
 });

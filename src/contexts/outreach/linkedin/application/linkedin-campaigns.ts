@@ -1,6 +1,7 @@
 import { enrollUnder, type EnrollOptions } from "../../application/enroll-options";
 import type { DbHandle } from "@/platform/db/client";
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
+import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
 import { parseCampaignType, canArchive, canTransition, stepsEditable, stepsWithPlaceholders, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
 import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "../../application/enrollment-admin";
 import { DEFAULT_LINKEDIN_STEPS, INVITE_NOTE_MAX, inviteNoteLength, renderLinkedInText, validateLinkedInSteps, type LinkedInStep } from "../domain/linkedin";
@@ -111,7 +112,8 @@ export interface LinkedInCampaignStore {
   update(organizationId: string, id: string, patch: { name?: string; type?: CampaignType; steps?: LinkedInStep[] }, tx?: DbHandle): Promise<boolean>;
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>, tx?: DbHandle): Promise<boolean>;
-  delete(organizationId: string, id: string): Promise<void>;
+  /** Deletes a draft. Returns false when no draft matched. */
+  delete(organizationId: string, id: string): Promise<boolean>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** People with a LinkedIn profile become enrollments with their LinkedIn progress row, in one transaction. */
@@ -130,6 +132,7 @@ export interface LinkedInCampaignStore {
 export interface LinkedInCampaignDeps {
   campaigns: LinkedInCampaignStore;
   fields: MergeFieldSource;
+  audit: AuditSink;
   /** Set by composition. Hand-picked enroll, removal and senders need it. */
   admin?: EnrollmentAdminStore;
   /** Defaults to the system clock. Tests pass a fixed one. */
@@ -244,8 +247,11 @@ export async function unarchiveLinkedInCampaign(deps: LinkedInCampaignDeps, acto
 
 export async function deleteLinkedInCampaign(deps: LinkedInCampaignDeps, actor: Actor, id: string): Promise<void> {
   const campaign = await load(deps, actor, id);
-  if (campaign.status !== "draft") throw new ConflictError("Only a draft campaign can be deleted. Pause it or mark it completed instead.");
-  await deps.campaigns.delete(actor.organizationId, id);
+  const refusal = "Only a draft campaign can be deleted. Pause it or mark it completed instead.";
+  if (campaign.status !== "draft") throw new ConflictError(refusal);
+  // The store deletes a draft only, so a start between the read and the write leaves the campaign and no audit row.
+  if (!(await deps.campaigns.delete(actor.organizationId, id))) throw new ConflictError(refusal);
+  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: id, meta: { name: campaign.name, channel: "linkedin", ...viaMeta(actor.via) } });
 }
 
 export async function enrollLinkedInLeads(

@@ -2,7 +2,7 @@ import type { DbHandle } from "@/platform/db/client";
 import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { actionToken, actionTokenMatches, actionTokenStale } from "@/shared/action-token";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { UTC_DAY_MS, utcDayStart } from "@/shared/utc-day";
 import { AGENT_CAMPAIGN_REFUSALS, agentCampaignRefusal, launchToken, launchTokenMatches, type AgentCampaignRefusal, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
 import { canTransition, type CampaignStatus } from "../domain/campaign";
@@ -285,8 +285,6 @@ export async function agentDeleteDraftCampaign(deps: AgentCampaignDeps, actor: A
   });
   if (row.channel === "email") await deleteCampaign(deps.email, actor, row.id);
   else await deleteLinkedInCampaign(deps.linkedin, actor, row.id);
-  if (await deps.store.transaction((tx) => deps.store.campaign(tx, actor.organizationId, row.id))) throw actionTokenStale();
-  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: row.id, meta: { name: row.name, channel: row.channel, ...viaMeta(actor.via) } });
 }
 
 /**

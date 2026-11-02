@@ -197,7 +197,8 @@ export const drizzleCampaignStore: CampaignStore = {
   },
 
   async delete(organizationId, id) {
-    await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft")));
+    const rows = await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
+    return rows.length > 0;
   },
 
   async setArchived(organizationId, id, archived) {

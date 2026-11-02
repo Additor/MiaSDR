@@ -180,7 +180,8 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
 
   async delete(organizationId, id) {
     try {
-      await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft")));
+      const rows = await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
+      return rows.length > 0;
     } catch (error) {
       // conversations_private_campaign_fk: replies of a personal campaign are stored under it and keep it alive.
       const code = (error as { code?: string }).code ?? (error as { cause?: { code?: string } }).cause?.code;

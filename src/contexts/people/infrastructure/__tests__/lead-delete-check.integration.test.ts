@@ -16,7 +16,8 @@ describeDb("lead delete qualification", () => {
     const [{ id }] = await sql`insert into organizations (name, slug) values ('D', ${"ld-" + tag}) returning id`;
     orgs.push(id);
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${id}, 'default', true) returning id`;
-    return { id: id as string, pipeline: pipeline as string, tag };
+    const [{ id: user }] = await sql`insert into users (name, email) values ('U', ${tag + "@ld.test"}) returning id`;
+    return { id: id as string, pipeline: pipeline as string, tag, user: user as string };
   }
   type Org = Awaited<ReturnType<typeof org>>;
   let n = 0;
@@ -34,7 +35,7 @@ describeDb("lead delete qualification", () => {
       await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${o.id}, ${campaignId}, ${personId}, 'email', ${status}) returning id`;
     return id as string;
   };
-  const actor = (o: Org) => ({ organizationId: o.id, userId: "u", role: "owner" }) as never;
+  const actor = (o: Org) => ({ organizationId: o.id, userId: o.user, role: "owner" }) as never;
 
   beforeAll(async () => {
     deps = { ...(await import("@/composition/person-lifecycle")).leadDeleteDeps, ...(await import("@/composition/leads")).leadDeps() };

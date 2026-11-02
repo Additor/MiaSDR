@@ -1,6 +1,7 @@
 import { enrollUnder, type EnrollOptions } from "./enroll-options";
 import type { DbHandle } from "@/platform/db/client";
-import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
+import { ConflictError, NotFoundError, ValidationError, viaMeta, type Actor } from "@/shared/errors";
 import { canArchive, canTransition, emptyFirstSubjectMessage, type ArchiveFilter, stepsEditable, stepsWithPlaceholders, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery } from "../domain/enrollment-list";
 import { MAX_PICKED_IDS, adminStore, assertAssignedSendersConnected, removeCampaignEnrollment, removeCampaignEnrollments, validateSenderIds, type EnrollmentAdminStore, type PickedEnrollCounts, type RemoveCounts, type SenderRef } from "./enrollment-admin";
@@ -13,6 +14,7 @@ export interface CampaignDeps {
   campaigns: CampaignStore;
   mailboxes: MailboxStore;
   fields: MergeFieldSource;
+  audit: AuditSink;
   /** Set by composition. Hand-picked enroll, removal and senders need it. */
   admin?: EnrollmentAdminStore;
   /** Defaults to the system clock. */
@@ -173,8 +175,11 @@ export async function unarchiveCampaign(deps: CampaignDeps, actor: Actor, id: st
 
 export async function deleteCampaign(deps: CampaignDeps, actor: Actor, id: string): Promise<void> {
   const campaign = await load(deps, actor, id);
-  if (campaign.status !== "draft") throw new ConflictError("Only a draft campaign can be deleted. Pause it or mark it completed instead.");
-  await deps.campaigns.delete(actor.organizationId, id);
+  const refusal = "Only a draft campaign can be deleted. Pause it or mark it completed instead.";
+  if (campaign.status !== "draft") throw new ConflictError(refusal);
+  // The store deletes a draft only, so a start between the read and the write leaves the campaign and no audit row.
+  if (!(await deps.campaigns.delete(actor.organizationId, id))) throw new ConflictError(refusal);
+  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: id, meta: { name: campaign.name, channel: "email", ...viaMeta(actor.via) } });
 }
 
 export const MAX_ENROLL_BATCH = 5000;

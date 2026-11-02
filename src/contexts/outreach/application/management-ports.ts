@@ -89,7 +89,8 @@ export interface CampaignStore {
   update(organizationId: string, id: string, patch: { name?: string; steps?: StepInput[] }, tx?: DbHandle): Promise<boolean>;
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<StepInput>, tx?: DbHandle): Promise<boolean>;
-  delete(organizationId: string, id: string): Promise<void>;
+  /** Deletes a draft. Returns false when no draft matched. */
+  delete(organizationId: string, id: string): Promise<boolean>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** With `dryRun` nothing is written and `wouldAdd` says how many people the same call would enroll. */

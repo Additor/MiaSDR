@@ -1,4 +1,5 @@
 import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { drizzleEnrollmentAdminStore } from "../drizzle-enrollment-admin";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Actor } from "@/shared/errors";
@@ -24,7 +25,7 @@ describeDb("campaign and mailbox management", () => {
     return {
       actor: { userId, organizationId: id, role },
       member: { userId, organizationId: id, role: "member" },
-      campaignDeps: { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore },
+      campaignDeps: { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore },
       mailboxDeps: { mailboxes: stores.drizzleMailboxStore, provider, now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null, openSignup: false } },
     };
   }
@@ -151,6 +152,18 @@ describeDb("campaign and mailbox management", () => {
       await expect(campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "active")).rejects.toBeInstanceOf(ConflictError);
       await campaignsUc.changeCampaignStatus(t.campaignDeps, t.actor, id, "paused");
       await expect(campaignsUc.deleteCampaign(t.campaignDeps, t.actor, id)).rejects.toThrow(/Only a draft/);
+    });
+
+    it("records a person's delete of a draft campaign in the audit log, and no row when the delete is refused", async () => {
+      const t = await org();
+      const { id } = await campaignsUc.createCampaign(t.campaignDeps, t.actor, { name: "Audited draft" });
+      await campaignsUc.deleteCampaign(t.campaignDeps, t.actor, id);
+      const rows = await sql`select actor_user_id, entity_id, meta from audit_log where organization_id = ${t.actor.organizationId} and action = 'campaign.deleted'`;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ actor_user_id: t.actor.userId, entity_id: id, meta: { name: "Audited draft", channel: "email" } });
+      expect(rows[0].meta.via).toBeUndefined();
+      await expect(campaignsUc.deleteCampaign({ ...t.campaignDeps, campaigns: { ...t.campaignDeps.campaigns, get: async () => ({ status: "draft" }) as never, delete: async () => false } }, t.actor, id)).rejects.toThrow(/Only a draft/);
+      expect((await sql`select count(*)::int as n from audit_log where organization_id = ${t.actor.organizationId} and action = 'campaign.deleted'`)[0].n).toBe(1);
     });
 
     it("will not start or resume a step with a field no lead has, and accepts one any person or company holds", async () => {

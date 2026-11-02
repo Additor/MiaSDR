@@ -1,4 +1,5 @@
 import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { drizzleEnrollmentAdminStore } from "../drizzle-enrollment-admin";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
@@ -55,7 +56,7 @@ describeDb("import to campaign data quality", () => {
     }
   });
 
-  const campaignDeps = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin: drizzleEnrollmentAdminStore });
+  const campaignDeps = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore });
 
   it("a file with only Name fills the first-name merge field", async () => {
     const t = await org();

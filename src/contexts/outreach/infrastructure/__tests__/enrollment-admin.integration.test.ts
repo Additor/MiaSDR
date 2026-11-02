@@ -1,4 +1,5 @@
 import { drizzleMergeFieldSource } from "../drizzle-merge-fields";
+import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Actor } from "@/shared/errors";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
@@ -42,8 +43,8 @@ describeDb("enrollment admin: picked enroll, remove, senders", () => {
   };
   const engineDeps = (provider: FakeMailboxProvider): EngineDeps => ({ store: emailStore, provider, clock, random: () => 0, appUrl: "https://app.test", unsubscribeSecret: "u".repeat(40) });
   const liDeps = (gateway: FakeLinkedInGateway): LinkedInEngineDeps => ({ store: liStore, gateways: gateway, clock, random: () => 0 });
-  const emailUc = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, admin, now: () => current });
-  const liUc = () => ({ campaigns: liCampaignStore, fields: drizzleMergeFieldSource, admin, now: () => current });
+  const emailUc = () => ({ campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin, now: () => current });
+  const liUc = () => ({ campaigns: liCampaignStore, fields: drizzleMergeFieldSource, audit: auditSink, admin, now: () => current });
 
   async function newOrg() {
     current = start;
