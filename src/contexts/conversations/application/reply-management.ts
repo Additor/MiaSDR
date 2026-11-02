@@ -205,7 +205,7 @@ export async function createManualDraft(
   deps: ReplyDeps,
   actor: Actor,
   conversationId: string,
-  input: { subject: string | null | undefined; bodyText: string; cc?: string[]; channel?: ReplyChannel; expectedOpenRevision?: number | null },
+  input: { subject: string | null | undefined; bodyText: string; cc?: string[]; channel?: ReplyChannel; expectedOpenRevision?: number | null; expectedOpenDraftId?: string },
 ): Promise<{ draftId: string; revision: number }> {
   assertId(conversationId, "Conversation");
   const channel = input.channel ?? "email";
@@ -231,6 +231,7 @@ export async function createManualDraft(
     actorUserId: actor.userId,
     via: actor.via,
     expectedOpenRevision: input.expectedOpenRevision,
+    expectedOpenDraftId: input.expectedOpenDraftId,
   });
   return { draftId: created.id, revision: created.revision };
 }

@@ -37,7 +37,7 @@ export const writeReplyDraftTool = defineTool({
   title: "Write reply draft",
   description: [
     "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent.",
-    "`request_ai` has the AI write one (`conversationId`); `create_manual` saves your text as the draft (`conversationId`, `bodyText`, and `subject` for email; with an open draft also its `revision`, since it replaces that draft);",
+    "`request_ai` has the AI write one (`conversationId`); `create_manual` saves your text as the draft (`conversationId`, `bodyText`, and `subject` for email; with an open draft also its `draftId` and `revision`, since it replaces that draft);",
     "`edit` replaces the draft's text (`draftId`, `revision`, `bodyText`, optional `subject`); `regenerate` has the AI write it again (`draftId`, `revision`, optional `note`); `discard` drops it (`draftId`, `revision`).",
     "`edit` and `create_manual` refuse text that looks made from an answer that cut the draft (`truncated_text`). Take `revision` from get_conversation or the last answer. The answer gives the draft and `reviewUrl`, where the person reviews and sends it.",
   ].join(" "),
@@ -68,9 +68,10 @@ export const writeReplyDraftTool = defineTool({
         const { channel } = await getThread(inboxDeps(), actor, conversationId);
         const bodyText = unfenced(need(input.bodyText, "bodyText", "create_manual"));
         const open = await readDraft(actor, out, conversationId);
-        if (open?.status === "awaiting_review" && input.revision === open.revision && isCutCopy(bodyText, (await draftOf(actor, open.draftId)).text, LONG_TEXT_CHARS)) throw cutCopyRefusal("draft text");
+        const replaces = open?.status === "awaiting_review" && input.revision === open.revision ? open : null;
+        if (replaces && isCutCopy(bodyText, (await draftOf(actor, replaces.draftId)).text, LONG_TEXT_CHARS)) throw cutCopyRefusal("draft text");
         // A new draft turns the open one stale, so the agent must have read that one, as `edit` and `discard` require. The store checks it under the record lock.
-        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject && unfenced(input.subject), bodyText, channel: channel === "linkedin" ? "linkedin" : "email", expectedOpenRevision: input.revision ?? null });
+        await createManualDraft(replyDeps(), actor, conversationId, { subject: input.subject && unfenced(input.subject), bodyText, channel: channel === "linkedin" ? "linkedin" : "email", expectedOpenRevision: input.revision ?? null, expectedOpenDraftId: input.draftId ?? replaces?.draftId });
         break;
       }
       case "edit": {

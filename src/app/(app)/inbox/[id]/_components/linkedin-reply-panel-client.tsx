@@ -1,7 +1,7 @@
 "use client";
 
 import { TriangleAlertIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { ReachFlag } from "@/components/shell/reach-flag";
@@ -14,10 +14,10 @@ import { Textarea } from "@/components/ui/textarea";
 import type { LinkedInReplyPanelView } from "@/contexts/conversations/application/linkedin-reply";
 import { callApi } from "@/app/_lib/api-client";
 import { draftStatusLabel } from "../../labels";
-import { draftingAbove, sendKeyAfter } from "../_lib/reply-panel";
+import { draftingAbove } from "../_lib/reply-panel";
 import { SendingLine } from "./sending-line";
 import { UncertainBox } from "./uncertain-box";
-import { useDraftActions } from "./use-draft-actions";
+import { useDraftActions, useSendKey } from "./use-draft-actions";
 
 type SendResult = { status: string; error?: string | null };
 
@@ -32,7 +32,6 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
   const draft = panel.draft;
   const [text, setText] = useState(draft?.status === "awaiting_review" ? draft.text : "");
   const working = busy !== null;
-  const key = useRef("");
   const blocked = panel.issue !== null || panel.doNotContact;
   const stale = draft?.status === "stale";
   const [note, setNote] = useState("");
@@ -46,27 +45,22 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
     setShowRegenerate(false);
     setNote("");
   }
-  // A send key belongs to one draft state: the next state is a new decision.
-  useEffect(() => {
-    key.current = "";
-  }, [revision]);
+  const sendKey = useSendKey(revision);
   const draftingNext = draftingAbove(draft, drafting);
 
   function send() {
     return work("send", async () => {
-      // One key per decision: a double click or a retry after a lost response replays the same send.
-      key.current ||= crypto.randomUUID();
       const result = await callApi<SendResult>(`/api/inbox/${panel.conversationId}/linkedin-reply`, "POST", {
         text,
-        idempotencyKey: key.current,
+        idempotencyKey: sendKey.take(),
         // Approving the AI draft names the draft and the revision the person reviewed, so a stale or replaced draft cannot go out.
         ...(draft?.status === "awaiting_review" ? { draftId: draft.id, revision: draft.revision } : {}),
       });
-      key.current = sendKeyAfter(key.current, result);
+      const keptKey = sendKey.settle(result);
       if (!result.ok) {
         setError(result.error);
         // Without an answer the send may have gone out: the reload shows it in the thread and empties the box.
-        if (key.current) refresh();
+        if (keptKey) refresh();
         return;
       }
       const data = result.data;
@@ -152,7 +146,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
                 value={stale ? (draft?.text ?? "") : text}
                 onChange={(e) => {
                   // Other words are a new decision: a retry with the old key would replay the old send and drop them.
-                  key.current = "";
+                  sendKey.drop();
                   setText(e.target.value);
                 }}
                 disabled={blocked || working || stale}

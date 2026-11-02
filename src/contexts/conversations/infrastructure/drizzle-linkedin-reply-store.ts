@@ -21,10 +21,8 @@ import { checkAccountReady, checkDraftCurrent, checkNoneInFlight, checkRecordOpe
 
 type Tx = DbTx;
 
-type Snapshot = LinkedInSnapshot;
-
 function contextFor(attempt: typeof sendAttempts.$inferSelect): LinkedInReplyContext {
-  const snap = attempt.request as Snapshot;
+  const snap = attempt.request as LinkedInSnapshot;
   return {
     attempt: toAttempt(attempt),
     organizationId: attempt.organizationId,
@@ -191,7 +189,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         revision = created.revision;
       }
 
-      const snapshot: Snapshot = {
+      const snapshot: LinkedInSnapshot = {
         channel: "linkedin",
         text,
         chat,

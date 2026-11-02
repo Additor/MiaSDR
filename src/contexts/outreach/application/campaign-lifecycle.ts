@@ -191,10 +191,11 @@ export async function unarchiveOn<Step, Row extends CampaignRow<Step>, Enrolled>
 
 export async function deleteOn<Step, Row extends CampaignRow<Step>, Enrolled>(deps: CampaignLifecycleDeps<Step, Row, Enrolled>, channel: OutreachChannel, actor: Actor, id: string): Promise<void> {
   const campaign = await loadCampaign(deps.campaigns, actor, id);
-  const refusal = "Only a draft campaign can be deleted. Pause it or mark it completed instead.";
-  if (campaign.status !== "draft") throw new ConflictError(refusal);
+  // The code an agent's preview answers for the same refusal.
+  const refusal = () => new ConflictError("Only a draft campaign can be deleted. Pause it or mark it completed instead.", { code: "campaign_not_draft" });
+  if (campaign.status !== "draft") throw refusal();
   // The store deletes a draft only, so a start between the read and the write leaves the campaign and no audit row.
-  if (!(await deps.campaigns.delete(actor.organizationId, id))) throw new ConflictError(refusal);
+  if (!(await deps.campaigns.delete(actor.organizationId, id))) throw refusal();
   await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "campaign.deleted", entityType: "campaign", entityId: id, meta: { name: campaign.name, channel, ...viaMeta(actor.via) } });
 }
 

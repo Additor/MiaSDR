@@ -10,6 +10,11 @@ export const SPEND_CAP_ERROR = "Enter the spend cap as zero or more dollars, or 
 /** Text that is no cap: dollars below zero or not a number. Empty means no cap, and a $0 cap must be typed. */
 export const spendCapInvalid = (text: string) => text.trim() !== "" && dollarsToCents(text) === null;
 
+export const CREDIT_CAP_ERROR = "Enter the credit cap as zero or more credits, or leave it empty.";
+
+/** Text that is no cap: credits below zero or not a number. `creditCap` reads it as 0, which stops every call. */
+export const creditCapInvalid = (text: string) => text.trim() !== "" && !(Number(text) >= 0);
+
 const usedInputs = (inputs: Record<string, string>) => Object.fromEntries(Object.entries(inputs).filter(([, v]) => v));
 
 const catchAllStops = () => [...SETTLED_STATUSES, "catch_all"];
@@ -50,7 +55,7 @@ export function toCreateBody(input: EnrichmentCreateInput): Record<string, unkno
     ...base,
     ...(stopAtCatchAll && steps[0].actionKey === "verify-email" ? { settledStatuses: catchAllStops() } : {}),
     ...(maxCost.trim() !== "" && cents !== null ? { maxCostCents: cents } : {}),
-    ...(credits !== null ? { maxCredits: credits } : {}),
+    ...(credits !== null && !creditCapInvalid(maxCredits) ? { maxCredits: credits } : {}),
     ...(waitOnLimit ? { onRateLimit: "wait" } : {}),
   };
 }
@@ -90,8 +95,8 @@ export function editFormOf(column: { autoRun: boolean; config: Record<string, un
 }
 
 /**
- * The fields an edit changed, or the reason it cannot save. `patch` is null when nothing changed. A spend cap that is no
- * amount refuses the save, so it never lands as a $0 cap that stops every call.
+ * The fields an edit changed, or the reason it cannot save. `patch` is null when nothing changed. A spend or credit cap that
+ * is no amount refuses the save, so it never lands as a cap of zero that stops every call.
  */
 export function toEditPatch(form: EnrichmentEditValues, initial: EnrichmentEditValues, column: { columnId: string; isWaterfall: boolean }): { patch: Record<string, unknown> | null } | { error: string } {
   const changes: Record<string, unknown> = {};
@@ -107,7 +112,10 @@ export function toEditPatch(form: EnrichmentEditValues, initial: EnrichmentEditV
       if (spendCapInvalid(form.maxCost)) return { error: SPEND_CAP_ERROR };
       changes.maxCostCents = form.maxCost.trim() === "" ? null : dollarsToCents(form.maxCost);
     }
-    if (form.maxCredits !== initial.maxCredits) changes.maxCredits = creditCap(form.maxCredits);
+    if (form.maxCredits !== initial.maxCredits) {
+      if (creditCapInvalid(form.maxCredits)) return { error: CREDIT_CAP_ERROR };
+      changes.maxCredits = creditCap(form.maxCredits);
+    }
     if (form.waitOnLimit !== initial.waitOnLimit) changes.onRateLimit = form.waitOnLimit ? "wait" : "next";
   }
   return { patch: Object.keys(changes).length === 0 ? null : { columnId: column.columnId, ...changes } };

@@ -271,9 +271,8 @@ export async function agentCompleteCampaign(deps: AgentCampaignDeps, actor: Acto
 }
 
 /**
- * An agent deletes a draft campaign. Draft enrollments go with it. The person's own delete has no record, so this one
- * writes who asked. The delete itself holds to `status = 'draft'`, so a start in between leaves the campaign, and the
- * read after it answers stale.
+ * An agent deletes a draft campaign. Draft enrollments go with it. The delete use case writes the audit row with who asked.
+ * It holds to `status = 'draft'`, so a start in between leaves the campaign and answers `campaign_not_draft`.
  */
 export async function agentDeleteDraftCampaign(deps: AgentCampaignDeps, actor: Actor, input: { channel: AgentChannel; campaignId: string; token: string }): Promise<void> {
   const row = await deps.store.transaction(async (tx) => {

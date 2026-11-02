@@ -1,13 +1,37 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { orThrow, runApiAction, type ActionResult } from "@/app/_lib/api-action";
 import { callApi } from "@/app/_lib/api-client";
 import { useApiAction } from "@/app/_lib/use-api-action";
+import { newIdempotencyKey } from "@/app/(app)/crm/_components/deal-effects";
+import { sendKeyAfter } from "../_lib/reply-panel";
 
 /** What a reply card is doing, for the one label that says so. The card's actions share one busy key, since each changes its one open draft. */
 export type ReplyWork = "send" | "save" | "draft" | "regen" | "resolve";
+
+/**
+ * The idempotency key of a card's Send. `take` answers the key of this decision, so a double click or a retry after a lost
+ * response replays one send, and `settle` applies `sendKeyAfter` and answers whether the key stays. A key belongs to one
+ * draft state (`draftState`): a new draft, revision or status is a new decision.
+ */
+export function useSendKey(draftState: string) {
+  const key = useRef("");
+  useEffect(() => {
+    key.current = "";
+  }, [draftState]);
+  return {
+    take: () => (key.current ||= newIdempotencyKey()),
+    settle: (result: Parameters<typeof sendKeyAfter>[1]) => {
+      key.current = sendKeyAfter(key.current, result);
+      return key.current !== "";
+    },
+    drop: () => {
+      key.current = "";
+    },
+  };
+}
 
 /**
  * The draft actions both reply cards share. `work` runs one action at a time and clears the last error; `change` also shows

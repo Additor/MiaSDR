@@ -247,12 +247,14 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       if (input.expectedOpenRevision !== undefined) {
         // An edit holds the draft row, so this waits for one in progress and reads its revision.
         const open = await tx
-          .select({ revision: drafts.revision })
+          .select({ id: drafts.id, conversationId: drafts.conversationId, revision: drafts.revision })
           .from(drafts)
           .where(and(eq(drafts.recordId, head.recordId), eq(drafts.channel, channel), eq(drafts.status, "awaiting_review")))
           .for("update");
-        const other = open.find((draft) => draft.revision !== input.expectedOpenRevision);
-        if (other) throw new ConflictError(`This conversation has an open draft at revision ${other.revision}. Read it, then pass that revision to replace it, or use edit.`, { code: "draft_open" });
+        const expectedId = input.expectedOpenDraftId?.toLowerCase();
+        const other = open.find((draft) => draft.revision !== input.expectedOpenRevision || (expectedId !== undefined && draft.id !== expectedId));
+        // A record holds one open draft per channel, so the one that goes stale can sit on another conversation of the person.
+        if (other) throw new ConflictError(`${other.conversationId === input.conversationId ? "This conversation" : `Conversation ${other.conversationId} of this person`} has an open draft, ${other.id}, at revision ${other.revision}. Read it, then pass its draftId and revision to replace it, or use edit.`, { code: "draft_open" });
       }
 
       const [created] = await tx

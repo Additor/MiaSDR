@@ -460,6 +460,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
           now: input.now,
           set: { workflowState: afterPersonDecision(record.workflowState), nextActionAt: null },
           drafts: { reason: "The person was marked do not contact." },
+          personDecided: true,
         });
         draftsRetired += advanced.draftsRetired;
         await tx.insert(events).values({

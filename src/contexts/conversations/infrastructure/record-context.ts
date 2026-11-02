@@ -26,7 +26,7 @@ export interface AdvanceRecordContext {
   set?: PgUpdateSetSource<typeof records>;
   drafts?: { reason: string } | null;
   runs?: Parameters<typeof interruptRecordRunsTx>[3] | null;
-  /** A person chose what the record is, which also answers a held stop request. */
+  /** A person chose what the record is, or marked the person do not contact, which also answers a held stop request. */
   personDecided?: boolean;
 }
 

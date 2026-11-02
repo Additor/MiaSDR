@@ -19,12 +19,12 @@ import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { draftStatusLabel } from "../../labels";
 import { registerDraftEdits } from "../_lib/draft-edits";
-import { draftingAbove, regenerateControl, sendKeyAfter } from "../_lib/reply-panel";
+import { draftingAbove, regenerateControl } from "../_lib/reply-panel";
 import type { NextInQueue } from "../_lib/next-queue";
 import { ReplyComposer } from "./reply-composer-client";
 import { SendingLine } from "./sending-line";
 import { UncertainBox } from "./uncertain-box";
-import { useDraftActions } from "./use-draft-actions";
+import { useDraftActions, useSendKey } from "./use-draft-actions";
 import { QueueKeys } from "./queue-keys";
 
 type Panel = Omit<ReplyPanel, "draft" | "knownCcs"> & { knownCcs: Array<Omit<ReplyPanel["knownCcs"][number], "lastSeenAt"> & { lastSeenAt: string }>; draft: (Omit<NonNullable<ReplyPanel["draft"]>, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string }) | null };
@@ -60,7 +60,7 @@ export function ReplyPanelClient({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // An out-of-date draft cannot send. "Edit and send anyway" copies its text into the composer as a new draft.
   const [editStale, setEditStale] = useState(false);
-  const key = useRef<string>("");
+  const sendKey = useSendKey(draft ? `${draft.id}:${draft.revision}:${draft.status}` : "");
   // The thread's mailbox is gone or the conversation closed: a send cannot succeed, so Approve and send stays off and says why.
   const sendBlocked = draft?.status === "awaiting_review" ? panel.mailboxIssue : null;
 
@@ -127,9 +127,8 @@ export function ReplyPanelClient({
         }
         revision = saveResult.data.revision;
       }
-      key.current ||= crypto.randomUUID();
-      const result = await callApi<{ status: string; error?: string }>(`/api/drafts/${draft.id}/send`, "POST", { revision, idempotencyKey: key.current });
-      key.current = sendKeyAfter(key.current, result);
+      const result = await callApi<{ status: string; error?: string }>(`/api/drafts/${draft.id}/send`, "POST", { revision, idempotencyKey: sendKey.take() });
+      sendKey.settle(result);
       if (!result.ok) {
         setError(result.error);
       } else if (result.data && result.data.status !== "sent") {

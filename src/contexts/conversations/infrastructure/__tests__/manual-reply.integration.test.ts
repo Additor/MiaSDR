@@ -88,6 +88,15 @@ describeDb("manual email replies (no AI)", () => {
       expect(await count("drafts", f.org, "status = 'awaiting_review'")).toBe(1);
     });
 
+    it("answers draft_open when another draft at the same revision replaced the one the caller read", async () => {
+      const f = await fixture();
+      const read = await compose(f);
+      const replacement = await compose(f, { bodyText: "A person's newer draft." });
+      expect(replacement.revision).toBe(read.revision);
+      await expect(mgmt.createManualDraft(f.replyDeps, f.actor, f.conversationId, { subject: "Re: Question about pricing", bodyText: "A new draft.", expectedOpenRevision: read.revision, expectedOpenDraftId: read.draftId })).rejects.toMatchObject({ details: { code: "draft_open" } });
+      expect(await one("select status from drafts where id = $1", [replacement.draftId])).toMatchObject({ status: "awaiting_review" });
+    });
+
     it("answers draft_open when a draft appeared after the caller read none", async () => {
       const f = await fixture();
       const open = await compose(f);

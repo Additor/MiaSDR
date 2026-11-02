@@ -12,7 +12,7 @@ import { contractAction } from "@/contexts/grid/enrichment/domain/enrichment-con
 import { inputsCovered } from "@/contexts/grid/enrichment/domain/enrichment-inputs";
 import { useCellRequest } from "../_lib/data/cell-request";
 import { coverageText, fullRunText, useEnrichmentPreview } from "../_lib/data/enrichment-preview";
-import { SPEND_CAP_ERROR, spendCapInvalid, toCreateBody } from "../_lib/data/enrichment-request";
+import { CREDIT_CAP_ERROR, creditCapInvalid, SPEND_CAP_ERROR, spendCapInvalid, toCreateBody } from "../_lib/data/enrichment-request";
 import { outcomeOf } from "../_lib/data/outcomes";
 import { guessColumn, lookupCents, lookupPrice, type ActionSpec, type CatalogEntry, type ProviderView } from "../_lib/data/providers";
 import { ColumnChips, ConnectProviders, SetupRow } from "./enrichment-setup";
@@ -70,7 +70,7 @@ export function EnrichmentOutcomeForm({ tableId, columns, afterColumnId, onClose
       noProvider: offering.length === 0 ? `Connect a provider that can ${outcome.label.toLowerCase()}.` : "Tick a provider.",
       missingInput,
       uncovered,
-    }) ?? (capInvalid ? SPEND_CAP_ERROR : null);
+    }) ?? (capInvalid ? SPEND_CAP_ERROR : waterfall && creditCapInvalid(maxCredits) ? CREDIT_CAP_ERROR : null);
   const preview = useEnrichmentPreview(tableId, picked.map((providerKey) => ({ providerKey, actionKey })), inputs);
 
   const toggle = (key: string, on: boolean) => setPicked(on ? [...picked, key] : picked.filter((k) => k !== key));

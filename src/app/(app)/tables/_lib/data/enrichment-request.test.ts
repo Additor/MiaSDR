@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editFormOf, SPEND_CAP_ERROR, spendCapInvalid, toCreateBody, toEditPatch, type EnrichmentEditValues } from "./enrichment-request";
+import { CREDIT_CAP_ERROR, creditCapInvalid, editFormOf, SPEND_CAP_ERROR, spendCapInvalid, toCreateBody, toEditPatch, type EnrichmentEditValues } from "./enrichment-request";
 
 const find = { providerKey: "hunter", actionKey: "find-email" };
 const verify = (providerKey: string) => ({ providerKey, actionKey: "verify-email" });
@@ -9,6 +9,13 @@ describe("spendCapInvalid", () => {
   it("accepts empty, zero and dollars, and refuses the rest", () => {
     for (const text of ["", "  ", "0", "1.25", "$3"]) expect(spendCapInvalid(text)).toBe(false);
     for (const text of ["abc", "-1", "1,5"]) expect(spendCapInvalid(text)).toBe(true);
+  });
+});
+
+describe("creditCapInvalid", () => {
+  it("accepts empty, zero and credits, and refuses the rest", () => {
+    for (const text of ["", "  ", "0", "0.5", "2"]) expect(creditCapInvalid(text)).toBe(false);
+    for (const text of ["abc", "-1"]) expect(creditCapInvalid(text)).toBe(true);
   });
 });
 
@@ -55,6 +62,7 @@ describe("toCreateBody", () => {
 
   it("never turns an invalid cap into $0", () => {
     expect(toCreateBody({ ...base, name: "Email", steps: [find, { ...find, providerKey: "apollo" }], maxCost: "abc" })).not.toHaveProperty("maxCostCents");
+    expect(toCreateBody({ ...base, name: "Email", steps: [find, { ...find, providerKey: "apollo" }], maxCredits: "-1" })).not.toHaveProperty("maxCredits");
   });
 });
 
@@ -68,6 +76,10 @@ describe("toEditPatch", () => {
 
   it("refuses a spend cap that is no amount, so it cannot save as $0", () => {
     expect(toEditPatch({ ...initial, maxCost: "abc", autoRun: true }, initial, waterfall)).toEqual({ error: SPEND_CAP_ERROR });
+  });
+
+  it("refuses a credit cap that is no amount, so it cannot save as zero", () => {
+    expect(toEditPatch({ ...initial, maxCredits: "-1" }, initial, waterfall)).toEqual({ error: CREDIT_CAP_ERROR });
   });
 
   it("clears a cap left empty and saves a typed one in cents", () => {

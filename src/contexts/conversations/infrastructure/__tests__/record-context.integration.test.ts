@@ -185,6 +185,14 @@ describeDb("a context version bump retires the picks held for a check", () => {
       expect(await pickStatus(pick)).toBe("stale");
     });
 
+    it("retires when a person marks the person do not contact, so clearing the mark does not ask again", async () => {
+      const f = await fixture();
+      const l = await lead(f);
+      const pick = await stopPick(f, l.recordId);
+      await store.setDoNotContact({ organizationId: f.org, actorUserId: f.user, personId: l.personId as string, enabled: true, reason: "asked", now: new Date() });
+      expect(await pickStatus(pick)).toBe("stale");
+    });
+
     it("retires when a person changes the type", async () => {
       const f = await fixture();
       const l = await lead(f);

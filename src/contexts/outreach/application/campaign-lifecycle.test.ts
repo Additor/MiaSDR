@@ -36,7 +36,7 @@ describe("campaign lifecycle", () => {
     const started = setup("active");
     await expect(deleteOn(started.deps, "email", actor, "c1")).rejects.toThrow(/Only a draft/);
     const raced = setup("draft", { delete: async () => false });
-    await expect(deleteOn(raced.deps, "email", actor, "c1")).rejects.toThrow(/Only a draft/);
+    await expect(deleteOn(raced.deps, "email", actor, "c1")).rejects.toMatchObject({ message: expect.stringMatching(/Only a draft/), details: { code: "campaign_not_draft" } });
     expect([...started.audited, ...raced.audited]).toEqual([]);
   });
 
