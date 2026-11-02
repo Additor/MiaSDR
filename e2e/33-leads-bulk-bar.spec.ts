@@ -161,13 +161,14 @@ test.describe("lead list selection bar", () => {
       await pickRow(page, "Select S33 Lead 58");
       await page.getByRole("button", { name: "More actions" }).click();
       const item = page.getByRole("menuitem", { name: "Delete selected" });
-      expect(await contrastOf(item), `${scheme} menu item`).toBeGreaterThanOrEqual(4.5);
+      // Polled, like the two below: the buttons ease between colors, and a reading on the way is meaningless.
+      await expect.poll(() => contrastOf(item), { message: `${scheme} menu item` }).toBeGreaterThanOrEqual(4.5);
       await item.click();
       const confirm = page.getByRole("dialog").getByRole("button", { name: /^Delete (lead|\d+ leads)$/ });
-      expect(await contrastOf(confirm), `${scheme} confirm button`).toBeGreaterThanOrEqual(4.5);
+      await expect.poll(() => contrastOf(confirm), { message: `${scheme} confirm button` }).toBeGreaterThanOrEqual(4.5);
       // A disabled destructive button stays readable (3:1) and no longer looks like a faded red fill.
       await confirm.evaluate((el) => ((el as HTMLButtonElement).disabled = true));
-      expect(await contrastOf(confirm), `${scheme} disabled confirm button`).toBeGreaterThanOrEqual(3);
+      await expect.poll(() => contrastOf(confirm), { message: `${scheme} disabled confirm button` }).toBeGreaterThanOrEqual(3);
       await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
     }
   });

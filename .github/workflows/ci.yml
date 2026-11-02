@@ -137,6 +137,8 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: test-results
+          # `.run` is a hidden folder, and the action skips those unless told otherwise.
+          include-hidden-files: true
           path: |
             e2e/.run/test-results/
             e2e/.run/*.log
