@@ -1,13 +1,17 @@
 import "server-only";
 
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
+import { mcp } from "@better-auth/mcp";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { organization } from "better-auth/plugins";
+import { jwt, organization } from "better-auth/plugins";
 import { db } from "@/platform/db/client";
 import * as schema from "@/platform/db/schema";
 import { env } from "@/shared/env";
+import { CONSENT_PAGE, MCP_OAUTH_SCOPES, MCP_ORG_CLAIM, mcpOAuthAvailable, mcpResourceUrl } from "../domain/mcp-oauth";
 import { authEmail, sendAuthEmail } from "./auth-email";
 import { e2eRateLimitStorage } from "./e2e-rate-limit";
 import { canCreateAccount, canCreateOrganization, initialOrganizationId } from "./signup-facts";
@@ -19,6 +23,39 @@ const sendQuietly = (message: Parameters<typeof sendAuthEmail>[0], what: string)
 
 function refuseBypass(message: string): never {
   throw new APIError("FORBIDDEN", { message });
+}
+
+/**
+ * The OAuth server for MCP clients. An access token lasts an hour and names the organization the session had active when
+ * the person agreed, which is the grant's organization. Consent goes only through `POST /api/oauth/consent`, which
+ * records the grant in `mcp_tokens`. The `/token` path stays off: it would hand any session a JWT no one needs.
+ */
+function mcpOAuthPlugins(e: ReturnType<typeof env>) {
+  if (!mcpOAuthAvailable(e.APP_URL, e.MCP_ENABLED)) return [];
+  return [
+    jwt({ disableSettingJwtHeader: true }),
+    mcp({
+      resource: mcpResourceUrl(e.APP_URL),
+      loginPage: "/sign-in",
+      consentPage: CONSENT_PAGE,
+      scopes: [...MCP_OAUTH_SCOPES],
+      grantTypes: ["authorization_code", "refresh_token"],
+      allowDynamicClientRegistration: e.MCP_OAUTH_DCR,
+      allowUnauthenticatedClientRegistration: e.MCP_OAUTH_DCR,
+      clientRegistrationDefaultApplicationType: "infer",
+      postLogin: {
+        page: CONSENT_PAGE,
+        shouldRedirect: () => false,
+        consentReferenceId: ({ session }) => {
+          const organizationId = (session as { activeOrganizationId?: string | null }).activeOrganizationId;
+          if (!organizationId) throw new APIError("FORBIDDEN", { message: "Join an organization before you connect an app." });
+          return organizationId;
+        },
+      },
+      customAccessTokenClaims: ({ referenceId }) => ({ [MCP_ORG_CLAIM]: referenceId }),
+    }),
+    cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+  ];
 }
 
 function createAuth() {
@@ -34,7 +71,11 @@ function createAuth() {
     database: drizzleAdapter(db, { provider: "pg", schema, usePlural: true }),
     advanced: { database: { generateId: "uuid" } },
     // Only the e2e build swaps the store, so the specs can reset the counters between files.
-    ...(customRateLimitStorage ? { rateLimit: { customStorage: customRateLimitStorage } } : {}),
+    rateLimit: {
+      // Self-registration needs no account, so one address may add only so many clients.
+      customRules: { "/oauth2/register": { window: 60 * 60, max: 20 } },
+      ...(customRateLimitStorage ? { customStorage: customRateLimitStorage } : {}),
+    },
 
     emailAndPassword: {
       enabled: true,
@@ -110,7 +151,11 @@ function createAuth() {
       },
     },
 
+    disabledPaths: ["/token"],
+
     plugins: [
+      // Typed away: their endpoints reach the code only through `mcp-oauth.ts`, and a plugin list that may be empty would hide the organization plugin's session field from every caller.
+      ...(mcpOAuthPlugins(e) as []),
       organization({
         allowUserToCreateOrganization: (user) => canCreateOrganization(user.id),
         invitationExpiresIn: 7 * 24 * 60 * 60,

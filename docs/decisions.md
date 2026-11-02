@@ -636,6 +636,15 @@ An agent sends a reply with `send_reply` over MCP. The tool calls `approveAndSen
 - **LinkedIn.** An agent sends a saved draft (`draftId`, `revision`) as it stands: the text is the stored body, the revision stays, and the composer's open-draft path does not run. A call without a draft answers 422. An agent types a LinkedIn draft with `write_reply_draft` `create_manual` (`createManualDraft` with `channel: "linkedin"`).
 - **Records.** `send_attempts.origin` is `agent`, with `mcp_token_id` and `client_name`. The `draft.sent` event carries `meta.via`, the stored message `raw.sentVia` (the token name), and the thread marks it "Sent by an agent ({token name})". `send_reply` answers `retryable` true for a definite failure and for a block that leaves the draft in review; `delivery_uncertain` tells the agent not to send again.
 
+### MCP OAuth
+
+- `@better-auth/mcp` and `@better-auth/cimd` run the OAuth server at the issuer `<APP_URL>/api/auth`, only where `APP_URL` is HTTPS or loopback (`mcpOAuthAvailable`). The versions stay pinned, since these plugins are young.
+- **One grant, one row.** A grant is an app, a person and the organization active when they agreed. Its `mcp_tokens` row (`kind = 'oauth'`, `oauth_grant_id = <org>:<user>:<client>`) decides every request, as a personal token's does. Better Auth has no revoke hook, so the design needs none: revoking the row stops an unexpired access token at once, and also removes the consent and refresh tokens, so the app must ask the person again. A person who agrees again brings the same row back, and an access token from before the revoke then works until it expires.
+- **Consent has one door.** `/oauth2/consent` stays off the endpoint allow-list; `POST /api/oauth/consent` writes the row first and then calls it. A token with no row would be refused with no way to recover. The page offers what `tokenScopesProblem` allows, never preselects sending, and refuses an organization other than the one it showed.
+- **Tokens.** Access tokens are JWTs for one hour. `verifyMcpAccessToken` checks issuer, audience `<APP_URL>/api/mcp` and type `at+jwt`, so a session JWT does not pass. The token's scopes can only narrow the row's. A token bound to a DPoP key is refused, and the metadata routes do not offer DPoP, because the endpoint checks no proofs.
+- **Clients.** A client metadata document proves an app controls its address, and the consent page names that host. `MCP_OAUTH_DCR` (default on) also lets a client register itself, 20 an hour per address, because clients that publish no document could not connect at all; the page then says MiaSDR cannot confirm the name.
+- A connected app does not count against the limit of 10 personal tokens. `legacy: "stateless"` stays, unlike the plugin's advice, because tokens and older clients still use it.
+
 ### MCP Apps cards
 
 - `write_reply_draft` and `preview_campaign_launch` name a card (`_tools/cards.ts`) in `_meta.ui.resourceUri`. A token reads a card only while it sees the tool.

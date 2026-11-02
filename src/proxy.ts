@@ -22,6 +22,8 @@ const PUBLIC_PREFIXES = [
   "/api/jobs/tick",
   "/api/webhooks",
   "/api/mcp",
+  // What an MCP client reads before it has a token.
+  "/.well-known",
 ];
 
 function isPublic(pathname: string): boolean {

@@ -52,6 +52,13 @@ describe("auth endpoint policy", () => {
   });
 
   it("keeps the allow-list short", () => {
-    expect(allowedAuthMutations()).toHaveLength(9);
+    expect(allowedAuthMutations()).toHaveLength(12);
+  });
+
+  it("keeps Better Auth's consent endpoint closed, so an agreement always comes with its grant row", () => {
+    expect(checkAuthEndpoint("POST", "/api/auth/oauth2/consent").allowed).toBe(false);
+    expect(checkAuthEndpoint("POST", "/api/auth/oauth2/continue").allowed).toBe(false);
+    expect(checkAuthEndpoint("POST", "/api/auth/oauth2/create-client").allowed).toBe(false);
+    expect(checkAuthEndpoint("POST", "/api/auth/oauth2/token").allowed).toBe(true);
   });
 });

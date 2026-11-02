@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
+import { mcpOAuthAvailable } from "@/contexts/identity/domain/mcp-oauth";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { getMcpSettings, listMcpTokens } from "@/contexts/tenancy/application/mcp-tokens";
 import { listMcpToolCalls } from "@/contexts/tenancy/application/mcp-tool-calls";
@@ -42,6 +43,7 @@ async function Mcp() {
   const { MCP_ENABLED, MCP_SEND_ENABLED, APP_URL, RETENTION_MCP_TOOL_CALLS_DAYS } = env();
   return (
     <McpPanel
+      oauthAvailable={mcpOAuthAvailable(APP_URL, MCP_ENABLED)}
       installEnabled={MCP_ENABLED}
       enabled={settings.enabled}
       memberWriteTokens={settings.memberWriteTokens}

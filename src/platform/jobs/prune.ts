@@ -88,6 +88,8 @@ export async function pruneHistory(options: PruneOptions): Promise<PruneResult> 
     ["mcp_tool_calls", sql`created_at < ${before(retention.mcpToolCalls)}::timestamptz`],
     ["sessions", sql`expires_at < ${authCutoff}::timestamptz`],
     ["verifications", sql`expires_at < ${authCutoff}::timestamptz`],
+    ["oauth_refresh_tokens", sql`expires_at < ${authCutoff}::timestamptz`],
+    ["oauth_client_assertions", sql`expires_at < ${authCutoff}::timestamptz`],
   ];
   const tableOf = (key: string) => (key.startsWith("inbound_events") ? "inbound_events" : key);
 

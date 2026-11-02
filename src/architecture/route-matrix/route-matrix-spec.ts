@@ -264,6 +264,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "members": { handlers: { POST: admin({ email: "invitee@matrix.test", role: "member" }) } },
   "members/[id]": { ids: { id: "members" }, handlers: { PATCH: admin({ role: "member" }), DELETE: admin() } },
   "organizations": { handlers: { GET: ok(), POST: ok({ name: "" }) } }, // an empty name never creates a row, whichever way the signup policy answers
+  "oauth/consent": { handlers: { POST: ok({ oauthQuery: "sig=matrix", accept: false, organizationId: "00000000-0000-4000-8000-000000000000" }) } },
   "organizations/active": { handlers: { POST: ok({ organizationId: "00000000-0000-4000-8000-000000000000" }) } },
   "people/search": { handlers: { GET: { query: { q: "matrix" } } } },
   "people/[personId]/notes": { ids: { personId: "people" }, handlers: { GET: ok(), POST: ok({ body: "note" }) } },

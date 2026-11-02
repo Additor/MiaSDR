@@ -2,7 +2,9 @@ import { createMcpHandler, readRequestBody, type AuthInfo } from "@modelcontextp
 import { connection } from "next/server";
 import { apiError } from "@/app/_lib/api-errors";
 import { logMcp } from "@/app/_lib/mcp";
-import { resolveMcpAccess, type McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
+import { mcpOAuthAvailable, mcpResourceMetadataUrl } from "@/contexts/identity/domain/mcp-oauth";
+import { looksLikeJwt, verifyMcpAccessToken } from "@/contexts/identity/infrastructure/mcp-oauth";
+import { resolveMcpAccess, resolveMcpGrant, type McpPrincipal } from "@/contexts/tenancy/application/mcp-principal";
 import { takeMcpRequest } from "@/contexts/tenancy/application/mcp-rate-limit";
 import { bearerToken, isMcpTokenFormat } from "@/contexts/tenancy/domain/mcp-token";
 import { mcpPrincipalDeps, mcpRateLimitDeps } from "@/contexts/tenancy/infrastructure/mcp-composition";
@@ -54,8 +56,18 @@ const badTokens = new BadTokenLimiter();
 const tooManyRequests = (retryAfterSeconds: number, message: string) =>
   apiError(429, message, { retryAfterSeconds }, { headers: { "Retry-After": String(retryAfterSeconds) } });
 
-/** A 401 that tells an MCP client to send a bearer token. */
-const unauthorized = () => apiError(401, "Send a valid MiaSDR MCP token as a bearer token.", {}, { headers: { "WWW-Authenticate": 'Bearer realm="miasdr"' } });
+/** A 401 that tells an MCP client to send a bearer token and, where OAuth is on, where to get one. */
+const unauthorized = (config: ReturnType<typeof env>) => {
+  const metadata = mcpOAuthAvailable(config.APP_URL, config.MCP_ENABLED) ? `, resource_metadata="${mcpResourceMetadataUrl(config.APP_URL)}"` : "";
+  return apiError(401, "Send a valid MiaSDR MCP token as a bearer token.", {}, { headers: { "WWW-Authenticate": `Bearer realm="miasdr"${metadata}` } });
+};
+
+/** The access behind a bearer token: a personal token by its hash, or an access token this server signed by its grant. */
+async function accessOf(token: string | null) {
+  if (token === null || isMcpTokenFormat(token)) return resolveMcpAccess(mcpPrincipalDeps(), token);
+  const claims = await verifyMcpAccessToken(token);
+  return claims && resolveMcpGrant(mcpPrincipalDeps(), claims);
+}
 
 async function serve(request: Request): Promise<Response> {
   await connection();
@@ -66,7 +78,7 @@ async function serve(request: Request): Promise<Response> {
   const token = bearerToken(request.headers.get("authorization"));
   // Only a well-formed token costs a lookup, so only a failed one counts against the client's IP. A missing or
   // malformed token answers 401 at no cost and is not counted.
-  const guess = token !== null && isMcpTokenFormat(token);
+  const guess = token !== null && (isMcpTokenFormat(token) || looksLikeJwt(token));
   const ip = guess ? clientIp(request.headers.get("x-forwarded-for"), config.TRUST_PROXY_HOPS) : null;
   const now = new Date();
   const wait = ip ? badTokens.retryAfter(ip, now) : null;
@@ -75,12 +87,12 @@ async function serve(request: Request): Promise<Response> {
     return tooManyRequests(wait, "Too many requests with an unknown MCP token. Wait, then send a valid one.");
   }
 
-  const access = await resolveMcpAccess(mcpPrincipalDeps(), token);
+  const access = await accessOf(token);
   if (!access) {
     if (ip) badTokens.record(ip, now);
     // A request with no token is how a client finds out it needs one; only a token that failed is worth a line.
     if (guess) logMcp("token refused", { ip });
-    return unauthorized();
+    return unauthorized(config);
   }
   if ("refusal" in access) return apiError(403, "MCP is off in this organization. An owner or admin can turn it on.", { code: access.refusal });
   const { principal } = access;

@@ -53,7 +53,7 @@ describeDb("/api/mcp", () => {
     for (const value of [null, "not-a-token", `msdr_pat_${randomBytes(32).toString("base64url")}`, revoked]) {
       const result = await post({ token: value, method: "server/discover" });
       expect(result.status, String(value)).toBe(401);
-      expect(result.headers.get("www-authenticate")).toBe('Bearer realm="miasdr"');
+      expect(result.headers.get("www-authenticate")).toBe('Bearer realm="miasdr", resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource/api/mcp"');
       expect(result.body).toMatchObject({ code: "unauthenticated" });
     }
   });
@@ -62,7 +62,7 @@ describeDb("/api/mcp", () => {
     for (const value of [null, "not-a-token", `msdr_pat_${randomBytes(32).toString("base64url")}`]) {
       const result = await callMcp(POST, { era: "legacy", token: value, method: "initialize", params: legacyInitialize });
       expect(result.status, String(value)).toBe(401);
-      expect(result.headers.get("www-authenticate")).toBe('Bearer realm="miasdr"');
+      expect(result.headers.get("www-authenticate")).toBe('Bearer realm="miasdr", resource_metadata="http://localhost:3000/.well-known/oauth-protected-resource/api/mcp"');
     }
   });
 

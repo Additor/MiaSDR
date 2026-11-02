@@ -30,7 +30,7 @@ describeDb("schema audit (organization scope)", () => {
   });
 
   it("lists the allow-lists, each entry with a reason", () => {
-    expect(Object.keys(NO_SCOPE).sort()).toEqual(["accounts", "integration_credentials", "organizations", "sessions", "users", "verifications"]);
+    expect(Object.keys(NO_SCOPE).sort()).toEqual(["accounts", "integration_credentials", "jwks", "oauth_access_tokens", "oauth_client_assertions", "oauth_client_resources", "oauth_clients", "oauth_consents", "oauth_refresh_tokens", "oauth_resources", "organizations", "sessions", "users", "verifications"]);
     expect(Object.keys(NULLABLE_SCOPE).sort()).toEqual(["inbound_events", "job_runs"]);
     expect(Object.keys(SCOPED_BY_SIBLING_KEY).sort()).toEqual([
       "knowledge_documents.knowledge_documents_latest_version_fk",

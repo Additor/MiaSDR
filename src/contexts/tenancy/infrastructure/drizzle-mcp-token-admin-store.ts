@@ -14,6 +14,7 @@ const viewColumns = {
   id: mcpTokens.id,
   name: mcpTokens.name,
   hint: mcpTokens.tokenHint,
+  kind: mcpTokens.kind,
   scopes: mcpTokens.scopes,
   ownerUserId: mcpTokens.userId,
   ownerName: users.name,
@@ -64,11 +65,21 @@ export const drizzleMcpTokenAdminStore: McpTokenStore = {
               and(
                 eq(mcpTokens.organizationId, organizationId),
                 eq(mcpTokens.userId, userId),
+                // An app a person connected is not a secret they hold, so it does not use up the limit.
+                eq(mcpTokens.kind, "pat"),
                 isNull(mcpTokens.revokedAt),
                 or(isNull(mcpTokens.expiresAt), gt(mcpTokens.expiresAt, now)),
               ),
             );
           return row.n;
+        },
+        async upsertGrant(grant, audit) {
+          const [row] = await tx
+            .insert(mcpTokens)
+            .values({ ...grant, kind: "oauth" })
+            .onConflictDoUpdate({ target: mcpTokens.oauthGrantId, set: { name: grant.name, scopes: grant.scopes, policyEpoch: grant.policyEpoch, revokedAt: null } })
+            .returning({ id: mcpTokens.id });
+          await recordAudit(tx, { ...audit, entityType: "mcp_token", entityId: row.id });
         },
         async insert(token, audit) {
           const [created] = await tx

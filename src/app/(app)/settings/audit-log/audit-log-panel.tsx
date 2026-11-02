@@ -80,6 +80,7 @@ const ACTION_LABEL: Record<string, string> = {
   "mcp.agent_send_mode": "Changed what agents can send",
   "mcp.agent_limits": "Changed the agent sending limits",
   "mcp.agent_campaigns_paused": "Paused the campaigns agents started",
+  "mcp.app_connected": "Connected an app over MCP",
   "mcp.member_tokens_revoked": "Revoked a removed member's MCP tokens",
 };
 

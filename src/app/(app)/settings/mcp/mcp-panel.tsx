@@ -21,6 +21,8 @@ import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 
 interface Token {
   id: string;
+  /** `oauth` is an app the person connected by signing in. */
+  kind: "pat" | "oauth";
   name: string;
   hint: string | null;
   scopes: string[];
@@ -36,6 +38,8 @@ interface Token {
 
 interface Props {
   /** `MCP_ENABLED`: false turns the endpoint off for the whole install. */
+  /** The install can act as an OAuth server: `APP_URL` is HTTPS or loopback. */
+  oauthAvailable: boolean;
   installEnabled: boolean;
   /** The organization's own switch. */
   enabled: boolean;
@@ -83,7 +87,7 @@ const SEND_NOTE: Record<"off" | "replies" | "replies_and_campaigns", string> = {
   replies_and_campaigns: "Agents with a token that sends can send replies and start campaigns with no one reviewing first.",
 };
 
-export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSendMode, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays, agentSends }: Props) {
+export function McpPanel({ oauthAvailable, installEnabled, enabled, memberWriteTokens, agentSendMode, canManage, currentUserId, endpoint, tokenDays, tokenLimit, mine, everyone, activity, activityDays, agentSends }: Props) {
   const router = useRouter();
   const refresh = () => router.refresh();
   const { isBusy, run } = useApiAction();
@@ -97,7 +101,9 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
   const usable = installEnabled && enabled;
   const canWrite = canManage || memberWriteTokens;
   // The limit counts live tokens; an expired one stays listed until someone revokes it.
-  const live = mine.filter((t) => !isExpired(t)).length;
+  const myTokens = mine.filter((t) => t.kind === "pat");
+  const apps = mine.filter((t) => t.kind === "oauth");
+  const live = myTokens.filter((t) => !isExpired(t)).length;
 
   function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -158,10 +164,16 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
         )}
       </SettingsSection>
 
+      {(oauthAvailable || apps.length > 0) && (
+        <SettingsSection id="apps" title="Connected apps" description={`Apps such as claude.ai or ChatGPT connect when you add ${endpoint} in the app and sign in here. Each stops as soon as you disconnect it.`}>
+          {apps.length === 0 ? <p className="text-sm text-muted-foreground">No connected apps yet.</p> : <TokenList tokens={apps} label="Connected apps" showOwner={false} onRevoke={setRevoking} />}
+        </SettingsSection>
+      )}
+
       <SettingsSection
         id="tokens"
         title="Your tokens"
-        count={mine.length > 0 ? `${live} of ${tokenLimit} live` : undefined}
+        count={myTokens.length > 0 ? `${live} of ${tokenLimit} live` : undefined}
         description={`A token reads what you can read here, and a token that makes changes also changes what you can change. It lasts ${tokenDays} days. Revoke a token you no longer use, or one you think someone else has.`}
       >
         {usable && (
@@ -211,10 +223,10 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
           </form>
         )}
         {created && <NewToken name={created.name} token={created.token} endpoint={endpoint} onDone={() => setCreated(null)} />}
-        {mine.length === 0 ? (
+        {myTokens.length === 0 ? (
           <EmptyState className="py-0" title="No tokens" description={usable ? "Create one to connect an agent." : undefined} />
         ) : (
-          <TokenList tokens={mine} showOwner={false} onRevoke={setRevoking} />
+          <TokenList tokens={myTokens} label="Your tokens" showOwner={false} onRevoke={setRevoking} />
         )}
       </SettingsSection>
 
@@ -234,7 +246,7 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
           {everyone.length === 0 ? (
             <EmptyState className="py-0" title="No member has a token" />
           ) : (
-            <TokenList tokens={everyone} showOwner currentUserId={currentUserId} onRevoke={setRevoking} />
+            <TokenList tokens={everyone} label="Every member's tokens" showOwner currentUserId={currentUserId} onRevoke={setRevoking} />
           )}
         </SettingsSection>
       )}
@@ -278,14 +290,16 @@ export function McpPanel({ installEnabled, enabled, memberWriteTokens, agentSend
       <ConfirmDialog
         open={revoking !== null}
         onOpenChange={(open) => !open && setRevoking(null)}
-        title={`Revoke "${revoking?.name ?? "this token"}"?`}
+        title={`${revoking?.kind === "oauth" ? "Disconnect" : "Revoke"} "${revoking?.name ?? "this token"}"?`}
         description={
-          revoking && revoking.ownerUserId !== currentUserId
+          revoking?.kind === "oauth"
+            ? "The app stops working on its next request. Connecting it again asks for consent again."
+            : revoking && revoking.ownerUserId !== currentUserId
             ? `${revoking.ownerName}'s agent stops working on its next request. They can create a new token.`
             : "The agent that uses it stops working on its next request."
         }
-        confirmLabel="Revoke token"
-        cancelLabel="Keep token"
+        confirmLabel={revoking?.kind === "oauth" ? "Disconnect" : "Revoke token"}
+        cancelLabel={revoking?.kind === "oauth" ? "Keep connected" : "Keep token"}
         pendingLabel="Revoking…"
         destructive
         onConfirm={async () => revoking && toastOrThrow(await runApiAction(callApi(`/api/settings/mcp/tokens/${revoking.id}`, "DELETE"), { refresh }), "Token revoked.")}
@@ -339,14 +353,15 @@ function NewToken({ name, token, endpoint, onDone }: { name: string; token: stri
   );
 }
 
-function TokenList({ tokens, showOwner, currentUserId, onRevoke }: { tokens: Token[]; showOwner: boolean; currentUserId?: string; onRevoke: (token: Token) => void }) {
+function TokenList({ tokens, label, showOwner, currentUserId, onRevoke }: { tokens: Token[]; label: string; showOwner: boolean; currentUserId?: string; onRevoke: (token: Token) => void }) {
   return (
-    <ul className={RULED_LIST} aria-label={showOwner ? "Every member's tokens" : "Your tokens"}>
+    <ul className={RULED_LIST} aria-label={label}>
       {tokens.map((token) => {
         const expired = isExpired(token);
         return (
           <li key={token.id} className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-sm ${RULED_ROW}`}>
             <span className="font-medium">{token.name}</span>
+            {showOwner && token.kind === "oauth" && <Badge variant="outline">App</Badge>}
             {token.hint && <span className="font-mono text-xs text-muted-foreground">…{token.hint}</span>}
             {showOwner && (
               <span className="text-muted-foreground">
@@ -372,7 +387,7 @@ function TokenList({ tokens, showOwner, currentUserId, onRevoke }: { tokens: Tok
               )}
             </span>
             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => onRevoke(token)}>
-              Revoke
+              {token.kind === "oauth" ? "Disconnect" : "Revoke"}
             </Button>
           </li>
         );

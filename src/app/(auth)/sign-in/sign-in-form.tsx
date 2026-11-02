@@ -40,7 +40,7 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
     setPending(true);
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email")).trim();
-    const { error } = await authClient.signIn.email({
+    const { data, error } = await authClient.signIn.email({
       email,
       password: String(form.get("password")),
     });
@@ -48,6 +48,12 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
     if (error) {
       if (error.status === 403) setUnverifiedEmail(email);
       setError(error.status === 403 ? "Confirm your email first. Check your inbox for the link." : "Invalid email or password.");
+      return;
+    }
+    // Signed in on the way to connecting an MCP app: the OAuth server names the next page, and it may be another site.
+    const oauthNext = (data as { url?: unknown } | null)?.url;
+    if (params.has("sig") && typeof oauthNext === "string") {
+      window.location.assign(oauthNext);
       return;
     }
     router.push(safeNext(params.get("next")));

@@ -19,6 +19,9 @@ export function bearerToken(header: string | null): string | null {
   return match ? match[1] : null;
 }
 
+/** One OAuth grant: an app, a person and the organization they chose. A refresh stays on the same grant. */
+export const mcpGrantId = (organizationId: string, userId: string, clientId: string): string => `${organizationId}:${userId}:${clientId}`;
+
 /** Live tokens one person may hold in one organization. A revoked or expired token does not count. */
 export const MCP_TOKEN_LIMIT = 10;
 

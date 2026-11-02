@@ -1,5 +1,5 @@
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT, mcpTokenHint, mcpTokenNameProblem } from "../domain/mcp-token";
+import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT, MCP_TOKEN_NAME_MAX, mcpGrantId, mcpTokenHint, mcpTokenNameProblem } from "../domain/mcp-token";
 import { tokenAccess, tokenScopesProblem, type McpScope } from "../domain/mcp-policy";
 import { mcpSettingsProblem, type McpSettings, type McpSettingsPatch } from "../domain/mcp-settings";
 import { isOwnerOrAdmin } from "../domain/roles";
@@ -8,6 +8,8 @@ import type { AuditEntry } from "./audit-log";
 /** A token as lists show it. The secret appears once, in the answer to `createMcpToken`. */
 export interface McpTokenView {
   id: string;
+  /** `pat` is a personal token; `oauth` is an app the person connected. */
+  kind: "pat" | "oauth";
   name: string;
   /** The secret's last four characters. */
   hint: string | null;
@@ -49,6 +51,8 @@ export interface McpTokenTx {
   /** Tokens that are neither revoked nor expired at `now`. */
   liveCount(now: Date): Promise<number>;
   insert(token: NewMcpToken, audit: AuditEntry): Promise<McpTokenView>;
+  /** The app's row for this grant, created or brought back to life. */
+  upsertGrant(grant: { organizationId: string; userId: string; name: string; oauthGrantId: string; scopes: McpScope[]; policyEpoch: number }, audit: AuditEntry): Promise<void>;
 }
 
 export interface McpTokenStore {
@@ -177,6 +181,34 @@ export async function createMcpToken(deps: McpTokenDeps, actor: Actor, input: { 
   // The session found the member a moment ago; null means a removal committed in between.
   if (!created) throw new ForbiddenError("You are no longer a member of this organization.");
   return { ...created, token };
+}
+
+/** What a person may let an app do here, highest last. Reading is always allowed while MCP is on. */
+export function grantableAccess(settings: McpSettings, role: string, installSendEnabled: boolean): McpTokenAccess[] {
+  return MCP_TOKEN_ACCESS.filter((access) => !tokenScopesProblem({ role, settings, scopes: SCOPES_OF[access] }) && (access !== "send" || installSendEnabled));
+}
+
+/**
+ * Records that a person lets an app act for them in this organization, on the same rules as creating a token. The
+ * `mcp_tokens` row is what the endpoint checks on every call; agreeing again with another access level, or after a
+ * revoke, updates the same row. Answers the scopes granted.
+ */
+export async function grantMcpAccess(deps: McpTokenDeps, actor: Actor, input: { clientId: string; clientName: string; access: McpTokenAccess }): Promise<McpScope[]> {
+  const settings = await deps.store.settings(actor.organizationId);
+  if (!settings.enabled) throw new ConflictError("MCP is off in this organization. An owner or admin can turn it on.", { code: "mcp_disabled" });
+  const scopes = SCOPES_OF[input.access];
+  const refused = tokenScopesProblem({ role: actor.role, settings, scopes });
+  if (refused) throw new ForbiddenError(refused);
+  const name = input.clientName.trim().slice(0, MCP_TOKEN_NAME_MAX) || "Connected app";
+  const created = await deps.store.forMember(actor.organizationId, actor.userId, async (tx) => {
+    await tx.upsertGrant(
+      { organizationId: actor.organizationId, userId: actor.userId, name, oauthGrantId: mcpGrantId(actor.organizationId, actor.userId, input.clientId), scopes, policyEpoch: settings.agentSendEpoch },
+      audit(actor, "mcp.app_connected", undefined, { name, clientId: input.clientId, scopes: scopes.join(" ") }),
+    );
+    return true;
+  });
+  if (!created) throw new ForbiddenError("You are no longer a member of this organization.");
+  return scopes;
 }
 
 /** A member revokes their own tokens; an owner or admin revokes anyone's. Revoking a revoked token is a no-op. */

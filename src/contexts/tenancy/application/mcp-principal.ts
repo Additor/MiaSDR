@@ -1,4 +1,4 @@
-import { isMcpTokenFormat } from "../domain/mcp-token";
+import { isMcpTokenFormat, mcpGrantId } from "../domain/mcp-token";
 import { agentSendPolicy, usableScopes, type McpScope } from "../domain/mcp-policy";
 import type { McpSettings } from "../domain/mcp-settings";
 
@@ -44,6 +44,7 @@ export const TOUCH_INTERVAL_MS = 60_000;
 
 export interface McpPrincipalStore {
   findPersonalToken(tokenHash: string): Promise<StoredMcpToken | null>;
+  findGrant(grantId: string): Promise<StoredMcpToken | null>;
   /** Records use. The store also skips the write when the last one is under `TOUCH_INTERVAL_MS` old, for two requests that race. */
   touch(tokenId: string, now: Date): Promise<void>;
   settings(organizationId: string): Promise<McpSettings>;
@@ -69,7 +70,20 @@ export type McpAccess = { principal: McpPrincipal } | { refusal: "mcp_disabled" 
 export async function resolveMcpAccess(deps: McpPrincipalDeps, token: string | null): Promise<McpAccess | null> {
   if (!token || !isMcpTokenFormat(token)) return null;
   // The lookup is by hash, so the secret itself is never compared and its timing reveals nothing.
-  const row = await deps.store.findPersonalToken(deps.hash(token));
+  return accessOf(deps, await deps.store.findPersonalToken(deps.hash(token)));
+}
+
+/**
+ * The principal behind a verified OAuth access token, on the same terms as a personal token. The `mcp_tokens` row
+ * decides, so a revoked grant stops at once though its token has not expired, and the token's own scopes can only narrow
+ * what the person agreed to.
+ */
+export async function resolveMcpGrant(deps: McpPrincipalDeps, claims: { userId: string; organizationId: string; clientId: string; scopes: readonly string[] }): Promise<McpAccess | null> {
+  const row = await deps.store.findGrant(mcpGrantId(claims.organizationId, claims.userId, claims.clientId));
+  return accessOf(deps, row && { ...row, scopes: row.scopes.filter((scope) => claims.scopes.includes(scope)) });
+}
+
+async function accessOf(deps: McpPrincipalDeps, row: StoredMcpToken | null): Promise<McpAccess | null> {
   const now = deps.now();
   if (!row || row.revokedAt || row.role === null) return null;
   if (row.expiresAt && row.expiresAt.getTime() <= now.getTime()) return null;

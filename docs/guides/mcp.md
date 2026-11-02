@@ -34,6 +34,12 @@ VS Code, in `.vscode/mcp.json`:
 
 Keep the token out of files you commit. Clients that read environment variables in their config can take it from one.
 
+### Sign in instead of a token
+
+Apps such as claude.ai and ChatGPT connect without a token: add the endpoint in the app, sign in to MiaSDR when it asks, then choose the organization and what the app may do. An owner or admin turns MCP on first. The app shows under Connected apps on the settings page, and Disconnect stops it on its next request. Connecting it again asks you again.
+
+This needs an HTTPS address, because the app has to reach your server. An install on plain HTTP uses tokens only. A change of address means connecting each app again.
+
 ## What an agent sees
 
 The agent acts as the person who created the token, in the token's organization only, with that person's role. A member's agent reads what the member reads; an owner's agent also sees the LinkedIn accounts and failed AI jobs that members do not.
