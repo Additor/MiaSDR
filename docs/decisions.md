@@ -643,7 +643,7 @@ An agent sends a reply with `send_reply` over MCP. The tool calls `approveAndSen
 - **Consent has one door.** `/oauth2/consent` stays off the endpoint allow-list; `POST /api/oauth/consent` writes the row first and then calls it. A token with no row would be refused with no way to recover. The page offers what `tokenScopesProblem` allows, never preselects sending, and refuses an organization other than the one it showed.
 - **Tokens.** Access tokens are JWTs for one hour. `verifyMcpAccessToken` checks issuer, audience `<APP_URL>/api/mcp` and type `at+jwt`, so a session JWT does not pass. The token's scopes can only narrow the row's. A token bound to a DPoP key is refused, and the metadata routes do not offer DPoP, because the endpoint checks no proofs.
 - **Clients.** A client metadata document proves an app controls its address, and the consent page names that host. `MCP_OAUTH_DCR` (default on) also lets a client register itself, 20 an hour per address, because clients that publish no document could not connect at all; the page then says MiaSDR cannot confirm the name.
-- A connected app does not count against the limit of 10 personal tokens. `legacy: "stateless"` stays, unlike the plugin's advice, because tokens and older clients still use it.
+- A connected app does not count against the limit of 10 personal tokens. `legacy: "stateless"` stays, unlike the plugin's advice, because tokens and older clients still use it. A 2025-11-25 client names itself only in `initialize`, so the answer carries the name in `Mcp-Session-Id` and the activity log reads it back from there (`legacy-connection.ts`). A column on the token would misname calls when two clients share a token, and it would cost a write per connection.
 
 ### MCP Apps cards
 
