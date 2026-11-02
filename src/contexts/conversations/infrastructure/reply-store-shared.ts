@@ -1,8 +1,9 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
-import { contactPolicies, conversations, drafts, events, mailboxes, messages, people, records, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
+import { contactPolicies, conversations, drafts, events, mailboxes, messages, people, records, replyTypePicks, sendAttempts, suppressionList, leadCcs } from "@/platform/db/schema";
 import type { AttemptRow, DraftRow, KnownCc, SendContext } from "../application/reply-ports";
 import { DRAFT_FROM, type DraftStatus } from "../domain/draft-status";
+import { PICK_FROM, type PickStatus } from "../domain/reply-type-pick";
 import { ATTEMPT_FROM, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
 import { organizationMailboxAddresses } from "./drizzle-conversation-store";
 import { attemptVia } from "./agent-reply-gate";
@@ -11,6 +12,9 @@ import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** The drafts row may move to `to` from where it is now (see `DRAFT_FROM`). */
 export const draftCanBecome = (to: DraftStatus) => inArray(drafts.status, [...DRAFT_FROM[to]]);
+
+/** The reply_type_picks row may move to `to` from where it is now (see `PICK_FROM`). */
+export const pickMayBecome = (to: PickStatus) => inArray(replyTypePicks.status, [...PICK_FROM[to]]);
 
 /** The drafts row is in one of the named statuses. */
 export const draftIn = (statuses: readonly DraftStatus[]) => inArray(drafts.status, [...statuses]);

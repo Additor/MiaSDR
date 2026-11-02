@@ -1,7 +1,9 @@
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import type { DbTx } from "@/platform/db/client";
+import { sqlValues } from "@/platform/db/sql-values";
 import { interruptRecordRunsTx } from "../after-reply/infrastructure/sequence-stop";
+import { PICK_FROM } from "../domain/reply-type-pick";
 import { records } from "./schema";
 import { staleOpenDraftsTx } from "./stale-drafts-sql";
 
@@ -37,7 +39,7 @@ export async function advanceRecordContextTx(tx: DbTx, input: AdvanceRecordConte
     .returning({ contextVersion: records.contextVersion });
   await tx.execute(sql`
     update reply_type_picks k set status = 'stale'
-    where k.organization_id = ${organizationId} and k.record_id = ${recordId} and k.status = 'proposed'
+    where k.organization_id = ${organizationId} and k.record_id = ${recordId} and k.status in ${sqlValues(PICK_FROM.stale)}
       and (${input.personDecided === true}::boolean
         or k.message_id is distinct from (select r.latest_inbound_message_id from records r where r.id = ${recordId})
         or not (coalesce((k.response->>'stopRequested')::boolean, false)

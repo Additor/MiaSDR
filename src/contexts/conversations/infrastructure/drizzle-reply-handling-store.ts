@@ -1,3 +1,5 @@
+import { pickMayBecome } from "./reply-store-shared";
+import { isAppliedPick, pickFlags, pickResponse } from "../domain/reply-type-pick";
 import { violatedConstraint } from "@/platform/db/errors";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
@@ -171,7 +173,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     // record's version (`loadDraftContext`, `insertDraft`), so an undone or outdated pick drafts nothing.
     const ofLatest = cls.filter(({ c }) => c.messageId === record.latestInboundMessageId);
     const latestPick = (ofLatest.find(({ c }) => c.status !== "stale") ?? ofLatest[0])?.c;
-    const pickDrafts = latestPick && ["auto_applied", "accepted", "overridden"].includes(latestPick.status) && latestPick.expectedContextVersion === record.contextVersion;
+    const pickDrafts = latestPick && isAppliedPick(latestPick.status) && latestPick.expectedContextVersion === record.contextVersion;
     const [pendingJob] = pickDrafts
       ? await db
           .select({ id: aiJobs.id })
@@ -182,9 +184,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
     const draftJobPending = pendingJob !== undefined;
 
     const replyTypePickEntries = cls.map(({ c, conversationId }): ReplyTypePickEntry => {
-      const latest = c.messageId === record.latestInboundMessageId;
-      const applied = ["auto_applied", "accepted", "overridden"].includes(c.status) && c.appliedGroupKey !== null;
-      const response = (c.response ?? {}) as { holdReason?: unknown; stopRequested?: boolean };
+      const response = pickResponse(c.response);
       return {
         id: c.id,
         status: c.status,
@@ -205,10 +205,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
         holdReason: holdReasonOf(response.holdReason),
         stopRequested: response.stopRequested === true,
         createdAt: c.createdAt,
-        latest,
-        current: c.expectedContextVersion === record.contextVersion && c.status !== "stale",
-        canUndo: latest && applied,
-        canAcknowledge: c.acknowledgedAt === null && (c.status === "auto_applied" || c.status === "failed"),
+        ...pickFlags(c, record),
       };
     });
 
@@ -351,7 +348,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const record = await lockRecord(tx, input.organizationId, candidate.recordId);
       const [cls] = await tx.select().from(replyTypePicks).where(eq(replyTypePicks.id, input.replyTypePickId)).for("update");
       if (cls.messageId !== record.latestInboundMessageId) throw new ConflictError("Only the pick of the latest inbound message can be undone.");
-      if (!cls.appliedGroupKey || !["auto_applied", "accepted", "overridden"].includes(cls.status)) throw new ConflictError("This AI pick has no applied change to undo.");
+      if (!cls.appliedGroupKey || !isAppliedPick(cls.status)) throw new ConflictError("This AI pick has no applied change to undo.");
       if (record.groupKey !== cls.appliedGroupKey || record.replyTypeId !== cls.appliedReplyTypeId) {
         throw new ConflictError("A person changed the reply type after this pick. Change the type by hand.");
       }
@@ -359,7 +356,7 @@ export const drizzleReplyHandlingStore: ReplyHandlingStore = {
       const previousTypeId = previous ? cls.previousReplyTypeId : null;
       // The lock comes back as the record had it before the pick.
       const previousLocked = previous !== null && lockBeforePick(cls.response, previous);
-      await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(eq(replyTypePicks.id, cls.id));
+      await tx.update(replyTypePicks).set({ status: "rejected", acknowledgedAt: input.now }).where(and(eq(replyTypePicks.id, cls.id), pickMayBecome("rejected")));
       // A draft job that has not run yet would write a reply for the classification a person just rejected. A job that
       // already runs read the old version, and `insertDraft` writes its draft as stale once this commit bumps it.
       const cancelled = await tx

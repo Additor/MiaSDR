@@ -57,6 +57,13 @@ const GUARDED: Rule[] = [
     guard: /stepMayBecome\(/,
     target: { binding: "sequenceStepRuns", helpers: ["stepMayBecome", "heldStep"] },
   },
+  {
+    table: "reply_type_picks",
+    drizzle: /\.update\(replyTypePicks\)/g,
+    raw: /update (?:reply_type_picks|\$\{replyTypePicks\})(?: (\w+))? set\b(?:(?!\bwhere\b)[^`;])*?\bstatus\s*=/g,
+    guard: /pickMayBecome\(/,
+    target: { binding: "replyTypePicks", helpers: ["pickMayBecome"] },
+  },
 ];
 
 const ROOT = path.resolve(__dirname, "../..");

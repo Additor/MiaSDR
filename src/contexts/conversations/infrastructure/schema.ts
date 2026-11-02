@@ -21,6 +21,7 @@ import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES, IN_FLIGHT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 import type { AttemptStatus } from "../domain/send-attempt-status";
+import { PICK_STATUSES, type PickStatus } from "../domain/reply-type-pick";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
 import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
 import { inList } from "@/platform/db/sql-values";
@@ -382,7 +383,7 @@ export const replyTypePicks = pgTable(
     appliedReplyTypeId: uuid("applied_reply_type_id"),
     confidence: numeric("confidence", { precision: 5, scale: 4 }),
     reasoning: text("reasoning"),
-    status: text("status").notNull().default("proposed"),
+    status: text("status").$type<PickStatus>().notNull().default("proposed"),
     provider: text("provider"),
     model: text("model"),
     request: jsonb("request").$type<unknown>(),
@@ -404,7 +405,7 @@ export const replyTypePicks = pgTable(
     unique("reply_type_picks_message_version_uq").on(t.messageId, t.expectedContextVersion),
     check(
       "reply_type_picks_status_ck",
-      inList(t.status, ["proposed", "auto_applied", "accepted", "rejected", "overridden", "stale", "failed"]),
+      inList(t.status, PICK_STATUSES),
     ),
     check("reply_type_picks_confidence_ck", sql`${t.status} = 'failed' or ${t.confidence} is not null`),
     check("reply_type_picks_confidence_range_ck", sql`${t.confidence} is null or ${t.confidence} between 0 and 1`),

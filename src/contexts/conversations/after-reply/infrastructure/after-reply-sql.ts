@@ -1,3 +1,5 @@
+import { sqlValues } from "@/platform/db/sql-values";
+import { APPLIED_PICK_STATUSES } from "../../domain/reply-type-pick";
 import { sql, type SQL } from "drizzle-orm";
 
 /**
@@ -39,7 +41,7 @@ export const flowRunnableSql = (alias: string) => sql`(${sql.raw(alias)}.campaig
 const pickRulesSql = (alias: string) =>
   sql`(select ap.rules from reply_type_picks ap
        where ap.message_id = ${sql.raw(alias)}.latest_inbound_message_id and ap.expected_context_version = ${sql.raw(alias)}.context_version
-         and ap.status in ('auto_applied', 'accepted', 'overridden') and ap.applied_reply_type_id = ${sql.raw(alias)}.reply_type_id and ap.rules is not null
+         and ap.status in ${sqlValues(APPLIED_PICK_STATUSES)} and ap.applied_reply_type_id = ${sql.raw(alias)}.reply_type_id and ap.rules is not null
        order by ap.created_at desc limit 1)`;
 
 export const startFollowUpsSql = (alias: string, type: string) => sql`coalesce(${pickRulesSql(alias)}->>'followUps', ${sql.raw(type)}.follow_ups)`;

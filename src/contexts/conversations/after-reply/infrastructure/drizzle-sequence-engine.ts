@@ -1,3 +1,4 @@
+import { APPLIED_PICK_STATUSES } from "../../domain/reply-type-pick";
 import { and, asc, desc, eq, inArray, lt, gte, notExists, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/platform/db/client";
@@ -182,7 +183,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           and not ${stopRequestedSql(sql`r.latest_inbound_message_id`)}
           and p.email is not null
           and p.lifecycle <> 'contact'
-          and exists (select 1 from reply_type_picks cl where cl.message_id = r.latest_inbound_message_id and cl.expected_context_version = r.context_version and cl.status in ('auto_applied', 'accepted', 'overridden'))
+          and exists (select 1 from reply_type_picks cl where cl.message_id = r.latest_inbound_message_id and cl.expected_context_version = r.context_version and cl.status in ${sqlValues(APPLIED_PICK_STATUSES)})
           and not exists (select 1 from sequence_runs sr where sr.record_id = r.id and (sr.trigger_message_id = r.latest_inbound_message_id or sr.status in ('active', 'paused')))
           and not ${doNotContactSql("p")}
           and not ${suppressedSql("p")}

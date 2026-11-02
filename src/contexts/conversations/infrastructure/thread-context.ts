@@ -1,5 +1,6 @@
+import { APPLIED_PICK_STATUSES } from "../domain/reply-type-pick";
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import {
   replyTypePicks,
@@ -153,7 +154,7 @@ export async function buildDraftContext(organizationId: string, conversationId: 
       })
       .from(replyTypePicks)
       .innerJoin(replyTypes, eq(replyTypes.id, sql`coalesce(${replyTypePicks.appliedReplyTypeId}, ${replyTypePicks.proposedReplyTypeId})`))
-      .where(and(eq(replyTypePicks.recordId, head.recordId), eq(replyTypePicks.messageId, head.latestInbound), sql`${replyTypePicks.status} in ('auto_applied', 'accepted', 'overridden', 'proposed')`))
+      .where(and(eq(replyTypePicks.recordId, head.recordId), eq(replyTypePicks.messageId, head.latestInbound), inArray(replyTypePicks.status, [...APPLIED_PICK_STATUSES, "proposed"])))
       .orderBy(desc(replyTypePicks.createdAt))
       .limit(1);
     if (row) classification = { id: row.id, replyTypeName: row.name, reason: row.reasoning };

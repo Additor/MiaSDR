@@ -1,3 +1,4 @@
+import { isAppliedPick } from "../../domain/reply-type-pick";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { aiJobs, replyTypePicks, conversations, drafts, messages, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
@@ -210,7 +211,7 @@ const queueStore: AiJobQueueStore = {
     if (!ctx) return null;
 
     const skip = await (async (): Promise<string | null> => {
-      if (!["auto_applied", "accepted", "overridden"].includes(cls.status)) return "not_applied";
+      if (!isAppliedPick(cls.status)) return "not_applied";
       if (ctx.contextVersion !== cls.expected) return "stale";
       const [rec] = await db.select({ out: records.lastOutboundAt, inb: records.lastInboundAt, personId: records.personId }).from(records).where(eq(records.id, cls.recordId));
       if (rec.out && rec.inb && rec.out >= rec.inb) return "answered";

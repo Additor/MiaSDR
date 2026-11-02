@@ -5,6 +5,7 @@ import { rowsOf } from "@/platform/db/sql-values";
 import { RETIRABLE_DRAFT_STATUSES } from "../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import { lockBeforePick } from "../domain/reply-handling";
+import { PICK_FROM } from "../domain/reply-type-pick";
 import type { WorkflowState } from "../domain/workflow-state";
 import { advanceRecordContextTx } from "./record-context";
 
@@ -37,7 +38,7 @@ export async function detachPrivateThreadTx(tx: Tx, input: { organizationId: str
     where organization_id = ${input.organizationId} and conversation_id = ${input.conversationId} and status in ${sqlValues(RETIRABLE_DRAFT_STATUSES)}`);
   await tx.execute(sql`
     update reply_type_picks set status = 'stale'
-    where organization_id = ${input.organizationId} and status = 'proposed'
+    where organization_id = ${input.organizationId} and status in ${sqlValues(PICK_FROM.stale)}
       and message_id in (select id from messages where conversation_id = ${input.conversationId})`);
   await tx.execute(sql`
     update ai_jobs set status = 'failed', failed_at = ${at}, last_error = ${reason}
