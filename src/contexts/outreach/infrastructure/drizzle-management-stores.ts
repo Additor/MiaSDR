@@ -69,6 +69,14 @@ export const stepsStillEditable = (patch: { steps?: unknown }) => (patch.steps =
 export const checkedStatusChange = (organizationId: string, id: string, change: CampaignStatusChange<unknown>) =>
   and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, change.from), sql`${campaigns.steps} = ${JSON.stringify(change.checkedSteps)}::jsonb`);
 
+/** Who moved the campaign: a start records the agent's token (null for a person), and a pause records whether a person paused it. */
+export const statusMarks = (change: CampaignStatusChange<unknown>) => {
+  const via = change.viaTokenId ?? null;
+  if (change.to === "active") return { startedViaTokenId: via, personPaused: false };
+  if (change.to === "paused") return { personPaused: via === null };
+  return {};
+};
+
 export const drizzleCampaignStore: CampaignStore = {
   transaction: (fn, within) => inTransaction(within, fn),
 
@@ -184,8 +192,7 @@ export const drizzleCampaignStore: CampaignStore = {
   },
 
   async setStatus(organizationId, id, change, handle = db) {
-    const started = change.to === "active" ? { startedViaTokenId: change.startedViaTokenId ?? null } : {};
-    const rows = await handle.update(campaigns).set({ status: change.to, ...started }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
+    const rows = await handle.update(campaigns).set({ status: change.to, ...statusMarks(change) }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
     return rows.length > 0;
   },
 
@@ -261,7 +268,7 @@ export const drizzleCampaignStore: CampaignStore = {
         const result = await insertSkippingContacts(tx, organizationId, eligibleIds.slice(i, i + 500), (sp, ids) =>
           sp
             .insert(campaignEnrollments)
-            .values(ids.map((personId) => ({ organizationId, campaignId: id, personId, channel: "email" })))
+            .values(ids.map((personId) => ({ organizationId, campaignId: id, personId, channel: "email", enrolledViaTokenId: filter.viaTokenId ?? null })))
             .onConflictDoNothing()
             .returning({ id: campaignEnrollments.id }),
         );

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createTestOrg, describeDb, dropOrgs, testSql, useTestEnv, type TestOrg } from "@/test-support/db";
 import { enableMcp, mcpCaller, type McpCaller } from "@/test-support/mcp-fixture";
 import type { Actor } from "@/shared/errors";
@@ -34,12 +34,34 @@ describeDb("MCP write tools: campaigns, pauses, deals and imports", () => {
     member = await mcpCaller(sql, POST, { organizationId: org.organizationId, userId }, WRITE);
   });
 
+  // The tests together write more than one minute's write limit allows.
+  beforeEach(() => sql`delete from mcp_rate_limits where organization_id = ${orgs[0].organizationId}`);
+
   afterAll(async () => {
     try {
       await dropOrgs(sql, orgs, users);
     } finally {
       await sql.end();
     }
+  });
+
+  it("refuses steps that carry a body get_campaign cut", async () => {
+    const created = await owner.tool("draft_campaign", { action: "create", channel: "email", name: "Long steps" });
+    const campaignId = created.structured.campaignId as string;
+    const long = `${"A long paragraph about the offer. ".repeat(40)}The end.`;
+    const steps = [
+      { stepNumber: 1, kind: "email", subject: "Hello", body: long, waitDays: 0 },
+      { stepNumber: 2, kind: "email", body: "A short follow-up.", waitDays: 2 },
+    ];
+    expect((await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps })).isError).toBe(false);
+
+    const read = await owner.tool("get_campaign", { channel: "email", campaignId, previewStep: 2 });
+    const seen = read.structured.steps as Array<{ stepNumber: number; kind: string; subject: string | null; body: string; waitDays: number }>;
+    const back = seen.map((s) => ({ stepNumber: s.stepNumber, kind: s.kind, ...(s.subject ? { subject: s.subject } : {}), body: s.stepNumber === 2 ? "A new follow-up." : s.body, waitDays: s.waitDays }));
+    const refused = await owner.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: back });
+    expect(refused.structured.error).toMatchObject({ code: "truncated_text" });
+    const [{ steps: saved }] = await sql<{ steps: Array<{ body: string }> }[]>`select steps from campaigns where id = ${campaignId}`;
+    expect(saved[0].body).toBe(long);
   });
 
   it("drafts a campaign, counts a dry run without enrolling, then enrolls, and refuses a running campaign", async () => {

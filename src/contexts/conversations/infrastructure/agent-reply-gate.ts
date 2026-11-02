@@ -7,7 +7,7 @@ import type { AgentVia } from "@/shared/errors";
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
 import { replyRefusal, type AgentReplyRefusal, type ReplyChannel } from "../domain/reply-send";
-import { utcDayStart } from "../domain/linkedin-reply";
+import { utcDayStart } from "@/shared/utc-day";
 
 /** How long an agent waits between two replies in one reply handling, on either channel. */
 export const AGENT_REPLY_GAP_MS = 24 * 60 * 60 * 1000;

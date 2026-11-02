@@ -29,6 +29,9 @@ interface Token {
   createdAt: string;
   expiresAt: string | null;
   lastUsedAt: string | null;
+  /** What it does now: a send or write token loses that when the organization's settings change. */
+  access: "read" | "write" | "send";
+  sendRetired: boolean;
 }
 
 interface Props {
@@ -344,7 +347,8 @@ function TokenList({ tokens, showOwner, currentUserId, onRevoke }: { tokens: Tok
                 {token.ownerUserId === currentUserId && " (you)"}
               </span>
             )}
-            {token.scopes.includes("mcp:send") ? <Badge variant="secondary">Sends</Badge> : token.scopes.includes("mcp:write") && <Badge variant="secondary">Makes changes</Badge>}
+            {token.access === "send" ? <Badge variant="secondary">Sends</Badge> : token.access === "write" && <Badge variant="secondary">Makes changes</Badge>}
+            {token.sendRetired && <Badge variant="outline">No longer sends</Badge>}
             {expired && <Badge variant="outline">Expired</Badge>}
             <span className="text-muted-foreground">
               {token.lastUsedAt ? (

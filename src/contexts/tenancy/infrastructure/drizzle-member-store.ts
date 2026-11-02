@@ -65,6 +65,7 @@ export const drizzleMemberStore: MemberStore = {
       // Before the member rows: a role change or a removal then lands between agent actions, never inside one.
       await lockAgentSend(tx, organizationId);
       return run({
+        handle: tx,
         async members() {
           return tx
             .select({ id: members.id, userId: members.userId, role: members.role })

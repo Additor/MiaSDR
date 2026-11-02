@@ -189,7 +189,7 @@ describeDb("contacts and campaign enrollment", () => {
       await sql`insert into contact_policies (organization_id, person_id, do_not_contact, source, set_at) values (${f.org}, ${dnc}, true, 'human', now())`;
       const retries = guard.contactGuardStats.retries;
 
-      const out = await admin.enrollPicked(f.org, c, channel, [lead, plain, noIdentity, duplicate, suppressed, dnc]);
+      const out = await admin.enrollPicked(f.org, c, channel, [lead, plain, noIdentity, duplicate, suppressed, dnc], null);
       expect(out).toEqual({
         requested: 6,
         added: 1,
@@ -267,7 +267,7 @@ describeDb("contacts and campaign enrollment", () => {
       const f = await fixture();
       const c = await f.campaign(channel);
       const [a, b, racer] = [await f.person("ada"), await f.person("bob"), await f.person("race")];
-      const { result, retries } = await raceConversion(racer, () => admin.enrollPicked(f.org, c, channel, [a, b, racer]));
+      const { result, retries } = await raceConversion(racer, () => admin.enrollPicked(f.org, c, channel, [a, b, racer], null));
       expect(retries).toBeGreaterThan(0);
       expect(result).toMatchObject({ requested: 3, added: 2, skippedContact: 1, skippedDuplicate: 0 });
       expect(await enrolled(c)).toEqual([a, b].sort());

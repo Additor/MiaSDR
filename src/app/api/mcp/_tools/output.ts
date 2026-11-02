@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { fence } from "@/contexts/ai/domain/prompt-fence";
+import { ConflictError } from "@/shared/errors";
 
 /**
  * What every tool answer shares (the "툴 계약" rules of the MCP plan): links into the app, fenced text from outside the
@@ -46,6 +47,19 @@ export const LONG_TEXT_CHARS = 12_000;
 export function clip(text: string, max: number): { text: string; truncated: boolean } {
   return text.length > max ? { text: `${text.slice(0, max)}…`, truncated: true } : { text, truncated: false };
 }
+
+/**
+ * Whether `sent` is a cut copy of `stored`: `stored` is longer than an answer keeps, and `sent` ends with the cut mark
+ * after text `stored` starts with. Saving it would drop the rest of `stored`.
+ */
+export function isCutCopy(sent: string, stored: string, max: number): boolean {
+  if (stored.length <= max || !sent.endsWith("…")) return false;
+  return stored.startsWith(sent.slice(0, Math.min(EXCERPT_CHARS, sent.length - 1)));
+}
+
+/** The refusal a write meets when it carries text an answer cut. */
+export const cutCopyRefusal = (what: string) =>
+  new ConflictError(`The ${what} you sent ends where an answer cut the saved text, so saving it would drop the rest. Read it whole first, or write the full text yourself.`, { code: "truncated_text" });
 
 /** The first `max` characters of `text` on one line, cut at a word when one ends near the limit. */
 export function excerpt(text: string, max = EXCERPT_CHARS): string {

@@ -1,3 +1,4 @@
+import type { DbHandle } from "@/platform/db/client";
 import { drizzleMemberDirectory } from "@/contexts/tenancy/infrastructure/drizzle-member-directory";
 import { clearLinkedInOwner } from "./drizzle-linkedin-account-store";
 import { claimSlot, finishSlot } from "@/platform/jobs/slots";
@@ -82,8 +83,8 @@ export function linkedinManagementDeps(): LinkedInManagementDeps {
 }
 
 /** A member who leaves owns no LinkedIn account any more; an admin picks a new owner. */
-export async function releaseLinkedInAccounts(organizationId: string, userId: string): Promise<void> {
-  await clearLinkedInOwner(organizationId, userId);
+export async function releaseLinkedInAccounts(tx: DbHandle, organizationId: string, userId: string): Promise<void> {
+  await clearLinkedInOwner(tx, organizationId, userId);
 }
 
 export function linkedinOperationsDeps(inbox: InboxFiling): LinkedInOperationsDeps {

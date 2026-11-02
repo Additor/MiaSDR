@@ -7,7 +7,7 @@ import type { LinkedInCampaignStore, LinkedInEnrollResult } from "../application
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
 import { peopleWithPrivateThread } from "./drizzle-personal-thread-store";
 import { insertSkippingContacts, notContactSql } from "../../infrastructure/contact-guard";
-import { archiveCondition, checkedStatusChange, stepsStillEditable } from "../../infrastructure/drizzle-management-stores";
+import { archiveCondition, checkedStatusChange, statusMarks, stepsStillEditable } from "../../infrastructure/drizzle-management-stores";
 import { parseCampaignType, type CampaignStatus } from "../../domain/campaign";
 import { retriesUsed } from "../../domain/enrollment-list";
 import { filteredScope, sentCount, tabCounts } from "../../infrastructure/enrollment-list-sql";
@@ -41,7 +41,7 @@ function enrollmentProfileUrl(p: EnrollCandidate): string | null {
   return p.memberId;
 }
 
-async function insertEnrollments(tx: DbHandle, organizationId: string, campaignId: string, eligible: EnrollCandidate[]): Promise<{ addedPersonIds: string[]; skippedContact: number }> {
+async function insertEnrollments(tx: DbHandle, organizationId: string, campaignId: string, eligible: EnrollCandidate[], viaTokenId: string | null = null): Promise<{ addedPersonIds: string[]; skippedContact: number }> {
   const urlOf = new Map(
     eligible.flatMap((p) => {
       const profileUrl = enrollmentProfileUrl(p);
@@ -55,7 +55,7 @@ async function insertEnrollments(tx: DbHandle, organizationId: string, campaignI
     const result = await insertSkippingContacts(tx, organizationId, ids.slice(i, i + 500), (sp, keep) =>
       sp
         .insert(campaignEnrollments)
-        .values(keep.map((personId) => ({ organizationId, campaignId, personId, channel: "linkedin" })))
+        .values(keep.map((personId) => ({ organizationId, campaignId, personId, channel: "linkedin", enrolledViaTokenId: viaTokenId })))
         .onConflictDoNothing()
         .returning({ id: campaignEnrollments.id, personId: campaignEnrollments.personId }),
     );
@@ -174,8 +174,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
   },
 
   async setStatus(organizationId, id, change, handle = db) {
-    const started = change.to === "active" ? { startedViaTokenId: change.startedViaTokenId ?? null } : {};
-    const rows = await handle.update(campaigns).set({ status: change.to, ...started }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
+    const rows = await handle.update(campaigns).set({ status: change.to, ...statusMarks(change) }).where(checkedStatusChange(organizationId, id, change)).returning({ id: campaigns.id });
     return rows.length > 0;
   },
 
@@ -249,7 +248,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
         .orderBy(asc(people.createdAt), asc(people.id))
         .limit(filter.limit);
 
-      const { addedPersonIds, skippedContact } = await insertEnrollments(tx, organizationId, id, eligible);
+      const { addedPersonIds, skippedContact } = await insertEnrollments(tx, organizationId, id, eligible, filter.viaTokenId ?? null);
       const added = addedPersonIds.length;
       return {
         ...(filter.collectIds ? { addedPersonIds } : {}),

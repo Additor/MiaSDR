@@ -2,7 +2,7 @@ import { sqlState } from "@/platform/db/errors";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { credentialCipher } from "@/contexts/integrations/infrastructure/credential-cipher";
-import { db } from "@/platform/db/client";
+import { db, type DbHandle } from "@/platform/db/client";
 import { drafts, integrationAccounts, integrationCredentials, linkedinAccounts, sendAttempts, sends } from "@/platform/db/schema";
 import type { AccountStatusChange, LinkedInAccountStore, LinkedInCredentials, SyncStatus, WebhookStatus } from "../application/linkedin-management";
 import { defaultWorkingHours, startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
@@ -244,6 +244,6 @@ export const drizzleLinkedInAccountStore: LinkedInAccountStore = {
 };
 
 /** Clears the owner of every account the member owned in the organization. */
-export async function clearLinkedInOwner(organizationId: string, userId: string): Promise<void> {
-  await db.update(linkedinAccounts).set({ ownerUserId: null }).where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.ownerUserId, userId)));
+export async function clearLinkedInOwner(tx: DbHandle, organizationId: string, userId: string): Promise<void> {
+  await tx.update(linkedinAccounts).set({ ownerUserId: null }).where(and(eq(linkedinAccounts.organizationId, organizationId), eq(linkedinAccounts.ownerUserId, userId)));
 }

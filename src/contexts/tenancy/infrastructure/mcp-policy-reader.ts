@@ -1,9 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
-import { channelSettings, mcpTokens, members } from "@/platform/db/schema";
+import { mcpTokens, members } from "@/platform/db/schema";
 import { env } from "@/shared/env";
 import { agentSendPolicy, usableScopes, type AgentSendPolicy } from "../domain/mcp-policy";
-import { MCP_SETTINGS_CHANNEL, readMcpSettings, type McpSettings } from "../domain/mcp-settings";
+import type { McpSettings } from "../domain/mcp-settings";
+import { mcpSettingsIn } from "./mcp-settings-reader";
 import { lockAgentSend } from "./agent-send-lock";
 
 export interface AgentSendGate {
@@ -24,11 +25,7 @@ export async function readAgentSendGate(tx: DbHandle, input: { organizationId: s
   if (input.lock === "exclusive") await lockAgentSend(tx, input.organizationId);
   else await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtextextended(${`agent-send:${input.organizationId}`}, 0))`);
   // Read in statements after the lock, so they see what a save that held it committed (READ COMMITTED).
-  const [stored] = await tx
-    .select({ values: channelSettings.values })
-    .from(channelSettings)
-    .where(and(eq(channelSettings.organizationId, input.organizationId), eq(channelSettings.channel, MCP_SETTINGS_CHANNEL)));
-  const settings = readMcpSettings(stored?.values);
+  const settings = await mcpSettingsIn(tx, input.organizationId);
   const [token] = await tx
     .select({ scopes: mcpTokens.scopes, policyEpoch: mcpTokens.policyEpoch, revokedAt: mcpTokens.revokedAt, expiresAt: mcpTokens.expiresAt, role: members.role })
     .from(mcpTokens)

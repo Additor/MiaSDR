@@ -5,9 +5,9 @@ import { approveAndSendDraft } from "@/contexts/conversations/application/reply-
 import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { linkedinReplySendDeps, replySendDeps } from "@/contexts/conversations/infrastructure/reply-send-composition";
-import { NotFoundError } from "@/shared/errors";
+import { ConflictError, NotFoundError } from "@/shared/errors";
 import { defineTool } from "./define";
-import { appLinks } from "./output";
+import { appLinks, LONG_TEXT_CHARS } from "./output";
 
 const STATUSES = ["sent", "delivery_uncertain", "failed", "blocked", "in_progress"] as const;
 
@@ -33,6 +33,7 @@ export const sendReplyTool = defineTool({
   description: [
     "Sends a conversation's reviewed draft as it is saved, by email or LinkedIn, as the token's person. Pass `conversationId`, `draftId`, `revision` from the last read, and an `idempotencyKey` (8 to 200 characters) you keep for this one send; the same key never sends twice.",
     "Agents reply only where a campaign reached the person or a person already replied, without CC, at most once a day per reply handling and within the organization's daily limits; a refusal names its `code`.",
+    "A draft longer than the 12,000 characters an answer shows is refused (`draft_not_read`): shorten it with write_reply_draft, or a person sends it.",
     "Send only when the person asked for it or their standing instructions cover it.",
   ].join(" "),
   scope: "mcp:send",
@@ -54,6 +55,10 @@ export const sendReplyTool = defineTool({
     // The draft must belong to the conversation the agent named; another organization's draft answers not found.
     const draft = await replyDeps().store.getDraft(actor.organizationId, input.draftId);
     if (!draft || draft.conversationId !== input.conversationId) throw new NotFoundError("Draft not found");
+    // An agent sends only text it could read whole. A draft already sending or sent falls through to the replay answer.
+    if (draft.status === "awaiting_review" && (draft.editedBodyText ?? draft.aiBodyText ?? "").length > LONG_TEXT_CHARS) {
+      throw new ConflictError(`The draft is longer than the ${LONG_TEXT_CHARS} characters an answer shows, so the agent has not read all of it. Shorten it with write_reply_draft, or a person sends it in MiaSDR.`, { code: "draft_not_read" });
+    }
     const result =
       channel === "linkedin"
         ? await sendLinkedInReply(linkedinReplySendDeps(), actor, input.conversationId, { draftId: draft.id, revision: input.revision, idempotencyKey: input.idempotencyKey })

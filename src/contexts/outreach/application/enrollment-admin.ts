@@ -46,7 +46,8 @@ export interface SenderRef {
 /** Hand-picked enrollment, enrollment removal and per-campaign senders, for both channels. */
 export interface EnrollmentAdminStore {
   /** One transaction. Skips what cannot be enrolled and counts why. */
-  enrollPicked(organizationId: string, campaignId: string, channel: OutreachChannel, personIds: string[], tx?: DbHandle): Promise<PickedEnrollCounts>;
+  /** `viaTokenId` names the agent's token on each inserted row (`enrolled_via_token_id`); null for a person. */
+  enrollPicked(organizationId: string, campaignId: string, channel: OutreachChannel, personIds: string[], viaTokenId: string | null, tx?: DbHandle): Promise<PickedEnrollCounts>;
   /**
    * One transaction: every named `pending` or `active` enrollment of this campaign becomes `removed`, stops being
    * due and keeps its history. The person and the sends are not touched.

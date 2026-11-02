@@ -145,7 +145,7 @@ exports[`MCP contract > gives a send token the three send tools within budget, t
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Sends a conversation's reviewed draft as it is saved, by email or LinkedIn, as the token's person. Pass \`conversationId\`, \`draftId\`, \`revision\` from the last read, and an \`idempotencyKey\` (8 to 200 characters) you keep for this one send; the same key never sends twice. Agents reply only where a campaign reached the person or a person already replied, without CC, at most once a day per reply handling and within the organization's daily limits; a refusal names its \`code\`. Send only when the person asked for it or their standing instructions cover it.",
+    "description": "Sends a conversation's reviewed draft as it is saved, by email or LinkedIn, as the token's person. Pass \`conversationId\`, \`draftId\`, \`revision\` from the last read, and an \`idempotencyKey\` (8 to 200 characters) you keep for this one send; the same key never sends twice. Agents reply only where a campaign reached the person or a person already replied, without CC, at most once a day per reply handling and within the organization's daily limits; a refusal names its \`code\`. A draft longer than the 12,000 characters an answer shows is refused (\`draft_not_read\`): shorten it with write_reply_draft, or a person sends it. Send only when the person asked for it or their standing instructions cover it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -218,7 +218,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks \`truncated\` whole with \`previewStep\` before you send it back. \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`.",
+    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks \`truncated\` whole with \`previewStep\` before you send it back; a cut body is refused (\`truncated_text\`). \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -821,7 +821,7 @@ exports[`MCP contract > gives a write token the eight write tools, none read-onl
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent. \`request_ai\` has the AI write one (\`conversationId\`); \`create_manual\` saves your text as the draft (\`conversationId\`, \`bodyText\`, and \`subject\` for email); \`edit\` replaces the draft's text (\`draftId\`, \`revision\`, \`bodyText\`, optional \`subject\`); \`regenerate\` has the AI write it again (\`draftId\`, optional \`note\`); \`discard\` drops it (\`draftId\`, \`revision\`). Take \`revision\` from get_conversation or the last answer. The answer gives the draft and \`reviewUrl\`, where the person reviews and sends it.",
+    "description": "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent. \`request_ai\` has the AI write one (\`conversationId\`); \`create_manual\` saves your text as the draft (\`conversationId\`, \`bodyText\`, and \`subject\` for email); \`edit\` replaces the draft's text (\`draftId\`, \`revision\`, \`bodyText\`, optional \`subject\`); \`regenerate\` has the AI write it again (\`draftId\`, optional \`note\`); \`discard\` drops it (\`draftId\`, \`revision\`). \`edit\` refuses text that ends where an answer cut the draft (\`truncated_text\`). Take \`revision\` from get_conversation or the last answer. The answer gives the draft and \`reviewUrl\`, where the person reviews and sends it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {

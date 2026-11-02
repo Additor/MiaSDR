@@ -128,6 +128,14 @@ describeDb("MCP send_reply: agent email replies", () => {
     expect(await sql`select 1 from send_attempts where organization_id = ${org.organizationId} and status = 'sending'`).toHaveLength(0);
   });
 
+  it("refuses a draft longer than an answer shows, so the agent sends only text it read whole", async () => {
+    const thread = await conversation({ campaign: true });
+    const draft = await draftOn(thread.conversationId);
+    await sql`update drafts set edited_body_text = ${"Long text. ".repeat(1200)} where id = ${draft.draftId}`;
+    expect(codeOf(await send(thread.conversationId, draft))).toBe("draft_not_read");
+    expect(await sql`select 1 from send_attempts where draft_id = ${draft.draftId}`).toHaveLength(0);
+  });
+
   it("sends where a person already replied, and waits a day before the agent replies there again", async () => {
     const thread = await conversation();
     const { approveAndSendDraft } = await import("@/contexts/conversations/application/reply-management");

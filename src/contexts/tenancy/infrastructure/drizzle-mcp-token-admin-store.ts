@@ -1,13 +1,14 @@
 import { and, count, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
-import { db, type DbHandle } from "@/platform/db/client";
+import { db } from "@/platform/db/client";
 import { channelSettings, mcpTokens, members, users } from "@/platform/db/schema";
-import type { McpTokenStore, McpTokenView } from "../application/mcp-tokens";
+import type { McpTokenRow, McpTokenStore, McpTokenView } from "../application/mcp-tokens";
 import { readScopes } from "../domain/mcp-policy";
-import { MCP_SETTINGS_CHANNEL, readMcpSettings } from "../domain/mcp-settings";
+import { MCP_SETTINGS_CHANNEL } from "../domain/mcp-settings";
 import { lockAgentSend, revokeMcpTokensTx } from "./agent-send-lock";
 import { recordAudit } from "./audit";
 import { mergeChannelSettings } from "./channel-settings";
 import { drizzleMcpTokenStore } from "./drizzle-mcp-token-store";
+import { mcpSettingsIn } from "./mcp-settings-reader";
 
 const viewColumns = {
   id: mcpTokens.id,
@@ -21,26 +22,19 @@ const viewColumns = {
   lastUsedAt: mcpTokens.lastUsedAt,
 };
 
-async function settingsIn(tx: DbHandle, organizationId: string) {
-  const [row] = await tx
-    .select({ values: channelSettings.values })
-    .from(channelSettings)
-    .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, MCP_SETTINGS_CHANNEL)));
-  return readMcpSettings(row?.values);
-}
-
 const toView = (row: Omit<McpTokenView, "scopes"> & { scopes: string[] }): McpTokenView => ({ ...row, scopes: readScopes(row.scopes) });
 
 /** The token list, creation and revoke behind Settings > MCP. `drizzle-mcp-token-store.ts` serves the MCP requests. */
 export const drizzleMcpTokenAdminStore: McpTokenStore = {
   async list(organizationId, userId) {
     const rows = await db
-      .select(viewColumns)
+      .select({ ...viewColumns, ownerRole: members.role, policyEpoch: mcpTokens.policyEpoch })
       .from(mcpTokens)
       .innerJoin(users, eq(users.id, mcpTokens.userId))
+      .leftJoin(members, and(eq(members.organizationId, mcpTokens.organizationId), eq(members.userId, mcpTokens.userId)))
       .where(and(eq(mcpTokens.organizationId, organizationId), isNull(mcpTokens.revokedAt), userId ? eq(mcpTokens.userId, userId) : undefined))
       .orderBy(desc(mcpTokens.createdAt), desc(mcpTokens.id));
-    return rows.map(toView);
+    return rows.map((row): McpTokenRow => ({ ...toView(row), ownerRole: row.ownerRole, policyEpoch: row.policyEpoch }));
   },
 
   async owner(organizationId, tokenId) {
@@ -104,7 +98,7 @@ export const drizzleMcpTokenAdminStore: McpTokenStore = {
     await db.transaction(async (tx) => {
       // A policy change: agent actions that start after it answers see the new settings.
       await lockAgentSend(tx, organizationId);
-      const current = await settingsIn(tx, organizationId);
+      const current = await mcpSettingsIn(tx, organizationId);
       await mergeChannelSettings(tx, organizationId, MCP_SETTINGS_CHANNEL, patch, userId);
       // Turning agent sending off retires every send token made before: the epoch moves past the stored one and past
       // every token's, so turning it back on later does not revive them.

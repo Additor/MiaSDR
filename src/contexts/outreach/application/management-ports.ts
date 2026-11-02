@@ -93,7 +93,8 @@ export interface CampaignStore {
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** With `dryRun` nothing is written and `wouldAdd` says how many people the same call would enroll. */
-  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean }, tx?: DbHandle): Promise<EnrollResult>;
+  /** `viaTokenId` names the agent's token on each inserted row (`enrolled_via_token_id`); null for a person. */
+  enroll(organizationId: string, id: string, filter: { query?: string; limit: number; dryRun?: boolean; viaTokenId?: string | null }, tx?: DbHandle): Promise<EnrollResult>;
   /** `total` counts the rows of the active tab and search. `counts` and `sent` cover the whole campaign. */
   listEnrollments(organizationId: string, id: string, query: EnrollmentListQuery): Promise<{ rows: EnrollmentRow[]; total: number; counts: TabCounts; sent: number }>;
   /** Variables of the first enrolled person, or the first lead with an email; null when there are no leads. */

@@ -172,6 +172,8 @@ export const campaigns = pgTable(
     archivedAt: tstz("archived_at"),
     /** The MCP token of the agent that last started or resumed the campaign; null when a person did. */
     startedViaTokenId: uuid("started_via_token_id"),
+    /** A person paused the campaign, so only a person resumes it. An agent's pause leaves it false. */
+    personPaused: boolean("person_paused").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -100,6 +100,22 @@ describeDb("MCP write tools: drafts, reply handling and tasks", () => {
     expect(await sql`select 1 from send_attempts where organization_id = ${orgs[0].organizationId}`).toHaveLength(0);
   });
 
+  it("refuses an edit that carries the cut copy of a long draft", async () => {
+    const long = `${"Pricing tiers explained at length. ".repeat(500)}The end.`;
+    const created = await writer.tool("write_reply_draft", { action: "create_manual", conversationId: thread.conversationId, subject: "Re: pricing", bodyText: long });
+    const draft = created.structured.draft as { draftId: string; revision: number; text: string; truncated: boolean };
+    expect(draft.truncated).toBe(true);
+
+    const cut = await writer.tool("write_reply_draft", { action: "edit", draftId: draft.draftId, revision: draft.revision, bodyText: draft.text });
+    expect(cut.structured.error).toMatchObject({ code: "truncated_text" });
+    const [row] = await sql<{ edited_body_text: string }[]>`select edited_body_text from drafts where id = ${draft.draftId}`;
+    expect(row.edited_body_text).toBe(long);
+
+    const rewritten = await writer.tool("write_reply_draft", { action: "edit", draftId: draft.draftId, revision: draft.revision, bodyText: "A short answer instead." });
+    expect(rewritten.isError, rewritten.text).toBe(false);
+    await writer.tool("write_reply_draft", { action: "discard", draftId: draft.draftId, revision: draft.revision + 1 });
+  });
+
   it("assigns, notes, closes and reopens a reply handling, each event marked with the token", async () => {
     const claimed = await writer.tool("update_conversation", { action: "claim", recordId: thread.recordId });
     expect(claimed.structured).toMatchObject({ assignedTo: orgs[0].userId, changed: true });

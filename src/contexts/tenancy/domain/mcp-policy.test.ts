@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MCP_SETTINGS, type McpSettings } from "./mcp-settings";
-import { agentSendPolicy, hasScope, readScopes, tokenScopesProblem, usableScopes, type PolicyToken } from "./mcp-policy";
+import { agentSendPolicy, hasScope, readScopes, tokenAccess, tokenScopesProblem, usableScopes, type PolicyToken } from "./mcp-policy";
 
 const now = new Date("2026-10-30T12:00:00Z");
 const on: McpSettings = { ...DEFAULT_MCP_SETTINGS, enabled: true, agentSendMode: "replies", agentSendEpoch: 2 };
@@ -74,5 +74,23 @@ describe("agent send policy", () => {
 
   it("treats a token with no expiry as not expired", () => {
     expect(policy({ token: { expiresAt: null } }).replies).toBe(true);
+  });
+});
+
+describe("what a token does now, for the token list", () => {
+  const access = (patch: { role?: string | null; settings?: Partial<McpSettings>; token?: Partial<PolicyToken> } = {}) =>
+    tokenAccess({ role: patch.role === undefined ? "owner" : patch.role, installSendEnabled: true, settings: { ...on, ...patch.settings }, token: { ...sendToken, ...patch.token }, now });
+
+  it("sends while the policy allows it", () => {
+    expect(access()).toEqual({ access: "send", sendRetired: false });
+  });
+  it("marks a send token retired once sending went off or the policy moved on", () => {
+    expect(access({ settings: { agentSendMode: "off" } })).toEqual({ access: "write", sendRetired: true });
+    expect(access({ settings: { agentSendEpoch: 3 } })).toEqual({ access: "write", sendRetired: true });
+  });
+  it("drops write and send from a member when member write tokens are off, and everything from someone who left", () => {
+    expect(access({ role: "member", settings: { memberWriteTokens: false } })).toEqual({ access: "read", sendRetired: false });
+    expect(access({ role: null })).toEqual({ access: "read", sendRetired: false });
+    expect(access({ token: { scopes: ["mcp:read", "mcp:write"] } })).toEqual({ access: "write", sendRetired: false });
   });
 });

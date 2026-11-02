@@ -10,9 +10,9 @@ import { agentEnroll, checkAgentSenderChange } from "@/contexts/outreach/applica
 import { agentCampaignDeps } from "@/contexts/outreach/infrastructure/agent-campaign-composition";
 import type { DbHandle } from "@/platform/db/client";
 import { ValidationError, type Actor } from "@/shared/errors";
-import { campaignStatus, CHANNELS } from "./campaigns";
+import { campaignState, CHANNELS, STEP_BODY_CHARS } from "./campaigns";
 import { CHANGES, defineTool } from "./define";
-import { appLinks } from "./output";
+import { appLinks, cutCopyRefusal, isCutCopy } from "./output";
 
 type Channel = (typeof CHANNELS)[number];
 const ACTIONS = ["create", "update", "add_leads"] as const;
@@ -69,7 +69,7 @@ export const draftCampaignTool = defineTool({
   title: "Draft campaign",
   description: [
     "Prepares a campaign; nothing here sends. `create` makes a draft (`channel`, `name`, optional `senderIds`; LinkedIn `personal`).",
-    "`update` changes `name`, `steps` or `senderIds` of a draft or paused campaign; `steps` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks `truncated` whole with `previewStep` before you send it back.",
+    "`update` changes `name`, `steps` or `senderIds` of a draft or paused campaign; `steps` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks `truncated` whole with `previewStep` before you send it back; a cut body is refused (`truncated_text`).",
     "`add_leads` enrolls leads by Leads search `query` or `personIds` (up to 500); call it with `dryRun: true` first to see the counts. Agents enroll a limited number of leads a day (`agent_enroll_cap`).",
     "Adding to a running campaign needs a token that sends, agent campaigns allowed, and `launchToken` from preview_campaign_launch with `purpose: enroll`.",
   ].join(" "),
@@ -110,7 +110,12 @@ export const draftCampaignTool = defineTool({
     if (!campaignId) throw new ValidationError(`${input.action} needs campaignId.`);
     if (input.action === "update") {
       if (input.name === undefined && input.steps === undefined && input.senderIds === undefined) throw new ValidationError("update needs name, steps or senderIds.");
-      if (input.senderIds !== undefined) checkAgentSenderChange(await campaignStatus(actor, input.channel, campaignId));
+      if (input.senderIds !== undefined || input.steps !== undefined) {
+        const saved = await campaignState(actor, input.channel, campaignId);
+        if (input.senderIds !== undefined) checkAgentSenderChange(saved.status);
+        // `steps` replace every step, so a body get_campaign cut must not come back as the whole step.
+        if (input.steps?.some((s) => saved.steps.some((old) => isCutCopy(s.body, old.body, STEP_BODY_CHARS)))) throw cutCopyRefusal("step body");
+      }
       await writes.update(actor, campaignId, { name: input.name, steps: input.steps, senderIds: input.senderIds });
       return answer(campaignId, "Saved the campaign.");
     }

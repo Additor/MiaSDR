@@ -17,6 +17,7 @@ import { RULED_LIST, RULED_ROW, SettingsSection } from "../settings-section";
 export interface AgentSendsData {
   sends: Array<{ attemptId: string; conversationId: string; channel: "email" | "linkedin"; status: string; tokenName: string; userName: string; createdAt: string }>;
   campaigns: Array<{ campaignId: string; name: string; channel: string; status: string; tokenName: string; enrolledByAgents: number }>;
+  running: number;
   today: { replies: number; enrolls: number };
   limits: { replies: number; enrolls: number };
 }
@@ -36,9 +37,10 @@ const STATUS_LABEL: Record<string, string> = {
 export function AgentSends({ data }: { data: AgentSendsData }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
-  const running = data.campaigns.filter((c) => c.status === "active").length;
+  const { running } = data;
   const repliesFull = data.today.replies >= data.limits.replies;
   const enrollsFull = data.today.enrolls >= data.limits.enrolls;
+  const waiting = repliesFull && enrollsFull ? "Agent replies and enrolls wait" : repliesFull ? "Agent replies wait" : "Agent enrolls wait";
 
   return (
     <SettingsSection
@@ -60,7 +62,7 @@ export function AgentSends({ data }: { data: AgentSendsData }) {
         <p role="status" className="flex items-start gap-2 text-sm">
           <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
           <span>
-            <strong className="font-medium text-warning">Agents reached today&apos;s limit.</strong> {repliesFull ? "Agent replies" : "Agent enrolls"} wait until midnight UTC unless you raise the limit.
+            <strong className="font-medium text-warning">Agents reached today&apos;s limit.</strong> {waiting} until midnight UTC unless you raise the limit.
           </span>
         </p>
       )}

@@ -62,8 +62,8 @@ export interface AgentSendPolicy {
 
 /**
  * Whether an agent holding this token may send replies and start campaigns now. `installSendEnabled` is the install's
- * switch for agent sending; `src/shared/env.ts` has no variable for it yet, so the caller supplies it. Checks run in a
- * fixed order, so the refusal names the first thing to fix.
+ * switch for agent sending (`MCP_SEND_ENABLED`), which the caller reads. Checks run in a fixed order, so the refusal
+ * names the first thing to fix.
  */
 export function agentSendPolicy(input: { installSendEnabled: boolean; settings: McpSettings; token: PolicyToken; now: Date }): AgentSendPolicy {
   const refuse = (refusal: AgentSendRefusal): AgentSendPolicy => ({ replies: false, campaigns: false, refusal });
@@ -75,4 +75,16 @@ export function agentSendPolicy(input: { installSendEnabled: boolean; settings: 
   if (settings.agentSendMode === "off") return refuse("mode_off");
   if (token.policyEpoch !== settings.agentSendEpoch) return refuse("epoch_changed");
   return { replies: true, campaigns: settings.agentSendMode === "replies_and_campaigns", refusal: null };
+}
+
+/**
+ * What a token does now, as the token list shows it: send only while the send policy allows it, write while the
+ * person's role and the member write setting allow it. `sendRetired` marks a send token that cannot send again, after
+ * agent sending went off or the policy moved on: a new token sends.
+ */
+export function tokenAccess(input: { role: string | null; installSendEnabled: boolean; settings: McpSettings; token: PolicyToken; now: Date }): { access: "read" | "write" | "send"; sendRetired: boolean } {
+  const scopes = input.role === null ? [] : usableScopes({ role: input.role, settings: input.settings, scopes: input.token.scopes });
+  const policy = agentSendPolicy({ installSendEnabled: input.installSendEnabled, settings: input.settings, token: { ...input.token, scopes }, now: input.now });
+  const sendRetired = hasScope(input.token.scopes, "mcp:send") && (policy.refusal === "mode_off" || policy.refusal === "epoch_changed");
+  return { access: policy.replies ? "send" : scopes.includes("mcp:write") ? "write" : "read", sendRetired };
 }

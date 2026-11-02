@@ -20,7 +20,7 @@ const senderLabel = (channel: OutreachChannel) =>
 const toRef = (row: { id: string; label: string; status: string }): SenderRef => ({ id: row.id, label: row.label, connected: row.status === "connected" });
 
 export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
-  async enrollPicked(organizationId, campaignId, channel, personIds, handle) {
+  async enrollPicked(organizationId, campaignId, channel, personIds, viaTokenId, handle) {
     const ids = [...new Set(personIds)];
     return inTransaction(handle, async (tx) => {
       const suppressed = sql<boolean>`${suppressedSql("people")}`;
@@ -69,7 +69,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
         const { inserted, skippedContact } = await insertSkippingContacts(tx, organizationId, chunk.map((p) => p.id), (sp, ids) =>
           sp
             .insert(campaignEnrollments)
-            .values(ids.map((personId) => ({ organizationId, campaignId, personId, channel })))
+            .values(ids.map((personId) => ({ organizationId, campaignId, personId, channel, enrolledViaTokenId: viaTokenId })))
             .onConflictDoNothing()
             .returning({ id: campaignEnrollments.id, personId: campaignEnrollments.personId }),
         );

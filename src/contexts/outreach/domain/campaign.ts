@@ -88,15 +88,18 @@ export interface CampaignStatusChange<Step> {
   from: CampaignStatus;
   to: CampaignStatus;
   checkedSteps: readonly Step[];
-  /** On a move to `active`: the MCP token of the agent that starts it, or null for a person. Stored as `started_via_token_id`. */
-  startedViaTokenId?: string | null;
+  /**
+   * The MCP token of the agent making the change, or null for a person. A move to `active` stores it as
+   * `started_via_token_id`; a person's pause sets `person_paused`, so only a person resumes.
+   */
+  viaTokenId?: string | null;
 }
 
 /** Starter templates mark what the author must write as [[like this]]. */
 const TEMPLATE_PLACEHOLDER = /\[\[[^\]]*\]\]/;
 
 /** Steps that still contain a [[placeholder]], which would reach leads as literal text. */
-export function stepsWithPlaceholders(steps: StepInput[]): number[] {
+export function stepsWithPlaceholders(steps: ReadonlyArray<{ stepNumber: number; subject?: string; body: string }>): number[] {
   return steps.filter((s) => TEMPLATE_PLACEHOLDER.test(s.body) || TEMPLATE_PLACEHOLDER.test(s.subject ?? "")).map((s) => s.stepNumber);
 }
 

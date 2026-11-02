@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
+import { utcDayStart } from "@/shared/utc-day";
 import { campaignEnrollments, campaigns, drafts, mcpTokens, sendAttempts, users } from "@/platform/db/schema";
 
 /*
@@ -29,6 +30,8 @@ export interface AgentCampaignRow {
 export interface AgentSendsOverview {
   sends: AgentSendRow[];
   campaigns: AgentCampaignRow[];
+  /** Running campaigns an agent started, all of them: what Pause campaigns agents started would pause. */
+  running: number;
   /** Today, from midnight UTC: what the daily limits count. */
   today: { replies: number; enrolls: number };
 }
@@ -36,8 +39,8 @@ export interface AgentSendsOverview {
 const SHOWN = 20;
 
 export async function agentSendsOverview(organizationId: string, now: Date): Promise<AgentSendsOverview> {
-  const dayStart = new Date(Math.floor(now.getTime() / 86_400_000) * 86_400_000);
-  const [sends, started, [replies], [enrolls]] = await Promise.all([
+  const dayStart = utcDayStart(now);
+  const [sends, started, [running], [replies], [enrolls]] = await Promise.all([
     db
       .select({
         attemptId: sendAttempts.id,
@@ -71,6 +74,10 @@ export async function agentSendsOverview(organizationId: string, now: Date): Pro
       .limit(SHOWN),
     db
       .select({ n: sql<number>`count(*)::int` })
+      .from(campaigns)
+      .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.status, "active"), isNotNull(campaigns.startedViaTokenId))),
+    db
+      .select({ n: sql<number>`count(*)::int` })
       .from(sendAttempts)
       .where(and(eq(sendAttempts.organizationId, organizationId), eq(sendAttempts.origin, "agent"), sql`${sendAttempts.status} <> 'failed'`, gte(sendAttempts.createdAt, dayStart))),
     db
@@ -81,6 +88,7 @@ export async function agentSendsOverview(organizationId: string, now: Date): Pro
   return {
     sends: sends.map(({ provider, ...row }): AgentSendRow => ({ ...row, channel: provider === "linkedin" ? "linkedin" : "email" })),
     campaigns: started,
+    running: running?.n ?? 0,
     today: { replies: replies?.n ?? 0, enrolls: enrolls?.n ?? 0 },
   };
 }

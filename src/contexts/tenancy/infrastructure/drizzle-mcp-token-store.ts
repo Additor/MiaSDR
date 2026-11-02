@@ -1,8 +1,8 @@
 import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { channelSettings, mcpTokens, members } from "@/platform/db/schema";
+import { mcpTokens, members } from "@/platform/db/schema";
 import { TOUCH_INTERVAL_MS, type McpPrincipalStore } from "../application/mcp-principal";
-import { MCP_SETTINGS_CHANNEL, readMcpSettings } from "../domain/mcp-settings";
+import { mcpSettingsIn } from "./mcp-settings-reader";
 
 export const drizzleMcpTokenStore: McpPrincipalStore = {
   async findPersonalToken(tokenHash) {
@@ -33,11 +33,5 @@ export const drizzleMcpTokenStore: McpPrincipalStore = {
       .where(and(eq(mcpTokens.id, tokenId), or(isNull(mcpTokens.lastUsedAt), lt(mcpTokens.lastUsedAt, new Date(now.getTime() - TOUCH_INTERVAL_MS)))));
   },
 
-  async settings(organizationId) {
-    const [row] = await db
-      .select({ values: channelSettings.values })
-      .from(channelSettings)
-      .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, MCP_SETTINGS_CHANNEL)));
-    return readMcpSettings(row?.values);
-  },
+  settings: (organizationId) => mcpSettingsIn(db, organizationId),
 };

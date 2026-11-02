@@ -1,11 +1,11 @@
 import type { DbHandle } from "@/platform/db/client";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { ConflictError, ForbiddenError, NotFoundError, type Actor } from "@/shared/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { UTC_DAY_MS, utcDayStart } from "@/shared/utc-day";
 import { agentCampaignRefusal, launchToken, launchTokenMatches, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
-import { canTransition, emptyFirstSubjectMessage, stepsWithPlaceholders, validateSteps, type CampaignStatus, type StepInput } from "../domain/campaign";
-import { validateLinkedInSteps, type LinkedInStep } from "../linkedin/domain/linkedin";
-import { changeLinkedInCampaignStatus, previewLinkedInStep, type LinkedInCampaignDeps } from "../linkedin/application/linkedin-campaigns";
-import { changeCampaignStatus, previewStep, SUBJECT_SAMPLE, type CampaignDeps } from "./campaign-management";
+import { canTransition, type CampaignStatus } from "../domain/campaign";
+import { changeLinkedInCampaignStatus, linkedInStartProblems, previewLinkedInStep, type LinkedInCampaignDeps } from "../linkedin/application/linkedin-campaigns";
+import { campaignStartProblems, changeCampaignStatus, previewStep, type CampaignDeps } from "./campaign-management";
 
 /**
  * Agents starting and resuming campaigns and enrolling leads (docs/decisions.md, "Agent campaigns"). Each function
@@ -23,6 +23,8 @@ export interface AgentCampaignRow {
   status: CampaignStatus;
   steps: unknown;
   archivedAt: Date | null;
+  /** A person paused it; only a person resumes it. */
+  personPaused: boolean;
 }
 
 export interface AgentSender {
@@ -55,8 +57,6 @@ export interface AgentCampaignStore {
   pending(tx: DbHandle, campaignId: string): Promise<number>;
   sendPaused(tx: DbHandle, organizationId: string): Promise<boolean>;
   agentEnrolledSince(tx: DbHandle, organizationId: string, since: Date): Promise<number>;
-  /** Marks the enrollments this transaction inserted with the token. Answers how many. */
-  markEnrolledVia(tx: DbHandle, campaignId: string, tokenId: string): Promise<number>;
   /** Running campaigns an agent started or resumed last. */
   agentStartedActive(organizationId: string): Promise<Array<{ id: string; channel: AgentChannel }>>;
 }
@@ -68,9 +68,6 @@ export interface AgentCampaignDeps {
   now: () => Date;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const utcDayStart = (now: Date) => new Date(Math.floor(now.getTime() / DAY_MS) * DAY_MS);
-const PLACEHOLDER = /\[\[[^\]]*\]\]/;
 
 function tokenOf(actor: Actor): string {
   if (!actor.via) throw new Error("An agent campaign action needs an agent actor.");
@@ -96,17 +93,9 @@ function ownershipProblem(actor: Actor, row: AgentCampaignRow, senders: { assign
 /** The status a purpose starts from: a start leaves a draft, a resume a paused campaign. */
 const FROM: Record<Exclude<LaunchPurpose, "enroll">, CampaignStatus> = { start: "draft", resume: "paused" };
 
-/** The problems a person would meet starting the campaign now, as sentences. */
-function stepProblems(row: AgentCampaignRow): string[] {
-  if (row.channel === "email") {
-    const steps = row.steps as StepInput[];
-    const unfinished = stepsWithPlaceholders(steps);
-    return [...validateSteps(steps).map((i) => (i.step ? `Step ${i.step}: ${i.message}` : i.message)), ...(unfinished.length > 0 ? [`Replace the [[bracketed text]] in step ${unfinished.join(", ")}.`] : [])];
-  }
-  const steps = row.steps as LinkedInStep[];
-  const unfinished = steps.filter((s) => PLACEHOLDER.test(s.body)).map((s) => s.stepNumber);
-  return [...validateLinkedInSteps(steps).map((i) => `Step ${i.step}: ${i.message}`), ...(unfinished.length > 0 ? [`Replace the [[bracketed text]] in step ${unfinished.join(", ")}.`] : [])];
-}
+/** A start problem as sentences: each step issue on its own, or the problem's message. */
+const sentences = (problem: ValidationError): string[] =>
+  problem.issues.length > 0 ? problem.issues.map((i) => (i.step ? `Step ${i.step}: ${i.message}` : i.message)) : [problem.message];
 
 export interface LaunchPreview {
   channel: AgentChannel;
@@ -149,23 +138,24 @@ export async function previewLaunch(deps: AgentCampaignDeps, actor: Actor, input
   const startsNow = input.purpose !== "enroll" || row.status === "active";
   if (row.archivedAt) problems.push("The campaign is archived. A person unarchives it first.");
   if (input.purpose !== "enroll" && row.status !== FROM[input.purpose]) problems.push(`A ${row.status} campaign cannot be ${input.purpose === "start" ? "started" : "resumed"}.`);
+  if (input.purpose === "resume" && row.status === "paused" && row.personPaused) problems.push("A person paused this campaign, so only a person resumes it (agent_resume_person_paused).");
   if (input.purpose === "enroll" && row.status === "completed") problems.push("The campaign is completed.");
   if (startsNow && !gate.campaigns) problems.push("Agents may not start campaigns or enroll leads in running ones here (agent_campaigns_off).");
   if (startsNow && paused) problems.push("Sending is paused for this organization (agent_send_paused).");
   if (startsNow && ownershipProblem(actor, row, senders)) problems.push("This Personal campaign sends from accounts the token's person does not own, or names no senders (agent_sender_not_owned).");
-  if (input.purpose !== "enroll") problems.push(...stepProblems(row));
-  if (senders.senders.every((s) => s.status !== "connected")) problems.push(row.channel === "email" ? "No mailbox the campaign sends from is connected." : "No LinkedIn account the campaign sends from is connected.");
+  // A start or resume lists the checks the status change runs, so a preview that passes them starts.
+  let emptySubjectLeads: number | null = null;
+  if (input.purpose !== "enroll") {
+    const check = row.channel === "email" ? await campaignStartProblems(deps.email, actor, row.id) : { problems: await linkedInStartProblems(deps.linkedin, actor, row.id), emptySubjectLeads: null };
+    problems.push(...check.problems.flatMap(sentences));
+    if (row.channel === "email" && input.purpose === "start") emptySubjectLeads = check.emptySubjectLeads;
+  } else if (senders.senders.every((s) => s.status !== "connected")) problems.push(row.channel === "email" ? "No mailbox the campaign sends from is connected." : "No LinkedIn account the campaign sends from is connected.");
   else if (senders.assigned && senders.senders.some((s) => s.status !== "connected")) problems.push("A sender the campaign names is not connected. A person reconnects it or removes it from the campaign.");
 
   const firstStep =
     row.channel === "email"
       ? await previewStep(deps.email, actor, row.id, 1).then((p) => ({ subject: p.subject, bodyText: p.bodyText, leadName: p.leadName })).catch(() => ({ subject: null, bodyText: "", leadName: null }))
       : await previewLinkedInStep(deps.linkedin, actor, row.id, 1).then((p) => ({ subject: null, bodyText: p.text, leadName: p.leadName })).catch(() => ({ subject: null, bodyText: "", leadName: null }));
-  let emptySubjectLeads: number | null = null;
-  if (row.channel === "email" && input.purpose === "start") {
-    const leads = await deps.email.campaigns.liveLeadVariables(actor.organizationId, row.id, SUBJECT_SAMPLE);
-    emptySubjectLeads = leads.filter((variables) => emptyFirstSubjectMessage(row.steps as StepInput[], variables) !== null).length;
-  }
   const inviteCapacity = senders.senders.filter((s) => s.status === "connected").reduce((sum, s) => sum + (s.dailyLimit ?? 0), 0);
   return {
     channel: row.channel,
@@ -208,6 +198,7 @@ export async function launchCampaign(
     const row = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
     if (row.archivedAt) throw new ConflictError("An archived campaign cannot be started. Unarchive it first.");
     if (row.status !== FROM[input.action] || !canTransition(row.status, "active")) throw new ConflictError(`A ${row.status} campaign cannot be ${input.action === "start" ? "started" : "resumed"}.`);
+    if (input.action === "resume" && row.personPaused) throw agentCampaignRefusal("agent_resume_person_paused");
     const gate = await deps.store.gate(tx, actor.organizationId, tokenId, deps.now());
     await checkAgentRun(deps, tx, actor, row, input.action, input.launchToken, gate);
     if (row.channel === "email") {
@@ -243,9 +234,8 @@ export async function agentEnroll<T extends { added?: number; wouldAdd?: number 
     // A dry run by query reports `wouldAdd`; a picked dry run reports what it would add as `added`.
     const adding = input.dryRun ? (result.wouldAdd ?? result.added ?? 0) : (result.added ?? 0);
     if (used + adding > gate.enrollCap) {
-      throw agentCampaignRefusal("agent_enroll_cap", (dayStart.getTime() + DAY_MS - now.getTime()) / 1000);
+      throw agentCampaignRefusal("agent_enroll_cap", (dayStart.getTime() + UTC_DAY_MS - now.getTime()) / 1000);
     }
-    if (!input.dryRun && adding > 0) await deps.store.markEnrolledVia(tx, row.id, tokenId);
     return result;
   });
 }

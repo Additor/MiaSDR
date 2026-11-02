@@ -86,7 +86,8 @@ export interface ToolHooks {
   now: () => number;
 }
 
-const bucketsOf = (tool: ToolDefinition, input: unknown): McpRateBucket[] => tool.buckets?.(input as never) ?? (tool.scope === "mcp:read" ? [] : ["write"]);
+/** A read-only tool counts as a read whatever scope it needs, such as preview_campaign_launch under `mcp:send`. */
+const bucketsOf = (tool: ToolDefinition, input: unknown): McpRateBucket[] => tool.buckets?.(input as never) ?? (tool.scope === "mcp:read" || tool.annotations.readOnlyHint ? [] : ["write"]);
 
 /** What a token ran out of, by bucket, for the refusal's sentence. */
 const LIMIT_WORDS: Record<McpRateBucket, string> = {

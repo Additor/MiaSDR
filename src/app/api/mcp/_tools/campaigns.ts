@@ -14,7 +14,7 @@ import { appLinks, clip, DEFAULT_LIST_LIMIT, fencedField, fitItems, iso, UNTRUST
 export const CHANNELS = ["email", "linkedin"] as const;
 
 /** Characters of a step body get_campaign keeps, except the step it previews, which comes whole. */
-const STEP_BODY_CHARS = 300;
+export const STEP_BODY_CHARS = 300;
 /** Characters of a rendered step preview an answer keeps. */
 const PREVIEW_CHARS = 4000;
 
@@ -95,9 +95,11 @@ const READS: Record<(typeof CHANNELS)[number], ChannelReads> = {
   },
 };
 
-/** A campaign's status for the write tools that check it first. A foreign or wrong-channel id answers not found. */
-export const campaignStatus = async (actor: Actor, channel: (typeof CHANNELS)[number], campaignId: string): Promise<string> =>
-  (await READS[channel].detail(actor, campaignId, parseEnrollmentListQuery({ size: "1" }))).campaign.status;
+/** A campaign's status and steps for the write tools that check them first. A foreign or wrong-channel id answers not found. */
+export const campaignState = async (actor: Actor, channel: (typeof CHANNELS)[number], campaignId: string): Promise<{ status: string; steps: Step[] }> =>
+  (await READS[channel].detail(actor, campaignId, parseEnrollmentListQuery({ size: "1" }))).campaign;
+
+export const campaignStatus = async (actor: Actor, channel: (typeof CHANNELS)[number], campaignId: string): Promise<string> => (await campaignState(actor, channel, campaignId)).status;
 
 /** A step body as written: cut to an excerpt, or whole for the previewed step. */
 const bodyOf = (body: string, whole: boolean): { body: string; truncated: boolean } => {

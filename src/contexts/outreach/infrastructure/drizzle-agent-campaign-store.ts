@@ -6,9 +6,11 @@ import { isOutboundPaused } from "@/shared/outbound-pause";
 import type { AgentCampaignStore, AgentCampaignRow, AgentSender } from "../application/agent-campaigns";
 import { readSendPause } from "../domain/send-pause";
 
+const ROW = { id: campaigns.id, channel: campaigns.channel, type: campaigns.type, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, personPaused: campaigns.personPaused };
+
 async function lockCampaign(tx: DbHandle, organizationId: string, campaignId: string, mode: "update" | "share"): Promise<AgentCampaignRow | null> {
   const [row] = await tx
-    .select({ id: campaigns.id, channel: campaigns.channel, type: campaigns.type, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt })
+    .select(ROW)
     .from(campaigns)
     .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, campaignId)))
     .for(mode);
@@ -30,7 +32,7 @@ export const drizzleAgentCampaignStore: AgentCampaignStore = {
 
   async campaign(tx, organizationId, campaignId) {
     const [row] = await tx
-      .select({ id: campaigns.id, channel: campaigns.channel, type: campaigns.type, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt })
+      .select(ROW)
       .from(campaigns)
       .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, campaignId)));
     return row ? { ...row, channel: row.channel as AgentCampaignRow["channel"] } : null;
@@ -105,14 +107,5 @@ export const drizzleAgentCampaignStore: AgentCampaignStore = {
     return rows.map((r) => ({ id: r.id, channel: r.channel as "email" | "linkedin" }));
   },
 
-  async markEnrolledVia(tx, campaignId, tokenId) {
-    // Rows this transaction inserted carry its start time, `now()`, as their creation time.
-    const rows = await tx
-      .update(campaignEnrollments)
-      .set({ enrolledViaTokenId: tokenId })
-      .where(and(eq(campaignEnrollments.campaignId, campaignId), sql`${campaignEnrollments.createdAt} = now()`, sql`${campaignEnrollments.enrolledViaTokenId} is null`))
-      .returning({ id: campaignEnrollments.id });
-    return rows.length;
-  },
 
 };

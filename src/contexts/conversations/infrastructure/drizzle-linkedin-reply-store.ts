@@ -5,7 +5,8 @@ import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/linkedin-reply-ports";
 import type { AttemptRow } from "../application/reply-ports";
 import { ATTEMPT_COUNTED, ATTEMPT_FROM, ATTEMPT_FROM_CALL, canMoveAttempt, type AttemptStatus } from "../domain/send-attempt-status";
-import { replyBlock, replyGapSeconds, utcDayStart } from "../domain/linkedin-reply";
+import { utcDayStart } from "@/shared/utc-day";
+import { replyBlock, replyGapSeconds } from "../domain/linkedin-reply";
 import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
@@ -135,6 +136,12 @@ export async function settleLinkedInSent(tx: Tx, attemptId: string, sent: { prov
   });
 }
 
+/** A draft a person or an agent typed. `createManualDraft` marks it `source: "manual"`; older composer drafts carry `manual: true`. */
+const typedDraft = (request: unknown): boolean => {
+  const meta = request as { source?: string; manual?: boolean } | null;
+  return meta?.source === "manual" || meta?.manual === true;
+};
+
 export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
   async begin(input) {
     const result = await db.transaction(async (tx) => {
@@ -228,7 +235,10 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         draftId = target.id;
         revision = target.revision;
       } else if (open) {
-        const [updated] = await tx.update(drafts).set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: record.version }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
+        // The text is the sender's now: a person's replaces an agent's, so the agent badge goes with it.
+        const [updated] = await tx
+          .update(drafts)
+          .set({ editedBodyText: text, revision: open.revision + 1, error: null, expectedContextVersion: record.version, writtenViaTokenId: input.via?.tokenId ?? null }).where(and(eq(drafts.id, open.id), eq(drafts.status, "awaiting_review"))).returning({ revision: drafts.revision });
         draftId = open.id;
         revision = updated.revision;
       } else {
@@ -243,7 +253,8 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
             editedBodyText: text,
             status: "awaiting_review",
             provider: "human",
-            request: { manual: true, createdBy: input.actorUserId },
+            request: { source: "manual", createdBy: input.actorUserId },
+            writtenViaTokenId: input.via?.tokenId ?? null,
           })
           .returning({ id: drafts.id, revision: drafts.revision });
         draftId = created.id;
@@ -388,7 +399,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       usedToday: used.usedToday,
       dailyLimit: account?.dailyMessageLimit ?? 0,
       draft: draft
-        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: (draft.request as { manual?: boolean } | null)?.manual === true ? "manual" : "ai", writtenVia: token?.name ?? null }
+        ? { id: draft.id, status: draft.status, text: draft.editedBodyText ?? draft.aiBodyText ?? "", error: draft.error, revision: draft.revision, source: typedDraft(draft.request) ? "manual" : "ai", writtenVia: token?.name ?? null }
         : null,
     };
   },

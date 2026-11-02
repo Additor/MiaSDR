@@ -6,7 +6,7 @@ import { createManualDraft, discardDraft, editDraft, getReplyPanel, regenerateDr
 import { inboxDeps } from "@/contexts/conversations/infrastructure/composition";
 import { NotFoundError, type Actor } from "@/shared/errors";
 import { defineTool, need, type ToolContext } from "./define";
-import { appLinks, clip, LONG_TEXT_CHARS } from "./output";
+import { appLinks, clip, cutCopyRefusal, isCutCopy, LONG_TEXT_CHARS } from "./output";
 
 const ACTIONS = ["request_ai", "create_manual", "edit", "regenerate", "discard"] as const;
 
@@ -23,11 +23,11 @@ async function readDraft(actor: Actor, conversationId: string): Promise<z.infer<
   return d ? { draftId: d.id, status: d.status, revision: d.revision, subject: d.subject, ...clip(d.editedBodyText ?? d.aiBodyText ?? "", LONG_TEXT_CHARS) } : null;
 }
 
-/** The conversation a draft belongs to; another organization's draft answers not found. */
-async function conversationOfDraft(actor: Actor, draftId: string): Promise<string> {
+/** The conversation a draft belongs to and its saved text; another organization's draft answers not found. */
+async function draftOf(actor: Actor, draftId: string): Promise<{ conversationId: string; text: string }> {
   const draft = await replyDeps().store.getDraft(actor.organizationId, draftId);
   if (!draft) throw new NotFoundError("Draft not found");
-  return draft.conversationId;
+  return { conversationId: draft.conversationId, text: draft.editedBodyText ?? draft.aiBodyText ?? "" };
 }
 
 export const writeReplyDraftTool = defineTool({
@@ -37,7 +37,7 @@ export const writeReplyDraftTool = defineTool({
     "Writes the reply draft of a conversation for a person to review and send in MiaSDR. Nothing is sent.",
     "`request_ai` has the AI write one (`conversationId`); `create_manual` saves your text as the draft (`conversationId`, `bodyText`, and `subject` for email);",
     "`edit` replaces the draft's text (`draftId`, `revision`, `bodyText`, optional `subject`); `regenerate` has the AI write it again (`draftId`, optional `note`); `discard` drops it (`draftId`, `revision`).",
-    "Take `revision` from get_conversation or the last answer. The answer gives the draft and `reviewUrl`, where the person reviews and sends it.",
+    "`edit` refuses text that ends where an answer cut the draft (`truncated_text`). Take `revision` from get_conversation or the last answer. The answer gives the draft and `reviewUrl`, where the person reviews and sends it.",
   ].join(" "),
   scope: "mcp:write",
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
@@ -68,19 +68,22 @@ export const writeReplyDraftTool = defineTool({
       }
       case "edit": {
         const draftId = need(input.draftId, "draftId", "edit");
-        conversationId = await conversationOfDraft(actor, draftId);
-        await editDraft(replyDeps(), actor, draftId, { revision: need(input.revision, "revision", "edit"), subject: input.subject, bodyText: need(input.bodyText, "bodyText", "edit") });
+        const bodyText = need(input.bodyText, "bodyText", "edit");
+        const saved = await draftOf(actor, draftId);
+        if (isCutCopy(bodyText, saved.text, LONG_TEXT_CHARS)) throw cutCopyRefusal("draft text");
+        conversationId = saved.conversationId;
+        await editDraft(replyDeps(), actor, draftId, { revision: need(input.revision, "revision", "edit"), subject: input.subject, bodyText });
         break;
       }
       case "regenerate": {
         const draftId = need(input.draftId, "draftId", "regenerate");
-        conversationId = await conversationOfDraft(actor, draftId);
+        ({ conversationId } = await draftOf(actor, draftId));
         await regenerateDraft(replyDeps(), actor, draftId, { note: input.note });
         break;
       }
       case "discard": {
         const draftId = need(input.draftId, "draftId", "discard");
-        conversationId = await conversationOfDraft(actor, draftId);
+        ({ conversationId } = await draftOf(actor, draftId));
         await discardDraft(replyDeps(), actor, draftId, { expectedRevision: need(input.revision, "revision", "discard") });
         break;
       }

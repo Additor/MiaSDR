@@ -56,8 +56,3 @@ export function replyBlock(
   }
   return null;
 }
-
-/** Start of the UTC day that contains `now`. */
-export function utcDayStart(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}

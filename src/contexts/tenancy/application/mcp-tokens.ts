@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { MCP_TOKEN_DAYS, MCP_TOKEN_LIMIT, mcpTokenHint, mcpTokenNameProblem } from "../domain/mcp-token";
-import { tokenScopesProblem, type McpScope } from "../domain/mcp-policy";
+import { tokenAccess, tokenScopesProblem, type McpScope } from "../domain/mcp-policy";
 import { mcpSettingsProblem, type McpSettings, type McpSettingsPatch } from "../domain/mcp-settings";
 import { isOwnerOrAdmin } from "../domain/roles";
 import type { AuditEntry } from "./audit-log";
@@ -17,6 +17,20 @@ export interface McpTokenView {
   createdAt: Date;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
+}
+
+/** A token as the list reads it: the view, plus what its access depends on now. */
+export interface McpTokenRow extends McpTokenView {
+  /** The owner's role, or null when they left the organization. */
+  ownerRole: string | null;
+  policyEpoch: number;
+}
+
+/** A token in the Settings list, with what it does now. */
+export interface McpTokenListItem extends McpTokenView {
+  access: "read" | "write" | "send";
+  /** A send token that will not send again; a new token sends. */
+  sendRetired: boolean;
 }
 
 export interface NewMcpToken {
@@ -39,7 +53,7 @@ export interface McpTokenTx {
 
 export interface McpTokenStore {
   /** Tokens that are not revoked, newest first; one person's when `userId` is given. */
-  list(organizationId: string, userId: string | null): Promise<McpTokenView[]>;
+  list(organizationId: string, userId: string | null): Promise<McpTokenRow[]>;
   /** The token's owner, revoked or not, or null when the organization has no such token. */
   owner(organizationId: string, tokenId: string): Promise<{ userId: string } | null>;
   /**
@@ -62,6 +76,8 @@ export interface McpTokenDeps {
   newSecret: () => string;
   hash: (token: string) => string;
   now: () => Date;
+  /** `MCP_SEND_ENABLED`, the install's switch for agent sending. */
+  installSendEnabled: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -114,9 +130,14 @@ export async function updateMcpSettings(deps: Pick<McpTokenDeps, "store">, actor
 }
 
 /** The caller's own tokens; with `organization`, every member's, which only an owner or admin may read. */
-export async function listMcpTokens(deps: Pick<McpTokenDeps, "store">, actor: Actor, scope: "mine" | "organization"): Promise<McpTokenView[]> {
+export async function listMcpTokens(deps: Pick<McpTokenDeps, "store" | "now" | "installSendEnabled">, actor: Actor, scope: "mine" | "organization"): Promise<McpTokenListItem[]> {
   if (scope === "organization") requireAdmin(actor, "Only an owner or admin can see every member's MCP tokens.");
-  return deps.store.list(actor.organizationId, scope === "mine" ? actor.userId : null);
+  const [rows, settings] = await Promise.all([deps.store.list(actor.organizationId, scope === "mine" ? actor.userId : null), deps.store.settings(actor.organizationId)]);
+  const now = deps.now();
+  return rows.map(({ ownerRole, policyEpoch, ...view }) => ({
+    ...view,
+    ...tokenAccess({ role: ownerRole, installSendEnabled: deps.installSendEnabled, settings, token: { scopes: view.scopes, policyEpoch, revokedAt: null, expiresAt: view.expiresAt }, now }),
+  }));
 }
 
 /**

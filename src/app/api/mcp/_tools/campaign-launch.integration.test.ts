@@ -217,5 +217,45 @@ describeDb("MCP agent campaigns: launch and enroll", () => {
     const { paused } = await pauseAgentStartedCampaigns(agentCampaignDeps(), { userId: org.userId, organizationId: org.organizationId, role: "owner" });
     expect(paused).toBeGreaterThan(0);
     expect(await sql`select 1 from campaigns where organization_id = ${org.organizationId} and status = 'active' and started_via_token_id is not null`).toHaveLength(0);
+    expect(overview.running).toBeGreaterThan(0);
+    expect((await agentSendsOverview(org.organizationId, new Date())).running).toBe(0);
+
+    // A person paused it, so the agent may not resume it; one the agent paused itself, it may.
+    const seen = await preview(campaignId, "resume");
+    expect(seen.structured.problems).toContainEqual(expect.stringContaining("agent_resume_person_paused"));
+    expect(codeOf(await launch(campaignId, seen.structured.launchToken as string, "resume"))).toBe("agent_resume_person_paused");
+    await sql`update campaigns set person_paused = false where id = ${campaignId}`;
+    expect((await agent.tool("pause_sending", { target: "campaign", channel: "email", campaignId })).structured.outcome).toBe("already_paused");
+    const resumed = await launch(campaignId, (await preview(campaignId, "resume")).structured.launchToken as string, "resume");
+    expect(resumed.structured.status, resumed.text).toBe("active");
+    expect((await agent.tool("pause_sending", { target: "campaign", channel: "email", campaignId })).structured.outcome).toBe("paused");
+    expect(await sql`select person_paused from campaigns where id = ${campaignId}`).toEqual([{ person_paused: false }]);
+  });
+
+  it("previews the same start checks the launch runs", async () => {
+    const campaignId = await campaign();
+    await agent.tool("draft_campaign", { action: "update", channel: "email", campaignId, steps: [{ ...STEPS[0], subject: "{{company}}" }] });
+    await addLeads(campaignId, await leads(1));
+    const seen = await preview(campaignId, "start");
+    expect(seen.structured.problems).toContainEqual(expect.stringContaining("subject"));
+    const refused = await launch(campaignId, seen.structured.launchToken as string);
+    expect(refused.isError).toBe(true);
+
+    const { id: linkedinId } = await (await import("@/contexts/outreach/linkedin/application/linkedin-campaigns")).createLinkedInCampaign(
+      (await import("@/contexts/outreach/linkedin/infrastructure/linkedin-composition")).linkedinCampaignDeps(),
+      { userId: org.userId, organizationId: org.organizationId, role: "owner" },
+      { name: "No steps" },
+    );
+    await sql`update campaigns set steps = '[]'::jsonb where id = ${linkedinId}`;
+    const empty = await agent.tool("preview_campaign_launch", { channel: "linkedin", campaignId: linkedinId, purpose: "start" });
+    expect(empty.structured.problems).toContainEqual("Add at least one step.");
+    expect(JSON.stringify(empty.structured.problems)).not.toContain("Step null");
+  });
+
+  it("counts the launch preview as a read, not a change", async () => {
+    const campaignId = await campaign();
+    await sql`delete from mcp_rate_limits where token_id = ${agent.tokenId}`;
+    await preview(campaignId, "start");
+    expect(await sql`select bucket from mcp_rate_limits where token_id = ${agent.tokenId} and bucket = 'write'`).toHaveLength(0);
   });
 });

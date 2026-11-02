@@ -99,6 +99,8 @@ test("an admin lets agents send replies, creates a token that sends, and turns a
   await expect(page.getByText("Agent sending saved.")).toBeVisible();
 
   await page.goto("/settings/mcp");
+  await expect(row).toContainText("No longer sends");
+  await expect(row).not.toContainText(/\bSends\b/);
   await row.getByRole("button", { name: "Revoke" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Revoke token" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();

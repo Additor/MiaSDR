@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { replyBlock, replyGapSeconds, utcDayStart } from "./linkedin-reply";
+import { replyBlock, replyGapSeconds } from "./linkedin-reply";
 
 const now = new Date("2026-10-15T12:00:00Z");
 const ok = { status: "connected", limitReachedUntil: null, dailyMessageLimit: 50 };
@@ -38,11 +38,5 @@ describe("replyBlock", () => {
     const last = new Date(now.getTime() - 3000);
     expect(replyBlock(now, ok, { ...free, lastAttemptAt: last })).toMatchObject({ reason: "too_fast", retryAfterSeconds: 5 });
     expect(replyBlock(now, ok, { ...free, lastAttemptAt: new Date(now.getTime() - 8000) })).toBeNull();
-  });
-});
-
-describe("utcDayStart", () => {
-  it("returns midnight UTC", () => {
-    expect(utcDayStart(new Date("2026-10-15T23:59:59Z")).toISOString()).toBe("2026-10-15T00:00:00.000Z");
   });
 });

@@ -480,6 +480,13 @@ describeDb("LinkedIn conversation replies", () => {
       expect(stranger.fake.messages).toEqual([]);
     });
 
+    it("marks a typed agent draft manual with the agent named, until a person's text replaces it", async () => {
+      const f = await agentFixture({ reached: true });
+      expect((await app.getLinkedInReplyPanel(f.deps, f.actor, f.conversationId))?.draft).toMatchObject({ source: "manual", writtenVia: "Agent laptop" });
+      expect((await send(f, "My own words.")).status).toBe("sent");
+      expect(await one("select edited_body_text, written_via_token_id from drafts where id = $1", [f.draft.draftId])).toEqual({ edited_body_text: "My own words.", written_via_token_id: null });
+    });
+
     it("refuses an empty saved draft", async () => {
       const f = await agentFixture({ reached: true });
       await sql`update drafts set edited_body_text = '   ' where id = ${f.draft.draftId}`;
