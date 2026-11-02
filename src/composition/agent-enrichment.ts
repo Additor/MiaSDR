@@ -23,7 +23,8 @@ export async function runEnrichment(actor: Actor, target: AgentRunTarget, token:
   if (token !== plan.actionToken) throw actionTokenStale();
   // Nothing to run costs nothing, and a limit of 0 should not refuse it.
   if (plan.report.cells === 0) return plan.report;
-  const amount = plan.report.worstCaseCostCents;
+  // Prices can hold fractions of a cent, and the daily count is whole cents, so it rounds toward the limit.
+  const amount = Math.ceil(plan.report.worstCaseCostCents);
   const report = await withAgentUsage(agentUsageDeps(), actor, { kind: "spend_cents", amount }, () => startAgentRun(deps, actor, target, amount));
   await auditSink.record({
     organizationId: actor.organizationId,
