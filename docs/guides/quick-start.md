@@ -29,7 +29,7 @@ A lead that matches an existing email or LinkedIn profile updates that lead. It 
 
 ## 5. Build a campaign
 
-1. Open Campaigns and create an email campaign. On the Sequence tab, write up to 10 steps. These messages send automatically at their time, and a reply, bounce or unsubscribe stops them. Each step has a subject, a body and a wait before the next step. Merge fields such as the first name fill from the lead.
+1. Open Campaigns and create an email campaign. On the Sequence tab, write up to 10 steps. These messages send automatically at their time, and a reply, bounce or unsubscribe stops them. Each step has a subject, a body and a wait before the next step. Merge fields such as the first name fill from the lead. A campaign with a merge field no lead has does not start, and the message names the field.
 2. Preview the steps. Check that no field renders empty.
 3. On the Leads tab, select Add leads and add the leads that match a search (up to 5,000 at a time). The app skips people with no email, unsubscribed addresses, do-not-contact people and people already in the campaign, and reports each count.
 4. Select Start campaign. The note under the button links to the responsible-use page.

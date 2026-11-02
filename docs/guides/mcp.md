@@ -73,6 +73,12 @@ A token that makes changes adds these tools. Each acts as its person would in Mi
 
 Each item carries an `appUrl`, the page in MiaSDR where a person sees or acts on it. An answer stays under about 10,000 tokens. A request that would return more fails with `answer_too_large`; narrow it with a filter, a page or a shorter date range. Long text comes cut and marked `truncated`: a reply draft keeps 12,000 characters, and `get_campaign` keeps 300 of each step body except the step named in `previewStep`, which comes whole. A write that sends a cut copy back is refused (`truncated_text`), and `send_reply` refuses a draft longer than 12,000 characters (`draft_not_read`).
 
+## Merge fields in campaign steps
+
+`get_workspace` lists the fields a step can use in `mergeFields`. Steps write them as `{{firstName}}`, and `{{first_name}}` or `{{First Name}}` fill the same field. The list samples recent leads and companies, so a rarely used import column can work without appearing there.
+
+After a save, `draft_campaign` answers `unknownFields`: the fields no lead in the organization has. They would reach every lead as a blank, so the save goes through but the campaign cannot start or resume until they change. `preview_campaign_launch` lists them under `problems`. It also answers `firstStep.unresolved`: the fields step 1 leaves blank for the lead it shows, `empty` when other leads may have a value and `unknown` when none does. A lead with an empty field still gets the message, with that field left out.
+
 ## Cards in the chat
 
 A client that supports MCP Apps shows a card beside two tools' answers: `write_reply_draft` shows the draft, and `preview_campaign_launch` shows what a start would do. A card only displays the answer and opens MiaSDR, so a person reviews and sends there. Other clients read the same answer as text.
@@ -119,4 +125,4 @@ Each token change and each switch of MCP writes a row to the audit log under the
 
 ## Agent activity
 
-Owners and admins see each agent call under Agent activity on the same page: the tool, the person and token, and a link to the conversation or deal. Changes show by default; Show reads adds the reads. The list keeps the ids a call named and never its text, and drops calls older than `RETENTION_MCP_TOOL_CALLS_DAYS` (90 days by default). A draft an agent wrote shows "Written by an agent" with the token's name until a person edits it, and a conversation's history reads "{person} via {token}" beside each change an agent made.
+Owners and admins see each agent call under Agent activity on the same page: the tool, the person and token, the client when it names itself, and a link to the conversation or deal. Changes show by default; Show reads adds the reads. The list keeps the ids a call named and never its text, and drops calls older than `RETENTION_MCP_TOOL_CALLS_DAYS` (90 days by default). A draft an agent wrote shows "Written by an agent" with the token's name until a person edits it, and a conversation's history reads "{person} via {token}" beside each change an agent made.
