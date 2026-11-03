@@ -164,7 +164,7 @@ describeDb("linkedin.sync-accounts job", () => {
     const disabled = await org();
     const broken = await org();
     await sql`update integration_accounts set enabled = false where organization_id = ${disabled.id}`;
-    await sql`update integration_credentials set encrypted_payload = 'not-an-envelope' where account_id = (select id from integration_accounts where organization_id = ${broken.id})`;
+    await sql`update integration_credentials set encrypted_payload = 'v2:not-an-envelope' where account_id = (select id from integration_accounts where organization_id = ${broken.id})`;
     const result = await run(at("10:00"), undefined, [none.id, disabled.id, broken.id]);
     expect(result.detail).toMatchObject({ organizations: 0, failed: 0 });
     for (const o of [none, disabled, broken]) {
