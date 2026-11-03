@@ -114,7 +114,7 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
         <StartBlockers blockers={blockers} channel="linkedin" base={base} />
 
         <div className="stack-group">
-          <CampaignTabs base={base} active={tab} />
+          <CampaignTabs base={base} active={tab} campaignId={campaign.id} />
 
           {tab === "leads" && (
             <LeadsSection id={campaign.id} count={enrollments.counts.all} disabled={campaign.status === "completed"} channel="linkedin">

@@ -170,7 +170,7 @@ async function Campaign({ params, searchParams }: { params: PageProps<"/campaign
         <StartBlockers blockers={blockers} channel="email" base={base} />
 
         <div className="stack-group">
-          <CampaignTabs base={base} active={tab} />
+          <CampaignTabs base={base} active={tab} campaignId={campaign.id} />
 
           {tab === "leads" && (
             <LeadsSection id={campaign.id} count={enrollments.counts.all} disabled={campaign.status === "completed"}>

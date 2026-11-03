@@ -1,5 +1,6 @@
 "use client";
 
+import { useServerDraft } from "@/app/_lib/use-server-draft";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -23,7 +24,7 @@ interface Org {
 export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: Org; zones: string[]; canRename: boolean; canEditZone: boolean }) {
   const router = useRouter();
   const saved = { name: org.name, timeZone: org.timeZone, country: org.defaultPhoneCountry ?? "" };
-  const [values, setValues] = useState(saved);
+  const { value: values, setValue: setValues, baseChanged, discard, adoptNext } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
@@ -45,6 +46,7 @@ export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: 
       setError(result.error);
       return;
     }
+    adoptNext();
     toast.success("Organization saved.");
   }
 
@@ -71,7 +73,7 @@ export function OrganizationForm({ org, zones, canRename, canEditZone }: { org: 
               Lead imports and lead edits read a number without a country code, such as 010-1234-5678, as a number from this country. With no default, such a number is ignored with a warning, unless your administrator set a default country in the server configuration.
             </FieldDescription>
           </Field>
-          {canEditZone && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValues(saved)} />}
+          {canEditZone && <SaveRow dirty={dirty} pending={pending} error={error} baseChanged={baseChanged} onDiscard={discard} />}
         </FieldGroup>
       </form>
     </SettingsSection>

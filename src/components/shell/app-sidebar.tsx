@@ -165,6 +165,7 @@ export function AppSidebar({ organizationName, organizations = [], canCreateOrga
       return;
     }
     // A full load: the next person on this browser must not find this person's pages kept mounted.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.assign(SIGN_IN);
   }
 

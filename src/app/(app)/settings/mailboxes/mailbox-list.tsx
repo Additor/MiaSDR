@@ -1,5 +1,6 @@
 "use client";
 
+import { useServerDraft } from "@/app/_lib/use-server-draft";
 import { CheckIcon, TriangleAlertIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -318,7 +319,7 @@ function EditMailbox({ mailbox, zones, defaultTimeZone, refresh }: { mailbox: Ma
     hours: hoursDraft(mailbox.ownHours ? mailbox.workingHours : null, defaultTimeZone),
   };
   const [open, setOpen] = useState(false);
-  const [values, setValues] = useState(saved);
+  const { value: values, setValue: setValues, adoptNext } = useServerDraft(saved);
   const dirty =
     values.displayName.trim() !== saved.displayName ||
     Number(values.limit) !== mailbox.dailySendLimit ||
@@ -335,6 +336,7 @@ function EditMailbox({ mailbox, zones, defaultTimeZone, refresh }: { mailbox: Ma
       workingHours: values.hoursMode === "organization" ? null : toStoredHours(values.hours),
     };
     orThrow(await runApiAction(callApi(`/api/mailboxes/${mailbox.id}`, "PATCH", body), { refresh }));
+    adoptNext();
     toast.success("Mailbox saved.");
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { useEffect } from "react";
+import { useLeaveGuard } from "@/components/shell/use-leave-guard";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 
@@ -9,7 +9,7 @@ import { FieldError } from "@/components/ui/field";
  * The end of every Settings form: the error, then Save. Save stays off until something changed, and "Unsaved
  * changes" with Discard shows while it is on, so a person sees what a click would do. One size and one label, Save.
  */
-export function SaveRow({ dirty, pending, error, onDiscard, label = "Save", pendingLabel = "Saving…" }: { dirty: boolean; pending: boolean; error?: string | null; onDiscard?: () => void; label?: string; pendingLabel?: string }) {
+export function SaveRow({ dirty, pending, error, baseChanged, onDiscard, label = "Save", pendingLabel = "Saving…" }: { dirty: boolean; pending: boolean; error?: string | null; baseChanged?: boolean; onDiscard?: () => void; label?: string; pendingLabel?: string }) {
   return (
     <>
       {error && <FieldError>{error}</FieldError>}
@@ -20,7 +20,7 @@ export function SaveRow({ dirty, pending, error, onDiscard, label = "Save", pend
         {dirty && !pending && (
           <>
             <span role="status" className="text-sm text-muted-foreground">
-              Unsaved changes
+              {baseChanged ? "Someone changed this since you opened it. Save replaces their change." : "Unsaved changes"}
             </span>
             {onDiscard && (
               <Button type="button" variant="ghost" onClick={onDiscard}>
@@ -34,15 +34,7 @@ export function SaveRow({ dirty, pending, error, onDiscard, label = "Save", pend
   );
 }
 
-/** Asks before the tab closes or reloads while a form holds unsaved changes. */
-export function useLeaveGuard(dirty: boolean) {
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-}
+export { useLeaveGuard };
 
 /** Move up and Move down for one row of an ordered list (custom fields, pipeline stages). `name` labels the buttons. */
 export function ReorderButtons({ name, canUp, canDown, disabled, onMove }: { name: string; canUp: boolean; canDown: boolean; disabled?: boolean; onMove: (direction: -1 | 1) => void }) {

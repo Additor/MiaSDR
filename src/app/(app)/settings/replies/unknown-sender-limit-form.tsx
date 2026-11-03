@@ -1,5 +1,6 @@
 "use client";
 
+import { useServerDraft } from "@/app/_lib/use-server-draft";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -15,7 +16,7 @@ import { SettingsSection } from "../settings-section";
 /** The daily AI job limit for replies from senders the organization never wrote to. It is stored on the organization. */
 export function UnknownSenderLimitForm({ limit, timeZone, canManage }: { limit: number; timeZone: string; canManage: boolean }) {
   const router = useRouter();
-  const [value, setValue] = useState(String(limit));
+  const { value: value, setValue: setValue, baseChanged, discard, adoptNext } = useServerDraft(String(limit));
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
@@ -33,6 +34,7 @@ export function UnknownSenderLimitForm({ limit, timeZone, canManage }: { limit: 
       setError(result.error);
       return;
     }
+    adoptNext();
     toast.success("Limit saved.");
   }
 
@@ -47,7 +49,7 @@ export function UnknownSenderLimitForm({ limit, timeZone, canManage }: { limit: 
               Over the limit, jobs are skipped and listed under <Link href="/settings/jobs">Jobs</Link>. The day follows the organization&apos;s time zone, {timeZone}.
             </FieldDescription>
           </Field>
-          {canManage && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValue(String(limit))} />}
+          {canManage && <SaveRow dirty={dirty} pending={pending} error={error} baseChanged={baseChanged} onDiscard={discard} />}
         </FieldGroup>
       </form>
     </SettingsSection>

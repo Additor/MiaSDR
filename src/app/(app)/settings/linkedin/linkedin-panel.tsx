@@ -1,5 +1,6 @@
 "use client";
 
+import { useServerDraft } from "@/app/_lib/use-server-draft";
 import { TriangleAlertIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -410,7 +411,7 @@ function AccountRow({
 }) {
   const orgTimeZone = useOrgTimeZone();
   const saved = { invites: String(account.dailyInviteLimit), messages: String(account.dailyMessageLimit), premium: account.isPremium, hours: hoursDraft(account.workingHours, orgTimeZone), owner: account.ownerUserId ?? NO_OWNER };
-  const [values, setValues] = useState(saved);
+  const { value: values, setValue: setValues, baseChanged, discard, adoptNext } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const saving = isBusy("save");
@@ -439,7 +440,8 @@ function AccountRow({
       };
       const result = await runApiAction(callApi<{ warnings: string[] }>(`/api/linkedin/accounts/${account.id}`, "PATCH", body), { refresh: onChanged });
       if (!result.ok) return setError(result.error);
-      toast.success(`${name} saved.`);
+      adoptNext();
+    toast.success(`${name} saved.`);
       for (const warning of result.data?.warnings ?? []) toast.warning(warning);
     });
   }
@@ -518,7 +520,7 @@ function AccountRow({
             </div>
           )}
           <WorkingHoursFields id={`hours-${account.id}`} value={values.hours} onChange={(hours) => setValues({ ...values, hours })} zones={zones} />
-          <SaveRow dirty={dirty} pending={saving} error={error} onDiscard={() => setValues(saved)} />
+          <SaveRow dirty={dirty} pending={saving} error={error} baseChanged={baseChanged} onDiscard={discard} />
         </FieldGroup>
       </form>
     </li>
