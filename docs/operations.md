@@ -109,7 +109,7 @@ Back up the database before the first `--apply`. Keep the old key until step 6 s
 
 ## History retention
 
-`platform.history-prune` deletes only logs and old agent usage counts (`mcp_agent_usage`, after 7 days). Defaults in days: `RETENTION_JOB_RUNS_DAYS` 30, `RETENTION_INBOUND_EVENTS_DAYS` 30 (finished events), `RETENTION_INBOUND_FAILED_DAYS` 90 (dead-lettered events), `RETENTION_AI_JOBS_DAYS` 30 (succeeded AI jobs), `RETENTION_MCP_TOOL_CALLS_DAYS` 90 (MCP agent activity). Sends, messages, enrollments, suppression, sequence runs and grid data are never pruned.
+`platform.history-prune` deletes only logs and old agent usage counts (`mcp_agent_usage`, after 7 days). Defaults in days: `RETENTION_JOB_RUNS_DAYS` 30, `RETENTION_INBOUND_EVENTS_DAYS` 30 (finished events), `RETENTION_INBOUND_FAILED_DAYS` 90 (dead-lettered events), `RETENTION_AI_JOBS_DAYS` 30 (succeeded AI jobs), `RETENTION_MCP_TOOL_CALLS_DAYS` 90 (MCP agent activity). Sends, messages, enrollments, suppression, follow-up runs and grid data are never pruned.
 
 ## Logs
 
