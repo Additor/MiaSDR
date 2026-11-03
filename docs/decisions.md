@@ -332,7 +332,10 @@ Code: `src/contexts/outreach`, the email engine under `email/`. `outreach/domain
 | Provider answer | Send status | What follows |
 |---|---|---|
 | Accepted | `sent` | Enrollment advances |
-| Refused (`definite`) | `failed` | Retry after 15, then 30 minutes; the third failure fails the enrollment |
+| Refused, about this message (`definite`, scope `message`) | `failed` | Retry after 15, then 30 minutes; the third failure fails the enrollment |
+| Refused, this address can never receive it (scope `recipient`) | `failed` | The enrollment fails at once |
+| Refused, the mailbox cannot send (scope `account`) | `failed`, attempt given back | The mailbox goes `failed`, which starts the takeover clock. The hourly `email.mailbox-recheck` or Recheck brings it back, and the lead sends the same step |
+| Refused, the provider is down or limiting us (scope `provider`) | `failed`, attempt given back | The mailbox waits 30 minutes (`PROVIDER_HOLD_MINUTES`). Its status stays |
 | Anything else (`unknown`) | `unknown` | Never retried on a guess |
 
 - We set our own `Message-ID` and an `X-MiaSDR-Send-Id` header before sending. Gmail replaces `Message-ID`, so `findSent` scans sent mail since the claim and matches the custom header.

@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { markMailboxUnavailableTx } from "./mailbox-state";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import {
   campaignEnrollments,
@@ -247,12 +248,40 @@ export const drizzleOutreachStore: OutreachStore = {
     });
   },
 
-  async markFailed(claim, error, now, retryAfterMinutes, maxAttempts) {
+  async markFailed(claim, error, now, retryAfterMinutes, maxAttempts, fatal) {
     await db.transaction(async (tx) => {
       const moved = await tx.update(sends).set({ status: "failed", error }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
-      await scheduleRetry(tx, claim.enrollmentId, claim.attempt, now, retryAfterMinutes, maxAttempts, error);
+      await scheduleRetry(tx, claim.enrollmentId, claim.attempt, now, retryAfterMinutes, maxAttempts, error, fatal);
     });
+  },
+
+  async releaseForMailbox(claim, error, now) {
+    await db.transaction(async (tx) => {
+      if ((await giveBackAttempt(tx, claim, error)).length === 0) return;
+      await markMailboxUnavailableTx(tx, eq(mailboxes.id, claim.mailbox.id), error, now);
+    });
+  },
+
+  async releaseForProvider(claim, error, until) {
+    await db.transaction(async (tx) => {
+      if ((await giveBackAttempt(tx, claim, error)).length === 0) return;
+      await tx.update(mailboxes).set({ nextSendAt: until, lastError: error }).where(eq(mailboxes.id, claim.mailbox.id));
+    });
+  },
+
+  async failedMailboxes(testedBefore) {
+    return db
+      .select({ id: mailboxes.id, emailAddress: mailboxes.emailAddress })
+      .from(mailboxes)
+      .where(and(eq(mailboxes.status, "failed"), or(isNull(mailboxes.lastTestedAt), lte(mailboxes.lastTestedAt, testedBefore))));
+  },
+
+  async recordMailboxCheck(mailboxId, error, now) {
+    await db
+      .update(mailboxes)
+      .set(error === null ? { status: "connected", lastError: null, lastTestedAt: now, unavailableSince: null } : { lastError: error, lastTestedAt: now })
+      .where(and(eq(mailboxes.id, mailboxId), eq(mailboxes.status, "failed")));
   },
 
   async markUnknown(claim, error) {

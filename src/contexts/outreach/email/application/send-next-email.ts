@@ -1,7 +1,7 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { randomUUID } from "node:crypto";
 import { renderEmail } from "../../domain/render";
-import { MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES, pickGapMinutes, retryDelayMinutes, emailRules } from "../../domain/send-policy";
+import { FAILED_MAILBOX_CHECK_MINUTES, MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, PROVIDER_HOLD_MINUTES, UNCERTAIN_AFTER_MINUTES, pickGapMinutes, retryDelayMinutes, emailRules } from "../../domain/send-policy";
 import { resolveThreading } from "../domain/threading";
 import { unsubscribeLinks } from "../domain/unsubscribe-token";
 import { defaultWorkingHours } from "../../domain/working-hours";
@@ -93,13 +93,43 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof ProviderSendError && error.kind === "definite") {
-      await deps.store.markFailed(claim, message, deps.clock.now(), retryDelayMinutes(claim.attempt), MAX_SEND_ATTEMPTS);
-      return { kind: "failed", retry: claim.attempt < MAX_SEND_ATTEMPTS };
+      const failedAt = deps.clock.now();
+      if (error.scope === "account") {
+        await deps.store.releaseForMailbox(claim, message, failedAt);
+        return { kind: "blocked", reason: "mailbox_unavailable" };
+      }
+      if (error.scope === "provider") {
+        await deps.store.releaseForProvider(claim, message, new Date(failedAt.getTime() + PROVIDER_HOLD_MINUTES * 60_000));
+        return { kind: "blocked", reason: "provider_unavailable" };
+      }
+      const fatal = error.scope === "recipient";
+      await deps.store.markFailed(claim, message, failedAt, retryDelayMinutes(claim.attempt), MAX_SEND_ATTEMPTS, fatal);
+      return { kind: "failed", retry: !fatal && claim.attempt < MAX_SEND_ATTEMPTS };
     }
     // Anything else might have gone out. Never retry on a guess.
     await deps.store.markUnknown(claim, message);
     return { kind: "unknown" };
   }
+}
+
+/**
+ * Tries failed mailboxes again, at most hourly. Access comes back without anyone telling MiaSDR: an admin fixes delegation in
+ * Google, and the mailbox's leads carry on from the step they were on. LinkedIn accounts recover the same way.
+ */
+export async function recheckFailedMailboxes(deps: EngineDeps): Promise<{ checked: number; recovered: number }> {
+  const now = deps.clock.now();
+  const report = { checked: 0, recovered: 0 };
+  for (const mailbox of await deps.store.failedMailboxes(new Date(now.getTime() - FAILED_MAILBOX_CHECK_MINUTES * 60_000))) {
+    report.checked += 1;
+    try {
+      await deps.provider.verify(mailbox.emailAddress);
+      await deps.store.recordMailboxCheck(mailbox.id, null, now);
+      report.recovered += 1;
+    } catch (error) {
+      await deps.store.recordMailboxCheck(mailbox.id, error instanceof Error ? error.message : "Could not verify this mailbox.", now);
+    }
+  }
+  return report;
 }
 
 export interface ReconcileReport {

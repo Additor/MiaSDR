@@ -199,6 +199,8 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "people/infrastructure/reachability",
   // LinkedIn account limits and disconnects, which conversations' replies hit as campaign sends do.
   "outreach/linkedin/infrastructure/linkedin-account-state",
+  // A mailbox a reply found it cannot send from, marked as a campaign send marks it.
+  "outreach/email/infrastructure/mailbox-state",
   // People's inbound leads and LinkedIn profile write-back, which conversations and outreach call inside their transactions.
   "people/infrastructure/inbound-leads",
   "people/infrastructure/linkedin-profile",

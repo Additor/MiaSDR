@@ -1,6 +1,6 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import type { Job } from "@/platform/jobs/types";
-import { reconcileUncertainSends, sendNextEmail, type EngineDeps } from "./send-next-email";
+import { recheckFailedMailboxes, reconcileUncertainSends, sendNextEmail, type EngineDeps } from "./send-next-email";
 
 /** One tick: reconcile first (it may release or settle steps), then send at most one email per mailbox. */
 export function createEmailJobs(deps: EngineDeps): Job[] {
@@ -19,6 +19,13 @@ export function createEmailJobs(deps: EngineDeps): Job[] {
             reconcile_inconclusive: report.inconclusive,
           },
         };
+      },
+    },
+    {
+      name: "email.mailbox-recheck",
+      async run() {
+        const report = await recheckFailedMailboxes(deps);
+        return { processed: report.recovered, more: false, detail: { checked: report.checked } };
       },
     },
     {

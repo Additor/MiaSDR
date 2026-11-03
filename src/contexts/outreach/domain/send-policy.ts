@@ -69,6 +69,10 @@ export function mailboxBlock(now: Date, mailbox: MailboxState): MailboxBlock | n
  * holds the cap (`scheduleRetry` ends it at this attempt), so no claim query and no database rule repeats the number.
  */
 export const MAX_SEND_ATTEMPTS = 3;
+/** How long a mailbox waits after the provider said it is down or limiting us. */
+export const PROVIDER_HOLD_MINUTES = 30;
+/** How often a failed mailbox is tried again on its own. */
+export const FAILED_MAILBOX_CHECK_MINUTES = 60;
 /** Wait before retrying a definite failure: 15 minutes, then 30. */
 export function retryDelayMinutes(attemptJustFailed: number): number {
   return 15 * attemptJustFailed;

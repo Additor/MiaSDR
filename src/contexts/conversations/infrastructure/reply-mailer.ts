@@ -2,6 +2,7 @@ import { env } from "@/shared/env";
 import { unsubscribeLinks } from "@/contexts/outreach/email/domain/unsubscribe-token";
 import { applySignature, toHtmlBody } from "@/contexts/outreach/domain/render";
 import { ProviderSendError, type MailboxProvider } from "@/contexts/outreach/email/application/ports";
+import { markAddressUnavailable } from "@/contexts/outreach/email/infrastructure/mailbox-state";
 import { ReplySendError, type ReplyMailer } from "../application/reply-ports";
 import { createSentFinder } from "./sent-finder";
 
@@ -36,6 +37,10 @@ export function createReplyMailer(provider: () => MailboxProvider): ReplyMailer 
         return { providerMessageId: sent.providerMessageId, threadId: sent.threadId };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        // A person sees the reply come back to review, and the mailbox shows why, as a campaign send would have marked it.
+        if (error instanceof ProviderSendError && error.kind === "definite" && error.scope === "account") {
+          await markAddressUnavailable(request.organizationId, request.mailbox.emailAddress, message, new Date());
+        }
         throw new ReplySendError(message, error instanceof ProviderSendError && error.kind === "definite" ? "definite" : "unknown");
       }
     },
