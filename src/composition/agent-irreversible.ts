@@ -55,8 +55,6 @@ const CONTACT_BLOCKERS: Record<ContactDeleteBlocker["reason"], string> = {
   recent_send: "A message went to this contact a moment ago. Try again once the send has settled.",
   recent_invite: "A LinkedIn invitation went to this contact a moment ago. Try again once it has settled.",
   ai_job_running: "An AI job is working on this contact's replies. Try again in a moment.",
-  private_conversation: "This contact has another member's private conversation. Ask that member, an owner or an admin.",
-  personal_campaign_sends: "This contact is in another member's personal campaign. Ask its creator, an owner or an admin.",
 };
 
 const targetIdOf = (target: IrreversibleTarget): string => ("dealId" in target ? target.dealId : "personId" in target ? target.personId : target.campaignId);

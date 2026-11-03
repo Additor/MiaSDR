@@ -23,11 +23,10 @@ describe("workflow state", () => {
   });
 
   it("settles an AI pick only when it applied, needs no check after, wants no draft and asked nothing to stop", () => {
-    const applied = { hold: null, needsLooksRight: false, wantsDraft: false, followUps: "stop" } as const;
+    const applied = { hold: null, wantsDraft: false, followUps: "stop" } as const;
     expect(settlesAfterAiPick("action_required", applied, false)).toBe(true);
     expect(settlesAfterAiPick("action_required", { ...applied, wantsDraft: true }, false)).toBe(false);
-    expect(settlesAfterAiPick("action_required", { ...applied, needsLooksRight: true }, false)).toBe(false);
-    expect(settlesAfterAiPick("action_required", { ...applied, hold: "requires_review" }, false)).toBe(false);
+    expect(settlesAfterAiPick("action_required", { ...applied, hold: "low_confidence" }, false)).toBe(false);
     expect(settlesAfterAiPick("action_required", applied, true)).toBe(false);
     expect(settlesAfterAiPick("waiting", applied, false)).toBe(false);
   });

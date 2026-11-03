@@ -13,9 +13,9 @@ import { earlierVersionNote, FIXED_STOPS_LINE, stopTypesLine } from "../_lib/aft
 /**
  * Settings section of a campaign: what happens after a lead replies. The form is the client editor. The blocks under it
  * (what stops follow-ups, follow-ups in progress) are read-only and render on the server. The reply types that stop
- * follow-ups are data, changed in Settings > Reply handling.
+ * follow-ups are seeded; Settings > Reply handling lists what each type does.
  */
-export function AfterReplyPanel({ view, personal = false }: { view: AfterReplyView; personal?: boolean }) {
+export function AfterReplyPanel({ view }: { view: AfterReplyView }) {
   const earlier = earlierVersionNote(view.earlierVersionCount);
   return (
     <CampaignSection id="after-reply" className="scroll-mt-4" title="Follow-ups after a reply" description="What happens to a lead who replies. The sequence stops for that lead either way.">
@@ -26,7 +26,6 @@ export function AfterReplyPanel({ view, personal = false }: { view: AfterReplyVi
           steps={view.steps}
           supported={view.supported}
           lockedReason={view.lockedReason}
-          personal={personal}
           inProgress={view.inProgress.length}
         />
 
@@ -35,7 +34,7 @@ export function AfterReplyPanel({ view, personal = false }: { view: AfterReplyVi
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h3 className="heading-item">Stops for these reply types</h3>
               <Link href="/settings/replies" className="text-sm text-muted-foreground underline underline-offset-4 focus-ring hover:text-foreground">
-                Change in Settings
+                See all reply types
               </Link>
             </div>
             <p className="max-w-prose text-sm">{stopTypesLine(view.stopReplyTypes.map((t) => t.name))}</p>

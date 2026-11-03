@@ -480,7 +480,6 @@ CREATE TABLE "campaigns" (
 	"organization_id" uuid NOT NULL,
 	"channel" text NOT NULL,
 	"name" text NOT NULL,
-	"type" text DEFAULT 'regular' NOT NULL,
 	"status" text DEFAULT 'draft' NOT NULL,
 	"steps" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_by" uuid,
@@ -491,9 +490,7 @@ CREATE TABLE "campaigns" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "campaigns_id_org_uq" UNIQUE("id","organization_id"),
 	CONSTRAINT "campaigns_channel_ck" CHECK ("campaigns"."channel" in ('email', 'linkedin')),
-	CONSTRAINT "campaigns_status_ck" CHECK ("campaigns"."status" in ('draft', 'active', 'paused', 'completed')),
-	CONSTRAINT "campaigns_type_ck" CHECK ("campaigns"."type" in ('regular', 'personal')),
-	CONSTRAINT "campaigns_personal_linkedin_ck" CHECK ("campaigns"."type" = 'regular' or "campaigns"."channel" = 'linkedin')
+	CONSTRAINT "campaigns_status_ck" CHECK ("campaigns"."status" in ('draft', 'active', 'paused', 'completed'))
 );
 --> statement-breakpoint
 CREATE TABLE "inbound_events" (
@@ -776,7 +773,6 @@ CREATE TABLE "conversations" (
 	"provider_thread_id" text,
 	"provider_contact_id" text,
 	"status" text DEFAULT 'active' NOT NULL,
-	"private_campaign_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "conversations_id_org_uq" UNIQUE("id","organization_id"),
@@ -974,11 +970,9 @@ CREATE TABLE "records" (
 CREATE TABLE "reply_handling_settings" (
 	"reply_type_set_id" uuid PRIMARY KEY NOT NULL,
 	"organization_id" uuid NOT NULL,
-	"auto_apply_confidence" numeric(4, 3) DEFAULT '0.850' NOT NULL,
 	"draft_instructions" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"classification_instructions" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "reply_handling_settings_confidence_ck" CHECK ("reply_handling_settings"."auto_apply_confidence" between 0 and 1),
 	CONSTRAINT "reply_handling_settings_instructions_ck" CHECK (jsonb_typeof("reply_handling_settings"."draft_instructions") = 'array' and jsonb_typeof("reply_handling_settings"."classification_instructions") = 'array'
         and length("reply_handling_settings"."draft_instructions"::text) <= 100000 and length("reply_handling_settings"."classification_instructions"::text) <= 100000)
 );
@@ -1004,7 +998,6 @@ CREATE TABLE "reply_type_picks" (
 	"response" jsonb,
 	"rules" jsonb,
 	"error" text,
-	"acknowledged_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "reply_type_picks_id_org_uq" UNIQUE("id","organization_id"),
 	CONSTRAINT "reply_type_picks_message_version_uq" UNIQUE("message_id","expected_context_version"),
@@ -1040,9 +1033,7 @@ CREATE TABLE "reply_types" (
 	"name" text NOT NULL,
 	"description" text,
 	"classification_guidance" text,
-	"active" boolean DEFAULT true NOT NULL,
 	"sort_order" integer DEFAULT 0 NOT NULL,
-	"check_mode" text DEFAULT 'after' NOT NULL,
 	"reply_draft" boolean DEFAULT true NOT NULL,
 	"follow_ups" text DEFAULT 'continue' NOT NULL,
 	"system_role" text,
@@ -1054,9 +1045,9 @@ CREATE TABLE "reply_types" (
 	CONSTRAINT "reply_types_group_ck" CHECK ("reply_types"."group_key" in ('customer', 'interested', 'not_interested', 'other')),
 	CONSTRAINT "reply_types_key_ck" CHECK ("reply_types"."key" ~ '^[a-z][a-z0-9_]*$'),
 	CONSTRAINT "reply_types_sort_ck" CHECK ("reply_types"."sort_order" >= 0),
-	CONSTRAINT "reply_types_rules_ck" CHECK ("reply_types"."check_mode" in ('before', 'after', 'skip') and "reply_types"."follow_ups" in ('continue', 'stop')),
+	CONSTRAINT "reply_types_rules_ck" CHECK ("reply_types"."follow_ups" in ('continue', 'stop')),
 	CONSTRAINT "reply_types_system_role_ck" CHECK ("reply_types"."system_role" is null or "reply_types"."system_role" in ('stop_request', 'customer')),
-	CONSTRAINT "reply_types_stop_request_ck" CHECK ("reply_types"."system_role" is distinct from 'stop_request' or ("reply_types"."check_mode" = 'before' and not "reply_types"."reply_draft" and "reply_types"."follow_ups" = 'stop' and "reply_types"."active")),
+	CONSTRAINT "reply_types_stop_request_ck" CHECK ("reply_types"."system_role" is distinct from 'stop_request' or (not "reply_types"."reply_draft" and "reply_types"."follow_ups" = 'stop')),
 	CONSTRAINT "reply_types_customer_ck" CHECK ("reply_types"."system_role" is distinct from 'customer' or "reply_types"."group_key" = 'customer')
 );
 --> statement-breakpoint
@@ -1246,7 +1237,7 @@ CREATE TABLE "grid_columns" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "grid_columns_table_key_uq" UNIQUE("table_id","key"),
-	CONSTRAINT "grid_columns_type_ck" CHECK ("grid_columns"."type" in ('text', 'number', 'currency', 'boolean', 'date', 'url', 'email', 'image', 'select', 'multiselect', 'json', 'enrichment', 'integration_output', 'ai_output', 'http', 'ai', 'functions', 'message', 'waterfall', 'formula', 'merge')),
+	CONSTRAINT "grid_columns_type_ck" CHECK ("grid_columns"."type" in ('text', 'number', 'currency', 'boolean', 'date', 'url', 'email', 'image', 'select', 'multiselect', 'json', 'enrichment', 'integration_output', 'ai_output', 'http', 'ai', 'functions', 'message', 'waterfall', 'merge')),
 	CONSTRAINT "grid_columns_key_ck" CHECK ("grid_columns"."key" <> '' and length(btrim("grid_columns"."name")) > 0)
 );
 --> statement-breakpoint
@@ -1496,7 +1487,6 @@ ALTER TABLE "sends" ADD CONSTRAINT "sends_linkedin_account_fk" FOREIGN KEY ("lin
 ALTER TABLE "ai_jobs" ADD CONSTRAINT "ai_jobs_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversations" ADD CONSTRAINT "conversations_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "conversations" ADD CONSTRAINT "conversations_private_campaign_fk" FOREIGN KEY ("private_campaign_id","organization_id") REFERENCES "public"."campaigns"("id","organization_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_record_id_organization_id_records_id_organization_id_fk" FOREIGN KEY ("record_id","organization_id") REFERENCES "public"."records"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "drafts" ADD CONSTRAINT "drafts_conversation_id_organization_id_conversations_id_organization_id_fk" FOREIGN KEY ("conversation_id","organization_id") REFERENCES "public"."conversations"("id","organization_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -1648,7 +1638,6 @@ CREATE UNIQUE INDEX "sends_provider_message_uq" ON "sends" USING btree ("channel
 CREATE INDEX "ai_jobs_claim_idx" ON "ai_jobs" USING btree ("status","run_after","priority");--> statement-breakpoint
 CREATE INDEX "ai_jobs_stale_lock_idx" ON "ai_jobs" USING btree ("status","locked_at");--> statement-breakpoint
 CREATE INDEX "ai_jobs_org_failed_idx" ON "ai_jobs" USING btree ("organization_id","failed_at") WHERE "ai_jobs"."status" = 'failed';--> statement-breakpoint
-CREATE INDEX "conversations_private_idx" ON "conversations" USING btree ("organization_id","private_campaign_id") WHERE "conversations"."private_campaign_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "conversations_org_thread_uq" ON "conversations" USING btree ("organization_id","channel","account_ref","provider_thread_id") WHERE "conversations"."provider_thread_id" is not null;--> statement-breakpoint
 CREATE INDEX "conversations_record_idx" ON "conversations" USING btree ("record_id");--> statement-breakpoint
 CREATE INDEX "drafts_record_status_idx" ON "drafts" USING btree ("record_id","status");--> statement-breakpoint

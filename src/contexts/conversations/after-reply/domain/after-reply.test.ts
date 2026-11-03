@@ -132,7 +132,7 @@ describe("why a run cannot start", () => {
     doNotContact: false,
     suppressed: false,
     contact: false,
-    owner: { name: "Autumn", channel: "email", type: "regular", status: "active", archived: false },
+    owner: { name: "Autumn", channel: "email", status: "active", archived: false },
     flow: { status: "active", hasPublished: true },
     stepCount: 3,
     answered: false,
@@ -144,7 +144,7 @@ describe("why a run cannot start", () => {
 
   it("names the campaign state before the record state", () => {
     const f = ok();
-    f.owner = { name: "Autumn", channel: "email", type: "regular", status: "paused", archived: false };
+    f.owner = { name: "Autumn", channel: "email", status: "paused", archived: false };
     f.doNotContact = true;
     expect(startBlockedReason(f)).toBe("The campaign Autumn is paused. Resume it to restart follow-ups.");
   });
@@ -158,7 +158,7 @@ describe("why a run cannot start", () => {
 
   it("names an archived campaign even when its status is active", () => {
     const f = ok();
-    f.owner = { name: "Autumn", channel: "email", type: "regular", status: "active", archived: true };
+    f.owner = { name: "Autumn", channel: "email", status: "active", archived: true };
     expect(startBlockedReason(f)).toMatch(/Autumn is archived/);
   });
 
@@ -169,12 +169,6 @@ describe("why a run cannot start", () => {
     const empty = ok();
     empty.flow = { status: "active", hasPublished: false };
     expect(startBlockedReason(empty)).toMatch(/no published follow-up steps\. Add them in its Follow-ups after a reply setting\./);
-  });
-
-  it("says a personal campaign cannot draft follow-ups", () => {
-    const f = ok();
-    f.owner = { name: "Autumn", channel: "email", type: "personal", status: "active", archived: false };
-    expect(startBlockedReason(f)).toBe("Personal campaigns keep replies out of the Inbox, so they cannot draft follow-ups.");
   });
 
   it("names the reply type whose Follow-ups rule is Stop", () => {

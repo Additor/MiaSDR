@@ -55,7 +55,6 @@ export interface InboxLinkedInMessage {
   providerMessageId: string;
   counterparty: { providerId: string; name: string | null; profileUrl: string | null; slug: string | null };
   personId: string | null;
-  privateCampaignId?: string | null;
   bodyText: string;
   receivedAt: Date;
 }

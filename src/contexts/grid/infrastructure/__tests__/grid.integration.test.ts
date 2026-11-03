@@ -14,7 +14,6 @@ describeDb("grid core", () => {
   let columnsUc: typeof import("../../application/column-management");
   let rowsUc: typeof import("../../application/row-management");
   let io: typeof import("../../application/import-export");
-  let formulaUc: typeof import("../../application/formula-management");
   let handoffUc: typeof import("../../application/campaign-handoff");
   let events: typeof import("../../application/cell-events");
   let parseUpload: typeof import("../parse-upload").parseUpload;
@@ -28,6 +27,13 @@ describeDb("grid core", () => {
   async function table(actor: Actor, name = "T") {
     const { workbook, table: t } = await structure.createWorkbook(deps, actor, { name: "W", firstTableName: name });
     return { workbook, table: t };
+  }
+
+  /** An AI column that reads `reads`, inserted directly: creating one through the use case needs output columns these tests do not look at. */
+  async function aiColumn(actor: Actor, tableId: string, key: string, reads: string[]) {
+    const [column] = await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position, auto_run)
+      values (${actor.organizationId}, ${tableId}, ${key}, ${key}, 'ai', ${sql.json({ prompt: reads.map((k) => `{{${k}}}`).join(" ") } as never)}, ${reads}, 99, false) returning id, key`;
+    return { id: column.id as string, key: column.key as string };
   }
 
   async function withColumns(actor: Actor, tableId: string, specs: Array<[string, string, Record<string, unknown>?]>) {
@@ -49,7 +55,6 @@ describeDb("grid core", () => {
     columnsUc = await import("../../application/column-management");
     rowsUc = await import("../../application/row-management");
     io = await import("../../application/import-export");
-    formulaUc = await import("../../application/formula-management");
     handoffUc = await import("../../application/campaign-handoff");
     events = await import("../../application/cell-events");
     parseUpload = (await import("../parse-upload")).parseUpload;
@@ -170,31 +175,19 @@ describeDb("grid core", () => {
   });
 
   describe("columns", () => {
-    it("records the columns a formula reads as its dependencies", async () => {
+    it("refuses an unknown type and a runner column made from raw JSON", async () => {
       const { actor } = await org();
       const { table: t } = await table(actor);
-      const [price, qty] = await withColumns(actor, t.id, [["Price", "number"], ["Qty", "number"]]);
-      const { column: total } = await columnsUc.createColumn(deps, actor, t.id, { name: "Total", type: "formula", config: { expression: `{{${price}}} * {{${qty}}}` } });
-      expect(total.dependsOn.sort()).toEqual([price, qty].sort());
-    });
-
-    it("refuses a formula on an unknown column, a broken formula, an unknown type and an overlong expression", async () => {
-      const { actor } = await org();
-      const { table: t } = await table(actor);
-      await expect(columnsUc.createColumn(deps, actor, t.id, { name: "Bad", type: "formula", config: { expression: "{{ghost}} + 1" } })).rejects.toThrow(/unknown column/);
-      await expect(columnsUc.createColumn(deps, actor, t.id, { name: "Bad", type: "formula", config: { expression: "1 +" } })).rejects.toBeInstanceOf(ValidationError);
       await expect(columnsUc.createColumn(deps, actor, t.id, { name: "Bad", type: "bogus" })).rejects.toBeInstanceOf(ValidationError);
-      await expect(columnsUc.createColumn(deps, actor, t.id, { name: "Bad", type: "formula", config: { expression: "x".repeat(6000) } })).rejects.toBeInstanceOf(ValidationError);
+      await expect(columnsUc.createColumn(deps, actor, t.id, { name: "Bad", type: "ai", config: {} })).rejects.toThrow(/own setup dialog/);
     });
 
-    it("blocks a formula loop and the delete of a column a formula reads, and allows the delete once the formula is gone", async () => {
+    it("blocks the delete of a column an AI column reads, and allows it once the AI column is gone", async () => {
       const { actor } = await org();
       const { table: t } = await table(actor);
-      const [price, qty] = await withColumns(actor, t.id, [["Price", "number"], ["Qty", "number"]]);
-      const { column: total } = await columnsUc.createColumn(deps, actor, t.id, { name: "Total", type: "formula", config: { expression: `{{${price}}} * {{${qty}}}` } });
-      // price now reads total, total reads price: a loop.
+      const [price] = await withColumns(actor, t.id, [["Price", "number"]]);
+      const total = await aiColumn(actor, t.id, "total", [price]);
       const priceColumn = (await columnsUc.listColumns(deps, actor, t.id)).columns.find((c) => c.key === price)!;
-      await expect(columnsUc.updateColumn(deps, actor, t.id, priceColumn.id, { type: "formula", config: { expression: `{{${total.key}}}` } })).rejects.toThrow(/Circular/);
       await expect(columnsUc.deleteColumn(deps, actor, t.id, priceColumn.id)).rejects.toThrow(/used by/);
       await columnsUc.deleteColumn(deps, actor, t.id, total.id);
       await columnsUc.deleteColumn(deps, actor, t.id, priceColumn.id);
@@ -278,13 +271,14 @@ describeDb("grid core", () => {
     it("bumps the row version on every edit and rejects runner and unknown columns", async () => {
       const { actor } = await org();
       const { table: t } = await table(actor);
-      const [key, calc] = [await withColumns(actor, t.id, [["Note", "text"]]).then((k) => k[0]), await columnsUc.createColumn(deps, actor, t.id, { name: "Calc", type: "formula", config: { expression: "1 + 1" } }).then((r) => r.column.key)];
+      const [key] = await withColumns(actor, t.id, [["Note", "text"]]);
+      const { key: calc } = await aiColumn(actor, t.id, "calc", [key]);
       const [row] = await rowsOf(actor, t.id);
       const v0 = await versionOf(row.id);
       const result = await rowsUc.editCells(deps, actor, t.id, [{ rowId: row.id, columnKey: key, value: "hello" }]);
       expect(result.rows[0].version).toBeGreaterThan(v0);
       expect(result.rows[0].version).toBe(await versionOf(row.id));
-      await expect(rowsUc.editCells(deps, actor, t.id, [{ rowId: row.id, columnKey: calc, value: 3 }])).rejects.toThrow(/calculates from its formula/);
+      await expect(rowsUc.editCells(deps, actor, t.id, [{ rowId: row.id, columnKey: calc, value: 3 }])).rejects.toThrow(/is filled by a run/);
       await expect(rowsUc.editCells(deps, actor, t.id, [{ rowId: row.id, columnKey: "ghost", value: 3 }])).rejects.toBeInstanceOf(ValidationError);
       await expect(rowsUc.editCells(deps, actor, t.id, [{ rowId: row.id, columnKey: key, value: "a" }, { rowId: row.id, columnKey: key, value: "b" }])).rejects.toThrow(/same cell twice/);
       await expect(rowsUc.editCells(deps, actor, t.id, [{ rowId: "00000000-0000-4000-8000-000000000000", columnKey: key, value: "a" }])).rejects.toBeInstanceOf(NotFoundError);
@@ -490,7 +484,6 @@ describeDb("grid core", () => {
       await denied(io.exportTableCsv(deps, b.actor, t.id));
       await denied(io.previewImport(deps, b.actor, t.id, { headers: ["a"], rows: [["1"]] }, "x.csv"));
       await denied(io.runImport(deps, b.actor, t.id, { headers: ["a"], rows: [["1"]] }, [{ headerIndex: 0, action: "create", type: "text" }]));
-      await denied(formulaUc.previewFormula(deps, b.actor, t.id, { expression: "1" }));
       await denied(handoffUc.pushToCampaign(deps, b.actor, t.id, { rowIds: [row.id], target: { newCampaignName: "x" }, fields: { email: key } }));
 
       // Same-organization access still works and nothing was changed.
@@ -536,77 +529,6 @@ describeDb("grid core", () => {
       });
     });
 
-    it("keeps lookups inside the organization", async () => {
-      const a = await org("a");
-      const b = await org("b");
-      const { table: ta } = await table(a.actor, "Companies");
-      const { table: tb } = await table(b.actor, "Companies");
-      const [domainB, industryB] = await withColumns(b.actor, tb.id, [["Domain", "text"], ["Industry", "text"]]);
-      const [rowB] = await rowsOf(b.actor, tb.id);
-      await rowsUc.editCells(deps, b.actor, tb.id, [{ rowId: rowB.id, columnKey: domainB, value: "acme.io" }, { rowId: rowB.id, columnKey: industryB, value: "Secret industry" }]);
-      const [domainA] = await withColumns(a.actor, ta.id, [["Domain", "text"]]);
-      const [rowA] = await rowsOf(a.actor, ta.id);
-      await rowsUc.editCells(deps, a.actor, ta.id, [{ rowId: rowA.id, columnKey: domainA, value: "acme.io" }]);
-      // Table "Companies" of org A has no Industry column. Org B's table must not satisfy the lookup.
-      await expect(
-        formulaUc.previewFormula(deps, a.actor, ta.id, { expression: `LOOKUP("Companies", {{${domainA}}}, "Domain", "Industry")` }),
-      ).rejects.toThrow(/unknown or ambiguous/);
-    });
-  });
-
-  describe("formulas", () => {
-    it("previews against a row, with cross-table lookups, and never writes", async () => {
-      const { actor } = await org();
-      const { workbook, table: people } = await table(actor, "People");
-      const [first, last, company] = await withColumns(actor, people.id, [["First", "text"], ["Last", "text"], ["Company", "text"]]);
-      const { table: companies } = await structure.createTable(deps, actor, { workbookId: workbook.id, name: "Companies" });
-      const [name, industry] = await withColumns(actor, companies.id, [["Company name", "text"], ["Industry", "text"]]);
-      await rowsUc.addRows(deps, actor, people.id, 1);
-      const [p1] = await rowsOf(actor, people.id);
-      await rowsUc.editCells(deps, actor, people.id, [{ rowId: p1.id, columnKey: first, value: "Ada" }, { rowId: p1.id, columnKey: company, value: "Acme" }]);
-      const [c1] = await rowsOf(actor, companies.id);
-      await rowsUc.editCells(deps, actor, companies.id, [{ rowId: c1.id, columnKey: name, value: "Acme" }, { rowId: c1.id, columnKey: industry, value: "Rockets" }]);
-
-      const before = await versionOf(p1.id);
-      const joined = await formulaUc.previewFormula(deps, actor, people.id, { expression: `{{${first}}} + " " + {{${last}}} + "!"` });
-      expect(joined).toMatchObject({ ok: true, value: "Ada !", rowNumber: 1 });
-      const looked = await formulaUc.previewFormula(deps, actor, people.id, { expression: `LOOKUP("Companies", {{${company}}}, "Company name", "Industry", "n/a")`, rowId: p1.id });
-      expect(looked.value).toBe("Rockets");
-      expect(await versionOf(p1.id)).toBe(before);
-
-      await expect(formulaUc.previewFormula(deps, actor, people.id, { expression: "{{nope}}" })).rejects.toThrow(/unknown column/);
-      await expect(formulaUc.previewFormula(deps, actor, people.id, { expression: "1 / 0" })).rejects.toThrow(/Division by zero/);
-      await expect(formulaUc.previewFormula(deps, actor, people.id, { expression: "x".repeat(6000) })).rejects.toBeInstanceOf(ValidationError);
-      await expect(formulaUc.previewFormula(deps, actor, people.id, { expression: 'LOOKUP("Nowhere", 1, "a", "b")' })).rejects.toThrow(/unknown or ambiguous/);
-      await expect(formulaUc.previewFormula(deps, actor, people.id, { expression: "1", rowId: "00000000-0000-4000-8000-000000000000" })).rejects.toBeInstanceOf(NotFoundError);
-    });
-
-    it("generates through the provider resolver and checks what comes back", async () => {
-      const { actor } = await org();
-      const { table: t } = await table(actor);
-      const [first] = await withColumns(actor, t.id, [["First", "text"]]);
-      const answers = [`=NOPE({{${first}}})`, `UPPER({{${first}}})`];
-      const calls: unknown[] = [];
-      const author = {
-        forOrganization: async () => ({
-          complete: async (input: unknown) => {
-            calls.push(input);
-            return { formula: answers[calls.length - 1], explanation: "" };
-          },
-        }),
-        status: async () => ({ state: "on" as const, provider: "Anthropic", model: "m" }),
-      };
-      const out = await formulaUc.generateFormula({ ...deps, formulaAuthor: author }, actor, t.id, { prompt: "shout the name" });
-      expect(out.formula).toBe(`UPPER({{${first}}})`);
-      expect(calls).toHaveLength(2);
-      expect(JSON.stringify(calls[1])).toContain("Unknown function NOPE");
-
-      const stubborn = { ...author, forOrganization: async () => ({ complete: async () => ({ formula: "{{ghost}}", explanation: "" }) }) };
-      await expect(formulaUc.generateFormula({ ...deps, formulaAuthor: stubborn }, actor, t.id, { prompt: "x" })).rejects.toThrow(/could not produce a working formula/);
-      const none = { forOrganization: async () => null, status: async () => ({ state: "no_model" as const, provider: "OpenRouter" }) };
-      await expect(formulaUc.generateFormula({ ...deps, formulaAuthor: none }, actor, t.id, { prompt: "x" })).rejects.toThrow(new ConflictError("AI is off. OpenRouter needs a model: ask an owner or admin to pick one."));
-      await expect(formulaUc.generateFormula({ ...deps, formulaAuthor: author }, actor, t.id, { prompt: "x".repeat(3000) })).rejects.toBeInstanceOf(ValidationError);
-    });
   });
 
   describe("import and export", () => {
@@ -730,11 +652,10 @@ describeDb("grid core", () => {
       expect((await deps.columns.list(actor.organizationId, lone.id)).map((c) => c.key)).toEqual(["company"]);
     });
 
-    it("keeps the seed column key when a formula depends on it", async () => {
+    it("keeps the seed column key when an AI column depends on it", async () => {
       const { actor } = await org();
       const { table: t } = await table(actor, "Dependent");
-      // A recalculation writes the formula's result into the placeholder row, so the state is built directly: seed, formula column, empty row.
-      await sql`insert into grid_columns (organization_id, table_id, key, name, type, config, depends_on, position) values (${actor.organizationId}, ${t.id}, 'shout', 'Shout', 'formula', ${sql.json({ expression: "UPPER({{name}})" } as never)}, ${sql.array(["name"])}, 2)`;
+      await aiColumn(actor, t.id, "shout", ["name"]);
       expect(await canReuseSeed(actor.organizationId, t.id)).toBe(false);
       const sheet = await upload("Company\nAcme\n");
       await io.runImport(deps, actor, t.id, sheet, [{ headerIndex: 0, action: "create", name: "Company", type: "text" }]);

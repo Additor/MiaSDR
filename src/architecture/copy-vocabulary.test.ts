@@ -145,7 +145,7 @@ const REPLY_FILES = [/^src\/app\/\(app\)\/inbox\//, /^src\/app\/\(app\)\/actions
 const PROMPT_FILES = [/^src\/contexts\/[^/]+\/ai\/domain\//, /^src\/contexts\/ai\/domain\//];
 
 /**
- * Reply type words the screens no longer use. "Reply type", "Change type", "AI picks" and "Looks right" replace them;
+ * Reply type words the screens no longer use. "Reply type", "Change type" and "AI picks" replace them;
  * `REPLY_TYPE_TERMS` below lists the words that took their place.
  */
 const RETIRED_REPLY_WORDS =
@@ -193,7 +193,7 @@ const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> = [
   { file: "src/app/(app)/settings/settings-nav-config.ts", text: "Pipeline stages", reason: "Settings entry for the deal stages page (/settings/pipeline)." },
   {
     file: "src/app/api/mcp/_tools/workspace.ts",
-    text: "The organization's members, active reply types, deal stages, mailboxes and, for an owner or admin, LinkedIn accounts, with the ids other tools take. Call it first to learn who `assignedTo` names and which reply type or stage an id means.",
+    text: "The organization's members, reply types, deal stages, mailboxes and, for an owner or admin, LinkedIn accounts, with the ids other tools take. Call it first to learn who `assignedTo` names and which reply type or stage an id means.",
     reason: "MCP tool description; the stages are the deal stages, which the tool lists next to reply types and mailboxes.",
   },
   { file: "src/app/api/mcp/_tools/workspace.ts", text: "{} reply types, {} deal stages, {} mailboxes{}.", reason: "MCP tool summary; the stages are the deal stages." },
@@ -234,24 +234,14 @@ const REPLY_TYPE_TERMS = [
   "Change type",
   "AI picks",
   "AI picked",
-  "AI applied",
-  "Looks right",
   "Review stop request",
   "Possible stop request",
   "Only change the type",
   "Asked to stop",
   "Held for a check",
-  "Not checked",
   "Picked by the AI",
   "No type yet",
   "Group",
-  "Confidence floor",
-  "Check before",
-  "Check after",
-  "No check",
-  "Write one",
-  "Don't write",
-  "Keep going",
   "Stop",
   "Remind me",
   "Follow-ups after a reply",
@@ -422,7 +412,7 @@ const baseFacts: afterReply.StartBlockFacts = {
   doNotContact: false,
   suppressed: false,
   contact: false,
-  owner: { name: "Spring", channel: "email", type: "team", status: "active", archived: false },
+  owner: { name: "Spring", channel: "email", status: "active", archived: false },
   flow: { status: "active", hasPublished: true },
   stepCount: 2,
   answered: false,
@@ -433,7 +423,6 @@ const blockedFacts: afterReply.StartBlockFacts[] = [
   { ...baseFacts, contact: true },
   { ...baseFacts, conversation: null },
   { ...baseFacts, owner: null },
-  { ...baseFacts, owner: { ...baseFacts.owner!, type: "personal" } },
   { ...baseFacts, owner: { ...baseFacts.owner!, archived: true } },
   { ...baseFacts, owner: { ...baseFacts.owner!, status: "paused" } },
   { ...baseFacts, owner: { ...baseFacts.owner!, status: "draft" } },
@@ -467,7 +456,7 @@ function renderedLabels(): Array<{ file: string; text: string }> {
   push(AFTER_REPLY_FILE, afterReply.FIXED_STOP_RULES.map((rule) => rule.label));
   push(AFTER_REPLY_FILE, afterReply.stopsOnLines([{ id: "t1", name: "Out of office" }]).map((line) => line.label));
   push(AFTER_REPLY_FILE, [afterReply.afterReplyFlowName("Spring")]);
-  push(AFTER_REPLY_FILE, [afterReply.afterReplyLockedReason({ channel: "email", type: "personal" }), afterReply.afterReplyLockedReason({ channel: "linkedin", type: "team" })]);
+  push(AFTER_REPLY_FILE, [afterReply.afterReplyLockedReason({ channel: "linkedin" })]);
   push(AFTER_REPLY_FILE, blockedFacts.map(afterReply.startBlockedReason));
   push(ACTION_QUEUE_FILE, stringValues(actionQueue.QUEUE_GROUP_LABELS));
   return out;

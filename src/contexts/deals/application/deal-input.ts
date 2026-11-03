@@ -1,5 +1,4 @@
-import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/conversion-terms";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
+import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCloseDate, parseDealTitle } from "../domain/deal";
 import { parseAmountToMinor, parseCurrency } from "../domain/money";
 import { firstOpenStage } from "../domain/stages";
@@ -17,14 +16,6 @@ export const MAX_IDEMPOTENCY_KEY = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
 
-
-/** The person has a live enrollment in another member's personal campaign. */
-export class PersonalCampaignError extends ForbiddenError {
-  readonly code = "personal_campaign";
-  constructor() {
-    super(PERSONAL_CAMPAIGN_MESSAGE);
-  }
-}
 
 export const isAlreadyConverted = (error: unknown) => error instanceof ConflictError && error.details?.code === "already_converted";
 

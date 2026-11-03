@@ -1,9 +1,8 @@
 import { and, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { campaignEnrollments, campaigns, companies, conversations, linkedinAccounts, mailboxes, messages, people, records, sends } from "@/platform/db/schema";
+import { campaignEnrollments, companies, conversations, linkedinAccounts, mailboxes, messages, people, records, sends } from "@/platform/db/schema";
 import { OUT_OF_OFFICE_KEY } from "../domain/inbox-filter";
 import type { InboxFilter, InboxFilterOptions, InboxRow, InboxStore, ScheduledRow, ThreadMessage } from "../application/ports";
-import { publicConversation, publicConversationSql } from "@/platform/db/conversation-visibility";
 import { automatedByPattern, autoReplyFlag, excludedFromUnread, likePattern } from "./inbox-sql";
 
 /** CC addresses stored in a message's raw jsonb (inbound headers, or the list a reply went out with). */
@@ -75,7 +74,7 @@ function personFilters(f: InboxFilter): SQL[] {
 }
 
 function conversationFilters(organizationId: string, f: InboxFilter): SQL[] {
-  const out: SQL[] = [sql`c.organization_id = ${organizationId}`, publicConversationSql("c"), ...personFilters(f)];
+  const out: SQL[] = [sql`c.organization_id = ${organizationId}`, ...personFilters(f)];
   if (f.query) {
     const t = likePattern(f.query);
     // Any message of the thread can match, not only the latest.
@@ -190,7 +189,6 @@ export const drizzleInboxStore: InboxStore = {
       sql`ce.status = 'active'`,
       sql`ce.next_send_at is not null`,
       sql`camp.status = 'active'`,
-      sql`camp.type = 'regular'`,
       ...person,
       ...(present(filter.campaignIds) ? [sql`ce.campaign_id in (${uuidList(filter.campaignIds)})`] : []),
       ...(present(filter.mailboxIds) ? [sql`ce.mailbox_id in (${uuidList(filter.mailboxIds)})`] : []),
@@ -198,7 +196,6 @@ export const drizzleInboxStore: InboxStore = {
     ];
     const sequenceWhere = [
       sql`ssr.organization_id = ${organizationId}`,
-      publicConversationSql("c"),
       sql`ssr.status = 'scheduled'`,
       sql`sr.status = 'active'`,
       // A paused campaign holds its follow-ups, so they are not scheduled to go out. A legacy sequence has no campaign and keeps running.
@@ -255,8 +252,8 @@ export const drizzleInboxStore: InboxStore = {
   async filterOptions(organizationId, leadIds): Promise<InboxFilterOptions> {
     const [boxes, camps, subs, leads] = await Promise.all([
       db.select({ id: mailboxes.id, label: mailboxes.emailAddress }).from(mailboxes).where(eq(mailboxes.organizationId, organizationId)).orderBy(mailboxes.emailAddress),
-      db.execute(sql`select id, name as label from campaigns where organization_id = ${organizationId} and status <> 'draft' and type = 'regular' order by name limit 200`),
-      db.execute(sql`select key, min(name) as label from reply_types where organization_id = ${organizationId} and active group by key order by min(name)`),
+      db.execute(sql`select id, name as label from campaigns where organization_id = ${organizationId} and status <> 'draft' order by name limit 200`),
+      db.execute(sql`select key, min(name) as label from reply_types where organization_id = ${organizationId} group by key order by min(name)`),
       leadIds.length > 0
         ? db.execute(sql`select id, coalesce(full_name, first_name, email) as label from people where organization_id = ${organizationId} and id in (${uuidList(leadIds)})`)
         : Promise.resolve([]),
@@ -290,7 +287,7 @@ export const drizzleInboxStore: InboxStore = {
       .innerJoin(records, eq(records.id, conversations.recordId))
       .innerJoin(people, eq(people.id, records.personId))
       .leftJoin(companies, eq(companies.id, people.companyId))
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId)));
     if (!head) return null;
 
     const stored = await db
@@ -323,11 +320,8 @@ export const drizzleInboxStore: InboxStore = {
             .select({ id: sends.id, body: sends.body, sentAt: sends.sentAt, claimedAt: sends.claimedAt })
             .from(sends)
             .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-            .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
             .where(
               and(
-                // What a personal campaign sent stays out of the shared thread.
-                eq(campaigns.type, "regular"),
                 eq(sends.organizationId, organizationId),
                 eq(sends.channel, "linkedin"),
                 eq(sends.status, "sent"),
@@ -425,7 +419,7 @@ export const drizzleInboxStore: InboxStore = {
     const [found] = await db
       .select({ id: conversations.id })
       .from(conversations)
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId)));
     if (!found) return null;
     const changed = await db
       .update(messages)

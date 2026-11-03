@@ -41,7 +41,6 @@ async function Mailboxes() {
       canManage={canManage}
       takeoverAfterHours={rules.takeoverAfterHours}
       allowedDomains={policy.allowedDomains}
-      signupBlocked={policy.allowedDomains === null && policy.openSignup}
       unsubscribeUnreachable={unsubscribeUnreachable()}
       zones={zones}
       defaultTimeZone={orgTimeZone}

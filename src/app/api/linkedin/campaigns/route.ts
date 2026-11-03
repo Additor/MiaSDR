@@ -9,4 +9,4 @@ import { withActor } from "@/app/_lib/api";
 export const GET = (request: Request) => withActor((actor) => listLinkedInCampaigns(linkedinCampaignDeps(), actor, parseArchiveFilter(new URL(request.url).searchParams.get("archived"))));
 
 export const POST = (request: Request) =>
-  withActor(async (actor) => createLinkedInCampaign(linkedinCampaignDeps(), actor, z.object({ name: z.string(), type: z.enum(["regular", "personal"]).optional(), senderIds: z.array(z.uuid()).max(MAX_CAMPAIGN_SENDERS).optional() }).parse(await request.json())), 201);
+  withActor(async (actor) => createLinkedInCampaign(linkedinCampaignDeps(), actor, z.object({ name: z.string(), senderIds: z.array(z.uuid()).max(MAX_CAMPAIGN_SENDERS).optional() }).parse(await request.json())), 201);

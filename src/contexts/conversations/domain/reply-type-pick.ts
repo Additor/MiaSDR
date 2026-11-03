@@ -48,14 +48,13 @@ export function pickResponse(stored: unknown): PickResponse {
 
 /** What a person can still do with a pick, against the record as it is now. */
 export function pickFlags(
-  pick: { messageId: string; status: string; appliedGroupKey: string | null; acknowledgedAt: Date | null; expectedContextVersion: number },
+  pick: { messageId: string; status: string; appliedGroupKey: string | null; expectedContextVersion: number },
   record: { latestInboundMessageId: string | null; contextVersion: number },
-): { latest: boolean; current: boolean; canUndo: boolean; canAcknowledge: boolean } {
+): { latest: boolean; current: boolean; canUndo: boolean } {
   const latest = pick.messageId === record.latestInboundMessageId;
   return {
     latest,
     current: pick.expectedContextVersion === record.contextVersion && pick.status !== "stale",
     canUndo: latest && isAppliedPick(pick.status) && pick.appliedGroupKey !== null,
-    canAcknowledge: pick.acknowledgedAt === null && (pick.status === "auto_applied" || pick.status === "failed"),
   };
 }

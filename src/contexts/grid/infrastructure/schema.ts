@@ -31,7 +31,7 @@ import { inList } from "@/platform/db/sql-values";
 
 export const GRID_COLUMN_TYPES = [
   "text", "number", "currency", "boolean", "date", "url", "email", "image", "select", "multiselect", "json",
-  "enrichment", "integration_output", "ai_output", "http", "ai", "functions", "message", "waterfall", "formula", "merge",
+  "enrichment", "integration_output", "ai_output", "http", "ai", "functions", "message", "waterfall", "merge",
 ] as const;
 export const GRID_JOB_STATUSES = ["queued", "running", "waiting", "succeeded", "failed"] as const;
 export const GRID_CELL_OUTCOMES = ["hit", "miss", "error", "failed", "skipped", "cancelled"] as const;

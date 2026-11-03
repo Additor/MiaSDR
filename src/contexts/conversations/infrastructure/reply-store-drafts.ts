@@ -5,7 +5,6 @@ import { ConflictError, NotFoundError, viaMeta } from "@/shared/errors";
 import type { NewDraft, PanelData, ReplyStore } from "../application/reply-ports";
 import { checkNoneInFlight, checkRecordOpen, checkReplyText, checkThreadWritable, HANDLING_CLOSED, REPLY_REFUSALS } from "../domain/reply-send";
 import { buildDraftContext } from "./thread-context";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 import { toAttempt } from "./reply-attempt-ledger";
 import { toDraftRow, mailboxFor, blockedAddressesFor, knownCcsFor, ccContextFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { canMoveDraft, IN_FLIGHT_DRAFT_STATUSES, UNSENT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
@@ -112,13 +111,13 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
       .from(conversations)
       .innerJoin(records, eq(records.id, conversations.recordId))
       .innerJoin(people, eq(people.id, records.personId))
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId)));
     if (!head) return null;
 
     const taxonomyRows = await db
       .select({ id: replyTypes.id, key: replyTypes.key, name: replyTypes.name, groupKey: replyTypes.groupKey })
       .from(replyTypes)
-      .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.active, true)))
+      .where(eq(replyTypes.replyTypeSetId, head.replyTypeSetId))
       .orderBy(replyTypes.sortOrder);
 
     const [draftRow] = await db
@@ -217,7 +216,7 @@ export const replyDraftMethods: Pick<ReplyStore, "panel" | "draftContext" | "dra
         .from(conversations)
         .innerJoin(records, eq(records.id, conversations.recordId))
         .innerJoin(people, eq(people.id, records.personId))
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
+        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)))
         // Serializes typed drafts with each other and with AI draft writes, which lock the record too.
         .for("no key update", { of: records });
       if (!head) throw new NotFoundError("Conversation not found");

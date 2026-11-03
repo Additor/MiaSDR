@@ -4,7 +4,7 @@ import type { Identity } from "./route-client";
 const PASSWORD = "identity-fixture-pw-1";
 
 /** Sets the environment a route-level integration test needs. Call before the first import of app code. */
-export function useTestEnvironment(databaseUrl: string, signup: "open" | "invite-only"): void {
+export function useTestEnvironment(databaseUrl: string): void {
   const secret = "i".repeat(40);
   Object.assign(process.env, {
     DATABASE_URL: databaseUrl,
@@ -13,7 +13,6 @@ export function useTestEnvironment(databaseUrl: string, signup: "open" | "invite
     BETTER_AUTH_SECRET: secret,
     INTEGRATION_CREDENTIALS_KEY: secret,
     UNSUBSCRIBE_SECRET: secret,
-    AUTH_SIGNUP: signup,
   });
   delete process.env.RESEND_API_KEY;
   delete process.env.AUTH_EMAIL_FROM;

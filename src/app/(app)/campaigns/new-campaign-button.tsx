@@ -13,16 +13,10 @@ import { callApi } from "@/app/_lib/api-client";
 import { SenderPicker, type SenderOption } from "./sender-picker";
 
 type Channel = "email" | "linkedin";
-type CampaignType = "regular" | "personal";
 
 const CHANNELS = [
   ["email", "Email", "Sent from your mailboxes"],
   ["linkedin", "LinkedIn", "Connection request, then messages"],
-] as const;
-
-const TYPES = [
-  ["regular", "Regular", "Replies go to the Inbox and Actions"],
-  ["personal", "Personal", "Private: replies stay out of the Inbox, Actions and the AI. Only the creator, owners and admins can read them."],
 ] as const;
 
 /** A choice of two with an explanation each, as selectable tiles. */
@@ -48,19 +42,17 @@ export function NewCampaignButton({ senders }: { senders: { email: SenderOption[
   const [name, setName] = useState("");
   const [channel, setChannel] = useState<Channel>("email");
   const [senderIds, setSenderIds] = useState<string[]>([]);
-  const [type, setType] = useState<CampaignType>("regular");
 
   function openDialog() {
     setName("");
     setChannel("email");
     setSenderIds([]);
-    setType("regular");
     setOpen(true);
   }
 
   async function create() {
     const result = await runApiAction(
-      callApi<{ id: string }>(channel === "linkedin" ? "/api/linkedin/campaigns" : "/api/campaigns", "POST", channel === "linkedin" ? { name, senderIds, type } : { name, senderIds }),
+      callApi<{ id: string }>(channel === "linkedin" ? "/api/linkedin/campaigns" : "/api/campaigns", "POST", { name, senderIds }),
       { expectData: true },
     );
     // ConfirmDialog keeps the panel open and shows the reason when this throws.
@@ -92,10 +84,8 @@ export function NewCampaignButton({ senders }: { senders: { email: SenderOption[
           onChange={(next) => {
             setChannel(next);
             setSenderIds([]);
-            setType("regular");
           }}
         />
-        {channel === "linkedin" && <ChoiceTiles name="campaign-type" legend="Campaign type" options={TYPES} value={type} onChange={setType} />}
         <Field>
           <FieldLabel htmlFor="campaign-name">Name</FieldLabel>
           <Input id="campaign-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Q4 outreach to CTOs" maxLength={120} autoFocus />

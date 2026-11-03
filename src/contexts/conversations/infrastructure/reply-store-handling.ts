@@ -12,7 +12,6 @@ import type { ReplyStore } from "../application/reply-ports";
 import { afterTypeChange } from "../domain/workflow-state";
 import { typeRulesOf } from "../domain/reply-type";
 import { lockAfterPersonMove } from "../domain/reply-handling";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** What a person decides about a reply: a classification of their own, or suppressing the sender. */
 export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | "suppressSender"> = {
@@ -32,7 +31,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         })
         .from(conversations)
         .innerJoin(records, eq(records.id, conversations.recordId))
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
+        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)))
         .for("no key update", { of: records });
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.latest) throw new ConflictError("There is no inbound message to classify.");
@@ -60,13 +59,12 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         const [found] = await tx
           .select({ id: replyTypes.id })
           .from(replyTypes)
-          .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.key, input.replyTypeKey), eq(replyTypes.active, true)));
-        if (!found) throw new ValidationError("That reply type is not active.");
+          .where(and(eq(replyTypes.replyTypeSetId, head.replyTypeSetId), eq(replyTypes.key, input.replyTypeKey)));
+        if (!found) throw new ValidationError("That reply type does not exist.");
         targetId = found.id;
       }
       const [target] = await tx.select().from(replyTypes).where(eq(replyTypes.id, targetId));
       const accepted = input.replyTypeKey === null;
-      if (accepted && !target.active) throw new ConflictError("The AI picked a reply type that was archived since. Choose another type.");
       // Accepting a stop request would only change the type, while the person asked us to stop. The client opens Stop
       // contacting on this code. Choosing the stop request type by name stays allowed and changes only the type.
       if (accepted && target.systemRole === "stop_request") {
@@ -76,7 +74,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
       const decision = await personTypeDecisionTx(tx, {
         organizationId: input.organizationId,
         record: { id: head.recordId, latestInboundMessageId: head.latest, replyTypeLocked: head.locked },
-        target: { groupKey: target.groupKey, rules },
+        target: { groupKey: target.groupKey, systemRole: target.systemRole, rules },
       });
       // The person chose this type, so a move out of the customer group unlocks without a second confirmation.
       const locked = lockAfterPersonMove(target);
@@ -90,7 +88,6 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             appliedGroupKey: target.groupKey,
             appliedReplyTypeId: target.id,
             rules,
-            acknowledgedAt: new Date(),
             // The lock before the first pick of this row stays: undo goes back to it. A stop request read from the text
             // is kept on the row, so the start sweep sees it (`stopRequestedSql`).
             response: sql`(case when ${replyTypePicks.response} ? 'previousLocked' then ${replyTypePicks.response}
@@ -142,7 +139,6 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
             reasoning: "Set by a person.",
             status: "overridden",
             provider: "human",
-            acknowledgedAt: new Date(),
           })
           .returning({ id: replyTypePicks.id });
         replyTypePickId = row.id;
@@ -173,7 +169,7 @@ export const replyHandlingMethods: Pick<ReplyStore, "applyHumanReplyTypePick" | 
         .from(conversations)
         .innerJoin(records, eq(records.id, conversations.recordId))
         .innerJoin(people, eq(people.id, records.personId))
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation));
+        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)));
       if (!head) throw new NotFoundError("Conversation not found");
       if (!head.email) throw new ConflictError("This person has no email address to suppress.");
       const email = head.email.toLowerCase();

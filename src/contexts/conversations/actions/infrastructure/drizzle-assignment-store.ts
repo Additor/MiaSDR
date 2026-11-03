@@ -4,18 +4,16 @@ import { events } from "@/platform/db/schema";
 import { NotFoundError, viaMeta } from "@/shared/errors";
 import type { AssignmentStore } from "../application/assignment";
 import { ASSIGNED_EVENT, planAssign, planClaim } from "../domain/assignment";
-import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 
 export const drizzleAssignmentStore: AssignmentStore = {
   async change({ organizationId, recordId, actorUserId, via, change, now }) {
     return db.transaction(async (tx) => {
       // The same lock the other record writers take, so a claim and a reclassification wait for each other. The row is
-      // read through the visibility rule: a record that exists only for a private thread answers 404.
       const [row] = rowsOf<{ person_id: string; assigned_to: string | null }>(
         await tx.execute(sql`
           select r.person_id, r.assigned_to from records r
-          where r.id = ${recordId} and r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
+          where r.id = ${recordId} and r.organization_id = ${organizationId}
           for no key update`),
       );
       if (!row) throw new NotFoundError("Reply handling not found");

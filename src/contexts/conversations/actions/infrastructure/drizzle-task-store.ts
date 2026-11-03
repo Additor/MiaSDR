@@ -1,7 +1,6 @@
-import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
-import { conversations, messages, notes, people, records, tasks, users } from "@/platform/db/schema";
-import { onVisibleRecordSql, publicConversation, publicConversationSql } from "@/platform/db/conversation-visibility";
+import { messages, notes, people, records, tasks, users } from "@/platform/db/schema";
 import type { NoteScope, TaskRow, TaskStore } from "../application/tasks-ports";
 
 const assignee = users;
@@ -12,10 +11,10 @@ const columns = {
   personId: tasks.personId,
   personName: sql<string | null>`coalesce(${people.fullName}, ${people.firstName}, ${people.email})`,
   personLifecycle: people.lifecycle,
-  // The same pick as `activeConversationOfPerson`: public threads only, the record's active channel first.
+  // The same pick as `activeConversationOfPerson`: the record's active channel first.
   conversationId: sql<string | null>`(
     select c.id from conversations c join records r on r.id = c.record_id and r.organization_id = c.organization_id
-    where r.person_id = ${tasks.personId} and r.organization_id = ${tasks.organizationId} and ${publicConversationSql("c")}
+    where r.person_id = ${tasks.personId} and r.organization_id = ${tasks.organizationId}
     order by (c.channel = r.active_channel) desc nulls last, c.updated_at desc, c.id limit 1)`,
   name: tasks.name,
   description: tasks.description,
@@ -29,11 +28,10 @@ const columns = {
 };
 
 /**
- * A record scope matches that record's rows; a person scope matches the person's rows that `personNotes` lists, so a note on a
- * private-thread-only record is not found through the person.
+ * A record scope matches that record's rows; a person scope matches the person's rows that `personNotes` lists.
  */
 const noteScopeWhere = (scope: NoteScope) =>
-  scope.recordId !== undefined ? eq(notes.recordId, scope.recordId) : and(eq(notes.personId, scope.personId), onVisibleRecordSql(notes.recordId));
+  scope.recordId !== undefined ? eq(notes.recordId, scope.recordId) : eq(notes.personId, scope.personId);
 
 function select(where: SQL | undefined) {
   return db
@@ -51,8 +49,7 @@ export const drizzleTaskStore: TaskStore = {
       filter.state === "open" ? eq(tasks.isCompleted, false) : filter.state === "completed" ? eq(tasks.isCompleted, true) : undefined,
       filter.assigneeId ? eq(tasks.assignedTo, filter.assigneeId) : undefined,
       filter.recordId ? eq(tasks.recordId, filter.recordId) : undefined,
-      // Through the person, a task on a record whose only threads are private stays with that private thread, as notes do.
-      filter.personId ? and(eq(tasks.personId, filter.personId), onVisibleRecordSql(tasks.recordId)) : undefined,
+      filter.personId ? eq(tasks.personId, filter.personId) : undefined,
     );
     const rows: TaskRow[] = await select(where)
       .orderBy(asc(tasks.isCompleted), sql`${tasks.dueAt} asc nulls last`, asc(tasks.createdAt), asc(tasks.id))
@@ -154,7 +151,6 @@ export const drizzleTaskStore: TaskStore = {
         and(
           eq(notes.organizationId, organizationId),
           eq(notes.personId, personId),
-          onVisibleRecordSql(notes.recordId),
         ),
       )
       .orderBy(desc(notes.createdAt), desc(notes.id));
@@ -168,8 +164,6 @@ export const drizzleTaskStore: TaskStore = {
         and(
           eq(messages.id, messageId),
           eq(messages.organizationId, organizationId),
-          // A message of a private conversation is not found, like every other reader of it.
-          inArray(messages.conversationId, db.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.organizationId, organizationId), publicConversation))),
         ),
       )
       .returning({ id: messages.id });

@@ -240,7 +240,7 @@ async function Contact({ params, searchParams }: { params: PageProps<"/crm/conta
 
 /**
  * The source campaign in Details: the source of the deal that made the person a contact, which is the first one created. A later deal
- * has no source, and a personal campaign never shows (`getDeal` leaves it out).
+ * has no source.
  */
 async function sourceCampaign(actor: Actor, deals: Array<{ id: string; createdAt: Date }>) {
   const firstDeal = [...deals].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))[0];

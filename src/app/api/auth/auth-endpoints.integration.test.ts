@@ -26,7 +26,6 @@ describeDb("/api/auth organization endpoints", () => {
     LINKEDIN_PROVIDER: "fake",
     AI_PROVIDER: "fake",
     GRID_PROVIDER: "fake",
-    AUTH_SIGNUP: "invite-only",
     RESEND_API_KEY: undefined,
     AUTH_EMAIL_FROM: undefined,
   });

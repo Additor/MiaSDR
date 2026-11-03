@@ -83,15 +83,3 @@ export async function apiOrgContext(): Promise<OrgContext | null> {
   const resolved = await resolveOrgContext();
   return resolved.ok ? resolved.ctx : null;
 }
-
-export interface SessionUser {
-  userId: string;
-  /** The active organization stored on the session. May be stale or null: see resolveOrgContext. */
-  activeOrganizationId: string | null;
-}
-
-/** For route handlers that need a signed-in user but no organization. Null means answer 401. */
-export async function apiUser(): Promise<SessionUser | null> {
-  const session = await auth().api.getSession({ headers: await headers() });
-  return session ? { userId: session.user.id, activeOrganizationId: session.session.activeOrganizationId ?? null } : null;
-}

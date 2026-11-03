@@ -1,6 +1,5 @@
 import type { DbHandle } from "@/platform/db/client";
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
-import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { MAX_CONVERT_PREVIEW_IDS } from "./conversion-terms";
 
 /*
@@ -62,11 +61,6 @@ export interface ConvertInput {
   /** The person who acts. Null for a system caller. */
   actorUserId: string | null;
   now?: Date;
-  /**
-   * The caller's last check, run under the person's locks after the lifecycle re-read and before anything changes. A throw
-   * aborts the conversion. Deals passes the personal-campaign rule here, so an enrollment that committed before the locks counts.
-   */
-  guard?: (tx: DbHandle) => Promise<void>;
 }
 
 export interface ConvertResult {
@@ -78,7 +72,7 @@ export interface ConvertResult {
 const NOTHING_STOPPED = { enrollments: 0, runs: 0, drafts: 0 };
 
 /**
- * Converts one lead, in the order the lock rules need: person lock, lifecycle re-read, the caller's guard, `markConverted`,
+ * Converts one lead, in the order the lock rules need: person lock, lifecycle re-read, `markConverted`,
  * enrollments, runs, event. Lock order per person is records, advisory lock, people row, enrollments, runs, as the conversations paths take
  * it. The caller runs it inside one transaction (with `lock_timeout` and one retry on 40P01 or 55P03), so any throw undoes
  * every step. Idempotent: a contact returns `changed: false`.
@@ -90,7 +84,6 @@ export async function convertToContact(deps: ConvertDeps, tx: DbHandle, input: C
   const lifecycle = await deps.lifecycleOf(tx, organizationId, personId);
   if (lifecycle === null) throw new NotFoundError("Lead not found");
   if (lifecycle === "contact") return { changed: false, stopped: NOTHING_STOPPED };
-  if (input.guard) await input.guard(tx);
   if (!(await deps.markConverted(tx, organizationId, personId, now))) return { changed: false, stopped: NOTHING_STOPPED };
   const stop: PersonStopInput = { organizationId, personId, reason: "converted", now };
   const { stopped: enrollments } = await deps.stopEnrollments(tx, stop);
@@ -106,14 +99,6 @@ export async function convertToContact(deps: ConvertDeps, tx: DbHandle, input: C
   return { changed: true, stopped: { enrollments, runs, drafts } };
 }
 
-/** The person's live (pending or active) enrollments, split the way the permission rule needs them. */
-export interface LiveEnrollmentSummary {
-  /** Enrollments in regular campaigns. */
-  regular: number;
-  /** Enrollments in personal campaigns, with the distinct users who created those campaigns. */
-  personal: { count: number; createdBy: string[] };
-}
-
 export interface RunStopPreview {
   runs: number;
   drafts: number;
@@ -122,43 +107,29 @@ export interface RunStopPreview {
 /** What the preview reads, besides the lifecycle. Outreach and conversations implement them (`drizzle-lead-lifecycle.ts` holds the leads part). */
 export interface PreviewDeps {
   lifecycles: LeadLifecycleStore["lifecycles"];
-  /** Live enrollments per person. A person without any has no entry. */
-  liveEnrollmentSummary(organizationId: string, personIds: readonly string[]): Promise<Map<string, LiveEnrollmentSummary>>;
+  /** Live (pending or active) enrollments per person. A person without any has no entry. */
+  liveEnrollmentCounts(organizationId: string, personIds: readonly string[]): Promise<Map<string, number>>;
   /** Active and paused follow-up runs per person with the unsent drafts an interruption retires. A person without a run has no entry. */
   previewRunStop(organizationId: string, personIds: readonly string[]): Promise<Map<string, RunStopPreview>>;
 }
 
-export { MAX_CONVERT_PREVIEW_IDS, PERSONAL_CAMPAIGN_MESSAGE } from "./conversion-terms";
+export { MAX_CONVERT_PREVIEW_IDS } from "./conversion-terms";
 
 export interface ConvertPreview {
-  /** Leads the actor may convert. */
+  /** Leads to convert. */
   people: number;
   alreadyContacts: number;
-  /** Pending and active enrollments the conversion stops, personal campaigns the actor may see included. */
+  /** Pending and active enrollments the conversion stops. */
   enrollments: number;
   runs: number;
   followUpDraftsToRetire: number;
-  /** Leads the actor may not convert, because a personal campaign of another member holds them. They are left out of every count above. */
-  skippedPersonalCampaign: number;
 }
 
-/**
- * The `personal_campaign` skip: a person with a live personal-campaign enrollment can be converted only by the creator of
- * that campaign or an owner or admin. Another member's private outreach stays theirs to end.
- */
-export function personalCampaignSkip(actor: Pick<Actor, "userId" | "role">, summary: LiveEnrollmentSummary | undefined): boolean {
-  if (!summary || summary.personal.count === 0) return false;
-  if (isOwnerOrAdmin(actor.role)) return false;
-  const { createdBy } = summary.personal;
-  return !(createdBy.length > 0 && createdBy.every((id) => id === actor.userId));
-}
-
-
-/** The effects of converting these leads, said before the click. Counts only what the actor may convert and see. */
+/** The effects of converting these leads, said before the click. */
 export async function previewConvert(deps: PreviewDeps, actor: Actor, personIds: readonly string[]): Promise<ConvertPreview> {
   const ids = [...new Set(personIds)];
   if (ids.length > MAX_CONVERT_PREVIEW_IDS) throw new ValidationError(`Preview up to ${MAX_CONVERT_PREVIEW_IDS} people at a time.`);
-  const preview: ConvertPreview = { people: 0, alreadyContacts: 0, enrollments: 0, runs: 0, followUpDraftsToRetire: 0, skippedPersonalCampaign: 0 };
+  const preview: ConvertPreview = { people: 0, alreadyContacts: 0, enrollments: 0, runs: 0, followUpDraftsToRetire: 0 };
   if (ids.length === 0) return preview;
 
   const lifecycles = await deps.lifecycles(actor.organizationId, ids);
@@ -166,18 +137,12 @@ export async function previewConvert(deps: PreviewDeps, actor: Actor, personIds:
   preview.alreadyContacts = ids.filter((id) => lifecycles.get(id) === "contact").length;
   if (leadIds.length === 0) return preview;
 
-  const enrollments = await deps.liveEnrollmentSummary(actor.organizationId, leadIds);
-  const convertible = leadIds.filter((id) => !personalCampaignSkip(actor, enrollments.get(id)));
-  preview.skippedPersonalCampaign = leadIds.length - convertible.length;
-  preview.people = convertible.length;
-  for (const id of convertible) {
-    const summary = enrollments.get(id);
-    if (summary) preview.enrollments += summary.regular + summary.personal.count;
-  }
-  if (convertible.length === 0) return preview;
+  const enrollments = await deps.liveEnrollmentCounts(actor.organizationId, leadIds);
+  preview.people = leadIds.length;
+  for (const id of leadIds) preview.enrollments += enrollments.get(id) ?? 0;
 
-  const runStops = await deps.previewRunStop(actor.organizationId, convertible);
-  for (const id of convertible) {
+  const runStops = await deps.previewRunStop(actor.organizationId, leadIds);
+  for (const id of leadIds) {
     const stop = runStops.get(id);
     if (!stop) continue;
     preview.runs += stop.runs;

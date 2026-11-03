@@ -83,7 +83,7 @@ describe("planImportColumns and records", () => {
   it("does not rename the seed when another column exists, even if the caller allows reuse", () => {
     const existing = [
       { key: "name", name: "New Column", type: "text" },
-      { key: "f", name: "F", type: "formula", config: { expression: "UPPER({{name}})" }, dependsOn: ["name"] },
+      { key: "f", name: "F", type: "ai", config: { prompt: "Shout {{name}}" }, dependsOn: ["name"] },
     ];
     expect(isInitialSeedColumn(existing)).toBe(false);
     const plan = planImportColumns([{ headerIndex: 0, action: "create", name: "Company", type: "text" }], existing, { canReuseSeedColumn: true });
@@ -91,8 +91,8 @@ describe("planImportColumns and records", () => {
   });
 
   it("does not reuse a lone seed column that carries config or dependencies", () => {
-    for (const extra of [{ config: { expression: "1" } }, { dependsOn: ["x"] }]) {
-      const existing = [{ key: "name", name: "New Column", type: "formula", ...extra }];
+    for (const extra of [{ config: { prompt: "1" } }, { dependsOn: ["x"] }]) {
+      const existing = [{ key: "name", name: "New Column", type: "ai", ...extra }];
       expect(isInitialSeedColumn(existing)).toBe(false);
       const plan = planImportColumns([{ headerIndex: 0, action: "create", name: "Company", type: "text" }], existing, { canReuseSeedColumn: true });
       expect(plan.newColumns[0].reuseExisting).toBe(false);

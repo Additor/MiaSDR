@@ -24,7 +24,6 @@ const REPLY_TYPE_TERMS = [
   "Asked to stop",
   "Customer question",
   "Existing customer",
-  "Looks right",
   "Review stop request",
   "Change type",
   "Remind me",

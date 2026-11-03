@@ -9,7 +9,6 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { PERSONAL_CAMPAIGN_MESSAGE } from "@/contexts/people/application/conversion-terms";
 import { runApiAction } from "@/app/_lib/api-action";
 import { apiMessage, callApi } from "@/app/_lib/api-client";
 import { CompanyDomainField, CompanyJoinLine, companyName, useCompanyDomainLookup } from "@/app/(app)/_components/person/company-domain-field";
@@ -232,7 +231,7 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
       throw new Error(result.error);
     }
     const result = await runApiAction(callApi<{ personId: string }>(`/api/leads/${match.personId}/make-contact`, "POST", {}), {
-      onConflict: { try_again: () => apiMessage("try_again", label), personal_campaign: () => PERSONAL_CAMPAIGN_MESSAGE },
+      onConflict: { try_again: () => apiMessage("try_again", label) },
     });
     // `already_converted` means someone else made the lead a contact first: the outcome stands, so open the contact.
     if (result.ok || result.code === "already_converted") return done(`/crm/contacts/${match.personId}`);
@@ -245,7 +244,6 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
 
   if (lead) {
     const label = matchLabel(lead);
-    const held = preview !== null && preview.skippedPersonalCampaign > 0;
     return (
       <ConfirmDialog
         open={open}
@@ -254,19 +252,15 @@ export function AddContactDialog({ open, onOpenChange, members, currentUserId, s
         description={`${matchWithEmail(lead)} is already a lead.`}
         confirmLabel={withDeal ? "Create deal" : `Make ${label} a contact`}
         pendingLabel={withDeal ? "Creating…" : "Making contact…"}
-        confirmDisabled={preview === null || held || !dealReady}
+        confirmDisabled={preview === null || !dealReady}
         className="sm:max-w-lg"
         back={{ label: "Back", onClick: () => setLead(null) }}
         onConfirm={() => convertLead(lead)}
       >
         <div className="stack-group text-sm" data-testid="add-contact-lead">
-          {held ? (
-            <p role="status">{PERSONAL_CAMPAIGN_MESSAGE}</p>
-          ) : (
-            <p className="text-muted-foreground" aria-busy={preview === null && !previewError}>
-              {previewError ?? (preview ? singleEffectsText(label, preview) : "Checking what this changes…")}
-            </p>
-          )}
+          <p className="text-muted-foreground" aria-busy={preview === null && !previewError}>
+            {previewError ?? (preview ? singleEffectsText(label, preview) : "Checking what this changes…")}
+          </p>
           <p>{permanenceText(upperFirst(label), { withDeal })}</p>
           <p>MiaSDR keeps {label}&apos;s saved details and drops what you typed here. Edit them on the contact page.</p>
           <OtherLines others={lead.others} />

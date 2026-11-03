@@ -18,7 +18,7 @@ export interface DeleteCounts {
 /** A blocker as the page and the API hand it over; `until` is an ISO timestamp. */
 export type DeleteBlocker =
   | { reason: "open_deals"; deals: Array<{ id: string; title: string; stageName: string }> }
-  | { reason: "send_in_flight" | "ai_job_running" | "private_conversation" | "personal_campaign_sends" }
+  | { reason: "send_in_flight" | "ai_job_running" }
   | { reason: "recent_send" | "recent_invite"; until: string };
 
 export interface DeletePreview {
@@ -27,7 +27,6 @@ export interface DeletePreview {
   blockers: DeleteBlocker[];
   suppressionKept: boolean;
   linkedinOnlyBlock: boolean;
-  hiddenExcluded: boolean;
 }
 
 export const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -49,10 +48,6 @@ export function blockerText(blocker: DeleteBlocker, name: string, time: (iso: st
       return `${Name} got a LinkedIn invitation in the last 7 days. You can delete the contact after ${time(blocker.until)}. Deleting sooner would free an invitation in this week's LinkedIn limit.`;
     case "ai_job_running":
       return `The AI is still reading a reply from ${name}. Try again in a minute.`;
-    case "private_conversation":
-      return `${Name} has a conversation in another member's personal campaign. An owner or admin can delete this contact.`;
-    case "personal_campaign_sends":
-      return `${Name} got messages in another member's personal campaign. Its creator, an owner or an admin can delete this contact.`;
   }
 }
 

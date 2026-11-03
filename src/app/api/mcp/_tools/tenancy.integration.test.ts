@@ -67,7 +67,6 @@ const SPEC: Record<string, { refused?: Args[]; filtered?: Args[]; crossed?: Args
   set_reply_type: {
     refused: [
       (i) => ({ action: "change", recordId: i.record, groupKey: "interested", expectedContextVersion: 0 }),
-      (i) => ({ action: "confirm_pick", replyTypePickId: i.pick }),
       (i) => ({ action: "undo_pick", replyTypePickId: i.pick }),
     ],
     crossed: [(i) => ({ action: "change", recordId: i.own.record, replyTypeId: i.replyType, expectedContextVersion: 0 })],

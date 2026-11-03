@@ -7,6 +7,7 @@ import type { ActionSpec } from "../domain/enrichment-catalog";
 import type { VerificationStatus } from "../domain/enrichment-contracts";
 import { acceptsText, inputsCovered } from "../domain/enrichment-inputs";
 import type { AdapterRegistry, ColumnChange, ColumnRow, GridRunStore, NewColumn, ProviderStore } from "./enrichment-ports";
+import { assertNoDependencyLoop } from "../../domain/column-config";
 
 export interface ColumnDeps {
   store: GridRunStore;
@@ -203,7 +204,7 @@ export interface CreateAiInput extends Placement {
 
 /**
  * Adds an AI column and one typed column per output field, named for the field. The AI column itself shows the first
- * field's answer as text; the field columns keep the typed values, so filters, formulas and a push read them.
+ * field's answer as text; the field columns keep the typed values, so filters and a push read them.
  */
 export async function createAiColumns(deps: ColumnDeps, actor: Actor, tableId: string, input: CreateAiInput): Promise<ColumnRow[]> {
   const label = input.name?.trim() || "AI";
@@ -383,6 +384,7 @@ export async function updateRunnableColumn(deps: ColumnDeps, actor: Actor, table
     // An input mapped to this column's own output would feed the run its own result and queue it forever.
     const loop = dependsOn.find((k) => own.has(k));
     if (loop) throw new ValidationError("A column cannot read its own output.");
+    assertNoDependencyLoop(columns, { key: column.key, dependsOn });
     change.updates!.push({ id: column.id, config, dependsOn, autoRun: input.autoRun });
     return change;
   });

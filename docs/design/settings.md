@@ -8,9 +8,9 @@ Groups follow what a setting changes, and each setting has one home: You, Worksp
 
 ## Reply handling
 
-Settings > Reply handling holds three blocks. Reply types comes first, with Add reply type on its heading row. A type row shows the name, a Locked badge on Customer question, an Archived badge when archived, the count of people, and the rules summary in muted text ("Check after · Draft · Follow-ups keep going"). Asked to stop and Customer question add their reason sentence. Edit opens the dialog: Group (when adding), Name, Description, AI guidance, then the fieldset "When the AI picks {type}" with "Applies to replies picked from now on." and three radio groups: Check (Before it applies, After it applies, Skip), Reply draft (Write one, Don't write) and Follow-ups (Keep going, Stop). Asked to stop shows its fixed rules and reason in place of the radios. The archive dialog says how many people keep the type and where the AI sends replies that would have fit it. Confidence floor follows as one percent field with the help "Below this, an AI pick waits for a person." The floor holds a pick whatever its Check says. Unknown senders closes the page.
+Settings > Reply handling holds two blocks. Reply types comes first and is read-only: a sentence states when an AI pick waits for a person (a stop request, under 85 percent confidence, a move out of Existing customer), then each group lists its types. A type row shows the name, a Locked badge on Customer question, the rules summary in muted text ("Draft · Follow-ups keep going") and the description. Asked to stop and Customer question add their reason sentence. The AI's daily limit for unknown senders follows.
 
-A sentence that states what a setting does stays visible as the block's or the field's description ("Below this, an AI pick waits for a person."); an info mark only defines a name.
+A sentence that states what a setting does stays visible as the block's or the field's description ("This caps how many a day."); an info mark only defines a name.
 
 ## Setup guide
 

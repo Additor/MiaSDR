@@ -25,7 +25,7 @@ describe("parseClipboard", () => {
 
 describe("planPaste", () => {
   const rows = [row("r1"), row("r2"), row("r3")];
-  const columns = [col("a"), col("b", "number"), col("c", "formula")];
+  const columns = [col("a"), col("b", "number"), col("c", "ai")];
 
   it("lands at the top left corner of the selection", () => {
     const plan = planPaste([["1", "2"], ["3", ""]], { r0: 1, r1: 1, c0: 0, c1: 0 }, rows, columns);
@@ -121,19 +121,18 @@ describe("routePaste", () => {
 });
 
 describe("skippedCellsText", () => {
-  it("tells formula columns from AI and enrichment columns", () => {
-    expect(skippedCellsText(4, 4)).toBe("Skipped 4 cells in formula columns (they recalculate).");
-    expect(skippedCellsText(1, 0)).toBe("Skipped 1 cell in AI or enrichment columns (a run fills them).");
-    expect(skippedCellsText(1_003, 3)).toBe("Skipped 3 cells in formula columns (they recalculate) and 1,000 cells in AI or enrichment columns (a run fills them).");
+  it("says a run fills the skipped columns", () => {
+    expect(skippedCellsText(1)).toBe("Skipped 1 cell in AI or enrichment columns (a run fills them).");
+    expect(skippedCellsText(1_000)).toBe("Skipped 1,000 cells in AI or enrichment columns (a run fills them).");
   });
 
   it("says nothing when no cell was skipped", () => {
-    expect(skippedCellsText(0, 0)).toBe("");
+    expect(skippedCellsText(0)).toBe("");
   });
 });
 
 describe("pasteSummary", () => {
-  const base = { cells: 12, addedRows: 0, addedColumns: 0, skippedRunner: 0, skippedFormula: 0, invalidCount: 0 };
+  const base = { cells: 12, addedRows: 0, addedColumns: 0, skippedRunner: 0, invalidCount: 0 };
 
   it("reports what was written and created", () => {
     expect(pasteSummary({ ...base, addedRows: 2, addedColumns: 1 })).toBe("Pasted 12 cells and added 2 rows and 1 column.");
@@ -141,16 +140,8 @@ describe("pasteSummary", () => {
   });
 
   it("adds why cells were skipped and which ones the column type refused", () => {
-    expect(pasteSummary({ ...base, skippedRunner: 5, skippedFormula: 3, invalidCount: 1 })).toBe(
-      "Pasted 12 cells. Skipped 3 cells in formula columns (they recalculate) and 2 cells in AI or enrichment columns (a run fills them). 1 cell did not fit the column type and was not saved.",
+    expect(pasteSummary({ ...base, skippedRunner: 5, invalidCount: 1 })).toBe(
+      "Pasted 12 cells. Skipped 5 cells in AI or enrichment columns (a run fills them). 1 cell did not fit the column type and was not saved.",
     );
-  });
-});
-
-describe("planPaste skips", () => {
-  it("counts the formula share of the skipped cells", () => {
-    const plan = planPaste([["x", "y", "z"]], { r0: 0, r1: 0, c0: 0, c1: 0 }, [row("r1")], [col("a"), col("f", "formula"), col("ai", "ai")]);
-    expect(plan.skippedRunner).toBe(2);
-    expect(plan.skippedFormula).toBe(1);
   });
 });

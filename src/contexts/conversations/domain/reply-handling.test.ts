@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError, ValidationError } from "@/shared/errors";
-import { byGroupThenOrder, checkReplyTypeChange, keyFromName, lockAfterPersonMove, lockBeforePick, parseInstructionBlocks, parseReplyHandlingSettings, parseReplyTypeInput, parseReplyTypePatch } from "./reply-handling";
+import { byGroupThenOrder, checkReplyTypeChange, lockAfterPersonMove, lockBeforePick, parseInstructionBlocks } from "./reply-handling";
 
 const before = { groupKey: "interested", replyTypeId: "s1", replyTypeLocked: false, contextVersion: 3, workflowState: "waiting" };
 
@@ -51,45 +51,7 @@ describe("type change rules", () => {
   });
 });
 
-describe("reply type input", () => {
-  it("derives the key from the name, trims text and takes the default rules for the ones it does not name", () => {
-    expect(keyFromName("  Pricing & Plans! ")).toBe("pricing_plans");
-    const parsed = parseReplyTypeInput({ groupKey: "interested", name: " Pricing question ", description: " asks for a price ", checkMode: "before" });
-    expect(parsed).toEqual({
-      groupKey: "interested",
-      key: "pricing_question",
-      name: "Pricing question",
-      description: "asks for a price",
-      classificationGuidance: null,
-      rules: { checkMode: "before", replyDraft: true, followUps: "continue" },
-    });
-    expect(parseReplyTypeInput({ groupKey: "other", name: "Bounce", replyDraft: false, followUps: "stop" }).rules).toEqual({ checkMode: "after", replyDraft: false, followUps: "stop" });
-  });
-
-  it("rejects a bad group, key, rule and long guidance", () => {
-    expect(() => parseReplyTypeInput({ groupKey: "won", name: "X" })).toThrow(/four groups/);
-    expect(() => parseReplyTypeInput({ groupKey: "other", name: "X", key: "Bad Key" })).toThrow(/key/);
-    expect(() => parseReplyTypeInput({ groupKey: "other", name: "X", checkMode: "later" })).toThrow(/Check/);
-    expect(() => parseReplyTypeInput({ groupKey: "other", name: "X", replyDraft: "yes" })).toThrow(/Reply draft/);
-    expect(() => parseReplyTypeInput({ groupKey: "other", name: "X", followUps: "pause" })).toThrow(/Follow-ups/);
-    expect(() => parseReplyTypeInput({ groupKey: "other", name: "X", classificationGuidance: "x".repeat(2001) })).toThrow(/guidance/);
-  });
-
-  it("builds a patch from the fields present, with only the rules it names, and rejects an empty one", () => {
-    expect(parseReplyTypePatch({ active: false, followUps: "stop" })).toEqual({ active: false, rules: { followUps: "stop" } });
-    expect(parseReplyTypePatch({ name: "Asks" })).toEqual({ name: "Asks" });
-    expect(() => parseReplyTypePatch({})).toThrow(/Nothing/);
-    expect(() => parseReplyTypePatch({ stageRank: 2, reviewRequired: true })).toThrow(/Nothing/);
-  });
-});
-
 describe("pipeline settings and instructions", () => {
-  it("bounds the confidence floor", () => {
-    expect(parseReplyHandlingSettings({ autoApplyConfidence: 0.9 })).toEqual({ autoApplyConfidence: 0.9 });
-    expect(() => parseReplyHandlingSettings({ autoApplyConfidence: 1.2 })).toThrow(/confidence floor/);
-    expect(() => parseReplyHandlingSettings({ reviewOther: false })).toThrow(/Nothing/);
-  });
-
   it("validates blocks, duplicate ids and the total length", () => {
     expect(parseInstructionBlocks([{ id: "tone", title: " Tone ", content: " Be brief. " }], "Drafting instructions")).toEqual([{ id: "tone", title: "Tone", content: "Be brief." }]);
     expect(() => parseInstructionBlocks([{ id: "a", title: "A", content: "x" }, { id: "a", title: "B", content: "y" }], "Drafting instructions")).toThrow(/repeats/);

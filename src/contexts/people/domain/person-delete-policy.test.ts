@@ -8,19 +8,11 @@ describe("leadDeleteBlock", () => {
     expect(leadDeleteBlock(clean)).toBeNull();
   });
 
-  it("ranks the reasons that keep the lead for every actor first: a visible send, a hidden one, a running campaign, history", () => {
-    expect(leadDeleteBlock({ ...clean, outreach: ["in_active_campaign", "has_hidden_sends", "has_sends", "personal_campaign_sends"] })).toBe("has_sends");
-    expect(leadDeleteBlock({ ...clean, outreach: ["in_active_campaign", "personal_campaign_sends", "has_hidden_sends"] })).toBe("has_hidden_sends");
-    expect(leadDeleteBlock({ ...clean, outreach: ["personal_campaign_sends", "in_active_campaign"] })).toBe("in_active_campaign");
+  it("ranks the reasons: a send, a running campaign, history", () => {
+    expect(leadDeleteBlock({ ...clean, outreach: ["in_active_campaign", "has_sends"] })).toBe("has_sends");
     expect(leadDeleteBlock({ contact: true, history: true, outreach: ["in_active_campaign"] })).toBe("in_active_campaign");
     expect(leadDeleteBlock({ ...clean, history: true })).toBe("linked_records");
     expect(leadDeleteBlock({ ...clean, contact: true })).toBe("linked_records");
-  });
-
-  it("names another member's personal campaign only when nothing else keeps the lead", () => {
-    expect(leadDeleteBlock({ ...clean, outreach: ["personal_campaign_sends"] })).toBe("personal_campaign_sends");
-    // The owner who is asked would meet the history, so the member reads that reason.
-    expect(leadDeleteBlock({ ...clean, history: true, outreach: ["personal_campaign_sends"] })).toBe("linked_records");
   });
 });
 

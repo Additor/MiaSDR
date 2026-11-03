@@ -45,10 +45,9 @@ function waitingWarning(count: number, hours: number) {
   return `${formatCount(count)} lead${count === 1 ? " waits" : "s wait"} for follow-ups on this mailbox; after ${hours} hour${hours === 1 ? "" : "s"} another mailbox takes over and the thread breaks.`;
 }
 
-/** Mirrors the send-time domain policy: a connected mailbox outside the list (or any mailbox under open sign-up without a list) does not send. */
-function domainAllowed(emailAddress: string, allowedDomains: string[] | null, signupBlocked: boolean): boolean {
-  if (allowedDomains) return allowedDomains.includes(emailAddress.slice(emailAddress.lastIndexOf("@") + 1).toLowerCase());
-  return !signupBlocked;
+/** Mirrors the send-time domain policy: a connected mailbox outside the list does not send. */
+function domainAllowed(emailAddress: string, allowedDomains: string[] | null): boolean {
+  return !allowedDomains || allowedDomains.includes(emailAddress.slice(emailAddress.lastIndexOf("@") + 1).toLowerCase());
 }
 
 export function MailboxList({
@@ -56,7 +55,6 @@ export function MailboxList({
   canManage,
   takeoverAfterHours,
   allowedDomains,
-  signupBlocked,
   unsubscribeUnreachable,
   zones,
   defaultTimeZone,
@@ -66,7 +64,6 @@ export function MailboxList({
   canManage: boolean;
   takeoverAfterHours: number;
   allowedDomains: string[] | null;
-  signupBlocked: boolean;
   unsubscribeUnreachable: boolean;
   zones: string[];
   defaultTimeZone: string;
@@ -105,11 +102,7 @@ export function MailboxList({
           description={
             <>
               Enter the address campaigns should send from.
-              {allowedDomains
-                ? ` Allowed domains: ${allowedDomains.join(", ")}.`
-                : signupBlocked
-                  ? " Connecting is disabled until your administrator limits which domains can be connected in the server configuration."
-                  : ""}
+              {allowedDomains ? ` Allowed domains: ${allowedDomains.join(", ")}.` : ""}
             </>
           }
         >
@@ -182,7 +175,7 @@ export function MailboxList({
                     {waitingWarning(mailbox.waitingLeads, takeoverAfterHours)}
                   </p>
                 )}
-                {mailbox.status === "connected" && !domainAllowed(mailbox.emailAddress, allowedDomains, signupBlocked) && (
+                {mailbox.status === "connected" && !domainAllowed(mailbox.emailAddress, allowedDomains) && (
                   <p role="alert" className="text-sm text-destructive">
                     Blocked: this address is outside the domains your administrator allows. Connect an address in an allowed domain, or ask your administrator to add this one.
                   </p>

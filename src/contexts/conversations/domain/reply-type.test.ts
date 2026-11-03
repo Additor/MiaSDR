@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_REPLY_TYPES } from "./default-reply-types";
 import {
+  AI_PICK_CONFIDENCE_FLOOR,
   decideReplyType,
   holdReasonOf,
-  DEFAULT_TYPE_RULES,
-  STOP_REQUEST_RULES,
   typeChangeOutcome,
-  validateTypeRules,
   type ReplyType,
   type ReplyTypeFacts,
   type TypeRules,
@@ -20,7 +18,6 @@ const facts: ReplyTypeFacts = {
   campaignMode: "ai_drafts",
   channel: "email",
   confidence: 0.99,
-  floor: 0.85,
   locked: false,
   currentType: null,
 };
@@ -31,34 +28,34 @@ const type = (rules: Partial<TypeRules> = {}, over: Partial<ReplyType> = {}): Re
   name: "Demo request",
   groupKey: "interested",
   systemRole: null,
-  rules: { ...DEFAULT_TYPE_RULES, ...rules },
+  rules: { replyDraft: true, followUps: "continue", ...rules },
   ...over,
 });
 
-type SeededDecision = [key: string, hold: "requires_review" | null, needsLooksRight: boolean, wantsDraft: boolean, followUps: "continue" | "stop", settles: boolean];
+type SeededDecision = [key: string, hold: "stop_request" | null, wantsDraft: boolean, followUps: "continue" | "stop", settles: boolean];
 
 /**
  * What an AI pick of each default type decides, with `facts` above. The values are written out so a change to the
  * seeded rules or to `decideReplyType` shows up here. `settles` is `settlesAfterAiPick` from `action_required`.
  */
 const SEEDED: readonly SeededDecision[] = [
-  ["information_requested", null, true, true, "continue", false],
-  ["case_study", null, true, true, "continue", false],
-  ["demo_request", null, true, true, "continue", false],
-  ["meeting_requested", null, true, true, "continue", false],
-  ["meeting_no_show", null, true, true, "continue", false],
-  ["meeting_done", null, true, true, "continue", false],
-  ["trial_requested", null, true, true, "continue", false],
-  ["trial_user", null, true, true, "continue", false],
-  ["customer", "requires_review", false, true, "stop", false],
-  ["do_not_contact", "requires_review", false, false, "stop", false],
-  ["not_required_right_now", null, false, false, "stop", true],
-  ["already_using_a_tool", null, false, false, "stop", true],
-  ["wrong_contact", "requires_review", false, true, "stop", false],
-  ["connected_to_different_contact", "requires_review", false, true, "stop", false],
-  ["left_company", "requires_review", false, false, "stop", false],
-  ["out_of_office", "requires_review", false, false, "stop", false],
-  ["other", "requires_review", false, true, "continue", false],
+  ["information_requested", null, true, "continue", false],
+  ["case_study", null, true, "continue", false],
+  ["demo_request", null, true, "continue", false],
+  ["meeting_requested", null, true, "continue", false],
+  ["meeting_no_show", null, true, "continue", false],
+  ["meeting_done", null, true, "continue", false],
+  ["trial_requested", null, true, "continue", false],
+  ["trial_user", null, true, "continue", false],
+  ["customer", null, true, "stop", false],
+  ["do_not_contact", "stop_request", false, "stop", false],
+  ["not_required_right_now", null, false, "stop", true],
+  ["already_using_a_tool", null, false, "stop", true],
+  ["wrong_contact", null, true, "stop", false],
+  ["connected_to_different_contact", null, true, "stop", false],
+  ["left_company", null, false, "stop", true],
+  ["out_of_office", null, false, "stop", true],
+  ["other", null, true, "continue", false],
 ];
 
 describe("decideReplyType for every default type", () => {
@@ -66,11 +63,11 @@ describe("decideReplyType for every default type", () => {
     expect(SEEDED.map(([key]) => key)).toEqual(DEFAULT_REPLY_TYPES.map((d) => d.key));
   });
 
-  for (const [key, hold, needsLooksRight, wantsDraft, followUps, settles] of SEEDED) {
+  for (const [key, hold, wantsDraft, followUps, settles] of SEEDED) {
     it(`${key}: hold ${hold ?? "none"}, draft ${wantsDraft}, follow-ups ${followUps}`, () => {
       const d = DEFAULT_REPLY_TYPES.find((t) => t.key === key)!;
-      const decision = decideReplyType(d, facts);
-      expect(decision).toEqual({ hold, needsLooksRight, wantsDraft, followUps });
+      const decision = decideReplyType({ ...d, systemRole: d.systemRole ?? null }, facts);
+      expect(decision).toEqual({ hold, wantsDraft, followUps });
       expect(settlesAfterAiPick("action_required", decision, false)).toBe(settles);
     });
   }
@@ -80,36 +77,45 @@ describe("decideReplyType for every default type", () => {
       ["customer", "customer"],
       ["do_not_contact", "stop_request"],
     ]);
-    expect(DEFAULT_REPLY_TYPES.find((d) => d.systemRole === "stop_request")?.rules).toEqual(STOP_REQUEST_RULES);
+    expect(DEFAULT_REPLY_TYPES.find((d) => d.systemRole === "stop_request")?.rules).toEqual({ replyDraft: false, followUps: "stop" });
   });
 });
 
 describe("decideReplyType", () => {
-  it("holds an AI pick for the customer lock, then for Check before, then below the floor", () => {
+  it("holds an AI pick of the stop request type, whatever the confidence", () => {
+    const stop = type({ replyDraft: false, followUps: "stop" }, { systemRole: "stop_request", groupKey: "not_interested" });
+    expect(decideReplyType(stop, { ...facts, confidence: 1 }).hold).toBe("stop_request");
+    expect(decideReplyType(stop, { ...facts, confidence: 0.1 }).hold).toBe("stop_request");
+  });
+
+  it("holds an AI pick under the floor, and applies one at the floor", () => {
+    expect(AI_PICK_CONFIDENCE_FLOOR).toBe(0.85);
+    expect(decideReplyType(type(), { ...facts, confidence: 0.8499 }).hold).toBe("low_confidence");
+    expect(decideReplyType(type(), { ...facts, confidence: 0.85 }).hold).toBeNull();
+  });
+
+  it("holds an AI pick that moves a locked customer out of the group, and no pick inside it", () => {
     const locked = { ...facts, locked: true, currentType: { groupKey: "customer" } };
-    expect(decideReplyType(type({ checkMode: "before" }), { ...locked, confidence: 0.1 }).hold).toBe("protected_customer");
+    expect(decideReplyType(type(), locked).hold).toBe("protected_customer");
+    expect(decideReplyType(type(), { ...locked, confidence: 0.1 }).hold).toBe("protected_customer");
     expect(decideReplyType(type({}, { groupKey: "customer" }), locked).hold).toBeNull();
-    expect(decideReplyType(type({ checkMode: "before" }), { ...facts, confidence: 0.1 }).hold).toBe("requires_review");
-    expect(decideReplyType(type({ checkMode: "skip" }), { ...facts, confidence: 0.84 }).hold).toBe("low_confidence");
-    expect(decideReplyType(type({ checkMode: "skip" }), { ...facts, confidence: 0.85 }).hold).toBeNull();
   });
 
-  it("applies a confident AI pick of a type checked after, whatever type it replaces", () => {
-    // Progress belongs to Deal stage: no pick waits to protect the type it replaces. A team that wants a person to confirm
-    // a move into a type sets that type's Check to before.
-    const meetingDone = type({ checkMode: "after" }, { key: "meeting_done", name: "Meeting done" });
+  it("applies every other AI pick at once, whatever type it replaces", () => {
     for (const currentType of [null, { groupKey: "interested" }, { groupKey: "not_interested" }, { groupKey: "other" }]) {
-      expect(decideReplyType(meetingDone, { ...facts, currentType })).toMatchObject({ hold: null, needsLooksRight: true });
+      expect(decideReplyType(type(), { ...facts, currentType }).hold).toBeNull();
     }
-    expect(decideReplyType({ ...meetingDone, rules: { ...meetingDone.rules, checkMode: "before" } }, facts).hold).toBe("requires_review");
+    expect(decideReplyType(type({ replyDraft: false, followUps: "stop" }, { systemRole: "customer", groupKey: "customer" }), facts).hold).toBeNull();
   });
 
-  it("never holds a person's pick, and asks Looks right only of an applied AI pick of a type checked after", () => {
+  it("applies a pick the reply's own words read as a stop: the stop review holds it, not the pick", () => {
+    expect(decideReplyType(type(), { ...facts, stopRequested: true })).toMatchObject({ hold: null, wantsDraft: false });
+  });
+
+  it("never holds a person's pick", () => {
     const person = { ...facts, confidence: null, locked: true, currentType: { groupKey: "customer" } };
-    expect(decideReplyType(type({ checkMode: "before" }), person)).toMatchObject({ hold: null, needsLooksRight: false });
-    expect(decideReplyType(type({ checkMode: "after" }), facts).needsLooksRight).toBe(true);
-    expect(decideReplyType(type({ checkMode: "after" }), { ...facts, confidence: 0.5 }).needsLooksRight).toBe(false);
-    expect(decideReplyType(type({ checkMode: "skip" }), facts).needsLooksRight).toBe(false);
+    expect(decideReplyType(type(), person).hold).toBeNull();
+    expect(decideReplyType(type({}, { systemRole: "stop_request" }), person).hold).toBeNull();
   });
 
   it("writes no draft for a stop request, whatever the type says", () => {
@@ -134,31 +140,10 @@ describe("decideReplyType", () => {
   });
 });
 
-describe("validateTypeRules", () => {
-  it("accepts any rules for a type without a role or with the customer role", () => {
-    const rules: TypeRules = { checkMode: "skip", replyDraft: false, followUps: "continue" };
-    expect(validateTypeRules({ systemRole: null }, rules)).toEqual(rules);
-    expect(validateTypeRules({ systemRole: "customer" }, rules)).toEqual(rules);
-  });
-
-  it("keeps the stop request rules", () => {
-    expect(validateTypeRules({ systemRole: "stop_request" }, { ...STOP_REQUEST_RULES })).toEqual(STOP_REQUEST_RULES);
-    expect(() => validateTypeRules({ systemRole: "stop_request" }, { ...STOP_REQUEST_RULES, checkMode: "after" })).toThrow(/checked before/);
-    expect(() => validateTypeRules({ systemRole: "stop_request" }, { ...STOP_REQUEST_RULES, replyDraft: true })).toThrow(/never gets a reply draft/);
-    expect(() => validateTypeRules({ systemRole: "stop_request" }, { ...STOP_REQUEST_RULES, followUps: "continue" })).toThrow(/stops follow-ups/);
-  });
-
-  it("refuses values outside the rule sets", () => {
-    expect(() => validateTypeRules({ systemRole: null }, { ...DEFAULT_TYPE_RULES, checkMode: "later" as never })).toThrow(/Check/);
-    expect(() => validateTypeRules({ systemRole: null }, { ...DEFAULT_TYPE_RULES, followUps: "pause" as never })).toThrow(/Follow-ups/);
-    expect(() => validateTypeRules({ systemRole: null }, { ...DEFAULT_TYPE_RULES, replyDraft: "yes" as never })).toThrow(/Reply draft/);
-  });
-});
-
 describe("typeChangeOutcome", () => {
   const outcomeFacts = { ...facts } as Omit<ReplyTypeFacts, "confidence">;
-  const notNow = type({ checkMode: "skip", replyDraft: false, followUps: "stop" }, { name: "Not now", groupKey: "not_interested" });
-  const askedToStop = type(STOP_REQUEST_RULES, { name: "Asked to stop", groupKey: "not_interested", systemRole: "stop_request" });
+  const notNow = type({ replyDraft: false, followUps: "stop" }, { name: "Not now", groupKey: "not_interested" });
+  const askedToStop = type({ replyDraft: false, followUps: "stop" }, { name: "Asked to stop", groupKey: "not_interested", systemRole: "stop_request" });
 
   it("says a draft is written and follow-ups keep going for a type that wants both", () => {
     expect(typeChangeOutcome(notNow, type(), outcomeFacts)).toEqual({
@@ -215,7 +200,7 @@ describe("typeChangeOutcome", () => {
 
 describe("holdReasonOf", () => {
   it("reads the three hold reasons and nothing else", () => {
-    for (const reason of ["protected_customer", "requires_review", "low_confidence"]) expect(holdReasonOf(reason)).toBe(reason);
-    for (const legacy of ["protected_stage", "customer_requires_review", "review_other", "", 3, null, undefined, {}]) expect(holdReasonOf(legacy)).toBeNull();
+    for (const reason of ["protected_customer", "stop_request", "low_confidence"]) expect(holdReasonOf(reason)).toBe(reason);
+    for (const legacy of ["protected_stage", "requires_review", "customer_requires_review", "review_other", "", 3, null, undefined, {}]) expect(holdReasonOf(legacy)).toBeNull();
   });
 });

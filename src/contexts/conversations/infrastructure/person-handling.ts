@@ -1,16 +1,13 @@
 import { detectsStopRequest } from "../domain/stop-request";
 import { stopRequestedSql } from "./stop-requested-sql";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
-import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { HELD_LOCK_TIMEOUT, setLockTimeout } from "@/platform/db/person-locks";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
 import { endRunCountingTx, OPEN_STEPS, RETIRABLE_DRAFTS, type Tx } from "../after-reply/infrastructure/sequence-stop";
 import { conversations, events, records } from "@/platform/db/schema";
-import type { Actor } from "@/shared/errors";
 import { AI_JOB_LEASE_MS } from "../ai/application/ai-jobs";
 import type { PersonChannel, PersonEventInput, PersonEventView, PersonReplyHandling, PersonRunStop } from "../application/person-ports";
-import { publicConversation, publicConversationSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf, uuidList } from "@/platform/db/sql-values";
 
 /**
@@ -104,7 +101,7 @@ export async function activeConversationOfPerson(organizationId: string, personI
     .select({ id: conversations.id, channel: conversations.channel })
     .from(conversations)
     .innerJoin(records, and(eq(records.id, conversations.recordId), eq(records.organizationId, conversations.organizationId)))
-    .where(and(eq(conversations.organizationId, organizationId), eq(records.personId, personId), publicConversation))
+    .where(and(eq(conversations.organizationId, organizationId), eq(records.personId, personId)))
     .orderBy(sql`(${conversations.channel} = ${records.activeChannel}) desc nulls last`, desc(conversations.updatedAt), conversations.id)
     .limit(1);
   return row ? { conversationId: row.id, channel: row.channel as PersonChannel } : null;
@@ -123,8 +120,7 @@ export async function listPersonEvents(organizationId: string, personId: string,
       toData: events.toData,
     })
     .from(events)
-    .leftJoin(records, and(eq(records.id, events.recordId), eq(records.organizationId, events.organizationId)))
-    .where(and(eq(events.organizationId, organizationId), eq(events.personId, personId), or(isNull(events.recordId), visibleRecordSql("records"))))
+    .where(and(eq(events.organizationId, organizationId), eq(events.personId, personId)))
     .orderBy(desc(events.createdAt), desc(events.id))
     .limit(Math.min(Math.max(Math.trunc(limit), 1), MAX_EVENTS));
   return rows;
@@ -154,7 +150,7 @@ export async function lockPersonForConversion(tx: DbHandle, organizationId: stri
  * Step 1 of a contact delete: the person's records `FOR UPDATE` in id order, then the conversations of those records
  * `FOR UPDATE` in id order, then the person's outreach advisory lock. The conversation locks keep a reply from adding a
  * message between the purge's message and conversation deletes: a message insert needs `FOR KEY SHARE` on its
- * conversation. The ids are locked, not read, so private threads lock too. Once the first lock is held the transaction
+ * conversation. Once the first lock is held the transaction
  * waits at most `HELD_LOCK_TIMEOUT` for the next, so a writer with another order wins and the delete retries.
  */
 export async function lockPersonForDelete(tx: DbHandle, organizationId: string, personId: string): Promise<void> {
@@ -180,44 +176,28 @@ export interface PersonHandlingCounts {
   hidden: boolean;
 }
 
-export type PersonHandlingBlocker = { reason: "send_in_flight" } | { reason: "ai_job_running" } | { reason: "private_conversation" };
+export type PersonHandlingBlocker = { reason: "send_in_flight" } | { reason: "ai_job_running" };
 
 const personRecords = (organizationId: string, personId: string) =>
   sql`(select r.id from records r where r.organization_id = ${organizationId} and r.person_id = ${personId}::uuid)`;
 
 /**
- * Whether the actor sees conversation `alias`: an owner or admin sees every conversation, a member sees public ones and the
- * private threads of personal campaigns they created.
+ * What a contact delete removes in this context. The sets match `purgePersonHandling`: events of the person or of their
+ * records, notes and tasks of the person, the conversations of their records and their messages.
  */
-const seenBy = (actor: Actor, alias: string) =>
-  isOwnerOrAdmin(actor.role)
-    ? sql`true`
-    : sql`(${publicConversationSql(alias)} or exists (select 1 from campaigns pc where pc.id = ${sql.raw(alias)}.private_campaign_id and pc.organization_id = ${sql.raw(alias)}.organization_id and pc.created_by = ${actor.userId}::uuid))`;
-
-/**
- * What a contact delete removes in this context, as the actor may see it. The sets match `purgePersonHandling`: events of
- * the person or of their records, notes and tasks of the person, the conversations of their records and their messages.
- * A record whose conversations are all hidden from the actor takes its events, notes and tasks out of the counts.
- */
-export async function personHandlingCounts(tx: DbHandle, actor: Actor, personId: string): Promise<PersonHandlingCounts> {
-  const org = actor.organizationId;
+export async function personHandlingCounts(tx: DbHandle, org: string, personId: string): Promise<PersonHandlingCounts> {
   const recs = personRecords(org, personId);
   const [row] = rowsOf<PersonHandlingCounts>(
     await tx.execute(sql`
       with convs as (
-        select c.id, c.record_id, ${seenBy(actor, "c")} as seen from conversations c where c.organization_id = ${org} and c.record_id in ${recs}
-      ),
-      hidden_records as (select record_id from convs group by record_id having not bool_or(seen))
+        select c.id from conversations c where c.organization_id = ${org} and c.record_id in ${recs}
+      )
       select
-        (select count(*) from convs where seen)::int as conversations,
-        (select count(*) from messages m where m.organization_id = ${org} and m.conversation_id in (select id from convs where seen))::int as messages,
-        (select count(*) from events e where e.organization_id = ${org} and (e.person_id = ${personId}::uuid or e.record_id in ${recs})
-          and (e.record_id is null or e.record_id not in (select record_id from hidden_records)))::int as events,
-        (select count(*) from notes n where n.organization_id = ${org} and n.person_id = ${personId}::uuid
-          and (n.record_id is null or n.record_id not in (select record_id from hidden_records)))::int as notes,
-        (select count(*) from tasks t where t.organization_id = ${org} and t.person_id = ${personId}::uuid
-          and (t.record_id is null or t.record_id not in (select record_id from hidden_records)))::int as tasks,
-        exists (select 1 from convs where not seen) as hidden`),
+        (select count(*) from convs)::int as conversations,
+        (select count(*) from messages m where m.organization_id = ${org} and m.conversation_id in (select id from convs))::int as messages,
+        (select count(*) from events e where e.organization_id = ${org} and (e.person_id = ${personId}::uuid or e.record_id in ${recs}))::int as events,
+        (select count(*) from notes n where n.organization_id = ${org} and n.person_id = ${personId}::uuid)::int as notes,
+        (select count(*) from tasks t where t.organization_id = ${org} and t.person_id = ${personId}::uuid)::int as tasks`),
   );
   return row;
 }
@@ -225,14 +205,12 @@ export async function personHandlingCounts(tx: DbHandle, actor: Actor, personId:
 /**
  * Step 6 of a contact delete. `send_in_flight`: a reply send of the person's drafts is prepared, sending or uncertain.
  * `ai_job_running`: an AI job holds a live lease on a message or classification of the person's records; a job whose lease
- * ran out does not block, and the purge deletes it. `private_conversation`: for a member, the person has a thread in a
- * personal campaign of another member. Owners and admins pass that rule.
+ * ran out does not block, and the purge deletes it.
  */
-export async function personHandlingBlockers(tx: DbHandle, actor: Actor, personId: string): Promise<PersonHandlingBlocker[]> {
-  const org = actor.organizationId;
+export async function personHandlingBlockers(tx: DbHandle, org: string, personId: string): Promise<PersonHandlingBlocker[]> {
   const recs = personRecords(org, personId);
   const leaseSeconds = AI_JOB_LEASE_MS / 1000;
-  const [row] = rowsOf<{ send_in_flight: boolean; ai_job_running: boolean; private_conversation: boolean }>(
+  const [row] = rowsOf<{ send_in_flight: boolean; ai_job_running: boolean }>(
     await tx.execute(sql`
       select
         exists (
@@ -247,15 +225,11 @@ export async function personHandlingBlockers(tx: DbHandle, actor: Actor, personI
                    where m.organization_id = ${org} and mc.record_id in ${recs}))
               or (j.kind = 'initial_draft' and j.entity_type = 'classification' and j.entity_id in (
                    select k.id from reply_type_picks k where k.organization_id = ${org} and k.record_id in ${recs})))
-        ) as ai_job_running,
-        exists (
-          select 1 from conversations c where c.organization_id = ${org} and c.record_id in ${recs} and not ${seenBy(actor, "c")}
-        ) as private_conversation`),
+        ) as ai_job_running`),
   );
   const blockers: PersonHandlingBlocker[] = [];
   if (row.send_in_flight) blockers.push({ reason: "send_in_flight" });
   if (row.ai_job_running) blockers.push({ reason: "ai_job_running" });
-  if (row.private_conversation) blockers.push({ reason: "private_conversation" });
   return blockers;
 }
 
@@ -281,7 +255,7 @@ const STOP_CHECK_REPLIES = 500;
 
 /**
  * The people among `personIds` with a reply that asked to stop: a pick stored the flag, or its own words ask. It reads
- * every conversation, private ones too, so a person's request counts whoever can see it.
+ * every conversation of the person.
  */
 export async function peopleWhoAskedToStop(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<string[]> {
   if (personIds.length === 0) return [];

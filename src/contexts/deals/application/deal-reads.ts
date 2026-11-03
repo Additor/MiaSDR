@@ -36,7 +36,7 @@ export interface DealView {
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
-  /** "From {campaign}": the replied enrollment that converted the person, shown only for a regular campaign. */
+  /** "From {campaign}": the replied enrollment that converted the person. */
   source: DealSource | null;
   person: DealPerson;
 }
@@ -49,8 +49,7 @@ async function sourcesOf(deps: DealsDeps, organizationId: string, enrollmentIds:
   const out = new Map<string, DealSource>();
   if (ids.length === 0) return out;
   for (const [enrollmentId, source] of await deps.outreach.enrollmentSources(organizationId, ids)) {
-    // A personal campaign is its creator's private outreach: the deal never names it.
-    if (source.type === "regular") out.set(enrollmentId, { enrollmentId, campaignId: source.campaignId, campaignName: source.name });
+    out.set(enrollmentId, { enrollmentId, campaignId: source.campaignId, campaignName: source.name });
   }
   return out;
 }

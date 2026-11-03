@@ -1,6 +1,6 @@
 import { ValidationError } from "@/shared/errors";
 import { isCalendarDay, shiftDay, startOfDayInZone } from "@/shared/time-zone";
-import type { CheckMode, SystemRole } from "../../domain/reply-type";
+import type { SystemRole } from "../../domain/reply-type";
 
 /**
  * The Actions queue lists records, not source rows. A record is in the queue when it is `action_required`
@@ -50,37 +50,29 @@ export interface QueueFacts {
  *   (`stopReviewOpenSql`), whatever the pick's status. The query also lists a reply no pick has read. Accept would only change the type, so the row offers Review stop request. A person already marked do not
  *   contact, or an email address on the suppression list, has nothing left to stop.
  * - `held`: a current held pick of a type other than the stop request type. Accept applies it.
- * - `looks_right`: an applied pick nobody looked at, of the record's current type, decided with Check after.
  *
- * Null when nothing waits: the pick is stale, a held pick that asks nothing to stop lost its record version, a person
- * already looked at it, or it is a held stop request for someone who can no longer be contacted.
+ * Null when nothing waits: the pick applied or is stale, a held pick that asks nothing to stop lost its record version,
+ * or it is a held stop request for someone who can no longer be contacted.
  */
-export type PickReviewKind = "stop_review" | "held" | "looks_right";
+export type PickReviewKind = "stop_review" | "held";
 
 export interface PickReviewFacts {
   status: string;
   /** The pick was written for the record's current version and is not stale. */
   current: boolean;
-  /** The held pick names a type that still exists and is active. An archived type cannot be accepted. */
+  /** The held pick names a type. */
   hasProposedType: boolean;
   proposedSystemRole: SystemRole | null;
   /** The reply asks to stop and no person reviewed it. */
   stopReviewOpen: boolean;
-  acknowledged: boolean;
-  /** The applied type is the record's type now. A person who changed the type since has answered the pick. */
-  appliedIsCurrentType: boolean;
-  /** Check from the pick's rules snapshot. Null for a pick written before snapshots, read as after. */
-  checkMode: CheckMode | null;
   /** Do not contact, or the address on the suppression list on an email thread. */
   stopped: boolean;
 }
 
 export function pickReviewOf(f: PickReviewFacts): PickReviewKind | null {
   const held = f.status === "proposed" && f.current;
-  const applied = f.status === "auto_applied" && !f.acknowledged && f.appliedIsCurrentType;
   if (f.stopReviewOpen && !f.stopped) return "stop_review";
   if (held && f.hasProposedType && f.proposedSystemRole !== "stop_request") return "held";
-  if (applied && (f.checkMode === null || f.checkMode === "after")) return "looks_right";
   return null;
 }
 

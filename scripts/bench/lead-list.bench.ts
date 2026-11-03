@@ -21,7 +21,7 @@ describeDb("lead list benchmark", () => {
     org = await createTestOrg(sql, "Bench");
     const o = org.organizationId;
     const [{ id: pipeline }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${o}, 'default', true) returning id`;
-    const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${o}, 'email', 'Big', 'active', 'regular') returning id`;
+    const [{ id: campaign }] = await sql`insert into campaigns (organization_id, channel, name, status) values (${o}, 'email', 'Big', 'active') returning id`;
     await sql`insert into people (organization_id, email, full_name)
       select ${o}, 'bulk' || g || '-' || ${org.slug} || '@la.test', 'Bulk ' || g from generate_series(1, ${LEADS}) g`;
     await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status)

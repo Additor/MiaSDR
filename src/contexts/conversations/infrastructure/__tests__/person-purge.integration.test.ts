@@ -51,13 +51,12 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     // A person has one record per pipeline, so the private record of `contact` lives in a second pipeline.
     const pipeline2 = await one(sql`insert into reply_type_sets (organization_id, name, is_default) values (${org}, 'p2', false) returning id`);
     const sub = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
-    const personal = await one(sql`insert into campaigns (organization_id, channel, name, type, created_by) values (${org}, 'linkedin', 'Mine', 'personal', ${other}) returning id`);
     const actors = {
       member: { userId: member, organizationId: org, role: "member" } satisfies Actor,
       other: { userId: other, organizationId: org, role: "member" } satisfies Actor,
       admin: { userId: admin, organizationId: org, role: "admin" } satisfies Actor,
     };
-    return { org, tag, pipeline, pipeline2, sub, personal, actors };
+    return { org, tag, pipeline, pipeline2, sub, actors };
   }
   type Org = Awaited<ReturnType<typeof organization>>;
 
@@ -65,9 +64,9 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
    * A contact with a row in every table the purge touches: one record with a public email thread (two messages, a
    * classification, AI jobs, a draft with a send attempt, a follow-up run with a step run, a follow-up choice), events on
    * the person and on the record, notes and tasks on both, a do-not-contact row and a resolved identity exception. On
-   * request, a second record whose only thread is private, in another member's personal campaign.
+   * request, a second record with a thread of its own.
    */
-  async function contact(o: Org, label: string, opts: { privateThread?: boolean } = {}) {
+  async function contact(o: Org, label: string, opts: { secondRecord?: boolean } = {}) {
     const t = `${o.tag}-${label}`;
     const person = await one(sql`
       insert into people (organization_id, email, full_name, lifecycle, converted_at) values (${o.org}, ${`${t}@lead.test`}, ${label}, 'contact', now()) returning id`);
@@ -113,21 +112,21 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     await sql`
       insert into identity_exceptions (organization_id, channel, account_ref, source_event_key, reason, status, resolved_person_id, resolved_at)
       values (${o.org}, 'email', ${mailbox}, ${`ev-${t}`}, 'unknown sender', 'resolved', ${person}, now())`;
-    let privateConversation: string | null = null;
-    if (opts.privateThread) {
-      // A second record whose only thread is private, with an event, a note and a task of its own.
+    let secondConversation: string | null = null;
+    if (opts.secondRecord) {
+      // A second record with its own thread, event, note and task.
       const account = `li-${t}`;
-      const privateRecord = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
-      privateConversation = await one(sql`
-        insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${o.org}, ${privateRecord}, 'linkedin', ${account}, ${o.personal}) returning id`);
+      const secondRecord = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
+      secondConversation = await one(sql`
+        insert into conversations (organization_id, record_id, channel, account_ref) values (${o.org}, ${secondRecord}, 'linkedin', ${account}) returning id`);
       await sql`
         insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-        values (${o.org}, ${privateConversation}, 'linkedin', ${account}, 'inbound', ${`li-in-${t}`}, 'private hello', now())`;
-      await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${privateRecord}, 'reply_type.changed', 'system')`;
-      await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${privateRecord}, 'private note')`;
-      await sql`insert into tasks (organization_id, person_id, record_id, name) values (${o.org}, ${person}, ${privateRecord}, 'private task')`;
+        values (${o.org}, ${secondConversation}, 'linkedin', ${account}, 'inbound', ${`li-in-${t}`}, 'second hello', now())`;
+      await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${o.org}, ${person}, ${secondRecord}, 'reply_type.changed', 'system')`;
+      await sql`insert into notes (organization_id, person_id, record_id, body) values (${o.org}, ${person}, ${secondRecord}, 'second note')`;
+      await sql`insert into tasks (organization_id, person_id, record_id, name) values (${o.org}, ${person}, ${secondRecord}, 'second task')`;
     }
-    return { person, record, conversation, inbound, outbound, classification, draft, privateConversation, email: `${t}@lead.test` };
+    return { person, record, conversation, inbound, outbound, classification, draft, secondConversation, email: `${t}@lead.test` };
   }
 
   /** Rows that point at `person`, per table this context owns, plus the person's identity exceptions and ccs. */
@@ -170,7 +169,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
 
   it("deletes every row of the person in this context, touches no other person or organization, and turns the switch off", async () => {
     const o = await organization();
-    const target = await contact(o, "target", { privateThread: true });
+    const target = await contact(o, "target", { secondRecord: true });
     const neighbour = await contact(o, "neighbour");
     // A cc of the neighbour that the target's message carried goes with that message.
     await sql`insert into lead_ccs (organization_id, person_id, email, source_message_id) values (${o.org}, ${neighbour.person}, ${`cc-${o.tag}@lead.test`}, ${target.inbound})`;
@@ -225,9 +224,9 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
       insert into ai_jobs (organization_id, kind, status, entity_type, entity_id, idempotency_key, locked_at, locked_by, started_at)
       values (${o.org}, 'classification', 'running', 'message', ${target.inbound}, ${`stale-${o.tag}`}, now() - interval '6 minutes', 'w2', now() - interval '6 minutes') returning id`;
 
-    expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.actors.admin, target.person))).toEqual([{ reason: "ai_job_running" }]);
+    expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.org, target.person))).toEqual([{ reason: "ai_job_running" }]);
     await sql`update ai_jobs set locked_at = now() - interval '6 minutes', started_at = now() - interval '6 minutes' where id = ${live.id}`;
-    expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.actors.admin, target.person))).toEqual([]);
+    expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.org, target.person))).toEqual([]);
     await sql`update ai_jobs set locked_at = now(), started_at = now() where id = ${live.id}`;
 
     // Without the blocker check, the purge still leaves the live job and removes the stale one.
@@ -246,22 +245,14 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
       values (${o.org}, ${target.record}, ${target.conversation}, ${target.inbound}, 0, 'email') returning id`);
     await sql`
       insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id, status) values (${o.org}, ${draft}, ${`sa2-${o.tag}`}, ${o.actors.member.userId}, ${status})`;
-    expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.actors.admin, target.person))).toEqual([{ reason: "send_in_flight" }]);
+    expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.org, target.person))).toEqual([{ reason: "send_in_flight" }]);
   });
 
-  it("counts what the actor sees: a member misses another member's private thread and is blocked, the creator and an admin are not", async () => {
+  it("counts every row the purge removes, and blocks nothing at rest", async () => {
     const o = await organization();
-    const target = await contact(o, "private", { privateThread: true });
-    const counts = (actor: Actor) => db.transaction((tx) => handling.personHandlingCounts(tx, actor, target.person));
-    const blockers = (actor: Actor) => db.transaction((tx) => handling.personHandlingBlockers(tx, actor, target.person));
-
-    expect(await counts(o.actors.admin)).toEqual({ conversations: 2, messages: 3, events: 3, notes: 3, tasks: 2, hidden: false });
-    expect(await counts(o.actors.other)).toEqual({ conversations: 2, messages: 3, events: 3, notes: 3, tasks: 2, hidden: false });
-    // The private record's event, note and task leave the member's counts with its thread.
-    expect(await counts(o.actors.member)).toEqual({ conversations: 1, messages: 2, events: 2, notes: 2, tasks: 1, hidden: true });
-    expect(await blockers(o.actors.member)).toEqual([{ reason: "private_conversation" }]);
-    expect(await blockers(o.actors.other)).toEqual([]);
-    expect(await blockers(o.actors.admin)).toEqual([]);
+    const target = await contact(o, "counted", { secondRecord: true });
+    expect(await db.transaction((tx) => handling.personHandlingCounts(tx, o.org, target.person))).toEqual({ conversations: 2, messages: 3, events: 3, notes: 3, tasks: 2 });
+    expect(await db.transaction((tx) => handling.personHandlingBlockers(tx, o.org, target.person))).toEqual([]);
   });
 
   it("reads the do-not-contact row under a lock, and a person without one is not marked", async () => {

@@ -41,7 +41,7 @@ describeDb("AI classification, drafts and approval", () => {
       // The pick stores the rules of the type it proposes, as they were when it was decided.
       expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
         status: "proposed",
-        rules: { checkMode: "after", replyDraft: true, followUps: "continue" },
+        rules: { replyDraft: true, followUps: "continue" },
       });
       expect(await count("drafts", f.org)).toBe(0);
       expect(
@@ -58,7 +58,7 @@ describeDb("AI classification, drafts and approval", () => {
       expect(accepted).toMatchObject({ replyTypeKey: "demo_request", draftQueued: true });
       expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
         status: "accepted",
-        rules: { checkMode: "after", replyDraft: true, followUps: "stop" },
+        rules: { replyDraft: true, followUps: "stop" },
       });
       expect(await one("select reply_type_source from records where organization_id = $1", [f.org])).toMatchObject({ reply_type_source: "human" });
       await f.run();
@@ -68,17 +68,8 @@ describeDb("AI classification, drafts and approval", () => {
       await mgmt.setReplyType(f.replyDeps, f.actor, r.conversationId, { replyTypeKey: "not_required_right_now", expectedContextVersion: await version(f) });
       expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
         status: "overridden",
-        rules: { checkMode: "skip", replyDraft: false, followUps: "stop" },
+        rules: { replyDraft: false, followUps: "stop" },
       });
-    });
-
-    it("honors a changed pipeline threshold", async () => {
-      const f = await fixture();
-      await composition.ingestInbound(mail(f, { bodyText: "pricing please" }));
-      // The pipeline exists after the first ingest; raise the bar above the fake's 0.88 before the AI runs.
-      await sql`update reply_handling_settings set auto_apply_confidence = 0.95 where organization_id = ${f.org}`;
-      await f.run();
-      expect(await one("select status from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed" });
     });
 
     it("discards a result when newer context arrived during the call", async () => {
@@ -157,26 +148,20 @@ describeDb("AI classification, drafts and approval", () => {
       expect((await panel(f, r.conversationId)).suppressed).toBe(true);
     });
 
-    it("settles the record to idle when an applied pick of a type checked neither before nor after asks for no reply", async () => {
+    it("settles the record to idle when an applied pick asks for no reply", async () => {
       const f = await fixture();
       await composition.ingestInbound(mail(f, { bodyText: "I am out of office until Monday.", subject: "Out of office" }));
-      await sql`update reply_types set check_mode = 'skip' where organization_id = ${f.org} and group_key = 'other' and not reply_draft`;
       await f.run();
       expect(await one("select workflow_state, group_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "idle", group_key: "other" });
       expect(await count("drafts", f.org)).toBe(0);
     });
 
-    it.each([
-      // The fake reads an out-of-office reply as `other` on its own; the customer answer is forced at top confidence.
-      { category: "customer", answer: { subcategoryKey: "customer", confidence: 0.99, reason: "Says they are a customer." }, reply: {} },
-      { category: "other", answer: null, reply: { bodyText: "I am out of office until Monday.", subject: "Out of office" } },
-    ])("holds a $category classification for review by default", async ({ category, answer, reply }) => {
+    it("applies a customer pick at once, with no lock", async () => {
       const f = await fixture();
-      if (answer) f.ai!.classifyWith = () => answer;
-      await receive(f, reply);
-      expect(await one("select workflow_state, group_key from records where organization_id = $1", [f.org])).toMatchObject({ workflow_state: "action_required", group_key: null });
-      expect(await one("select status, proposed_group_key from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "proposed", proposed_group_key: category });
-      expect(await one("select response->>'holdReason' as hold_reason from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ hold_reason: "requires_review" });
+      f.ai!.classifyWith = () => ({ subcategoryKey: "customer", confidence: 0.99, reason: "Says they are a customer." });
+      await receive(f, {});
+      expect(await one("select group_key, reply_type_locked from records where organization_id = $1", [f.org])).toMatchObject({ group_key: "customer", reply_type_locked: false });
+      expect(await one("select status, response->>'holdReason' as hold_reason from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({ status: "auto_applied", hold_reason: null });
     });
   });
 
@@ -429,7 +414,7 @@ describeDb("AI classification, drafts and approval", () => {
       expect(await count("contact_policies", f.org, "do_not_contact")).toBe(0);
       expect(await one("select status, rules from reply_type_picks where organization_id = $1", [f.org])).toMatchObject({
         status: "overridden",
-        rules: { checkMode: "before", replyDraft: false, followUps: "stop" },
+        rules: { replyDraft: false, followUps: "stop" },
       });
     });
 

@@ -15,7 +15,7 @@ const files = () => sourceFiles(path.join(ROOT, "src")).map((file) => ({ file: r
 describe("the reply fact", () => {
   it("parses the auto-reply flag in one place", () => {
     const parsers = files().filter(({ text }) => /raw\s*->>\s*'autoReply'/.test(text)).map(({ file }) => file);
-    expect(parsers).toEqual(["src/platform/db/conversation-visibility.ts"]);
+    expect(parsers).toEqual(["src/platform/db/genuine-inbound.ts"]);
   });
 
   it("moves an enrollment to replied in one place", () => {

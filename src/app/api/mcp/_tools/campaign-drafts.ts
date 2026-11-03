@@ -35,7 +35,7 @@ type Counts = Partial<Record<(typeof SKIP_KEYS)[number] | "added" | "wouldAdd" |
 const counted = async (result: Promise<object>): Promise<Counts> => (await result) as Counts;
 
 interface ChannelWrites {
-  create(actor: Actor, input: { name: string; personal: boolean; senderIds?: string[] }): Promise<{ id: string }>;
+  create(actor: Actor, input: { name: string; senderIds?: string[] }): Promise<{ id: string }>;
   /** Checks the agent's steps by the channel's rules, and answers them with the update that saves them. */
   withSteps(sent: SentStep[] | undefined): { steps: Array<{ stepNumber: number; subject?: string; body: string }> | undefined; update(actor: Actor, id: string, patch: { name?: string; senderIds?: string[] }, tx: DbHandle): Promise<void> };
   byQuery(actor: Actor, id: string, query: string, dryRun: boolean, tx: DbHandle): Promise<Counts>;
@@ -55,7 +55,7 @@ const WRITES: Record<Channel, ChannelWrites> = {
     remove: (actor, id, enrollmentIds) => removeLeads(campaignDeps(), actor, id, enrollmentIds),
   },
   linkedin: {
-    create: (actor, input) => createLinkedInCampaign(linkedinCampaignDeps(), actor, { name: input.name, type: input.personal ? "personal" : undefined, senderIds: input.senderIds }),
+    create: (actor, input) => createLinkedInCampaign(linkedinCampaignDeps(), actor, { name: input.name, senderIds: input.senderIds }),
     withSteps: (sent) => {
       const steps = sent && stepsToSave(linkedinStepSchema, sent);
       return { steps, update: (actor, id, patch, tx) => updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, { ...patch, steps }, tx) };
@@ -100,7 +100,7 @@ export const draftCampaignTool = defineTool({
   name: "draft_campaign",
   title: "Draft campaign",
   description: [
-    "Prepares a campaign; nothing here sends. `create` makes a draft (`channel`, `name`, optional `senderIds`; LinkedIn `personal`).",
+    "Prepares a campaign; nothing here sends. `create` makes a draft (`channel`, `name`, optional `senderIds`).",
     "`update` changes `name`, `steps` or `senderIds` of a draft or paused campaign; `steps` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks `truncated` whole with `previewStep` and send its `readToken` with the edited step; text that looks like the cut copy is refused (`truncated_text`).",
     "Steps write merge fields as `{{token}}`, with a `token` from get_workspace `mergeFields`. After a save, `unknownFields` names any no lead has a field for: they would reach every lead as a blank, so the campaign cannot start until they change.",
     "`add_leads` enrolls leads by Leads search `query` or `personIds` (up to 500); call it with `dryRun: true` first to see the counts. Agents enroll a limited number of leads a day (`agent_enroll_cap`).",
@@ -114,7 +114,6 @@ export const draftCampaignTool = defineTool({
     channel: z.enum(CHANNELS),
     campaignId: z.string().optional(),
     name: z.string().optional(),
-    personal: z.boolean().optional(),
     steps: z.array(step).optional(),
     senderIds: z.array(z.string()).optional(),
     query: z.string().optional(),
@@ -140,7 +139,7 @@ export const draftCampaignTool = defineTool({
     });
     if (input.action === "create") {
       if (!input.name) throw new ValidationError("create needs name.");
-      const { id } = await writes.create(actor, { name: input.name, personal: input.personal === true, senderIds: input.senderIds });
+      const { id } = await writes.create(actor, { name: input.name, senderIds: input.senderIds });
       return answer(id, `Created draft campaign ${id}. Set its steps with update; a person starts it in MiaSDR, or launch_campaign where agents may start campaigns.`);
     }
     const campaignId = input.campaignId;

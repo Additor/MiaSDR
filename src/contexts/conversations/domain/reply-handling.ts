@@ -1,9 +1,9 @@
 import { pickResponse } from "./reply-type-pick";
 import { ConflictError, ValidationError } from "@/shared/errors";
-import { DEFAULT_TYPE_RULES, isCheckMode, isFollowUpsRule, validateTypeRules, type SystemRole, type TypeRules } from "./reply-type";
+import type { SystemRole } from "./reply-type";
 
 /**
- * Pure reply-handling rules: the fixed groups, validation of reply types and AI-instruction settings, and the rules
+ * Pure reply-handling rules: the fixed groups, validation of AI-instruction settings, and the rules
  * for a person's type change. Nothing here reads or writes data.
  */
 
@@ -71,115 +71,6 @@ export function parseInstructionBlocks(value: unknown, label: string): AiInstruc
   return blocks;
 }
 
-export interface ReplyTypeInput {
-  groupKey: ReplyTypeGroup;
-  key: string;
-  name: string;
-  description: string | null;
-  classificationGuidance: string | null;
-  rules: TypeRules;
-}
-
-/** A change to a reply type. `rules` holds only the rules the request names; the use case merges and validates them. */
-export type ReplyTypePatch = Partial<Omit<ReplyTypeInput, "groupKey" | "key" | "rules">> & { active?: boolean; sortOrder?: number; rules?: Partial<TypeRules> };
-
-const KEY = /^[a-z][a-z0-9_]*$/;
-
-export function keyFromName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/^(\d)/, "s_$1")
-    .slice(0, 60);
-}
-
-const optionalText = (value: unknown, label: string, max: number): string | null | undefined => {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  if (typeof value !== "string") throw new ValidationError(`${label} must be text.`);
-  const text = value.trim();
-  if (text.length > max) throw new ValidationError(`${label} is longer than ${max} characters.`);
-  return text === "" ? null : text;
-};
-
-function parseName(value: unknown): string {
-  if (typeof value !== "string" || value.trim() === "" || value.trim().length > 100) throw new ValidationError("The name must be 1 to 100 characters.");
-  return value.trim();
-}
-
-/** The type rules a request names, as `checkMode`, `replyDraft` and `followUps` fields. Absent fields stay absent. */
-function parseRules(raw: Record<string, unknown>): Partial<TypeRules> {
-  const rules: Partial<TypeRules> = {};
-  if (raw.checkMode !== undefined) {
-    if (!isCheckMode(raw.checkMode)) throw new ValidationError("Check must be before, after or skip.");
-    rules.checkMode = raw.checkMode;
-  }
-  if (raw.replyDraft !== undefined) {
-    if (typeof raw.replyDraft !== "boolean") throw new ValidationError("Reply draft must be true or false.");
-    rules.replyDraft = raw.replyDraft;
-  }
-  if (raw.followUps !== undefined) {
-    if (!isFollowUpsRule(raw.followUps)) throw new ValidationError("Follow-ups must be continue or stop.");
-    rules.followUps = raw.followUps;
-  }
-  return rules;
-}
-
-export function parseReplyTypeInput(raw: Record<string, unknown>): ReplyTypeInput {
-  const groupKey = typeof raw.groupKey === "string" ? raw.groupKey : "";
-  if (!isReplyTypeGroup(groupKey)) throw new ValidationError("Choose one of the four groups.");
-  const name = parseName(raw.name);
-  const key = typeof raw.key === "string" && raw.key.trim() !== "" ? raw.key.trim() : keyFromName(name);
-  if (!KEY.test(key) || key.length > 60) throw new ValidationError("The key must start with a letter and use only lowercase letters, digits and underscores.");
-  return {
-    groupKey,
-    key,
-    name,
-    description: optionalText(raw.description, "The description", 500) ?? null,
-    classificationGuidance: optionalText(raw.classificationGuidance, "The guidance", 2000) ?? null,
-    // A type a person adds has no system role, so any rules are valid for it.
-    rules: validateTypeRules({ systemRole: null }, { ...DEFAULT_TYPE_RULES, ...parseRules(raw) }),
-  };
-}
-
-export function parseReplyTypePatch(raw: Record<string, unknown>): ReplyTypePatch {
-  const patch: ReplyTypePatch = {};
-  if (raw.name !== undefined) patch.name = parseName(raw.name);
-  const description = optionalText(raw.description, "The description", 500);
-  if (description !== undefined) patch.description = description;
-  const guidance = optionalText(raw.classificationGuidance, "The guidance", 2000);
-  if (guidance !== undefined) patch.classificationGuidance = guidance;
-  const rules = parseRules(raw);
-  if (Object.keys(rules).length > 0) patch.rules = rules;
-  if (raw.active !== undefined) {
-    if (typeof raw.active !== "boolean") throw new ValidationError("Active must be true or false.");
-    patch.active = raw.active;
-  }
-  if (raw.sortOrder !== undefined) {
-    if (typeof raw.sortOrder !== "number" || !Number.isInteger(raw.sortOrder) || raw.sortOrder < 0) throw new ValidationError("The sort order must be a whole number from 0.");
-    patch.sortOrder = raw.sortOrder;
-  }
-  if (Object.keys(patch).length === 0) throw new ValidationError("Nothing to change.");
-  return patch;
-}
-
-export interface ReplyHandlingSettingsPatch {
-  /** The confidence floor. */
-  autoApplyConfidence?: number;
-}
-
-export function parseReplyHandlingSettings(raw: Record<string, unknown>): ReplyHandlingSettingsPatch {
-  const patch: ReplyHandlingSettingsPatch = {};
-  if (raw.autoApplyConfidence !== undefined) {
-    const value = raw.autoApplyConfidence;
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError("The confidence floor must be a number from 0 to 1.");
-    patch.autoApplyConfidence = Math.round(value * 1000) / 1000;
-  }
-  if (Object.keys(patch).length === 0) throw new ValidationError("Nothing to change.");
-  return patch;
-}
-
 export interface ReplyTypeChangeCheck {
   before: { groupKey: string | null; replyTypeId: string | null; replyTypeLocked: boolean; contextVersion: number; workflowState: string };
   /** `systemRole` of the target type, or null for a type without one or a group without a type. */
@@ -199,8 +90,8 @@ export function lockAfterPersonMove(target: { groupKey: string }): boolean {
 }
 
 /**
- * The lock a record had before a pick applied, kept in the pick's `response.previousLocked` so undo and a thread that
- * turns private give back exactly that. A pick stored before the field existed falls back to the group: a record in the
+ * The lock a record had before a pick applied, kept in the pick's `response.previousLocked` so undo gives back
+ * exactly that. A pick stored before the field existed falls back to the group: a record in the
  * Existing customer group was locked.
  */
 export function lockBeforePick(response: unknown, previousGroupKey: string | null): boolean {

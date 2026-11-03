@@ -52,8 +52,6 @@ const FENCE_EXEMPT: Record<string, string> = {
     "A person's pick: it requeues a finished job (token cleared) or marks a running one `rerun` in its payload, which the holder's own settle reads.",
   "src/contexts/conversations/infrastructure/drizzle-reply-handling-store.ts#undoReplyTypePick":
     "Stop on undo: it fails queued draft jobs, which no claim holds, and drops the rerun mark of a running one without ending its claim.",
-  "src/contexts/conversations/infrastructure/private-thread-detach.ts#detachPrivateThreadTx":
-    "Private-thread detach: it fails queued jobs of the thread, which no claim holds.",
   "src/contexts/conversations/infrastructure/person-purge.ts#purgePersonHandling":
     "Contact purge: it deletes the person's jobs and leaves a running job with a live lease alone.",
   "src/contexts/outreach/linkedin/infrastructure/drizzle-linkedin-inbound-store.ts#claimReplayable":

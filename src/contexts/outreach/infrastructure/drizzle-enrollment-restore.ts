@@ -1,4 +1,4 @@
-import { genuineInboundSql } from "@/platform/db/conversation-visibility";
+import { genuineInboundSql } from "@/platform/db/genuine-inbound";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db, type DbHandle } from "@/platform/db/client";

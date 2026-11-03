@@ -1,25 +1,19 @@
-import { ValidationError } from "@/shared/errors";
-
 /**
- * A reply type and its type rules, and the one function that reads them. Each type tells the AI what to do when it
- * picks that type: whether a person checks the pick (before it applies, after, or not at all), whether the AI writes a
- * reply draft, and whether follow-ups keep going. `decideReplyType` is the only interpreter of these rules; the AI
- * apply path, a person's type change and `typeChangeOutcome` all call it. Rules apply at decision time only, and each
- * pick stores a snapshot of the rules it used (`reply_type_picks.rules`).
+ * A reply type and its type rules, and the one function that reads them. Each type tells the AI whether to write a reply
+ * draft and whether follow-ups keep going. Whether an AI pick waits for a person is one fixed rule, the same for every
+ * type (`decideReplyType`). A pick sends nothing: the draft approval is the gate for what goes out. `decideReplyType` is
+ * the only interpreter of these rules; the AI apply path, a person's type change and `typeChangeOutcome` all call it.
+ * Each pick stores a snapshot of the rules it used (`reply_type_picks.rules`).
  */
-
-export const CHECK_MODES = ["before", "after", "skip"] as const;
-export type CheckMode = (typeof CHECK_MODES)[number];
 
 export const FOLLOW_UPS_RULES = ["continue", "stop"] as const;
 export type FollowUpsRule = (typeof FOLLOW_UPS_RULES)[number];
 
-/** A type with a system role drives a fixed path, so some of its rules and its archive state are fixed. */
+/** A type with a system role drives a fixed path. */
 export const SYSTEM_ROLES = ["stop_request", "customer"] as const;
 export type SystemRole = (typeof SYSTEM_ROLES)[number];
 
 export interface TypeRules {
-  checkMode: CheckMode;
   replyDraft: boolean;
   followUps: FollowUpsRule;
 }
@@ -33,49 +27,28 @@ export interface ReplyType {
   rules: TypeRules;
 }
 
-/** The rules a stop request type always has. `reply_types_stop_request_ck` holds the same values. */
-export const STOP_REQUEST_RULES: Readonly<TypeRules> = { checkMode: "before", replyDraft: false, followUps: "stop" };
+/** An AI pick with a confidence under this waits for a person. */
+export const AI_PICK_CONFIDENCE_FLOOR = 0.85;
 
-/** Rules of a type a person adds, until they choose others. */
-export const DEFAULT_TYPE_RULES: Readonly<TypeRules> = { checkMode: "after", replyDraft: true, followUps: "continue" };
-
-/** Why a system-role type cannot be archived and keeps the rules it has, worded for the settings screen. */
+/** What a system-role type does beyond its rules, worded for the settings screen. */
 export const SYSTEM_ROLE_REASONS: Record<SystemRole, string> = {
-  stop_request: "The AI's pick of this type always waits for a person. It writes no draft and stops follow-ups. Use Stop contacting to stop all outreach to the person.",
-  customer: "A person moved into Existing customer is locked there, so the AI cannot move them to another group. This type keeps the group in use, so it cannot be archived.",
+  stop_request: "The AI's pick of this type always waits for a person. Use Stop contacting to stop all outreach to the person.",
+  customer: "A person moved into Existing customer is locked there, so the AI's pick to another group waits for a person.",
 };
 
-export const isCheckMode = (value: unknown): value is CheckMode => CHECK_MODES.includes(value as CheckMode);
 export const isFollowUpsRule = (value: unknown): value is FollowUpsRule => FOLLOW_UPS_RULES.includes(value as FollowUpsRule);
 export const isSystemRole = (value: unknown): value is SystemRole => SYSTEM_ROLES.includes(value as SystemRole);
 
 /** The rules of a stored type, read from the `reply_types` columns. */
-export const typeRulesOf = (row: { checkMode: string; replyDraft: boolean; followUps: string }): TypeRules => ({
-  checkMode: isCheckMode(row.checkMode) ? row.checkMode : "before",
+export const typeRulesOf = (row: { replyDraft: boolean; followUps: string }): TypeRules => ({
   replyDraft: row.replyDraft,
   followUps: isFollowUpsRule(row.followUps) ? row.followUps : "stop",
 });
 
-/**
- * Checks a set of rules for a type and returns them. A stop request type keeps `STOP_REQUEST_RULES`. A customer type
- * may take any rules; its lock and its archive state are fixed elsewhere.
- */
-export function validateTypeRules(type: { systemRole: SystemRole | null }, rules: TypeRules): TypeRules {
-  if (!isCheckMode(rules.checkMode)) throw new ValidationError("Check must be before, after or skip.");
-  if (typeof rules.replyDraft !== "boolean") throw new ValidationError("Reply draft must be true or false.");
-  if (!isFollowUpsRule(rules.followUps)) throw new ValidationError("Follow-ups must be continue or stop.");
-  if (type.systemRole === "stop_request") {
-    if (rules.checkMode !== STOP_REQUEST_RULES.checkMode) throw new ValidationError("A stop request is always checked before it applies.");
-    if (rules.replyDraft !== STOP_REQUEST_RULES.replyDraft) throw new ValidationError("A stop request never gets a reply draft.");
-    if (rules.followUps !== STOP_REQUEST_RULES.followUps) throw new ValidationError("A stop request always stops follow-ups.");
-  }
-  return { checkMode: rules.checkMode, replyDraft: rules.replyDraft, followUps: rules.followUps };
-}
-
 // Decision --------------------------------------------------------------------------------------------------
 
 /** Why an AI pick waits for a person. The values are stored in `reply_type_picks.response.holdReason`. */
-export const HOLD_REASONS = ["protected_customer", "requires_review", "low_confidence"] as const;
+export const HOLD_REASONS = ["protected_customer", "stop_request", "low_confidence"] as const;
 export type HoldReason = (typeof HOLD_REASONS)[number];
 
 /**
@@ -99,8 +72,6 @@ export interface ReplyTypeFacts {
   channel: string | null;
   /** The AI's confidence. Null when a person picks the type. */
   confidence: number | null;
-  /** The organization's confidence floor (`reply_handling_settings.auto_apply_confidence`). */
-  floor: number;
   /** The record is locked to its current group (`records.reply_type_locked`). */
   locked: boolean;
   /** The record's type before this pick, or null when it has none. Its group decides the customer lock hold. */
@@ -112,8 +83,6 @@ export type FollowUpsOutcome = FollowUpsRule | "not_applicable";
 export interface ReplyTypeDecision {
   /** An AI pick that waits for a person before it applies, and why. Null when it applies, and for a person's pick. */
   hold: HoldReason | null;
-  /** An applied AI pick that a person should mark Looks right. */
-  needsLooksRight: boolean;
   /** Once applied, the AI writes a reply draft. */
   wantsDraft: boolean;
   /** Once applied: follow-ups keep going or stop, or none apply to this conversation. */
@@ -121,24 +90,23 @@ export interface ReplyTypeDecision {
 }
 
 /**
- * What applying `type` means for one reply. The type's rules decide, inside fixed rules no setting changes: a
- * locked customer stays in its group until a person moves it, an AI pick below the floor waits for a person, a stop
- * request gets no draft and stops follow-ups, and follow-ups only apply to email conversations of a campaign in
- * `ai_drafts` mode whose person is not a contact.
+ * What applying `type` means for one reply. An AI pick waits for a person when the record is locked as Existing customer
+ * and the pick moves it out, when it is the stop request type, or when its confidence is under
+ * `AI_PICK_CONFIDENCE_FLOOR`. Every other AI pick applies at once, and a person corrects a wrong one with Change type or
+ * Undo. A person's pick never waits. A stop request gets no draft and stops follow-ups, and follow-ups only apply to email
+ * conversations of a campaign in `ai_drafts` mode whose person is not a contact.
  */
-export function decideReplyType(type: Pick<ReplyType, "groupKey" | "rules">, facts: ReplyTypeFacts): ReplyTypeDecision {
-  const ai = facts.confidence !== null;
+export function decideReplyType(type: Pick<ReplyType, "groupKey" | "rules" | "systemRole">, facts: ReplyTypeFacts): ReplyTypeDecision {
   let hold: HoldReason | null = null;
-  if (ai) {
+  if (facts.confidence !== null) {
     if (facts.locked && type.groupKey !== facts.currentType?.groupKey) hold = "protected_customer";
-    else if (type.rules.checkMode === "before") hold = "requires_review";
-    else if ((facts.confidence as number) < facts.floor) hold = "low_confidence";
+    else if (type.systemRole === "stop_request") hold = "stop_request";
+    else if (facts.confidence < AI_PICK_CONFIDENCE_FLOOR) hold = "low_confidence";
   }
   const followUps: FollowUpsOutcome =
     facts.isContact || facts.campaignMode !== "ai_drafts" || facts.channel !== "email" ? "not_applicable" : facts.stopRequested ? "stop" : type.rules.followUps;
   return {
     hold,
-    needsLooksRight: ai && hold === null && type.rules.checkMode === "after",
     wantsDraft: type.rules.replyDraft && !facts.stopRequested,
     followUps,
   };

@@ -41,7 +41,7 @@ const displayName = (p: { fullName: string | null; email: string | null }) => p.
 export const createLeadRepository = ({ activity, detailActivity }: { activity: ActivityCondition; detailActivity: ReadLeadDetailActivity }): LeadRepository => {
   const filterWhere = (organizationId: string, filter: LeadFilter) => leadFilterWhere(organizationId, filter, activity);
   return {
-    async get(organizationId, id, viewer) {
+    async get(organizationId, id) {
       const [person] = await db
         .select({
           id: people.id,
@@ -87,7 +87,7 @@ export const createLeadRepository = ({ activity, detailActivity }: { activity: A
               .from(suppressionList)
               .where(and(eq(suppressionList.organizationId, organizationId), eq(suppressionList.email, person.email.toLowerCase())))
           : Promise.resolve([]),
-        detailActivity(organizationId, id, viewer),
+        detailActivity(organizationId, id),
       ]);
 
       return {
@@ -98,7 +98,6 @@ export const createLeadRepository = ({ activity, detailActivity }: { activity: A
         enrollments: outreach.enrollments,
         conversationId: outreach.conversationId,
         sends: outreach.sends,
-        hiddenSends: outreach.hiddenSends,
       };
     },
 

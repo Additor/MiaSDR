@@ -198,8 +198,6 @@ export const drizzleLinkedInStore: LinkedInOutreachStore = {
           const candidate = (await candidates(exclude))[0];
           if (!candidate) return null;
           const stepNumber = candidate.current_step + 1;
-          // Shared with other claims, exclusive against a campaign type change (drizzle-linkedin-campaign-store `update`).
-          await tx.execute(sql`select id from campaigns where id = ${candidate.campaign_id} for share`);
           const claimed = await tx.execute(sql`
             insert into sends (organization_id, enrollment_id, step_number, channel, status, linkedin_account_id, attempt, claimed_at)
             values (${org}, ${candidate.id}, ${stepNumber}, 'linkedin', 'sending', ${account.id}, 1, ${nowIso}::timestamptz)

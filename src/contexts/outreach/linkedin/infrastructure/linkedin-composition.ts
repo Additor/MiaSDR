@@ -27,7 +27,6 @@ import { drizzleLinkedInSearchBatchStore } from "./drizzle-linkedin-search-batch
 import { drizzleLinkedInSearchCapacityStore } from "./drizzle-linkedin-search-capacity";
 import { drizzleLinkedInSearchEngineStore, drizzleLinkedInSearchStore } from "./drizzle-linkedin-search-store";
 import { drizzleLinkedInStore } from "./drizzle-linkedin-store";
-import { drizzlePersonalThreadStore } from "./drizzle-personal-thread-store";
 import { searchLeadSink } from "./search-lead-sink";
 import { FakeLinkedInGateway } from "./fake-linkedin-gateway";
 import { UnipileGateway } from "./unipile-gateway";
@@ -92,7 +91,6 @@ export function linkedinOperationsDeps(inbox: InboxFiling): LinkedInOperationsDe
   return { store: drizzleLinkedInOperationsStore, inbound: inboundDeps(inbox), audit: auditSink, now: () => new Date() };
 }
 
-export const personalThreadDeps = () => ({ store: drizzlePersonalThreadStore });
 
 export const linkedinCampaignDeps = (): LinkedInCampaignDeps => ({ campaigns: drizzleLinkedInCampaignStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore });
 

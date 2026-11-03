@@ -23,7 +23,6 @@ const summaryRow = z.object({
   channel: z.enum(CHANNELS),
   name: z.string(),
   status: z.string(),
-  type: z.string(),
   enrolled: z.number(),
   replied: z.number(),
   archived: z.boolean(),
@@ -46,8 +45,8 @@ export const listCampaignsTool = defineTool({
       input.channel === "email" ? [] : listLinkedInCampaigns(linkedinCampaignDeps(), actor, archived),
     ]);
     const campaigns = [
-      ...email.map((c) => ({ campaignId: c.id, channel: "email" as const, name: c.name, status: c.status, type: "regular", enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, appUrl: links.campaign(c.id) })),
-      ...linkedin.map((c) => ({ campaignId: c.id, channel: "linkedin" as const, name: c.name, status: c.status, type: c.type, enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, appUrl: links.campaign(c.id) })),
+      ...email.map((c) => ({ campaignId: c.id, channel: "email" as const, name: c.name, status: c.status, enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, appUrl: links.campaign(c.id) })),
+      ...linkedin.map((c) => ({ campaignId: c.id, channel: "linkedin" as const, name: c.name, status: c.status, enrolled: c.enrolled, replied: c.replied, archived: c.archivedAt !== null, appUrl: links.campaign(c.id) })),
     ];
     const fitted = fitItems(campaigns);
     const lines = fitted.items.map((c) => `${c.name} (${c.channel}, ${c.status}): ${c.enrolled} enrolled, ${c.replied} replied`);

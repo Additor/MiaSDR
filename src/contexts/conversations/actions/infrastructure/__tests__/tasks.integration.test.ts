@@ -200,42 +200,6 @@ describeDb("tasks, note ownership and the important flag", () => {
     expect((await tasks.listTasks(deps, w.ann, { state: "all", recordId: w.recordId })).map((t) => t.id)).toEqual([recordTask.id]);
   });
 
-  it("leaves a note out of the person's list when its record has only private threads", async () => {
-    const w = await org();
-    const [{ person_id: personId }] = await sql`select person_id from records where id = ${w.recordId}`;
-    const onRecord = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "on the record" });
-    const onPerson = await replies.addRecordNote(replyHandlingDeps, w.ann, { personId }, { body: "on the person" });
-    const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, name, channel, type) values (${w.id}, 'Personal', 'linkedin', 'personal') returning id`;
-    await sql`update conversations set private_campaign_id = ${campaignId} where id = ${w.conversationId}`;
-    expect((await tasks.listPersonNotes(deps, w.ann, personId)).map((n) => n.id)).toEqual([onPerson.id]);
-    await sql`update conversations set private_campaign_id = null where id = ${w.conversationId}`;
-    await sql`delete from campaigns where id = ${campaignId}`;
-    expect((await tasks.listPersonNotes(deps, w.ann, personId)).map((n) => n.id).sort()).toEqual([onRecord.id, onPerson.id].sort());
-  });
-
-  it("does not find a note or task of a private-thread-only record through the person; the record scope still does", async () => {
-    const w = await org();
-    const [{ person_id: personId }] = await sql`select person_id from records where id = ${w.recordId}`;
-    const onRecord = await replies.addRecordNote(replyHandlingDeps, w.ann, w.recordId, { body: "on the record" });
-    const recordTask = await tasks.createTask(deps, w.ann, w.recordId, { name: "record task" });
-    const personTask = await tasks.createTask(deps, w.ann, { personId }, { name: "person task" });
-    const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, name, channel, type) values (${w.id}, 'Personal', 'linkedin', 'personal') returning id`;
-    await sql`update conversations set private_campaign_id = ${campaignId} where id = ${w.conversationId}`;
-    try {
-      await expect(tasks.editNote(deps, w.ann, { personId }, onRecord.id, { body: "x" })).rejects.toBeInstanceOf(NotFoundError);
-      await expect(tasks.assertCanDeleteNote(deps, w.admin, { personId }, onRecord.id)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(replies.deleteRecordNote(replyHandlingDeps, w.admin, { personId }, onRecord.id)).rejects.toBeInstanceOf(NotFoundError);
-      expect((await sql`select body from notes where id = ${onRecord.id}`)[0].body).toBe("on the record");
-      expect((await tasks.listTasks(deps, w.ann, { state: "all", personId })).map((t) => t.id)).toEqual([personTask.id]);
-      // The private thread's own view, by record, keeps both.
-      await tasks.editNote(deps, w.ann, w.recordId, onRecord.id, { body: "edited on the record" });
-      expect((await tasks.listTasks(deps, w.ann, { state: "all", recordId: w.recordId })).map((t) => t.id)).toEqual([recordTask.id]);
-    } finally {
-      await sql`update conversations set private_campaign_id = null where id = ${w.conversationId}`;
-      await sql`delete from campaigns where id = ${campaignId}`;
-    }
-  });
-
   it("answers 404 for another organization's person in every person-scoped call", async () => {
     const a = await org();
     const b = await org();

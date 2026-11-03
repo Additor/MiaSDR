@@ -4137,13 +4137,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'regular'"
-        },
         "status": {
           "name": "status",
           "type": "text",
@@ -4284,14 +4277,6 @@
         "campaigns_status_ck": {
           "name": "campaigns_status_ck",
           "value": "\"campaigns\".\"status\" in ('draft', 'active', 'paused', 'completed')"
-        },
-        "campaigns_type_ck": {
-          "name": "campaigns_type_ck",
-          "value": "\"campaigns\".\"type\" in ('regular', 'personal')"
-        },
-        "campaigns_personal_linkedin_ck": {
-          "name": "campaigns_personal_linkedin_ck",
-          "value": "\"campaigns\".\"type\" = 'regular' or \"campaigns\".\"channel\" = 'linkedin'"
         }
       },
       "isRLSEnabled": false
@@ -6847,12 +6832,6 @@
           "notNull": true,
           "default": "'active'"
         },
-        "private_campaign_id": {
-          "name": "private_campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6869,28 +6848,6 @@
         }
       },
       "indexes": {
-        "conversations_private_idx": {
-          "name": "conversations_private_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "private_campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"conversations\".\"private_campaign_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "conversations_org_thread_uq": {
           "name": "conversations_org_thread_uq",
           "columns": [
@@ -6968,21 +6925,6 @@
             "organization_id"
           ],
           "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "conversations_private_campaign_fk": {
-          "name": "conversations_private_campaign_fk",
-          "tableFrom": "conversations",
-          "tableTo": "campaigns",
-          "columnsFrom": [
-            "private_campaign_id",
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -8954,13 +8896,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "auto_apply_confidence": {
-          "name": "auto_apply_confidence",
-          "type": "numeric(4, 3)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0.850'"
-        },
         "draft_instructions": {
           "name": "draft_instructions",
           "type": "jsonb",
@@ -9018,10 +8953,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "reply_handling_settings_confidence_ck": {
-          "name": "reply_handling_settings_confidence_ck",
-          "value": "\"reply_handling_settings\".\"auto_apply_confidence\" between 0 and 1"
-        },
         "reply_handling_settings_instructions_ck": {
           "name": "reply_handling_settings_instructions_ck",
           "value": "jsonb_typeof(\"reply_handling_settings\".\"draft_instructions\") = 'array' and jsonb_typeof(\"reply_handling_settings\".\"classification_instructions\") = 'array'\n        and length(\"reply_handling_settings\".\"draft_instructions\"::text) <= 100000 and length(\"reply_handling_settings\".\"classification_instructions\"::text) <= 100000"
@@ -9152,12 +9083,6 @@
         "error": {
           "name": "error",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "acknowledged_at": {
-          "name": "acknowledged_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -9496,26 +9421,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "sort_order": {
           "name": "sort_order",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "check_mode": {
-          "name": "check_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'after'"
         },
         "reply_draft": {
           "name": "reply_draft",
@@ -9650,7 +9561,7 @@
         },
         "reply_types_rules_ck": {
           "name": "reply_types_rules_ck",
-          "value": "\"reply_types\".\"check_mode\" in ('before', 'after', 'skip') and \"reply_types\".\"follow_ups\" in ('continue', 'stop')"
+          "value": "\"reply_types\".\"follow_ups\" in ('continue', 'stop')"
         },
         "reply_types_system_role_ck": {
           "name": "reply_types_system_role_ck",
@@ -9658,7 +9569,7 @@
         },
         "reply_types_stop_request_ck": {
           "name": "reply_types_stop_request_ck",
-          "value": "\"reply_types\".\"system_role\" is distinct from 'stop_request' or (\"reply_types\".\"check_mode\" = 'before' and not \"reply_types\".\"reply_draft\" and \"reply_types\".\"follow_ups\" = 'stop' and \"reply_types\".\"active\")"
+          "value": "\"reply_types\".\"system_role\" is distinct from 'stop_request' or (not \"reply_types\".\"reply_draft\" and \"reply_types\".\"follow_ups\" = 'stop')"
         },
         "reply_types_customer_ck": {
           "name": "reply_types_customer_ck",
@@ -11784,7 +11695,7 @@
       "checkConstraints": {
         "grid_columns_type_ck": {
           "name": "grid_columns_type_ck",
-          "value": "\"grid_columns\".\"type\" in ('text', 'number', 'currency', 'boolean', 'date', 'url', 'email', 'image', 'select', 'multiselect', 'json', 'enrichment', 'integration_output', 'ai_output', 'http', 'ai', 'functions', 'message', 'waterfall', 'formula', 'merge')"
+          "value": "\"grid_columns\".\"type\" in ('text', 'number', 'currency', 'boolean', 'date', 'url', 'email', 'image', 'select', 'multiselect', 'json', 'enrichment', 'integration_output', 'ai_output', 'http', 'ai', 'functions', 'message', 'waterfall', 'merge')"
         },
         "grid_columns_key_ck": {
           "name": "grid_columns_key_ck",

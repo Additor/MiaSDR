@@ -6,7 +6,7 @@ const col = (key: string, type: GridColumn["type"] = "text"): GridColumn => ({ i
 const row = (id: string, cells: Record<string, unknown> = {}): GridRow => ({ id, position: 0, cells, cellMeta: {}, version: 1 });
 
 describe("planFill", () => {
-  const columns = [col("a"), col("b", "number"), col("f", "formula")];
+  const columns = [col("a"), col("b", "number"), col("f", "ai")];
   const rows = [row("r1", { a: "x", b: 1, f: 2 }), row("r2", { a: "y", b: 2 }), row("r3"), row("r4"), row("r5"), row("r6")];
 
   it("copies one selected row down the drag", () => {

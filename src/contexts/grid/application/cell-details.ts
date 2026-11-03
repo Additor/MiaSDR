@@ -3,7 +3,7 @@ import type { ColumnRecord, GridDeps } from "./ports";
 
 type Deps = Pick<GridDeps, "structure" | "columns" | "rows" | "cellRuns">;
 
-const RUN_TYPES = new Set(["enrichment", "ai", "http", "formula"]);
+const RUN_TYPES = new Set(["enrichment", "ai", "http"]);
 
 /** The column whose run produced a cell: the column itself, or the source an output column points back to. */
 function sourceOf(column: ColumnRecord, columns: readonly ColumnRecord[]): ColumnRecord | null {
@@ -30,10 +30,5 @@ export async function getCellDetails(deps: Deps, actor: Actor, tableId: string, 
 
   const head = { sourceColumnKey: source.key, sourceColumnName: source.name, sourceColumnType: source.type, canAddResponseColumn: source.type === "enrichment" };
   const run = await deps.cellRuns.latestRun(org, tableId, rowId, source.key);
-  if (!run) return { ...head, run: null };
-  return {
-    ...head,
-    // A formula runs locally and stores no response, so its answer is the cell itself.
-    run: { ...run, response: run.response ?? (source.type === "formula" ? { result: row.cells[source.key] ?? null } : null) },
-  };
+  return { ...head, run };
 }

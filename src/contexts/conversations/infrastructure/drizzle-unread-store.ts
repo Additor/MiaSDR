@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { excludedFromUnread } from "./inbox-sql";
 import { db } from "@/platform/db/client";
 import type { UnreadStore } from "../application/unread-count";
@@ -9,9 +8,7 @@ export const drizzleUnreadStore: UnreadStore = {
     const rows = (await db.execute(sql`
       select m.channel, count(*)::int as n
       from messages m
-      join conversations c on c.id = m.conversation_id
       where m.organization_id = ${organizationId}
-        and ${publicConversationSql("c")}
         and m.direction = 'inbound'
         and m.opened_at is null
         and not ${excludedFromUnread("m")}

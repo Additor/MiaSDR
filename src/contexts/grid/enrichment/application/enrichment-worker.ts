@@ -42,8 +42,6 @@ export interface WorkerDeps {
   /** Wall-clock limit for one provider call. */
   callTimeoutMs: number;
   gate?: LocalRateGate;
-  /** Called after a cell result is saved, with the column keys it wrote. Failures are logged and never fail the job. */
-  afterWrite?: (job: CellJob, columnKeys: string[]) => Promise<void>;
 }
 
 export const GRID_JOB_LEASE_MS = 5 * 60_000;
@@ -275,14 +273,6 @@ async function finishRetry(deps: WorkerDeps, job: CellJob, attempts: StepAttempt
   return "retried";
 }
 
-async function notifyWritten(deps: WorkerDeps, job: CellJob, keys: string[]): Promise<void> {
-  try {
-    await deps.afterWrite?.(job, keys);
-  } catch (error) {
-    console.error("[grid] after-write hook failed:", error instanceof Error ? error.message : error);
-  }
-}
-
 async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awaited<ReturnType<GridWorkerStore["loadCell"]>>>, gate: LocalRateGate): Promise<string> {
   const { column, cells } = ctx;
   const plan = stepsOf(column.type, column.config);
@@ -361,7 +351,6 @@ async function runProviderColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullabl
     meta[columnKey] = base;
   }
   const ok = await succeedOnce(deps, job, { cells: cells2, meta }, ledger(result.attempts), () => cascadeSpecFor(deps, job.organizationId, ctx.columns, Object.keys(cells2)));
-  if (ok === "saved") await notifyWritten(deps, job, Object.keys(cells2));
   return ok === "saved" ? (hit ? "hit" : "miss") : ok === "save_failed" ? "failed" : "lease_lost";
 }
 
@@ -432,7 +421,6 @@ async function runAiColumn(deps: WorkerDeps, job: CellJob, ctx: NonNullable<Awai
     response: { output, ...(rejected.length > 0 ? { rejected } : {}), usage: sanitizeOutput(answered.usage ?? null) },
   };
   const ok = await succeedOnce(deps, job, write, [run], () => cascadeSpecFor(deps, job.organizationId, ctx.columns, Object.keys(write.cells)));
-  if (ok === "saved") await notifyWritten(deps, job, Object.keys(write.cells));
   return ok === "saved" ? (hasResult ? "hit" : "miss") : ok === "save_failed" ? "failed" : "lease_lost";
 }
 

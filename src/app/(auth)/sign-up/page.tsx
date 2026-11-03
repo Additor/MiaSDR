@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { AuthCardSkeleton } from "../auth-skeleton";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { isPublicSignupAvailable, pendingInvitationEmail } from "@/contexts/identity/infrastructure/signup-facts";
+import { pendingInvitationEmail } from "@/contexts/identity/infrastructure/signup-facts";
 import { env } from "@/shared/env";
 import { needsSetup } from "@/contexts/tenancy/application/setup-instance";
 import { setupDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
@@ -29,7 +29,6 @@ async function SignUp({ searchParams }: { searchParams: PageProps<"/sign-up">["s
   const { invitation } = await searchParams;
   const invitedEmail = typeof invitation === "string" ? await pendingInvitationEmail(invitation) : null;
   if (invitedEmail) return <SignUpForm invitedEmail={invitedEmail} invitationId={String(invitation)} googleEnabled={googleEnabled} />;
-  if (await isPublicSignupAvailable()) return <SignUpForm googleEnabled={googleEnabled} />;
   return (
     <Card>
       <CardHeader>

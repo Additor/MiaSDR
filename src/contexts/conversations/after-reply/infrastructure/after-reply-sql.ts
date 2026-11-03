@@ -8,7 +8,7 @@ import { sql, type SQL } from "drizzle-orm";
  * campaign owns the conversation. One row, or none. The caller decides whether the campaign can start a run.
  */
 export const owningCampaignSql = (input: { organizationId: SQL; personId: SQL; at: SQL | null }) => sql`
-  select camp.id, camp.name, camp.channel, camp.type, camp.status, camp.archived_at
+  select camp.id, camp.name, camp.channel, camp.status, camp.archived_at
   from sends sd
   join campaign_enrollments ce on ce.id = sd.enrollment_id and ce.organization_id = sd.organization_id
   join campaigns camp on camp.id = ce.campaign_id and camp.organization_id = ce.organization_id
@@ -18,9 +18,9 @@ export const owningCampaignSql = (input: { organizationId: SQL; personId: SQL; a
   order by sd.sent_at desc, sd.id desc
   limit 1`;
 
-/** A campaign that may start new runs: email, regular, not archived, running or finished. A paused or draft campaign starts none. */
-export const startableCampaignSql = (campaign: { channel: SQL; type: SQL; status: SQL; archivedAt: SQL }) =>
-  sql`${campaign.channel} = 'email' and ${campaign.type} = 'regular' and ${campaign.archivedAt} is null and ${campaign.status} in ('active', 'completed')`;
+/** A campaign that may start new runs: email, not archived, running or finished. A paused or draft campaign starts none. */
+export const startableCampaignSql = (campaign: { channel: SQL; status: SQL; archivedAt: SQL }) =>
+  sql`${campaign.channel} = 'email' and ${campaign.archivedAt} is null and ${campaign.status} in ('active', 'completed')`;
 
 /**
  * A run's flow may keep running. A campaign-owned flow runs only while its status is `active`: switching Follow-ups after a reply

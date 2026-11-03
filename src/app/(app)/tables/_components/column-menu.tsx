@@ -14,7 +14,6 @@ import {
   PinIcon,
   PinOffIcon,
   PlayIcon,
-  RefreshCwIcon,
   RotateCcwIcon,
   SettingsIcon,
   SplitIcon,
@@ -60,7 +59,7 @@ export function ColumnMenu({ column, index, count, sort, pinned = false, pinCoun
   const offered = (kind: ColumnAction["kind"]) => isColumnActionOffered(kind, { column, pinned, pinCount });
   const pinBlocked = pinBlockedReason({ pinned, pinCount });
   const isStatic = isStaticColumnType(column.type);
-  const hasConfig = isStatic ? ["select", "multiselect", "currency"].includes(column.type) : ["formula", "ai", "enrichment", "waterfall"].includes(column.type);
+  const hasConfig = isStatic ? ["select", "multiselect", "currency"].includes(column.type) : ["ai", "enrichment", "waterfall"].includes(column.type);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -151,30 +150,21 @@ export function ColumnMenu({ column, index, count, sort, pinned = false, pinCoun
             </DropdownMenuItem>
           )}
         </DropdownMenuGroup>
-        {(RUNNER_TYPES_WITH_RUN.has(column.type) || column.type === "formula") && (
+        {RUNNER_TYPES_WITH_RUN.has(column.type) && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              {RUNNER_TYPES_WITH_RUN.has(column.type) && (
-                <>
-                  <DropdownMenuItem onClick={act({ kind: "run" })}>
-                    <PlayIcon /> Run column
-                  </DropdownMenuItem>
-                  {offered("runFirstN") && (
-                    <DropdownMenuItem onClick={act({ kind: "runFirstN", count: 10 })}>
-                      <PlayIcon /> Run first 10 rows
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem onClick={act({ kind: "retry" })}>
-                    <RotateCcwIcon /> Retry failed cells
-                  </DropdownMenuItem>
-                </>
-              )}
-              {column.type === "formula" && (
-                <DropdownMenuItem onClick={act({ kind: "recalculate" })}>
-                  <RefreshCwIcon /> Recalculate
+              <DropdownMenuItem onClick={act({ kind: "run" })}>
+                <PlayIcon /> Run column
+              </DropdownMenuItem>
+              {offered("runFirstN") && (
+                <DropdownMenuItem onClick={act({ kind: "runFirstN", count: 10 })}>
+                  <PlayIcon /> Run first 10 rows
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={act({ kind: "retry" })}>
+                <RotateCcwIcon /> Retry failed cells
+              </DropdownMenuItem>
             </DropdownMenuGroup>
           </>
         )}

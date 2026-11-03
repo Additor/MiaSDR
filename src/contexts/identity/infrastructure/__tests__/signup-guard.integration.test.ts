@@ -6,10 +6,10 @@ vi.mock("server-only", () => ({}));
 
 /**
  * Needs TEST_DATABASE_URL pointing at a migrated, disposable Postgres: the first test empties `users`.
- * The instance is invite-only and APP_URL has a trailing slash, as an operator might type it.
+ * APP_URL has a trailing slash, as an operator might type it.
  */
-describeDb("sign-up guard on an invite-only instance", () => {
-  useTestEnv({ APP_URL: "http://localhost:3000/", AUTH_SIGNUP: "invite-only", RESEND_API_KEY: undefined, AUTH_EMAIL_FROM: undefined });
+describeDb("sign-up guard", () => {
+  useTestEnv({ APP_URL: "http://localhost:3000/", RESEND_API_KEY: undefined, AUTH_EMAIL_FROM: undefined });
   const sql = testSql({ max: 2 });
   const tag = Math.random().toString(36).slice(2, 8);
   const owner = { email: `owner-${tag}@guard.test`, password: "owner-password-1" };

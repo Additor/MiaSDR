@@ -384,7 +384,7 @@ export interface LinkedInAccountSettings {
   dailyMessageLimit?: number;
   isPremium?: boolean;
   workingHours?: WorkingHours | null;
-  /** The member whose LinkedIn this is, or null for none. An agent starts a Personal campaign only from accounts its token's person owns. */
+  /** The member whose LinkedIn this is, or null for none. An agent's search uses only accounts its token's person owns and accounts with no owner. */
   ownerUserId?: string | null;
 }
 

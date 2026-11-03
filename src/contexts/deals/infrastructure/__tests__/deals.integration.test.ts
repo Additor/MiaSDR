@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { lockRetryStats } from "@/platform/db/errors";
 import { setLockTimeout } from "@/platform/db/person-locks";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/shared/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import { bootDealsKit, holdLocks, type DealsKit, type DealsOrg } from "../../../../test-support/deals-test-kit";
 import { describeDb, TEST_DATABASE_URL } from "@/test-support/db";
 
 /**
  * The deals context against Postgres ("Leads and CRM" in docs/decisions.md): conversion plus deal in one
- * transaction, idempotency, rollback per step, the preview, stage moves and settings, validation, attribution, the
- * personal-campaign rule, organization scope and bulk creation. The lock races are in conversion-races.integration.test.ts.
+ * transaction, idempotency, rollback per step, the preview, stage moves and settings, validation, attribution,
+ * organization scope and bulk creation. The lock races are in conversion-races.integration.test.ts.
  * Needs TEST_DATABASE_URL pointing at a migrated Postgres.
  */
 describeDb("deals context", () => {
@@ -38,7 +38,7 @@ describeDb("deals context", () => {
   const failure = async (run: Promise<unknown>) => run.then(() => null, (error: unknown) => error);
   const conflictCode = async (run: Promise<unknown>) => ((await failure(run)) as ConflictError | null)?.details?.code;
 
-  /** A lead who replied to a regular campaign, with an active follow-up run, its reply draft, and a live enrollment elsewhere. */
+  /** A lead who replied to a campaign, with an active follow-up run, its reply draft, and a live enrollment elsewhere. */
   async function repliedLeadWithRun(f: DealsOrg) {
     const lead = await f.ingest();
     const { campaignId, repliedEnrollmentId } = await f.emailedBy(lead.personId);
@@ -70,7 +70,7 @@ describeDb("deals context", () => {
       expect(retirable).toBeGreaterThan(0);
 
       const preview = await leadsApp.previewConvert(composition.convertPreviewDeps(), f.owner, [lead.personId]);
-      expect(preview).toEqual({ people: 1, alreadyContacts: 0, enrollments: 2, runs: 1, followUpDraftsToRetire: retirable, skippedPersonalCampaign: 0 });
+      expect(preview).toEqual({ people: 1, alreadyContacts: 0, enrollments: 2, runs: 1, followUpDraftsToRetire: retirable });
 
       const result = await deals.createDealFromLead(deps(), f.owner, lead.personId, { amount: "1200", currency: "EUR" });
       expect(result.stopped).toEqual({ enrollments: preview.enrollments, runs: preview.runs, drafts: preview.followUpDraftsToRetire });
@@ -372,7 +372,7 @@ describeDb("deals context", () => {
   });
 
   describe("source enrollment", () => {
-    it("takes the latest replied enrollment by updated_at, then id; null without one; From is hidden for a personal campaign", async () => {
+    it("takes the latest replied enrollment by updated_at, then id; null without one", async () => {
       const f = await kit.organization();
       const personId = await f.person();
       const older = await f.enrollment(await f.campaign({ name: "Older" }), personId, "replied");
@@ -393,68 +393,6 @@ describeDb("deals context", () => {
 
       const none = await deals.createDealFromLead(deps(), f.owner, await f.person());
       expect((await deals.getDeal(deps(), f.owner, none.dealId)).source).toBeNull();
-
-      const personal = await f.person();
-      const privateCampaign = await f.campaign({ type: "personal", createdBy: f.owner.userId, name: "Private" });
-      await f.enrollment(privateCampaign, personal, "replied", "linkedin");
-      const hidden = await deals.createDealFromLead(deps(), f.owner, personal);
-      expect((await kit.one("select source_enrollment_id from deals where id = $1", [hidden.dealId])).source_enrollment_id).not.toBeNull();
-      expect((await deals.getDeal(deps(), f.owner, hidden.dealId)).source).toBeNull();
-      const card = (await deals.board(deps(), f.owner)).columns.flatMap((c) => c.cards).find((c) => c.id === hidden.dealId);
-      expect(card?.source).toBeNull();
-      expect(JSON.stringify(await deals.board(deps(), f.owner))).not.toContain("Private");
-    });
-  });
-
-  describe("personal campaigns", () => {
-    it("skips a member who did not create the campaign and converts for the creator or an admin", async () => {
-      const f = await kit.organization();
-      const privateCampaign = await f.campaign({ type: "personal", createdBy: f.creator.userId });
-      const a = await f.person();
-      const b = await f.person();
-      await f.enrollment(privateCampaign, a, "active", "linkedin");
-      await f.enrollment(privateCampaign, b, "pending", "linkedin");
-      const before = await snapshot(f, a);
-      expect(await failure(deals.createDealFromLead(deps(), f.member, a))).toBeInstanceOf(ForbiddenError);
-      expect(await snapshot(f, a)).toEqual(before);
-      expect(await deals.createDealsFromLeads(deps(), f.member, [a])).toEqual({ created: [], skipped: [{ personId: a, reason: "personal_campaign" }] });
-      expect((await leadsApp.previewConvert(composition.convertPreviewDeps(), f.member, [a, b])).skippedPersonalCampaign).toBe(2);
-
-      expect((await deals.createDealFromLead(deps(), f.creator, a)).stopped.enrollments).toBe(1);
-      expect((await deals.createDealFromLead(deps(), f.owner, b)).stopped.enrollments).toBe(1);
-      expect(await kit.count("campaign_enrollments", f.org, "status = 'cancelled' and stop_reason = 'converted'")).toBe(2);
-    });
-  });
-
-  describe("the personal-campaign rule holds under the person's locks", () => {
-    it("catches an enrollment that commits between the early read and the locks, for one deal and in bulk", async () => {
-      const f = await kit.organization();
-      const privateCampaign = await f.campaign({ type: "personal", createdBy: f.creator.userId });
-      const outreach = deps().outreach;
-      /** Deps whose first live-enrollment read is followed by a committed enrollment of the person in the private campaign. */
-      const racing = (personId: string) => {
-        let reads = 0;
-        return composition.dealsDeps({
-          outreach: {
-            ...outreach,
-            liveEnrollmentSummary: async (organizationId, ids, tx) => {
-              const summary = await outreach.liveEnrollmentSummary(organizationId, ids, tx);
-              reads += 1;
-              if (reads === 1) await f.enrollment(privateCampaign, personId, "active", "linkedin");
-              return summary;
-            },
-          },
-        });
-      };
-      const one = await f.person();
-      expect(await failure(deals.createDealFromLead(racing(one), f.member, one))).toBeInstanceOf(deals.PersonalCampaignError);
-      expect((await kit.one("select lifecycle from people where id = $1", [one])).lifecycle).toBe("lead");
-      expect(await kit.count("deals", f.org, `person_id = '${one}'`)).toBe(0);
-      expect(await kit.count("campaign_enrollments", f.org, `person_id = '${one}' and status = 'active'`)).toBe(1);
-
-      const bulk = await f.person();
-      expect(await deals.createDealsFromLeads(racing(bulk), f.member, [bulk])).toEqual({ created: [], skipped: [{ personId: bulk, reason: "personal_campaign" }] });
-      expect((await kit.one("select lifecycle from people where id = $1", [bulk])).lifecycle).toBe("lead");
     });
   });
 

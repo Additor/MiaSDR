@@ -74,7 +74,7 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
   }
   // A contact lives in the CRM. The page streams after `connection()`, so this is a client redirect behind a 200.
   if (lead.person.lifecycle === "contact") redirect(`/crm/contacts/${id}`);
-  const { person, customColumns, policy, suppression, enrollments, sends, hiddenSends, conversationId } = lead;
+  const { person, customColumns, policy, suppression, enrollments, sends, conversationId } = lead;
   // The same read as the lead list, so the header and the list show one state.
   const [activities, deals] = await Promise.all([
     readLeadActivity(leadActivityDeps(), actor.organizationId, [person]),
@@ -136,7 +136,7 @@ async function Lead({ params, searchParams }: { params: PageProps<"/leads/[id]">
           main={
             <>
               <CampaignsTable enrollments={enrollments} invitedFrom={invitedFrom} />
-              <SendHistoryTable sends={sends} hiddenSends={hiddenSends} />
+              <SendHistoryTable sends={sends} />
               <Suspense fallback={<ListSkeleton rows={3} toolbar={false} label="Loading activity" />}>
                 <PersonActivity actor={actor} personId={person.id} />
               </Suspense>

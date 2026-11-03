@@ -214,7 +214,6 @@ export async function createWorld(databaseUrl: string): Promise<World> {
     LINKEDIN_PROVIDER: "fake",
     AI_PROVIDER: "fake",
     GRID_PROVIDER: "fake",
-    AUTH_SIGNUP: "invite-only",
     RESEND_API_KEY: undefined,
     AUTH_EMAIL_FROM: undefined,
   };

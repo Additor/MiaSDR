@@ -50,23 +50,15 @@ describeDb("send-time mailbox domain policy", () => {
 
   it("excludes a mailbox outside the list and counts it; inside the list is unaffected", async () => {
     const f = await fixture(["inside.test", "outside.test"]);
-    const { ids, blockedByDomainPolicy } = await store.listSendableMailboxIds(now, { allowedDomains: ["inside.test"], openSignup: false });
+    const { ids, blockedByDomainPolicy } = await store.listSendableMailboxIds(now, { allowedDomains: ["inside.test"] });
     expect(mine(f, ids)).toEqual([f.ids["inside.test"]]);
     expect(blockedByDomainPolicy).toBeGreaterThanOrEqual(1);
   });
 
-  it("lists everything with no list on an invite-only instance", async () => {
+  it("lists everything with no list", async () => {
     const f = await fixture(["a.test", "b.test"]);
-    const { ids } = await store.listSendableMailboxIds(now, { allowedDomains: null, openSignup: false });
+    const { ids } = await store.listSendableMailboxIds(now, { allowedDomains: null });
     expect(mine(f, ids).sort()).toEqual(Object.values(f.ids).sort());
-  });
-
-  it("sends from no mailbox under open sign-up without a list", async () => {
-    const f = await fixture(["a.test"]);
-    const { ids, blockedByDomainPolicy } = await store.listSendableMailboxIds(now, { allowedDomains: null, openSignup: true });
-    expect(ids).toEqual([]);
-    expect(blockedByDomainPolicy).toBeGreaterThanOrEqual(1);
-    expect(f.ids["a.test"]).toBeDefined();
   });
 
   it("claim refuses an outside mailbox and still serves an inside one", async () => {
@@ -74,7 +66,7 @@ describeDb("send-time mailbox domain policy", () => {
     const provider = new FakeMailboxProvider();
     const deps: EngineDeps = {
       store, provider, clock: { now: () => now }, random: () => 0, appUrl: "https://app.test", unsubscribeSecret: "u".repeat(40),
-      domainPolicy: { allowedDomains: ["inside.test"], openSignup: false },
+      domainPolicy: { allowedDomains: ["inside.test"] },
     };
     expect((await send.sendNextEmail(deps, f.ids["outside.test"])).kind).toBe("idle");
     expect(provider.delivered).toHaveLength(0);
@@ -85,7 +77,7 @@ describeDb("send-time mailbox domain policy", () => {
     await fixture(["outside.test"]);
     const deps: EngineDeps = {
       store, provider: new FakeMailboxProvider(), clock: { now: () => now }, random: () => 0, appUrl: "https://app.test", unsubscribeSecret: "u".repeat(40),
-      domainPolicy: { allowedDomains: ["inside.test"], openSignup: false },
+      domainPolicy: { allowedDomains: ["inside.test"] },
     };
     const job = jobs.createEmailJobs(deps).find((j) => j.name === "email.send")!;
     const result = await job.run({ now: () => now, deadline: Date.now() + 60_000 } as never);

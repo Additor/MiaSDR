@@ -52,7 +52,7 @@ describeDb("the agent send gate on a stop request", () => {
 
   async function types(recordId: string) {
     const all = await sql<{ id: string; key: string; group_key: string; system_role: string | null }[]>`
-      select t.id, t.key, t.group_key, t.system_role from reply_types t join records r on r.reply_type_set_id = t.reply_type_set_id where r.id = ${recordId} and t.active`;
+      select t.id, t.key, t.group_key, t.system_role from reply_types t join records r on r.reply_type_set_id = t.reply_type_set_id where r.id = ${recordId}`;
     return { applied: all.find((t) => !t.system_role && t.group_key === "interested")!, other: all.find((t) => !t.system_role && t.group_key !== "interested")!, stop: all.find((t) => t.system_role === "stop_request")! };
   }
 
@@ -112,7 +112,6 @@ describeDb("the agent send gate on a stop request", () => {
         return agent.tool("set_reply_type", { action: "change", recordId, groupKey: t.other.group_key, replyTypeId: t.other.id, expectedContextVersion: v });
       },
     },
-    { name: "confirm_pick", run: ({ pick }) => agent.tool("set_reply_type", { action: "confirm_pick", replyTypePickId: pick }) },
     { name: "undo_pick", run: ({ pick }) => agent.tool("set_reply_type", { action: "undo_pick", replyTypePickId: pick }) },
     {
       name: "close and reopen",
@@ -227,14 +226,5 @@ describeDb("the agent send gate on a stop request", () => {
     await changeReplyType(replyHandlingDeps(), { userId: org.userId, organizationId: org.organizationId, role: "owner" }, thread.recordId, { groupKey: t.other.group_key, replyTypeId: t.other.id, expectedContextVersion: v, confirmUnlock: false });
     expect(await sendCode(thread.conversationId)).toBe("sent");
     expect(await queued(thread.recordId)).toBe(false);
-  });
-
-  it("lets an agent send once a person looked at the applied pick", async () => {
-    const thread = await conversation();
-    const { pick } = await seedPick(thread, "auto_applied");
-    const { replyHandlingDeps } = await import("@/contexts/conversations/infrastructure/reply-handling-composition");
-    const { acknowledgeReplyTypePick } = await import("@/contexts/conversations/application/reply-handling");
-    await acknowledgeReplyTypePick(replyHandlingDeps(), { userId: org.userId, organizationId: org.organizationId, role: "owner" }, pick);
-    expect(await sendCode(thread.conversationId)).toBe("sent");
   });
 });

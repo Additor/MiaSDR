@@ -78,7 +78,7 @@ export interface SaveAfterReplyResult extends AfterReplyView {
 }
 
 /** Why a campaign cannot draft follow-ups, or null when it can. */
-export const afterReplyLockedReason: (campaign: Pick<FlowCampaign, "channel" | "type">) => string | null = lockedReasonOf;
+export const afterReplyLockedReason: (campaign: Pick<FlowCampaign, "channel">) => string | null = lockedReasonOf;
 
 function toStopTypes(rows: readonly StopReplyTypeRow[]): StopReplyType[] {
   return [...rows]

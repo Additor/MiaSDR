@@ -356,48 +356,20 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(await count("events", f.org, "event_type = 'test.rolled_back'")).toBe(0);
       await expect(appDb.transaction((tx) => handling.appendPersonEvent(tx, { organizationId: f.org, personId, eventType: "test.human", actorType: "human" }))).rejects.toMatchObject({ cause: { constraint_name: "events_human_user_ck" } });
     });
-
-    it("hides the events of a record that holds only personal-campaign conversations, and shows the person's own", async () => {
-      const f = await fixture();
-      const { personId, recordId } = await ingest(f);
-      const hidden = await personalOnly(f);
-      await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${f.org}, ${hidden.personId}, ${hidden.recordId}, 'test.private_record', 'system')`;
-      await sql`insert into events (organization_id, person_id, event_type, actor_type) values (${f.org}, ${hidden.personId}, 'test.person_level', 'system')`;
-      await sql`insert into events (organization_id, person_id, record_id, event_type, actor_type) values (${f.org}, ${personId}, ${recordId}, 'test.public_record', 'system')`;
-      const hiddenTypes = (await handling.listPersonEvents(f.org, hidden.personId, 50)).map((e) => e.eventType);
-      expect(hiddenTypes).toContain("test.person_level");
-      expect(hiddenTypes).not.toContain("test.private_record");
-      expect((await handling.listPersonEvents(f.org, personId, 50)).map((e) => e.eventType)).toContain("test.public_record");
-      const other = await fixture();
-      expect(await handling.listPersonEvents(other.org, personId, 50)).toEqual([]);
-    });
   });
 
-  /** A person whose only conversation belongs to a personal campaign. */
-  async function personalOnly(f: Fx) {
-    const personId = await person(f);
-    const pipeline = await one("select id from reply_type_sets where organization_id = $1 limit 1", [f.org]);
-    const record = await one("insert into records (organization_id, person_id, reply_type_set_id, active_channel) values ($1, $2, $3, 'linkedin') returning id", [f.org, personId, pipeline.id]);
-    const campaignId = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
-    const conversation = await one(
-      "insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values ($1, $2, 'linkedin', $3, $4) returning id",
-      [f.org, record.id, `acct-${f.tag}`, campaignId],
-    );
-    return { personId, recordId: record.id as string, conversationId: conversation.id as string, campaignId };
-  }
-
   describe("activeConversationOfPerson", () => {
-    const addConversation = async (f: Fx, recordId: string, channel: "email" | "linkedin" | "whatsapp", over: { privateCampaignId?: string; updatedAt?: Date } = {}) => {
+    const addConversation = async (f: Fx, recordId: string, channel: "email" | "linkedin" | "whatsapp", over: { updatedAt?: Date } = {}) => {
       const n = ++counter;
       return (
         await one(
-          "insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id, private_campaign_id, updated_at) values ($1, $2, $3, $4, $5, $6, $7) returning id",
-          [f.org, recordId, channel, `acct-${channel}-${f.tag}`, `thr-${n}`, over.privateCampaignId ?? null, over.updatedAt ?? new Date()],
+          "insert into conversations (organization_id, record_id, channel, account_ref, provider_thread_id, updated_at) values ($1, $2, $3, $4, $5, $6) returning id",
+          [f.org, recordId, channel, `acct-${channel}-${f.tag}`, `thr-${n}`, over.updatedAt ?? new Date()],
         )
       ).id as string;
     };
 
-    it("returns the only public conversation with its channel", async () => {
+    it("returns the only conversation with its channel", async () => {
       const f = await fixture();
       const { personId } = await ingest(f);
       const conversation = await one("select c.id from conversations c join records r on r.id = c.record_id where r.person_id = $1", [personId]);
@@ -425,21 +397,9 @@ describeDb("person handling for the lead-to-contact conversion", () => {
       expect(await pick()).toBe(newerEmail);
     });
 
-    it("skips a personal-campaign conversation even when it is the active channel and the newest", async () => {
-      const f = await fixture();
-      const { personId, recordId } = await ingest(f);
-      const email = (await one("select id from conversations where record_id = $1", [recordId])).id as string;
-      const campaignId = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
-      await addConversation(f, recordId, "linkedin", { privateCampaignId: campaignId, updatedAt: new Date(Date.now() + 60_000) });
-      await sql`update records set active_channel = 'linkedin' where id = ${recordId}`;
-      expect(await handling.activeConversationOfPerson(f.org, personId)).toEqual({ conversationId: email, channel: "email" });
-    });
-
-    it("returns nothing for a personal-only person, a person without a record and another organization", async () => {
+    it("returns nothing for a person without a record and another organization", async () => {
       const f = await fixture();
       const { personId } = await ingest(f);
-      const priv = await personalOnly(f);
-      expect(await handling.activeConversationOfPerson(f.org, priv.personId)).toBeNull();
       expect(await handling.activeConversationOfPerson(f.org, await person(f))).toBeNull();
       const other = await fixture();
       expect(await handling.activeConversationOfPerson(other.org, personId)).toBeNull();

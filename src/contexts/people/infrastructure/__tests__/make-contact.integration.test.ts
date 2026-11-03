@@ -19,9 +19,8 @@ describeDb("make contact", () => {
     kit = await bootDealsKit(TEST_DATABASE_URL ?? "");
     app = await import("../../application/make-contact");
     const { conversionDeps } = await import("@/composition/deals");
-    const { conversionOutreach } = await import("@/contexts/outreach/infrastructure/drizzle-conversion-outreach");
     const { personTransaction } = await import("../drizzle-contact-store");
-    deps = { ...conversionDeps, liveEnrollmentSummary: conversionOutreach.liveEnrollmentSummary, transaction: personTransaction };
+    deps = { ...conversionDeps, transaction: personTransaction };
   }, 60_000);
 
   afterAll(async () => {
@@ -50,23 +49,6 @@ describeDb("make contact", () => {
     const error = (await errorOf(app.makeContact(deps, f.member, p))) as ConflictError;
     expect(error).toBeInstanceOf(ConflictError);
     expect(error.details).toEqual({ code: "already_converted", personId: p });
-  });
-
-  it("answers 409 personal_campaign to a member while another member's personal campaign reaches the lead", async () => {
-    const f = await kit.organization();
-    const p = await f.person();
-    await f.enrollment(await f.campaign({ type: "personal", createdBy: f.creator.userId }), p, "active", "linkedin");
-    const error = (await errorOf(app.makeContact(deps, f.member, p))) as ConflictError;
-    expect(error).toBeInstanceOf(ConflictError);
-    expect(error.details).toEqual({ code: "personal_campaign" });
-    expect(error.message).toBe("A personal campaign of another member is still reaching this person. Its creator or an admin can create the deal.");
-    expect(await lifecycle(p)).toBe("lead");
-
-    expect((await app.makeContact(deps, f.creator, p)).personId).toBe(p);
-    const other = await f.person();
-    await f.enrollment(await f.campaign({ type: "personal", createdBy: f.creator.userId }), other, "active", "linkedin");
-    await app.makeContact(deps, f.owner, other);
-    expect(await lifecycle(other)).toBe("contact");
   });
 
   it("gives way to a held person row, retries once and answers try_again", async () => {

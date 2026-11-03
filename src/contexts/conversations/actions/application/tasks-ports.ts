@@ -5,7 +5,7 @@ export interface TaskRow {
   personName: string | null;
   /** `lead` or `contact`: where the Actions queue links the task. */
   personLifecycle: string;
-  /** The person's public conversation on the active channel, or null. */
+  /** The person's conversation on the active channel, or null. */
   conversationId: string | null;
   name: string;
   description: string | null;

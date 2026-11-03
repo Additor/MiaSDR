@@ -1,6 +1,6 @@
 "use client";
 
-import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, PlayIcon, PlusIcon, Rows3Icon, SearchIcon, SendIcon, SigmaIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
+import { BotIcon, ChevronDownIcon, Columns3Icon, DownloadIcon, PlayIcon, PlusIcon, Rows3Icon, SearchIcon, SendIcon, SparklesIcon, UploadIcon, Redo2Icon, Undo2Icon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Spinner } from "@/components/shell/spinner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ interface Props {
   unfilteredTotal: number;
   jobs: Progress["jobs"];
   activeJobs: number;
-  onAddColumn: (kind: "column" | "formula") => void;
+  onAddColumn: () => void;
   /** Opens the enrichment dialog on one outcome, or on its outcome tiles when none is given. */
   onEnrich: (outcome?: string) => void;
   onAddAi: () => void;
@@ -131,11 +131,8 @@ export function TableToolbar(props: Props) {
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuGroup>
               <DropdownMenuLabel>Columns</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => props.onAddColumn("column")}>
+              <DropdownMenuItem onClick={props.onAddColumn}>
                 <Columns3Icon /> Column
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => props.onAddColumn("formula")}>
-                <SigmaIcon /> Formula
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
@@ -199,7 +196,7 @@ export function TableToolbar(props: Props) {
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button size={props.autoRun ? "sm" : "icon-sm"} aria-label={props.autoRun ? "Run options, auto-run is on" : "Run options"} />}>
-                {props.autoRun && <span className="text-xs">Auto-run on</span>}
+                {props.autoRun && <span className="text-xs max-sm:hidden">Auto-run on</span>}
                 <ChevronDownIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

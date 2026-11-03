@@ -288,7 +288,7 @@ describeDb("email send engine", () => {
       advance(61);
       provider.behavior = () => "ok";
       const verify = vi.spyOn(provider, "verify");
-      const report = await send.recheckFailedMailboxes({ ...d, domainPolicy: { allowedDomains: ["other.test"], openSignup: false } });
+      const report = await send.recheckFailedMailboxes({ ...d, domainPolicy: { allowedDomains: ["other.test"] } });
       expect(report).toEqual({ checked: 1, recovered: 0 });
       expect(verify).not.toHaveBeenCalled();
       expect(await mailbox(f.mailboxIds[0])).toMatchObject({ status: "failed", last_error: expect.stringMatching(/not an allowed mailbox domain/) });

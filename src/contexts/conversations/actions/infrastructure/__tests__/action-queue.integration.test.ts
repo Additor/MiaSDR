@@ -81,18 +81,17 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
   async function aiPick(
     f: Fx,
     l: { recordId: string },
-    input: { status: "proposed" | "auto_applied"; key?: string; checkMode?: string | null; stopRequested?: boolean; acknowledged?: boolean },
+    input: { status: "proposed" | "auto_applied"; key?: string; stopRequested?: boolean },
   ) {
     const [target] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and key = ${input.key ?? "demo_request"}`;
     const r = await rec(l.recordId);
     const applied = input.status === "auto_applied";
-    const rules = input.checkMode === null || input.checkMode === undefined ? null : sql.json({ checkMode: input.checkMode, replyDraft: true, followUps: "continue" });
     await sql`
       insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, proposed_group_key, proposed_reply_type_id,
-        applied_group_key, applied_reply_type_id, confidence, reasoning, status, provider, rules, response, acknowledged_at)
+        applied_group_key, applied_reply_type_id, confidence, reasoning, status, provider, rules, response)
       values (${f.org}, ${l.recordId}, ${r.latest_inbound_message_id}, ${r.context_version}, ${target.group_key}, ${target.id},
-        ${applied ? target.group_key : null}, ${applied ? target.id : null}, 0.8, 'read it', ${input.status}, 'fake', ${rules},
-        ${sql.json({ stopRequested: input.stopRequested === true })}, ${input.acknowledged ? new Date() : null})`;
+        ${applied ? target.group_key : null}, ${applied ? target.id : null}, 0.8, 'read it', ${input.status}, 'fake', ${sql.json({ replyDraft: true, followUps: "continue" })},
+        ${sql.json({ stopRequested: input.stopRequested === true })})`;
     if (applied) await sql`update records set reply_type_id = ${target.id}, group_key = ${target.group_key}, reply_type_source = 'ai' where id = ${l.recordId}`;
   }
 
@@ -498,7 +497,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect((await workQueue.getWorkQueue(deps2, utc.actor, { filter: { dueBefore: "2026-10-15" } })).groups.follow_up.items.map((i) => i.recordId)).toEqual([same.recordId]);
   });
 
-  it("shows the start of the latest inbound message of the thread the item opens, and never a private thread", async () => {
+  it("shows the start of the latest inbound message of the thread the item opens", async () => {
     const f = await fixture();
     const long = `Hello there.\n\n   ${"We would like a demo of the product. ".repeat(10)}`;
     const l = await lead(f, { bodyText: long });
@@ -507,16 +506,6 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect(item.snippet).toHaveLength(140);
     expect(item.snippet).toMatch(/^Hello there\. We would like a demo/);
     expect(item.snippet).not.toMatch(/\s\s|\n/);
-
-    // A newer message in a personal campaign's thread is private to it. The snippet stays with the public thread.
-    const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, name, channel, type) values (${f.org}, 'Personal', 'linkedin', 'personal') returning id`;
-    const [{ id: privateConversation }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${f.org}, ${l.recordId}, 'linkedin', ${"acct-" + f.tag}, ${campaignId}) returning id`;
-    await sql`
-      insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      values (${f.org}, ${privateConversation}, 'linkedin', ${"acct-" + f.tag}, 'inbound', ${"private-" + f.tag}, 'PRIVATE words that no one else may read', now())`;
-    const after = (await queue(f)).groups.reply.items[0];
-    expect(after.snippet).toMatch(/^Hello there\./);
-    expect(JSON.stringify(after)).not.toContain("PRIVATE");
   });
 
   it("shows the start of the draft a reply row asks you to approve, the edited text when a person changed it, on one line", async () => {
@@ -641,12 +630,9 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       hasProposedType: true,
       proposedSystemRole: null,
       stopReviewOpen: false,
-      acknowledged: false,
-      appliedIsCurrentType: false,
-      checkMode: null,
       stopped: false,
     };
-    const applied = { ...base, status: "auto_applied", appliedIsCurrentType: true };
+    const applied = { ...base, status: "auto_applied" };
     type L = Awaited<ReturnType<typeof lead>>;
     const dnc = (l: L) => sql`insert into contact_policies (person_id, organization_id, do_not_contact, reason, source, set_at) values (${l.personId}, ${f.org}, true, 'Asked to stop', 'human', now())`;
     const suppress = async (l: L) => {
@@ -654,29 +640,21 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       await sql`insert into suppression_list (organization_id, email, reason) values (${f.org}, ${String(p.email).toLowerCase()}, 'manual')`;
     };
     const scenarios: Array<{ name: string; facts: PickReviewFacts; setup: (l: L) => Promise<unknown> }> = [
-      { name: "held", facts: base, setup: (l) => aiPick(f, l, { status: "proposed", checkMode: "before" }) },
+      { name: "held", facts: base, setup: (l) => aiPick(f, l, { status: "proposed" }) },
       {
         name: "held, record version moved on",
         facts: { ...base, current: false },
         setup: async (l) => {
-          await aiPick(f, l, { status: "proposed", checkMode: "before" });
+          await aiPick(f, l, { status: "proposed" });
           await sql`update records set context_version = context_version + 1 where id = ${l.recordId}`;
         },
       },
-      {
-        name: "held, proposed type archived since",
-        facts: { ...base, hasProposedType: false },
-        setup: async (l) => {
-          await aiPick(f, l, { status: "proposed", key: "information_requested", checkMode: "before" });
-          await sql`update reply_types set active = false where organization_id = ${f.org} and key = 'information_requested'`;
-        },
-      },
-      { name: "held stop request", facts: { ...base, proposedSystemRole: "stop_request", stopReviewOpen: true }, setup: (l) => aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" }) },
+      { name: "held stop request", facts: { ...base, proposedSystemRole: "stop_request", stopReviewOpen: true }, setup: (l) => aiPick(f, l, { status: "proposed", key: "do_not_contact" }) },
       {
         name: "held stop request, record version moved on",
         facts: { ...base, current: false, proposedSystemRole: "stop_request", stopReviewOpen: true },
         setup: async (l) => {
-          await aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" });
+          await aiPick(f, l, { status: "proposed", key: "do_not_contact" });
           await sql`update records set context_version = context_version + 1 where id = ${l.recordId}`;
         },
       },
@@ -684,7 +662,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
         name: "held stop request, person do not contact",
         facts: { ...base, proposedSystemRole: "stop_request", stopReviewOpen: true, stopped: true },
         setup: async (l) => {
-          await aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" });
+          await aiPick(f, l, { status: "proposed", key: "do_not_contact" });
           await dnc(l);
         },
       },
@@ -692,38 +670,22 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
         name: "held stop request, address suppressed",
         facts: { ...base, proposedSystemRole: "stop_request", stopReviewOpen: true, stopped: true },
         setup: async (l) => {
-          await aiPick(f, l, { status: "proposed", key: "do_not_contact", checkMode: "before" });
+          await aiPick(f, l, { status: "proposed", key: "do_not_contact" });
           await suppress(l);
         },
       },
-      { name: "held, reply reads as a stop", facts: { ...base, stopReviewOpen: true }, setup: (l) => aiPick(f, l, { status: "proposed", checkMode: "before", stopRequested: true }) },
-      { name: "applied, Check after", facts: { ...applied, checkMode: "after" }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "after" }) },
-      { name: "applied, no snapshot", facts: { ...applied, checkMode: null }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: null }) },
-      { name: "applied, Skip", facts: { ...applied, checkMode: "skip" }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "skip" }) },
-      { name: "applied, looked at", facts: { ...applied, checkMode: "after", acknowledged: true }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "after", acknowledged: true }) },
-      {
-        name: "applied, type changed since",
-        facts: { ...applied, checkMode: "after", appliedIsCurrentType: false },
-        setup: async (l) => {
-          await aiPick(f, l, { status: "auto_applied", checkMode: "after" });
-          await sql`update records set (reply_type_id, group_key) = (select id, group_key from reply_types where organization_id = ${f.org} and key = 'not_required_right_now') where id = ${l.recordId}`;
-        },
-      },
-      {
-        name: "applied, looked at by an agent, reply reads as a stop",
-        facts: { ...applied, checkMode: "after", acknowledged: true, stopReviewOpen: true },
-        setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "after", acknowledged: true, stopRequested: true }),
-      },
+      { name: "held, reply reads as a stop", facts: { ...base, stopReviewOpen: true }, setup: (l) => aiPick(f, l, { status: "proposed", stopRequested: true }) },
+      { name: "applied", facts: applied, setup: (l) => aiPick(f, l, { status: "auto_applied" }) },
       {
         name: "applied, a person reviewed the stop",
-        facts: { ...applied, checkMode: "skip" },
+        facts: applied,
         setup: async (l) => {
-          await aiPick(f, l, { status: "auto_applied", checkMode: "skip", stopRequested: true });
+          await aiPick(f, l, { status: "auto_applied", stopRequested: true });
           const r = await rec(l.recordId);
           await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) values (${f.org}, ${r.latest_inbound_message_id}, now())`;
         },
       },
-      { name: "applied, Skip, reply reads as a stop", facts: { ...applied, checkMode: "skip", stopReviewOpen: true }, setup: (l) => aiPick(f, l, { status: "auto_applied", checkMode: "skip", stopRequested: true }) },
+      { name: "applied, reply reads as a stop", facts: { ...applied, stopReviewOpen: true }, setup: (l) => aiPick(f, l, { status: "auto_applied", stopRequested: true }) },
     ];
 
     const built: Array<{ name: string; recordId: string; facts: PickReviewFacts }> = [];
@@ -744,7 +706,7 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
     expect(actual).toEqual(expected);
     // A stop request that refuses agents stays listed when the record waits on nobody.
     const idle = await lead(f);
-    await aiPick(f, idle, { status: "auto_applied", checkMode: "skip", stopRequested: true });
+    await aiPick(f, idle, { status: "auto_applied", stopRequested: true });
     await sql`update records set workflow_state = 'idle' where id = ${idle.recordId}`;
     const listed = await queue(f, { limit: 200 });
     expect(ids(listed.groups.classification)).toContain(idle.recordId);
@@ -756,8 +718,8 @@ describeDb("Actions queue: state-based groups, filters, keyset paging, counts", 
       "held stop request, record version moved on": "stop_review",
       "held stop request, person do not contact": null,
       "held stop request, address suppressed": null,
-      "applied, Check after": "looks_right",
-      "applied, Skip": null,
+      applied: null,
+      "applied, reply reads as a stop": "stop_review",
     });
   });
 

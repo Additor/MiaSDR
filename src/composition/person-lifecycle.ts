@@ -15,7 +15,6 @@ import { drizzleContactDeleteStore } from "@/contexts/people/infrastructure/driz
 import { drizzleContactStore, personTransaction } from "@/contexts/people/infrastructure/drizzle-contact-store";
 import { drizzleLeadsAudit } from "@/contexts/people/infrastructure/drizzle-leads-audit";
 import { peopleMarkedTx } from "@/contexts/people/infrastructure/reachability";
-import { conversionOutreach } from "@/contexts/outreach/infrastructure/drizzle-conversion-outreach";
 import {
   leadOutreachBlockers,
   leadsInRunningCampaigns,
@@ -54,7 +53,6 @@ export const addContactWithDealDeps = (): AddContactWithDealDeps => ({
 /** Make contact: the conversion's ports and the live enrollments of outreach. */
 export const makeContactDeps: MakeContactDeps = {
   ...conversionDeps,
-  liveEnrollmentSummary: conversionOutreach.liveEnrollmentSummary,
   transaction: personTransaction,
 };
 

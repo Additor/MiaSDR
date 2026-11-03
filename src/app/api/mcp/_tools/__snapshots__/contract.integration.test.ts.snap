@@ -337,7 +337,7 @@ exports[`MCP contract > gives a write token the ten write tools, none read-only,
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`; LinkedIn \`personal\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks \`truncated\` whole with \`previewStep\` and send its \`readToken\` with the edited step; text that looks like the cut copy is refused (\`truncated_text\`). Steps write merge fields as \`{{token}}\`, with a \`token\` from get_workspace \`mergeFields\`. After a save, \`unknownFields\` names any no lead has a field for: they would reach every lead as a blank, so the campaign cannot start until they change. \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`. \`remove_lead\` takes \`enrollmentIds\` from get_campaign (up to 500) out of the campaign, which stops their steps. A person can restore them in MiaSDR; add_leads cannot bring them back. A lead with a final outcome keeps it.",
+    "description": "Prepares a campaign; nothing here sends. \`create\` makes a draft (\`channel\`, \`name\`, optional \`senderIds\`). \`update\` changes \`name\`, \`steps\` or \`senderIds\` of a draft or paused campaign; \`steps\` replace all steps (email: kind email, subject, body, waitDays; LinkedIn: invitation then messages), so read a step get_campaign marks \`truncated\` whole with \`previewStep\` and send its \`readToken\` with the edited step; text that looks like the cut copy is refused (\`truncated_text\`). Steps write merge fields as \`{{token}}\`, with a \`token\` from get_workspace \`mergeFields\`. After a save, \`unknownFields\` names any no lead has a field for: they would reach every lead as a blank, so the campaign cannot start until they change. \`add_leads\` enrolls leads by Leads search \`query\` or \`personIds\` (up to 500); call it with \`dryRun: true\` first to see the counts. Agents enroll a limited number of leads a day (\`agent_enroll_cap\`). Adding to a running campaign needs a token that sends, agent campaigns allowed, and \`launchToken\` from preview_campaign_launch with \`purpose: enroll\`. \`remove_lead\` takes \`enrollmentIds\` from get_campaign (up to 500) out of the campaign, which stops their steps. A person can restore them in MiaSDR; add_leads cannot bring them back. A lead with a final outcome keeps it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -382,9 +382,6 @@ exports[`MCP contract > gives a write token the ten write tools, none read-only,
           },
           "maxItems": 500,
           "type": "array",
-        },
-        "personal": {
-          "type": "boolean",
         },
         "query": {
           "type": "string",
@@ -691,14 +688,13 @@ exports[`MCP contract > gives a write token the ten write tools, none read-only,
       "openWorldHint": false,
       "readOnlyHint": false,
     },
-    "description": "Sets how a reply handling is classified, as a person does in the inbox. \`change\` sets the group and reply type (\`recordId\`, \`groupKey\`, \`replyTypeId\` or null for the group alone, \`expectedContextVersion\` from get_conversation, optional \`note\`); a customer type stays locked unless \`confirmUnlock\`. \`confirm_pick\` marks an applied AI pick as seen and \`undo_pick\` reverts it (\`replyTypePickId\`). For a pick that waits for a check, as get_work_queue lists it: \`accept_pick\` applies the AI's proposal and \`override_pick\` applies \`replyTypeKey\` instead (\`conversationId\`, \`expectedContextVersion\`). Both queue a fresh draft when the type writes one. A change can retire open drafts and start or end follow-ups; the answer says which. None of these answers a stop request: sending stays refused until a person reviews it.",
+    "description": "Sets how a reply handling is classified, as a person does in the inbox. \`change\` sets the group and reply type (\`recordId\`, \`groupKey\`, \`replyTypeId\` or null for the group alone, \`expectedContextVersion\` from get_conversation, optional \`note\`); a customer type stays locked unless \`confirmUnlock\`. \`undo_pick\` reverts an applied AI pick (\`replyTypePickId\`). For a pick that waits for a check, as get_work_queue lists it: \`accept_pick\` applies the AI's proposal and \`override_pick\` applies \`replyTypeKey\` instead (\`conversationId\`, \`expectedContextVersion\`). Both queue a fresh draft when the type writes one. A change can retire open drafts and start or end follow-ups; the answer says which. None of these answers a stop request: sending stays refused until a person reviews it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "action": {
           "enum": [
             "change",
-            "confirm_pick",
             "undo_pick",
             "accept_pick",
             "override_pick",
@@ -1363,7 +1359,6 @@ exports[`MCP contract > keeps the definitions within the token budget and unchan
         "email": {},
         "enrollments": {},
         "error": {},
-        "hiddenSends": {},
         "lastContactAt": {},
         "lifecycle": {},
         "linkedinUrl": {},
@@ -1563,7 +1558,7 @@ exports[`MCP contract > keeps the definitions within the token budget and unchan
       "openWorldHint": false,
       "readOnlyHint": true,
     },
-    "description": "The organization's members, active reply types, deal stages, mailboxes and, for an owner or admin, LinkedIn accounts, with the ids other tools take. Call it first to learn who \`assignedTo\` names and which reply type or stage an id means.",
+    "description": "The organization's members, reply types, deal stages, mailboxes and, for an owner or admin, LinkedIn accounts, with the ids other tools take. Call it first to learn who \`assignedTo\` names and which reply type or stage an id means.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {},

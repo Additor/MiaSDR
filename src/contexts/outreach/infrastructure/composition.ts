@@ -105,7 +105,7 @@ export const unsubscribeUnreachable = (): boolean => env().MAILBOX_PROVIDER === 
 export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore, unreachableUnsubscribe: unsubscribeUnreachable() });
 
 function mailboxDomainPolicy(): MailboxDomainPolicy {
-  return { allowedDomains: parseAllowedDomains(env().MAILBOX_ALLOWED_DOMAINS), openSignup: env().AUTH_SIGNUP === "open" };
+  return { allowedDomains: parseAllowedDomains(env().MAILBOX_ALLOWED_DOMAINS) };
 }
 
 export const mailboxDeps = (): MailboxDeps => ({ mailboxes: drizzleMailboxStore, provider: mailboxProvider(), now: () => new Date(), policy: mailboxDomainPolicy() });

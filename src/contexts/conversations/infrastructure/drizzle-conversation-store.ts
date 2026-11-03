@@ -40,7 +40,6 @@ export async function defaultReplyTypeSetId(tx: Tx, organizationId: string): Pro
       name: s.name,
       description: s.description,
       classificationGuidance: s.classificationGuidance,
-      checkMode: s.rules.checkMode,
       replyDraft: s.rules.replyDraft,
       followUps: s.rules.followUps,
       systemRole: s.systemRole ?? null,

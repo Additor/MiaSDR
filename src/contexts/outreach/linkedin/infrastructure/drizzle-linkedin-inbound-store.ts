@@ -196,20 +196,17 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
           .select({ name: linkedinConnections.name, profileUrl: linkedinConnections.profileUrl, chatId: linkedinConnections.chatId })
           .from(linkedinConnections)
           .where(and(eq(linkedinConnections.linkedinAccountId, account.id), eq(linkedinConnections.providerId, event.counterparty)));
-        // A lead in a personal campaign makes the whole thread private, whichever enrollment is the oldest. Before the lead's profile
-        // resolved, their enrollment has no member id, and it can sit on another account of the organization, so the match also
-        // goes through the person: the stored member id or the public profile slug.
+        // Before the lead's profile resolved, their enrollment has no member id, and it can sit on another account of the
+        // organization, so the match also goes through the person: the stored member id or the public profile slug.
         const profileUrl = event.counterpartyProfileUrl ?? connection?.profileUrl ?? null;
         const slug = profileUrl ? linkedinSlug(profileUrl) : null;
-        const [personal] = await tx
-          .select({ campaignId: campaigns.id, personId: campaignEnrollments.personId })
+        const [enrolled] = await tx
+          .select({ personId: campaignEnrollments.personId })
           .from(campaignEnrollments)
-          .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
           .innerJoin(people, and(eq(people.id, campaignEnrollments.personId), eq(people.organizationId, campaignEnrollments.organizationId)))
           .where(
             and(
               eq(campaignEnrollments.organizationId, organizationId),
-              eq(campaigns.type, "personal"),
               or(
                 inArray(campaignEnrollments.id, ofMember),
                 sql`${people.raw}->>'linkedin_member_id' = ${event.counterparty}`,
@@ -223,11 +220,10 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
           reply: {
             accountId: account.id,
             accountName: account.name ?? account.username,
-            personId: lead?.personId ?? personal?.personId ?? null,
+            personId: lead?.personId ?? enrolled?.personId ?? null,
             knownName: connection?.name ?? null,
             knownProfileUrl: connection?.profileUrl ?? null,
             knownChatId: connection?.chatId ?? null,
-            privateCampaignId: personal?.campaignId ?? null,
           },
         };
       });
@@ -248,7 +244,6 @@ interface ReplyContext {
   knownName: string | null;
   knownProfileUrl: string | null;
   knownChatId: string | null;
-  privateCampaignId: string | null;
 }
 
 /** Files the message in the master inbox. Matched replies go under their lead, other real messages under a new inbound person. */
@@ -264,14 +259,11 @@ async function storeReply(inbox: InboxFiling, organizationId: string, event: Rep
     providerMessageId: event.messageId as string,
     counterparty: { providerId: member, name: event.counterpartyName ?? ctx.knownName, profileUrl, slug: profileUrl ? linkedinSlug(profileUrl) : null },
     personId: ctx.personId,
-    privateCampaignId: ctx.privateCampaignId,
     bodyText: event.text,
     receivedAt: sentAt && !Number.isNaN(sentAt.getTime()) ? sentAt : now,
   });
   const filedNote =
-    ctx.privateCampaignId && stored.status !== "quarantined"
-      ? "Kept private (personal campaign)."
-      : stored.status === "quarantined" ? "Held for review at /inbox/unmatched (sender has no profile identity)." : stored.status === "created" ? "Stored in the inbox." : "Already in the inbox.";
+    stored.status === "quarantined" ? "Held for review at /inbox/unmatched (sender has no profile identity)." : stored.status === "created" ? "Stored in the inbox." : "Already in the inbox.";
   const stopped = stored.status === "created" ? (stored.outreachStopped ?? 0) : 0;
   return stopped > 0
     ? { result: "done", note: `Reply stopped ${stopped} sequence(s). ${filedNote}` }

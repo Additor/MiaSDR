@@ -8,13 +8,11 @@ import type { MailboxProvider } from "./ports";
 import type { MailboxRecord, MailboxStore } from "../../application/management-ports";
 
 /**
- * The service account can impersonate every address in the Workspace domain, so which addresses a tenant
- * may connect is an operator decision. `allowedDomains` null means the operator set no list.
+ * The service account can impersonate every address in the Workspace domain, so the operator may limit which
+ * addresses an organization connects. `allowedDomains` null means the operator set no list, and any address may connect.
  */
 export interface MailboxDomainPolicy {
   allowedDomains: string[] | null;
-  /** True when anyone can create an organization (AUTH_SIGNUP=open). */
-  openSignup: boolean;
 }
 
 export interface MailboxDeps {
@@ -35,16 +33,9 @@ export function parseAllowedDomains(raw: string | undefined): string[] | null {
 
 /** Returns why this address cannot be connected, or null when it can. */
 export function mailboxPolicyViolation(policy: MailboxDomainPolicy, emailAddress: string): string | null {
+  if (!policy.allowedDomains) return null;
   const domain = emailAddress.slice(emailAddress.lastIndexOf("@") + 1).toLowerCase();
-  if (policy.allowedDomains) {
-    return policy.allowedDomains.includes(domain)
-      ? null
-      : `${domain} is not an allowed mailbox domain. Allowed: ${policy.allowedDomains.join(", ")}.`;
-  }
-  if (policy.openSignup) {
-    return "This instance allows open sign-up, so mailboxes cannot be connected until the operator sets MAILBOX_ALLOWED_DOMAINS to the domains tenants may use.";
-  }
-  return null;
+  return policy.allowedDomains.includes(domain) ? null : `${domain} is not an allowed mailbox domain. Allowed: ${policy.allowedDomains.join(", ")}.`;
 }
 
 /** Connected accounts send as the organization, so only owners and admins manage them. */

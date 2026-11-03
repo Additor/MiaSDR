@@ -9,10 +9,10 @@ describeDb("reply type rules", () => {
   let stop: string;
   let plain: string;
 
-  const addType = async (key: string, group: string, role: string | null, rules: { check?: string; draft?: boolean; followUps?: string } = {}) => {
+  const addType = async (key: string, group: string, role: string | null, rules: { draft?: boolean; followUps?: string } = {}) => {
     const [{ id }] = await sql<{ id: string }[]>`
-      insert into reply_types (organization_id, reply_type_set_id, group_key, key, name, check_mode, reply_draft, follow_ups, system_role)
-      values (${org.organizationId}, ${set}, ${group}, ${key}, ${key}, ${rules.check ?? "before"}, ${rules.draft ?? false}, ${rules.followUps ?? "stop"}, ${role})
+      insert into reply_types (organization_id, reply_type_set_id, group_key, key, name, reply_draft, follow_ups, system_role)
+      values (${org.organizationId}, ${set}, ${group}, ${key}, ${key}, ${rules.draft ?? false}, ${rules.followUps ?? "stop"}, ${role})
       returning id`;
     return id;
   };
@@ -28,22 +28,20 @@ describeDb("reply type rules", () => {
     await sql.end();
   });
 
-  it("keeps the rules of the stop request type and keeps it active", async () => {
+  it("keeps the rules of the stop request type", async () => {
     await expect(sql`update reply_types set reply_draft = true where id = ${stop}`).rejects.toThrow(/reply_types_stop_request_ck/);
-    await expect(sql`update reply_types set check_mode = 'after' where id = ${stop}`).rejects.toThrow(/reply_types_stop_request_ck/);
     await expect(sql`update reply_types set follow_ups = 'continue' where id = ${stop}`).rejects.toThrow(/reply_types_stop_request_ck/);
-    await expect(sql`update reply_types set active = false where id = ${stop}`).rejects.toThrow(/reply_types_stop_request_ck/);
   });
 
   it("holds one type per role in a set, and the customer type in its group", async () => {
     await expect(addType("stop_two", "not_interested", "stop_request")).rejects.toThrow(/reply_types_set_system_role_uq/);
     await expect(addType("vip", "interested", "customer")).rejects.toThrow(/reply_types_customer_ck/);
     const customer = await addType("customer", "customer", "customer");
-    await sql`update reply_types set check_mode = 'before', name = 'VIP' where id = ${customer}`;
+    await sql`update reply_types set name = 'VIP' where id = ${customer}`;
   });
 
-  it("refuses a check mode outside the list", async () => {
-    await expect(sql`update reply_types set check_mode = 'sometimes' where id = ${plain}`).rejects.toThrow(/reply_types_rules_ck/);
+  it("refuses a follow-ups rule outside the list", async () => {
+    await expect(sql`update reply_types set follow_ups = 'sometimes' where id = ${plain}`).rejects.toThrow(/reply_types_rules_ck/);
   });
 
   it("removes an organization's agent usage with the organization", async () => {

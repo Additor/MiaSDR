@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { authClient } from "@/contexts/identity/infrastructure/auth-client";
-import { callApi } from "@/app/_lib/api-client";
 import { GoogleButton } from "../google-button";
 import { safeNext } from "./safe-next";
 
@@ -16,21 +15,13 @@ const NOTICES: Record<string, string> = {
   "no-organization": "Your account does not belong to an organization yet. Ask an admin to invite you.",
 };
 
-export function SignInForm({ signupAvailable, googleEnabled = false }: { signupAvailable: boolean; googleEnabled?: boolean }) {
+export function SignInForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [resend, setResend] = useState<"idle" | "sending" | "sent" | "limited">("idle");
   const notice = NOTICES[params.get("error") ?? ""];
-  const [canCreateOrganization, setCanCreateOrganization] = useState(false);
-
-  // Signed in without an organization: offer the create form when the instance allows it.
-  useEffect(() => {
-    if (params.get("error") !== "no-organization") return;
-    void callApi<{ canCreate?: boolean }>("/api/organizations", "GET").then((result) => setCanCreateOrganization(result.data?.canCreate === true));
-  }, [params]);
-
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -77,19 +68,7 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
         </CardHeader>
         <CardContent className="py-4">
           <FieldGroup>
-            {notice && (
-              <p className="text-sm text-muted-foreground">
-                {notice}
-                {canCreateOrganization && (
-                  <>
-                    {" "}
-                    <Link href="/organizations/new" className="underline">
-                      Create an organization
-                    </Link>
-                  </>
-                )}
-              </p>
-            )}
+            {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
             <Field>
               <FieldLabel htmlFor="email">Email</FieldLabel>
               <Input id="email" name="email" type="email" autoComplete="email" required />
@@ -128,13 +107,7 @@ export function SignInForm({ signupAvailable, googleEnabled = false }: { signupA
             {pending ? "Signing in…" : "Sign in"}
           </Button>
           {googleEnabled && <GoogleButton callbackURL={safeNext(params.get("next"))} />}
-          {signupAvailable ? (
-            <p className="text-sm text-muted-foreground">
-              No account? <Link href="/sign-up" className="underline">Create one</Link>
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">Accounts are by invitation only.</p>
-          )}
+          <p className="text-sm text-muted-foreground">Accounts are by invitation only.</p>
         </CardFooter>
       </form>
     </Card>

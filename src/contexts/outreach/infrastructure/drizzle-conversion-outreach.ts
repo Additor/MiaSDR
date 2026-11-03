@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, linkedinEnrollmentDetails } from "@/platform/db/schema";
-import type { ConversionOutreach, EnrollmentSource, LiveEnrollmentSummary } from "../application/conversion";
+import type { ConversionOutreach, EnrollmentSource } from "../application/conversion";
 import { haltOutcome, REMOVABLE_STATUSES } from "../domain/enrollment-status";
 import { endEnrollmentsTx } from "./enrollment-end";
 
@@ -47,26 +47,16 @@ export async function stopPersonEnrollmentsTx(tx: DbHandle, input: { organizatio
   return { stopped: changed.length };
 }
 
-export async function liveEnrollmentSummary(organizationId: string, personIds: string[], tx?: DbHandle): Promise<Map<string, LiveEnrollmentSummary>> {
+export async function liveEnrollmentCounts(organizationId: string, personIds: string[], tx?: DbHandle): Promise<Map<string, number>> {
   const ids = [...new Set(personIds)];
-  const out = new Map<string, LiveEnrollmentSummary>(ids.map((id) => [id, { regular: 0, personal: { count: 0, createdBy: [] } }]));
+  const out = new Map<string, number>(ids.map((id) => [id, 0]));
   for (const part of chunked(ids)) {
     const rows = await (tx ?? db)
-      .select({ personId: campaignEnrollments.personId, type: campaigns.type, createdBy: campaigns.createdBy, id: campaignEnrollments.id })
+      .select({ personId: campaignEnrollments.personId })
       .from(campaignEnrollments)
-      .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
       .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.personId, part), inArray(campaignEnrollments.status, [...REMOVABLE_STATUSES])));
-    for (const row of rows) {
-      const entry = out.get(row.personId);
-      if (!entry) continue;
-      if (row.type !== "personal") entry.regular += 1;
-      else {
-        entry.personal.count += 1;
-        if (row.createdBy && !entry.personal.createdBy.includes(row.createdBy)) entry.personal.createdBy.push(row.createdBy);
-      }
-    }
+    for (const row of rows) out.set(row.personId, (out.get(row.personId) ?? 0) + 1);
   }
-  for (const entry of out.values()) entry.personal.createdBy.sort();
   return out;
 }
 
@@ -87,13 +77,13 @@ export async function enrollmentSources(organizationId: string, enrollmentIds: s
   const out = new Map<string, EnrollmentSource>();
   for (const part of chunked([...new Set(enrollmentIds)])) {
     const rows = await (tx ?? db)
-      .select({ enrollmentId: campaignEnrollments.id, campaignId: campaigns.id, name: campaigns.name, type: campaigns.type })
+      .select({ enrollmentId: campaignEnrollments.id, campaignId: campaigns.id, name: campaigns.name })
       .from(campaignEnrollments)
       .innerJoin(campaigns, and(eq(campaigns.id, campaignEnrollments.campaignId), eq(campaigns.organizationId, campaignEnrollments.organizationId)))
       .where(and(eq(campaignEnrollments.organizationId, organizationId), inArray(campaignEnrollments.id, part)));
-    for (const row of rows) out.set(row.enrollmentId, { campaignId: row.campaignId, name: row.name, type: row.type });
+    for (const row of rows) out.set(row.enrollmentId, { campaignId: row.campaignId, name: row.name });
   }
   return out;
 }
 
-export const conversionOutreach: ConversionOutreach = { stopPersonEnrollmentsTx, liveEnrollmentSummary, latestRepliedEnrollment, enrollmentSources };
+export const conversionOutreach: ConversionOutreach = { stopPersonEnrollmentsTx, liveEnrollmentCounts, latestRepliedEnrollment, enrollmentSources };

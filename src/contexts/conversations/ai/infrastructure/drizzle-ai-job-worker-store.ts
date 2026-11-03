@@ -2,12 +2,11 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { heldBy, NEW_CLAIM_TOKEN } from "@/platform/db/claim";
 import { interruptOnTerminalStageTx } from "../../after-reply/infrastructure/sequence-run-tx";
-import { aiJobs, replyTypePicks, conversations, events, messages, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
+import { aiJobs, replyTypePicks, conversations, events, messages, records, replyTypes } from "@/platform/db/schema";
 import type { AiJobWorkerStore, ClaimedJob, JobKind } from "../../application/reply-ports";
 import { AUTO_REQUEUE_CEILING, type FailureKind } from "../domain/ai-job-requeue";
 import { readUnknownSenderAiCap, UNKNOWN_SENDER_AI_CAP_KEY } from "@/contexts/tenancy/domain/ai-cap";
 import { startOfLocalDay } from "@/contexts/outreach/domain/working-hours";
-import { publicConversation, publicConversationSql } from "@/platform/db/conversation-visibility";
 import { organizationTimeZone } from "@/contexts/tenancy/infrastructure/drizzle-organization-store";
 import { settlesAfterAiPick } from "../../domain/workflow-state";
 import { decideReplyType, typeRulesOf, type ReplyTypeFacts } from "../../domain/reply-type";
@@ -18,20 +17,16 @@ import { SEND_COUNTED } from "@/contexts/outreach/domain/send-status";
 import { sqlValues } from "@/platform/db/sql-values";
 
 /**
- * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: the
- * confidence floor, and whether follow-ups apply (`followUpModeFactsTx`, as a person's type change reads them).
+ * The facts of `decideReplyType` that the classify context does not carry, read in the apply transaction: whether
+ * follow-ups apply (`followUpModeFactsTx`, as a person's type change reads them).
  */
 async function applyFactsTx(
   tx: Tx,
   organizationId: string,
-  record: { id: string; replyTypeSetId: string; activeChannel: string | null },
-): Promise<Pick<ReplyTypeFacts, "floor" | "isContact" | "campaignMode" | "channel">> {
-  const [[settings], mode] = await Promise.all([
-    tx.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
-    followUpModeFactsTx(tx, organizationId, record.id),
-  ]);
+  record: { id: string; activeChannel: string | null },
+): Promise<Pick<ReplyTypeFacts, "isContact" | "campaignMode" | "channel">> {
+  const mode = await followUpModeFactsTx(tx, organizationId, record.id);
   return {
-    floor: Number(settings?.floor ?? 0.85),
     isContact: mode?.isContact ?? false,
     campaignMode: mode?.campaignMode ?? null,
     channel: mode?.channel ?? record.activeChannel,
@@ -107,7 +102,7 @@ const senderKnown = (alias: string) => {
   return sql`(
   exists (select 1 from messages o where o.organization_id = ${m}.organization_id and o.direction = 'outbound' and lower(o.to_address) = lower(${m}.from_address))
   or exists (select 1 from messages o join conversations oc on oc.id = o.conversation_id join conversations mc on mc.record_id = oc.record_id
-             where mc.id = ${m}.conversation_id and o.organization_id = ${m}.organization_id and o.direction = 'outbound' and ${publicConversationSql("oc")})
+             where mc.id = ${m}.conversation_id and o.organization_id = ${m}.organization_id and o.direction = 'outbound')
   or exists (select 1 from sends s join campaign_enrollments e on e.id = s.enrollment_id join people p on p.id = e.person_id
              where s.organization_id = ${m}.organization_id and s.status in ${sqlValues(SEND_COUNTED)} and lower(p.email) = lower(${m}.from_address))
 )`;
@@ -174,7 +169,7 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
               .from(messages)
               .innerJoin(conversations, eq(conversations.id, messages.conversationId))
               .innerJoin(records, eq(records.id, conversations.recordId))
-              .where(and(eq(messages.id, job.entityId), eq(messages.organizationId, job.organizationId), publicConversation))
+              .where(and(eq(messages.id, job.entityId), eq(messages.organizationId, job.organizationId)))
               .for("no key update", { of: records })
           : [];
       const moved = await tx
@@ -272,16 +267,15 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
         .from(messages)
         .innerJoin(conversations, eq(conversations.id, messages.conversationId))
         .innerJoin(records, eq(records.id, conversations.recordId))
-        .where(and(eq(messages.id, input.messageId), eq(messages.organizationId, input.job.organizationId), publicConversation))
+        .where(and(eq(messages.id, input.messageId), eq(messages.organizationId, input.job.organizationId)))
         .for("no key update", { of: records });
       if (!record) return { status: "stale" as const };
       // A worker whose lease ran out writes nothing: the job's current claim owns this result.
       if (!(await holdsClaimTx(tx, input.job))) return { status: "stale" as const };
-      // A type archived after the job read its context is no longer a choice: the result is stored stale.
       const [proposed] = await tx
         .select()
         .from(replyTypes)
-        .where(and(eq(replyTypes.replyTypeSetId, record.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey), eq(replyTypes.active, true)));
+        .where(and(eq(replyTypes.replyTypeSetId, record.replyTypeSetId), eq(replyTypes.key, input.proposedReplyTypeKey)));
 
       const base = {
         rules: proposed ? typeRulesOf(proposed) : null,
@@ -309,10 +303,10 @@ export const drizzleAiJobWorkerStore: AiJobWorkerStore = {
         return { status: "stale" as const };
       }
 
-      // The one decision for this pick, under the record lock and with the facts as they are now: a floor raised or a
-      // lock set after the job read its context holds the pick here.
+      // The one decision for this pick, under the record lock and with the facts as they are now: a lock set after
+      // the job read its context holds the pick here.
       const decision = decideReplyType(
-        { groupKey: proposed.groupKey, rules: typeRulesOf(proposed) },
+        { groupKey: proposed.groupKey, systemRole: proposed.systemRole, rules: typeRulesOf(proposed) },
         {
           ...(await applyFactsTx(tx, input.job.organizationId, record)),
           stopRequested: input.stopRequested,

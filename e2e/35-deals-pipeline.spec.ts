@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page } from "@playwright/test";
-import { MOBILE_DARK, expect, expectNoHorizontalOverflow, importLeads, seedReply, signInAdmin, sql, test, unique, waitForHydrated } from "./support/fixtures";
+import { MOBILE_DARK, expect, expectNoHorizontalOverflow, importLeads, seedMember, seedReply, signInAdmin, signInAs, sql, test, unique, waitForHydrated } from "./support/fixtures";
 
 /*
  * Deals, the Pipeline board, the deal page and Settings > Pipeline stages ("Leads and CRM" in docs/decisions.md).
@@ -306,7 +306,7 @@ test.describe("deals pipeline", () => {
     await expect(items.filter({ hasText: "S35 Negotiation" })).toHaveCount(0);
   });
 
-  test("loading and empty states, and a new organization starts from the default stages", async ({ page }) => {
+  test("loading and empty states, and an organization with no stages starts from the default stages", async ({ page }) => {
     await signInAdmin(page);
     // AC7: both pages stream a skeleton first.
     expect(await (await page.request.get("/crm/pipeline")).text()).toContain('data-testid="board-loading"');
@@ -319,10 +319,13 @@ test.describe("deals pipeline", () => {
     await expect(page.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/crm/pipeline");
 
     // An organization without deals or stages: the empty board, then the default stages created from settings.
-    const orgs = (await (await page.request.get("/api/organizations")).json()) as { organizations: Array<{ id: string; active: boolean }> };
-    const home = orgs.organizations.find((o) => o.active)!.id;
-    const created = await page.request.post("/api/organizations", { data: { name: unique("S35 Empty Org") } });
-    expect(created.status()).toBe(201);
+    // The app creates no second organization, so this one comes straight from SQL, with an owner who signs in to it.
+    const slug = unique("s35-empty-org").toLowerCase();
+    const [{ id: emptyOrg }] = await sql()`insert into organizations (name, slug) values (${slug}, ${slug}) returning id`;
+    const owner = await seedMember(page.request, { name: "S35 Empty Owner", email: `${slug}@s35-alpha.test`, password: "s35-empty-owner-1" });
+    await sql()`update members set organization_id = ${emptyOrg}, role = 'owner' where user_id = (select id from users where email = ${owner.email})`;
+    await page.context().clearCookies();
+    await signInAs(page, owner.email, owner.password);
     try {
       await page.goto("/crm/pipeline");
       await expect(page.getByText("No deals yet.")).toBeVisible();
@@ -337,8 +340,8 @@ test.describe("deals pipeline", () => {
       await expect(page.getByRole("button", { name: "Create default stages" })).toHaveCount(0);
       await expect(page.getByRole("list", { name: "Stages" }).getByRole("listitem")).toHaveCount(5);
     } finally {
-      const back = await page.request.post("/api/organizations/active", { data: { organizationId: home } });
-      expect(back.status(), "switch back to the first organization").toBe(200);
+      await sql()`delete from organizations where id = ${emptyOrg}`;
+      await sql()`delete from users where email = ${owner.email}`;
     }
   });
 });

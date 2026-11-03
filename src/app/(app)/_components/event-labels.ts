@@ -13,7 +13,6 @@ export const EVENT_LABELS: Readonly<Record<string, string>> = {
   "reply_type_pick.accepted": "Accepted the AI pick",
   "reply_type_pick.overridden": "Changed the AI pick",
   "reply_type_pick.undone": "Undid an AI pick",
-  "reply_type_pick.acknowledged": "Marked an AI pick Looks right",
   "contact_policy.dnc_set": "Marked do not contact",
   "contact_policy.dnc_cleared": "Cleared do not contact",
   "contact_policy.enforced": "Applied do not contact",

@@ -3,7 +3,6 @@ import { db } from "@/platform/db/client";
 import { identityExceptions } from "@/platform/db/schema";
 import type { ActionQueue, ActionQueueCounts, ActionQueueExtras, QueueGroupPage, QueueItem, QueuePosition, WorkQueueStore } from "../application/work-queue-ports";
 import { NO_TYPE_FILTER, QUEUE_GROUPS, QUEUE_SCOPES, encodeQueueCursor, type PickReviewKind, type QueueFilter, type QueueGroup, type QueueProblemKind, type QueueScope, type WaitingBasis } from "../domain/action-queue";
-import { publicConversationSql, visibleReplyTypePickSql, visibleDraftSql, visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 import { holdReasonOf } from "../../domain/reply-type";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
@@ -20,15 +19,14 @@ import { stopReviewOpenSql } from "@/platform/db/stop-review-sql";
  *   ai_jobs         j   (a failed classification or draft job that still applies)
  *   reply_type_picks k  (the AI pick of the latest reply, and what it waits for)
  *   contact_policies, suppression_list (whether a stop request is still open)
- *   conversations   c   (the thread to open, public ones only)
+ *   conversations   c   (the thread to open)
  *   tasks           t   (an open task takes a next_step record out of the queue; open tasks are counted by assignee)
  *   users           au  (the assignee's name)
  *   campaign_enrollments (the campaign filter)
  *   sends, campaigns (campaign sends the provider never confirmed)
  *   identity_exceptions (open unmatched senders)
  *
- * It is read only: no statement here writes. Every statement filters by organization and by the visibility rules of
- * `conversation-visibility.ts`. The rule behind a row's group and membership is `queueGroupOf` and `isInQueue` in
+ * It is read only: no statement here writes. Every statement filters by organization. The rule behind a row's group and membership is `queueGroupOf` and `isInQueue` in
  * `domain/action-queue.ts`, and what an AI pick waits for is `pickReviewOf`; `action-queue.integration.test.ts` checks that
  * this SQL agrees with them. Membership reads `records.workflow_state` as the domain wrote it and works none of it out again.
  */
@@ -74,11 +72,11 @@ const queueRowsSql = (organizationId: string) => sql`
           where sa.draft_id = d.id and sa.origin = 'agent' and sa.status = 'delivery_uncertain' limit 1) as agent_token,
         exists (select 1 from send_attempts sa where sa.draft_id = d.id and sa.origin = 'agent' and sa.status = 'delivery_uncertain') as agent_uncertain
       from drafts d
-      where d.record_id = r.id and d.status in ('failed', 'delivery_uncertain') and ${visibleDraftSql("d")} order by d.updated_at desc limit 1
+      where d.record_id = r.id and d.status in ('failed', 'delivery_uncertain') order by d.updated_at desc limit 1
     ) pd on true
     left join lateral (
       select d.id, d.conversation_id, d.subject, d.updated_at from drafts d
-      where d.record_id = r.id and d.status = 'awaiting_review' and ${visibleDraftSql("d")} order by d.updated_at desc limit 1
+      where d.record_id = r.id and d.status = 'awaiting_review' order by d.updated_at desc limit 1
     ) rd on true
     left join lateral (
       select j.id, j.last_error, j.failed_at from ai_jobs j
@@ -103,26 +101,22 @@ const queueRowsSql = (organizationId: string) => sql`
       select lp.id, lp.confidence, lp.ctx, lp.cat, lp.sub_name, lp.hold_reason,
              case
                when lp.held and lp.proposed_role is distinct from 'stop_request' and lp.proposed_name is not null then 'held'
-               when lp.applied and coalesce(lp.check_mode, 'after') = 'after' then 'looks_right'
              end as kind
       from (
         select k.id, k.confidence, k.expected_context_version as ctx, coalesce(k.applied_group_key, k.proposed_group_key) as cat, ks.name as sub_name,
-               kp.name as proposed_name, kp.system_role as proposed_role, k.rules->>'checkMode' as check_mode, k.response->>'holdReason' as hold_reason,
-               k.status = 'proposed' and k.expected_context_version = r.context_version as held,
-               k.status = 'auto_applied' and k.acknowledged_at is null
-                 and k.applied_reply_type_id is not distinct from r.reply_type_id and k.applied_group_key is not distinct from r.group_key as applied
+               kp.name as proposed_name, kp.system_role as proposed_role, k.response->>'holdReason' as hold_reason,
+               k.status = 'proposed' and k.expected_context_version = r.context_version as held
         from reply_type_picks k
         left join reply_types ks on ks.id = coalesce(k.applied_reply_type_id, k.proposed_reply_type_id)
-        -- An archived proposed type cannot be accepted, so its held pick waits for nothing here.
-        left join reply_types kp on kp.id = k.proposed_reply_type_id and kp.active
-        where k.record_id = r.id and k.message_id = r.latest_inbound_message_id and ${visibleReplyTypePickSql("k")}
+        left join reply_types kp on kp.id = k.proposed_reply_type_id
+        where k.record_id = r.id and k.message_id = r.latest_inbound_message_id
         order by (k.status = 'stale'), k.created_at desc limit 1
       ) lp
     ) nk on true
     left join lateral (
-      select c.id from conversations c where c.record_id = r.id and ${publicConversationSql("c")} order by (c.channel = r.active_channel) desc, c.updated_at desc limit 1
+      select c.id from conversations c where c.record_id = r.id order by (c.channel = r.active_channel) desc, c.updated_at desc limit 1
     ) cv on true
-    where r.organization_id = ${organizationId} and ${visibleRecordSql("r")}
+    where r.organization_id = ${organizationId}
       -- A person checks an agent's unconfirmed send, and a stop request that keeps refusing agents, whatever state the record
       -- is in: no one else may have seen it.
       and (r.workflow_state in ('action_required', 'error') or (r.workflow_state = 'waiting' and r.next_action_at <= now()) or pd.agent_uncertain or st.review)
@@ -162,7 +156,7 @@ async function queueTotals(organizationId: string, actorUserId: string, filter: 
 
 /**
  * The start of the latest inbound message of each thread, on one line. The thread of a row is the one it opens, so the
- * caller passes `QueueItem.conversationId`. The read still keeps to public conversations, like every message read.
+ * caller passes `QueueItem.conversationId`.
  */
 async function snippetsOf(conversationIds: string[]): Promise<Map<string, string>> {
   if (conversationIds.length === 0) return new Map();
@@ -171,9 +165,7 @@ async function snippetsOf(conversationIds: string[]): Promise<Map<string, string
       select distinct on (m.conversation_id) m.conversation_id,
              left(btrim(regexp_replace(m.body_text, '[[:space:]]+', ' ', 'g')), 140) as snippet
       from messages m
-      join conversations c on c.id = m.conversation_id
       where m.conversation_id in (${sql.join(conversationIds.map((id) => sql`${id}::uuid`), sql`, `)}) and m.direction = 'inbound'
-        and ${publicConversationSql("c")}
       order by m.conversation_id, m.sent_at desc, m.id desc`),
   );
   return new Map(rows.filter((r) => r.snippet).map((r) => [r.conversation_id, r.snippet as string]));
@@ -273,14 +265,12 @@ export const drizzleWorkQueueStore: WorkQueueStore = {
                min(q.waiting_at) filter (where q.wait_basis in ('inbound', 'failure') and q.assigned_to <> ${actorUserId}) as oldest_others
         from (${queueRowsSql(organizationId)}) q
         group by q.grp`),
-      // Open tasks, except those on a record that exists only for a private thread.
       db.execute(sql`
         select count(*) filter (where t.assigned_to = ${actorUserId})::int as mine,
                count(*) filter (where t.assigned_to is null)::int as unassigned,
                count(*) filter (where t.assigned_to <> ${actorUserId})::int as others
         from tasks t
-        where t.organization_id = ${organizationId} and not t.is_completed
-          and (t.record_id is null or exists (select 1 from records tr where tr.id = t.record_id and ${visibleRecordSql("tr")}))`),
+        where t.organization_id = ${organizationId} and not t.is_completed`),
     ]);
     const groupRows = rowsOf<Record<string, unknown>>(records);
     const byGroup = emptyCounts();

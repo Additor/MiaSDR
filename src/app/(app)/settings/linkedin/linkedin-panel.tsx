@@ -504,7 +504,7 @@ function AccountRow({
                   ))}
                 </SelectContent>
               </Select>
-              <FieldDescription>Agents start a Personal campaign only from accounts their person owns.</FieldDescription>
+              <FieldDescription>An agent&apos;s LinkedIn search uses only accounts its person owns and accounts with no owner.</FieldDescription>
             </Field>
           </div>
           {(inviteWarning || messageWarning) && (

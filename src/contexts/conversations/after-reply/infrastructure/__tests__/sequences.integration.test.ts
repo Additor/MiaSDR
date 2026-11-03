@@ -268,19 +268,16 @@ describeDb("Follow-ups after a reply flows", () => {
       expect((await arApp.getCampaignAfterReply(f.arDeps, f.actor, campaignId)).mode).toBe("handoff");
     });
 
-    it("locks LinkedIn and Personal campaigns to handoff", async () => {
+    it("locks LinkedIn campaigns to handoff", async () => {
       const f = await fixture();
-      const linkedin = await createCampaign(sql, { organizationId: f.org, channel: "linkedin" });
-      const personal = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
-      for (const id of [linkedin, personal]) {
-        const view = await arApp.getCampaignAfterReply(f.arDeps, f.actor, id);
-        expect(view).toMatchObject({ mode: "handoff", supported: false });
-        expect(view.lockedReason).not.toBeNull();
-        const err = await arApp.saveCampaignAfterReply(f.arDeps, f.actor, id, { mode: "ai_drafts", steps: [STEPS[0]] }).catch((e) => e);
-        expect(err).toBeInstanceOf(ConflictError);
-        expect(err.details).toMatchObject({ code: "mode_locked" });
-        expect(await arApp.saveCampaignAfterReply(f.arDeps, f.actor, id, { mode: "handoff" })).toMatchObject({ mode: "handoff" });
-      }
+      const id = await createCampaign(sql, { organizationId: f.org, channel: "linkedin" });
+      const view = await arApp.getCampaignAfterReply(f.arDeps, f.actor, id);
+      expect(view).toMatchObject({ mode: "handoff", supported: false });
+      expect(view.lockedReason).not.toBeNull();
+      const err = await arApp.saveCampaignAfterReply(f.arDeps, f.actor, id, { mode: "ai_drafts", steps: [STEPS[0]] }).catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictError);
+      expect(err.details).toMatchObject({ code: "mode_locked" });
+      expect(await arApp.saveCampaignAfterReply(f.arDeps, f.actor, id, { mode: "handoff" })).toMatchObject({ mode: "handoff" });
       expect(await count("sequences", f.org)).toBe(0);
     });
 
@@ -728,21 +725,19 @@ describeDb("Follow-ups after a reply flows", () => {
       );
     });
 
-    it("the campaign lists the organization's active stop types of its default set, with their reasons", async () => {
+    it("the campaign lists the organization's stop types of its default set, with their reasons", async () => {
       const f = await fixture();
       await ingest(f);
       const campaignId = await emailedBy(f);
-      await sql`update reply_types set active = false where organization_id = ${f.org} and key = 'already_using_a_tool'`;
       await sql`update reply_types set follow_ups = 'stop' where organization_id = ${f.org} and key = 'meeting_requested'`;
       const other = await fixture();
       await ingest(other);
       await sql`update reply_types set follow_ups = 'stop' where organization_id = ${other.org} and key = 'demo_request'`;
 
-      const expected = (await sql`select key from reply_types where organization_id = ${f.org} and follow_ups = 'stop' and active`).map((r) => r.key as string);
+      const expected = (await sql`select key from reply_types where organization_id = ${f.org} and follow_ups = 'stop'`).map((r) => r.key as string);
       const types = await arApp.getFollowUpStopTypes(f.arDeps, f.actor);
       expect(types.map((t) => t.key).sort()).toEqual(expected.sort());
       expect(types.map((t) => t.key)).toEqual(expect.arrayContaining(["out_of_office", "do_not_contact", "meeting_requested", "customer"]));
-      expect(types.map((t) => t.key)).not.toContain("already_using_a_tool");
       expect(types.map((t) => t.key)).not.toContain("demo_request");
       expect(types.find((t) => t.key === "out_of_office")).toMatchObject({ name: "Out of office", groupKey: "other", systemRole: null, reason: "Out of office is set to stop follow-ups." });
       expect(types.find((t) => t.key === "do_not_contact")).toMatchObject({ systemRole: "stop_request" });

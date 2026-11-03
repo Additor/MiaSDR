@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import { AppSidebar } from "@/components/shell/app-sidebar";
 import { getOrgSendPause, getOrgTimeZone } from "@/components/shell/org-time-zone";
 import { OutboundPauseBanner } from "@/components/shell/outbound-pause-banner";
-import { RenderedOrganization } from "@/components/shell/rendered-organization";
 import { OrgTimeZoneProvider } from "@/components/shell/time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -14,11 +13,9 @@ import { workQueueDeps } from "@/contexts/conversations/actions/infrastructure/w
 import { unreadStore } from "@/contexts/conversations/infrastructure/composition";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import { listMyOrganizations } from "@/contexts/tenancy/application/organization-switching";
 import { getOnboarding } from "@/contexts/tenancy/application/onboarding";
 import { onboardingDeps } from "@/composition/onboarding";
 import { getOutboundPauseBanner } from "@/contexts/outreach/application/outbound-pause";
-import { switchingDeps } from "@/contexts/tenancy/infrastructure/organization-composition";
 import { toActor } from "@/app/_lib/api";
 
 export default function AppLayout({ children }: LayoutProps<"/">) {
@@ -36,11 +33,10 @@ async function Shell({ children }: { children: React.ReactNode }) {
   // The sidebar writes this cookie when it collapses; reading it here keeps the choice across full page loads.
   const defaultOpen = (await cookies()).get("sidebar_state")?.value !== "false";
   const scope = { userId: user.id, organizationId: organization.id, role };
-  // Six independent reads: run them together so the shell adds the slowest one, not the sum. The zone and the pause share one cached read.
-  const [{ total: inboxUnread }, { work }, { organizations, canCreate }, setup, timeZone, sendPause] = await Promise.all([
+  // Five independent reads: run them together so the shell adds the slowest one, not the sum. The zone and the pause share one cached read.
+  const [{ total: inboxUnread }, { work }, setup, timeZone, sendPause] = await Promise.all([
     unreadCounts(unreadStore, scope),
     getWorkQueueCounts(workQueueDeps(), scope),
-    listMyOrganizations(switchingDeps(), { userId: user.id, activeOrganizationId: organization.id }),
     setupProgress(toActor({ user, organization, role })),
     getOrgTimeZone(),
     // A failed read leaves the banner to PAUSE_OUTBOUND; the send engines still read the pause in their claim.
@@ -54,8 +50,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
-      <RenderedOrganization id={organization.id} />
-      <AppSidebar organizationName={organization.name} organizations={organizations} canCreateOrganization={canCreate} user={user} inboxUnread={inboxUnread} actionsPending={work.mine} setup={setup} isAdmin={isOwnerOrAdmin(role)} />
+      <AppSidebar organizationName={organization.name} user={user} inboxUnread={inboxUnread} actionsPending={work.mine} setup={setup} isAdmin={isOwnerOrAdmin(role)} />
       <SidebarInset id="main-content" tabIndex={-1} className="outline-none">
         <OutboundPauseBanner banner={getOutboundPauseBanner(sendPause)} />
         <OrgTimeZoneProvider timeZone={timeZone}>{children}</OrgTimeZoneProvider>

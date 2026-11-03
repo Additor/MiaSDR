@@ -52,7 +52,6 @@ interface Props {
   onRedo: () => void;
   onColumnAction: (column: GridColumn, action: ColumnAction) => void;
   onLoadMore: () => void;
-  onActiveChange: (cell: ActiveCell | null) => void;
   onOpenDetails: (cell: ActiveCell) => void;
   /** Runs the run that fills this cell (Ctrl or Cmd+Enter, or the run button of the active cell). */
   onRunCell?: (cell: ActiveCell) => void;
@@ -74,7 +73,7 @@ interface Editing {
 /** The spreadsheet: roving selection, typed editors, clipboard, and a window of rows rendered at a time. */
 export function DataGrid(props: Props) {
   const { columns, rows, total, selection, sorts } = props;
-  const { onSelection, onEdit, onLoadMore, onActiveChange, onOpenDetails } = props;
+  const { onSelection, onEdit, onLoadMore, onOpenDetails } = props;
   const pinnedCount = Math.min(props.pinnedCount ?? 0, columns.length);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ top: 0, height: 480 });
@@ -119,11 +118,6 @@ export function DataGrid(props: Props) {
 
   const activeRow = rows[active.row];
   const activeColumn = columns[active.col];
-  useEffect(() => {
-    onActiveChange(activeRow && activeColumn ? { row: activeRow, column: activeColumn } : null);
-    // Report the position, not every row object, so polling does not re-render the parent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRow?.id, activeColumn?.key, onActiveChange]);
 
   const focusGrid = useCallback(() => scroller.current?.focus({ preventScroll: true }), []);
   useEffect(() => {
@@ -226,7 +220,7 @@ export function DataGrid(props: Props) {
       const row = rows[pos.row];
       if (!column || !row) return;
       if (!isEditableColumn(column)) {
-        toast.message(column.type === "formula" ? `${column.name} calculates from its formula. Edit the formula to change it.` : `${column.name} is filled by a run. Run the column to change it.`, { id: "grid-readonly" });
+        toast.message(`${column.name} is filled by a run. Run the column to change it.`, { id: "grid-readonly" });
         return;
       }
       if (effectiveColumnType(column) === "boolean") {
@@ -324,7 +318,7 @@ export function DataGrid(props: Props) {
     if (route.kind === "block") return props.onPasteBlock(route.request);
     const plan = route.plan;
     if (plan.updates.length > 0) onEdit(plan.updates);
-    if (plan.skippedRunner > 0) toast.message(skippedCellsText(plan.skippedRunner, plan.skippedFormula));
+    if (plan.skippedRunner > 0) toast.message(skippedCellsText(plan.skippedRunner));
     else if (plan.clipped) toast.message("Some pasted cells fell outside the loaded rows and were skipped.");
   };
 
@@ -363,7 +357,7 @@ export function DataGrid(props: Props) {
       if (reached === null || reached <= drag.source.r1) return;
       const plan = planFill(drag.source, reached, latest.current.rows, latest.current.columns);
       if (plan.updates.length > 0) latest.current.onEdit(plan.updates);
-      if (plan.skippedRunner > 0) toast.message(skippedCellsText(plan.skippedRunner, plan.skippedFormula));
+      if (plan.skippedRunner > 0) toast.message(skippedCellsText(plan.skippedRunner));
       setRange({ anchor: { row: drag.source.r0, col: drag.source.c0 }, focus: { row: Math.min(reached, latest.current.rows.length - 1), col: drag.source.c1 } });
     };
     // pointerup ends a mouse, touch or pen drag; the fill handle cancels the compatibility mouseup.

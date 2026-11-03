@@ -3,15 +3,8 @@ import { retryOnce } from "@/platform/db/errors";
 import { MAX_BULK_DNC_IDS } from "./dnc-limits";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import {
-  isReplyTypeGroup,
-  parseInstructionBlocks,
-  parseReplyHandlingSettings,
-  parseReplyTypeInput,
-  parseReplyTypePatch,
-  type ReplyTypeGroup,
-} from "../domain/reply-handling";
-import { SYSTEM_ROLE_REASONS, isTypeChangePath, typeChangeOutcome, validateTypeRules, type TypeChangeOutcome } from "../domain/reply-type";
+import { isReplyTypeGroup, parseInstructionBlocks, type ReplyTypeGroup } from "../domain/reply-handling";
+import { isTypeChangePath, typeChangeOutcome, type TypeChangeOutcome } from "../domain/reply-type";
 import type { ReplyHandlingStore, IdentityExceptionIntake, IdentityExceptionRow, RecordDetail, UndoReplyTypePickResult } from "./reply-handling-ports";
 import type { InboundLinkedInInput } from "./linkedin-ports";
 import type { InboundEmailInput, IngestResult, InboxStore, ThreadMessage } from "./ports";
@@ -50,7 +43,7 @@ export interface TimelineMessage extends ThreadMessage {
 
 /**
  * Everything the Inbox thread shows about its reply record in the side column: category, history, drafts, events,
- * notes, enrollments and the person's other public conversations. A record whose only threads are private answers 404.
+ * notes, enrollments and the person's other conversations.
  */
 export async function getRecordDetail(deps: ReplyHandlingDeps, actor: Actor, recordId: string): Promise<RecordDetail> {
   assertId(recordId, "Reply handling");
@@ -70,7 +63,7 @@ export async function getRecord(deps: ReplyHandlingDeps, actor: Actor, recordId:
 }
 
 /**
- * What Change type would do for each active reply type of the record on `path`, as the three lines of
+ * What Change type would do for each reply type of the record on `path`, as the three lines of
  * `typeChangeOutcome`. The record's current type is left out: it is not a target.
  */
 export async function getTypeChangeOutcomes(deps: ReplyHandlingDeps, actor: Actor, recordId: string, path: unknown): Promise<Array<{ replyTypeId: string; outcome: TypeChangeOutcome }>> {
@@ -133,12 +126,6 @@ export async function changeReplyType(deps: ReplyHandlingDeps, actor: Actor, rec
 export async function undoReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<UndoReplyTypePickResult> {
   assertId(replyTypePickId, "AI pick");
   return deps.store.undoReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, replyTypePickId, now: deps.now() });
-}
-
-/** Marks an AI classification as seen. A held proposal is not acknowledged, it is accepted or overridden. */
-export async function acknowledgeReplyTypePick(deps: ReplyHandlingDeps, actor: Actor, replyTypePickId: string): Promise<void> {
-  assertId(replyTypePickId, "AI pick");
-  await deps.store.acknowledgeReplyTypePick({ organizationId: actor.organizationId, actorUserId: actor.userId, via: actor.via, replyTypePickId, now: deps.now() });
 }
 
 /**
@@ -260,53 +247,8 @@ function requireAdmin(actor: Actor): void {
 
 export const getReplyTypeCatalog = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.replyTypeCatalog(actor.organizationId);
 
-/** The confidence floor and the AI instructions, for readers that need no types or counts. */
+/** The AI instructions, for readers that need no types. */
 export const getReplySettings = (deps: ReplyHandlingDeps, actor: Actor) => deps.store.replySettings(actor.organizationId);
-
-export async function createReplyType(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>) {
-  requireAdmin(actor);
-  const input = parseReplyTypeInput(raw);
-  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
-  if (replyTypes.some((s) => s.key === input.key)) throw new ConflictError(`A reply type with the key "${input.key}" already exists.`);
-  if (replyTypes.some((s) => s.groupKey === input.groupKey && s.name.toLowerCase() === input.name.toLowerCase())) {
-    throw new ConflictError(`"${input.name}" already exists in this group.`);
-  }
-  return deps.store.createReplyType(actor.organizationId, input);
-}
-
-export async function updateReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string, raw: Record<string, unknown>): Promise<void> {
-  requireAdmin(actor);
-  assertId(id, "Reply type");
-  const patch = parseReplyTypePatch(raw);
-  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
-  const current = replyTypes.find((s) => s.id === id);
-  if (!current) throw new NotFoundError("Reply type not found");
-  if (current.systemRole && patch.active === false) throw new ConflictError(SYSTEM_ROLE_REASONS[current.systemRole], { code: "system_role" });
-  if (patch.name && replyTypes.some((s) => s.id !== id && s.groupKey === current.groupKey && s.name.toLowerCase() === patch.name!.toLowerCase())) {
-    throw new ConflictError(`"${patch.name}" already exists in this group.`);
-  }
-  // The rules the request names, on top of the stored ones, checked against the type's system role.
-  const rules = patch.rules ? validateTypeRules(current, { ...current.rules, ...patch.rules }) : undefined;
-  await deps.store.updateReplyType(actor.organizationId, id, { ...patch, ...(rules ? { rules } : {}) });
-}
-
-/** Delete is blocked for a type with a system role, and while records or pick history use the type. Archive it instead. */
-export async function deleteReplyType(deps: ReplyHandlingDeps, actor: Actor, id: string): Promise<void> {
-  requireAdmin(actor);
-  assertId(id, "Reply type");
-  const { replyTypes } = await deps.store.replyTypeCatalog(actor.organizationId);
-  const current = replyTypes.find((s) => s.id === id);
-  if (!current) throw new NotFoundError("Reply type not found");
-  if (current.systemRole) throw new ConflictError(SYSTEM_ROLE_REASONS[current.systemRole], { code: "system_role" });
-  if (current.recordCount > 0) throw new ConflictError(`${current.recordCount} ${current.recordCount === 1 ? "person has" : "people have"} this reply type. Change their type first, or archive it.`);
-  if (current.historyCount > 0) throw new ConflictError("AI picks refer to this reply type. Archive it instead of deleting it.");
-  await deps.store.deleteReplyType(actor.organizationId, id);
-}
-
-export async function updateReplySettings(deps: ReplyHandlingDeps, actor: Actor, raw: Record<string, unknown>): Promise<void> {
-  requireAdmin(actor);
-  await deps.store.updateSettings(actor.organizationId, parseReplyHandlingSettings(raw));
-}
 
 export async function updateReplyAiInstructions(deps: ReplyHandlingDeps, actor: Actor, raw: { draftInstructions?: unknown; classificationInstructions?: unknown }): Promise<void> {
   requireAdmin(actor);

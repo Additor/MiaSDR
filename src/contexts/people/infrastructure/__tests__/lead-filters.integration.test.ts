@@ -111,16 +111,6 @@ describeDb("lead list filters, sort and companies", () => {
   }
 
   describe("filters alone", () => {
-    it("does not count a personal campaign as a campaign membership, like the Status column", async () => {
-      const s = await seed();
-      const [{ id: personal }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${s.id}, 'linkedin', 'Personal thread', 'draft', 'personal') returning id`;
-      // Bob has only a personal enrollment; Eve has a regular one and a personal one.
-      await enroll(s.id, personal, s.bob, "linkedin");
-      await enroll(s.id, personal, s.eve, "linkedin");
-      expect(await ids(s.id, { campaign: "any" })).toEqual(sorted(s.eve, s.alice, s.carol, s.frank));
-      expect(await ids(s.id, { campaign: "none" })).toEqual(sorted(s.bob, s.dan));
-    });
-
     it("narrows by campaign membership, exclusion and a named campaign", async () => {
       const s = await seed();
       expect(await ids(s.id, { campaign: "any" })).toEqual(sorted(s.eve, s.alice, s.carol, s.frank));
@@ -339,12 +329,12 @@ describeDb("lead list filters, sort and companies", () => {
       return id as string;
     };
     let msg = 0;
-    /** A record, a conversation and one message for a person. `privateCampaignId` makes the thread private. */
-    const thread = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound", privateCampaignId: string | null = null) => {
+    /** A record, a conversation and one message for a person. */
+    const thread = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound") => {
       msg += 1;
       const [existing] = await sql`select id from records where organization_id = ${orgId} and person_id = ${personId}`;
       const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
-      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${orgId}, ${recordId}, 'email', ${"acct-" + msg}, ${privateCampaignId}) returning id`;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${orgId}, ${recordId}, 'email', ${"acct-" + msg}) returning id`;
       await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
         values (${orgId}, ${conversationId}, 'email', ${"acct-" + msg}, ${direction}, ${"k" + msg + "-" + orgId}, 'hello', now())`;
     };
@@ -423,18 +413,15 @@ describeDb("lead list filters, sort and companies", () => {
       const o = await org();
       const pipeline = await replyTypeSetOf(o.id);
       const regular = await campaign(o.id, "email", "Regular");
-      const [{ id: personalCampaign }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${o.id}, 'linkedin', 'Private', 'active', 'personal') returning id`;
       const unknownSender = await person(o.id, { email: "u@x.test" });
       const enrolledReplied = await person(o.id, { email: "e@x.test" });
       const outboundOnly = await person(o.id, { email: "o@x.test" });
-      const privateInbound = await person(o.id, { email: "p@x.test" });
       const quiet = await person(o.id, { email: "q@x.test" });
       await thread(o.id, pipeline, unknownSender, "inbound");
       await enroll(o.id, regular, enrolledReplied, "email", "replied");
       await thread(o.id, pipeline, outboundOnly, "outbound");
-      await thread(o.id, pipeline, privateInbound, "inbound", personalCampaign);
       const repliers = sorted(unknownSender, enrolledReplied);
-      const others = sorted(outboundOnly, privateInbound, quiet);
+      const others = sorted(outboundOnly, quiet);
 
       expect(await ids(o.id, { replied: true })).toEqual(repliers);
       expect(await ids(o.id, { replied: false })).toEqual(others);
@@ -445,21 +432,18 @@ describeDb("lead list filters, sort and companies", () => {
       for (const personId of others) expect(statuses.get(personId)?.state ?? "new", personId).not.toBe("replied");
     });
 
-    it("filters by hasConversation: a record with a public conversation counts, a private-only or record-only person does not", async () => {
+    it("filters by hasConversation: a record with a conversation counts, a record-only person does not", async () => {
       const o = await org();
       const pipeline = await replyTypeSetOf(o.id);
-      const [{ id: personalCampaign }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${o.id}, 'linkedin', 'Private', 'active', 'personal') returning id`;
       const outbound = await person(o.id, { email: "a@x.test" });
       const inbound = await person(o.id, { email: "b@x.test" });
-      const privateOnly = await person(o.id, { email: "c@x.test" });
       const recordOnly = await person(o.id, { email: "d@x.test" });
       const none = await person(o.id, { email: "e@x.test" });
       await thread(o.id, pipeline, outbound, "outbound");
       await thread(o.id, pipeline, inbound, "inbound");
-      await thread(o.id, pipeline, privateOnly, "outbound", personalCampaign);
       await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.id}, ${recordOnly}, ${pipeline})`;
       expect(await ids(o.id, { hasConversation: true })).toEqual(sorted(outbound, inbound));
-      expect(await ids(o.id, { hasConversation: false })).toEqual(sorted(privateOnly, recordOnly, none));
+      expect(await ids(o.id, { hasConversation: false })).toEqual(sorted(recordOnly, none));
       expect(await ids(o.id, { hasConversation: true, lifecycle: "contact" })).toEqual([]);
     });
   });
@@ -476,7 +460,7 @@ describeDb("lead list filters, sort and companies", () => {
       const [existing] = await sql`select id from records where organization_id = ${orgId} and person_id = ${personId}`;
       const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
       const account = `${channel}-acct-${orgId}`;
-      const [conv] = await sql`select id from conversations where record_id = ${recordId} and channel = ${channel} and private_campaign_id is null`;
+      const [conv] = await sql`select id from conversations where record_id = ${recordId} and channel = ${channel}`;
       const conversationId =
         conv?.id ?? (await sql`insert into conversations (organization_id, record_id, channel, account_ref) values (${orgId}, ${recordId}, ${channel}, ${account}) returning id`)[0].id;
       await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
@@ -529,14 +513,12 @@ describeDb("lead list filters, sort and companies", () => {
       expect(await ids(o.id, { lastContactFrom: "2026-10-01" })).toEqual([straddler]);
     });
 
-    it("counts a cold campaign send as last contact, and a private campaign send not at all", async () => {
+    it("counts a cold campaign send as last contact", async () => {
       const o = await org();
       const regular = await campaign(o.id, "email", "Alpha");
-      const [{ id: personal }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${o.id}, 'linkedin', 'Private', 'active', 'personal') returning id`;
       const cold = await lead(o.id);
-      const privateOnly = await lead(o.id);
       await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status, last_sent_at)
-        values (${o.id}, ${regular}, ${cold}, 'email', 'active', '2026-10-03T10:00:00Z'), (${o.id}, ${personal}, ${privateOnly}, 'email', 'active', '2026-10-03T10:00:00Z')`;
+        values (${o.id}, ${regular}, ${cold}, 'email', 'active', '2026-10-03T10:00:00Z')`;
       expect(await ids(o.id, { lastContactFrom: "2026-10-01" })).toEqual([cold]);
       expect(await ids(o.id, { lastContactTo: "2026-10-03" })).toEqual([cold]);
       expect(await ids(o.id, { lastContactTo: "2026-10-02" })).toEqual([]);
@@ -549,23 +531,19 @@ describeDb("lead list filters, sort and companies", () => {
       const [{ id }] = await sql`insert into reply_type_sets (organization_id, name, is_default) values (${orgId}, 'default', true) returning id`;
       return id as string;
     };
-    /** One message on the person's record, in a public thread or, with `privateCampaignId`, a personal campaign's private thread. */
-    const message = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound", sentAt: string, privateCampaignId: string | null = null) => {
+    /** One message on the person's record, in a thread of its own. */
+    const message = async (orgId: string, pipeline: string, personId: string, direction: "inbound" | "outbound", sentAt: string) => {
       n += 1;
       const [existing] = await sql`select id from records where organization_id = ${orgId} and person_id = ${personId}`;
       const recordId: string = existing?.id ?? (await sql`insert into records (organization_id, person_id, reply_type_set_id) values (${orgId}, ${personId}, ${pipeline}) returning id`)[0].id;
-      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id)
-        values (${orgId}, ${recordId}, 'email', ${`ar${n}`}, ${privateCampaignId}) returning id`;
+      const [{ id: conversationId }] = await sql`insert into conversations (organization_id, record_id, channel, account_ref)
+        values (${orgId}, ${recordId}, 'email', ${`ar${n}`}) returning id`;
       await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
         values (${orgId}, ${conversationId}, 'email', ${`ar${n}`}, ${direction}, ${`ar${n}-${orgId}`}, 'hello', ${sentAt})`;
     };
     const enrollSent = async (orgId: string, campaignId: string, personId: string, status: string, lastSentAt: string | null) => {
       await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status, last_sent_at)
         select ${orgId}, id, ${personId}, channel, ${status}, ${lastSentAt} from campaigns where id = ${campaignId}`;
-    };
-    const personal = async (orgId: string) => {
-      const [{ id }] = await sql`insert into campaigns (organization_id, channel, name, status, type) values (${orgId}, 'linkedin', 'Private', 'active', 'personal') returning id`;
-      return id as string;
     };
     const lead = (orgId: string) => person(orgId, { email: `ar${++n}@x.test` });
     const dayOf = (at: Date) => at.toISOString().slice(0, 10);
@@ -576,7 +554,6 @@ describeDb("lead list filters, sort and companies", () => {
       const pipeline = await replyTypeSetOf(o.id);
       const regular = await campaign(o.id, "email", "Regular");
       const other = await campaign(o.id, "email", "Other");
-      const privateCampaign = await personal(o.id);
       // A campaign step later than every message: the step is the last contact.
       const stepLater = await lead(o.id);
       await message(o.id, pipeline, stepLater, "outbound", "2026-09-01T10:00:00Z");
@@ -584,19 +561,9 @@ describeDb("lead list filters, sort and companies", () => {
       // A removed enrollment's step went out, so it stays contact.
       const removed = await lead(o.id);
       await enrollSent(o.id, other, removed, "removed", "2026-08-15T00:10:00Z");
-      // A personal campaign's step is private, so the public message decides.
-      const personalStep = await lead(o.id);
-      await message(o.id, pipeline, personalStep, "outbound", "2026-06-01T08:00:00Z");
-      await enrollSent(o.id, privateCampaign, personalStep, "active", "2026-10-01T10:00:00Z");
-      // An outbound message in a private thread never counts.
-      const privateThread = await lead(o.id);
-      await message(o.id, pipeline, privateThread, "outbound", "2026-05-05T12:00:00Z");
-      await message(o.id, pipeline, privateThread, "outbound", "2026-10-05T12:00:00Z", privateCampaign);
       const expected = new Map([
         [stepLater, "2026-09-20"],
         [removed, "2026-08-15"],
-        [personalStep, "2026-06-01"],
-        [privateThread, "2026-05-05"],
       ]);
 
       const statuses = await readLeadStatuses(o.id, [...expected.keys()]);
@@ -609,23 +576,11 @@ describeDb("lead list filters, sort and companies", () => {
       }
     });
 
-    it("leaves a lead contacted only in private out of both the status and the range", async () => {
-      const o = await org();
-      const pipeline = await replyTypeSetOf(o.id);
-      const privateCampaign = await personal(o.id);
-      const hidden = await lead(o.id);
-      await enrollSent(o.id, privateCampaign, hidden, "active", "2026-10-01T10:00:00Z");
-      await message(o.id, pipeline, hidden, "outbound", "2026-10-02T10:00:00Z", privateCampaign);
-      expect((await readLeadStatuses(o.id, [hidden])).get(hidden)?.lastContactAt ?? null).toBeNull();
-      expect(await ids(o.id, { lastContactFrom: "2000-01-01" })).toEqual([]);
-    });
-
     it("gives count, matching ids, export, delete by filter and previous/next the list's set for every activity filter", async () => {
       const o = await org();
       const pipeline = await replyTypeSetOf(o.id);
       const c1 = await campaign(o.id, "email", "One");
       const c2 = await campaign(o.id, "email", "Two");
-      const privateCampaign = await personal(o.id);
       const active = await lead(o.id);
       await enrollSent(o.id, c1, active, "active", null);
       await message(o.id, pipeline, active, "outbound", "2026-08-10T10:00:00Z");
@@ -634,9 +589,6 @@ describeDb("lead list filters, sort and companies", () => {
       await enrollSent(o.id, c1, replied, "replied", "2026-09-05T10:00:00Z");
       const removed = await lead(o.id);
       await enrollSent(o.id, c2, removed, "removed", "2026-07-01T10:00:00Z");
-      const privateOnly = await lead(o.id);
-      await enrollSent(o.id, privateCampaign, privateOnly, "active", "2026-08-12T10:00:00Z");
-      await message(o.id, pipeline, privateOnly, "inbound", "2026-08-13T10:00:00Z", privateCampaign);
       const wroteIn = await lead(o.id);
       await message(o.id, pipeline, wroteIn, "inbound", "2026-08-20T10:00:00Z");
       const pending = await lead(o.id);

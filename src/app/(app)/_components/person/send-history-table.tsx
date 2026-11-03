@@ -6,21 +6,15 @@ import type { LeadDetail } from "@/contexts/people/application/lead-ports";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import { RecordSection } from "../record/record-header";
 
-/** The empty line when the person got sends the viewer may not see (`LeadDetail.hiddenSends`, plan 5.9). */
-export const HIDDEN_SENDS_TEXT = "No messages you can see. Another member's personal campaign wrote to this lead.";
-
 /**
- * A person's send attempts, newest first. Without sends it prints `emptyText` as one muted line, or `HIDDEN_SENDS_TEXT` when
- * `hiddenSends` says another member's personal campaign wrote to the person.
+ * A person's send attempts, newest first. Without sends it prints `emptyText` as one muted line.
  */
 export function SendHistoryTable({
   sends,
-  hiddenSends = false,
   emptyText = "Nothing sent to this lead yet.",
   level = "h2",
 }: {
   sends: LeadDetail["sends"];
-  hiddenSends?: boolean;
   emptyText?: string;
   /** h3 inside another section, such as the contact page's Outreach history. */
   level?: "h2" | "h3";
@@ -28,7 +22,7 @@ export function SendHistoryTable({
   if (sends.length === 0) {
     return (
       <RecordSection title="Send history" level={level} testId="sends-empty">
-        <p className="text-sm text-muted-foreground">{hiddenSends ? HIDDEN_SENDS_TEXT : emptyText}</p>
+        <p className="text-sm text-muted-foreground">{emptyText}</p>
       </RecordSection>
     );
   }

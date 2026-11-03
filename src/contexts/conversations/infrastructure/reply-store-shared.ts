@@ -6,7 +6,6 @@ import { DRAFT_FROM, type DraftStatus } from "../domain/draft-status";
 import { PICK_FROM, type PickStatus } from "../domain/reply-type-pick";
 import { organizationMailboxAddresses } from "./drizzle-conversation-store";
 import { toAttempt } from "./reply-attempt-ledger";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 
 /** The drafts row may move to `to` from where it is now (see `DRAFT_FROM`). */
 export const draftCanBecome = (to: DraftStatus) => inArray(drafts.status, [...DRAFT_FROM[to]]);
@@ -135,7 +134,7 @@ export async function ccContextFor(organizationId: string, conversationId: strin
     .from(conversations)
     .innerJoin(records, eq(records.id, conversations.recordId))
     .innerJoin(people, eq(people.id, records.personId))
-    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId), publicConversation));
+    .where(and(eq(conversations.id, conversationId), eq(conversations.organizationId, organizationId)));
   if (!row) return null;
   const known = await db.select({ email: leadCcs.email }).from(leadCcs).where(and(eq(leadCcs.organizationId, organizationId), eq(leadCcs.personId, row.personId)));
   const ours = new Set(await organizationMailboxAddresses(organizationId));

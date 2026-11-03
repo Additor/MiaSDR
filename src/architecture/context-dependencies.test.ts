@@ -175,7 +175,6 @@ const PUBLISHED_INFRASTRUCTURE = new Set([
   "identity/infrastructure/auth",
   // A revoke in tenancy also ends the app's consent and refresh tokens, which identity owns.
   "identity/infrastructure/mcp-oauth-grants",
-  "identity/infrastructure/signup-facts",
   // The Better Auth rows tenancy writes: the first admin, and a removed member's sessions.
   "identity/infrastructure/user-accounts",
   // Credential encryption and live checks, a generic service.

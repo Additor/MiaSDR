@@ -49,8 +49,8 @@ export interface PersonReplyHandling {
   /** What `interruptPersonRuns` would change now, per person. Writes nothing. Every requested id has an entry. */
   previewPersonRunStop(organizationId: string, personIds: string[]): Promise<Map<string, PersonRunStop>>;
   appendPersonEvent(tx: DbHandle, input: PersonEventInput): Promise<void>;
-  /** The public conversation of the person's active channel, else the most recently updated one. Null when the person has none or only personal-campaign threads. */
+  /** The conversation of the person's active channel, else the most recently updated one. Null when the person has none. */
   activeConversationOfPerson(organizationId: string, personId: string): Promise<{ conversationId: string; channel: PersonChannel } | null>;
-  /** Newest first. Events without a record, plus events of records that have a public conversation or none. */
+  /** Newest first. */
   listPersonEvents(organizationId: string, personId: string, limit: number): Promise<PersonEventView[]>;
 }

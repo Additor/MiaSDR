@@ -4,7 +4,6 @@ import type { LinkedInReplySendDeps } from "../../application/linkedin-reply";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { createTestOrg, describeDb, dropOrgs, testSql, uniqueKey, useTestEnv, waitForLockWaiters, type TestOrg } from "@/test-support/db";
 import { useReplyKit, type ReplyFixture, type ReplyModules } from "./replies-test-kit";
-import { createCampaign } from "../../after-reply/infrastructure/after-reply-test-kit";
 
 /**
  * Characterization of every reason a reply send is refused before the provider call, per channel: the status the route
@@ -421,30 +420,6 @@ describeDb("LinkedIn reply send refusals", () => {
       await handling.reopenRecord(handlingDeps, f.actor, f.recordId);
       expect(await refusal(send(f, draft))).toEqual({ status: 409, error: "A person marked reply handling done after this draft was written. Review the thread and regenerate the draft." });
       expect(await count("send_attempts", f.org)).toBe(0);
-    });
-
-    it("closes while a LinkedIn message turns another chat of the person private, without a deadlock", async () => {
-      // The close locks the record, then shares each public conversation in turn. The ingest that makes chat B private
-      // updates B and then detaches the record. Both take the record before a conversation (docs/database.md, "Lock modes").
-      const f = await fixture();
-      const chatB = await composition.ingestInboundLinkedInMessage({ ...f.input, providerThreadId: `chat-b-${f.tag}`, providerMessageId: `msg-b-${f.tag}` });
-      expect(await one("select record_id from conversations where id = $1", [chatB.conversationId])).toMatchObject({ record_id: f.recordId });
-      const campaignId = await createCampaign(sql, { organizationId: f.org, channel: "linkedin", type: "personal" });
-      let close!: Promise<unknown>;
-      let ingest!: Promise<unknown>;
-      await sql.begin(async (tx) => {
-        // Chat A held: the close stops on it, holding the record, with chat B still ahead of it.
-        await tx`select id from conversations where id = ${f.conversationId} for update`;
-        close = handling.closeRecord(handlingDeps, f.actor, f.recordId, { reason: "Not a fit" });
-        close.catch(() => undefined);
-        await waitForLockWaiters(sql, 1, 10_000, "%conversations%for share%");
-        ingest = composition.ingestInboundLinkedInMessage({ ...f.input, providerThreadId: `chat-b-${f.tag}`, providerMessageId: `msg-b2-${f.tag}`, privateCampaignId: campaignId });
-        ingest.catch(() => undefined);
-        await waitForLockWaiters(sql, 2, 10_000);
-      });
-      await expect(close).resolves.toBeUndefined();
-      await expect(ingest).resolves.toMatchObject({ status: "created" });
-      expect(await one("select private_campaign_id from conversations where id = $1", [chatB.conversationId])).toMatchObject({ private_campaign_id: campaignId });
     });
 
     it("lands a close after a typed reply that already read reply handling open, and refuses the next one", async () => {

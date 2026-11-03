@@ -1,4 +1,4 @@
-import { holdReasonOf, type HoldReason, type SystemRole, type TypeRules } from "@/contexts/conversations/domain/reply-type";
+import { AI_PICK_CONFIDENCE_FLOOR, holdReasonOf, type HoldReason, type SystemRole, type TypeRules } from "@/contexts/conversations/domain/reply-type";
 
 /**
  * Pure rules for the thread's type line: which AI pick it speaks for, whether it waits for a person, and the short texts
@@ -11,15 +11,10 @@ export interface PickFacts {
   provider: string | null;
   latest: boolean;
   current: boolean;
-  acknowledged: boolean;
   proposed: { groupKey: string | null; name: string | null };
   applied: { groupKey: string | null; name: string | null };
   appliedReplyTypeId: string | null;
-  /** The rules the pick was decided with: only Check after asks for Looks right. */
-  rules: Pick<TypeRules, "checkMode"> | null;
   proposedSystemRole: SystemRole | null;
-  /** The proposed type is still active. An admin may archive it while the pick waits. */
-  proposedActive: boolean;
   holdReason: HoldReason | null;
   stopRequested: boolean;
   confidence: number | null;
@@ -38,18 +33,15 @@ export function latestAiPick<T extends Pick<PickFacts, "latest" | "status" | "pr
   return latestPick(entries.filter((e) => e.provider !== "human"));
 }
 
-export type DecisionKind = "stop" | "held" | "archived" | "looks_right";
+export type DecisionKind = "stop" | "held";
 
 /** A stop request can wait with no pick: the reply's own words asked, before any pick read it. */
-export type TypeDecision<T extends PickFacts = PickFacts> = { kind: "stop"; pick: T | null } | { kind: Exclude<DecisionKind, "stop">; pick: T } | null;
+export type TypeDecision<T extends PickFacts = PickFacts> = { kind: "stop"; pick: T | null } | { kind: "held"; pick: T } | null;
 
 /**
  * What the type line asks of a person, if anything. A stop request comes first: Accept would only change the type, so the
- * line offers Review stop request instead. Then a held pick (Accept), or a held pick whose type an admin archived since
- * (`archived`: Accept would refuse it, so the line leads with Change type), then an applied pick that waits for Looks right. A
- * person already marked do not contact, or an email address on the suppression list, has nothing left to stop. An applied
- * pick asks only when its type is checked after it applies, and only while the record still has that type: a person who
- * changed the type since has answered it.
+ * line offers Review stop request instead. Then a held pick (Accept). A person already marked do not contact, or an email
+ * address on the suppression list, has nothing left to stop. An applied pick asks nothing.
  */
 export function typeDecision<T extends PickFacts>(
   pick: T | undefined,
@@ -59,17 +51,14 @@ export function typeDecision<T extends PickFacts>(
   const stopped = reach.doNotContact || (reach.channel === "email" && reach.suppressed);
   if (record.stopReviewOpen && !stopped) return { kind: "stop", pick: pick?.latest ? pick : null };
   if (!pick || !pick.latest) return null;
-  const applied = pick.status === "auto_applied" && !pick.acknowledged && pick.applied.groupKey === record.groupKey && pick.appliedReplyTypeId === record.replyTypeId;
-  const unchecked = applied && (pick.rules === null || pick.rules.checkMode === "after");
-  if (pick.status === "proposed" && pick.current && pick.proposed.name && pick.proposedSystemRole !== "stop_request") return { kind: pick.proposedActive ? "held" : "archived", pick };
-  if (unchecked) return { kind: "looks_right", pick };
+  if (pick.status === "proposed" && pick.current && pick.proposed.name && pick.proposedSystemRole !== "stop_request") return { kind: "held", pick };
   return null;
 }
 
 const HOLD_TEXT: Record<HoldReason, string> = {
   protected_customer: "The person is locked as Existing customer. Accept takes them out of it.",
-  requires_review: "This type waits for a person to check it.",
-  low_confidence: "The AI's confidence is under the confidence floor.",
+  stop_request: "A stop request waits for a person.",
+  low_confidence: `The AI's confidence is under the ${Math.round(AI_PICK_CONFIDENCE_FLOOR * 100)}% floor.`,
 };
 
 /** Why a held pick waits, in one sentence. An unknown reason, or none, gets the fallback. */
@@ -104,9 +93,6 @@ export function undoMessage(result: { draftsRetired: number; runEnded: boolean; 
   return `AI pick undone. It ${list}.`;
 }
 
-/** One toast for Looks right, on the thread, in AI picks and in Actions. */
-export const LOOKS_RIGHT_DONE = "Marked as looked at.";
-
 /** What the reply panel says when no draft is open, read from the record behind the thread. */
 export function draftState(
   detail: {
@@ -138,17 +124,9 @@ export function decisionView(current: string | null, settled: { key: string; tex
   return { showDecision: true, done: null };
 }
 
-/**
- * The badge of an AI pick in the history, only while it waits for a person: Held for a check on a held pick, Not checked on
- * an applied pick that is still current, nobody looked at and whose stored rules check after it applies. A pick stored
- * without rules counts as checked after, as on the type line.
- */
-export function pickBadge(e: { status: string; acknowledged: boolean; current: boolean; rules: Pick<TypeRules, "checkMode"> | null }): "Failed" | "Held for a check" | "Not checked" | null {
+/** The badge of an AI pick in the history, only while it waits for a person or failed. */
+export function pickBadge(e: { status: string }): "Failed" | "Held for a check" | null {
   if (e.status === "failed") return "Failed";
   if (e.status === "proposed") return "Held for a check";
-  if (e.status === "auto_applied" && !e.acknowledged && e.current && (e.rules === null || e.rules.checkMode === "after")) return "Not checked";
   return null;
 }
-
-/** The history offers Looks right only on a pick it marks Not checked, so the button and the badge agree. */
-export const offersLooksRight = (e: Parameters<typeof pickBadge>[0] & { canAcknowledge: boolean }): boolean => e.canAcknowledge && pickBadge(e) === "Not checked";

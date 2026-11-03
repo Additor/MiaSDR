@@ -56,7 +56,6 @@ export function MakeContactDialog({ personId, name, open, onOpenChange: setOpen 
       return;
     }
     if (result.status === 404) throw new Error(`${name} no longer exists.`);
-    // `personal_campaign` carries PERSONAL_CAMPAIGN_MESSAGE; other refusals carry their own sentence.
     throw new Error(result.error);
   }
 

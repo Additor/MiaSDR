@@ -16,13 +16,12 @@ import {
 import { users } from "@/contexts/identity/infrastructure/schema";
 import { mcpTokens, members } from "@/contexts/tenancy/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
-import { campaigns } from "@/contexts/outreach/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { DRAFT_STATUSES, IN_FLIGHT_DRAFT_STATUSES, type DraftStatus } from "../domain/draft-status";
 import type { AttemptStatus } from "../domain/send-attempt-status";
 import { PICK_STATUSES, type PickStatus } from "../domain/reply-type-pick";
 import { WORKFLOW_STATES, type WorkflowState } from "../domain/workflow-state";
-import { CHECK_MODES, FOLLOW_UPS_RULES, SYSTEM_ROLES, type CheckMode, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
+import { FOLLOW_UPS_RULES, SYSTEM_ROLES, type FollowUpsRule, type SystemRole, type TypeRules } from "../domain/reply-type";
 import { inList } from "@/platform/db/sql-values";
 import { AI_JOB_STATUSES, type AiJobStatus } from "../ai/domain/ai-job-status";
 
@@ -70,10 +69,8 @@ export const replyTypes = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     classificationGuidance: text("classification_guidance"),
-    active: boolean("active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
-    /** Type rules (`domain/reply-type.ts`): who checks the AI's pick, whether it drafts a reply, whether follow-ups go on. */
-    checkMode: text("check_mode").$type<CheckMode>().notNull().default("after"),
+    /** Type rules (`domain/reply-type.ts`): whether it drafts a reply, whether follow-ups go on. */
     replyDraft: boolean("reply_draft").notNull().default(true),
     followUps: text("follow_ups").$type<FollowUpsRule>().notNull().default("continue"),
     /** A fixed path this type drives. At most one type per role in a set, and it never changes. */
@@ -90,12 +87,12 @@ export const replyTypes = pgTable(
     check("reply_types_group_ck", inList(t.groupKey, REPLY_TYPE_GROUP_KEYS)),
     check("reply_types_key_ck", sql`${t.key} ~ '^[a-z][a-z0-9_]*$'`),
     check("reply_types_sort_ck", sql`${t.sortOrder} >= 0`),
-    check("reply_types_rules_ck", sql`${inList(t.checkMode, CHECK_MODES)} and ${inList(t.followUps, FOLLOW_UPS_RULES)}`),
+    check("reply_types_rules_ck", inList(t.followUps, FOLLOW_UPS_RULES)),
     check("reply_types_system_role_ck", sql`${t.systemRole} is null or ${inList(t.systemRole, SYSTEM_ROLES)}`),
-    // The stop request type keeps STOP_REQUEST_RULES and stays active; the customer type stays in the customer group.
+    // The stop request type writes no draft and stops follow-ups; the customer type stays in the customer group.
     check(
       "reply_types_stop_request_ck",
-      sql`${t.systemRole} is distinct from 'stop_request' or (${t.checkMode} = 'before' and not ${t.replyDraft} and ${t.followUps} = 'stop' and ${t.active})`,
+      sql`${t.systemRole} is distinct from 'stop_request' or (not ${t.replyDraft} and ${t.followUps} = 'stop')`,
     ),
     check("reply_types_customer_ck", sql`${t.systemRole} is distinct from 'customer' or ${t.groupKey} = 'customer'`),
     uniqueIndex("reply_types_set_system_role_uq").on(t.replyTypeSetId, t.systemRole).where(sql`${t.systemRole} is not null`),
@@ -113,15 +110,12 @@ export const replyHandlingSettings = pgTable(
   {
     replyTypeSetId: uuid("reply_type_set_id").primaryKey(),
     organizationId: orgId(),
-    /** The confidence floor: an AI pick below it waits for a person, whatever its type's Check rule says. */
-    autoApplyConfidence: numeric("auto_apply_confidence", { precision: 4, scale: 3 }).notNull().default("0.850"),
     draftInstructions: jsonb("draft_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     classificationInstructions: jsonb("classification_instructions").$type<AiInstructionBlock[]>().default([]).notNull(),
     updatedAt: updatedAt(),
   },
   (t) => [
     foreignKey({ columns: [t.replyTypeSetId, t.organizationId], foreignColumns: [replyTypeSets.id, replyTypeSets.organizationId] }).onDelete("cascade"),
-    check("reply_handling_settings_confidence_ck", sql`${t.autoApplyConfidence} between 0 and 1`),
     // The API caps instructions at 20,000 characters of text; 100,000 leaves room for JSON escapes and titles.
     check(
       "reply_handling_settings_instructions_ck",
@@ -205,15 +199,11 @@ export const conversations = pgTable(
     providerThreadId: text("provider_thread_id"),
     providerContactId: text("provider_contact_id"),
     status: text("status").notNull().default("active"),
-    /** Set when the thread belongs to a personal campaign. Such a conversation is hidden from every inbox read (conversation-visibility.ts). */
-    privateCampaignId: uuid("private_campaign_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     foreignKey({ columns: [t.recordId, t.organizationId], foreignColumns: [records.id, records.organizationId] }).onDelete("restrict"),
-    foreignKey({ name: "conversations_private_campaign_fk", columns: [t.privateCampaignId, t.organizationId], foreignColumns: [campaigns.id, campaigns.organizationId] }),
-    index("conversations_private_idx").on(t.organizationId, t.privateCampaignId).where(sql`${t.privateCampaignId} is not null`),
     unique("conversations_id_org_uq").on(t.id, t.organizationId),
     unique("conversations_id_channel_account_uq").on(t.id, t.channel, t.accountRef),
     uniqueIndex("conversations_org_thread_uq")
@@ -390,7 +380,6 @@ export const replyTypePicks = pgTable(
     /** The type rules the pick was decided with. Null for a pick that names no type (a stale or failed one). */
     rules: jsonb("rules").$type<TypeRules>(),
     error: text("error"),
-    acknowledgedAt: tstz("acknowledged_at"),
     createdAt: createdAt(),
   },
   (t) => [

@@ -1,5 +1,5 @@
 import type { AgentVia } from "@/shared/errors";
-import type { AiInstructionBlock, ReplyTypeGroup, ReplyHandlingSettingsPatch, ReplyTypeInput, ReplyTypePatch } from "../domain/reply-handling";
+import type { AiInstructionBlock, ReplyTypeGroup } from "../domain/reply-handling";
 import type { HoldReason, ReplyTypeFacts, SystemRole, TypeRules } from "../domain/reply-type";
 import type { NoteScope } from "../actions/application/tasks-ports";
 
@@ -17,19 +17,13 @@ export interface ReplyTypeRow {
   name: string;
   description: string | null;
   classificationGuidance: string | null;
-  active: boolean;
-  /** The type's rules, as they apply to picks from now on. */
+  /** What the type does when it applies. */
   rules: TypeRules;
   systemRole: SystemRole | null;
   sortOrder: number;
-  recordCount: number;
-  /** Picks that name this reply type, so deleting it would break history. */
-  historyCount: number;
 }
 
 export interface ReplyHandlingSettingsRow {
-  /** The confidence floor: an AI pick below it waits for a person. */
-  autoApplyConfidence: number;
   draftInstructions: AiInstructionBlock[];
   classificationInstructions: AiInstructionBlock[];
 }
@@ -50,7 +44,7 @@ export interface ReplyTypeOption {
   rules: TypeRules;
 }
 
-/** What `typeChangeOutcome` needs for one record: its current type, the active types it can move to, and the facts. */
+/** What `typeChangeOutcome` needs for one record: its current type, the types it can move to, and the facts. */
 export interface TypeChangeFacts {
   current: ReplyTypeOption | null;
   targets: ReplyTypeOption[];
@@ -70,13 +64,10 @@ export interface ReplyTypePickEntry {
   reasoning: string | null;
   error: string | null;
   provider: string | null;
-  acknowledged: boolean;
   /** The type rules the pick was decided with. Null for a pick without a type. */
   rules: TypeRules | null;
   /** System role of the proposed type, so the thread can tell a held stop request apart. */
   proposedSystemRole: SystemRole | null;
-  /** The proposed type is still active. False once an admin archived it, or when the pick proposed no type. Accept refuses an archived type. */
-  proposedActive: boolean;
   /** Why the AI held the pick for a person, from the pick's response. Null when it applied. */
   holdReason: HoldReason | null;
   /** The reply asked to stop, as the AI read it. */
@@ -84,10 +75,9 @@ export interface ReplyTypePickEntry {
   createdAt: Date;
   /** Belongs to the record's latest inbound message. */
   latest: boolean;
-  /** Decided on the record's current context version and not stale, so Accept and Looks right still apply to it. */
+  /** Decided on the record's current context version and not stale, so Accept still applies to it. */
   current: boolean;
   canUndo: boolean;
-  canAcknowledge: boolean;
 }
 
 export interface DraftEntry {
@@ -142,7 +132,7 @@ export interface RecordDetail {
     replyTypeName: string | null;
     replyTypeSource: string | null;
     replyTypeLocked: boolean;
-    /** Rules of the record's type as they stand now, archived types included. Null without a type. */
+    /** Rules of the record's type. Null without a type. */
     replyTypeRules: TypeRules | null;
     replyTypeSystemRole: SystemRole | null;
     /** The initial draft job of the latest pick of the latest reply is queued or running, and that pick is applied at the record's version. */
@@ -255,12 +245,11 @@ export interface ReplyHandlingStore extends IdentityExceptionIntake {
   /** Everything but the conversation timelines, which the use case reads through the inbox store. */
   recordDetail(organizationId: string, recordId: string): Promise<RecordDetail | null>;
   draftIdForAttempt(organizationId: string, attemptId: string): Promise<string | null>;
-  /** Null when the record is not in the organization or has only private conversations. */
+  /** Null when the record is not in the organization. */
   typeChangeFacts(organizationId: string, recordId: string): Promise<TypeChangeFacts | null>;
 
   changeReplyType(input: ReplyTypeChangeInput): Promise<ReplyTypeChangeResult>;
   undoReplyTypePick(input: { organizationId: string; actorUserId: string; via?: AgentVia; replyTypePickId: string; now: Date }): Promise<UndoReplyTypePickResult>;
-  acknowledgeReplyTypePick(input: { organizationId: string; actorUserId: string; via?: AgentVia; replyTypePickId: string; now: Date }): Promise<void>;
   /** Sets or clears the person's do-not-contact flag and stops everything that would contact them. */
   setDoNotContact(input: { organizationId: string; actorUserId: string; personId: string; enabled: boolean; reason: string; now: Date }): Promise<DncResult>;
   closeRecord(input: { organizationId: string; actorUserId: string; via?: AgentVia; recordId: string; reason: string; now: Date }): Promise<void>;
@@ -270,12 +259,9 @@ export interface ReplyHandlingStore extends IdentityExceptionIntake {
   deleteNote(input: { organizationId: string; scope: NoteScope; noteId: string }): Promise<boolean>;
 
   replyTypeCatalog(organizationId: string): Promise<ReplyTypeCatalog>;
-  /** The confidence floor and the AI instructions, without the types and their counts. */
+  /** The AI instructions, without the types. */
   replySettings(organizationId: string): Promise<ReplyHandlingSettingsRow>;
-  createReplyType(organizationId: string, input: ReplyTypeInput): Promise<{ id: string }>;
-  updateReplyType(organizationId: string, id: string, patch: ReplyTypePatch): Promise<void>;
-  deleteReplyType(organizationId: string, id: string): Promise<void>;
-  updateSettings(organizationId: string, patch: ReplyHandlingSettingsPatch & { draftInstructions?: AiInstructionBlock[]; classificationInstructions?: AiInstructionBlock[] }): Promise<void>;
+  updateSettings(organizationId: string, patch: { draftInstructions?: AiInstructionBlock[]; classificationInstructions?: AiInstructionBlock[] }): Promise<void>;
 
   listIdentityExceptions(organizationId: string, status: "open" | "resolved" | "ignored"): Promise<IdentityExceptionRow[]>;
   getIdentityException(organizationId: string, id: string): Promise<IdentityExceptionRow | null>;

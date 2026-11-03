@@ -11,7 +11,7 @@ describe("deleteQualification", () => {
     expect(q.detail).toMatch(/No message was sent/);
   });
 
-  it.each(["has_sends", "personal_campaign_sends", "in_active_campaign", "linked_records"] as const)("says a lead blocked by %s cannot be deleted and gives the server's own reason", (reason) => {
+  it.each(["has_sends", "in_active_campaign", "linked_records"] as const)("says a lead blocked by %s cannot be deleted and gives the server's own reason", (reason) => {
     const q = deleteQualification(reason);
     expect(q.canDelete).toBe(false);
     expect(q.summary).toBe("This lead cannot be deleted.");
@@ -47,8 +47,8 @@ describe("checkLeadDelete", () => {
       },
       outreach: {
         lockEnrollments: async () => calls.push("lockEnrollments"),
-        blockers: async (_tx: unknown, actor: { organizationId: string }, ids: string[]) => {
-          calls.push(`blockers ${actor.organizationId} ${ids.join()}`);
+        blockers: async (_tx: unknown, org: string, ids: string[]) => {
+          calls.push(`blockers ${org} ${ids.join()}`);
           return new Map([["lead-1", ["in_active_campaign"]]]);
         },
       },

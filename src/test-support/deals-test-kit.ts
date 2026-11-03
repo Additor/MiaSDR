@@ -103,9 +103,8 @@ export async function bootDealsKit(url: string) {
         const [{ id }] = await sql`insert into companies (organization_id, domain, name) values (${org}, ${domain}, ${name}) returning id`;
         return id as string;
       },
-      /** A personal campaign is a LinkedIn campaign (`campaigns_personal_linkedin_ck`). */
-      campaign: (over: { type?: "regular" | "personal"; createdBy?: string; name?: string } = {}) =>
-        createCampaign(sql, { organizationId: org, type: over.type, name: over.name, channel: over.type === "personal" ? "linkedin" : "email" }).then(async (id) => {
+      campaign: (over: { createdBy?: string; name?: string } = {}) =>
+        createCampaign(sql, { organizationId: org, name: over.name, channel: "email" }).then(async (id) => {
           if (over.createdBy) await sql`update campaigns set created_by = ${over.createdBy} where id = ${id}`;
           return id;
         }),
@@ -115,7 +114,7 @@ export async function bootDealsKit(url: string) {
           values (${org}, ${campaignId}, ${personId}, ${channel}, ${status}, ${status === "active" ? new Date() : null}) returning id`;
         return id as string;
       },
-      /** An unknown sender writes in: a lead with a reply record and a public conversation. */
+      /** An unknown sender writes in: a lead with a reply record and a conversation. */
       async ingest(partial: Partial<InboundEmailInput> = {}) {
         const input = mail(partial);
         const result = await conversations.ingestInbound(input);
@@ -123,7 +122,7 @@ export async function bootDealsKit(url: string) {
         const [r] = await sql`select id from records where person_id = ${p.id}`;
         return { input, personId: p.id as string, recordId: r.id as string, conversationId: result.conversationId };
       },
-      /** The person replied to a regular campaign that drafts follow-ups; after `cycle` the person has an active run and its reply draft. */
+      /** The person replied to a campaign that drafts follow-ups; after `cycle` the person has an active run and its reply draft. */
       async emailedBy(personId: string) {
         const campaignId = await createCampaign(sql, { organizationId: org });
         const sent = await recordSentEmail(sql, { organizationId: org, campaignId, personId, sentAt: new Date(Date.now() - 3_600_000) });

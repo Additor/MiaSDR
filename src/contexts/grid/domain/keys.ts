@@ -7,24 +7,16 @@ export const MAX_NAME_LENGTH = 200;
 
 /**
  * What a column key may contain: letters, digits and combining marks of any script, plus underscore.
- * This is the one definition. The formula parser, the config dependency scan and the template renderer
- * all read keys through KEY_CHAR, TOKEN, SINGLE_TOKEN or scanKey, so they cannot drift apart.
+ * This is the one definition. The prompt and input templates read keys through TOKEN and
+ * SINGLE_TOKEN, so they cannot drift apart.
  */
-export const KEY_CHAR = "[\\p{L}\\p{N}\\p{M}_]";
+const KEY_CHAR = "[\\p{L}\\p{N}\\p{M}_]";
 
 /** `{{key}}` anywhere in a text. Global: use with matchAll or replace, which do not leak lastIndex. */
 export const TOKEN = new RegExp(`\\{\\{\\s*(${KEY_CHAR}+)\\s*\\}\\}`, "gu");
 
 /** A text that is exactly one `{{key}}`. */
 export const SINGLE_TOKEN = new RegExp(`^\\{\\{\\s*(${KEY_CHAR}+)\\s*\\}\\}$`, "u");
-
-const KEY_RUN = new RegExp(`${KEY_CHAR}+`, "uy");
-
-/** The run of key characters starting at `start` (astral characters included), or "" when there is none. */
-export function scanKey(source: string, start: number): string {
-  KEY_RUN.lastIndex = start;
-  return KEY_RUN.exec(source)?.[0] ?? "";
-}
 
 /** Column keys are stored NFC. A token typed or pasted as NFD (macOS file names, some IMEs) must match them. */
 export const normalizeKey = (key: string): string => key.normalize("NFC");

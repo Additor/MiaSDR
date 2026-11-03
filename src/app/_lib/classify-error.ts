@@ -18,20 +18,14 @@ function isInvalidUuid(error: unknown): boolean {
   return code?.code === "22P02" || code?.cause?.code === "22P02";
 }
 
-/** The `code` a refusal class names for itself, such as `PersonalCampaignError`'s `personal_campaign`. */
-function ownCode(error: Error): { code?: string } {
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" ? { code } : {};
-}
-
 /**
- * 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413 `payload_too_large`, 422 `validation`, 400 `bad_request`. A 403
- * or 409 that names its own code keeps it. Null for anything else: the caller treats it as a server error and must not
+ * 403 `forbidden`, 404 `not_found`, 409 `conflict`, 413 `payload_too_large`, 422 `validation`, 400 `bad_request`. A 409
+ * that names its own code keeps it. Null for anything else: the caller treats it as a server error and must not
  * show its message, which can name a table or a query.
  */
 export function classifyError(error: unknown): ClassifiedError | null {
   if (error instanceof NotFoundError) return { status: 404, message: error.message, details: {} };
-  if (error instanceof ForbiddenError) return { status: 403, message: error.message, details: ownCode(error) };
+  if (error instanceof ForbiddenError) return { status: 403, message: error.message, details: {} };
   if (error instanceof ConflictError) return { status: 409, message: error.message, details: error.details ?? {} };
   if (error instanceof PayloadTooLargeError) return { status: 413, message: error.message, details: {} };
   if (error instanceof ValidationError) return { status: 422, message: error.message, details: { issues: error.issues } };

@@ -21,7 +21,7 @@ export const LEAD_STATE_LABELS: Record<LeadState, string> = {
   stopped: "Stopped",
 };
 
-/** One enrollment of the lead in a regular campaign, as the read model loads it. */
+/** One enrollment of the lead, as the read model loads it. */
 export interface LeadEnrollmentFact {
   id: string;
   /** The enrollment status (`enrollments_status_ck`). */
@@ -51,7 +51,7 @@ export interface LeadStatus {
   state: LeadState;
   /** Null for a new lead, and for a reply that came in outside any campaign. */
   enrollment: LeadStatusEnrollment | null;
-  /** Other regular campaigns the lead is in, removed ones left out. */
+  /** Other campaigns the lead is in, removed ones left out. */
   otherCampaigns: number;
   /** The latest outbound message or campaign step, or null when nothing went out. */
   lastContactAt: Date | null;
@@ -86,8 +86,8 @@ export function latestContact(messageAt: Date | null, facts: readonly Pick<LeadE
 export const heldByCampaign = (status: string, campaignStatus: string): boolean => (status === "active" || status === "pending") && campaignStatus !== "active";
 
 /**
- * The lead's status from its enrollments in regular campaigns, its latest outbound message and whether it wrote in a
- * public conversation. The first rule that matches wins:
+ * The lead's status from its enrollments, its latest outbound message and whether it wrote in a
+ * conversation. The first rule that matches wins:
  *
  * 1. replied: an inbound message, or an enrollment with status `replied` (a reply stops outreach to the lead);
  * 2. in_sequence: an `active` enrollment in an active campaign;

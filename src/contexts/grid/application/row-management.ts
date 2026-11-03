@@ -5,12 +5,10 @@ import { effectiveColumnType, isStaticColumnType } from "../domain/column-types"
 import { MAX_SEARCH_CHARS, type GridQuery, type TableView } from "../domain/view-query";
 import { notifyCellsChanged, type CellChange } from "./cell-events";
 import { GRID_LIMITS } from "./limits";
-import { refreshAfterSourceWrite } from "./formula-lookup-refresh";
-import { recalculateFormulasQuietly } from "./formula-recalc";
 import { resolveView } from "./structure-management";
 import type { CellEdit, ColumnRecord, GridDeps, RowRecord, SkippedCell } from "./ports";
 
-type Deps = Pick<GridDeps, "structure" | "columns" | "rows" | "formulas">;
+type Deps = Pick<GridDeps, "structure" | "columns" | "rows">;
 
 async function loadTable(deps: Deps, actor: Actor, tableId: string) {
   const [table, columns] = await Promise.all([deps.structure.getTable(actor.organizationId, tableId), deps.columns.list(actor.organizationId, tableId)]);
@@ -80,10 +78,8 @@ export async function deleteRows(deps: Deps, actor: Actor, tableId: string, rowI
   const ids = [...new Set(rowIds)];
   if (ids.length === 0) throw new ValidationError("rowIds must be a non-empty array");
   if (ids.length > GRID_LIMITS.deleteRows) throw new ValidationError(`Delete up to ${GRID_LIMITS.deleteRows} rows at a time`);
-  const { table } = await loadTable(deps, actor, tableId);
-  const deleted = await deps.rows.delete(actor.organizationId, tableId, ids);
-  if (deleted > 0) await refreshAfterSourceWrite(deps, actor.organizationId, table);
-  return { deleted };
+  await loadTable(deps, actor, tableId);
+  return { deleted: await deps.rows.delete(actor.organizationId, tableId, ids) };
 }
 
 /** Row ids matching the member's view and an optional search. This is what "select all matching rows" reads. */
@@ -136,7 +132,7 @@ export async function editCells(deps: Deps, actor: Actor, tableId: string, updat
   if (!Array.isArray(updates) || updates.length === 0 || updates.length > GRID_LIMITS.cellUpdates) {
     throw new ValidationError(`Send between 1 and ${GRID_LIMITS.cellUpdates.toLocaleString("en-US")} cell updates`);
   }
-  const { table, columns } = await loadTable(deps, actor, tableId);
+  const { columns } = await loadTable(deps, actor, tableId);
   const byKey = new Map(columns.map((c) => [c.key, c]));
 
   const seen = new Set<string>();
@@ -162,7 +158,7 @@ export async function editCells(deps: Deps, actor: Actor, tableId: string, updat
         unrestorable.push({ rowId: update.rowId, columnKey: update.columnKey, current: null });
         continue;
       }
-      throw new ValidationError(column.type === "formula" ? `"${column.name}" is a formula column. It calculates from its formula, so edit the formula to change it.` : `"${column.name}" is filled by a run. Run its column to change this value.`);
+      throw new ValidationError(`"${column.name}" is filled by a run. Run its column to change this value.`);
     }
 
     const input = coerceCellInput(update.value, column.type);
@@ -210,22 +206,17 @@ export async function editCells(deps: Deps, actor: Actor, tableId: string, updat
   } else {
     ({ queued, skippedByCap } = await notifyCellsChanged({ organizationId: actor.organizationId, tableId, userId: actor.userId, changes: changed }));
   }
-  let rows = result.rows as RowRecord[];
-  const recalculated = await recalculateFormulasQuietly(deps, actor.organizationId, tableId, { rowIds: rows.map((r) => r.id), changedKeys: changed.map((c) => c.columnKey) });
-  // Formulas in other tables that look up the edited columns.
-  const lookups = changed.length > 0 ? await refreshAfterSourceWrite(deps, actor.organizationId, table, [...new Set(changed.map((c) => c.columnKey))]) : null;
-  if (recalculated > 0 || (lookups && lookups.recalculated + lookups.stale > 0)) rows = (await deps.rows.listByIds(actor.organizationId, tableId, rows.map((r) => r.id))) as RowRecord[];
-  return { updatedCells: updates.length, rows, queued, skippedByCap, applied, skipped: result.skipped };
+  return { updatedCells: updates.length, rows: result.rows as RowRecord[], queued, skippedByCap, applied, skipped: result.skipped };
 }
 
 /**
  * Runner columns (enrichment, AI and the like) that read a changed cell keep their old result, which no longer
- * matches its input. Formulas are not marked: the recalculation that follows the write refreshes them.
+ * matches its input.
  */
 async function markDependentsStale(deps: Deps, organizationId: string, tableId: string, columns: ReadonlyArray<ColumnRecord>, changed: ReadonlyArray<CellChange>) {
   if (changed.length === 0) return;
   const keys = new Set(changed.map((c) => c.columnKey));
-  const dependents = columns.filter((c) => !isStaticColumnType(c.type) && c.type !== "formula" && c.type !== "ai_output" && c.type !== "integration_output" && c.dependsOn.some((key) => keys.has(key)));
+  const dependents = columns.filter((c) => !isStaticColumnType(c.type) && c.type !== "ai_output" && c.type !== "integration_output" && c.dependsOn.some((key) => keys.has(key)));
   if (dependents.length === 0) return;
   const rowIds = [...new Set(changed.map((c) => c.rowId))];
   await deps.rows.markStale(organizationId, tableId, dependents.map((c) => c.key), "An input cell was restored by undo. Run this column to refresh it.", rowIds);

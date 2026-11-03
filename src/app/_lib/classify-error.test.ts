@@ -3,10 +3,6 @@ import { z } from "zod";
 import { classifyError } from "./classify-error";
 import { ConflictError, ForbiddenError, NotFoundError, PayloadTooLargeError, ValidationError } from "@/shared/errors";
 
-class PersonalCampaignError extends ForbiddenError {
-  readonly code = "personal_campaign";
-}
-
 describe("classifyError", () => {
   it("maps each application error to its status, sentence and details", () => {
     expect(classifyError(new NotFoundError("Draft not found"))).toEqual({ status: 404, message: "Draft not found", details: {} });
@@ -15,10 +11,6 @@ describe("classifyError", () => {
     expect(classifyError(new ConflictError("Changed."))).toEqual({ status: 409, message: "Changed.", details: {} });
     expect(classifyError(new PayloadTooLargeError("Too big."))).toEqual({ status: 413, message: "Too big.", details: {} });
     expect(classifyError(new ValidationError("Fix the steps.", [{ step: 1, message: "empty" }]))).toEqual({ status: 422, message: "Fix the steps.", details: { issues: [{ step: 1, message: "empty" }] } });
-  });
-
-  it("keeps the code a refusal class names for itself", () => {
-    expect(classifyError(new PersonalCampaignError("Only its creator."))?.details).toEqual({ code: "personal_campaign" });
   });
 
   it("answers 400 for bad input and bad JSON", () => {

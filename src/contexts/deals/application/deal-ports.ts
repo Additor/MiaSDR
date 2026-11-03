@@ -149,7 +149,7 @@ export interface DealPeople {
   summaries(organizationId: string, ids: readonly string[]): Promise<Map<string, DealPerson>>;
 }
 
-export type DealOutreach = Pick<ConversionOutreach, "liveEnrollmentSummary" | "latestRepliedEnrollment" | "enrollmentSources">;
+export type DealOutreach = Pick<ConversionOutreach, "latestRepliedEnrollment" | "enrollmentSources">;
 
 export interface DealEvents {
   append(tx: DbHandle, input: PersonEventInput): Promise<void>;

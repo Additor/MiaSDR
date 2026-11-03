@@ -26,7 +26,7 @@ const nameOf = async (page: Page, seeded: SeededGrid, row = 0) => (await gridPag
  * and not inside a gesture test.
  */
 test.describe("grid seed helper", () => {
-  test("seeds typed columns, a Korean header and a formula, and the grid shows them", async ({ page }) => {
+  test("seeds typed columns, a Korean header and an AI column, and the grid shows them", async ({ page }) => {
     await signInAdmin(page);
     const seeded = await seedGrid(page.request, { rows: 120, name: "T7b seed smoke" });
 
@@ -34,22 +34,21 @@ test.describe("grid seed helper", () => {
     expect(data.total).toBe(120);
     const typeOf = (name: string) => data.columns.find((c) => c.name === name)?.type;
     expect([...SEED_HEADERS].map(typeOf)).toEqual(["text", "email", "number", "date", "boolean", "url", "text"]);
-    expect(typeOf("Score x2")).toBe("formula");
+    expect(typeOf("Summary")).toBe("ai");
     const first = data.rows[0].cells;
     expect(first[seeded.keys.Name]).toBe(seeded.expected(0).Name);
     expect(first[seeded.keys["회사"]]).toBe("회사 0");
-    expect(Number(first[seeded.keys["Score x2"]])).toBe(2);
 
     await page.goto(`/tables/${seeded.workbookId}`);
     await expect(page.getByText("120 rows", { exact: true })).toBeVisible();
     await expect(page.getByRole("gridcell", { name: "Name: Person 1", exact: true })).toBeVisible();
     await expect(page.getByRole("gridcell", { name: "회사: 회사 0", exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("gridcell", { name: "Score x2: 2", exact: true })).toBeVisible();
+    await expect(page.getByRole("gridcell", { name: /^Summary: / }).first()).toBeVisible();
   });
 });
 
 test.describe("grid undo and redo", () => {
-  test("Ctrl/Cmd+Z, Shift+Z and Y step through a typed edit, and the formula follows", async ({ page }) => {
+  test("Ctrl/Cmd+Z, Shift+Z and Y step through a typed edit", async ({ page }) => {
     const seeded = await open(page, "S27 undo keys");
     const score = page.getByRole("gridcell", { name: /^Score: 1$/ });
     await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
@@ -75,15 +74,13 @@ test.describe("grid undo and redo", () => {
     await page.keyboard.press(`${MOD}+y`);
     await expect(page.getByRole("gridcell", { name: "Name: Edited", exact: true })).toBeVisible();
 
-    // A number edit moves the formula column, and undo moves it back.
+    // Undo restores a number edit too.
     await expect(score).toBeVisible();
     await score.click();
     await page.keyboard.type("50");
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("gridcell", { name: "Score x2: 100", exact: true })).toBeVisible();
     await page.getByRole("gridcell", { name: "Score: 50", exact: true }).click();
     await page.keyboard.press(`${MOD}+z`);
-    await expect(page.getByRole("gridcell", { name: "Score x2: 2", exact: true })).toBeVisible();
     await expect(page.getByRole("gridcell", { name: "Score: 1", exact: true })).toBeVisible();
   });
 
@@ -199,26 +196,26 @@ test.describe("grid paste past the end", () => {
   test("a block past the last row and column adds rows and a column, and one undo restores the values", async ({ page }) => {
     const seeded = await open(page, "S27 paste grow");
     const site = (n: number) => seeded.expected(n - 1).Site;
-    await page.evaluate((text) => navigator.clipboard.writeText(text), "a1\tb1\tc1\td1\na2\tb2\tc2\td2\na3\tb3\tc3\td3");
+    await page.evaluate((text) => navigator.clipboard.writeText(text), "a1\tb1\tc1\td1\te1\na2\tb2\tc2\td2\te2\na3\tb3\tc3\td3\te3");
     await page.getByRole("gridcell", { name: `Site: ${site(1)}`, exact: true }).click();
     await page.keyboard.press(`${MOD}+ArrowDown`);
     await page.keyboard.press(`${MOD}+v`);
     await expect(page.getByText(/added 2 rows and 1 column/)).toBeVisible();
-    await expect(page.getByText("Skipped 3 cells in formula columns (they recalculate).")).toBeVisible();
+    await expect(page.getByText("Skipped 6 cells in AI or enrichment columns (a run fills them).")).toBeVisible();
     // The grid keeps its scroll position at the paste instead of jumping back toward the first page of rows.
     await expect(page.getByRole("gridcell", { name: "Site: a1", exact: true })).toBeVisible();
 
     const grown = await gridPage(page.request, seeded.tableId);
     expect(grown.unfilteredTotal).toBe(32);
-    expect(grown.columns).toHaveLength(9);
-    const extra = grown.columns[8];
-    expect(extra.name).toBe("Column 9");
+    expect(grown.columns).toHaveLength(10);
+    const extra = grown.columns[9];
+    expect(extra.name).toBe("Column 10");
     const cell = (row: number, key: string) => grown.rows[row].cells[key];
     expect([29, 30, 31].map((i) => cell(i, seeded.keys.Site))).toEqual(["a1", "a2", "a3"]);
     expect([29, 30, 31].map((i) => cell(i, seeded.keys["회사"]))).toEqual(["b1", "b2", "b3"]);
-    expect([29, 30, 31].map((i) => cell(i, extra.key))).toEqual(["d1", "d2", "d3"]);
-    // The formula column was skipped, not overwritten.
-    expect(cell(29, seeded.keys["Score x2"])).toBe(60);
+    expect([29, 30, 31].map((i) => cell(i, extra.key))).toEqual(["e1", "e2", "e3"]);
+    // The AI column and its output were skipped, not written.
+    expect(cell(29, seeded.keys.Summary) ?? null).toBeNull();
 
     // Undo restores the values. The rows and the column the paste created stay.
     await page.getByRole("gridcell", { name: "Site: a1", exact: true }).click();
@@ -226,7 +223,7 @@ test.describe("grid paste past the end", () => {
     await expect(page.getByRole("gridcell", { name: `Site: ${site(30)}`, exact: true })).toBeVisible();
     const undone = await gridPage(page.request, seeded.tableId);
     expect(undone.unfilteredTotal).toBe(32);
-    expect(undone.columns).toHaveLength(9);
+    expect(undone.columns).toHaveLength(10);
     expect(undone.rows[29].cells[seeded.keys.Site]).toBe(site(30));
     expect(undone.rows[30].cells[seeded.keys.Site] ?? null).toBeNull();
     expect(undone.rows[31].cells[extra.key] ?? null).toBeNull();
@@ -308,11 +305,11 @@ test.describe("grid pinned columns", () => {
 });
 
 test.describe("grid fill handle", () => {
-  test("dragging the corner copies the selection down, skips a formula column, and undoes as one step", async ({ page }) => {
+  test("dragging the corner copies the selection down, skips an AI column, and undoes as one step", async ({ page }) => {
     const seeded = await open(page, "S27 fill");
     const row1 = seeded.expected(0);
     await page.getByRole("gridcell", { name: `Site: ${row1.Site}`, exact: true }).click();
-    await page.getByRole("gridcell", { name: "Score x2: 2", exact: true }).click({ modifiers: ["Shift"] });
+    await page.getByRole("gridcell", { name: /^Summary: / }).first().click({ modifiers: ["Shift"] });
 
     const handle = page.locator("[data-fill-handle]");
     await expect(handle).toHaveCount(1);
@@ -326,8 +323,8 @@ test.describe("grid fill handle", () => {
     await expect.poll(async () => (await gridPage(page.request, seeded.tableId)).rows.slice(0, 3).map((r) => r.cells[seeded.keys.Site])).toEqual([row1.Site, row1.Site, row1.Site]);
     const filled = (await gridPage(page.request, seeded.tableId)).rows;
     expect(filled.slice(0, 3).map((r) => r.cells[seeded.keys["회사"]])).toEqual([row1["회사"], row1["회사"], row1["회사"]]);
-    // The formula column is not a fill target: its rows still follow their own Score.
-    expect(filled.slice(0, 3).map((r) => Number(r.cells[seeded.keys["Score x2"]]))).toEqual([2, 4, 6]);
+    // The AI column is not a fill target: its cells stay empty until a run.
+    expect(filled.slice(0, 3).map((r) => r.cells[seeded.keys.Summary] ?? null)).toEqual([null, null, null]);
 
     await page.getByRole("gridcell", { name: `Site: ${row1.Site}`, exact: true }).first().click();
     await page.keyboard.press(`${MOD}+z`);

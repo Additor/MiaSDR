@@ -3,8 +3,6 @@ import { ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/sh
 import { effectiveColumnType } from "../domain/column-types";
 import { cleanName } from "../domain/keys";
 import { mergeViews, personalOverride, sanitizePersonalView, sanitizeView, validateView, type TableView } from "../domain/view-query";
-import { tableTokens } from "../domain/formula-dependencies";
-import { refreshLookupDependentsQuietly } from "./formula-lookup-refresh";
 import { GRID_LIMITS } from "./limits";
 import type { ColumnStore, GridDeps, TableRecord } from "./ports";
 
@@ -17,7 +15,7 @@ const FOLDER_FALLBACK = "Untitled folder";
 const WORKBOOK_FALLBACK = "Untitled workbook";
 
 type Structure = Pick<GridDeps, "structure">;
-type StructureAndColumns = Pick<GridDeps, "structure" | "columns" | "rows" | "formulas">;
+type StructureAndColumns = Pick<GridDeps, "structure" | "columns">;
 
 const optionalText = (value: unknown, label: string): string | null | undefined => {
   if (value === undefined) return undefined;
@@ -153,7 +151,6 @@ export async function updateTable(deps: StructureAndColumns, actor: Actor, table
     fields.view = patch.view as TableView;
   }
 
-  const original = table;
   if (patch.workbookId !== undefined && patch.workbookId !== table.workbookId) {
     if (!(await deps.structure.getWorkbook(org, patch.workbookId))) throw new NotFoundError("Destination workbook not found");
     table = await deps.structure.moveTable(org, tableId, patch.workbookId, GRID_LIMITS.tablesPerWorkbook);
@@ -162,14 +159,6 @@ export async function updateTable(deps: StructureAndColumns, actor: Actor, table
   if (Object.keys(fields).length > 0) {
     table = await deps.structure.updateTable(org, tableId, fields);
     if (!table) throw new NotFoundError("Table not found");
-  }
-  // LOOKUPs name the table, so a move or a rename changes what they resolve to. The old workbook loses the
-  // table and the new one may start to resolve a name it could not before.
-  if (table.workbookId !== original.workbookId) {
-    await refreshLookupDependentsQuietly(deps, org, original.workbookId, { tableTokens: tableTokens(original), columnTokens: null }, `"${original.name}"`);
-    await refreshLookupDependentsQuietly(deps, org, table.workbookId, { tableTokens: tableTokens(table), columnTokens: null }, `"${table.name}"`);
-  } else if (table.name !== original.name) {
-    await refreshLookupDependentsQuietly(deps, org, table.workbookId, { tableTokens: [...tableTokens(original), table.name], columnTokens: null }, `"${original.name}"`);
   }
   // The new default is what this person was looking at, so their own override no longer has a reason to exist.
   if (fields.view !== undefined) await deps.structure.deleteUserView(org, tableId, actor.userId);
@@ -191,8 +180,6 @@ export async function reorderTables(deps: Structure, actor: Actor, workbookId: s
 export async function deleteTable(deps: StructureAndColumns, actor: Actor, tableId: string) {
   const table = await deps.structure.getTable(actor.organizationId, tableId);
   if (!table || !(await deps.structure.deleteTable(actor.organizationId, tableId))) throw new NotFoundError("Table not found");
-  // Formulas that looked the table up show #REF from now on.
-  await refreshLookupDependentsQuietly(deps, actor.organizationId, table.workbookId, { tableTokens: tableTokens(table), columnTokens: null }, `"${table.name}"`);
   return { ok: true };
 }
 

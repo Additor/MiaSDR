@@ -28,7 +28,7 @@ export const getWorkspace = defineTool({
   name: "get_workspace",
   title: "Get workspace",
   description:
-    "The organization's members, active reply types, deal stages, mailboxes and, for an owner or admin, LinkedIn accounts, with the ids other tools take. Call it first to learn who `assignedTo` names and which reply type or stage an id means.",
+    "The organization's members, reply types, deal stages, mailboxes and, for an owner or admin, LinkedIn accounts, with the ids other tools take. Call it first to learn who `assignedTo` names and which reply type or stage an id means.",
   scope: "mcp:read",
   annotations: READ_ONLY,
   input: z.object({}),
@@ -44,7 +44,7 @@ export const getWorkspace = defineTool({
     ]);
     const structured = {
       members: members.map((m) => ({ userId: m.userId, name: m.name, email: m.email, role: m.role })),
-      replyTypes: catalog.replyTypes.filter((t) => t.active).map((t) => ({ id: t.id, key: t.key, name: t.name, group: t.groupKey })),
+      replyTypes: catalog.replyTypes.map((t) => ({ id: t.id, key: t.key, name: t.name, group: t.groupKey })),
       // A stage with a null id is a default the organization has not saved yet; deals cannot point at it.
       dealStages: stages.stages.map((s) => ({ id: s.id, name: s.name, kind: s.kind })),
       mailboxes: mailboxes.map((m) => ({ id: m.id, emailAddress: m.emailAddress, displayName: m.displayName, status: m.status, dailySendLimit: m.dailySendLimit, sentToday: m.sentToday })),

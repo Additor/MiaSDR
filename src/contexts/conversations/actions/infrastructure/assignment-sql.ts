@@ -11,7 +11,6 @@ import { rowsOf } from "@/platform/db/sql-values";
  * Nobody (`assigned_source = 'cleared'`). The update guards both again in case another transaction changed it first. Returns the assignee, or null when nobody was assigned.
  *
  * Reads outreach tables (campaigns, enrollments) and the membership table, read only, like the other stores of this context.
- * A personal campaign never counts: its threads are private and the record is not shown in the queue because of them.
  */
 export async function autoAssignTx(tx: Tx, input: { organizationId: string; recordId: string; personId: string; now?: Date }): Promise<string | null> {
   const [held] = rowsOf<{ assigned_to: string | null; assigned_source: string | null }>(await tx.execute(sql`select assigned_to, assigned_source from records where id = ${input.recordId} and organization_id = ${input.organizationId}`));
@@ -22,7 +21,7 @@ export async function autoAssignTx(tx: Tx, input: { organizationId: string; reco
     await tx.execute(sql`
       select c.created_by as user_id, (m.user_id is not null) as is_member
       from campaign_enrollments e
-      join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id and c.type = 'regular'
+      join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
       left join members m on m.organization_id = c.organization_id and m.user_id = c.created_by
       where e.organization_id = ${input.organizationId} and e.person_id = ${input.personId} and e.status <> 'removed' and c.created_by is not null
       order by e.created_at desc, e.id desc`),

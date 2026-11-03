@@ -96,8 +96,8 @@ export const linkedinAccounts = pgTable(
     nextAllowedRunAt: tstz("next_allowed_run_at"),
     /**
      * The member whose LinkedIn this is. Set when they connect it through a link; null for an account that arrived by
-     * sync or before owners existed, until an admin picks one. An agent starts a personal campaign only from accounts
-     * its token's person owns.
+     * sync or before owners existed, until an admin picks one. An agent's search uses only accounts its token's person
+     * owns and accounts with no owner.
      */
     ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
@@ -165,8 +165,6 @@ export const campaigns = pgTable(
     organizationId: orgId(),
     channel: text("channel").notNull(),
     name: text("name").notNull(),
-    /** `personal` is private outreach (LinkedIn only): replies stay out of the Inbox and the AI. Fixed once the first send exists. */
-    type: text("type").notNull().default("regular"),
     status: text("status").$type<CampaignStatus>().notNull().default("draft"),
     steps: jsonb("steps").$type<CampaignStep[]>().default([]).notNull(),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -185,8 +183,6 @@ export const campaigns = pgTable(
     foreignKey({ name: "campaigns_started_via_token_fk", columns: [t.startedViaTokenId, t.organizationId], foreignColumns: [mcpTokens.id, mcpTokens.organizationId] }).onDelete("set null"),
     check("campaigns_channel_ck", sql`${t.channel} in ('email', 'linkedin')`),
     check("campaigns_status_ck", sql`${t.status} in ('draft', 'active', 'paused', 'completed')`),
-    check("campaigns_type_ck", sql`${t.type} in ('regular', 'personal')`),
-    check("campaigns_personal_linkedin_ck", sql`${t.type} = 'regular' or ${t.channel} = 'linkedin'`),
     index("campaigns_org_status_idx").on(t.organizationId, t.status),
   ],
 );

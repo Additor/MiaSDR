@@ -305,20 +305,6 @@ describeDb("person delete races", () => {
     }
   }, 60_000);
 
-  it("refuses a member's delete of a lead sent to in a personal campaign whose creator left", async () => {
-    const f = await kit.organization();
-    const campaignId = await f.campaign({ type: "personal" });
-    // A deleted user sets `created_by` to null (ON DELETE SET NULL).
-    await kit.sql`update campaigns set created_by = null, status = 'completed' where id = ${campaignId}`;
-    const lead = await f.person();
-    const enrollmentId = await f.enrollment(campaignId, lead, "completed", "linkedin");
-    await kit.sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, sent_at) values (${f.org}, ${enrollmentId}, 1, 'linkedin', 'sent', now())`;
-    const outcome = await leads.deleteLeads(leadDeps, f.member, { ids: [lead] });
-    expect(outcome).toMatchObject({ deleted: 0, blocked: [{ id: lead, reason: "has_hidden_sends" }] });
-    expect((await leads.deleteLeads(leadDeps, f.owner, { ids: [lead] })).blocked).toMatchObject([{ id: lead, reason: "has_sends" }]);
-    expect(await sendsOf(enrollmentId)).toEqual(["sent"]);
-  }, 30_000);
-
   it("takes the same advisory lock for an id sent in uppercase as the reply stop takes for the stored id", async () => {
     const f = await kit.organization();
     const lead = await f.person();

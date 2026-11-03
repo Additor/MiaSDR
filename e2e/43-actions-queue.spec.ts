@@ -1,4 +1,4 @@
-import { MOBILE_DARK, e2eOrganizationId, expect, expectNoHorizontalOverflow, seedReply, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
+import { MOBILE_DARK, expect, expectNoHorizontalOverflow, seedReply, signInAdmin, sql, test, waitForHydrated } from "./support/fixtures";
 
 const DINA = { email: "dina@s43-group.test", firstName: "Dina", lastName: "Park", title: "COO", company: "S43 Group" };
 const ELI = { email: "eli@s43-group.test", firstName: "Eli", lastName: "Moss", title: "CTO", company: "S43 Group" };
@@ -141,46 +141,17 @@ test.describe("the Actions queue as a list to work through", () => {
     await expect(page.getByTestId("queue-item").filter({ hasText: "Fay Stone" })).toContainText("Possible stop request.");
   });
 
-  test("applied AI picks the AI was sure of are marked as looked at in one step", async ({ page }) => {
+  test("a sure pick that writes no draft applies at once and leaves nothing in the queue", async ({ page }) => {
     await signInAdmin(page);
-    // Two replies the AI files on its own at 90%, so the file runs alone as well as after the other specs. A decline needs
-    // no reply and settles its record; putting the record back in the queue leaves the unreviewed pick to look at. Not now
-    // is seeded with Check skip, so an admin sets it to Check after through the API before the replies come, and the
-    // finally block puts the seeded rule back for the specs after this one.
-    const [notNow] = await sql()`select rt.id, rt.check_mode from reply_types rt join reply_type_sets s on s.id = rt.reply_type_set_id
-      where s.organization_id = ${await e2eOrganizationId()} and s.is_default and rt.key = 'not_required_right_now'`;
-    const setCheck = async (checkMode: string) => expect((await page.request.patch(`/api/reply-types/${notNow.id}`, { data: { checkMode } })).status()).toBe(200);
-    await setCheck("after");
-    try {
-      for (const [key, name, text] of [
-        ["S43C", "Ola", "No thanks, not interested."],
-        ["S43D", "Max", "Not now, thanks."],
-      ] as const) {
-        const email = `${name.toLowerCase()}@s43-sure.test`;
-        const [seeded] = await sql()`select 1 from people where email = ${email}`;
-        if (!seeded) await seedReply(page.request, { key, mailbox: `sdr${key.toLowerCase()}@e2e-corp.test`, lead: { email, firstName: name, lastName: "Sure", company: "S43 Sure" }, reply: { bodyText: text } });
-        await sql()`update records set workflow_state = 'action_required' where person_id = (select id from people where email = ${email})`;
-      }
-    } finally {
-      await setCheck(notNow.check_mode);
-    }
+    const email = "ola@s43-sure.test";
+    const [seeded] = await sql()`select 1 from people where email = ${email}`;
+    if (!seeded) await seedReply(page.request, { key: "S43C", mailbox: "sdrs43c@e2e-corp.test", lead: { email, firstName: "Ola", lastName: "Sure", company: "S43 Sure" }, reply: { bodyText: "No thanks, not interested." } });
+    const [record] = await sql()`select r.workflow_state, t.name from records r join people p on p.id = r.person_id join reply_types t on t.id = r.reply_type_id where p.email = ${email}`;
+    expect(record).toMatchObject({ workflow_state: "idle", name: "Not now" });
     await page.goto("/actions");
-    // The row names the type alone; the channel is a mark.
-    const ola = page.getByTestId("queue-item").filter({ hasText: "Ola Sure" });
-    await expect(ola.getByTestId("queue-type")).toHaveText("Not now");
-    await expect(ola).toContainText(/AI applied Not now, 9\d% confident/);
-    await expect(ola.getByTestId("settle")).toHaveText("Looks right");
-    const bulk = page.getByTestId("mark-confident");
-    await expect(bulk).toHaveText(/^Looks right: \d+ sure picks$/);
-    await waitForHydrated(page.getByTestId("queue-item").first());
-    await bulk.click();
-    // The bulk step names every row it marks before it marks them, and Keep for review is the way out.
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByTestId("mark-confident-list")).toContainText("Ola Sure");
-    await dialog.getByRole("button", { name: /^Mark \d+ as looked at$/ }).click();
-    await expect(page.locator("[data-sonner-toast]").filter({ hasText: /^Marked \d+ AI picks as looked at\.$/ })).toBeVisible();
-    await expect(page.getByTestId("queue-item").filter({ hasText: /AI applied .*9\d% confident/ })).toHaveCount(0);
-    await expect(bulk).toHaveCount(0);
+    await expect(page.getByTestId("queue-item").first()).toBeVisible();
+    await expect(page.getByTestId("queue-item").filter({ hasText: "Ola Sure" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Looks right/ })).toHaveCount(0);
   });
 
   test("a problem leads the page, and the top line names the oldest wait and jumps to each list", async ({ page }) => {

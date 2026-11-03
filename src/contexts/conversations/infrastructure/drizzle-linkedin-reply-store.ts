@@ -6,7 +6,6 @@ import type { LinkedInReplyContext, LinkedInReplyStore } from "../application/li
 import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
 import { utcDayStart } from "@/shared/utc-day";
 import { replyBlock, replyGapSeconds } from "../domain/linkedin-reply";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
 import { draftCanBecome, draftIn } from "./reply-store-shared";
 import { isDoNotContact } from "@/contexts/people/infrastructure/reachability";
@@ -71,7 +70,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       const [conv] = await tx
         .select({ id: conversations.id, recordId: conversations.recordId, channel: conversations.channel, status: conversations.status, accountRef: conversations.accountRef, chat: conversations.providerThreadId })
         .from(conversations)
-        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId), publicConversation))
+        .where(and(eq(conversations.id, input.conversationId), eq(conversations.organizationId, input.organizationId)))
         .for("update");
       if (!conv) throw new NotFoundError("Conversation not found");
 
@@ -259,7 +258,7 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
       .from(conversations)
       .innerJoin(records, eq(records.id, conversations.recordId))
       .innerJoin(people, eq(people.id, records.personId))
-      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+      .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId)));
     if (!head) return null;
     if (head.channel !== "linkedin") return null;
 

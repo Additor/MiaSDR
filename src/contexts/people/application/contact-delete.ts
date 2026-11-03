@@ -9,8 +9,7 @@ import type { LeadsAudit } from "./leads-audit";
  * Contact delete ("Contacts and Companies CRUD" in docs/decisions.md). A contact without an open deal goes
  * with their closed deals, reply handling, conversations, messages, history, notes, tasks, enrollments and sends, in one
  * transaction. The use case owns the order of plan 4.3; each context deletes its own rows through the ports below, which the
- * composition root (`src/composition/person-lifecycle.ts`) wires. Any member can delete (P4), except that another member's
- * personal campaign or private thread with the contact needs its creator, an owner or an admin.
+ * composition root (`src/composition/person-lifecycle.ts`) wires. Any member can delete (P4).
  */
 
 /** The person as the delete reads it. */
@@ -41,9 +40,7 @@ export type ContactDeleteBlocker =
   | { reason: "send_in_flight" }
   | { reason: "recent_send"; until: Date }
   | { reason: "recent_invite"; until: Date }
-  | { reason: "ai_job_running" }
-  | { reason: "private_conversation" }
-  | { reason: "personal_campaign_sends" };
+  | { reason: "ai_job_running" };
 
 export interface ContactDeleteCounts {
   deals: { won: number; lost: number; wonTitles: string[] };
@@ -88,8 +85,8 @@ export interface ContactDeleteStore {
 /** Conversations: `person-handling.ts` and `person-purge.ts`. */
 export interface ContactDeleteHandling {
   lockPersonForDelete(tx: DbHandle, organizationId: string, personId: string): Promise<void>;
-  counts(tx: DbHandle, actor: Actor, personId: string): Promise<{ conversations: number; messages: number; events: number; notes: number; tasks: number; hidden: boolean }>;
-  blockers(tx: DbHandle, actor: Actor, personId: string): Promise<Array<{ reason: "send_in_flight" | "ai_job_running" | "private_conversation" }>>;
+  counts(tx: DbHandle, organizationId: string, personId: string): Promise<{ conversations: number; messages: number; events: number; notes: number; tasks: number }>;
+  blockers(tx: DbHandle, organizationId: string, personId: string): Promise<Array<{ reason: "send_in_flight" | "ai_job_running" }>>;
   purge(tx: DbHandle, organizationId: string, personId: string): Promise<unknown>;
 }
 
@@ -108,8 +105,8 @@ export interface ContactDeleteDeals {
 export interface ContactDeleteOutreach {
   /** After the deals, before the blockers: the person's enrollments `FOR UPDATE` in id order, so no send claim lands between the blockers and the purge. */
   lockEnrollments(tx: DbHandle, organizationId: string, personIds: readonly string[]): Promise<unknown>;
-  counts(tx: DbHandle, actor: Actor, personId: string): Promise<{ campaigns: number; sends: number; hidden: boolean }>;
-  blockers(tx: DbHandle, actor: Actor, personId: string, now: Date): Promise<Array<{ reason: "send_in_flight" | "personal_campaign_sends" } | { reason: "recent_send" | "recent_invite"; until: Date }>>;
+  counts(tx: DbHandle, organizationId: string, personId: string): Promise<{ campaigns: number; sends: number }>;
+  blockers(tx: DbHandle, organizationId: string, personId: string, now: Date): Promise<Array<{ reason: "send_in_flight" } | { reason: "recent_send" | "recent_invite"; until: Date }>>;
   /** Step 12. */
   purge(tx: DbHandle, organizationId: string, personId: string): Promise<unknown>;
 }
@@ -135,8 +132,6 @@ export interface ContactDeletePreview {
   suppressionKept: boolean;
   /** Marked do not contact with a LinkedIn profile, which no list keeps blocked after the delete. */
   linkedinOnlyBlock: boolean;
-  /** The counts leave out rows in another member's personal campaign that the actor cannot see. */
-  hiddenExcluded: boolean;
   /** The actor is an agent, and this person is one only a person deletes. */
   agentProtected: boolean;
 }
@@ -176,27 +171,24 @@ const openDealsBlocker = (deals: ContactDealRef[]): ContactDeleteBlocker[] => {
 
 /** Every blocker in one list: the open deals, then outreach, then conversations, without repeating `send_in_flight`. */
 async function blockersOf(deps: ContactDeleteDeps, tx: DbHandle, actor: Actor, personId: string, deals: ContactDealRef[], now: Date): Promise<ContactDeleteBlocker[]> {
-  const outreach = await deps.outreach.blockers(tx, actor, personId, now);
-  const handling = await deps.handling.blockers(tx, actor, personId);
+  const outreach = await deps.outreach.blockers(tx, actor.organizationId, personId, now);
+  const handling = await deps.handling.blockers(tx, actor.organizationId, personId);
   return mergeContactBlockers<ContactDeleteBlocker>(openDealsBlocker(deals), outreach, handling);
 }
 
-async function countsOf(deps: ContactDeleteDeps, tx: DbHandle, actor: Actor, personId: string): Promise<{ counts: ContactDeleteCounts; hidden: boolean }> {
+async function countsOf(deps: ContactDeleteDeps, tx: DbHandle, actor: Actor, personId: string): Promise<ContactDeleteCounts> {
   const deals = await deps.deals.counts(tx, actor.organizationId, personId);
-  const handling = await deps.handling.counts(tx, actor, personId);
-  const outreach = await deps.outreach.counts(tx, actor, personId);
+  const handling = await deps.handling.counts(tx, actor.organizationId, personId);
+  const outreach = await deps.outreach.counts(tx, actor.organizationId, personId);
   return {
-    counts: {
-      deals,
-      notes: handling.notes,
-      tasks: handling.tasks,
-      events: handling.events,
-      conversations: handling.conversations,
-      messages: handling.messages,
-      campaigns: outreach.campaigns,
-      sends: outreach.sends,
-    },
-    hidden: handling.hidden || outreach.hidden,
+    deals,
+    notes: handling.notes,
+    tasks: handling.tasks,
+    events: handling.events,
+    conversations: handling.conversations,
+    messages: handling.messages,
+    campaigns: outreach.campaigns,
+    sends: outreach.sends,
   };
 }
 
@@ -218,7 +210,7 @@ function checkPerson(person: ContactForDelete | null): ContactForDelete {
 }
 
 /**
- * What a delete of the contact would remove and what blocks it, as the actor may see it. The contact page states it before
+ * What a delete of the contact would remove and what blocks it. The contact page states it before
  * any click, and the dialog shows its counts. 404 for a person outside the organization; 409 `not_a_contact` for a lead.
  */
 export async function previewContactDelete(deps: ContactDeleteDeps, actor: Actor, personId: string): Promise<ContactDeletePreview> {
@@ -229,14 +221,13 @@ export async function previewContactDelete(deps: ContactDeleteDeps, actor: Actor
     const person = checkPerson(await deps.people.read(tx, organizationId, personId));
     const deals = await deps.deals.list(tx, organizationId, personId);
     const blockers = await blockersOf(deps, tx, actor, personId, deals, now);
-    const { counts, hidden } = await countsOf(deps, tx, actor, personId);
+    const counts = await countsOf(deps, tx, actor, personId);
     return {
       person: { id: person.id, fullName: person.fullName, email: person.email, linkedinUrl: person.linkedinUrl, doNotContact: person.doNotContact },
       counts,
       blockers,
       suppressionKept: Boolean(person.email?.trim()) && (person.suppressed || person.doNotContact),
       linkedinOnlyBlock: person.doNotContact && Boolean(person.linkedinUrl || person.linkedinSlug),
-      hiddenExcluded: hidden,
       agentProtected: actor.via !== undefined && (await deps.agentProtected(tx, organizationId, [personId], { lock: false })).has(personId),
     };
   });
@@ -265,7 +256,7 @@ export async function deleteContact(deps: ContactDeleteDeps, actor: Actor, perso
         const blockers = await blockersOf(deps, tx, actor, personId, deals, deps.now?.() ?? new Date());
         if (blockers.length > 0) throw new ConflictError("This contact cannot be deleted.", { code: "contact_blocked", blockers });
 
-        const { counts } = await countsOf(deps, tx, actor, personId);
+        const counts = await countsOf(deps, tx, actor, personId);
         const now = flatten(counts);
         if (EXPECTED_KEYS.some((key) => now[key] !== expected[key])) {
           throw new ConflictError(`${Name(person)} changed while this was open. Check the new counts and confirm again.`, { code: "counts_changed", counts });

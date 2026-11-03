@@ -18,7 +18,7 @@ export interface SeededGrid {
   workbookId: string;
   tableId: string;
   rows: number;
-  /** Column key by column name, formula column included. */
+  /** Column key by column name, the AI column and its output included. */
   keys: Record<string, string>;
   /** The values written for row `i` (0-based), so a test can assert without reading them back. */
   expected: (i: number) => Record<(typeof SEED_HEADERS)[number], string>;
@@ -42,13 +42,12 @@ export interface SeedOptions {
   rows: number;
   /** Workbook name. Defaults to a name that includes the row count. */
   name?: string;
-  /** Adds `Score x2`, a formula column `{{Score}} * 2`. Default true. */
-  formula?: boolean;
 }
 
 /**
  * Creates a workbook with one grid table holding `rows` rows of every common static type
- * (text, email, number, date, boolean, url, a Korean-named text column) and a formula column.
+ * (text, email, number, date, boolean, url, a Korean-named text column), then an AI column `Summary` that reads
+ * `Score`, with its output column `Note`. Auto-run is off, so both stay empty until a test runs them.
  * It goes through the same two import calls as the wizard, then the columns API, so it needs no database access
  * and works against any E2E build. Sign in first: the request context carries the session.
  */
@@ -71,12 +70,10 @@ export async function seedGrid(request: APIRequestContext, options: SeedOptions)
 
   let page = await gridPage(request, tableId);
   const keys = Object.fromEntries(page.columns.map((c) => [c.name, c.key]));
-  if (options.formula !== false) {
-    const added = await request.post(`/api/grid/tables/${tableId}/columns`, { data: { name: "Score x2", type: "formula", config: { expression: `{{${keys.Score}}} * 2` } } });
-    expect(added.status(), "seed formula column").toBe(201);
-    page = await gridPage(request, tableId);
-    Object.assign(keys, Object.fromEntries(page.columns.map((c) => [c.name, c.key])));
-  }
+  const added = await request.post(`/api/grid/tables/${tableId}/ai`, { data: { name: "Summary", prompt: `Summarize {{${keys.Score}}}`, outputs: [{ key: "note", type: "text" }], autoRun: false } });
+  expect(added.status(), "seed AI column").toBe(201);
+  page = await gridPage(request, tableId);
+  Object.assign(keys, Object.fromEntries(page.columns.map((c) => [c.name, c.key])));
   expect(page.unfilteredTotal, "seeded row count").toBe(rows);
   return { workbookId, tableId, rows, keys, expected: seedRow };
 }

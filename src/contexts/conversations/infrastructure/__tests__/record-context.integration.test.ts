@@ -46,7 +46,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
   /** The AI's pick of the record's latest reply, or of `messageId`, held for a check at the record's current version. */
   async function holdPick(f: Fx, recordId: string, options: { messageId?: string; stopAsked?: boolean } = {}) {
     const [record] = await sql`select latest_inbound_message_id as latest, context_version as version from records where id = ${recordId}`;
-    const [type] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and system_role is null and active order by created_at limit 1`;
+    const [type] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and system_role is null order by created_at limit 1`;
     const [pick] = await sql`
       insert into reply_type_picks (organization_id, record_id, message_id, expected_context_version, proposed_group_key, proposed_reply_type_id, confidence, status, provider, response)
       values (${f.org}, ${recordId}, ${options.messageId ?? record.latest}, ${record.version}, ${type.group_key}, ${type.id}, 0.5, 'proposed', 'fake', ${sql.json({ stopRequested: options.stopAsked === true })})
@@ -79,7 +79,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
     {
       path: "undoing the latest pick",
       run: async (f, l) => {
-        const [type] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and system_role is null and active order by created_at limit 1`;
+        const [type] = await sql`select id, group_key from reply_types where organization_id = ${f.org} and system_role is null order by created_at limit 1`;
         const next = await composition.ingestInbound(mail(f, { bodyText: "One more thing.", receivedAt: new Date("2026-10-14T11:00:00Z") }));
         const [{ v }] = await sql`select context_version as v from records where id = ${l.recordId}`;
         await sql`update reply_type_picks set status = 'proposed' where record_id = ${l.recordId} and message_id = ${l.messageId}`;
@@ -125,15 +125,6 @@ describeDb("a context version bump retires the picks held for a check", () => {
         });
       },
     },
-    {
-      path: "the thread with the latest reply turning private",
-      run: async (f, l) => {
-        const second = await composition.ingestInbound(mail(f, { bodyText: "From my other thread.", receivedAt: new Date("2026-10-14T11:00:00Z") }));
-        await sql`update reply_type_picks set status = 'proposed' where record_id = ${l.recordId} and message_id = ${l.messageId}`;
-        const { detachPrivateThreadTx } = await import("../private-thread-detach");
-        await inTx((tx) => detachPrivateThreadTx(tx, { organizationId: f.org, conversationId: second.conversationId as string, recordId: l.recordId, now: new Date() }));
-      },
-    },
   ];
 
   it.each(PATHS)("$path retires the pick, so nothing counts it as waiting", async ({ path, run }) => {
@@ -176,7 +167,7 @@ describeDb("a context version bump retires the picks held for a check", () => {
       expect(await reviewOpen(l.recordId)).toBe(true);
     });
 
-    it("stays open for its reply when a newer reply arrives, since a thread turning private can make it the latest again", async () => {
+    it("stays open for its reply when a newer reply arrives, since the review belongs to that reply", async () => {
       const f = await fixture();
       const l = await lead(f);
       const [{ latest }] = await sql`select latest_inbound_message_id as latest from records where id = ${l.recordId}`;

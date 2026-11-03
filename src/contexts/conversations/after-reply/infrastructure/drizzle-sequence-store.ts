@@ -10,7 +10,6 @@ import { rowsOf } from "@/platform/db/sql-values";
 import { advanceRunTx, asDate, asDateOrNull, StepMovedError, ts } from "./sequence-run-tx";
 import { endRunTx, recordEvent, runMayBecome, stepMayBecome, type Tx } from "./sequence-stop";
 import { sequenceRuns, sequences, sequenceSteps, sequenceStepRuns, sequenceVersions } from "./sequences-schema";
-import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
 import { sqlValues } from "@/platform/db/sql-values";
 import type { FollowUpsRule } from "../../domain/reply-type";
@@ -85,7 +84,7 @@ async function latestPublished(tx: Tx | typeof db, sequenceId: string) {
 // The Follow-ups after a reply flow of a campaign ---------------------------------------------------------------
 
 const OPEN_STEP_RUNS = sqlValues(OPEN_STEP_STATUSES);
-const campaignCols = { id: campaigns.id, name: campaigns.name, channel: campaigns.channel, type: campaigns.type, status: campaigns.status };
+const campaignCols = { id: campaigns.id, name: campaigns.name, channel: campaigns.channel, status: campaigns.status };
 const ofCampaign = (organizationId: string, campaignId: string) => and(eq(campaigns.id, campaignId), eq(campaigns.organizationId, organizationId));
 const flowOf = (organizationId: string, campaignId: string) => and(eq(sequences.campaignId, campaignId), eq(sequences.organizationId, organizationId));
 
@@ -154,7 +153,7 @@ export const drizzleAfterReplyStore: AfterReplyStore = {
     return db
       .select({ id: replyTypes.id, key: replyTypes.key, name: replyTypes.name, groupKey: replyTypes.groupKey, systemRole: replyTypes.systemRole, sortOrder: replyTypes.sortOrder })
       .from(replyTypes)
-      .where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, set.id), eq(replyTypes.active, true), eq(replyTypes.followUps, "stop")));
+      .where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, set.id), eq(replyTypes.followUps, "stop")));
   },
 
   async save(input) {
@@ -274,8 +273,8 @@ export async function loadStartOn(
              conv.id as conv_id, conv.record_id as conv_record_id, conv.channel as conv_channel,
              p.email is not null as has_email,
              ${stopRequestedSql(sql`r.latest_inbound_message_id`)} as stop_requested,
-             (select m.body_text from messages m join conversations mc on mc.id = m.conversation_id
-               where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id and ${publicConversationSql("mc")}) as latest_body,
+             (select m.body_text from messages m
+               where m.id = r.latest_inbound_message_id and m.organization_id = r.organization_id) as latest_body,
              p.lifecycle = 'contact' as contact,
              ${doNotContactSql("p")} as dnc,
              ${suppressedSql("p")} as suppressed
@@ -284,7 +283,7 @@ export async function loadStartOn(
       left join reply_types s on s.id = r.reply_type_id
       left join lateral (
         select c.id, c.record_id, c.channel from conversations c
-        where c.organization_id = ${organizationId} and ${publicConversationSql("c")}
+        where c.organization_id = ${organizationId}
           and c.id = ${opts.conversationId ? sql`${opts.conversationId}::uuid` : sql`(select m.conversation_id from messages m where m.id = r.latest_inbound_message_id and m.organization_id = ${organizationId})`}
       ) conv on true
       where r.id = ${recordId} and r.organization_id = ${organizationId}`),
@@ -300,12 +299,12 @@ export async function loadStartOn(
   if (r.latest_inbound_message_id) {
     // The owner, its flow and the flow's newest published version come in one query.
     const [found] = rowsOf<{
-      id: string; name: string; channel: string; type: string; status: string; archived: boolean; startable: boolean;
+      id: string; name: string; channel: string; status: string; archived: boolean; startable: boolean;
       flow_id: string | null; flow_status: "active" | "archived" | null; version_id: string | null;
     }>(
       await exec.execute(sql`
-        select own.id, own.name, own.channel, own.type, own.status, own.archived_at is not null as archived,
-               (${startableCampaignSql({ channel: sql`own.channel`, type: sql`own.type`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}) as startable,
+        select own.id, own.name, own.channel, own.status, own.archived_at is not null as archived,
+               (${startableCampaignSql({ channel: sql`own.channel`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}) as startable,
                fl.id as flow_id, fl.status as flow_status, ver.id as version_id
         from (${owningCampaignSql({
           organizationId: sql`${organizationId}::uuid`,
@@ -318,7 +317,7 @@ export async function loadStartOn(
         ) ver on true`),
     );
     if (found) {
-      owner = { id: found.id, name: found.name, channel: found.channel, type: found.type, status: found.status, archived: found.archived };
+      owner = { id: found.id, name: found.name, channel: found.channel, status: found.status, archived: found.archived };
       flowFacts = found.flow_id && found.flow_status ? { status: found.flow_status, hasPublished: found.version_id !== null } : null;
       if (found.startable && found.flow_id && found.flow_status === "active" && found.version_id) {
         selection = { sequenceId: found.flow_id, sequenceVersionId: found.version_id, campaignId: found.id };

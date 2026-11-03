@@ -28,7 +28,7 @@ function facts(over: Partial<StartFacts> = {}): StartFacts {
     doNotContact: false,
     suppressed: false,
     contact: false,
-    owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "active", archived: false },
+    owner: { id: "camp", name: "Autumn", channel: "email", status: "active", archived: false },
     flow: { status: "active", hasPublished: true },
     conversation: { id: "c1", recordId: "rec1", channel: "email" },
     selection: { sequenceId: "seq", sequenceVersionId: "v1", campaignId: "camp" },
@@ -136,9 +136,9 @@ describe("restartSequenceRun", () => {
 
   /** Each cause answers a 409 that names it, and the record page shows the same words. */
   const causes: Array<[string, Partial<StartFacts>, RegExp]> = [
-    ["the campaign is paused", { owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "paused", archived: false }, selection: null }, /Autumn is paused\. Resume it/],
-    ["the campaign has not started", { owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "draft", archived: false }, selection: null }, /Autumn has not started yet/],
-    ["the campaign is archived", { owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "active", archived: true }, selection: null }, /Autumn is archived/],
+    ["the campaign is paused", { owner: { id: "camp", name: "Autumn", channel: "email", status: "paused", archived: false }, selection: null }, /Autumn is paused\. Resume it/],
+    ["the campaign has not started", { owner: { id: "camp", name: "Autumn", channel: "email", status: "draft", archived: false }, selection: null }, /Autumn has not started yet/],
+    ["the campaign is archived", { owner: { id: "camp", name: "Autumn", channel: "email", status: "active", archived: true }, selection: null }, /Autumn is archived/],
     ["AI drafts are off", { flow: { status: "archived", hasPublished: true }, selection: null }, /AI drafts are off for the campaign Autumn/],
     ["AI drafts were never turned on", { flow: null, selection: null }, /AI drafts are off for the campaign Autumn/],
     ["the flow has no published steps", { flow: { status: "active", hasPublished: false }, selection: null }, /no published follow-up steps/],
@@ -158,7 +158,7 @@ describe("restartSequenceRun", () => {
   });
 
   it("does not claim the setting is wrong when the cause is somewhere else", async () => {
-    const s = store(facts({ owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "paused", archived: false }, selection: null }));
+    const s = store(facts({ owner: { id: "camp", name: "Autumn", channel: "email", status: "paused", archived: false }, selection: null }));
     await expect(restartSequenceRun(s.deps, actor, "rec1")).rejects.not.toThrow(/AI drafts/);
   });
 
@@ -247,7 +247,7 @@ describe("getRecordSequence", () => {
     const state = { recordId: "rec1", campaign: { id: "camp", name: "Autumn", mode: "ai_drafts" as const }, run: null };
     const ok = { loadStart: async () => facts(), recordState: async () => state } satisfies Pick<RunStore, "recordState" | "loadStart">;
     expect(await getRecordSequence({ runs: ok, now: () => NOW }, actor, "rec1")).toMatchObject({ canRestart: true, restartBlockedReason: null });
-    const paused = { loadStart: async () => facts({ owner: { id: "camp", name: "Autumn", channel: "email", type: "regular", status: "paused", archived: false }, selection: null }), recordState: async () => state } satisfies Pick<RunStore, "recordState" | "loadStart">;
+    const paused = { loadStart: async () => facts({ owner: { id: "camp", name: "Autumn", channel: "email", status: "paused", archived: false }, selection: null }), recordState: async () => state } satisfies Pick<RunStore, "recordState" | "loadStart">;
     expect(await getRecordSequence({ runs: paused, now: () => NOW }, actor, "rec1")).toMatchObject({ canRestart: false, restartBlockedReason: "The campaign Autumn is paused. Resume it to restart follow-ups." });
   });
 

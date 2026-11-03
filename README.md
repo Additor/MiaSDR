@@ -68,7 +68,7 @@ The [quick start guide](docs/guides/quick-start.md) walks from install to a firs
 - **Campaigns**: email from your Google Workspace mailboxes, LinkedIn invitations and messages through [Unipile](docs/setup/linkedin-unipile.md), inside the working hours and daily limits you set. When a mailbox loses access, its leads wait and carry on from the same step once access returns.
 - **Inbox and Actions**: every conversation in one list, and one queue for replies to approve, follow-ups due and tasks.
 - **CRM**: a pipeline board of deals. A lead becomes a contact when you create a deal from it, and leaves its campaigns.
-- **Tables**: a spreadsheet with formulas, AI columns and a waterfall across nine enrichment vendors, one step from a campaign.
+- **Tables**: AI columns that write a field for every row and a waterfall across nine enrichment vendors, one step from a campaign.
 - **Analytics**: sends, replies, bounces and the LinkedIn funnel per campaign.
 
 **In preview:** LinkedIn outreach and the enrichment vendors. Tests run them against local stand-ins and live key checks, but no full LinkedIn campaign has run on a real account and no vendor has run with a paid key. Start small and watch the results.

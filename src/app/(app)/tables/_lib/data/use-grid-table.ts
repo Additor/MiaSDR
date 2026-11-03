@@ -35,7 +35,6 @@ interface PasteResponse {
   addedRows: number;
   createdColumns: GridColumn[];
   skippedRunner: number;
-  skippedFormula?: number;
   invalid: Array<{ rowIndex: number; columnKey: string; error: string }>;
   invalidCount: number;
 }
@@ -45,7 +44,6 @@ export interface PasteOutcome {
   addedRows: number;
   addedColumns: number;
   skippedRunner: number;
-  skippedFormula: number;
   invalidCount: number;
 }
 
@@ -114,7 +112,6 @@ export interface GridTableState {
   retryFailed: (columnKey?: string) => Promise<GridResponse<{ retried: number }>>;
   /** Queues the runs behind cells, such as one cell's run (`cellRunBody`). */
   runCells: <T extends { queued: number } = { queued: number }>(body: Record<string, unknown>) => Promise<GridResponse<T>>;
-  recalculate: (columnId: string) => Promise<GridResponse<{ changedCells: number }>>;
   addOutput: (runnerId: string, outputKey: string) => Promise<GridResponse<{ filled?: number }>>;
 }
 
@@ -342,7 +339,7 @@ export function useGridTable(tableId: string): GridTableState {
         for (let i = 0; i < 25 && store.rows().length < Math.min(want, totalsRef.current.total); i += 1) await loadMore();
       }
       else store.putRows(mergeRows(store.rows(), data.rows, { canAppend: false }).rows);
-      return { cells: data.applied.length, addedRows: data.addedRows, addedColumns: data.createdColumns.length, skippedRunner: data.skippedRunner, skippedFormula: data.skippedFormula ?? 0, invalidCount: data.invalidCount };
+      return { cells: data.applied.length, addedRows: data.addedRows, addedColumns: data.createdColumns.length, skippedRunner: data.skippedRunner, invalidCount: data.invalidCount };
     }, () => (store.refusedGesture(), null)),
     [store, tableId, reload, load, loadMore],
   );
@@ -369,8 +366,6 @@ export function useGridTable(tableId: string): GridTableState {
   const retryFailed = useCallback((columnKey?: string) => afterSaves<{ retried: number }>(gridUrl.sub(tableId, "run/retry"), "POST", columnKey ? { columnKey } : {}), [afterSaves, tableId]);
   // A run reads the stored inputs, so a queued input would be left out.
   const runCells = useCallback(<T extends { queued: number } = { queued: number }>(body: Record<string, unknown>) => afterSaves<T>(gridUrl.sub(tableId, "run"), "POST", body), [afterSaves, tableId]);
-  // A formula reads the stored cells, so a queued input would be left out.
-  const recalculate = useCallback((columnId: string) => afterSaves<{ changedCells: number }>(`${gridUrl.sub(tableId, "columns")}/${columnId}/recalculate`, "POST"), [afterSaves, tableId]);
   const addOutput = useCallback((runnerId: string, outputKey: string) => afterSaves<{ filled?: number }>(gridUrl.sub(tableId, "enrichments"), "PATCH", { columnId: runnerId, addOutput: outputKey }), [afterSaves, tableId]);
 
   const deleteRows = useCallback(
@@ -486,7 +481,6 @@ export function useGridTable(tableId: string): GridTableState {
     moveColumn,
     duplicateColumn,
     retryFailed,
-    recalculate,
     addOutput,
   };
 }

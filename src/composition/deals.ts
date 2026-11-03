@@ -31,7 +31,7 @@ export const convertLead: ConvertLead = (tx, input) => convertToContact(conversi
 /** What `previewConvert` reads. */
 export const convertPreviewDeps = (): PreviewDeps => ({
   lifecycles: drizzleLeadLifecycle.lifecycles,
-  liveEnrollmentSummary: (organizationId, ids) => conversionOutreach.liveEnrollmentSummary(organizationId, [...ids]),
+  liveEnrollmentCounts: (organizationId, ids) => conversionOutreach.liveEnrollmentCounts(organizationId, [...ids]),
   previewRunStop: (organizationId, ids) => personReplyHandling.previewPersonRunStop(organizationId, [...ids]),
 });
 

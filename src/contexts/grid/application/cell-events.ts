@@ -24,7 +24,7 @@ export type CellsChangedListener = (event: CellsChangedEvent) => Promise<number 
 const listeners: CellsChangedListener[] = [];
 
 /**
- * Lets the module that runs formulas and enrichments react to edits (for example by queueing the
+ * Lets the module that runs enrichments and AI columns react to edits (for example by queueing the
  * columns that read the edited cell). Register once at startup. Registering the same function twice is a no-op.
  */
 export function registerCellsChangedListener(listener: CellsChangedListener): void {

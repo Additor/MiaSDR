@@ -8,7 +8,7 @@ import { isFilterActive } from "../domain/lead-filter";
 import { planLeadEdit, type LeadEditInput } from "../domain/lead-edit";
 import { leadDeleteBlock } from "../domain/person-delete-policy";
 import { BLOCK_MESSAGES } from "./lead-delete-terms";
-import type { BlockedLead, BlockReason, DeleteOutcome, LeadDeleteDeps, LeadDeps, LeadDetail, LeadFilter, LeadForDelete, SendViewer } from "./lead-ports";
+import type { BlockedLead, BlockReason, DeleteOutcome, LeadDeleteDeps, LeadDeps, LeadDetail, LeadFilter, LeadForDelete } from "./lead-ports";
 
 /*
  * Permissions: any member of the organization can read, edit, delete and export
@@ -22,10 +22,8 @@ export { BLOCK_MESSAGES };
 /** One line per reason in a bulk delete's answer, for `n` leads kept. Each says why, in the order of the per-lead reasons. */
 const KEPT_LINES: Record<BlockReason, (n: number) => string> = {
   has_sends: (n) => `${leads(n)} already got messages.`,
-  has_hidden_sends: (n) => `${leads(n)} got messages in another member's personal campaign.`,
   in_active_campaign: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in a running or paused campaign. Cancel the enrollment or finish the campaign first.`,
   linked_records: (n) => `${leads(n)} ${n === 1 ? "has" : "have"} history, such as replies or conversations.`,
-  personal_campaign_sends: (n) => `${leads(n)} ${n === 1 ? "is" : "are"} in another member's personal campaign. Ask its creator, an owner or an admin.`,
   try_again: (n) => `${leads(n)} ${n === 1 ? "was" : "were"} busy with another change. Try again.`,
   agent_delete_protected: (n) => `${leads(n)} can be deleted only by a person.`,
 };
@@ -57,11 +55,8 @@ export function summarizeDelete(outcome: DeleteOutcome): DeleteSummary {
   };
 }
 
-/** The actor as a reader of personal-campaign sends: the campaign's creator, an owner or an admin sees them. */
-export const sendViewer = (actor: Pick<Actor, "userId" | "role">): SendViewer => ({ userId: actor.userId, seesAllPersonal: isOwnerOrAdmin(actor.role) });
-
 export async function getLead(deps: LeadDeps, actor: Actor, id: string): Promise<LeadDetail> {
-  const lead = await deps.leads.get(actor.organizationId, id, sendViewer(actor));
+  const lead = await deps.leads.get(actor.organizationId, id);
   if (!lead) throw new NotFoundError("Lead not found");
   return lead;
 }
@@ -140,14 +135,11 @@ export async function deleteLeads(deps: LeadDeleteDeps, actor: Actor, selection:
   return deleteInBatches(deps, actor, await deps.people.idsMatching(actor.organizationId, filter));
 }
 
-/**
- * The reason a lead stays, from the facts of the three contexts. The viewer only picks between `has_sends` and
- * `has_hidden_sends`, and opens `personal_campaign_sends` to the campaign's creator, an owner or an admin.
- */
+/** The reason a lead stays, from the facts of the three contexts. */
 async function verdicts(deps: LeadDeleteDeps, tx: DbHandle, actor: Actor, rows: LeadForDelete[], lockPolicies: boolean): Promise<Map<string, BlockReason>> {
   const ids = rows.map((row) => row.id);
   const shielded = actor.via ? await deps.agentProtected(tx, actor.organizationId, ids, { lock: lockPolicies }) : new Set<string>();
-  const outreach = await deps.outreach.blockers(tx, actor, ids);
+  const outreach = await deps.outreach.blockers(tx, actor.organizationId, ids);
   const history = await deps.handling.peopleWithHistory(tx, actor.organizationId, ids);
   const blocked = new Map<string, BlockReason>();
   for (const row of rows) {
@@ -193,7 +185,7 @@ function deleteBatch(deps: LeadDeleteDeps, actor: Actor, ids: string[]): Promise
   );
 }
 
-/** What a delete of one person would meet, as this actor may see it. Null when no such person is in the organization. */
+/** What a delete of one person would meet. Null when no such person is in the organization. */
 export async function previewLeadDelete(deps: LeadDeleteDeps, actor: Actor, id: string): Promise<{ id: string; name: string | null; contact: boolean; blocked: BlockReason | null } | null> {
   return deps.transaction(async (tx) => {
     const [row] = await deps.people.read(tx, actor.organizationId, [id]);

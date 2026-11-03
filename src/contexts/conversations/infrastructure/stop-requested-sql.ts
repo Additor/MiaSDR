@@ -1,7 +1,6 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
 import { rowsOf } from "@/platform/db/sql-values";
-import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { stopReviewOpenSql } from "@/platform/db/stop-review-sql";
 import { detectsStopRequest } from "../domain/stop-request";
 
@@ -21,7 +20,7 @@ export const stopRequestedSql = (messageId: SQL): SQL =>
 export async function replyAskedToStop(exec: DbHandle, messageId: string | null): Promise<boolean> {
   if (!messageId) return false;
   const [row] = rowsOf<{ asked: boolean; body: string | null }>(
-    await exec.execute(sql`select ${stopRequestedSql(sql`${messageId}::uuid`)} as asked, (select m.body_text from messages m join conversations c on c.id = m.conversation_id where m.id = ${messageId}::uuid and ${publicConversationSql("c")}) as body`),
+    await exec.execute(sql`select ${stopRequestedSql(sql`${messageId}::uuid`)} as asked, (select m.body_text from messages m where m.id = ${messageId}::uuid) as body`),
   );
   return row?.asked === true || detectsStopRequest(row?.body ?? "");
 }

@@ -1,4 +1,4 @@
-import { genuineInboundSql } from "@/platform/db/conversation-visibility";
+import { genuineInboundSql } from "@/platform/db/genuine-inbound";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import {
@@ -54,15 +54,13 @@ const touch = (f: AnalyticsFilter) => sql`
 
 /**
  * True when the person has an inbound message on the enrollment's channel at or after `at`. Auto-replies and unverified bounce notices are not replies.
- * A private reply (personal campaign) counts for that personal campaign only, never for a regular campaign the person is also in.
  */
-const repliedAfter = (f: AnalyticsFilter, channel: SQL, person: SQL, at: SQL, campaign: SQL) => sql`exists (
+const repliedAfter = (f: AnalyticsFilter, channel: SQL, person: SQL, at: SQL) => sql`exists (
   select 1 from records r
   join conversations cv on cv.record_id = r.id and cv.organization_id = r.organization_id
   join messages m on m.conversation_id = cv.id and m.organization_id = cv.organization_id
   where r.organization_id = ${org(f)} and r.person_id = ${person} and ${genuineInboundSql("m")}
-    and m.channel = ${channel} and m.sent_at >= ${at}
-    and (cv.private_campaign_id is null or cv.private_campaign_id = ${campaign}))`;
+    and m.channel = ${channel} and m.sent_at >= ${at})`;
 
 /** Inbound messages in the window from people who had been contacted (a confirmed send at or before the message). One row per message. */
 const replyMessages = (f: AnalyticsFilter, channel?: Channel) => sql`
@@ -73,7 +71,6 @@ const replyMessages = (f: AnalyticsFilter, channel?: Channel) => sql`
   join campaign_enrollments e on e.person_id = r.person_id and e.organization_id = m.organization_id and e.channel = m.channel
   where m.organization_id = ${org(f)} and ${genuineInboundSql("m")} and ${inWindow(sql`m.sent_at`, f)}
     ${channel ? sql`and m.channel = ${channel}` : sql``} ${campaignOf(f)} ${accountOf(f)}
-    and (cv.private_campaign_id is null or cv.private_campaign_id = e.campaign_id)
     and exists (
       select 1 from sends s
       where s.enrollment_id = e.id and s.organization_id = e.organization_id and s.status = 'sent' and s.sent_at <= m.sent_at)
@@ -121,7 +118,7 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
           (count(*) filter (where replied))::int as replied,
           (count(*) filter (where status = 'bounced'))::int as bounced
         from (
-          select t.*, ${repliedAfter(f, sql`t.channel`, sql`t.person_id`, sql`t.first_at`, sql`t.campaign_id`)} as replied
+          select t.*, ${repliedAfter(f, sql`t.channel`, sql`t.person_id`, sql`t.first_at`)} as replied
           from touch t where ${inWindow(sql`t.first_at`, f)}
         ) x group by campaign_id
       ),
@@ -167,7 +164,7 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
         select channel, count(*)::int as contacted, (count(*) filter (where replied))::int as replied,
           (count(*) filter (where status = 'bounced'))::int as bounced
         from (
-          select t.*, ${repliedAfter(f, sql`t.channel`, sql`t.person_id`, sql`t.first_at`, sql`t.campaign_id`)} as replied
+          select t.*, ${repliedAfter(f, sql`t.channel`, sql`t.person_id`, sql`t.first_at`)} as replied
           from touch t where ${inWindow(sql`t.first_at`, f)}
         ) x group by channel
       ),
@@ -234,7 +231,7 @@ export const drizzleAnalyticsReadModel: AnalyticsReadModel = {
         (count(*) filter (where i.connection_state = 'connected' and exists (
           select 1 from sends s where s.enrollment_id = i.enrollment_id and s.organization_id = ${org(f)} and s.status = 'sent' and ${stepKind} = 'message'
         )))::int as messaged,
-        (count(*) filter (where i.connection_state = 'connected' and ${repliedAfter(f, sql`'linkedin'`, sql`i.person_id`, sql`i.invited_at`, sql`i.campaign_id`)}))::int as replied
+        (count(*) filter (where i.connection_state = 'connected' and ${repliedAfter(f, sql`'linkedin'`, sql`i.person_id`, sql`i.invited_at`)}))::int as replied
       from invited i join campaigns c on c.id = i.campaign_id and c.organization_id = ${org(f)}
       where ${inWindow(sql`i.invited_at`, f)}
       group by i.campaign_id, c.name, c.created_at

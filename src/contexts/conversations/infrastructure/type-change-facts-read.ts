@@ -1,8 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db, type DbHandle } from "@/platform/db/client";
-import { records, replyHandlingSettings, replyTypes } from "@/platform/db/schema";
+import { records, replyTypes } from "@/platform/db/schema";
 import { replyAskedToStop } from "./stop-requested-sql";
-import { visibleRecordSql } from "@/platform/db/conversation-visibility";
 import { followUpModeFactsTx } from "./follow-up-mode-facts";
 import { byGroupThenOrder, type ReplyTypeGroup } from "../domain/reply-handling";
 import { typeRulesOf } from "../domain/reply-type";
@@ -19,22 +18,20 @@ export const replyTypeOption = (t: typeof replyTypes.$inferSelect): ReplyTypeOpt
 });
 
 /**
- * The facts `typeChangeOutcome` reads for one record: its current type, the active types of its set, whether the latest
+ * The facts `typeChangeOutcome` reads for one record: its current type, the types of its set, whether the latest
  * reply asked to stop (`replyAskedToStop`), whether the person is a contact, and the Follow-ups after a reply mode
- * and channel that decide whether follow-ups apply. Null for a record outside the organization or with only private
- * conversations. The Change type outcomes read it; a write decides through `personTypeDecisionTx`.
+ * and channel that decide whether follow-ups apply. Null for a record outside the organization. The Change type outcomes read it; a write decides through `personTypeDecisionTx`.
  */
 export async function typeChangeFactsOf(organizationId: string, recordId: string, exec: DbHandle = db): Promise<TypeChangeFacts | null> {
   const [head] = await exec
     .select({ record: records })
     .from(records)
-    .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId), visibleRecordSql("records")));
+    .where(and(eq(records.id, recordId), eq(records.organizationId, organizationId)));
   if (!head) return null;
   const { record } = head;
 
-  const [types, [settings], stopRequested, mode] = await Promise.all([
+  const [types, stopRequested, mode] = await Promise.all([
     exec.select().from(replyTypes).where(and(eq(replyTypes.organizationId, organizationId), eq(replyTypes.replyTypeSetId, record.replyTypeSetId))),
-    exec.select({ floor: replyHandlingSettings.autoApplyConfidence }).from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, record.replyTypeSetId)),
     replyAskedToStop(exec, record.latestInboundMessageId),
     followUpModeFactsTx(exec, organizationId, recordId),
   ]);
@@ -42,16 +39,12 @@ export async function typeChangeFactsOf(organizationId: string, recordId: string
 
   return {
     current: current ? replyTypeOption(current) : null,
-    targets: types
-      .filter((t) => t.active)
-      .sort(byGroupThenOrder)
-      .map(replyTypeOption),
+    targets: types.sort(byGroupThenOrder).map(replyTypeOption),
     facts: {
       stopRequested,
       isContact: mode?.isContact ?? false,
       campaignMode: mode?.campaignMode ?? null,
       channel: mode?.channel ?? record.activeChannel,
-      floor: Number(settings?.floor ?? 0.85),
       locked: record.replyTypeLocked,
     },
   };

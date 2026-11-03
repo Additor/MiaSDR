@@ -4,7 +4,6 @@ import { conversations, drafts, events, mailboxes, messages, people, records, se
 import { ConflictError, NotFoundError } from "@/shared/errors";
 import type { BeginSend, ReplyStore } from "../application/reply-ports";
 import { ATTEMPT_FROM } from "../domain/send-attempt-status";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 import { attemptOfAnotherDraft, failAttempt, listUnsettledAttempts, markAttemptUncertain, settleAttemptSentTx, toAttempt } from "./reply-attempt-ledger";
 import { type Snapshot, mailboxFor, sendContextFor, blockedAddressesFor, draftCanBecome, draftIn } from "./reply-store-shared";
 import { IN_FLIGHT_DRAFT_STATUSES } from "../domain/draft-status";
@@ -53,8 +52,7 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
         .from(conversations)
         .innerJoin(records, eq(records.id, conversations.recordId))
         .innerJoin(people, eq(people.id, records.personId))
-        .where(and(eq(conversations.id, seen.conversationId), publicConversation));
-      // A private conversation answers as a foreign id does.
+        .where(eq(conversations.id, seen.conversationId));
       if (!ctx) throw new NotFoundError("Draft not found");
       checkRecordOpen(ctx, "email");
       checkThreadWritable(ctx, "email");

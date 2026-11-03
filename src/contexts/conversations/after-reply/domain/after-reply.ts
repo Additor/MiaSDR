@@ -30,8 +30,7 @@ export function afterReplyModeOf(flow: { status: string; hasPublishedVersion: bo
 export const afterReplyFlowName = (campaignName: string): string => `${campaignName.trim()} (after a reply)`;
 
 /** Why a campaign cannot draft follow-ups, or null when it can. */
-export function afterReplyLockedReason(campaign: { channel: string; type: string }): string | null {
-  if (campaign.type === "personal") return "Personal campaigns keep replies out of the Inbox, so they cannot draft follow-ups.";
+export function afterReplyLockedReason(campaign: { channel: string }): string | null {
   if (campaign.channel !== "email") return "Follow-up drafts are available for email campaigns only. Replies on LinkedIn go to the Inbox.";
   return null;
 }
@@ -72,7 +71,7 @@ export interface StartBlockFacts {
   /** The person is a contact (`people.lifecycle`), who starts no follow-ups. */
   contact: boolean;
   /** The campaign that most recently emailed the person, or null. */
-  owner: { name: string; channel: string; type: string; status: string; archived: boolean } | null;
+  owner: { name: string; channel: string; status: string; archived: boolean } | null;
   /** The owner's Follow-ups after a reply sequence, or null when it has none. */
   flow: { status: string; hasPublished: boolean } | null;
   stepCount: number;

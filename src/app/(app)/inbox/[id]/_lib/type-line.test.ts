@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decisionKey, decisionView, holdText, latestAiPick, latestPick, noDraftReason, offersLooksRight, pickBadge, rulesSummary, typeDecision, undoMessage, type PickFacts } from "./type-line";
+import { decisionKey, decisionView, holdText, latestAiPick, latestPick, noDraftReason, pickBadge, rulesSummary, typeDecision, undoMessage, type PickFacts } from "./type-line";
 
 const pick = (over: Partial<PickFacts> = {}): PickFacts => ({
   id: "p1",
@@ -7,13 +7,10 @@ const pick = (over: Partial<PickFacts> = {}): PickFacts => ({
   provider: "fake",
   latest: true,
   current: true,
-  acknowledged: false,
   proposed: { groupKey: "interested", name: "Demo request" },
   applied: { groupKey: "interested", name: "Demo request" },
   appliedReplyTypeId: "t-demo",
-  rules: { checkMode: "after" },
   proposedSystemRole: null,
-  proposedActive: true,
   holdReason: null,
   stopRequested: false,
   confidence: 0.9,
@@ -32,26 +29,14 @@ describe("typeDecision", () => {
     expect(typeDecision(undefined, email, demo)).toBeNull();
   });
 
-  it("asks for Looks right on an applied pick nobody looked at", () => {
-    expect(typeDecision(pick(), email, demo)?.kind).toBe("looks_right");
-    expect(typeDecision(pick({ acknowledged: true }), email, demo)).toBeNull();
-    // A type that skips the check asks nothing.
-    expect(typeDecision(pick({ rules: { checkMode: "skip" } }), email, demo)).toBeNull();
-    // A person changed the type since: the pick no longer describes the record.
-    expect(typeDecision(pick(), email, { groupKey: "interested", replyTypeId: "t-meeting", stopReviewOpen: false })).toBeNull();
-    // Another type with the same name in the same group is still another type.
-    expect(typeDecision(pick({ applied: { groupKey: "interested", name: "Demo request" } }), email, { groupKey: "interested", replyTypeId: "t-demo-2", stopReviewOpen: false })).toBeNull();
+  it("asks nothing of an applied pick", () => {
+    expect(typeDecision(pick(), email, demo)).toBeNull();
   });
 
   it("holds a proposed pick only while it is current", () => {
     expect(typeDecision(pick({ status: "proposed", holdReason: "low_confidence" }), email, demo)?.kind).toBe("held");
     expect(typeDecision(pick({ status: "proposed", current: false }), email, demo)).toBeNull();
     expect(typeDecision(pick({ status: "stale", stopRequested: true, current: false }), email, stopOpen)?.kind).toBe("stop");
-  });
-
-  it("offers no Accept for a held pick whose type an admin archived since", () => {
-    expect(typeDecision(pick({ status: "proposed", proposedActive: false, holdReason: "requires_review" }), email, demo)?.kind).toBe("archived");
-    expect(typeDecision(pick({ status: "proposed", proposedActive: false, current: false }), email, demo)).toBeNull();
   });
 
   it("puts a stop request first, and drops it once contact stopped", () => {
@@ -103,7 +88,7 @@ describe("texts", () => {
 
 describe("holdText", () => {
   it("says why a held pick waits, and falls back for an unknown reason or none", () => {
-    expect(holdText("low_confidence")).toBe("The AI's confidence is under the confidence floor.");
+    expect(holdText("low_confidence")).toBe("The AI's confidence is under the 85% floor.");
     expect(holdText("protected_customer")).toBe("The person is locked as Existing customer. Accept takes them out of it.");
     for (const unknown of ["anything", null, undefined]) {
       expect(holdText(unknown)).toBe("It waits for you.");
@@ -128,42 +113,15 @@ describe("decisionView", () => {
   });
 
   it("clears the done line when a new decision arrives", () => {
-    const next = decisionKey({ kind: "looks_right", pickId: "p2" });
+    const next = decisionKey({ kind: "stop", pickId: "p2" });
     expect(decisionView(next, { key: held!, text: "AI pick accepted." })).toEqual({ showDecision: true, done: null });
   });
 });
 
 describe("pickBadge", () => {
-  const entry = { status: "auto_applied", acknowledged: false, current: true, rules: { checkMode: "after" as const } };
-
-  it("marks an applied pick Not checked only while it waits for Looks right", () => {
-    expect(pickBadge(entry)).toBe("Not checked");
-    expect(pickBadge({ ...entry, rules: null })).toBe("Not checked");
-    expect(pickBadge({ ...entry, rules: { checkMode: "skip" } })).toBeNull();
-    expect(pickBadge({ ...entry, rules: { checkMode: "before" } })).toBeNull();
-    expect(pickBadge({ ...entry, acknowledged: true })).toBeNull();
-    // A later decision moved the record on: the pick no longer waits.
-    expect(pickBadge({ ...entry, current: false })).toBeNull();
-  });
-
-  it("marks a held pick and a failed one", () => {
-    expect(pickBadge({ ...entry, status: "proposed" })).toBe("Held for a check");
-    expect(pickBadge({ ...entry, status: "failed" })).toBe("Failed");
-    expect(pickBadge({ ...entry, status: "accepted" })).toBeNull();
-  });
-});
-
-describe("offersLooksRight", () => {
-  const entry = { status: "auto_applied", acknowledged: false, current: true, rules: { checkMode: "after" as const }, canAcknowledge: true };
-
-  it("offers Looks right on a pick marked Not checked", () => {
-    expect(offersLooksRight(entry)).toBe(true);
-  });
-
-  it("offers it on no pick without that badge, even when the server would take it", () => {
-    expect(offersLooksRight({ ...entry, rules: { checkMode: "skip" } })).toBe(false);
-    expect(offersLooksRight({ ...entry, current: false })).toBe(false);
-    expect(offersLooksRight({ ...entry, status: "failed" })).toBe(false);
-    expect(offersLooksRight({ ...entry, canAcknowledge: false })).toBe(false);
+  it("marks a held pick and a failed one, and no other", () => {
+    expect(pickBadge({ status: "proposed" })).toBe("Held for a check");
+    expect(pickBadge({ status: "failed" })).toBe("Failed");
+    for (const status of ["auto_applied", "accepted", "overridden", "rejected", "stale"]) expect(pickBadge({ status })).toBeNull();
   });
 });

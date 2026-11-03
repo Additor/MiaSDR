@@ -6,7 +6,6 @@ import { EmptyState } from "@/components/shell/empty-state";
 import { PageHeader } from "@/components/shell/page-header";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
-import { Badge } from "@/components/ui/badge";
 import { ScrollableTable } from "@/components/ui/scrollable-table";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
@@ -70,7 +69,6 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
       name: c.name,
       status: c.status,
       channel: "email" as const,
-      personal: false,
       steps: c.steps,
       enrolled: c.enrolled,
       createdAt: c.createdAt,
@@ -83,7 +81,6 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
       name: c.name,
       status: c.status,
       channel: "linkedin" as const,
-      personal: c.type === "personal",
       steps: c.steps.length,
       enrolled: c.enrolled,
       createdAt: c.createdAt,
@@ -154,10 +151,7 @@ async function CampaignTable({ searchParams }: { searchParams: PageProps<"/campa
                   <RowLink href={`/campaigns/${c.id}`}>{c.name}</RowLink>
                 </TableCell>
                 <TableCell>
-                  <span className="inline-flex items-center gap-2">
-                    <ChannelName channel={c.channel} />
-                    {c.personal && <Badge variant="outline">Personal</Badge>}
-                  </span>
+                  <ChannelName channel={c.channel} />
                 </TableCell>
                 <TableCell>
                   <CampaignStatusToken status={c.status} archived={c.archived} compact />

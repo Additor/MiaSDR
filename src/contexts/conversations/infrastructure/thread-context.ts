@@ -21,7 +21,6 @@ import { KNOWLEDGE_BUDGET_CHARS, normalizeTags, selectKnowledge } from "../ai/do
 import { groupLabel } from "../domain/reply-handling";
 import { replySubject } from "../domain/reply-policy";
 import { drizzleInboxStore } from "./drizzle-inbox-store";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -126,7 +125,7 @@ export async function buildDraftContext(organizationId: string, conversationId: 
     })
     .from(conversations)
     .innerJoin(records, eq(records.id, conversations.recordId))
-    .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId), publicConversation));
+    .where(and(eq(conversations.organizationId, organizationId), eq(conversations.id, conversationId)));
   if (!head || (head.channel !== "email" && head.channel !== "linkedin")) return null;
   const channel = head.channel;
   const thread = await threadEntries(organizationId, conversationId);

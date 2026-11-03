@@ -2,14 +2,12 @@ import { unconfirmedSendsOf } from "../../infrastructure/drizzle-management-stor
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
-import { campaignEnrollments, campaigns, channelSettings, companies, conversations, entityColumns, linkedinAccounts, linkedinEnrollmentDetails, people, sends } from "@/platform/db/schema";
-import { ConflictError } from "@/shared/errors";
+import { campaignEnrollments, campaigns, channelSettings, companies, entityColumns, linkedinAccounts, linkedinEnrollmentDetails, people, sends } from "@/platform/db/schema";
 import type { LinkedInCampaignStore, LinkedInEnrollResult } from "../application/linkedin-campaigns";
 import { drizzleCrossCampaignNotices } from "../../infrastructure/drizzle-cross-campaign-notices";
-import { peopleWithPrivateThread } from "./drizzle-personal-thread-store";
 import { insertSkippingContacts, notContactSql } from "../../infrastructure/contact-guard";
 import { archiveCondition, checkedStatusChange, statusMarks, stepsStillEditable } from "../../infrastructure/drizzle-management-stores";
-import { parseCampaignType, type CampaignStatus } from "../../domain/campaign";
+import type { CampaignStatus } from "../../domain/campaign";
 import { retriesUsed } from "../../domain/enrollment-list";
 import { filteredScope, sentCount, tabCounts } from "../../infrastructure/enrollment-list-sql";
 import { inboxConversationsOfPeople } from "../../infrastructure/inbox-thread-lookup";
@@ -85,7 +83,6 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
       .select({
         id: campaigns.id,
         name: campaigns.name,
-        type: campaigns.type,
         status: campaigns.status,
         steps: campaigns.steps,
         archivedAt: campaigns.archivedAt,
@@ -102,21 +99,21 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
       .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.channel, "linkedin"), archiveCondition(archived)))
       .groupBy(campaigns.id)
       .orderBy(desc(campaigns.createdAt));
-    return rows.map((r) => ({ ...r, type: parseCampaignType(r.type), status: r.status as CampaignStatus, steps: r.steps as unknown as LinkedInStep[] }));
+    return rows.map((r) => ({ ...r, status: r.status as CampaignStatus, steps: r.steps as unknown as LinkedInStep[] }));
   },
 
   async get(organizationId, id, tx) {
     const [row] = await (tx ?? db)
-      .select({ id: campaigns.id, name: campaigns.name, type: campaigns.type, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, createdAt: campaigns.createdAt, createdBy: campaigns.createdBy })
+      .select({ id: campaigns.id, name: campaigns.name, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, createdAt: campaigns.createdAt, createdBy: campaigns.createdBy })
       .from(campaigns)
       .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.channel, "linkedin")));
-    return row ? { ...row, type: parseCampaignType(row.type), status: row.status as CampaignStatus, steps: row.steps as unknown as LinkedInStep[] } : null;
+    return row ? { ...row, status: row.status as CampaignStatus, steps: row.steps as unknown as LinkedInStep[] } : null;
   },
 
   async create(organizationId, input, tx) {
     const [row] = await (tx ?? db)
       .insert(campaigns)
-      .values({ organizationId, channel: "linkedin", name: input.name, type: input.type ?? "regular", status: "draft", steps: input.steps as never, createdBy: input.createdBy })
+      .values({ organizationId, channel: "linkedin", name: input.name, status: "draft", steps: input.steps as never, createdBy: input.createdBy })
       .returning({ id: campaigns.id });
     return row.id;
   },
@@ -129,53 +126,16 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     return row.furthest;
   },
 
-  async hasSends(organizationId, id, tx) {
-    const [row] = await (tx ?? db)
-      .select({ n: sql<number>`count(*)::int` })
-      .from(sends)
-      .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-      .where(and(eq(sends.organizationId, organizationId), eq(campaignEnrollments.campaignId, id)));
-    return row.n > 0;
-  },
-
-  async update(organizationId, id, patch, handle) {
-    const set = { ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.type !== undefined ? { type: patch.type } : {}), ...(patch.steps !== undefined ? { steps: patch.steps as never } : {}) };
+  async update(organizationId, id, patch, handle = db) {
+    const set = { ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.steps !== undefined ? { steps: patch.steps as never } : {}) };
     // An empty patch changes nothing. Drizzle throws "No values to set" for an empty SET, which would answer 500.
     if (Object.keys(set).length === 0) return true;
-    return inTransaction(handle, async (tx) => {
-      if (patch.type !== undefined) {
-        // The type guard runs under the campaign row lock. The LinkedIn claim takes the same row `for share` before it inserts a send,
-        // so a claim in flight either committed (this check sees its send) or waits for this commit.
-        const [row] = await tx
-          .select({ type: campaigns.type })
-          .from(campaigns)
-          .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id)))
-          .for("update");
-        if (row && row.type !== patch.type) {
-          const [sent] = await tx
-            .select({ one: sql<number>`1` })
-            .from(sends)
-            .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-            .where(and(eq(sends.organizationId, organizationId), eq(campaignEnrollments.campaignId, id)))
-            .limit(1);
-          if (sent) throw new ConflictError("The campaign type cannot change once the campaign has sent something.");
-          if (row.type === "personal") {
-            const [kept] = await tx
-              .select({ one: sql<number>`1` })
-              .from(conversations)
-              .where(and(eq(conversations.organizationId, organizationId), eq(conversations.privateCampaignId, id)))
-              .limit(1);
-            if (kept) throw new ConflictError("This campaign already holds private replies, so it stays personal.");
-          }
-        }
-      }
-      const rows = await tx
-        .update(campaigns)
-        .set(set)
-        .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), stepsStillEditable(patch)))
-        .returning({ id: campaigns.id });
-      return rows.length > 0;
-    });
+    const rows = await handle
+      .update(campaigns)
+      .set(set)
+      .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), stepsStillEditable(patch)))
+      .returning({ id: campaigns.id });
+    return rows.length > 0;
   },
 
   async setStatus(organizationId, id, change, handle = db) {
@@ -184,21 +144,11 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
   },
 
   async delete(organizationId, id, audit) {
-    try {
-      return await db.transaction(async (tx) => {
-        const rows = await tx.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
-        if (rows.length > 0) await recordAudit(tx, audit);
-        return rows.length > 0;
-      });
-    } catch (error) {
-      // conversations_private_campaign_fk: replies of a personal campaign are stored under it and keep it alive.
-      const code = (error as { code?: string }).code ?? (error as { cause?: { code?: string } }).cause?.code;
-      const constraint = (error as { constraint_name?: string; constraint?: string }).constraint_name ?? (error as { cause?: { constraint_name?: string } }).cause?.constraint_name;
-      if (code === "23503" && constraint === "conversations_private_campaign_fk") {
-        throw new ConflictError("This campaign holds private replies and cannot be deleted. Archive it instead.");
-      }
-      throw error;
-    }
+    return db.transaction(async (tx) => {
+      const rows = await tx.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
+      if (rows.length > 0) await recordAudit(tx, audit);
+      return rows.length > 0;
+    });
   },
 
   async setArchived(organizationId, id, archived) {
@@ -356,7 +306,6 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
       .where(and(eq(entityColumns.organizationId, organizationId), eq(entityColumns.entity, "people")));
     const labels = new Map(columns.map((c) => [c.key, c.name]));
     const cross = await drizzleCrossCampaignNotices.leadContext(organizationId, id, [...new Set(rows.map((r) => r.personId))]);
-    const withThread = await peopleWithPrivateThread(organizationId, id, [...new Set(rows.map((r) => r.personId))]);
     const repliedPeople = [...new Set(rows.filter((r) => r.status === "replied").map((r) => r.personId))];
     const inboxThreads = await inboxConversationsOfPeople(organizationId, "linkedin", repliedPeople);
     const [counts, sent] = await Promise.all([tabCounts(organizationId, id, query.campaignStatus), sentCount(organizationId, id)]);
@@ -372,7 +321,6 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
           ...rest,
           personId,
           inboxConversationId: inboxThreads.get(personId) ?? null,
-          hasPrivateThread: withThread.has(personId),
           personName: personName ?? firstName,
           profileUrl: profileUrl ?? (slug ? profileUrlFor(slug) : null),
           variables: buildVariables({ firstName, lastName, fullName: personName, title, phone, email, companyName, companyDomain, linkedinUrl, raw, companyLinkedinUrl, companyRaw, custom, mergeFields }, labels),

@@ -8,7 +8,7 @@ export interface QueueItem {
   group: QueueGroup;
   personName: string | null;
   personLifecycle: "lead" | "contact";
-  /** The thread to open. Null when the record has no public conversation. */
+  /** The thread to open. Null when the record has no conversation. */
   conversationId: string | null;
   groupKey: string | null;
   replyTypeName: string | null;

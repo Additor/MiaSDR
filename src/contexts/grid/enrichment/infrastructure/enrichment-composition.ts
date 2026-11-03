@@ -84,15 +84,6 @@ export function gridWorkerDeps(overrides: Partial<WorkerDeps> = {}): WorkerDeps 
     leaseMs: GRID_JOB_LEASE_MS,
     concurrency: env().GRID_RUN_CONCURRENCY ?? DEFAULT_CONCURRENCY,
     callTimeoutMs: GRID_CALL_TIMEOUT_MS,
-    // Formulas that read a result recompute once it lands. Loaded on use because composition.ts imports this file.
-    afterWrite: async (job, columnKeys) => {
-      const [{ recalculateFormulasQuietly }, { refreshAfterSourceWrite }, { gridDeps }] = await Promise.all([import("../../application/formula-recalc"), import("../../application/formula-lookup-refresh"), import("../../infrastructure/composition")]);
-      const deps = gridDeps();
-      await recalculateFormulasQuietly(deps, job.organizationId, job.tableId, { rowIds: [job.rowId], changedKeys: columnKeys });
-      // Formulas in other tables may look up what the run just wrote. One rescan per finished cell is too much, so they are marked stale.
-      const table = await deps.structure.getTable(job.organizationId, job.tableId);
-      if (table) await refreshAfterSourceWrite(deps, job.organizationId, table, columnKeys, { markOnly: true });
-    },
     ...overrides,
   };
 }

@@ -7,11 +7,11 @@ import { aiFakeMode, languageModels } from "@/contexts/ai/infrastructure/composi
 import { answerJsonSchema, answerSchema, buildAnswerPrompt, type AnswerInput, type AnswerOutput } from "../domain/ai-answer";
 import { FakeGridAi } from "./fake-grid-ai";
 
-/** The grid's AI question on one model: AI columns and the formula helper both ask it. */
+/** The grid's AI question on one model. AI columns ask it. */
 export interface GridAnswerer {
   readonly provider: string;
   readonly model: string;
-  answer(input: AnswerInput, task?: "grid.answer" | "grid.formula"): Promise<{ output: AnswerOutput; usage?: Record<string, number> }>;
+  answer(input: AnswerInput): Promise<{ output: AnswerOutput; usage?: Record<string, number> }>;
 }
 
 export interface GridAnswererResolver {
@@ -24,10 +24,10 @@ export function createGridAnswerer(model: LanguageModel): GridAnswerer {
   return {
     provider: model.provider,
     model: model.model,
-    async answer(input, task = "grid.answer") {
+    async answer(input) {
       const prompt = buildAnswerPrompt(input, randomBytes(6).toString("hex"));
       const { output, usage } = await generateStructured(model, {
-        task,
+        task: "grid.answer",
         system: [{ text: prompt.system, cacheable: true }],
         messages: [{ role: "user", content: prompt.user }],
         schema: { name: "row_fields", json: answerJsonSchema(input.outputs), parse: answerSchema(input.outputs) },

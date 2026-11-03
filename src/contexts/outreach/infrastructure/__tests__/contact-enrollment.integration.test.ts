@@ -40,11 +40,11 @@ describeDb("contacts and campaign enrollment", () => {
     const created = await createTestOrg(sql, "K");
     orgs.push(created);
     const { organizationId: org, userId } = created;
-    const campaign = async (channel: "email" | "linkedin", over: { type?: string; createdBy?: string | null; status?: string } = {}) =>
+    const campaign = async (channel: "email" | "linkedin", over: { createdBy?: string | null; status?: string } = {}) =>
       (
         await sql`
-          insert into campaigns (organization_id, channel, name, type, status, steps, created_by)
-          values (${org}, ${channel}, ${`${channel}-${over.type ?? "regular"}`}, ${over.type ?? "regular"}, ${over.status ?? "active"}, ${sql.json((channel === "email" ? EMAIL_STEPS : LINKEDIN_STEPS) as never)}, ${over.createdBy === undefined ? userId : over.createdBy})
+          insert into campaigns (organization_id, channel, name, status, steps, created_by)
+          values (${org}, ${channel}, ${channel}, ${over.status ?? "active"}, ${sql.json((channel === "email" ? EMAIL_STEPS : LINKEDIN_STEPS) as never)}, ${over.createdBy === undefined ? userId : over.createdBy})
           returning id`
       )[0].id as string;
     // `name` is a word of the search text, so a query for this fixture's tag matches every person of it.
@@ -314,12 +314,12 @@ describeDb("contacts and campaign enrollment", () => {
   describe("stopPersonEnrollmentsTx", () => {
     it("cancels only the person's pending and active rows and clears the LinkedIn retry time", async () => {
       const f = await fixture();
-      const [mail, li, personal, other] = [await f.campaign("email"), await f.campaign("linkedin"), await f.campaign("linkedin", { type: "personal" }), await f.campaign("email")];
+      const [mail, li, li2, other] = [await f.campaign("email"), await f.campaign("linkedin"), await f.campaign("linkedin"), await f.campaign("email")];
       const p = await f.person("target");
       const bystander = await f.person("bystander");
       const pending = await f.enrollment(mail, p, "email", "pending");
       const active = await f.enrollment(li, p, "linkedin", "active");
-      const inPersonal = await f.enrollment(personal, p, "linkedin", "pending");
+      const secondLinkedIn = await f.enrollment(li2, p, "linkedin", "pending");
       const removed = await f.enrollment(other, p, "email", "removed", { stopReason: "removed" });
       const replied = await f.enrollment(await f.campaign("email"), p, "email", "replied", { stopReason: "replied" });
       const completed = await f.enrollment(await f.campaign("email"), p, "email", "completed");
@@ -332,16 +332,16 @@ describeDb("contacts and campaign enrollment", () => {
 
       const out = await appDb.transaction((tx) => conversion.stopPersonEnrollmentsTx(tx, { organizationId: f.org, personId: p, reason: "converted", now: NOW }));
       expect(out).toEqual({ stopped: 3 });
-      for (const id of [pending, active, inPersonal]) expect(await rowOf(id)).toMatchObject({ status: "cancelled", stop_reason: "converted", next_send_at: null });
+      for (const id of [pending, active, secondLinkedIn]) expect(await rowOf(id)).toMatchObject({ status: "cancelled", stop_reason: "converted", next_send_at: null });
       expect(await rowOf(removed)).toMatchObject({ status: "removed", stop_reason: "removed" });
       expect(await rowOf(replied)).toMatchObject({ status: "replied", stop_reason: "replied" });
       expect(await rowOf(completed)).toMatchObject({ status: "completed" });
       expect(await rowOf(others)).toMatchObject({ status: "pending", stop_reason: null });
       expect(await rowOf(foreignEnrollment)).toMatchObject({ status: "pending" });
-      const retry = await sql`select enrollment_id, resolve_next_attempt_at from linkedin_enrollment_details where enrollment_id in ${sql([active, inPersonal, otherLinkedIn])}`;
+      const retry = await sql`select enrollment_id, resolve_next_attempt_at from linkedin_enrollment_details where enrollment_id in ${sql([active, secondLinkedIn, otherLinkedIn])}`;
       const byId = new Map(retry.map((r) => [r.enrollment_id as string, r.resolve_next_attempt_at]));
       expect(byId.get(active)).toBeNull();
-      expect(byId.get(inPersonal)).toBeNull();
+      expect(byId.get(secondLinkedIn)).toBeNull();
       expect(byId.get(otherLinkedIn), "the other person's retry time stays").not.toBeNull();
       const updated = await sql`select updated_at from campaign_enrollments where id = ${pending}`;
       expect(new Date(updated[0].updated_at).toISOString()).toBe(NOW.toISOString());
@@ -374,31 +374,22 @@ describeDb("contacts and campaign enrollment", () => {
   });
 
   describe("read helpers of the conversion", () => {
-    it("liveEnrollmentSummary splits live enrollments by campaign type and lists the personal creators", async () => {
+    it("liveEnrollmentCounts counts the live enrollments of each requested person", async () => {
       const f = await fixture();
       const other = await fixture();
-      const [regular, regular2, personal, personalOrphan, closed] = [
-        await f.campaign("email"),
-        await f.campaign("linkedin"),
-        await f.campaign("linkedin", { type: "personal" }),
-        await f.campaign("linkedin", { type: "personal", createdBy: null }),
-        await f.campaign("email"),
-      ];
+      const [email, linkedin, closed] = [await f.campaign("email"), await f.campaign("linkedin"), await f.campaign("email")];
       const [p, q, none] = [await f.person("p"), await f.person("q"), await f.person("none")];
-      await f.enrollment(regular, p, "email", "pending");
-      await f.enrollment(regular2, p, "linkedin", "active");
-      await f.enrollment(personal, p, "linkedin", "pending");
-      await f.enrollment(personalOrphan, p, "linkedin", "active");
+      await f.enrollment(email, p, "email", "pending");
+      await f.enrollment(linkedin, p, "linkedin", "active");
       await f.enrollment(closed, p, "email", "removed");
-      await f.enrollment(personal, q, "linkedin", "replied");
-      // A creator who also made the other personal campaign appears once.
-      const out = await conversion.liveEnrollmentSummary(f.org, [p, q, none, p]);
-      expect(out.get(p)).toEqual({ regular: 2, personal: { count: 2, createdBy: [f.userId] } });
-      expect(out.get(q)).toEqual({ regular: 0, personal: { count: 0, createdBy: [] } });
-      expect(out.get(none)).toEqual({ regular: 0, personal: { count: 0, createdBy: [] } });
+      await f.enrollment(linkedin, q, "linkedin", "replied");
+      const out = await conversion.liveEnrollmentCounts(f.org, [p, q, none, p]);
+      expect(out.get(p)).toBe(2);
+      expect(out.get(q)).toBe(0);
+      expect(out.get(none)).toBe(0);
       expect([...out.keys()].sort()).toEqual([p, q, none].sort());
       // Another organization's rows never count.
-      expect((await conversion.liveEnrollmentSummary(other.org, [p])).get(p)).toEqual({ regular: 0, personal: { count: 0, createdBy: [] } });
+      expect((await conversion.liveEnrollmentCounts(other.org, [p])).get(p)).toBe(0);
     });
 
     it("latestRepliedEnrollment picks the newest updated replied enrollment, ties by id", async () => {
@@ -424,13 +415,13 @@ describeDb("contacts and campaign enrollment", () => {
 
     it("enrollmentSources names the campaign of each enrollment and skips other organizations", async () => {
       const f = await fixture();
-      const [regular, personal] = [await f.campaign("email"), await f.campaign("linkedin", { type: "personal" })];
+      const [mail, li] = [await f.campaign("email"), await f.campaign("linkedin")];
       const p = await f.person("p");
-      const a = await f.enrollment(regular, p, "email", "replied");
-      const b = await f.enrollment(personal, p, "linkedin", "replied");
+      const a = await f.enrollment(mail, p, "email", "replied");
+      const b = await f.enrollment(li, p, "linkedin", "replied");
       const out = await conversion.enrollmentSources(f.org, [a, b, "00000000-0000-4000-8000-000000000000"]);
-      expect(out.get(a)).toEqual({ campaignId: regular, name: "email-regular", type: "regular" });
-      expect(out.get(b)).toEqual({ campaignId: personal, name: "linkedin-personal", type: "personal" });
+      expect(out.get(a)).toEqual({ campaignId: mail, name: expect.stringMatching(/^email/) });
+      expect(out.get(b)).toEqual({ campaignId: li, name: expect.stringMatching(/^linkedin/) });
       expect(out.size).toBe(2);
       expect((await conversion.enrollmentSources((await fixture()).org, [a])).size).toBe(0);
     });

@@ -127,9 +127,6 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v });
       await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(/already has this type/);
       await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "customer", replyTypeId: demo.id, expectedContextVersion: v + 1 })).rejects.toThrow(ValidationError);
-      const trial = await sub(f, "trial_user");
-      await replies.updateReplyType(deps, f.admin, trial.id, { active: false });
-      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: trial.id, expectedContextVersion: v + 1 })).rejects.toThrow(/archived/);
     });
 
     it("locks a customer and needs a confirmation to move them out", async () => {
@@ -190,7 +187,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       // Not now writes no draft, so nothing is left for a person.
       expect((await rec(l.recordId)).workflow_state).toBe("idle");
       const [event] = await sql`select meta from events where record_id = ${l.recordId} and event_type = 'reply_type.changed'`;
-      expect(event.meta).toMatchObject({ rules: { checkMode: "skip", replyDraft: false, followUps: "stop" } });
+      expect(event.meta).toMatchObject({ rules: { replyDraft: false, followUps: "stop" } });
 
       const demo = await sub(f, "demo_request");
       await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: demo.id, expectedContextVersion: (await rec(l.recordId)).context_version });
@@ -240,7 +237,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
     });
   });
 
-  describe("classification undo and acknowledge", () => {
+  describe("classification undo", () => {
     it("restores the previous category and rejects the classification", async () => {
       const f = await fixture();
       const l = await lead(f);
@@ -252,7 +249,7 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       expect(result).toEqual({ recordId: l.recordId, draftsRetired: 1, runEnded: false, draftJobCancelled: false });
       const after = await rec(l.recordId);
       expect(after).toMatchObject({ group_key: null, reply_type_id: null, reply_type_source: null, workflow_state: "action_required", context_version: before.context_version + 1 });
-      expect((await sql`select status, acknowledged_at from reply_type_picks where id = ${replyTypePickId}`)[0]).toMatchObject({ status: "rejected" });
+      expect((await sql`select status from reply_type_picks where id = ${replyTypePickId}`)[0]).toMatchObject({ status: "rejected" });
       expect((await sql`select status from drafts where id = ${draftId}`)[0].status).toBe("stale");
       expect(await eventTypes(l.recordId)).toContain("reply_type_pick.undone");
       await expect(replies.undoReplyTypePick(deps, f.actor, replyTypePickId)).rejects.toThrow(ConflictError);
@@ -382,20 +379,6 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await composition.ingestInbound(mail(f, { providerThreadId: conv.provider_thread_id, from: { email: "x@acme.test", name: null } }));
       await expect(replies.undoReplyTypePick(deps, f.actor, oldId)).rejects.toThrow(/latest inbound/);
     });
-
-    it("acknowledges an applied classification and refuses a held proposal", async () => {
-      const f = await fixture();
-      const l = await lead(f);
-      const applied = await appliedReplyTypePick(f, l, "demo_request");
-      await replies.acknowledgeReplyTypePick(deps, f.actor, applied);
-      expect((await sql`select acknowledged_at from reply_type_picks where id = ${applied}`)[0].acknowledged_at).not.toBeNull();
-      await replies.acknowledgeReplyTypePick(deps, f.actor, applied);
-      expect((await sql`select count(*)::int as n from events where record_id = ${l.recordId} and event_type = 'reply_type_pick.acknowledged'`)[0].n).toBe(1);
-
-      const g = await lead(f);
-      const held = await appliedReplyTypePick(f, g, "demo_request", "proposed");
-      await expect(replies.acknowledgeReplyTypePick(deps, f.actor, held)).rejects.toThrow(/Accept or change/);
-    });
   });
 
   describe("do not contact", () => {
@@ -475,37 +458,11 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       await expect(replies.changeReplyType(deps, b.actor, la.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: v })).rejects.toThrow(NotFoundError);
       await expect(replies.changeReplyType(deps, b.actor, lb.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: 0 })).rejects.toThrow(NotFoundError);
       await expect(replies.undoReplyTypePick(deps, b.actor, replyTypePickId)).rejects.toThrow(NotFoundError);
-      await expect(replies.acknowledgeReplyTypePick(deps, b.actor, replyTypePickId)).rejects.toThrow(NotFoundError);
       await expect(replies.setPersonDoNotContact(deps, b.actor, la.personId, { enabled: true, reason: "x" })).rejects.toThrow(NotFoundError);
       await expect(replies.closeRecord(deps, b.actor, la.recordId, { reason: "x" })).rejects.toThrow(NotFoundError);
       await expect(replies.addRecordNote(deps, b.actor, la.recordId, { body: "hi" })).rejects.toThrow(NotFoundError);
-      await expect(replies.updateReplyType(deps, b.admin, meeting.id, { active: false })).rejects.toThrow(NotFoundError);
-      await expect(replies.deleteReplyType(deps, b.admin, meeting.id)).rejects.toThrow(NotFoundError);
       expect(await rec(la.recordId)).toMatchObject({ context_version: v, reply_type_source: "ai" });
       expect((await sql`select count(*)::int as n from contact_policies where person_id = ${la.personId}`)[0].n).toBe(0);
-      expect((await sql`select active from reply_types where id = ${meeting.id}`)[0].active).toBe(true);
-    });
-  });
-
-  describe("visibility", () => {
-    it("answers 404 for every write on a record whose conversations are all private", async () => {
-      const f = await fixture();
-      const l = await lead(f);
-      const pickId = await appliedReplyTypePick(f, l, "demo_request");
-      const [personal] = await sql`insert into campaigns (organization_id, channel, name, type, status) values (${f.org}, 'linkedin', 'Mine', 'personal', 'active') returning id`;
-      await sql`update conversations set private_campaign_id = ${personal.id} where record_id = ${l.recordId}`;
-      const before = await rec(l.recordId);
-      const meeting = await sub(f, "meeting_done");
-
-      await expect(replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: meeting.id, expectedContextVersion: before.context_version })).rejects.toThrow(NotFoundError);
-      await expect(replies.undoReplyTypePick(deps, f.actor, pickId)).rejects.toThrow(NotFoundError);
-      await expect(replies.acknowledgeReplyTypePick(deps, f.actor, pickId)).rejects.toThrow(NotFoundError);
-      await expect(replies.closeRecord(deps, f.actor, l.recordId, { reason: "x" })).rejects.toThrow(NotFoundError);
-      await sql`update records set workflow_state = 'closed' where id = ${l.recordId}`;
-      await expect(replies.reopenRecord(deps, f.actor, l.recordId)).rejects.toThrow(NotFoundError);
-
-      expect(await rec(l.recordId)).toMatchObject({ context_version: before.context_version, reply_type_id: before.reply_type_id, workflow_state: "closed" });
-      expect((await sql`select status, acknowledged_at from reply_type_picks where id = ${pickId}`)[0]).toMatchObject({ status: "auto_applied", acknowledged_at: null });
     });
   });
 
@@ -555,80 +512,16 @@ describeDb("Reply handling: stage moves, undo, do not contact, tenancy, settings
       f = await fixture();
     });
 
-    it("creates a reply type with its rules and saves edits to them", async () => {
-      const created = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Pricing question", classificationGuidance: "Asks what it costs.", checkMode: "before" });
-      expect(await sub(f, "pricing_question")).toMatchObject({
-        id: created.id,
-        rules: { checkMode: "before", replyDraft: true, followUps: "continue" },
-        systemRole: null,
-        classificationGuidance: "Asks what it costs.",
-        recordCount: 0,
-      });
-      await replies.updateReplyType(deps, f.admin, created.id, { name: "Pricing questions", checkMode: "skip", followUps: "stop" });
-      expect(await sub(f, "pricing_question")).toMatchObject({ name: "Pricing questions", rules: { checkMode: "skip", replyDraft: true, followUps: "stop" } });
-    });
-
-    it("counts the people in a type and the picks that name it, each pick once", async () => {
-      const g = await fixture();
-      const l = await lead(g);
-      await appliedReplyTypePick(g, l, "demo_request");
-      // The pick names Demo request as proposed and applied: one pick in its history.
-      expect(await sub(g, "demo_request")).toMatchObject({ recordCount: 1, historyCount: 1 });
-      expect(await sub(g, "meeting_done")).toMatchObject({ recordCount: 0, historyCount: 0 });
-      expect(await replies.getReplySettings(deps, g.actor)).toEqual({ autoApplyConfidence: 0.85, draftInstructions: [], classificationInstructions: [] });
-    });
-
-    it("keeps the stop request rules and roles of the starter types", async () => {
-      const stop = await sub(f, "do_not_contact");
-      expect(stop).toMatchObject({ name: "Asked to stop", systemRole: "stop_request", rules: { checkMode: "before", replyDraft: false, followUps: "stop" } });
+    it("seeds the starter types with their rules and roles", async () => {
+      expect(await sub(f, "do_not_contact")).toMatchObject({ name: "Asked to stop", systemRole: "stop_request", rules: { replyDraft: false, followUps: "stop" } });
       expect(await sub(f, "customer")).toMatchObject({ name: "Customer question", systemRole: "customer" });
-      await expect(replies.updateReplyType(deps, f.admin, stop.id, { followUps: "continue" })).rejects.toThrow(/always stops follow-ups/);
+      expect(await replies.getReplySettings(deps, f.actor)).toEqual({ draftInstructions: [], classificationInstructions: [] });
     });
 
-    it("refuses to archive or delete a type with a system role, with the role's reason", async () => {
-      const { SYSTEM_ROLE_REASONS } = await import("../../domain/reply-type");
-      for (const [key, role] of [["do_not_contact", "stop_request"], ["customer", "customer"]] as const) {
-        const t = await sub(f, key);
-        const archive = await replies.updateReplyType(deps, f.admin, t.id, { active: false }).catch((e: unknown) => e);
-        expect(archive).toBeInstanceOf(ConflictError);
-        expect((archive as ConflictError).message).toBe(SYSTEM_ROLE_REASONS[role]);
-        expect((archive as ConflictError).details).toEqual({ code: "system_role" });
-        await expect(replies.deleteReplyType(deps, f.admin, t.id)).rejects.toThrow(SYSTEM_ROLE_REASONS[role]);
-        expect((await sub(f, key)).active).toBe(true);
-      }
-      // Rules a system role allows still save.
-      await replies.updateReplyType(deps, f.admin, (await sub(f, "customer")).id, { checkMode: "before" });
-      expect((await sub(f, "customer")).rules.checkMode).toBe("before");
-    });
-
-    it("validates rules on create and update", async () => {
-      await expect(replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Bad check", checkMode: "sometimes" })).rejects.toThrow(ValidationError);
-      const t = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Rules check" });
-      await expect(replies.updateReplyType(deps, f.admin, t.id, { followUps: "maybe" })).rejects.toThrow(ValidationError);
-      await expect(replies.updateReplyType(deps, f.admin, (await sub(f, "do_not_contact")).id, { replyDraft: true })).rejects.toThrow(/never gets a reply draft/);
-    });
-
-    it("refuses to delete a subcategory a record is in, and archives it instead", async () => {
-      const created = await replies.createReplyType(deps, f.admin, { groupKey: "interested", name: "Contract review" });
-      const l = await lead(f);
-      await replies.changeReplyType(deps, f.actor, l.recordId, { groupKey: "interested", replyTypeId: created.id, expectedContextVersion: (await rec(l.recordId)).context_version });
-      await expect(replies.deleteReplyType(deps, f.admin, created.id)).rejects.toThrow(/1 person has/);
-      await replies.updateReplyType(deps, f.admin, created.id, { active: false });
-      expect((await sub(f, "contract_review")).active).toBe(false);
-    });
-
-    it("deletes an unused subcategory", async () => {
-      const spare = await replies.createReplyType(deps, f.admin, { groupKey: "other", name: "Spare" });
-      await replies.deleteReplyType(deps, f.admin, spare.id);
-      expect((await replies.getReplyTypeCatalog(deps, f.actor)).replyTypes.some((s) => s.id === spare.id)).toBe(false);
-    });
-
-    it("saves the thresholds and draft instructions, and rejects a confidence above 1", async () => {
-      await replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 0.7 });
+    it("saves the draft instructions", async () => {
       await replies.updateReplyAiInstructions(deps, f.admin, { draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }] });
       const { settings } = await replies.getReplyTypeCatalog(deps, f.actor);
-      expect(settings).toEqual({ autoApplyConfidence: 0.7, draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }], classificationInstructions: [] });
-      await expect(replies.updateReplySettings(deps, f.admin, { autoApplyConfidence: 2 })).rejects.toThrow(ValidationError);
+      expect(settings).toEqual({ draftInstructions: [{ id: "tone", title: "Tone", content: "Short and warm." }], classificationInstructions: [] });
     });
   });
 

@@ -6,20 +6,19 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/shell/confirm-dialog";
 import { LIST_ROW_FRAME } from "@/components/shell/list-row";
 import { RowLink, rowLinkClasses } from "@/components/shell/row-link";
 import { InfoTip } from "@/components/shell/info-tip";
 import { SectionHead } from "@/components/shell/section";
 import { Time } from "@/components/shell/time";
-import { countOf, formatCount } from "@/shared/format-number";
+import { formatCount } from "@/shared/format-number";
 import { callApi } from "@/app/_lib/api-client";
 import { cn } from "@/components/ui/utils";
 import { channelLabel } from "@/contexts/outreach/domain/campaign-view";
 import type { PickReviewKind } from "@/contexts/conversations/actions/domain/action-queue";
 import { personHref } from "@/app/(app)/_components/person/person-href";
 import { LinkedInMark } from "@/app/(app)/_components/person/reach-icons";
-import { confidenceText, LOOKS_RIGHT_DONE } from "@/app/(app)/inbox/[id]/_lib/type-line";
+import { confidenceText } from "@/app/(app)/inbox/[id]/_lib/type-line";
 import { threadQueryFromActions } from "./actions-query";
 import { typeLabel } from "./type-label";
 import { waitingLabel } from "./waiting-label";
@@ -73,7 +72,7 @@ function ChannelMark({ channel }: { channel: string }) {
   );
 }
 
-/** A done notice for one row of many, so a screen reader hears whose row left: "Marked as looked at: Eli Moss." */
+/** A done notice for one row of many, so a screen reader hears whose row left: "AI pick accepted: Eli Moss." */
 const doneFor = (done: string, name: string | null) => `${done.replace(/\.$/, "")}: ${name ?? "the sender"}.`;
 
 const ACCEPTED = "AI pick accepted.";
@@ -87,18 +86,17 @@ interface Settled {
   /** Where the row stood, so the remnant stays at that spot while the rows around it change. */
   index: number;
   text: string;
-  /** The thread, when the person has a public conversation. */
+  /** The thread, when the person has a conversation. */
   href: string | null;
   /** True once a server refresh replaced the list under it; the next one takes it away. */
   survived: boolean;
 }
 
-/** What a remnant says: "Accepted Not now for Eli Moss." or "Marked as looked at: Eli Moss." */
+/** What a remnant says: "Accepted Not now for Eli Moss." */
 function settledText(item: QueueItemView, ambiguous: ReadonlySet<string>): string {
   const c = item.classification;
   const name = item.personName ?? "the sender";
-  if (c?.kind !== "held") return doneFor(LOOKS_RIGHT_DONE, item.personName);
-  return `Accepted ${typeLabel(c.name, c.groupKey, ambiguous) ?? "the AI pick"} for ${name}.`;
+  return `Accepted ${typeLabel(c?.name ?? null, c?.groupKey ?? null, ambiguous) ?? "the AI pick"} for ${name}.`;
 }
 
 const NOTICE_EVENT = "miasdr:actions-notice";
@@ -109,7 +107,7 @@ function announce(text: string) {
 }
 
 /**
- * The page's live region for row steps (Accept, Looks right). It sits outside the groups: a step can empty a group, the
+ * The page's live region for row steps (Accept). It sits outside the groups: a step can empty a group, the
  * refresh then takes it off the page, and a region inside it would lose the text before a screen reader read it.
  */
 export function QueueNotice() {
@@ -164,9 +162,8 @@ function describe(item: QueueItemView, ambiguous: ReadonlySet<string>): { detail
       const confidence = c?.confidence != null ? `, ${confidenceText(c.confidence)}` : "";
       // Accepting this one takes a locked customer out of Existing customer, so the row opens the thread instead of settling.
       if (c?.kind === "held" && c.unlocksCustomer) return { detail: `AI picked ${label}${confidence}. Accepting takes them out of Existing customer.`, action: open };
-      // Accept answers on a public thread only; without one the row opens the person.
-      if (c?.kind === "held") return { detail: `AI picked ${label}${confidence}`, action: item.conversationId ? "Accept" : open };
-      return { detail: `AI applied ${label}${confidence}`, action: "Looks right" };
+      // Accept answers on a thread only; without one the row opens the person.
+      return { detail: `AI picked ${label}${confidence}`, action: item.conversationId ? "Accept" : open };
     }
     case "follow_up":
       return {
@@ -237,8 +234,6 @@ export function QueueGroup({
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const list = useRef<HTMLUListElement>(null);
-  // The rows the bulk step will mark, kept as they were when its confirm opened, so the list cannot change under the person.
-  const [bulk, setBulk] = useState<{ open: boolean; rows: QueueItemView[] }>({ open: false, rows: [] });
   const timers = useRef<number[]>([]);
   useEffect(() => {
     // The array only grows in place, so the one read here holds every timer started later too.
@@ -264,20 +259,17 @@ export function QueueGroup({
   }
 
   /**
-   * Answers an AI pick row where it stands. A held pick is accepted as it is (a person who disagrees opens the thread and
-   * changes the type); an applied pick is marked as looked at (Looks right). Both go through the endpoints the thread uses, so
-   * a stale pick answers 409 here as it does there. A stop request is never accepted here: if a held pick turns out to be one,
-   * the server answers `stop_review` and the thread opens with Stop contacting.
+   * Answers a held AI pick where it stands: it is accepted as it is, and a person who disagrees opens the thread and changes
+   * the type. It goes through the endpoint the thread uses, so a stale pick answers 409 here as it does there. A stop request
+   * is never accepted here: if a held pick turns out to be one, the server answers `stop_review` and the thread opens with
+   * Stop contacting.
    */
   async function settle(item: QueueItemView): Promise<boolean> {
     const c = item.classification;
-    if (!c || !c.replyTypePickId || c.kind === "stop_review" || (c.kind === "held" && c.unlocksCustomer)) return false;
-    const result =
-      c.kind === "held"
-        ? item.conversationId
-          ? await callApi(`/api/inbox/${item.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
-          : { ok: false, error: "Open the person to decide.", code: null, details: null }
-        : await callApi(`/api/reply-type-picks/${c.replyTypePickId}/acknowledge`, "POST");
+    if (!c || !c.replyTypePickId || c.kind !== "held" || c.unlocksCustomer) return false;
+    const result = item.conversationId
+      ? await callApi(`/api/inbox/${item.conversationId}/reply-type`, "POST", { replyTypeKey: null, expectedContextVersion: c.contextVersion })
+      : { ok: false, error: "Open the person to decide.", code: null, details: null };
     if (!result.ok) {
       const stop = result.code === "stop_review" ? stopHref(item, query) : null;
       if (stop) router.push(stop);
@@ -305,32 +297,10 @@ export function QueueGroup({
         { recordId: item.recordId, index, text, href: item.conversationId ? rowHref(item, query) : null, survived: false },
       ]);
       timers.current.push(window.setTimeout(() => setSettled((current) => current.filter((r) => r.recordId !== item.recordId)), SETTLED_MS));
-      announce(doneFor(item.classification?.kind === "held" ? ACCEPTED : LOOKS_RIGHT_DONE, item.personName));
+      announce(doneFor(ACCEPTED, item.personName));
       if (last) toast.success(text);
     }
     // Totals and the group the record moves to are the server's to say.
-    router.refresh();
-  }
-
-  /** Applied picks the AI was at least 90 percent sure of. A held pick or a stop request needs a person's eyes, so it is never in here. */
-  const confident = group === "classification" ? items.filter((i) => i.classification?.kind === "looks_right" && (i.classification.confidence ?? 0) >= 0.9) : [];
-
-  /** Runs from the confirm step, which lists the rows it marks, so a person sees what N picks they sign off on. */
-  async function markConfident() {
-    if (rowBusy) return;
-    setRowBusy("bulk");
-    const done: string[] = [];
-    for (const item of bulk.rows) {
-      if (!(await settle(item))) break;
-      done.push(item.recordId);
-    }
-    setRowBusy(null);
-    if (done.length > 0) {
-      removeRows(done);
-      const text = `Marked ${countOf(done.length, "AI pick")} as looked at.`;
-      announce(text);
-      toast.success(text);
-    }
     router.refresh();
   }
 
@@ -364,7 +334,7 @@ export function QueueGroup({
 
   // The same frame as the lists below the queue (actions/page.tsx): the shell's section head with the lavender count (work
   // that waits for a person), help on an info mark where the name needs it, then one bordered list with hairlines between
-  // the items. The head wraps, so the bulk button drops under the title on a phone instead of widening the page.
+  // the items.
   return (
     <section id={`group-${group}`} aria-label={title} data-slot="queue-group" data-group={group} className="stack-group min-w-0 scroll-mt-4">
       <SectionHead
@@ -373,35 +343,7 @@ export function QueueGroup({
         countTone="waiting"
         countTestId={`queue-total-${group}`}
         help={description ? <InfoTip label={`About ${title}`}>{description}</InfoTip> : undefined}
-        action={
-          confident.length >= 2 ? (
-            <Button variant="outline" size="sm" touch disabled={rowBusy !== null} onClick={() => setBulk({ open: true, rows: confident })} data-testid="mark-confident">
-              {`Looks right: ${confident.length} sure picks`}
-            </Button>
-          ) : undefined
-        }
       />
-      {group === "classification" && (
-        <ConfirmDialog
-          open={bulk.open}
-          onOpenChange={(open) => setBulk((current) => ({ ...current, open }))}
-          title="Mark the sure picks as looked at"
-          description="The AI applied these types at 90% or more. Marking them as looked at keeps each type and takes the rows off the queue."
-          confirmLabel={`Mark ${formatCount(bulk.rows.length)} as looked at`}
-          cancelLabel="Keep for review"
-          pendingLabel="Marking…"
-          onConfirm={markConfident}
-        >
-          <ul className="grid gap-1 text-sm" data-testid="mark-confident-list">
-            {bulk.rows.map((item) => (
-              <li key={item.recordId}>
-                <span className="font-medium">{item.personName ?? "Unknown sender"}</span>
-                <span className="text-muted-foreground">{`, ${typeLabel(item.classification?.name ?? null, item.classification?.groupKey ?? null, ambiguous) ?? "a type"}`}</span>
-              </li>
-            ))}
-          </ul>
-        </ConfirmDialog>
-      )}
       <ul ref={list} className="divide-y rounded-lg border text-sm">
         {rows.map((entry) => {
           if ("remnant" in entry) {
@@ -468,7 +410,7 @@ export function QueueGroup({
                   >
                     {action}
                   </Link>
-                ) : (kind === "held" && item.conversationId && !item.classification?.unlocksCustomer) || kind === "looks_right" ? (
+                ) : kind === "held" && item.conversationId && !item.classification?.unlocksCustomer ? (
                   // Above the stretched link, so the click settles the row and does not open the thread.
                   <Button
                     variant="outline"

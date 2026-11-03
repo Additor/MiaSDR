@@ -1,36 +1,14 @@
 import { NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { convertStoredValue } from "../domain/cell-values";
-import { assertNoCycle, prepareColumnConfig } from "../domain/column-config";
+import { prepareColumnConfig } from "../domain/column-config";
 import { isColumnType, isStaticColumnType, type ColumnType } from "../domain/column-types";
 import { cleanName, placeAfter, placeBefore, uniqueColumnKey, uniqueColumnName } from "../domain/keys";
 import { dedupeReport, removeColumnFromView, TEXT_SPLIT_DELIMITERS, duplicateRowIds, splitValue, MAX_SPLIT_CELLS, MAX_SPLIT_COLUMNS, type TextSplitDelimiter } from "../domain/column-operations";
 import { effectiveColumnType } from "../domain/column-types";
-import { columnTokens, tableTokens } from "../domain/formula-dependencies";
-import { refreshAfterSourceWrite, refreshLookupDependentsQuietly } from "./formula-lookup-refresh";
-import { recalculateFormula, recalculateFormulasQuietly } from "./formula-recalc";
 import { GRID_LIMITS } from "./limits";
 import type { ColumnRecord, ColumnUpdate, GridDeps } from "./ports";
 
-/**
- * Extension point for column types that run (enrichment, ai, http, waterfall and so on). The module
- * that owns a type registers a hook to validate its config and name the columns it reads.
- * Without a hook, a runner column keeps any JSON object config and its dependencies are read
- * from {{key}} tokens and columnKey properties.
- */
-export interface ColumnTypeHook {
-  /** Throws ValidationError for a bad config. `siblings` are the table's other columns. */
-  validate?(config: Record<string, unknown>, siblings: ReadonlyArray<ColumnRecord>): void;
-  /** Overrides the default dependency scan. */
-  dependsOn?(config: Record<string, unknown>): string[];
-}
-
-const hooks = new Map<string, ColumnTypeHook>();
-
-export function registerColumnTypeHook(type: ColumnType, hook: ColumnTypeHook): void {
-  hooks.set(type, hook);
-}
-
-type Deps = Pick<GridDeps, "structure" | "columns" | "rows" | "formulas">;
+type Deps = Pick<GridDeps, "structure" | "columns" | "rows">;
 
 async function requireTable(deps: Deps, actor: Actor, tableId: string) {
   const table = await deps.structure.getTable(actor.organizationId, tableId);
@@ -43,19 +21,10 @@ export async function listColumns(deps: Deps, actor: Actor, tableId: string) {
   return { columns: await deps.columns.list(actor.organizationId, tableId) };
 }
 
-function prepare(type: ColumnType, rawConfig: unknown, siblings: ReadonlyArray<ColumnRecord>, ownKey: string | null) {
-  // A runner column the grid core cannot validate is created by the module that runs it, never from raw JSON.
-  if (!isStaticColumnType(type) && type !== "formula" && !hooks.has(type)) {
-    throw new ValidationError(`${type} columns are created from their own setup dialog`);
-  }
-  const prepared = prepareColumnConfig(type, rawConfig, new Set(siblings.map((c) => c.key)), ownKey);
-  const hook = hooks.get(type);
-  if (hook?.validate) hook.validate(prepared.config, siblings);
-  if (hook?.dependsOn) {
-    const own = ownKey;
-    prepared.dependsOn = hook.dependsOn(prepared.config).filter((key) => key !== own);
-  }
-  return prepared;
+/** A runner column is created by the module that runs it, never from raw JSON. */
+function prepare(type: ColumnType, rawConfig: unknown) {
+  if (!isStaticColumnType(type)) throw new ValidationError(`${type} columns are created from their own setup dialog`);
+  return prepareColumnConfig(type, rawConfig);
 }
 
 export interface CreateColumnInput {
@@ -84,15 +53,13 @@ export async function createColumn(deps: Deps, actor: Actor, tableId: string, in
       if (!isStaticColumnType(source.type)) throw new ValidationError("Values can only be copied from a data column");
       if (!isStaticColumnType(type)) throw new ValidationError("Copied values need a data column type");
     }
-    const { config, dependsOn } = prepare(type, input.config, existing, key);
-    assertNoCycle(existing, { key, dependsOn });
+    const config = prepare(type, input.config);
 
     const ordered = [...existing].sort((a, b) => a.position - b.position);
     const { position, renumber } = input.beforeColumnId ? placeBefore(ordered, input.beforeColumnId) : placeAfter(ordered, input.afterColumnId);
-    return { key, name: uniqueColumnName(name, existing.map((c) => c.name)), type, config, dependsOn, position, renumber, autoRun: input.autoRun ?? true, copyValuesFrom: input.copyValuesFrom };
+    return { key, name: uniqueColumnName(name, existing.map((c) => c.name)), type, config, dependsOn: [], position, renumber, autoRun: input.autoRun ?? true, copyValuesFrom: input.copyValuesFrom };
   });
   if (!column) throw new NotFoundError("Table not found");
-  if (column.type === "formula") await recalculateFormulasQuietly(deps, actor.organizationId, tableId, { columnKeys: [column.key] });
   return { column };
 }
 
@@ -106,15 +73,13 @@ export interface UpdateColumnInput {
 }
 
 export async function updateColumn(deps: Deps, actor: Actor, tableId: string, columnId: string, input: UpdateColumnInput) {
-  const table = await requireTable(deps, actor, tableId);
-  let before: ColumnRecord | undefined;
+  await requireTable(deps, actor, tableId);
   const column = await deps.columns.update(actor.organizationId, tableId, columnId, (current, siblings) => {
-    before = current;
     const update: ColumnUpdate = {};
     if (input.name !== undefined) {
       const name = cleanName(input.name, "name");
       const renamed = name.toLowerCase() !== current.name.trim().toLowerCase();
-      // Only a real rename is checked: a table made before names were unique can hold two "Formula" columns.
+      // Only a real rename is checked: a table made before names were unique can hold two "Notes" columns.
       if (renamed && siblings.some((c) => c.id !== current.id && c.name.trim().toLowerCase() === name.toLowerCase())) {
         throw new ValidationError(`A column named "${name}" already exists`);
       }
@@ -133,12 +98,9 @@ export async function updateColumn(deps: Deps, actor: Actor, tableId: string, co
     if (input.type !== undefined || input.config !== undefined) {
       if (input.type !== undefined && (typeof input.type !== "string" || !isColumnType(input.type))) throw new ValidationError("Unknown column type");
       const type = (input.type as ColumnType | undefined) ?? current.type;
-      const others = siblings.filter((c) => c.id !== current.id);
-      const { config, dependsOn } = prepare(type, input.config ?? current.config, others, current.key);
-      assertNoCycle(siblings, { key: current.key, dependsOn });
       update.type = type;
-      update.config = config;
-      update.dependsOn = dependsOn;
+      update.config = prepare(type, input.config ?? current.config);
+      update.dependsOn = [];
       if (type !== current.type && isStaticColumnType(type)) {
         if (isStaticColumnType(current.type)) update.convertValues = (value) => convertStoredValue(value, type);
         else update.dropJobs = true;
@@ -147,13 +109,6 @@ export async function updateColumn(deps: Deps, actor: Actor, tableId: string, co
     return update;
   });
   if (!column) throw new NotFoundError("Column not found");
-  const reconfigured = input.type !== undefined || input.config !== undefined;
-  if (column.type === "formula" && reconfigured) await recalculateFormulasQuietly(deps, actor.organizationId, tableId, { columnKeys: [column.key] });
-  // Formulas that look this column up now resolve differently (a new name, another type) or read new values.
-  const old = before as ColumnRecord | undefined;
-  if (old && (old.name !== column.name || old.type !== column.type || (column.type === "formula" && reconfigured))) {
-    await refreshLookupDependentsQuietly(deps, actor.organizationId, table.workbookId, { tableTokens: tableTokens(table), columnTokens: [...columnTokens(old), ...columnTokens(column)] }, `"${table.name}"`);
-  }
   return { column };
 }
 
@@ -172,11 +127,9 @@ function outputsOf(column: ColumnRecord, siblings: ReadonlyArray<ColumnRecord>):
 }
 
 export async function deleteColumn(deps: Deps, actor: Actor, tableId: string, columnId: string, options: { withOutputs?: boolean } = {}) {
-  const table = await requireTable(deps, actor, tableId);
-  let removed: ColumnRecord[] = [];
+  await requireTable(deps, actor, tableId);
   const result = await deps.columns.remove(actor.organizationId, tableId, columnId, (column, siblings, view) => {
     const doomed = [column, ...(options.withOutputs ? outputsOf(column, siblings) : [])];
-    removed = doomed;
     const doomedKeys = new Set(doomed.map((c) => c.key));
     const dependents = siblings.filter((c) => !doomedKeys.has(c.key) && c.dependsOn.some((key) => doomedKeys.has(key)));
     if (dependents.length > 0) throw new ValidationError(`Column is used by: ${dependents.map((c) => c.name).join(", ")}`);
@@ -210,37 +163,16 @@ export async function deleteColumn(deps: Deps, actor: Actor, tableId: string, co
     return { deleteIds: doomed.map((c) => c.id), configUpdates, view: nextView };
   });
   if (!result) throw new NotFoundError("Column not found");
-  // Formulas that looked the column up show #REF from now on.
-  await refreshLookupDependentsQuietly(deps, actor.organizationId, table.workbookId, { tableTokens: tableTokens(table), columnTokens: removed.flatMap(columnTokens) }, `"${table.name}"`);
   return { ok: true, deletedColumnIds: result.deletedIds };
-}
-
-/**
- * Recomputes a formula column for every row now, including LOOKUPs against tables that changed since the last run.
- * It clears the "stale" marker and rewrites error cells. Unlike the quiet recalculation after an edit, a failure
- * answers the request, so the person who pressed the button learns about it. Formulas that look this column up
- * are refreshed in turn.
- */
-export async function recalculateColumn(deps: Deps, actor: Actor, tableId: string, columnId: string) {
-  const table = await requireTable(deps, actor, tableId);
-  const columns = await deps.columns.list(actor.organizationId, tableId);
-  const column = columns.find((c) => c.id === columnId);
-  if (!column) throw new NotFoundError("Column not found");
-  if (column.type !== "formula") throw new ValidationError("Only formula columns can be recalculated");
-  const changed = await recalculateFormula(deps, actor.organizationId, tableId, column.key);
-  const lookups = await refreshLookupDependentsQuietly(deps, actor.organizationId, table.workbookId, { tableTokens: tableTokens(table), columnTokens: columnTokens(column) }, `"${table.name}"`);
-  return { recalculated: true, changedCells: changed, dependentColumns: lookups.recalculated, staleColumns: lookups.stale };
 }
 
 /* ------------------------------------------------------ column operations */
 
 /** Removes rows whose value in the column repeats an earlier row's. The first row stays. Blank values never match. */
 export async function dedupeColumn(deps: Deps, actor: Actor, tableId: string, columnId: string) {
-  const table = await deps.structure.getTable(actor.organizationId, tableId);
-  if (!table) throw new NotFoundError("Table not found");
+  await requireTable(deps, actor, tableId);
   const rowIds = await deps.rows.deleteDuplicates(actor.organizationId, tableId, columnId, (rows, column) => duplicateRowIds(rows, column.key));
   if (rowIds === null) throw new NotFoundError("Column not found");
-  if (rowIds.length > 0) await refreshAfterSourceWrite(deps, actor.organizationId, table);
   return dedupeReport(rowIds, GRID_LIMITS.pageSize);
 }
 

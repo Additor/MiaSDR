@@ -3,7 +3,6 @@
  * whole body as `details`). Client components import it; route handlers import `./api.ts`.
  */
 import type { ApiErrorCode } from "./api-errors";
-import { ORGANIZATION_HEADER } from "./api-organization";
 
 /**
  * The codes whose words the browser owns (docs/decisions.md, "API errors and contract types"). For these `callApi`
@@ -14,7 +13,6 @@ import { ORGANIZATION_HEADER } from "./api-organization";
 const CLIENT_MESSAGES = {
   unauthenticated: () => "Your session expired. Sign in again.",
   try_again: (subject?: string) => `MiaSDR is saving another change${subject ? ` to ${subject}` : ""}. Try again in a moment.`,
-  organization_changed: () => "You switched organization in another tab. Reload this page to continue.",
 } satisfies Record<string, (subject?: string) => string>;
 
 export type ClientCode = keyof typeof CLIENT_MESSAGES;
@@ -25,16 +23,6 @@ const isClientCode = (code: string | null): code is ClientCode => code !== null 
 export function apiMessage(code: ClientCode, subject?: string): string {
   return CLIENT_MESSAGES[code](subject);
 }
-
-let renderedOrganization: string | null = null;
-
-/** The organization this page was rendered for (`RenderedOrganization`). Each request names it. */
-export function setRenderedOrganization(id: string): void {
-  renderedOrganization = id;
-}
-
-/** The header that names it, for a call that does not go through `callApi`. */
-export const organizationHeaders = (): Record<string, string> => (renderedOrganization ? { [ORGANIZATION_HEADER]: renderedOrganization } : {});
 
 export interface ApiResult<T> {
   ok: boolean;
@@ -62,7 +50,7 @@ export async function callApi<T = unknown>(url: string, method: Method, body?: u
     const form = body instanceof FormData;
     const response = await fetch(url, {
       method,
-      headers: { ...organizationHeaders(), ...(body === undefined || form ? {} : { "content-type": "application/json" }) },
+      headers: body === undefined || form ? {} : { "content-type": "application/json" },
       body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       signal: init?.signal,
     });

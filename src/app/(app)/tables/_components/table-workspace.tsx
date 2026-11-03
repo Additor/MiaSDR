@@ -1,6 +1,5 @@
 "use client";
 
-import { organizationHeaders } from "@/app/_lib/api-client";
 import { DownloadIcon, RefreshCwIcon, PlayIcon, SendIcon, Trash2Icon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -16,7 +15,7 @@ import { CellRequestContext, RESOLVE_CONFLICT_FIRST } from "../_lib/data/cell-re
 import { deleteRowsReport, deleteRowsTitle } from "../_lib/edit/delete-rows";
 import { emptySelection, pruneSelection, type RowSelection } from "../_lib/view/selection";
 import { useGridTable } from "../_lib/data/use-grid-table";
-import { cellRunBody, recalcSummary, retrySummary, runCellSource } from "../_lib/data/run-request";
+import { cellRunBody, retrySummary, runCellSource } from "../_lib/data/run-request";
 import { withGridFocus } from "../_lib/edit/history-focus";
 import { layoutPins, pinPhoneNotice, withPin } from "../_lib/view/pin-layout";
 import { filtersNarrow, keepsTableOrder, setSort, toggleHidden, withRunFailures } from "../_lib/view/view";
@@ -31,11 +30,10 @@ import { duplicateColumnRequest, type ColumnAction } from "../_lib/edit/column-a
 import { pagesToReachEnd } from "../_lib/edit/add-rows";
 import { AddRowsDialog } from "./add-rows-dialog";
 import { ConflictDialog } from "./conflict-dialog";
-import { DataGrid, type ActiveCell } from "./data-grid";
+import { DataGrid } from "./data-grid";
 import { EnrichStart } from "./enrich-start";
 import { EnrichmentDialog } from "./enrichment-dialog";
 import { TableFilterPopover, TableSortPopover } from "./view-popovers";
-import { FormulaDialog } from "./formula-dialog";
 import { TableImportDialog } from "./table-import-dialog";
 import { PushCampaignDialog } from "./push-campaign-dialog";
 import { RunDialog } from "./run-controls";
@@ -44,7 +42,6 @@ import { ViewBar } from "./view-bar";
 
 type Open =
   | { kind: "import" }
-  | { kind: "formula"; column: GridColumn | null; after?: string }
   | { kind: "enrichment"; column: GridColumn | null; after?: string; outcome?: string }
   | { kind: "ai"; column: GridColumn | null; after?: string }
   | { kind: "run"; column: GridColumn | null; firstN?: number }
@@ -72,7 +69,6 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
   const [dialog, setDialog] = useState<Open | null>(null);
   const [focusToken, setFocusToken] = useState(0);
   const [reveal, setReveal] = useState<{ key: string; token: number } | null>(null);
-  const [active, setActive] = useState<ActiveCell | null>(null);
   const [busy, setBusy] = useState(false);
 
   const { columns, rows, view } = grid;
@@ -108,7 +104,6 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
       case "hide":
         return void grid.saveView(toggleHidden(view, column.key, true));
       case "config":
-        if (column.type === "formula") return setDialog({ kind: "formula", column });
         if (column.type === "ai") return setDialog({ kind: "ai", column });
         if (column.type === "enrichment" || column.type === "waterfall") return setDialog({ kind: "enrichment", column });
         return setDialog({ kind: "column", request: { column, action } });
@@ -118,11 +113,6 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
         return void grid.retryFailed(column.key).then((res) => {
           if (!res.ok) toast.error(res.error ?? "Could not retry.");
           else toast.success(retrySummary(res.data?.retried ?? 0));
-        });
-      case "recalculate":
-        return void grid.recalculate(column.id).then((res) => {
-          if (!res.ok) toast.error(res.error ?? "Could not recalculate.");
-          else toast.success(recalcSummary(column.name, res.data?.changedCells ?? 0));
         });
       case "move": {
         const after = action.side === "left" ? (columns[index - 2]?.id ?? null) : (columns[index + 1]?.id ?? null);
@@ -158,7 +148,7 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
     else toast.success(`Running ${source.name} for this row.`, { id: "grid-run-cell" });
   }
 
-  /** A "(copy)" next to the column. A data column brings its values; a formula column is recalculated by the server. */
+  /** A "(copy)" next to the column, with its values. */
   async function duplicateColumn(column: GridColumn) {
     const body = duplicateColumnRequest(column);
     if (!body) return void toast.message(`${column.name} is an AI or enrichment column, so it cannot be duplicated.`);
@@ -230,7 +220,7 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
       if (!(await grid.settle())) return void toast.message(RESOLVE_CONFLICT_FIRST, { id: "grid-history" });
       const response = await fetch(gridUrl.sub(tableId, "export"), {
         method: "POST",
-        headers: { ...organizationHeaders(), "content-type": "application/json" },
+        headers: { "content-type": "application/json" },
         // The server resolves the member's own view, so a filter, a sort and a personal view all carry over without the client sending them.
         body: JSON.stringify({ ...(onlySelected ? { rowIds: selectedIds } : { useView: true, search: grid.search.trim() }), columnKeys: visible.map((c) => c.key) }),
       });
@@ -334,7 +324,7 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
         unfilteredTotal={grid.unfilteredTotal}
         jobs={grid.jobs}
         activeJobs={grid.activeJobs}
-        onAddColumn={(kind) => setDialog(kind === "column" ? { kind: "column", request: { column: null, action: { kind: "add" } } } : { kind, column: null })}
+        onAddColumn={() => setDialog({ kind: "column", request: { column: null, action: { kind: "add" } } })}
         onEnrich={(outcome) => setDialog({ kind: "enrichment", column: null, outcome })}
         onAddAi={() => setDialog({ kind: "ai", column: null })}
         onAddRow={() => void addRow()}
@@ -420,7 +410,6 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
         onRedo={() => void grid.redo()}
         onColumnAction={onColumnAction}
         onLoadMore={() => void grid.loadMore()}
-        onActiveChange={setActive}
         onRunCell={(cell) => void runCell(cell.column, cell.row.id)}
         canRunCell={(column) => runCellSource(column, columns) !== null}
         onOpenDetails={(cell) => setDialog({ kind: "details", rowId: cell.row.id, columnKey: cell.column.key })}
@@ -432,7 +421,6 @@ export function TableWorkspace({ tableId, onSettle }: Props) {
 
       {dialog?.kind === "addRows" && <AddRowsDialog onAdd={addRows} onClose={closeDialog} />}
       {dialog?.kind === "import" && <TableImportDialog tableId={tableId} onClose={closeDialog} onImported={grid.reload} />}
-      {dialog?.kind === "formula" && <FormulaDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} previewRowId={active?.row.id} onClose={closeDialog} onSaved={grid.reload} />}
       {dialog?.kind === "enrichment" && <EnrichmentDialog tableId={tableId} columns={columns} column={dialog.column} afterColumnId={dialog.after} outcome={dialog.outcome} onClose={closeDialog} onSaved={async (key) => {
             await grid.reload();
             if (key) setReveal((r) => ({ key, token: (r?.token ?? 0) + 1 }));

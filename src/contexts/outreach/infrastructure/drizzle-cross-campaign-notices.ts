@@ -14,19 +14,10 @@ const personName = sql`coalesce(nullif(btrim(p.full_name), ''), nullif(btrim(con
 /** A step that went out (or may have) on the enrollment. Same statuses the engine counts for limits. */
 const sentStep = sql`exists (select 1 from sends s where s.enrollment_id = e.id and s.status in ${sqlValues(SEND_COUNTED)})`;
 
-/**
- * A personal campaign (and its replies) is private to the people who work in it. Another campaign's report, lead panel
- * or notice must not name it. `campaignId` is the campaign the reader is looking at: inside a personal campaign its
- * own screens may show other campaigns, in a regular campaign the personal ones drop out. `alias` is the campaigns alias.
- */
-const visibleTo = (alias: string, campaignId: string): SQL =>
-  sql`(${sql.raw(alias)}.type = 'regular' or exists (select 1 from campaigns viewer where viewer.id = ${campaignId}::uuid and viewer.type = 'personal'))`;
-
 export const drizzleCrossCampaignNotices: CrossCampaignNoticeReader = {
   async alreadyContacted(organizationId, campaignId, personIds) {
     if (personIds.length === 0) return { alreadyContacted: [], alreadyContactedPeople: 0 };
-    const where = sql`e.organization_id = ${organizationId} and e.campaign_id <> ${campaignId} and e.person_id in (${list(personIds)}) and (e.status = 'replied' or ${sentStep})
-      and exists (select 1 from campaigns vc where vc.id = e.campaign_id and ${visibleTo("vc", campaignId)})`;
+    const where = sql`e.organization_id = ${organizationId} and e.campaign_id <> ${campaignId} and e.person_id in (${list(personIds)}) and (e.status = 'replied' or ${sentStep})`;
     const [found, [count]] = await Promise.all([
       db.execute(sql`
         select e.person_id as "personId", ${personName} as name, c.id as "campaignId", c.name as "campaignName", e.channel, e.status
@@ -64,7 +55,7 @@ export const drizzleCrossCampaignNotices: CrossCampaignNoticeReader = {
           join campaign_enrollments e2 on e2.id = s.enrollment_id
           join campaigns c2 on c2.id = e2.campaign_id and c2.organization_id = e2.organization_id
           where e2.person_id = e.person_id and e2.id <> e.id and s.linkedin_account_id = e.linkedin_account_id
-            and s.step_number = 1 and s.status in ${sqlValues(SEND_COUNTED)} and ${visibleTo("c2", campaignId)}
+            and s.step_number = 1 and s.status in ${sqlValues(SEND_COUNTED)}
           order by s.claimed_at asc
           limit 1
         ) earlier on true
@@ -101,7 +92,7 @@ export const drizzleCrossCampaignNotices: CrossCampaignNoticeReader = {
         select e.person_id as "personId", c.id as "campaignId", c.name as "campaignName", e.channel, e.status
         from campaign_enrollments e
         join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
-        where e.organization_id = ${organizationId} and e.campaign_id <> ${campaignId} and e.person_id in (${list(personIds)}) and ${visibleTo("c", campaignId)}
+        where e.organization_id = ${organizationId} and e.campaign_id <> ${campaignId} and e.person_id in (${list(personIds)})
         order by e.created_at desc
       `),
       db.execute(sql`
@@ -112,7 +103,6 @@ export const drizzleCrossCampaignNotices: CrossCampaignNoticeReader = {
         join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
         left join linkedin_accounts a on a.id = s.linkedin_account_id and a.organization_id = e.organization_id
         where e.person_id in (${list(personIds)}) and s.linkedin_account_id is not null and s.step_number = 1 and s.status in ${sqlValues(SEND_COUNTED)}
-          and ${visibleTo("c", campaignId)}
         order by e.person_id, s.linkedin_account_id, s.claimed_at asc
       `),
     ]);

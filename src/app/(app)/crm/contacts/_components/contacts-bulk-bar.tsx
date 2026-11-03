@@ -8,7 +8,7 @@ import { BulkBar } from "@/components/shell/bulk-bar";
 import { useBarScrollPadding, useBulkStep, useSelection } from "@/components/shell/selection";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { callApi, organizationHeaders } from "@/app/_lib/api-client";
+import { callApi } from "@/app/_lib/api-client";
 import { BulkDncDialog } from "./bulk-dnc-dialog";
 import { contactsBarModel, selectedText } from "./contacts-bulk";
 
@@ -60,7 +60,7 @@ export function ContactsBulkBar({ total, pageIds, query }: { total: number; page
     setBusy("exporting");
     setError(null);
     try {
-      const response = await fetch("/api/contacts/export", { method: "POST", headers: { ...organizationHeaders(), "content-type": "application/json" }, body: JSON.stringify({ ids }) });
+      const response = await fetch("/api/contacts/export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids }) });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
         return fail(body?.error ?? "The export did not finish. Try again.");

@@ -241,7 +241,7 @@ async function Queue({ searchParams }: { searchParams: PageProps<"/actions">["se
     { scope: "others", label: "Others" },
   ] as const;
   const unassignedCount = counts.work.unassigned;
-  const replyTypes = taxonomy.replyTypes.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
+  const replyTypes = taxonomy.replyTypes.map((t) => ({ id: t.id, name: t.name, groupKey: t.groupKey }));
   const ambiguousTypes = [...ambiguousTypeNames(replyTypes)];
   const queueChips = queueFilterChips(filterValues, scope, { replyTypes, campaigns });
 

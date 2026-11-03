@@ -6,7 +6,7 @@ import { isOutboundPaused } from "@/shared/outbound-pause";
 import type { AgentCampaignStore, AgentCampaignRow, AgentSender } from "../application/agent-campaigns";
 import { readSendPause } from "../domain/send-pause";
 
-const ROW = { id: campaigns.id, name: campaigns.name, channel: campaigns.channel, type: campaigns.type, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, personPaused: campaigns.personPaused };
+const ROW = { id: campaigns.id, name: campaigns.name, channel: campaigns.channel, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, personPaused: campaigns.personPaused };
 
 async function lockCampaign(tx: DbHandle, organizationId: string, campaignId: string, mode: "update" | "share"): Promise<AgentCampaignRow | null> {
   const [row] = await tx
@@ -59,13 +59,12 @@ export const drizzleAgentCampaignStore: AgentCampaignStore = {
         .innerJoin(mailboxes, eq(mailboxes.id, campaignSenders.mailboxId))
         .where(eq(campaignSenders.campaignId, campaign.id));
       const rows = assigned.length > 0 ? assigned : await tx.select({ id: mailboxes.id, status: mailboxes.status, name: mailboxes.emailAddress }).from(mailboxes).where(eq(mailboxes.organizationId, organizationId));
-      return { assigned: assigned.length > 0, senders: rows.map((r): AgentSender => ({ ...r, ownerUserId: null, dailyLimit: null, limitReachedUntil: null })) };
+      return { assigned: assigned.length > 0, senders: rows.map((r): AgentSender => ({ ...r, dailyLimit: null, limitReachedUntil: null })) };
     }
     const columns = {
       id: linkedinAccounts.id,
       status: linkedinAccounts.status,
       name: sql<string>`coalesce(${linkedinAccounts.name}, ${linkedinAccounts.username}, 'LinkedIn account')`,
-      ownerUserId: linkedinAccounts.ownerUserId,
       dailyLimit: linkedinAccounts.dailyInviteLimit,
       limitReachedUntil: linkedinAccounts.limitReachedUntil,
     };

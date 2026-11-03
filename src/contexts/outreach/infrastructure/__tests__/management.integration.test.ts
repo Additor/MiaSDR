@@ -26,7 +26,7 @@ describeDb("campaign and mailbox management", () => {
       actor: { userId, organizationId: id, role },
       member: { userId, organizationId: id, role: "member" },
       campaignDeps: { campaigns: stores.drizzleCampaignStore, mailboxes: stores.drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore },
-      mailboxDeps: { mailboxes: stores.drizzleMailboxStore, provider, now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null, openSignup: false } },
+      mailboxDeps: { mailboxes: stores.drizzleMailboxStore, provider, now: () => new Date("2026-10-14T10:00:00Z"), policy: { allowedDomains: null } },
     };
   }
 

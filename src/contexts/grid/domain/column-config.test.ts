@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertNoCycle, configDependencies, prepareColumnConfig, sanitizeConfig, topologicalOrder } from "./column-config";
+import { assertNoDependencyLoop, prepareColumnConfig, sanitizeConfig } from "./column-config";
 import { effectiveColumnType, isColumnType } from "./column-types";
 import { positionAfter, positionBefore, toColumnKey, uniqueColumnKey, uniqueColumnName } from "./keys";
 
@@ -28,31 +28,19 @@ describe("column keys and names", () => {
 });
 
 describe("column types", () => {
-  it("knows the 21 types of the table constraint", () => {
-    expect(isColumnType("formula")).toBe(true);
+  it("knows the 20 types of the table constraint", () => {
+    expect(isColumnType("ai")).toBe(true);
     expect(isColumnType("bogus")).toBe(false);
     expect(effectiveColumnType({ type: "ai_output", config: { valueType: "number" } })).toBe("number");
-    expect(effectiveColumnType({ type: "ai_output", config: { valueType: "formula" } })).toBe("text");
+    expect(effectiveColumnType({ type: "ai_output", config: { valueType: "ai" } })).toBe("text");
   });
 });
 
 describe("prepareColumnConfig", () => {
-  const keys = new Set(["a", "b"]);
   it("validates select options and currency", () => {
-    expect(() => prepareColumnConfig("select", { options: "x" }, keys, "c")).toThrow(/Options/);
-    expect(prepareColumnConfig("select", { options: ["x", { value: "y", label: "Y" }] }, keys, "c").config.options).toHaveLength(2);
-    expect(() => prepareColumnConfig("currency", { currency: 5 }, keys, "c")).toThrow(/Currency/);
-  });
-  it("parses formulas and finds their dependencies", () => {
-    expect(prepareColumnConfig("formula", { expression: "{{a}} + {{b}}" }, keys, "c").dependsOn.sort()).toEqual(["a", "b"]);
-    expect(() => prepareColumnConfig("formula", { expression: "{{zzz}}" }, keys, "c")).toThrow(/unknown column/);
-    expect(() => prepareColumnConfig("formula", { expression: "{{c}}" }, keys, "c")).toThrow(/unknown column/);
-    expect(() => prepareColumnConfig("formula", { expression: "1 +" }, keys, "c")).toThrow();
-    expect(() => prepareColumnConfig("formula", {}, keys, "c")).toThrow(/required/);
-  });
-  it("reads dependencies of runner configs from tokens and column properties", () => {
-    const deps = configDependencies({ url: "https://x/{{a}}", inputs: { q: { source: "column", columnKey: "b" } }, nested: [{ t: "{{ c }}" }] });
-    expect(deps.sort()).toEqual(["a", "b", "c"]);
+    expect(() => prepareColumnConfig("select", { options: "x" })).toThrow(/Options/);
+    expect(prepareColumnConfig("select", { options: ["x", { value: "y", label: "Y" }] }).options).toHaveLength(2);
+    expect(() => prepareColumnConfig("currency", { currency: 5 })).toThrow(/Currency/);
   });
   it("limits config size and nesting", () => {
     expect(() => sanitizeConfig([])).toThrow(/object/);
@@ -63,11 +51,20 @@ describe("prepareColumnConfig", () => {
   });
 });
 
-describe("dependency graph", () => {
-  it("rejects a cycle and orders the rest", () => {
-    const cols = [{ key: "a", dependsOn: [] as string[] }, { key: "b", dependsOn: ["a"] }];
-    expect(() => assertNoCycle(cols, { key: "a", dependsOn: ["b"] })).toThrow(/Circular/);
-    expect(() => assertNoCycle(cols, { key: "c", dependsOn: ["b"] })).not.toThrow();
-    expect(topologicalOrder([{ key: "b", dependsOn: ["a"] }, { key: "a", dependsOn: [] }, { key: "z", dependsOn: ["gone"] }]).map((c) => c.key)).toEqual(["a", "b", "z"]);
+describe("assertNoDependencyLoop", () => {
+  const columns = [
+    { key: "a", name: "Summary", dependsOn: ["name"] },
+    { key: "a_out", name: "Summary field", dependsOn: ["a"] },
+    { key: "b", name: "Score", dependsOn: ["a_out"] },
+    { key: "name", name: "Name", dependsOn: [] },
+  ];
+
+  it("refuses two columns that would read each other, through an output column too", () => {
+    expect(() => assertNoDependencyLoop(columns, { key: "a", dependsOn: ["b"] })).toThrow(/Summary and Score would read each other/);
+  });
+
+  it("allows a chain and a shared input", () => {
+    expect(() => assertNoDependencyLoop(columns, { key: "b", dependsOn: ["a_out", "name"] })).not.toThrow();
+    expect(() => assertNoDependencyLoop(columns, { key: "a", dependsOn: ["name"] })).not.toThrow();
   });
 });

@@ -52,7 +52,7 @@ describeDb("contact delete races", () => {
     sends: preview.counts.sends,
   });
 
-  /** A reply from an unknown sender, made a contact: a record, a public thread and one inbound message. */
+  /** A reply from an unknown sender, made a contact: a record, a thread and one inbound message. */
   async function repliedContact(f: DealsOrg) {
     const lead = await f.ingest();
     await kit.sql`update people set lifecycle = 'contact', converted_at = now() where id = ${lead.personId}`;

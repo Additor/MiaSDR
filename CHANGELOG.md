@@ -20,6 +20,13 @@ Agents can now spend on enrichment, run LinkedIn searches and take actions a per
 - `draft_campaign` takes a `remove_lead` action, which a person can restore.
 - New settings and switches: `agentSpendCentsPerDay`, `agentSearchLeadsPerDay`, `agentIrreversiblePerDay`, `MCP_SPEND_ENABLED`, `MCP_IRREVERSIBLE_ENABLED`. The database gains `mcp_agent_usage`, two columns on `mcp_tokens` and one on `linkedin_search_queries`, all with defaults.
 
+### Changed
+
+- One install now serves one organization. First-run setup creates it, and the server refuses another. Creating and switching organizations are gone. `AUTH_SIGNUP` is removed, so accounts need an invitation. `MAILBOX_ALLOWED_DOMAINS` stays optional.
+- AI picks follow one fixed rule: a pick waits for a person only for a stop request, confidence under 85%, or a move out of Existing customer. Every other pick applies at once, and Change type or Undo corrects it. Reply types are fixed, and Settings > Reply handling lists them read-only. Looks right, Check before and after, the confidence floor setting and the MCP `confirm_pick` action are gone.
+- Every LinkedIn reply now lands in the Inbox and Actions and reaches the AI. Personal campaigns are gone, along with the MCP fields `personal`, `hiddenSends` and the campaign list's `type`, and the refusal `agent_sender_not_owned`.
+- Tables keep enrichment columns, AI columns and the handoff to a campaign. Formula columns, LOOKUP, Recalculate and the AI formula helper are gone.
+
 ### Removed
 
 Nothing used these, and the database baseline drops them, so start from an empty database.
@@ -31,6 +38,7 @@ Nothing used these, and the database baseline drops them, so start from an empty
 
 ### Fixed
 
+- Two AI or enrichment columns can no longer read each other's output, which would have queued paid runs forever.
 - Recheck connection no longer turns a disabled mailbox back on. Only Enable does, and a check still running when a person disables the mailbox changes nothing.
 - A reply whose own words ask to stop now shows Review stop request in Actions and on the thread before any AI pick reads it. An MCP work queue row for one has `aiPick.replyTypePickId: null`.
 - A new reply on a closed conversation clears its old closed reason.

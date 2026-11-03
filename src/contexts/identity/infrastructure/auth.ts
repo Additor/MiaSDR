@@ -14,7 +14,7 @@ import { env } from "@/shared/env";
 import { CONSENT_PAGE, MCP_OAUTH_SCOPES, MCP_ORG_CLAIM, mcpOAuthAvailable, mcpResourceUrl } from "../domain/mcp-oauth";
 import { authEmail, sendAuthEmail } from "./auth-email";
 import { e2eRateLimitStorage } from "./e2e-rate-limit";
-import { canCreateAccount, canCreateOrganization, initialOrganizationId } from "./signup-facts";
+import { canCreateAccount, initialOrganizationId } from "./signup-facts";
 
 const sendQuietly = (message: Parameters<typeof sendAuthEmail>[0], what: string) =>
   // Not awaited: waiting on delivery would leak, through response timing,
@@ -157,7 +157,9 @@ function createAuth() {
       // Typed away: their endpoints reach the code only through `mcp-oauth.ts`, and a plugin list that may be empty would hide the organization plugin's session field from every caller.
       ...(mcpOAuthPlugins(e) as []),
       organization({
-        allowUserToCreateOrganization: (user) => canCreateOrganization(user.id),
+        // One install serves one organization, and /setup creates it. The option covers a call with a session; a server
+        // call that names a user skips the option, so the hook below refuses that one.
+        allowUserToCreateOrganization: false,
         invitationExpiresIn: 7 * 24 * 60 * 60,
         cancelPendingInvitationsOnReInvite: true,
         // The tenancy use cases never delete an organization through Better Auth, and no tool for it exists yet.
@@ -166,6 +168,7 @@ function createAuth() {
         // directly. These hooks only fire for a call through Better Auth, so a rejection here closes the bypass
         // for server code too, next to the path allow-list in the /api/auth route handler.
         organizationHooks: {
+          beforeCreateOrganization: async () => refuseBypass("This install has one organization."),
           beforeUpdateOrganization: async () => refuseBypass("Rename the organization from Settings."),
           beforeUpdateMemberRole: async () => refuseBypass("Change roles from the Members page."),
           beforeRemoveMember: async () => refuseBypass("Remove members from the Members page."),

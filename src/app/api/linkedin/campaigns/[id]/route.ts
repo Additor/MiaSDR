@@ -8,7 +8,7 @@ import { linkedinStepSchema } from "@/contexts/outreach/linkedin/domain/step-sch
 export async function PATCH(request: Request, ctx: RouteContext<"/api/linkedin/campaigns/[id]">) {
   const { id } = await ctx.params;
   return withActor(async (actor) => {
-    const body = z.object({ name: z.string().optional(), type: z.enum(["regular", "personal"]).optional(), steps: z.array(linkedinStepSchema).optional(), senderIds: z.array(z.uuid()).max(MAX_CAMPAIGN_SENDERS).optional() }).parse(await request.json());
+    const body = z.object({ name: z.string().optional(), steps: z.array(linkedinStepSchema).optional(), senderIds: z.array(z.uuid()).max(MAX_CAMPAIGN_SENDERS).optional() }).parse(await request.json());
     await updateLinkedInCampaign(linkedinCampaignDeps(), actor, id, body);
     return { ok: true };
   });

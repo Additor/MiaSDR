@@ -93,7 +93,7 @@ export async function createCampaignOn<Step, Row extends CampaignRow<Step>, Enro
 
 /**
  * With `tx`, the edit joins the caller's transaction and reads through it: an agent's edit holds the campaign row there, and
- * a read from the pool could wait on a connection this request holds. `more` adds the channel's own columns to the patch.
+ * a read from the pool could wait on a connection this request holds.
  */
 export async function updateCampaignOn<Step, Row extends CampaignRow<Step>, Enrolled>(
   deps: CampaignLifecycleDeps<Step, Row, Enrolled>,
@@ -102,13 +102,11 @@ export async function updateCampaignOn<Step, Row extends CampaignRow<Step>, Enro
   id: string,
   patch: { name?: string; steps?: Step[]; senderIds?: string[] },
   tx?: DbHandle,
-  more?: (campaign: Row) => Promise<Record<string, unknown>>,
 ): Promise<void> {
   const campaign = await loadCampaign(deps.campaigns, actor, id, tx);
   const next: { name?: string; steps?: Step[] } = {};
   const senderIds = patch.senderIds === undefined ? undefined : await validateSenderIds(adminStore(deps), actor, channel.channel, patch.senderIds, tx);
   if (patch.name !== undefined) next.name = cleanName(patch.name);
-  if (more) Object.assign(next, await more(campaign));
   if (patch.steps !== undefined) {
     if (!stepsEditable(campaign.status)) throw new ConflictError("Pause the campaign before editing its steps.");
     const issues = channel.validateSteps(patch.steps);

@@ -135,15 +135,13 @@ export function CreateDealDialog({ open, onOpenChange, mode, person, members, cu
   }, [open, mode, person.id]);
 
   const form = { ...values, stage: values.stage ?? firstOpenChoice(stages) };
-  const heldByPersonalCampaign = mode === "lead" && preview !== null && preview.skippedPersonalCampaign > 0;
-  const ready = dealFieldsReady(form, stages, true) && !already && !heldByPersonalCampaign && (mode === "contact" || preview !== null);
+  const ready = dealFieldsReady(form, stages, true) && !already && (mode === "contact" || preview !== null);
 
   let description: string;
   if (mode === "contact") description = contactDealText(name, person.openDeals ?? 0);
   else if (previewError) description = previewError;
   else if (!preview) description = "Checking what this changes…";
   else if (already) description = "Nothing changed. Open the deal or the contact to add another deal there.";
-  else if (heldByPersonalCampaign) description = "Another member's personal campaign holds this lead. Its creator or an admin can create the deal.";
   else description = `${singleEffectsText(name, preview)} ${permanenceText(name, { withDeal: true })}`;
 
   async function create(): Promise<boolean> {

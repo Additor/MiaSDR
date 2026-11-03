@@ -7,7 +7,7 @@ MiaSDR supports **PostgreSQL 17 or newer**. The bundled Compose file runs Postgr
 Two schema features need PostgreSQL 15, so the schema itself would apply on 15 and 16. The floor is a support statement, and the startup check enforces it:
 
 - `UNIQUE NULLS NOT DISTINCT` on `job_runs_job_slot_org_uq`, added in PostgreSQL 15.
-- `ON DELETE SET NULL (column)` on thirteen composite foreign keys, added in PostgreSQL 15. It nulls one column of a composite foreign key and keeps `organization_id` set.
+- `ON DELETE SET NULL (column)` on twenty-one composite foreign keys, added in PostgreSQL 15. It nulls one column of a composite foreign key and keeps `organization_id` set.
 
 On PostgreSQL 14 or older the first migration fails with a bare syntax error. The app reads `server_version_num` when the server starts. It prints the detected and required versions and exits with code 1 on a server older than 17. `src/platform/db/postgres-version.ts` holds the check. It runs before migrations and whether or not `RUN_MIGRATIONS` is on.
 
@@ -58,7 +58,7 @@ A row lock that serializes writers on `records` or `conversations` takes `FOR NO
 - A contact delete locks the person's records and conversations `FOR UPDATE` (`lockPersonForDelete`), because it deletes them.
 - A reply send locks its conversation `FOR UPDATE` on both channels. It holds back an ingest's message insert, whose transaction would go on to retire drafts and update the conversation, a cycle with the send's draft lock.
 
-One order for the conflicting locks: the record before its conversations. Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its public conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). A LinkedIn message that makes a chat private locks the record before it updates the conversation, since the detach that follows writes the record; updating the conversation first deadlocked with a close (`reply-send-refusals.integration.test.ts`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes records, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
+One order for the conflicting locks: the record before its conversations. Marking reply handling done takes the record `FOR NO KEY UPDATE` and then `FOR SHARE` on its conversations, which waits for a send in progress ("Reply send rules" in `docs/decisions.md`). The reply send locks the conversation first, but on the record it takes only the key share of its draft insert, which no writer lock blocks. A contact delete takes records, then conversations, both `FOR UPDATE`, and gives way on its held-lock timeout when a send meets it.
 
 The organization's `agent-send:<organization id>` advisory lock (`tenancy/infrastructure/agent-send-lock.ts`) orders agent sends against the changes that can stop them:
 
@@ -96,8 +96,8 @@ The flag lasts for that transaction. `TRUNCATE` is not guarded.
 
 Triggers freeze the rows that other rows point at by value or by version. Each rule is a trigger that raises SQLSTATE 23000:
 
-- `conversations`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status`, `private_campaign_id` and `updated_at` stay writable.
-- `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. Name, description, guidance, the type rules (`check_mode`, `reply_draft`, `follow_ups`), `active` and `sort_order` stay writable.
+- `conversations`: `channel`, `account_ref`, `provider_thread_id` and `provider_contact_id` cannot change. `status` and `updated_at` stay writable.
+- `reply_types`: `key`, `group_key`, `reply_type_set_id` and `system_role` cannot change. The app writes the other columns only when it seeds a set: name, description, guidance, the type rules (`reply_draft`, `follow_ups`) and `sort_order`.
 - `knowledge_document_versions`: append-only. An edit inserts a new version and raises `knowledge_documents.latest_version`. A direct `DELETE` raises like the ledger tables above (cascades pass, the purge flag allows it).
 - `sequence_versions` and `sequence_steps`: `organization_id`, `sequence_id` and `version` never change. A published version freezes its `status`, its `published_at` and all of its steps. The draft-to-published update stays legal, and so does deleting a sequence, which cascades.
 
@@ -111,9 +111,9 @@ The campaign setting Follow-ups after a reply (After a reply in code) lives in t
 
 ## Reply type rules
 
-`reply_types.check_mode` (`before`, `after` or `skip`, default `after`), `reply_draft` (boolean, default true) and `follow_ups` (`continue` or `stop`, default `continue`) hold the type rules, and `system_role` (`stop_request`, `customer` or null) marks the stop request and customer types. `reply_types_rules_ck` and `reply_types_system_role_ck` hold the allowed values, and `reply_types_keys_trg` makes `system_role` immutable. Checks hold the fixed parts. `reply_types_stop_request_ck` keeps the stop request type checked before, without a draft, with follow-ups stopped, and active. `reply_types_customer_ck` keeps the customer type in the customer group. `reply_types_set_system_role_uq` allows one type per role in a set.
+`reply_types.reply_draft` (boolean, default true) and `follow_ups` (`continue` or `stop`, default `continue`) hold the type rules, and `system_role` (`stop_request`, `customer` or null) marks the stop request and customer types. `reply_types_rules_ck` and `reply_types_system_role_ck` hold the allowed values, and `reply_types_keys_trg` makes `system_role` immutable. Checks hold the fixed parts. `reply_types_stop_request_ck` keeps the stop request type checked before, without a draft, with follow-ups stopped, and active. `reply_types_customer_ck` keeps the customer type in the customer group. `reply_types_set_system_role_uq` allows one type per role in a set.
 
-`reply_type_picks.rules` is a JSON object with the rules the pick used (`checkMode`, `replyDraft`, `followUps`), or null for a pick that names no type.
+`reply_type_picks.rules` is a JSON object with the rules the pick used (`replyDraft`, `followUps`), or null for a pick that names no type.
 
 ## Leads and the CRM
 

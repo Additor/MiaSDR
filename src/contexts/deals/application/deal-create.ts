@@ -1,12 +1,10 @@
 import { violatedConstraint } from "@/platform/db/errors";
 import { parseCreationKey, type AddContactInput } from "@/contexts/people/application/add-contact";
-import { personalCampaignSkip } from "@/contexts/people/application/convert-to-contact";
-import type { DbHandle } from "@/platform/db/client";
 import { retryOnce, TRY_AGAIN } from "@/platform/db/errors";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { defaultDealTitle, initialStagePosition } from "../domain/deal";
 import type { AddContactWithDealDeps, DealPerson, DealsDeps, StoppedCounts } from "./deal-ports";
-import { MAX_BULK_CONVERT_IDS, BULK_TIME_BUDGET_MS, isUuid, PersonalCampaignError, isAlreadyConverted, type CreateDealInput, type DealFields, parseDealFields, pickStage, personOf } from "./deal-input";
+import { MAX_BULK_CONVERT_IDS, BULK_TIME_BUDGET_MS, isUuid, isAlreadyConverted, type CreateDealInput, type DealFields, parseDealFields, pickStage, personOf } from "./deal-input";
 
 export interface CreateDealResult {
   dealId: string;
@@ -16,8 +14,8 @@ export interface CreateDealResult {
 }
 
 /**
- * One attempt of lead to contact plus deal, in one transaction: the idempotency lookup, the stages, the personal-campaign
- * rule, the conversion (locks, lifecycle re-read, stops), the deal and its event.
+ * One attempt of lead to contact plus deal, in one transaction: the idempotency lookup, the stages, the
+ * conversion (locks, lifecycle re-read, stops), the deal and its event.
  */
 function convertAndCreate(deps: DealsDeps, actor: Actor, person: DealPerson, fields: DealFields): Promise<CreateDealResult> {
   const organizationId = actor.organizationId;
@@ -36,15 +34,8 @@ function convertAndCreate(deps: DealsDeps, actor: Actor, person: DealPerson, fie
       const stages = await deps.store.ensureStages(tx, organizationId);
       const stage = pickStage(stages, fields.stageId);
       const position = initialStagePosition(stage, fields.lostReason, now);
-      // The early read answers fast without waiting on the person's locks. The guard repeats it under those locks, after the
-      // lifecycle re-read, so an enrollment that committed in between still counts; the guard is the authority.
-      const assertNoPersonalCampaign = async (handle: DbHandle) => {
-        const live = await deps.outreach.liveEnrollmentSummary(organizationId, [personId], handle);
-        if (personalCampaignSkip(actor, live.get(personId))) throw new PersonalCampaignError();
-      };
-      await assertNoPersonalCampaign(tx);
 
-      const converted = await deps.convertLead(tx, { organizationId, personId, reason: "deal_created", actorUserId: actor.userId, now, guard: assertNoPersonalCampaign });
+      const converted = await deps.convertLead(tx, { organizationId, personId, reason: "deal_created", actorUserId: actor.userId, now });
       if (!converted.changed) {
         // A concurrent call with the same key converted the person first and has committed by now (we waited on its locks).
         const late = await replay();
@@ -84,7 +75,7 @@ function convertAndCreate(deps: DealsDeps, actor: Actor, person: DealPerson, fie
 
 /**
  * Converts a lead and creates its first deal, all or nothing. 404 for a person outside the organization; 409 `already_converted`
- * (with the person's most recent deal id, or null) for a contact; 403 `personal_campaign`; 409 `try_again` after the retry;
+ * (with the person's most recent deal id, or null) for a contact; 409 `try_again` after the retry;
  * 422 for an invalid stage, owner, amount or close date. A repeat with the same idempotency key replays the first result.
  */
 export async function createDealFromLead(deps: DealsDeps, actor: Actor, personId: string, input: CreateDealInput = {}): Promise<CreateDealResult> {
@@ -93,7 +84,7 @@ export async function createDealFromLead(deps: DealsDeps, actor: Actor, personId
   return retryOnce(() => convertAndCreate(deps, actor, person, fields));
 }
 
-export type BulkSkipReason = "already_converted" | "not_found" | "personal_campaign" | "failed" | "retryable";
+export type BulkSkipReason = "already_converted" | "not_found" | "failed" | "retryable";
 
 export interface BulkCreateResult {
   created: Array<{ personId: string; dealId: string }>;
@@ -146,13 +137,11 @@ export async function createDealsFromLeads(
     } catch (error) {
       const reason: BulkSkipReason = isAlreadyConverted(error)
         ? "already_converted"
-        : error instanceof PersonalCampaignError
-          ? "personal_campaign"
-          : error instanceof NotFoundError
-            ? "not_found"
-            : error instanceof ConflictError && error.details?.code === "try_again"
-              ? "retryable"
-              : "failed";
+        : error instanceof NotFoundError
+          ? "not_found"
+          : error instanceof ConflictError && error.details?.code === "try_again"
+            ? "retryable"
+            : "failed";
       if (reason === "failed") console.error(`[deals] bulk create failed for person ${personId}: ${error instanceof Error ? error.message : String(error)}`);
       result.skipped.push({ personId, reason });
     }

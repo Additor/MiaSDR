@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import type { DbHandle } from "@/platform/db/client";
-import { publicConversationSql } from "@/platform/db/conversation-visibility";
 import { rowsOf } from "@/platform/db/sql-values";
 import { afterReplyLockedReason, afterReplyModeOf } from "../after-reply/domain/after-reply";
 import { owningCampaignSql } from "../after-reply/infrastructure/after-reply-sql";
@@ -23,7 +22,6 @@ export async function followUpModeFactsTx(
     channel: string | null;
     active_channel: string | null;
     owner_channel: string | null;
-    owner_type: string | null;
     owner_status: string | null;
     owner_archived: boolean | null;
     flow_status: string | null;
@@ -32,8 +30,8 @@ export async function followUpModeFactsTx(
     await exec.execute(sql`
       select p.lifecycle = 'contact' as contact, r.active_channel,
              (select c.channel from messages m join conversations c on c.id = m.conversation_id
-              where m.id = r.latest_inbound_message_id and c.organization_id = r.organization_id and ${publicConversationSql("c")}) as channel,
-             own.channel as owner_channel, own.type as owner_type, own.status as owner_status, own.archived_at is not null as owner_archived, fl.status as flow_status,
+              where m.id = r.latest_inbound_message_id and c.organization_id = r.organization_id) as channel,
+             own.channel as owner_channel, own.status as owner_status, own.archived_at is not null as owner_archived, fl.status as flow_status,
              exists (select 1 from sequence_versions v where v.sequence_id = fl.id and v.status = 'published') as published
       from records r
       join people p on p.id = r.person_id and p.organization_id = r.organization_id
@@ -46,7 +44,7 @@ export async function followUpModeFactsTx(
       where r.id = ${recordId} and r.organization_id = ${organizationId}`),
   );
   if (!row) return null;
-  const owner = row.owner_channel && row.owner_type ? { channel: row.owner_channel, type: row.owner_type } : null;
+  const owner = row.owner_channel ? { channel: row.owner_channel } : null;
   // The same order as `startableCampaignSql` and `startBlockedReason`: a locked campaign is handoff, then the campaign
   // state, then the flow's mode.
   const campaignMode: CampaignMode = owner

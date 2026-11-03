@@ -5,7 +5,6 @@ import { Suspense } from "react";
 import { AuthCardSkeleton } from "../auth-skeleton";
 import { needsSetup } from "@/contexts/tenancy/application/setup-instance";
 import { setupDeps } from "@/contexts/tenancy/infrastructure/onboarding-composition";
-import { isPublicSignupAvailable } from "@/contexts/identity/infrastructure/signup-facts";
 import { env } from "@/shared/env";
 import { SignInForm } from "./sign-in-form";
 
@@ -25,5 +24,5 @@ async function SignIn() {
   await connection();
   // A fresh instance has no accounts to sign in to: send the operator to first-run setup.
   if (await needsSetup(setupDeps())) redirect("/setup");
-  return <SignInForm signupAvailable={await isPublicSignupAvailable()} googleEnabled={googleEnabled()} />;
+  return <SignInForm googleEnabled={googleEnabled()} />;
 }

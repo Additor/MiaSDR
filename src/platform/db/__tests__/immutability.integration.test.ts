@@ -64,10 +64,9 @@ describeDb("immutable identity and versions", () => {
 
     it("allows the update paths the application uses", async () => {
       const w = await world();
-      // updated_at touches (reply and inbound stores), status and private_campaign_id (linkedin conversation store), and a same-value write.
+      // updated_at touches (reply and inbound stores), status, and a same-value write.
       await sql`update conversations set updated_at = now() where id = ${w.conversation}`;
       await sql`update conversations set status = 'closed' where id = ${w.conversation}`;
-      await sql`update conversations set private_campaign_id = null where id = ${w.conversation}`;
       await sql`update conversations set channel = channel, account_ref = account_ref, provider_thread_id = provider_thread_id where id = ${w.conversation}`;
     });
   });
@@ -82,10 +81,10 @@ describeDb("immutable identity and versions", () => {
       await expect(sql`update reply_types set reply_type_set_id = ${other.id} where id = ${w.subA}`).rejects.toThrow(KEYS);
     });
 
-    it("allows every field ReplyTypePatch writes", async () => {
+    it("allows the columns that are not keys", async () => {
       const w = await world();
       await sql`
-        update reply_types set name = 'Renamed', description = 'd', classification_guidance = 'g', check_mode = 'skip', reply_draft = false, follow_ups = 'stop', sort_order = 5, active = false
+        update reply_types set name = 'Renamed', description = 'd', classification_guidance = 'g', reply_draft = false, follow_ups = 'stop', sort_order = 5
         where id = ${w.subA}`;
       await sql`update reply_types set key = key, group_key = group_key where id = ${w.subA}`;
     });

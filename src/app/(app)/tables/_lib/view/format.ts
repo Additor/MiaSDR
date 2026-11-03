@@ -25,7 +25,6 @@ export const TYPE_LABELS: Record<string, string> = {
   functions: "Functions",
   message: "Message",
   waterfall: "Waterfall",
-  formula: "Formula",
   merge: "Merge",
 };
 
@@ -104,8 +103,8 @@ export function cellStatus(row: GridRow, columnKey: string): { state: "idle" | "
   if (meta.status === "running" || meta.status === "queued" || meta.status === "waiting") return { state: "running" };
   if (meta.status === "error" || meta.status === "failed") return { state: "error", message: meta.error ?? "The run failed." };
   if (meta.status === "skipped: cap") return { state: "skipped", message: meta.reason ?? "Not run automatically: over the auto-run limit." };
-  // A formula cell whose LOOKUP source changed after its last run. The value is the old one.
-  if (meta.status === "stale") return { state: "stale", message: meta.error ?? "The source changed. Recalculate this column." };
+  // An undo restored an input after the last run. The value is the old one.
+  if (meta.status === "stale") return { state: "stale", message: meta.error ?? "An input changed. Run this column to refresh it." };
   if (meta.outcome === "miss") {
     const steps = meta.unanswered?.length ? ` Steps that did not answer: ${meta.unanswered.join("; ")}.` : "";
     return { state: "miss", message: `No provider confirmed this.${steps}` };
@@ -147,7 +146,6 @@ export const DEFAULT_WIDTH: Record<string, number> = {
   select: 150,
   multiselect: 200,
   json: 220,
-  formula: 180,
   ai: 220,
   ai_output: 200,
   integration_output: 180,

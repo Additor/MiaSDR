@@ -21,7 +21,6 @@ export interface FlowCampaign {
   id: string;
   name: string;
   channel: string;
-  type: string;
   status: string;
 }
 
@@ -125,7 +124,7 @@ export interface StartFacts {
   /** The person is a contact (`people.lifecycle`), who starts no follow-ups. */
   contact: boolean;
   /** The campaign that most recently emailed the person, whatever its state. Null when none did. */
-  owner: { id: string; name: string; channel: string; type: string; status: string; archived: boolean } | null;
+  owner: { id: string; name: string; channel: string; status: string; archived: boolean } | null;
   /** The owner's Follow-ups after a reply sequence, whatever its state. Null when the owner has none. */
   flow: { status: SequenceStatus; hasPublished: boolean } | null;
   /** The conversation asked for, or the one holding the latest inbound message. */

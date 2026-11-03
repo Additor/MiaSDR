@@ -92,8 +92,8 @@ describe("checkDraftCurrent", () => {
       error: "conflict",
       message: "A person changed the reply type after this draft was written. Review the thread and regenerate the draft.",
     });
-    expect(refusal(() => checkDraftCurrent({ ...draft, status: "stale", error: "The conversation became private" }, expected, "linkedin"))?.message).toBe(
-      "The conversation became private. Review the thread and regenerate the draft.",
+    expect(refusal(() => checkDraftCurrent({ ...draft, status: "stale", error: "The thread moved on" }, expected, "linkedin"))?.message).toBe(
+      "The thread moved on. Review the thread and regenerate the draft.",
     );
     expect(refusal(() => checkDraftCurrent({ ...draft, status: "stale", error: null }, expected, "email"))?.message).toBe("This draft is out of date. Review the thread and regenerate the draft.");
   });

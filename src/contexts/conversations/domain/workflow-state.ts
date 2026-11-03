@@ -34,8 +34,8 @@ export function afterTypeChange(current: WorkflowState, decision: Pick<ReplyType
 }
 
 /**
- * An applied AI pick settles `action_required` to `idle` when nothing is left for a person: the pick did not wait, its
- * type is checked neither before nor after (Check = skip), it wants no draft, and the reply asked nothing to stop.
+ * An applied AI pick settles `action_required` to `idle` when nothing is left for a person: the pick did not wait, it
+ * wants no draft, and the reply asked nothing to stop.
  */
 export const settlesAfterAiPick = (current: string, decision: ReplyTypeDecision, stopRequested: boolean): boolean =>
-  current === "action_required" && decision.hold === null && !decision.needsLooksRight && !decision.wantsDraft && !stopRequested;
+  current === "action_required" && decision.hold === null && !decision.wantsDraft && !stopRequested;

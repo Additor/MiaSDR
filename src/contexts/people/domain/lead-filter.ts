@@ -15,11 +15,11 @@ export interface LeadFilter {
   hasLinkedin?: boolean;
   doNotContact?: boolean;
   /**
-   * True: the lead replied. False: it did not. A reply is an enrollment in a regular campaign with status `replied`, or an
-   * inbound message in a public conversation of the person.
+   * True: the lead replied. False: it did not. A reply is an enrollment with status `replied`, or an
+   * inbound message of the person.
    */
   replied?: boolean;
-  /** True: the person has a record with a public conversation (inbound or outbound). False: it has none. */
+  /** True: the person has a record with a conversation (inbound or outbound). False: it has none. */
   hasConversation?: boolean;
   /** Who the list shows. Absent means `lead` (`DEFAULT_LIFECYCLE`); `all` is the only way to list both. */
   lifecycle?: LifecycleFilter;

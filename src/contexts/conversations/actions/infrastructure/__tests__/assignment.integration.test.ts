@@ -37,10 +37,9 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
   }
   type Fx = Awaited<ReturnType<typeof fixture>>;
 
-  async function campaign(f: Fx, createdBy: string | null, opts: { type?: string; channel?: string } = {}): Promise<string> {
-    const type = opts.type ?? "regular";
-    const channel = opts.channel ?? (type === "personal" ? "linkedin" : "email");
-    const [row] = await sql`insert into campaigns (organization_id, name, channel, type, created_by, steps) values (${f.org}, ${"c-" + ++counter}, ${channel}, ${type}, ${createdBy}, ${sql.json([])}) returning id`;
+  async function campaign(f: Fx, createdBy: string | null, opts: { channel?: string } = {}): Promise<string> {
+    const channel = opts.channel ?? "email";
+    const [row] = await sql`insert into campaigns (organization_id, name, channel, created_by, steps) values (${f.org}, ${"c-" + ++counter}, ${channel}, ${createdBy}, ${sql.json([])}) returning id`;
     return row.id as string;
   }
 
@@ -125,12 +124,11 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
     const stranger = await composition.ingestInbound(mail(f, `stranger-${f.tag}@nowhere.test`));
     expect((await recordOf(stranger.personId)).assigned_to).toBeNull();
 
-    // A creator who is no member, a campaign without a creator, a removed enrollment and a personal campaign do not count.
+    // A creator who is no member, a campaign without a creator and a removed enrollment do not count.
     const lead = await enrolledLead(f);
     await enroll(f, await campaign(f, f.carl), lead.personId, "2026-10-01T09:00:00Z");
     await enroll(f, await campaign(f, null), lead.personId, "2026-10-02T09:00:00Z");
     await enroll(f, await campaign(f, f.ann), lead.personId, "2026-10-03T09:00:00Z", "removed");
-    await enroll(f, await campaign(f, f.bob, { type: "personal" }), lead.personId, "2026-10-04T09:00:00Z", "active", "linkedin");
     await composition.ingestInbound(mail(f, lead.email));
     const record = await recordOf(lead.personId);
     expect(record.assigned_to).toBeNull();
@@ -323,21 +321,15 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       expect(await assignedEvents(r.recordId)).toHaveLength(1);
     });
 
-    it("answers 404 for another organization's record, an id that is no UUID, and a record that exists only for a private thread", async () => {
+    it("answers 404 for another organization's record and an id that is no UUID", async () => {
       const f = await fixture();
       const other = await fixture();
-      const mine = await unassigned(f);
       const theirs = await unassigned(other);
 
       await expect(assignment.claimRecord(deps, actorOf(f, f.ann), theirs.recordId)).rejects.toBeInstanceOf(NotFoundError);
       await expect(assignment.assignRecord(deps, actorOf(f, f.ann), theirs.recordId, { assignedTo: f.ann, expectedAssignedTo: null })).rejects.toBeInstanceOf(NotFoundError);
       await expect(assignment.claimRecord(deps, actorOf(f, f.ann), "not-an-id")).rejects.toBeInstanceOf(NotFoundError);
       expect((await recordOf(theirs.personId)).assigned_to).toBeNull();
-
-      const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, name, channel, type) values (${f.org}, 'Personal', 'linkedin', 'personal') returning id`;
-      await sql`update conversations set private_campaign_id = ${campaignId} where id = ${mine.conversationId}`;
-      await expect(assignment.claimRecord(deps, actorOf(f, f.ann), mine.recordId)).rejects.toBeInstanceOf(NotFoundError);
-      expect((await recordOf(mine.personId)).assigned_to).toBeNull();
     });
   });
   describe("scopes of the work queue", () => {
@@ -427,12 +419,8 @@ describeDb("who handles a reply: automatic assignment on the first inbound messa
       expect(counts.work).toEqual({ mine: 2, unassigned: 1, others: 2 });
     });
 
-    it("leaves out the tasks of a record that exists only for a private thread, and another organization's work", async () => {
+    it("leaves out another organization's work", async () => {
       const f = await fixture();
-      const stranger = await waiting(f, f.ann);
-      await task(f, stranger.personId, stranger.recordId, f.ann);
-      const [{ id: campaignId }] = await sql`insert into campaigns (organization_id, name, channel, type) values (${f.org}, 'Personal', 'linkedin', 'personal') returning id`;
-      await sql`update conversations set private_campaign_id = ${campaignId} where record_id = ${stranger.recordId}`;
       const other = await fixture();
       await waiting(other, null);
 

@@ -65,10 +65,9 @@ test.describe("the conversation page", () => {
     await why.click();
     await expect(line.getByTestId("type-why")).toHaveText("The AI picked Meeting requested · Interested, 90% confident. The sender proposes a meeting.");
 
-    // The applied pick waits for Looks right, beside Change type.
-    const decision = line.getByTestId("type-decision");
-    await expect(decision.getByRole("button")).toHaveText(["Looks right", "Change type"]);
-    await decision.getByRole("button", { name: "Change type" }).click();
+    // The applied pick asks nothing. Change type sits on the line to correct it.
+    await expect(line.getByTestId("type-decision")).toHaveCount(0);
+    await line.getByRole("button", { name: "Change type" }).click();
     const dialog = page.getByRole("dialog", { name: "Change the reply type of Omar Reyes" });
     await expect(dialog.getByRole("radio", { name: "The AI read the last reply wrong" })).toBeChecked();
     await expect(dialog.getByTestId("ai-reading")).toContainText("The AI picked Meeting requested · Interested, 90% confident");
@@ -94,9 +93,6 @@ test.describe("the conversation page", () => {
     const panel = page.getByTestId("reply-panel");
     await expect(panel.getByTestId("draft-status")).toHaveText("Awaiting review");
     await waitForHydrated(panel.getByRole("button", { name: "Approve and send" }));
-    // Under a draft that waits for approval, the type line's buttons are outline and Approve and send stays the filled one.
-    const looksRight = page.getByTestId("type-decision").getByRole("button", { name: "Looks right" });
-    await expect(looksRight).toHaveAttribute("data-variant", "outline");
     await panel.getByLabel("Message").fill("Thursday at ten works. Typed by hand.");
 
     await page.getByTestId("type-line").getByRole("button", { name: "Change type" }).click();

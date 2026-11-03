@@ -8,7 +8,6 @@ import { defaultReplyTypeSetId, findOrCreateRecord, type Tx } from "./drizzle-co
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
 import { recordInboundTx } from "./record-context";
-import { detachPrivateThreadTx } from "./private-thread-detach";
 
 /**
  * The lead the message belongs to: the one the caller named, then the one with this profile slug, else a
@@ -51,7 +50,7 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
         eq(conversations.providerThreadId, input.providerThreadId),
       );
       const findConversation = async () =>
-        (await tx.select({ id: conversations.id, recordId: conversations.recordId, privateCampaignId: conversations.privateCampaignId }).from(conversations).where(threadScope))[0];
+        (await tx.select({ id: conversations.id, recordId: conversations.recordId }).from(conversations).where(threadScope))[0];
 
       // A message in a known chat joins that conversation.
       let conversation = await findConversation();
@@ -76,22 +75,10 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
             accountRef: input.accountRef,
             providerThreadId: input.providerThreadId,
             providerContactId: input.counterparty.providerId,
-            privateCampaignId: input.privateCampaignId ?? null,
           })
           .onConflictDoNothing();
         conversation = await findConversation();
       }
-      // A reply of a personal-campaign lead makes the thread private for good, even when a public thread existed before.
-      if (input.privateCampaignId && !conversation.privateCampaignId) {
-        // The record before the conversation, the order every writer of both takes (docs/database.md, "Lock modes"); the
-        // detach below writes the record.
-        await tx.select({ id: records.id }).from(records).where(eq(records.id, conversation.recordId)).for("no key update");
-        await tx.update(conversations).set({ privateCampaignId: input.privateCampaignId }).where(eq(conversations.id, conversation.id));
-        conversation = { ...conversation, privateCampaignId: input.privateCampaignId };
-        // The thread already moved the shared record while it was public. Undo that in this transaction.
-        await detachPrivateThreadTx(tx, { organizationId: input.organizationId, conversationId: conversation.id, recordId: conversation.recordId, now: new Date() });
-      }
-      const isPrivate = conversation.privateCampaignId !== null;
 
       const [owner] = await tx
         .select({ personId: records.personId, fullName: people.fullName, firstName: people.firstName, slug: people.linkedinSlug })
@@ -125,13 +112,9 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
         return { status: "duplicate" as const, conversationId: conversation.id, messageId: winner.id, personId: owner.personId, personCreated: false };
       }
 
-      // A private thread leaves the record alone: no workflow state, version bump or latest-inbound pointer, so no
-      // classification job, draft, task or stage movement can follow. Only the outreach stop below still runs.
-      if (!isPrivate) {
-        const at = sql`${input.receivedAt.toISOString()}::timestamptz`;
-        await recordInboundTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, channel: "linkedin", messageId: message.id, at, now: new Date() });
-        await autoAssignTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, personId: owner.personId });
-      }
+      const at = sql`${input.receivedAt.toISOString()}::timestamptz`;
+      await recordInboundTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, channel: "linkedin", messageId: message.id, at, now: new Date() });
+      await autoAssignTx(tx, { organizationId: input.organizationId, recordId: conversation.recordId, personId: owner.personId });
       // A reply ends all outreach to the person, on every channel and campaign, in the same transaction.
       const stop = await stopPersonOutreachOnReplyTx(tx, { organizationId: input.organizationId, personId: owner.personId, channel: "linkedin", now: new Date() });
       await tx.update(conversations).set({ updatedAt: sql`now()` }).where(eq(conversations.id, conversation.id));

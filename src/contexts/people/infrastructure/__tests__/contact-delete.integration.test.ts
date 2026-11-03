@@ -56,14 +56,13 @@ describeDb("contact delete", () => {
     const sub = await one(sql`insert into reply_types (organization_id, reply_type_set_id, group_key, key, name) values (${org}, ${pipeline}, 'interested', 'a', 'A') returning id`);
     const mailbox = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${`box-${tag}@x.test`}, 'connected') returning id`);
     const account = await one(sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id) values (${org}, ${`acc-${tag}`}, ${`li-${tag}`}) returning id`);
-    const personal = await one(sql`insert into campaigns (organization_id, channel, name, type, created_by) values (${org}, 'linkedin', 'Mine', 'personal', ${other}) returning id`);
     const regular = await one(sql`insert into campaigns (organization_id, channel, name, status) values (${org}, 'email', 'Spring', 'completed') returning id`);
     const actors = {
       member: { userId: member, organizationId: org, role: "member" } satisfies Actor,
       other: { userId: other, organizationId: org, role: "member" } satisfies Actor,
       admin: { userId: admin, organizationId: org, role: "admin" } satisfies Actor,
     };
-    return { org, tag, pipeline, pipeline2, sub, mailbox, account, personal, regular, actors };
+    return { org, tag, pipeline, pipeline2, sub, mailbox, account, regular, actors };
   }
   type Org = Awaited<ReturnType<typeof organization>>;
 
@@ -82,7 +81,7 @@ describeDb("contact delete", () => {
    * a sent attempt, a follow-up run, events, notes, tasks, a do not contact mark, a resolved identity exception, a won and a
    * lost deal, and a finished campaign enrollment with two sends a month old.
    */
-  async function full(o: Org, label: string, opts: { companyId?: string | null; privateThread?: boolean } = {}) {
+  async function full(o: Org, label: string, opts: { companyId?: string | null } = {}) {
     const t = `${o.tag}-${label}`;
     const { person, email } = await bare(o, label, opts);
     const record = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline}) returning id`);
@@ -135,16 +134,7 @@ describeDb("contact delete", () => {
     }
     const won = await closedDeal(o, person, "won", `${label} renewal`);
     const lost = await closedDeal(o, person, "lost", `${label} pilot`);
-    let privateConversation: string | null = null;
-    if (opts.privateThread) {
-      const privateRecord = await one(sql`insert into records (organization_id, person_id, reply_type_set_id) values (${o.org}, ${person}, ${o.pipeline2}) returning id`);
-      privateConversation = await one(sql`
-        insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${o.org}, ${privateRecord}, 'linkedin', ${`li-${t}`}, ${o.personal}) returning id`);
-      await sql`
-        insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-        values (${o.org}, ${privateConversation}, 'linkedin', ${`li-${t}`}, 'inbound', ${`li-in-${t}`}, 'private hello', now())`;
-    }
-    return { person, email, record, conversation, inbound, won, lost, privateConversation };
+    return { person, email, record, conversation, inbound, won, lost };
   }
 
   async function closedDeal(o: Org, personId: string, kind: "won" | "lost", title: string) {
@@ -222,7 +212,6 @@ describeDb("contact delete", () => {
       blockers: [],
       suppressionKept: true,
       linkedinOnlyBlock: false,
-      hiddenExcluded: false,
       agentProtected: false,
     });
     // Two seeded lines plus the deals' own history.
@@ -331,33 +320,6 @@ describeDb("contact delete", () => {
     expect(preview.blockers).toEqual([]);
     await app.deleteContact(deps, o.actors.admin, stale.person, { expected: expectedOf(preview) });
     expect(await sql`select id from ai_jobs where id = ${job}`).toEqual([]);
-  });
-
-  it("blocks a member on another member's personal campaign and private thread, leaves them out of the counts, and lets an admin delete", async () => {
-    const o = await organization();
-    const target = await full(o, "private", { privateThread: true });
-    await sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel, status) values (${o.org}, ${o.personal}, ${target.person}, 'linkedin', 'completed')`;
-
-    const member = await app.previewContactDelete(deps, o.actors.member, target.person);
-    expect(reasons(member)).toEqual(["personal_campaign_sends", "private_conversation"]);
-    expect(member.hiddenExcluded).toBe(true);
-    expect(member.counts).toMatchObject({ conversations: 1, messages: 2, campaigns: 1 });
-
-    // The campaign's creator sees both and is not blocked.
-    const creator = await app.previewContactDelete(deps, o.actors.other, target.person);
-    expect(creator.blockers).toEqual([]);
-    expect(creator.hiddenExcluded).toBe(false);
-
-    const admin = await app.previewContactDelete(deps, o.actors.admin, target.person);
-    expect(admin.blockers).toEqual([]);
-    expect(admin.hiddenExcluded).toBe(false);
-    expect(admin.counts).toMatchObject({ conversations: 2, messages: 3, campaigns: 2 });
-
-    const error = await rejection(app.deleteContact(deps, o.actors.member, target.person, { expected: expectedOf(member) }));
-    expect((error as ConflictError).details?.code).toBe("contact_blocked");
-    await app.deleteContact(deps, o.actors.admin, target.person, { expected: expectedOf(admin) });
-    expect(Object.values(await rowsOf(o, target.person)).every((n) => n === 0)).toBe(true);
-    expect(await sql`select id from conversations where id = ${target.privateConversation}`).toEqual([]);
   });
 
   it("keeps an existing suppression row as it is, and blocks nothing for an unmarked contact", async () => {

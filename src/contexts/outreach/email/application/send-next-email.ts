@@ -119,7 +119,7 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
 export async function recheckFailedMailboxes(deps: EngineDeps, deadline = Number.POSITIVE_INFINITY): Promise<{ checked: number; recovered: number }> {
   const now = deps.clock.now();
   const report = { checked: 0, recovered: 0 };
-  const policy = deps.domainPolicy ?? { allowedDomains: null, openSignup: false };
+  const policy = deps.domainPolicy ?? { allowedDomains: null };
   for (const mailbox of await deps.store.failedMailboxes(new Date(now.getTime() - FAILED_MAILBOX_CHECK_MINUTES * 60_000))) {
     // A provider outage makes each check wait out its timeout. The rest stay due, so the next tick takes them.
     if (Date.now() >= deadline) break;

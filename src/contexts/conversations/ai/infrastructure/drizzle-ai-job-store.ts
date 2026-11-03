@@ -6,7 +6,6 @@ import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import type { AiJobQueueStore, AiJobStore, ClassifyContext, DraftContext, FailedAiJob, JobKind, RequeueAudit, SkippedAiJob } from "../../application/reply-ports";
 import { AUTO_REQUEUE_BASE_SECONDS, AUTO_REQUEUE_CEILING, AUTO_REQUEUE_MAX_SECONDS, nextAutoRequeueAt, REQUEUEABLE_SKIP_REASONS, SWEEP_KINDS, type FailureKind } from "../domain/ai-job-requeue";
 import { buildDraftContext, knowledgeFor, renderInstructions, threadEntries } from "../../infrastructure/thread-context";
-import { publicConversation } from "@/platform/db/conversation-visibility";
 import { PENDING_DRAFT_STATUSES } from "../../domain/draft-status";
 import { typeRulesOf } from "../../domain/reply-type";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
@@ -160,13 +159,13 @@ const queueStore: AiJobQueueStore = {
       .from(messages)
       .innerJoin(conversations, eq(conversations.id, messages.conversationId))
       .innerJoin(records, eq(records.id, conversations.recordId))
-      .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId), publicConversation));
+      .where(and(eq(messages.id, messageId), eq(messages.organizationId, organizationId)));
     if (!row) return null;
 
     const taxonomyRows = await db
       .select()
       .from(replyTypes)
-      .where(and(eq(replyTypes.replyTypeSetId, row.replyTypeSetId), eq(replyTypes.active, true)))
+      .where(eq(replyTypes.replyTypeSetId, row.replyTypeSetId))
       .orderBy(replyTypes.sortOrder);
     const [settings] = await db.select().from(replyHandlingSettings).where(eq(replyHandlingSettings.replyTypeSetId, row.replyTypeSetId));
     const thread = await threadEntries(organizationId, row.conversationId);

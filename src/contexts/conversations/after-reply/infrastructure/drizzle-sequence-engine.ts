@@ -176,7 +176,7 @@ export const drizzleSequenceEngine: SequenceEngineStore = {
           order by v.version desc limit 1
         ) pick on true
         where r.latest_inbound_message_id is not null
-          and ${startableCampaignSql({ channel: sql`own.channel`, type: sql`own.type`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}
+          and ${startableCampaignSql({ channel: sql`own.channel`, status: sql`own.status`, archivedAt: sql`own.archived_at` })}
           and lm.sent_at >= pick.enabled_at - make_interval(mins => ${NEW_REPLY_MARGIN_MINUTES})
           and r.workflow_state not in ('closed', 'paused')
           and ${startFollowUpsSql("r", "s")} = 'continue'

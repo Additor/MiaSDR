@@ -80,7 +80,7 @@ export function ChangeTypeButton({
   aiReading?: AiReading | null;
   /** What Stop contacting needs, and whether the person is already marked. */
   stop: StopTarget & { doNotContact: boolean };
-  /** A link at the end of the type line, an outline button beside Accept or Looks right, or the lead button when the AI's pick names an archived type. */
+  /** A link at the end of the type line, or an outline button beside Accept. */
   variant?: "link" | "outline" | "default";
 }) {
   const router = useRouter();

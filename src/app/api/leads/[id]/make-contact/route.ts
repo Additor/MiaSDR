@@ -4,8 +4,7 @@ import { withActor } from "@/app/_lib/api";
 
 /**
  * Make contact: the lead becomes a contact without a deal. 200 `{ personId, stopped }`. A second call answers
- * 409 `already_converted`, which the dialog reads as done; 409 `personal_campaign` while another member's personal campaign
- * still reaches the person.
+ * 409 `already_converted`, which the dialog reads as done.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/leads/[id]/make-contact">) {
   const { id } = await ctx.params;

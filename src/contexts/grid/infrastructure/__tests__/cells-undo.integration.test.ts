@@ -70,7 +70,7 @@ describeDb("cells compare-and-set and undo", () => {
     expect(none.skipped).toHaveLength(1);
     // A plain edit (not an undo) of the same cells is still refused.
     await expect(rowsUc.editCells(deps, actor, tableId, [updates[1]])).rejects.toThrow(/Unknown column/);
-    await expect(rowsUc.editCells(deps, actor, tableId, [updates[2]])).rejects.toThrow(/(is a formula column|is filled by a run)/);
+    await expect(rowsUc.editCells(deps, actor, tableId, [updates[2]])).rejects.toThrow(/is filled by a run/);
     void org;
   });
 
@@ -146,13 +146,16 @@ describeDb("cells compare-and-set and undo", () => {
     expect(other.summary).toBeUndefined();
   });
 
-  it("recalculates formulas after an undo", async () => {
-    const { actor, tableId, keys, rows } = await setup([["N", "number"]]);
-    await columnsUc.createColumn(deps, actor, tableId, { name: "Double", type: "formula", config: { expression: `{{${keys[0]}}} * 2` } });
-    await rowsUc.editCells(deps, actor, tableId, [{ rowId: rows[0].id, columnKey: keys[0], value: 2 }]);
-    await rowsUc.editCells(deps, actor, tableId, [{ rowId: rows[0].id, columnKey: keys[0], value: 10 }]);
-    const result = await rowsUc.editCells(deps, actor, tableId, [{ rowId: rows[0].id, columnKey: keys[0], value: 2, expect: { value: 10 } }], { undo: true });
-    const formulaKey = (await columnsUc.listColumns(deps, actor, tableId)).columns.find((c) => c.type === "formula")!.key;
-    expect(result.rows[0].cells[formulaKey]).toBe(4);
+  it("markStale marks only the given rows with the reason and counts only rows it changed", async () => {
+    const { org, tableId, rows } = await setup([["N", "number"]]);
+    const ids = rows.map((r) => r.id);
+    expect(await deps.rows.markStale(org, tableId, ["summary"], "connection reset", ids.slice(0, 1))).toBe(1);
+    const metaOf = async (id: string) => (await sql`select cell_meta -> 'summary' as meta from grid_rows where id = ${id}`)[0].meta;
+    expect(await metaOf(ids[0])).toEqual({ status: "stale", error: "connection reset" });
+    expect(await metaOf(ids[1])).toBeNull();
+    // A new table starts with one row of its own, so count them. A row already stale is not counted again.
+    const [{ total }] = await sql`select count(*)::int as total from grid_rows where table_id = ${tableId}`;
+    expect(await deps.rows.markStale(org, tableId, ["summary"], "connection reset")).toBe(total - 1);
+    expect(await deps.rows.markStale(org, tableId, ["summary"], "connection reset")).toBe(0);
   });
 });

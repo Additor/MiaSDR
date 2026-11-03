@@ -17,8 +17,8 @@ import type { EnrollmentAdminStore, SenderRef } from "../../application/enrollme
 const actor: Actor = { userId: "u1", organizationId: "org1", role: "member" };
 const NOW = new Date("2026-10-14T10:00:00Z");
 
-function setup(options: { fieldNames?: string[]; steps?: LinkedInStep[]; status?: LinkedInCampaignRecord["status"]; lead?: Record<string, string | null> | null; accounts?: LinkedInAccountLimits[]; rows?: LinkedInEnrollmentRow[]; archived?: boolean; senders?: SenderRef[]; type?: LinkedInCampaignRecord["type"] } = {}) {
-  const campaign: LinkedInCampaignRecord = { id: "c1", name: "Q4", type: options.type ?? "regular", createdBy: "u1", status: options.status ?? "draft", steps: options.steps ?? DEFAULT_LINKEDIN_STEPS, archivedAt: options.archived ? NOW : null, createdAt: NOW };
+function setup(options: { fieldNames?: string[]; steps?: LinkedInStep[]; status?: LinkedInCampaignRecord["status"]; lead?: Record<string, string | null> | null; accounts?: LinkedInAccountLimits[]; rows?: LinkedInEnrollmentRow[]; archived?: boolean; senders?: SenderRef[] } = {}) {
+  const campaign: LinkedInCampaignRecord = { id: "c1", name: "Q4", createdBy: "u1", status: options.status ?? "draft", steps: options.steps ?? DEFAULT_LINKEDIN_STEPS, archivedAt: options.archived ? NOW : null, createdAt: NOW };
   const calls: string[] = [];
   const store = {
     get: async (org: string, id: string) => (org === "org1" && id === "c1" ? campaign : null),
@@ -100,7 +100,6 @@ describe("getLinkedInCampaignDetail", () => {
     lastSentAt: null,
     variables,
     detail: { headline: null, companyName: null, accountName: null, sends: [], retries: 0, lastError: null, alsoInCampaigns: [], excludedAccounts: [] },
-    hasPrivateThread: false,
     ...over,
   });
 
