@@ -22,6 +22,8 @@ export interface PickedEnrollCounts {
   /** On the suppression list. LinkedIn has no suppression list, so this stays 0 there. */
   skippedSuppressed: number;
   skippedDoNotContact: number;
+  /** The latest reply reads as a request to stop and no person reviewed it. */
+  skippedStopRequest: number;
   /** The person is a contact (a deal exists or was created from the lead), and a contact is not enrolled in campaigns. */
   skippedContact: number;
   /** Unknown ids and ids of another organization; the two look the same. */

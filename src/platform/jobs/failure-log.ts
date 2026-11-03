@@ -1,4 +1,4 @@
-import { and, desc, like, sql } from "drizzle-orm";
+import { and, desc, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { jobRuns } from "./schema";
 
@@ -32,6 +32,12 @@ export async function recordTickFailure(f: TickFailure): Promise<void> {
       // startedAt keeps the first sighting of the row; finishedAt is the latest.
       set: { status: "failed", finishedAt: f.now, error, leaseUntil: null },
     });
+}
+
+/** Removes the failure rows of jobs that ran clean. Their row says what is wrong now, and nothing is. */
+export async function clearTickFailures(jobs: string[]): Promise<void> {
+  if (jobs.length === 0) return;
+  await db.delete(jobRuns).where(inArray(jobRuns.job, jobs.map((job) => `${TICK_FAILURE_PREFIX}${job}`)));
 }
 
 export interface TickFailureRow {

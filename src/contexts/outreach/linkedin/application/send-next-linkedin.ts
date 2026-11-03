@@ -8,7 +8,7 @@ import {
   renderLinkedInText,
 } from "../domain/linkedin";
 import { parseLinkedInProfileRef } from "../domain/linkedin-identity";
-import { MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES } from "../../domain/send-policy";
+import { MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES, UNCERTAIN_RECHECK_MINUTES } from "../../domain/send-policy";
 import { defaultWorkingHours } from "../../domain/working-hours";
 import {
   LinkedInGatewayError,
@@ -245,7 +245,8 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
   const report: LinkedInReconcileReport = { checked: 0, foundSent: 0, retryable: 0, stillWaiting: 0, expired: 0 };
   const olderThan = new Date(now.getTime() - UNCERTAIN_AFTER_MINUTES * 60_000);
 
-  for (const send of await deps.store.listUncertain(olderThan, limit)) {
+  const later = new Date(now.getTime() + UNCERTAIN_RECHECK_MINUTES * 60_000);
+  for (const send of await deps.store.listUncertain(olderThan, limit, now)) {
     report.checked += 1;
     const retryIn = inviteRetryMinutes(send.attempt);
     if (!send.rendered) {
@@ -256,6 +257,7 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
     }
     const gateway = await deps.gateways.forOrganization(send.organizationId);
     if (!gateway) {
+      await deps.store.deferUncertain(send.sendId, later);
       report.stillWaiting += 1;
       continue;
     }
@@ -278,7 +280,8 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
         }
       }
     } catch {
-      // The provider cannot answer right now. Leave it unresolved.
+      // The provider cannot answer right now. Leave it unresolved, behind the sends it can answer for.
+      await deps.store.deferUncertain(send.sendId, later);
       report.stillWaiting += 1;
       continue;
     }
@@ -286,6 +289,8 @@ export async function reconcileLinkedInSends(deps: LinkedInEngineDeps, limit = 2
       await deps.store.resolveUncertainAsNotSent(send, now, retryIn, MAX_SEND_ATTEMPTS, "not_found");
       report.retryable += 1;
     } else {
+      // Looks again when the grace period ends, the moment this answer can change.
+      await deps.store.deferUncertain(send.sendId, new Date(send.claimedAt.getTime() + NOT_FOUND_GRACE_MINUTES * 60_000));
       report.stillWaiting += 1;
     }
   }

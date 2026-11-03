@@ -1,5 +1,6 @@
 "use client";
 
+import { useReportUnsaved } from "./unsaved-edits";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ export function CampaignSenders({ id, channel, options, assigned }: { id: string
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
   const dirty = value.length !== assigned.length || value.some((v) => !assigned.includes(v));
+  useReportUnsaved(id, "Senders", dirty);
 
   const save = () =>
     run("save", async () => {

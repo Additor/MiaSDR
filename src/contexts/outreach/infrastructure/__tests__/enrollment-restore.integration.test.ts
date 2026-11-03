@@ -246,10 +246,21 @@ describeDb("restore of removed enrollments", () => {
       await refuses(f, c, await f.enroll(c, await f.person("All Sent"), { step: 2, connection: "connected" }), "nothing_left");
     });
 
+    it("brings a failed lead back to the step it was on, as a person's Retry", async () => {
+      const f = await fixture();
+      const c = await f.campaign("Main");
+      const id = await f.enroll(c, await f.person("Failed lead"), { status: "failed", step: 0 });
+      const out = await restore(f, c, [id]);
+      expect(out.restored).toBe(1);
+      expect((await sql`select status, stop_reason from campaign_enrollments where id = ${id}`)[0]).toMatchObject({ status: "pending", stop_reason: null });
+      const [event] = await sql`select from_data from events where event_type = 'enrollment.restored' and to_data->>'enrollmentId' = ${id}`;
+      expect(event.from_data).toEqual({ status: "failed" });
+    });
+
     it("a lead that is not removed keeps its status", async () => {
       const f = await fixture();
       const c = await f.campaign("Main");
-      const statuses = ["pending", "active", "replied", "completed", "bounced", "suppressed", "failed", "cancelled"];
+      const statuses = ["pending", "active", "replied", "completed", "bounced", "suppressed", "cancelled"];
       const ids: string[] = [];
       for (const status of statuses) ids.push(await f.enroll(c, await f.person(`Status ${status}`), { status, step: status === "active" ? 1 : 0, connection: "request_sent" }));
       const out = await restore(f, c, ids);

@@ -79,8 +79,7 @@ export const HOLD_REASONS = ["protected_customer", "requires_review", "low_confi
 export type HoldReason = (typeof HOLD_REASONS)[number];
 
 /**
- * A stored hold reason, read back. A reason stored before migration 0003 (`protected_stage`, `customer_requires_review`,
- * `review_other`) or any other value reads as null, so a reader shows its fallback.
+ * A stored hold reason, read back. The column is JSON, so any other value reads as null and a reader shows its fallback.
  */
 export const holdReasonOf = (value: unknown): HoldReason | null => (HOLD_REASONS.includes(value as HoldReason) ? (value as HoldReason) : null);
 

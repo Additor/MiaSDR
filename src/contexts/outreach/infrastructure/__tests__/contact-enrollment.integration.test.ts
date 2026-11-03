@@ -199,6 +199,7 @@ describeDb("contacts and campaign enrollment", () => {
         skippedSuppressed: channel === "email" ? 1 : 0,
         // LinkedIn has no suppression list, so the suppressed contact falls through to the contact bucket there.
         skippedDoNotContact: 1,
+        skippedStopRequest: 0,
         skippedContact: channel === "email" ? 1 : 2,
         skippedNotFound: 0,
       });

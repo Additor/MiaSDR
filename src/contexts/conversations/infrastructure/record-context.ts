@@ -12,10 +12,9 @@ import { staleOpenDraftsTx } from "./stale-drafts-sql";
  * record's work was prepared for has changed, so everything that hangs on the old version ends in the same transaction:
  *
  * 1. The new version goes in with the caller's other record columns (`set`), so a job that read the old one skips.
- * 2. An AI pick held for a check retires (`stale`): it can no longer be accepted, so Actions, the history, the reply counts
- *    and the draft prompt stop treating it as waiting. A held pick that asks to stop stays until a person decides
- *    (`personDecided`), since the agent send gate reads it (`stopRequestOpen` in `agent-reply-gate.ts`). A newer reply does
- *    not end it either: a thread turning private can make the older reply the latest again.
+ * 2. An AI pick held for a check retires (`stale`): it can no longer be accepted, so the history, the reply counts and the
+ *    draft prompt stop treating it as waiting. A stop request it read stays open whatever the pick's status: the flag stays on
+ *    the row and only a person's review answers it (`stopReviewOpenSql`).
  * 3. With `drafts`, open drafts retire with that reason. With `runs`, the record's sequence run ends with that reason.
  *
  * The caller holds the record's lock when the path needs one, and writes its event with the returned version.
@@ -27,8 +26,6 @@ export interface AdvanceRecordContext {
   set?: PgUpdateSetSource<typeof records>;
   drafts?: { reason: string } | null;
   runs?: Parameters<typeof interruptRecordRunsTx>[3] | null;
-  /** A person chose what the record is, or marked the person do not contact, which also answers a held stop request. */
-  personDecided?: boolean;
 }
 
 export async function advanceRecordContextTx(tx: DbTx, input: AdvanceRecordContext): Promise<{ contextVersion: number; draftsRetired: number; runsEnded: number }> {
@@ -40,10 +37,7 @@ export async function advanceRecordContextTx(tx: DbTx, input: AdvanceRecordConte
     .returning({ contextVersion: records.contextVersion });
   await tx.execute(sql`
     update reply_type_picks k set status = 'stale'
-    where k.organization_id = ${organizationId} and k.record_id = ${recordId} and k.status in ${sqlValues(PICK_FROM.stale)}
-      and (${input.personDecided === true}::boolean
-        or not (coalesce((k.response->>'stopRequested')::boolean, false)
-          or exists (select 1 from reply_types t where t.id = k.proposed_reply_type_id and t.system_role = 'stop_request')))`);
+    where k.organization_id = ${organizationId} and k.record_id = ${recordId} and k.status in ${sqlValues(PICK_FROM.stale)}`);
   const draftsRetired = input.drafts ? await staleOpenDraftsTx(tx, { organizationId, recordId, reason: input.drafts.reason, now }) : 0;
   const runsEnded = input.runs ? await interruptRecordRunsTx(tx, organizationId, recordId, input.runs, now) : 0;
   return { contextVersion: bumped.contextVersion, draftsRetired, runsEnded };

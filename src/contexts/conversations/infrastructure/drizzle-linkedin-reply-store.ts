@@ -82,9 +82,9 @@ export const drizzleLinkedInReplyStore: LinkedInReplyStore = {
         .select({ attempt: sendAttempts, conversationId: drafts.conversationId })
         .from(sendAttempts)
         .innerJoin(drafts, eq(drafts.id, sendAttempts.draftId))
-        .where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
+        .where(and(eq(sendAttempts.organizationId, input.organizationId), eq(sendAttempts.idempotencyKey, input.idempotencyKey)));
       if (existing) {
-        if (existing.conversationId !== conv.id || existing.attempt.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another conversation.");
+        if (existing.conversationId !== conv.id) throw new ConflictError("This idempotency key belongs to another conversation.");
         // A key names one send of one draft, so another draft must not read that send's outcome as its own.
         if (input.draft && attemptOfAnotherDraft(existing.attempt, input.draft.id)) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing.attempt) };

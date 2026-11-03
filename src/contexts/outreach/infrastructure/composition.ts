@@ -3,7 +3,9 @@ import { env } from "@/shared/env";
 import type { CampaignDeps } from "../application/campaign-management";
 import type { EmailRulesDeps } from "../email/application/email-rules";
 import type { SendPauseDeps } from "../application/send-pause";
-import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
+import { db } from "@/platform/db/client";
+import { auditSink, recordAudit } from "@/contexts/tenancy/infrastructure/audit";
+import { mergeChannelSettings } from "@/contexts/tenancy/infrastructure/channel-settings";
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";
@@ -76,7 +78,14 @@ export { onboardingCampaignFacts } from "./onboarding-campaign-facts";
 export const emailRulesDeps = (): EmailRulesDeps => ({ settings: drizzleChannelSettingsStore });
 
 /** The organization's sending pause, which writes an audit row on each change. */
-export const sendPauseDeps = (): SendPauseDeps => ({ settings: drizzleChannelSettingsStore, audit: auditSink });
+export const sendPauseDeps = (): SendPauseDeps => ({
+  settings: drizzleChannelSettingsStore,
+  savePause: (organizationId, pause, userId, audit) =>
+    db.transaction(async (tx) => {
+      await mergeChannelSettings(tx, organizationId, "general", { sendingPaused: pause }, userId);
+      await recordAudit(tx, audit);
+    }),
+});
 
 /** Merge fields offered in the sequence editor. */
 export const mergeFieldDeps = (): { source: MergeFieldSource } => ({ source: drizzleMergeFieldSource });
@@ -131,6 +140,7 @@ export function emailJobs(inbox: InboxFiling, followUps: FollowUpStop) {
       ...createEmailJobs(engineDeps()),
       {
         name: "email.reconcile-test",
+        failureKeys: [],
         async run() {
           const report = await reconcileTestSends(testSendDeps());
           return { processed: report.foundSent + report.notSent, more: report.checked >= 25, detail: { checked: report.checked, found_sent: report.foundSent, not_sent: report.notSent, waiting: report.waiting } };

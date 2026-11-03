@@ -73,8 +73,8 @@ export async function seedWorld(sql: Sql): Promise<World> {
     insert into drafts (organization_id, record_id, conversation_id, reply_for_message_id, expected_context_version, channel)
     values (${org}, ${record}, ${conversation}, ${message}, 0, 'email') returning id`);
   const sendAttempt = await one(sql`insert into send_attempts (organization_id, draft_id, idempotency_key, actor_user_id) values (${org}, ${draft}, ${"sa-" + tag}, ${user}) returning id`);
-  const mailbox = await one(sql`insert into mailboxes (organization_id, email_address) values (${org}, ${"mb-" + tag + "@t8.test"}) returning id`);
-  const mailbox2 = await one(sql`insert into mailboxes (organization_id, email_address) values (${org}, ${"mb2-" + tag + "@t8.test"}) returning id`);
+  const mailbox = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${"mb-" + tag + "@t8.test"}, 'connected') returning id`);
+  const mailbox2 = await one(sql`insert into mailboxes (organization_id, email_address, status) values (${org}, ${"mb2-" + tag + "@t8.test"}, 'connected') returning id`);
   const linkedinAccount = await one(sql`insert into linkedin_accounts (organization_id, provider_account_id, linkedin_id) values (${org}, ${"pa-" + tag}, ${"li-" + tag}) returning id`);
   const campaign = await one(sql`insert into campaigns (organization_id, channel, name) values (${org}, 'email', 'c') returning id`);
   const enrollment = await one(sql`insert into campaign_enrollments (organization_id, campaign_id, person_id, channel) values (${org}, ${campaign}, ${person}, 'email') returning id`);

@@ -45,8 +45,7 @@ export function AcceptInvitation({ invitationId, view }: { invitationId: string;
 
   const accept = () =>
     run("accept", () => authClient.organization.acceptInvitation({ invitationId }), () => {
-      router.push(HOME);
-      router.refresh();
+      window.location.assign(HOME);
     });
   const decline = () => run("decline", () => authClient.organization.rejectInvitation({ invitationId }), () => router.refresh());
 

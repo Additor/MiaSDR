@@ -29,6 +29,7 @@ import { CampaignSenders } from "./campaign-senders";
 import { CrossCampaignSkipped } from "./cross-campaign-skipped";
 import { AfterReplyPanel } from "./after-reply-panel";
 import { CampaignTabs, SequenceNote } from "./campaign-tabs";
+import { UnconfirmedSends } from "./unconfirmed-sends";
 import { LeadsSection } from "./enroll-panel";
 import { EnrollmentListFilters, EnrollmentPager } from "./enrollment-list-controls";
 import { canRemoveEnrollment } from "@/contexts/outreach/domain/enrollment-status";
@@ -42,7 +43,7 @@ const PLACEHOLDER = /\[\[[^\]]*\]\]/;
 
 /** Detail page of a LinkedIn campaign. Throws NotFoundError when the id is not a LinkedIn campaign of this organization. */
 export async function LinkedInCampaignView({ id, query, tab, actor }: { id: string; query: EnrollmentListQuery; tab: CampaignTab; actor: Actor }) {
-  const { campaign, enrollments, accounts, connectedAccounts } = await getLinkedInCampaignDetail(linkedinCampaignDeps(), actor, id, query);
+  const { campaign, enrollments, accounts, connectedAccounts, unconfirmed } = await getLinkedInCampaignDetail(linkedinCampaignDeps(), actor, id, query);
   const senders = await getLinkedInCampaignSenders(linkedinCampaignDeps(), actor, id);
   const afterReply = tab === "settings" ? await getCampaignAfterReply(afterReplyDeps(), actor, id) : null;
   const everyone = enrollments.counts.all + enrollments.counts.removed;
@@ -111,10 +112,30 @@ export async function LinkedInCampaignView({ id, query, tab, actor }: { id: stri
           </div>
         )}
 
+        {unconfirmed.total > 0 && (
+          <div>
+            <UnconfirmedSends
+              campaignId={campaign.id}
+              channel="linkedin"
+              total={unconfirmed.total}
+              canResolve={isOwnerOrAdmin(actor.role)}
+              rows={unconfirmed.rows.map((r) => ({
+                sendId: r.sendId,
+                personName: r.personName,
+                email: r.email,
+                stepNumber: r.stepNumber,
+                mailboxEmail: r.mailboxEmail,
+                claimedAt: r.claimedAt.toISOString(),
+                note: r.note,
+              }))}
+            />
+          </div>
+        )}
+
         <StartBlockers blockers={blockers} channel="linkedin" base={base} />
 
         <div className="stack-group">
-          <CampaignTabs base={base} active={tab} />
+          <CampaignTabs base={base} active={tab} campaignId={campaign.id} />
 
           {tab === "leads" && (
             <LeadsSection id={campaign.id} count={enrollments.counts.all} disabled={campaign.status === "completed"} channel="linkedin">

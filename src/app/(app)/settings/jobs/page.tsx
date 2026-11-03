@@ -3,13 +3,14 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageSkeleton } from "@/components/shell/page-skeleton";
 import { requireOrgContext } from "@/contexts/identity/infrastructure/session";
+import { isInstanceOperator } from "@/contexts/identity/infrastructure/signup-facts";
 import { getLinkedInJobsOverview } from "@/contexts/outreach/linkedin/application/linkedin-operations";
 import { linkedinOperations } from "@/composition/inbox-filing";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { getFailedAiJobs, getSkippedAiJobs } from "@/contexts/conversations/ai/application/ai-job-ops";
 import { aiJobOpsDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
-import { recentTickFailures } from "@/platform/jobs/failure-log";
+import { loadInstallProblems } from "../settings-attention";
 import { AiJobsPanel } from "./ai-jobs-panel";
 import { Tabs } from "@/components/shell/tabs";
 import { JobsHistory } from "./jobs-panel";
@@ -32,22 +33,28 @@ async function Jobs() {
   const ctx = await requireOrgContext();
   if (!isOwnerOrAdmin(ctx.role)) return <AdminNotice action="see jobs" replacesPage />;
   const actor = toActor(ctx);
-  const [overview, failedAi, skippedAi, tickFailures] = await Promise.all([
+  const [overview, failedAi, skippedAi, install] = await Promise.all([
     getLinkedInJobsOverview(linkedinOperations(), actor),
     getFailedAiJobs(aiJobOpsDeps(), actor),
     getSkippedAiJobs(aiJobOpsDeps(), actor),
-    recentTickFailures(20),
+    (await isInstanceOperator(ctx.user.id)) ? loadInstallProblems() : { failures: [], problems: [] },
   ]);
+  const { failures: tickFailures, problems } = install;
   const linkedin = JSON.parse(JSON.stringify(overview));
   return (
     <div className="stack-section max-w-5xl">
+      {problems.map((problem) => (
+        <p key={problem} role="alert" className="text-sm text-destructive">
+          {problem}
+        </p>
+      ))}
       <Tabs
         label="Jobs"
         tabs={[
           {
             id: "attention",
             label: "Needs attention",
-            count: failedAi.total + tickFailures.length,
+            count: failedAi.total + tickFailures.length + problems.length,
             content: (
               <AiJobsPanel failed={JSON.parse(JSON.stringify(failedAi))} skipped={JSON.parse(JSON.stringify(skippedAi))} tickFailures={JSON.parse(JSON.stringify(tickFailures))} />
             ),

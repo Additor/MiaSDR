@@ -76,6 +76,8 @@ export interface FollowUpStop {
 export interface InboxFiling {
   email(input: InboxEmail): Promise<InboxFiled>;
   linkedin(input: InboxLinkedInMessage): Promise<InboxFiled>;
+  /** A person replied: ends all their outreach in `tx`, before filing runs, so a message that cannot be filed still stops it. */
+  stopOnReply(tx: DbTx, input: { organizationId: string; personId: string; senderEmail: string | null; accountRef: string; providerMessageId: string; channel: "email"; now: Date }): Promise<unknown>;
 }
 
 /** Failure history of one inbound message, kept in `inbound_events`. */

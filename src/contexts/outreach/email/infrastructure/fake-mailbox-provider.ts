@@ -5,6 +5,9 @@ export type FakeBehavior =
   | "ok"
   /** The provider refuses; nothing is sent. */
   | "refuse"
+  | "bad_address"
+  | "revoked"
+  | "outage"
   /** The call fails with a timeout, but the message was in fact accepted. */
   | "timeout-after-accept"
   /** The call fails with a timeout and the message was not accepted. */
@@ -32,12 +35,15 @@ export class FakeMailboxProvider implements MailboxProvider {
 
   async send(email: OutgoingEmail): Promise<SentEmail> {
     const behavior = this.behavior(email);
-    if (behavior === "refuse") throw new ProviderSendError("Recipient address rejected", "definite");
-    if (behavior === "timeout-lost") throw new ProviderSendError("Request timed out", "unknown");
+    if (behavior === "refuse") throw new ProviderSendError("Recipient address rejected", "definite", "message");
+    if (behavior === "bad_address") throw new ProviderSendError("Invalid To header", "definite", "recipient");
+    if (behavior === "revoked") throw new ProviderSendError("Google would not give an access token.", "definite", "account");
+    if (behavior === "outage") throw new ProviderSendError("Could not reach Google.", "definite", "provider");
+    if (behavior === "timeout-lost") throw new ProviderSendError("Request timed out", "unknown", "message");
     const sent = { providerMessageId: `fake-${this.instance}-${++this.counter}`, threadId: email.threadId ?? `thread-${this.instance}-${this.counter}` };
     this.delivered.push(email);
     this.sentIndex.set(email.rfcMessageId, sent);
-    if (behavior === "timeout-after-accept") throw new ProviderSendError("Request timed out", "unknown");
+    if (behavior === "timeout-after-accept") throw new ProviderSendError("Request timed out", "unknown", "message");
     return sent;
   }
 

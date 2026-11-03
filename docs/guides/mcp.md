@@ -102,7 +102,7 @@ With Replies on, a person can create a token that sends. Its agent gets one more
 |---|---|---|
 | `agent_send_off` | Agent sending is off, or the token was made before it was last turned off, or the token cannot send | Turn agent sending on, or create a new token that sends |
 | `agent_unverified_recipient` | No campaign reached this person in this conversation, and nobody in the organization replied there | Send the first reply yourself in MiaSDR |
-| `agent_stop_requested` | The AI read the lead's latest message as a request to stop, and no person reviewed it | A person reviews it in MiaSDR |
+| `agent_stop_requested` | The lead's latest message reads as a request to stop, and no person reviewed it | A person reviews it in MiaSDR |
 | `agent_cc_not_allowed` | The draft has CC addresses | Remove them, or send it yourself |
 | `agent_send_paused` | The organization's Sending pause or `PAUSE_OUTBOUND` is on | A person resumes sending |
 | `agent_daily_cap` | Agents reached today's limit for the organization (100), the token's person (50) or the mailbox (30) | Wait for midnight UTC (`retryAfterSeconds`), or an owner or admin raises the limit |

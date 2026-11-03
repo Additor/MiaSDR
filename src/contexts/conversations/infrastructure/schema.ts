@@ -216,8 +216,8 @@ export const conversations = pgTable(
     index("conversations_private_idx").on(t.organizationId, t.privateCampaignId).where(sql`${t.privateCampaignId} is not null`),
     unique("conversations_id_org_uq").on(t.id, t.organizationId),
     unique("conversations_id_channel_account_uq").on(t.id, t.channel, t.accountRef),
-    uniqueIndex("conversations_thread_uq")
-      .on(t.channel, t.accountRef, t.providerThreadId)
+    uniqueIndex("conversations_org_thread_uq")
+      .on(t.organizationId, t.channel, t.accountRef, t.providerThreadId)
       .where(sql`${t.providerThreadId} is not null`),
     check("conversations_channel_ck", inList(t.channel, CHANNELS)),
     check("conversations_status_ck", sql`${t.status} in ('active', 'closed')`),
@@ -257,9 +257,10 @@ export const messages = pgTable(
       foreignColumns: [conversations.id, conversations.channel, conversations.accountRef],
     }),
     unique("messages_id_org_uq").on(t.id, t.organizationId),
-    unique("messages_idempotency_uq").on(t.channel, t.accountRef, t.idempotencyKey),
-    uniqueIndex("messages_provider_id_uq")
-      .on(t.channel, t.accountRef, t.providerMessageId)
+    // With the organization: a mailbox address can leave one organization and join another, and its history stays behind.
+    uniqueIndex("messages_org_idempotency_uq").on(t.organizationId, t.channel, t.accountRef, t.idempotencyKey),
+    uniqueIndex("messages_org_provider_id_uq")
+      .on(t.organizationId, t.channel, t.accountRef, t.providerMessageId)
       .where(sql`${t.providerMessageId} is not null`),
     check("messages_direction_ck", sql`${t.direction} in ('inbound', 'outbound')`),
     check("messages_body_ck", sql`length(btrim(${t.bodyText})) > 0`),
@@ -289,7 +290,7 @@ export const identityExceptions = pgTable(
   (t) => [
     // The migration writes `ON DELETE SET NULL (resolved_person_id)`.
     foreignKey({ name: "identity_exceptions_resolved_person_fk", columns: [t.resolvedPersonId, t.organizationId], foreignColumns: [people.id, people.organizationId] }).onDelete("set null"),
-    unique("identity_exceptions_event_uq").on(t.channel, t.accountRef, t.sourceEventKey),
+    unique("identity_exceptions_event_uq").on(t.organizationId, t.channel, t.accountRef, t.sourceEventKey),
     check("identity_exceptions_status_ck", sql`${t.status} in ('open', 'resolved', 'ignored')`),
     check("identity_exceptions_channel_ck", inList(t.channel, CHANNELS)),
     check(
@@ -421,6 +422,26 @@ export const replyTypePicks = pgTable(
   ],
 );
 
+/**
+ * A person reviewed the stop request a reply seems to make. The fact belongs to the reply, whatever its picks did since, and
+ * an agent's call never writes it (`personReviewedStopsTx`). `reviewed_by` is null for a review from before this table.
+ */
+export const stopReviews = pgTable(
+  "stop_reviews",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    messageId: uuid("message_id").notNull(),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: tstz("reviewed_at").notNull(),
+  },
+  (t) => [
+    foreignKey({ name: "stop_reviews_message_fk", columns: [t.messageId, t.organizationId], foreignColumns: [messages.id, messages.organizationId] }).onDelete("cascade"),
+    unique("stop_reviews_message_uq").on(t.messageId),
+    index("stop_reviews_org_idx").on(t.organizationId),
+  ],
+);
+
 /** AI body and human edit stay separate so we can tell what the person changed. */
 export const drafts = pgTable(
   "drafts",
@@ -481,7 +502,7 @@ export const sendAttempts = pgTable(
     id: pk(),
     organizationId: orgId(),
     draftId: uuid("draft_id").notNull(),
-    idempotencyKey: text("idempotency_key").notNull().unique(),
+    idempotencyKey: text("idempotency_key").notNull(),
     status: text("status").$type<AttemptStatus>().notNull().default("prepared"),
     actorUserId: uuid("actor_user_id")
       .notNull()
@@ -523,6 +544,8 @@ export const sendAttempts = pgTable(
         and (${t.provider} is null or length(btrim(${t.provider})) > 0)
         and (${t.accountRef} is null or length(btrim(${t.accountRef})) > 0)`,
     ),
+    // The caller chooses the key, so two organizations may choose the same one.
+    unique("send_attempts_org_idempotency_uq").on(t.organizationId, t.idempotencyKey),
     uniqueIndex("send_attempts_one_terminal_uq")
       .on(t.draftId)
       .where(sql`${t.status} in ('sent', 'delivery_uncertain', 'reconciled')`),

@@ -184,7 +184,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
                 disabled={working || !panel.canGenerate || draftingNext}
                 onClick={async () => {
                   if (!showRegenerate) return setShowRegenerate(true);
-                  if (await regenerate(draft.id, note)) {
+                  if (await regenerate(draft.id, draft.revision, note)) {
                     setShowRegenerate(false);
                     setNote("");
                   }
@@ -209,7 +209,7 @@ export function LinkedInReplyPanelClient({ panel, noDraft, drafting }: { panel: 
           cancelLabel="Keep draft"
           pendingLabel="Discarding…"
           destructive
-          onConfirm={() => discard(draft.id)}
+          onConfirm={() => discard(draft.id, draft.revision)}
         />
       )}
     </Card>

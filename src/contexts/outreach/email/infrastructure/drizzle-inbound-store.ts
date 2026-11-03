@@ -5,8 +5,6 @@ import type { FollowUpStop, InboundStore, InboxFiling, MessageFailureState, Sync
 import type { InboundEmail } from "../application/ports";
 import { isVerifiedBounce } from "../domain/bounce";
 import { createSuppressionStore } from "../../infrastructure/suppression-store";
-import { haltOutcome } from "../../domain/enrollment-status";
-import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
 import { SEND_COUNTED } from "../../domain/send-status";
 
 type Tx = DbTx;
@@ -101,7 +99,8 @@ function storeInInbox(inbox: InboxFiling, mailbox: SyncMailbox, email: InboundEm
   });
 }
 
-const eventKey = (mailbox: SyncMailbox, providerMessageId: string) => `inbound:${mailbox.emailAddress}:${providerMessageId}`;
+/** By the mailbox row: an address can leave one organization and join another, and Gmail keeps its message ids. */
+const eventKey = (mailbox: SyncMailbox, providerMessageId: string) => `inbound:${mailbox.id}:${providerMessageId}`;
 
 /** The email inbound store. `inbox` files each message that is not a verified bounce or our own. */
 export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowUpStop): InboundStore {
@@ -156,10 +155,12 @@ export function createDrizzleInboundStore(inbox: InboxFiling, followUps: FollowU
           const matched = await db.transaction(async (tx) => {
             const enrollmentId = await matchEnrollment(tx, mailbox, email);
             if (!enrollmentId) return false;
-            await endEnrollmentsTx(tx, and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)), haltOutcome("replied"), now);
+            const [matchedEnrollment] = await tx.select({ personId: campaignEnrollments.personId }).from(campaignEnrollments).where(and(eq(campaignEnrollments.id, enrollmentId), eq(campaignEnrollments.organizationId, mailbox.organizationId)));
+            // The person-wide stop, ahead of filing: a message that fails to file must not leave their other campaigns running.
+            if (matchedEnrollment) await inbox.stopOnReply(tx, { organizationId: mailbox.organizationId, personId: matchedEnrollment.personId, senderEmail: email.from.email, accountRef: mailbox.emailAddress, providerMessageId: email.providerMessageId, channel: "email", now });
             return true;
           });
-          // After the sequence stopped: a replayed batch repeats both steps, and both are idempotent.
+          // After the sequence stopped. A replayed batch repeats both steps: the stop skips a filed message, and filing dedupes.
           const stored = await storeInInbox(inbox, mailbox, email, false);
           // Mail from a lead without thread headers has no matched send, but the sender-address stop still ended its enrollments.
           return matched || (stored.status === "created" && (stored.outreachStopped ?? 0) > 0) ? "reply" : "unmatched_message";

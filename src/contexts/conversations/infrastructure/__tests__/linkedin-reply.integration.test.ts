@@ -351,15 +351,16 @@ describeDb("LinkedIn conversation replies", () => {
   it("keeps organizations apart", async () => {
     const a = await fixture();
     const b = await fixture();
-    // Organization B's member cannot reply, read the panel or reuse a key in A's chat.
+    // Organization B's member cannot reply or read the panel in A's chat.
     await expect(app.sendLinkedInReply(b.deps, b.actor, a.conversationId, { text: "Hi", idempotencyKey: key() })).rejects.toBeInstanceOf(NotFoundError);
     expect(await app.getLinkedInReplyPanel(b.deps, b.actor, a.conversationId)).toBeNull();
     expect(a.fake.messages).toHaveLength(0);
     expect(b.fake.messages).toHaveLength(0);
     const k = key();
     await send(a, "Mine", k);
-    await expect(app.sendLinkedInReply(b.deps, b.actor, b.conversationId, { text: "Mine", idempotencyKey: k })).rejects.toBeInstanceOf(ConflictError);
-    expect(await unread.counts(b.org)).toMatchObject({ linkedin: 1 });
+    // The caller chooses the key, so B's own send with A's key goes out and does not read A's outcome.
+    expect(await app.sendLinkedInReply(b.deps, b.actor, b.conversationId, { text: "Mine", idempotencyKey: k })).toMatchObject({ status: "sent" });
+    expect(b.fake.messages).toHaveLength(1);
   });
 
   it("refuses an email conversation and shows no composer for it", async () => {

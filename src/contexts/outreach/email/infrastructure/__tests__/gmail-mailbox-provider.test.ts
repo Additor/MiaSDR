@@ -123,9 +123,32 @@ describe("send", () => {
     expect(error.kind).toBe("definite");
     expect(error.message).toContain("nope");
     if (status === 401 || status === 403) expect(error.message).toMatch(/domain-wide delegation/);
+    expect(error.scope).toBe(status === 401 || status === 403 ? "account" : "message");
   });
 
-  it.each([429, 500, 502, 503])("treats %i as unknown", async (status) => {
+  it("calls a bad address the recipient's, so no retry follows", async () => {
+    const { provider } = setup(sendHandler(() => json(400, { error: { message: "Invalid To header" } })));
+    expect((await provider.send(email).catch((e) => e)).scope).toBe("recipient");
+  });
+
+  it.each([
+    [429, "Too many requests"],
+    [403, "User-rate limit exceeded"],
+    [403, "Daily sending quota exceeded"],
+  ])("treats a Gmail limit (%i: %s) as the provider's and nothing sent", async (status, message) => {
+    const { provider } = setup(sendHandler(() => json(status, { error: { message } })));
+    const error = await provider.send(email).catch((e) => e);
+    expect(error).toMatchObject({ kind: "definite", scope: "provider" });
+  });
+
+  it("calls a refused token the mailbox's, and an unreachable Google the provider's", async () => {
+    const revoked = setup(() => json(400, { error: "invalid_grant", error_description: "Not a valid email" }));
+    expect(await revoked.provider.send(email).catch((e) => e)).toMatchObject({ kind: "definite", scope: "account" });
+    const down = setup(() => json(503, {}));
+    expect(await down.provider.send(email).catch((e) => e)).toMatchObject({ kind: "definite", scope: "provider" });
+  });
+
+  it.each([500, 502, 503])("treats %i as unknown", async (status) => {
     const { provider } = setup(sendHandler(() => json(status, { error: { message: "busy" } })));
     const error = await provider.send(email).catch((e) => e);
     expect(error).toBeInstanceOf(ProviderSendError);

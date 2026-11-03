@@ -81,6 +81,8 @@ export interface ReplyTypePickEntry {
   holdReason: HoldReason | null;
   /** The reply asked to stop, as the AI read it. */
   stopRequested: boolean;
+  /** A pick reads this reply as a request to stop and no person reviewed it, whatever this pick's status. */
+  stopReviewOpen: boolean;
   createdAt: Date;
   /** Belongs to the record's latest inbound message. */
   latest: boolean;

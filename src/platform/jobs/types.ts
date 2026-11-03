@@ -23,13 +23,20 @@ export interface JobResult {
 export interface Job {
   /** Stable id, used in logs and tick reports. */
   name: string;
+  /**
+   * The `detail` keys that mean something went wrong. A job states them, since a run that returns normally is not a healthy
+   * one: a provider refusing every send still returns. Empty for a job with nothing of the kind to report.
+   */
+  failureKeys: readonly string[];
+  /** Claims a slot once per period, so most ticks return without trying. A pass that did no work then says nothing about an earlier failure. */
+  slotted?: boolean;
   run(ctx: TickContext): Promise<JobResult>;
 }
 
 export interface TickReport {
   startedAt: string;
   durationMs: number;
-  jobs: Array<{ name: string; processed: number; more: boolean; detail?: Record<string, number>; error?: string; durationMs?: number }>;
+  jobs: Array<{ name: string; processed: number; more: boolean; detail?: Record<string, number>; failures?: Record<string, number>; error?: string; durationMs?: number; needsWork?: boolean }>;
 }
 
 /** Once-per-period claims on `job_runs` (see ./slots), handed to a job as a port so application code never opens the database. */

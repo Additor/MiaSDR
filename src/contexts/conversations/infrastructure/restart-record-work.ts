@@ -38,7 +38,6 @@ export async function restartRecordWorkTx(
     now: input.now,
     drafts: { reason: input.draftReason },
     runs: input.reason,
-    personDecided: true,
   });
   if (input.followUps !== "continue") return { contextVersion, draftsRetired, runsEnded, runStarted: false };
 

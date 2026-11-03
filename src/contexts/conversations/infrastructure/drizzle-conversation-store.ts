@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import { conversations, leadCcs, mailboxes, messages, people, replyTypeSets, replyHandlingSettings, records, replyTypes } from "@/platform/db/schema";
 import { DEFAULT_PIPELINE_NAME, DEFAULT_REPLY_TYPES } from "../domain/default-reply-types";
+import { detectsStopRequest } from "../domain/stop-request";
 import { inboundCcCandidates, normalizeCcList } from "../domain/lead-cc";
 import type { InboundConversationStore, InboundEmailInput } from "../application/ports";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
@@ -92,7 +93,7 @@ export const drizzleConversationStore: InboundConversationStore = {
   async ingestEmail(input: InboundEmailInput) {
     return db.transaction(async (tx) => {
       const idempotencyKey = `gmail:${input.accountRef}:${input.providerMessageId}`;
-      const messageScope = and(eq(messages.channel, "email"), eq(messages.accountRef, input.accountRef), eq(messages.idempotencyKey, idempotencyKey));
+      const messageScope = and(eq(messages.organizationId, input.organizationId), eq(messages.channel, "email"), eq(messages.accountRef, input.accountRef), eq(messages.idempotencyKey, idempotencyKey));
 
       const [stored] = await tx
         .select({ id: messages.id, conversationId: messages.conversationId, personId: records.personId })
@@ -105,12 +106,13 @@ export const drizzleConversationStore: InboundConversationStore = {
       }
 
       const threadScope = and(
+        eq(conversations.organizationId, input.organizationId),
         eq(conversations.channel, "email"),
         eq(conversations.accountRef, input.accountRef),
         eq(conversations.providerThreadId, input.providerThreadId),
       );
       const findConversation = async () =>
-        (await tx.select({ id: conversations.id, recordId: conversations.recordId, organizationId: conversations.organizationId }).from(conversations).where(threadScope))[0];
+        (await tx.select({ id: conversations.id, recordId: conversations.recordId }).from(conversations).where(threadScope))[0];
 
       // A reply in a known thread joins that conversation, whoever sent it.
       let conversation = await findConversation();
@@ -129,9 +131,6 @@ export const drizzleConversationStore: InboundConversationStore = {
           .onConflictDoNothing();
         conversation = await findConversation();
       }
-      if (conversation.organizationId !== input.organizationId) {
-        throw new Error(`Thread ${input.providerThreadId} on ${input.accountRef} belongs to another organization.`);
-      }
 
       const [message] = await tx
         .insert(messages)
@@ -147,7 +146,7 @@ export const drizzleConversationStore: InboundConversationStore = {
           fromAddress: input.from.email,
           toAddress: input.to.join(", ") || null,
           bodyText: input.bodyText,
-          raw: { autoReply: input.autoReply, rfcMessageId: input.rfcMessageId, inReplyTo: input.inReplyTo, fromName: input.from.name, ...(input.cc?.length ? { cc: normalizeCcList(input.cc) } : {}), ...(input.possibleBounce ? { possibleBounce: true } : {}) },
+          raw: { autoReply: input.autoReply, ...(detectsStopRequest(input.bodyText) ? { stopAsked: true } : {}), rfcMessageId: input.rfcMessageId, inReplyTo: input.inReplyTo, fromName: input.from.name, ...(input.cc?.length ? { cc: normalizeCcList(input.cc) } : {}), ...(input.possibleBounce ? { possibleBounce: true } : {}) },
           sentAt: input.receivedAt,
         })
         .onConflictDoNothing()

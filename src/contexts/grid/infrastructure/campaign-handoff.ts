@@ -7,6 +7,7 @@ import { DEFAULT_STEPS } from "@/contexts/outreach/application/campaign-manageme
 import { campaignDeps, enrollEmailPeople } from "@/contexts/outreach/infrastructure/composition";
 import { enrollPeople } from "@/contexts/outreach/linkedin/infrastructure/linkedin-composition";
 import { db, type DbTx } from "@/platform/db/client";
+import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
 import { campaignEnrollments, campaigns, contactPolicies, people, suppressionList } from "@/platform/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
 import type { CampaignHandoff, HandoffFailure } from "../application/ports";
@@ -134,6 +135,7 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
   const lateSuppressed = channel === "email" ? await suppressedEmails(tx, org, personRows.flatMap((r) => (r.person.email ? [r.person.email.toLowerCase()] : []))) : new Set<string>();
   const personIds = personRows.map((r) => r.person.id);
   const doNotContact = new Set<string>();
+  const stopOpen = new Set<string>();
   const contacts = new Set<string>();
   const already = new Set<string>();
   for (const part of chunked(personIds)) {
@@ -142,6 +144,8 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
       .from(contactPolicies)
       .where(and(eq(contactPolicies.organizationId, org), inArray(contactPolicies.personId, part), eq(contactPolicies.doNotContact, true)));
     for (const row of dnc) doNotContact.add(row.id);
+    const asked = await tx.select({ id: people.id }).from(people).where(and(eq(people.organizationId, org), inArray(people.id, part), personStopReviewOpenSql("people")));
+    for (const row of asked) stopOpen.add(row.id);
     // A lead who became a contact cannot be enrolled in a campaign. The row still counts as a lead import above.
     const converted = await tx
       .select({ id: people.id })
@@ -161,6 +165,7 @@ async function pushInTransaction(tx: DbTx, input: Parameters<CampaignHandoff["pu
   for (const { rowId, person } of personRows) {
     if (person.email && lateSuppressed.has(person.email.toLowerCase())) failures.push({ rowId, reason: "Email is suppressed" });
     else if (doNotContact.has(person.id)) failures.push({ rowId, reason: "Person is marked do not contact" });
+    else if (stopOpen.has(person.id)) failures.push({ rowId, reason: "The latest reply seems to ask to stop. Review it in Actions" });
     else if (already.has(person.id)) failures.push({ rowId, reason: "Person is already in this campaign" });
     else if (contacts.has(person.id)) failures.push({ rowId, reason: "Is a contact" });
     else toEnroll.push(person.id);

@@ -1,3 +1,4 @@
+import { errorText } from "@/shared/error-text";
 import type { Job, TickReport } from "./types";
 
 const DEFAULT_BUDGET_MS = 50_000;
@@ -26,13 +27,14 @@ export async function runTick(
     const jobStarted = Date.now();
     try {
       const result = await job.run({ deadline, now: () => new Date() });
-      report.jobs.push({ name: job.name, ...result, durationMs: Date.now() - jobStarted });
+      const failures = Object.fromEntries(job.failureKeys.flatMap((key) => ((result.detail?.[key] ?? 0) > 0 ? [[key, result.detail?.[key] as number]] : [])));
+      report.jobs.push({ name: job.name, ...result, ...(Object.keys(failures).length > 0 ? { failures } : {}), ...(job.failureKeys.length > 0 || job.slotted ? { needsWork: true } : {}), durationMs: Date.now() - jobStarted });
     } catch (error) {
       report.jobs.push({
         name: job.name,
         processed: 0,
         more: true,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorText(error),
         durationMs: Date.now() - jobStarted,
       });
     }

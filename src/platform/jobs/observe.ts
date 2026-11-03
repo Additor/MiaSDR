@@ -1,4 +1,5 @@
-import { recordTickFailure, type TickFailure } from "./failure-log";
+import { errorText } from "@/shared/error-text";
+import { clearTickFailures, recordTickFailure, type TickFailure } from "./failure-log";
 import type { TickReport } from "./types";
 
 /**
@@ -9,6 +10,7 @@ import type { TickReport } from "./types";
  * number of ticks it skipped. A different error logs at once. A job that recovers logs one line and starts clean.
  */
 export interface ObserverOptions {
+  clear?: (jobs: string[]) => Promise<void>;
   log?: (level: "error" | "warn" | "info", line: string) => void;
   persist?: (failure: TickFailure) => Promise<void>;
   now?: () => number;
@@ -35,18 +37,25 @@ export function failureSignature(message: string): string {
     .slice(0, 160);
 }
 
-/** The failure a job reports in this tick, from a thrown error or from a count of failed items in its detail. */
+/** The failure a job reports in this tick, from a thrown error or from the failure counts it declared (`Job.failureKeys`). */
 export function failureOf(job: TickReport["jobs"][number]): string | null {
   if (job.error) return job.error;
-  const failed = Object.entries(job.detail ?? {}).filter(([key, n]) => /fail|error/i.test(key) && n > 0);
+  const failed = Object.entries(job.failures ?? {});
   if (failed.length === 0) return null;
   // A detail key reads as words: "1 mailboxes failed", not "1 mailboxes_failed".
   return failed.map(([key, n]) => `${n} ${key.replace(/_/g, " ")}`).join(", ");
 }
 
+/**
+ * Whether this pass says the job works. A starved job did not run, and a job whose failures are counts or that runs by slot
+ * (`needsWork`) may have had nothing due: a sync that waits out its retry delay reports no failure while the fault stands.
+ */
+const provedHealthy = (job: TickReport["jobs"][number]) => !(job.processed === 0 && (job.more || job.needsWork) && !job.error);
+
 export function createTickObserver(options: ObserverOptions = {}) {
   const log = options.log ?? ((level, line) => (level === "info" ? console.info : level === "warn" ? console.warn : console.error)(line));
   const persist = options.persist ?? recordTickFailure;
+  const clear = options.clear ?? clearTickFailures;
   const now = options.now ?? Date.now;
   const repeatEveryMs = options.repeatEveryMs ?? DEFAULT_REPEAT_LOG_MS;
   const slowTickMs = options.slowTickMs ?? DEFAULT_SLOW_TICK_MS;
@@ -80,16 +89,24 @@ export function createTickObserver(options: ObserverOptions = {}) {
           await persist({ job: job.name, signature, message, occurrences: entry.occurrences, firstSeenAt: new Date(entry.firstSeenAt), now: new Date(t) });
         } catch (error) {
           // The log line above already carries the failure. A broken database must not stop the scheduler.
-          log("warn", line({ event: "job.failure_record_failed", job: job.name, error: error instanceof Error ? error.message : String(error) }));
+          log("warn", line({ event: "job.failure_record_failed", job: job.name, error: errorText(error) }));
         }
       }
 
       // A job that ran clean this tick closes its failure series.
       for (const [key, entry] of seen) {
         const name = key.slice(0, key.indexOf("\u0000"));
-        if (failing.has(name) || !report.jobs.some((j) => j.name === name && !(j.processed === 0 && j.more && !j.error))) continue;
+        if (failing.has(name) || !report.jobs.some((j) => j.name === name && provedHealthy(j))) continue;
         seen.delete(key);
         if (entry.lastLoggedAt > 0) log("info", line({ event: "job.recovered", job: name, occurrences: entry.occurrences }));
+      }
+
+      // A job that ran clean has nothing left to show: its rows leave the page and the badge, whichever process wrote them.
+      const clean = report.jobs.filter((j) => !failing.has(j.name) && provedHealthy(j)).map((j) => j.name);
+      try {
+        await clear(clean);
+      } catch (error) {
+        log("warn", line({ event: "job.failure_clear_failed", error: errorText(error) }));
       }
 
       if (report.durationMs >= slowTickMs) {

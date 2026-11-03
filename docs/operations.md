@@ -50,9 +50,11 @@ Pausing a single campaign or disabling a single mailbox stays available for a na
 
 `POST /api/jobs/tick` returns JSON. The embedded scheduler produces the same report and hands it, like the endpoint, to the tick observer:
 
-- A job that threw, or reported failed items in `detail` (any key containing `fail` or `error` with a count above zero), writes one line `[jobs] {"event":"job.failed",...}` to stderr. The same fault repeating logs once, then at most every ten minutes with `repeatedSinceLastLine`. A job that runs clean afterwards logs `job.recovered`.
+- A job that threw, or reported a count it declared as failure (`Job.failureKeys`) above zero, writes one line `[jobs] {"event":"job.failed",...}` to stderr. The same fault repeating logs once, then at most every ten minutes with `repeatedSinceLastLine`. A job that runs clean afterwards logs `job.recovered`.
 - A tick that takes 30 seconds or more writes one `tick.slow` line (stderr) with the slowest jobs, at most every ten minutes.
-- Each logged failure also updates one row in `job_runs` (job `tick:<name>`, one row per error text) that Settings, Jobs shows under Background job failures. Those rows follow `RETENTION_JOB_RUNS_DAYS`.
+- A job states which of its counts mean failure (`Job.failureKeys`), so a run that returns normally can still show as failing. Its rows clear on the next run that shows it works: a job with such counts, or one that runs by slot, has to do some work first, since a pass with nothing due proves nothing.
+- `/settings/jobs` tells the operator when the scheduler stopped or a tick hung (`platform.heartbeat`, stale after 10 minutes) and when migrations were not applied. `/api/health` stays a liveness check of the app and its database.
+- Each logged failure also updates one row in `job_runs` (job `tick:<name>`, one row per error text) that Settings, Jobs shows under Background job failures, to owners and admins of the oldest organization: the operator on an install with several organizations. It stores the database's reason, never the failed statement or its values. Those rows follow `RETENTION_JOB_RUNS_DAYS`.
 
 | Field | Meaning |
 | --- | --- |
@@ -71,21 +73,13 @@ An empty `jobs` array means no jobs are registered. Without a mailbox provider t
 
 `conversations.sequences` runs the follow-ups of the campaign setting Follow-ups after a reply on every tick. It first stops runs whose person replied, asked not to be contacted, unsubscribed, bounced, was suppressed or became a contact (reason `converted`), and runs whose reply handling a person closed or whose reply moved to a reply type set to stop follow-ups (`reply_types.follow_ups = 'stop'`). It then starts runs for replies whose applied pick keeps follow-ups going, and writes the draft for each due step. Any applied pick counts: one the AI applied, one a person accepted and a person's own pick. The start reads the rules the pick stored, so an edit of the type after the pick does not change that reply's run. A run on a type set to Don't write a reply draft starts at step 2. A run starts from the campaign that most recently emailed the person, and only when that campaign is an email campaign in "AI drafts, you approve" mode with a published flow. A paused campaign starts no new runs and holds draft writing for runs in progress. Switching the campaign back to "Off, hand to the Inbox" interrupts its runs in progress with the reason `after_reply_off`. A contact starts no run; creating a deal ends the person's runs in the same transaction. The job never sends: a person approves each draft on the Inbox thread, or an agent sends it with `send_reply` where the organization allows agent sending. One step is claimed at a time with a row lock, and a step stuck in `drafting` for longer than the lease is taken over, so overlapping ticks do not write two drafts. Whole-day delays follow the organization's time zone (Settings, Organization, UTC when unset). Retention: runs, step runs and their drafts are kept. No pruning step touches them.
 
-## Upgrades that change the reply tables
+## Upgrades and table locks
 
-Migrations 0002 and 0003 rename the reply tables and add and drop columns. Each `ALTER TABLE` waits for an exclusive lock on its table. Drizzle applies all pending migrations in one transaction, so a long query from an old instance keeps the migration waiting, and every query that arrives after it waits too. Stop every old instance before the new version boots.
+An `ALTER TABLE` in a migration waits for an exclusive lock on its table. Drizzle applies all pending migrations in one transaction, so a long query from an old instance keeps the migration waiting, and every query that arrives after it waits too. Stop every old instance before the new version boots.
 
 Both migrators set `lock_timeout` to 30 seconds once they hold the migration lock (`MIGRATION_LOCK_TIMEOUT` in `src/platform/db/migrate.ts`, `LOCK_TIMEOUT` in `scripts/migrate.mjs`). A statement that waits longer for a table lock fails, and the whole run rolls back. The wait for the migration lock itself has no limit, so a replica still waits while another one migrates.
 
 A run that hits the timeout logs `Migration failed: canceling statement due to lock timeout`. The app log shows it at boot, and `scripts/migrate.mjs` prints it and exits 1. Find the session that holds the lock in `pg_stat_activity`, end it or stop the old instance, and start the app again.
-
-## Upgrade to migration 0004
-
-Migration 0004 holds an exclusive lock on `sends` while it swaps the foreign key to `campaign_enrollments`, and briefly locks `ai_jobs`, `inbound_events` and `sequence_step_runs` to add a column. The swap adds the key `NOT VALID`, so it does not scan `sends`: the old key already held every row, and Postgres checks every new row. Those locks last until the whole migration commits, so stop every old instance first, as for any migration.
-
-Migration 0004 builds the unique index `drafts_one_in_flight_uq` on `drafts` inside the migration transaction, which blocks writes to `drafts` until the build ends. On a large install, build it first with `CREATE UNIQUE INDEX CONCURRENTLY drafts_one_in_flight_uq ON drafts (conversation_id) WHERE status in ('sending', 'delivery_uncertain')`, and the migration skips it.
-
-The migration stops with `conversations hold more than one draft in flight` and the conversation and draft ids when a conversation holds two such drafts. Settle each pair on its Inbox thread, then start the app again.
 
 ## Grid job and enrichment settings
 

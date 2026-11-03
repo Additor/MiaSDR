@@ -1,3 +1,4 @@
+import { genuineInboundSql } from "@/platform/db/conversation-visibility";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import {
@@ -59,8 +60,7 @@ const repliedAfter = (f: AnalyticsFilter, channel: SQL, person: SQL, at: SQL, ca
   select 1 from records r
   join conversations cv on cv.record_id = r.id and cv.organization_id = r.organization_id
   join messages m on m.conversation_id = cv.id and m.organization_id = cv.organization_id
-  where r.organization_id = ${org(f)} and r.person_id = ${person} and m.direction = 'inbound'
-    and coalesce(m.raw->>'autoReply', 'false') <> 'true'
+  where r.organization_id = ${org(f)} and r.person_id = ${person} and ${genuineInboundSql("m")}
     and m.channel = ${channel} and m.sent_at >= ${at}
     and (cv.private_campaign_id is null or cv.private_campaign_id = ${campaign}))`;
 
@@ -71,7 +71,7 @@ const replyMessages = (f: AnalyticsFilter, channel?: Channel) => sql`
   join conversations cv on cv.id = m.conversation_id and cv.organization_id = m.organization_id
   join records r on r.id = cv.record_id and r.organization_id = cv.organization_id
   join campaign_enrollments e on e.person_id = r.person_id and e.organization_id = m.organization_id and e.channel = m.channel
-  where m.organization_id = ${org(f)} and m.direction = 'inbound' and coalesce(m.raw->>'autoReply', 'false') <> 'true' and ${inWindow(sql`m.sent_at`, f)}
+  where m.organization_id = ${org(f)} and ${genuineInboundSql("m")} and ${inWindow(sql`m.sent_at`, f)}
     ${channel ? sql`and m.channel = ${channel}` : sql``} ${campaignOf(f)} ${accountOf(f)}
     and (cv.private_campaign_id is null or cv.private_campaign_id = e.campaign_id)
     and exists (

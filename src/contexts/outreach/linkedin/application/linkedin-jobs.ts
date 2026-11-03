@@ -20,6 +20,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
       // One sync per organization per UTC hour, so a disconnected account shows up without anyone pressing Sync.
       // A failed sync reopens its slot after ten minutes. Accounts stay as they are when the sync fails.
       name: "linkedin.sync-accounts",
+      failureKeys: ["failed"],
       async run(ctx) {
         const hourKey = ctx.now().toISOString().slice(0, 13);
         const detail = { organizations: 0, connected: 0, disconnected: 0, added: 0, failed: 0 };
@@ -52,6 +53,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
     },
     {
       name: "linkedin.replay-events",
+      failureKeys: ["failed"],
       async run() {
         const report = await replayLinkedInEvents(inbound);
         return { processed: report.done, more: report.claimed >= 50, detail: { failed: report.failed, stopped: report.stopped } };
@@ -59,6 +61,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
     },
     {
       name: "linkedin.reconcile",
+      failureKeys: [],
       async run() {
         const report = await reconcileLinkedInSends(engine);
         return { processed: report.foundSent + report.retryable + report.expired, more: report.checked >= 25, detail: { waiting: report.stillWaiting } };
@@ -67,6 +70,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
     {
       // One page per claim. The pacing gap lives on the rows, so the job never sleeps: a search that is not due is skipped.
       name: "linkedin.search",
+      failureKeys: ["failed"],
       async run(ctx) {
         const detail: Record<string, number> = {};
         let processed = 0;
@@ -82,6 +86,7 @@ export function createLinkedInJobs(engine: LinkedInEngineDeps, inbound: LinkedIn
     },
     {
       name: "linkedin.run",
+      failureKeys: ["failed", "resolve_failed"],
       async run(ctx) {
         // Queue build: while PAUSE_OUTBOUND is set, do not even list actionable accounts.
         if (isOutboundPaused()) return { processed: 0, more: false, detail: { paused: 1 } };

@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, isNull, notLike, or, sql } from "drizzle-orm";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
+import { and, desc, eq, inArray, notLike, sql } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { auditLog, inboundEvents, jobRuns, linkedinAccounts, users } from "@/platform/db/schema";
 import { TICK_FAILURE_PREFIX } from "@/platform/jobs/failure-log";
@@ -15,7 +16,7 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
     return db
       .select({ id: jobRuns.id, job: jobRuns.job, slot: jobRuns.slot, status: jobRuns.status, organizationId: jobRuns.organizationId, startedAt: jobRuns.startedAt, finishedAt: jobRuns.finishedAt, error: jobRuns.error })
       .from(jobRuns)
-      .where(and(or(eq(jobRuns.organizationId, organizationId), isNull(jobRuns.organizationId)), notLike(jobRuns.job, `${TICK_FAILURE_PREFIX}%`)))
+      .where(and(eq(jobRuns.organizationId, organizationId), notLike(jobRuns.job, `${TICK_FAILURE_PREFIX}%`)))
       .orderBy(desc(jobRuns.startedAt))
       .limit(limit);
   },
@@ -60,7 +61,7 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
     return (rows as unknown as unknown[]).length;
   },
 
-  async resetDailyCounters(organizationId, now) {
+  async resetDailyCounters(organizationId, now, audit) {
     return db.transaction(async (tx) => {
       const accounts = await tx
         .select({ id: linkedinAccounts.id, paused: sql<boolean>`${linkedinAccounts.limitReachedUntil} is not null and ${linkedinAccounts.limitReachedUntil} > ${now.toISOString()}::timestamptz`, search: linkedinAccounts.searchLeadsToday })
@@ -70,7 +71,9 @@ export const drizzleLinkedInOperationsStore: LinkedInOperationsStore = {
       if (accounts.length > 0) {
         await tx.update(linkedinAccounts).set({ limitReachedUntil: null, searchLeadsToday: 0 }).where(eq(linkedinAccounts.organizationId, organizationId));
       }
-      return { accounts: accounts.length, pausesCleared: accounts.filter((a) => a.paused).length, searchCountersCleared: accounts.filter((a) => a.search > 0).length };
+      const outcome = { accounts: accounts.length, pausesCleared: accounts.filter((a) => a.paused).length, searchCountersCleared: accounts.filter((a) => a.search > 0).length };
+      await recordAudit(tx, audit(outcome));
+      return outcome;
     });
   },
 

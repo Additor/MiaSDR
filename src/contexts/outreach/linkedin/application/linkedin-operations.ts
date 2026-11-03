@@ -1,3 +1,4 @@
+import type { AuditEntry } from "@/contexts/tenancy/application/audit-log";
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { ForbiddenError, type Actor } from "@/shared/errors";
 import { replayLinkedInEvents } from "./linkedin-inbound";
@@ -52,7 +53,8 @@ export interface LinkedInOperationsStore {
    * Clears the pause LinkedIn imposed (`limit_reached_until`) and the search lead counter of every account of the organization.
    * The invitation and message counts come from `sends` and stay: they are the safety limit, not a flag.
    */
-  resetDailyCounters(organizationId: string, now: Date): Promise<ResetOutcome>;
+  /** Clears the counters and writes `audit` in one transaction. */
+  resetDailyCounters(organizationId: string, now: Date, audit: (outcome: ResetOutcome) => AuditEntry): Promise<ResetOutcome>;
   /** Writes a finished `job_runs` row for a manual run, so it shows on the jobs page. */
   recordManualRun(input: { organizationId: string; job: string; now: Date; error: string | null }): Promise<void>;
 }
@@ -115,8 +117,7 @@ export async function replayFailedLinkedInWebhooks(deps: LinkedInOperationsDeps,
 export async function resetLinkedInDailyCounters(deps: LinkedInOperationsDeps, actor: Actor): Promise<ResetOutcome> {
   requireAdmin(actor);
   const now = deps.now();
-  const outcome = await deps.store.resetDailyCounters(actor.organizationId, now);
-  await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "linkedin.daily_counters_reset", meta: { ...outcome } });
+  const outcome = await deps.store.resetDailyCounters(actor.organizationId, now, (done) => ({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "linkedin.daily_counters_reset", meta: { ...done } }));
   await deps.store.recordManualRun({ organizationId: actor.organizationId, job: "linkedin.reset-daily-counters", now, error: null });
   return outcome;
 }

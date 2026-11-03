@@ -37,6 +37,7 @@ function setup(options: { fieldNames?: string[]; steps?: LinkedInStep[]; status?
       return { rows: options.rows ?? [], total: (options.rows ?? []).length, counts: {}, sent: 7 };
     },
     accountLimits: async () => options.accounts ?? [],
+    unconfirmedSends: async () => ({ total: 0, rows: [] }),
   } as unknown as LinkedInCampaignStore;
   const admin = {
     listSenders: async () => options.senders ?? [],

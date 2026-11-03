@@ -34,6 +34,7 @@ const READS = [/\.from\(conversations\)/, /[iI]nnerJoin\(conversations\b/, /[lL]
 const MESSAGE_READS = [/\.from\(messages\)/, /\.update\(messages\)/, /\.delete\(messages\)/, /[iI]nnerJoin\(messages\b/, /[lL]eftJoin\(messages\b/, /\b(?:from|join|update)\s+messages\b/];
 
 const MESSAGE_EXEMPT: Record<string, string> = {
+  "src/contexts/conversations/after-reply/infrastructure/sequence-stop.ts": "The email sync asks whether it already filed one message before it stops outreach. The answer stays a yes or no.",
   "src/contexts/conversations/infrastructure/drizzle-conversation-store.ts": "Email ingest: finds a stored message by idempotency key to answer `duplicate`; returns ids only.",
   "src/contexts/conversations/infrastructure/drizzle-linkedin-conversation-store.ts": "LinkedIn ingest: finds a stored message by idempotency key to answer `duplicate`; returns ids only.",
   "src/contexts/conversations/after-reply/infrastructure/drizzle-sequence-engine.ts": "Email follow-up engine: reads the latest inbound message of an email conversation to time a step; no content leaves it.",
@@ -43,6 +44,8 @@ const MESSAGE_EXEMPT: Record<string, string> = {
   "src/contexts/analytics/infrastructure/drizzle-analytics-read-model.ts": "Reply counts. Aggregates, scoped per campaign by `private_campaign_id`; no message content leaves it.",
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-store.ts": "Auto-reply and thread lookups feed the AI loaders, whose conversation reads carry the guard; the message-only lookups here return ids and flags.",
   "src/contexts/conversations/ai/infrastructure/drizzle-ai-job-worker-store.ts": "Split out of drizzle-ai-job-store.ts. The daily cap (`skipOverCap`) joins the job's message to count senders; it returns flags and a count.",
+  "src/contexts/conversations/infrastructure/stop-review.ts": "A person's review reads the stop flag of one reply of a record they decided on and stores only that it reviewed the reply. Nothing it read leaves the transaction.",
+  "src/platform/db/stop-review-sql.ts": "Reads the stop flag of a reply by its id, for a yes or no the caller asks about a record it may see. No message content leaves it.",
   "src/contexts/conversations/infrastructure/person-handling.ts": "Contact delete: `personHandlingBlockers` looks for a running AI job on any message of the person, private threads included, and returns a boolean.",
   "src/contexts/conversations/infrastructure/person-purge.ts": "Contact delete: `purgePersonHandling` deletes every message of the person's conversations and reads nothing back.",
 };

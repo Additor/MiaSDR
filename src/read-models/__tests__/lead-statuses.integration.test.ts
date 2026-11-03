@@ -41,7 +41,7 @@ describeDb("lead status read model", () => {
     return id as string;
   };
   let msg = 0;
-  const message = async (o: Org, recordId: string, channel: "email" | "linkedin", direction: "inbound" | "outbound", sentAt: string, privateCampaignId: string | null = null) => {
+  const message = async (o: Org, recordId: string, channel: "email" | "linkedin", direction: "inbound" | "outbound", sentAt: string, privateCampaignId: string | null = null, raw: Record<string, unknown> | null = null) => {
     msg += 1;
     const account = `${channel}-acct-${o.tag}`;
     const [conv] = await sql`select id from conversations where record_id = ${recordId} and channel = ${channel} and private_campaign_id is not distinct from ${privateCampaignId}`;
@@ -50,8 +50,8 @@ describeDb("lead status read model", () => {
       (
         await sql`insert into conversations (organization_id, record_id, channel, account_ref, private_campaign_id) values (${o.id}, ${recordId}, ${channel}, ${account}, ${privateCampaignId}) returning id`
       )[0].id;
-    await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at)
-      values (${o.id}, ${conversationId}, ${channel}, ${account}, ${direction}, ${`k${msg}-${o.tag}`}, 'hello', ${sentAt})`;
+    await sql`insert into messages (organization_id, conversation_id, channel, account_ref, direction, idempotency_key, body_text, sent_at, raw)
+      values (${o.id}, ${conversationId}, ${channel}, ${account}, ${direction}, ${`k${msg}-${o.tag}`}, 'hello', ${sentAt}, ${raw ? sql.json(raw as never) : null})`;
   };
 
   beforeAll(async () => {
@@ -150,6 +150,17 @@ describeDb("lead status read model", () => {
     // Inbound mail is no contact, but it is a reply: the entry exists and says so.
     expect(map.get(inboundOnly)).toEqual({ state: "replied", enrollment: null, otherCampaigns: 0, lastContactAt: null });
     expect(map.get(never)).toBeUndefined();
+  });
+
+  it("does not call an auto-reply or an unverified bounce a reply", async () => {
+    const o = await org();
+    const outOfOffice = await person(o);
+    const human = await person(o);
+    await message(o, await record(o, outOfOffice), "email", "inbound", "2026-10-01T10:00:00Z", null, { autoReply: true });
+    await message(o, await record(o, human), "email", "inbound", "2026-10-01T10:00:00Z");
+    const map = await read(o.id, [outOfOffice, human]);
+    expect(map.get(outOfOffice)?.state).not.toBe("replied");
+    expect(map.get(human)?.state).toBe("replied");
   });
 
   it("defines Replied as a replied enrollment or an inbound message in a public conversation", async () => {

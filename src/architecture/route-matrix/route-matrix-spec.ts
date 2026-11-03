@@ -144,8 +144,8 @@ export const ROUTES: Record<string, RouteSpec> = {
   "deals/[id]/stage": { ids: { id: "deals" }, handlers: { POST: ok({ stageId: SAMPLE_UUID, expectedVersion: 0 }) } },
 
   "drafts/[id]": { ids: { id: "drafts" }, handlers: { PATCH: ok({ revision: 1, bodyText: "x" }) } },
-  "drafts/[id]/discard": { ids: { id: "drafts" }, handlers: { POST: ok() } },
-  "drafts/[id]/regenerate": { ids: { id: "drafts" }, handlers: { POST: { lenientBody: true } } },
+  "drafts/[id]/discard": { ids: { id: "drafts" }, handlers: { POST: ok({ revision: 1 }) } },
+  "drafts/[id]/regenerate": { ids: { id: "drafts" }, handlers: { POST: ok({ revision: 1 }) } },
   "drafts/[id]/resolve": { ids: { id: "drafts" }, handlers: { POST: ok({ outcome: "delivered", note: "checked" }) } },
   "drafts/[id]/send": { ids: { id: "drafts" }, handlers: { POST: ok({ revision: 1, idempotencyKey: "key-12345678" }) } },
 
@@ -230,6 +230,7 @@ export const ROUTES: Record<string, RouteSpec> = {
   "linkedin/campaigns/[id]/enroll": { ids: { id: linkedinCampaign }, handlers: { POST: ok() } },
   "linkedin/campaigns/[id]/enrollments/[enrollmentId]": { ids: { enrollmentId: { table: "campaign_enrollments", force: { channel: "linkedin", parentForce: { campaigns: { channel: "linkedin", steps: LINKEDIN_STEPS } } }, links: { id: "campaign_id" } } }, handlers: { DELETE: ok() } },
   "linkedin/campaigns/[id]/enrollments/remove": { ids: { id: linkedinCampaign }, handlers: { POST: ok({ ids: [SAMPLE_UUID] }) } },
+  "linkedin/campaigns/[id]/sends/[sendId]/resolve": { ids: { id: linkedinCampaign, sendId: { table: "sends", force: { status: "unknown", channel: "linkedin" }, links: { id: "enrollment_id>campaign_enrollments.campaign_id" } } }, handlers: { POST: admin({ outcome: "delivered" }) } },
   "linkedin/campaigns/[id]/enrollments/restore": { ids: { id: linkedinCampaign }, handlers: { POST: ok({ ids: [SAMPLE_UUID] }) } },
   "linkedin/campaigns/[id]/preview": { ids: { id: linkedinCampaign }, handlers: { POST: ok({ step: 1 }) } },
   "linkedin/campaigns/[id]/status": { ids: { id: linkedinCampaign }, handlers: { POST: ok({ status: "active" }) } },

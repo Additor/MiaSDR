@@ -1,5 +1,6 @@
 "use client";
 
+import { useServerDraft } from "@/app/_lib/use-server-draft";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -15,11 +16,11 @@ import { SettingsSection } from "../settings-section";
 export function ConfidenceFloorForm({ confidenceFloor, canManage }: { confidenceFloor: number; canManage: boolean }) {
   const router = useRouter();
   const saved = String(Math.round(confidenceFloor * 1000) / 10);
-  const [percent, setPercent] = useState(saved);
+  const { value: percent, setValue: setPercent, baseChanged, discard, adoptNext, settling } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
-  const dirty = Number(percent) !== Number(saved);
+  const dirty = !settling && Number(percent) !== Number(saved);
   useLeaveGuard(dirty);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -30,6 +31,7 @@ export function ConfidenceFloorForm({ confidenceFloor, canManage }: { confidence
     });
     if (!result) return;
     if (!result.ok) return setError(result.error);
+    adoptNext();
     toast.success("Confidence floor saved.");
   }
 
@@ -42,7 +44,7 @@ export function ConfidenceFloorForm({ confidenceFloor, canManage }: { confidence
             <Input id="confidence-floor" type="number" min={0} max={100} step={0.1} value={percent} onChange={(e) => setPercent(e.target.value)} disabled={!canManage} className="w-32" required />
             <FieldDescription>Below this, an AI pick waits for a person.</FieldDescription>
           </Field>
-          {canManage && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setPercent(saved)} />}
+          {canManage && <SaveRow dirty={dirty} pending={pending} error={error} baseChanged={baseChanged} onDiscard={discard} />}
         </FieldGroup>
       </form>
     </SettingsSection>

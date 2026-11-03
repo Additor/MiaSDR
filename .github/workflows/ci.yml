@@ -85,6 +85,13 @@ jobs:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
           DATABASE_SSL: disable
       - run: pnpm test
+      # A schema change with no migration passes every test on a column nothing reads, and never reaches production.
+      - name: The schema matches the migrations
+        run: |
+          pnpm exec drizzle-kit generate --name drift_check
+          git status --porcelain drizzle | tee /dev/stderr | (! grep -q .)
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
 
   build:
     runs-on: ubuntu-latest

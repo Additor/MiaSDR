@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
 import { lockPersonOutreachTx } from "@/platform/db/person-locks";
-import { drafts, events, people, records } from "@/platform/db/schema";
+import { drafts, events, messages, people, records } from "@/platform/db/schema";
 import { sqlValues } from "@/platform/db/sql-values";
 import { haltPersonEnrollmentsTx } from "@/contexts/outreach/infrastructure/enrollment-end";
 import { RETIRABLE_DRAFT_STATUSES } from "../../domain/draft-status";
@@ -217,3 +217,20 @@ export async function stopPersonOutreachOnReplyTx(
 export const followUpStop: FollowUpStop = {
   endEmailRunsTx: (tx, organizationId, email, halt, now) => interruptEmailRunsTx(tx, organizationId, email, runReasonOfHalt(halt), now),
 };
+
+/**
+ * The email sync stops a person's outreach ahead of filing, so a message that fails to file still stops it. A batch that
+ * replays reaches this again for a message it did file, and a person may have enrolled that lead again since, so a filed
+ * message stops nothing.
+ */
+export async function stopOutreachOnUnfiledEmailTx(
+  tx: Tx,
+  input: { organizationId: string; personId: string; senderEmail: string | null; accountRef: string; providerMessageId: string; channel: "email"; now: Date },
+): Promise<ReplyStopResult> {
+  const [filed] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.organizationId, input.organizationId), eq(messages.channel, input.channel), eq(messages.accountRef, input.accountRef), eq(messages.providerMessageId, input.providerMessageId)))
+    .limit(1);
+  return filed ? { enrollmentsStopped: 0, runsEnded: 0 } : stopPersonOutreachOnReplyTx(tx, input);
+}

@@ -1,3 +1,4 @@
+import { errorText } from "@/shared/error-text";
 import type { Job } from "@/platform/jobs/types";
 import { classificationSchema, draftSchema, linkedinDraftSchema } from "../domain/ai-contract";
 import { stopRequestedBy } from "../../domain/reply-type-pick-policy";
@@ -5,7 +6,7 @@ import { normalizeSubject } from "../../domain/subject";
 import { AiError } from "@/contexts/ai/domain/ai-error";
 import type { ReplyAi, ReplyAiResolver } from "./ai-ports";
 import type { AiJobStore, ClaimedJob, DraftContext } from "../../application/reply-ports";
-import { sweepFailedAiJobs, type AuditPort } from "./ai-job-ops";
+import { sweepFailedAiJobs } from "./ai-job-ops";
 import type { FailureKind } from "../domain/ai-job-requeue";
 
 export interface AiJobDeps {
@@ -17,8 +18,8 @@ export interface AiJobDeps {
   leaseMs: number;
   /** Delay before a job of an organization without AI is looked at again. */
   notConfiguredDelayMs: number;
-  /** Writes `audit_log` rows. Without it the sweep that requeues failed jobs does not run. */
-  audit?: AuditPort;
+  /** Runs the sweep that requeues failed jobs. */
+  sweepsFailed?: boolean;
 }
 
 export const AI_JOB_LEASE_MS = 5 * 60_000;
@@ -30,7 +31,7 @@ function failureKindOf(error: unknown): FailureKind {
   return error.reason === "shape" ? "shape" : "transient";
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 1000);
+const message = (error: unknown) => errorText(error).slice(0, 1000);
 
 /** Shared by the draft job, `requestDraft` and `regenerateDraft`: asks the provider and validates the answer. */
 export async function produceDraft(
@@ -140,13 +141,14 @@ export function createAiJobs(deps: AiJobDeps): Job[] {
   return [
     {
       name: "conversations.ai",
+      failureKeys: ["sweep_error", "failed"],
       async run(ctx) {
         const detail: Record<string, number> = {};
         const count = (key: string) => (detail[key] = (detail[key] ?? 0) + 1);
         // A sweep failure must not stop new work, but the tick report names it so the scheduler logs it.
-        if (deps.audit) {
+        if (deps.sweepsFailed) {
           try {
-            const requeued = await sweepFailedAiJobs({ jobs: deps.jobs, ai: deps.ai, audit: deps.audit, now: deps.now });
+            const requeued = await sweepFailedAiJobs({ jobs: deps.jobs, ai: deps.ai, now: deps.now });
             if (requeued > 0) detail.auto_requeued = requeued;
           } catch (error) {
             console.error(`[ai-jobs] requeue sweep failed: ${message(error)}`);

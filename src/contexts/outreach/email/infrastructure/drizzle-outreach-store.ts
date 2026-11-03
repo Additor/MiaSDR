@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { markMailboxUnavailableTx } from "./mailbox-state";
+import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTx } from "@/platform/db/client";
 import {
   campaignEnrollments,
@@ -20,7 +21,7 @@ import { buildVariables } from "../../domain/variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { LIVE_ENROLLMENT_STATUSES } from "../../domain/enrollment-status";
 import { endEnrollmentsTx } from "../../infrastructure/enrollment-end";
-import { giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken } from "../../infrastructure/send-claim-sql";
+import { deferUncertainCheck, giveBackAttempt, ownClaim, readAttempt, reclaimGuard, scheduleRetry, stepTaken, uncertainDue, uncertainOrder } from "../../infrastructure/send-claim-sql";
 import { isDoNotContact, isSuppressed } from "@/contexts/people/infrastructure/reachability";
 
 type Tx = DbTx;
@@ -175,7 +176,7 @@ export const drizzleOutreachStore: OutreachStore = {
           values (${candidate.organization_id}, ${candidate.id}, ${stepNumber}, 'email', 'sending', ${mailbox.id}, ${candidate.taken_over_from}::uuid, 1, ${nowIso}::timestamptz)
           on conflict (enrollment_id, step_number) do update
             set status = 'sending', attempt = sends.attempt + 1, claimed_at = excluded.claimed_at,
-                mailbox_id = excluded.mailbox_id, taken_over_from_mailbox_id = excluded.taken_over_from_mailbox_id, error = null, rfc_message_id = null
+                mailbox_id = excluded.mailbox_id, taken_over_from_mailbox_id = excluded.taken_over_from_mailbox_id, error = null, rfc_message_id = null, next_check_at = null
             where ${reclaimGuard}
           returning id, attempt
         `);
@@ -244,22 +245,56 @@ export const drizzleOutreachStore: OutreachStore = {
       // A send that is already final (for example failed by a reconciler) stays as it is.
       if (moved.length === 0) return;
       await advanceEnrollment(tx, claim.enrollmentId, claim.stepNumber, claim.nextStep?.waitDays ?? null, now, claim.mailbox.id);
+      await tx.update(mailboxes).set({ unavailableSince: null }).where(and(eq(mailboxes.id, claim.mailbox.id), isNotNull(mailboxes.unavailableSince)));
     });
   },
 
-  async markFailed(claim, error, now, retryAfterMinutes, maxAttempts) {
+  async markFailed(claim, error, now, retryAfterMinutes, maxAttempts, fatal) {
     await db.transaction(async (tx) => {
       const moved = await tx.update(sends).set({ status: "failed", error }).where(ownClaim(claim)).returning({ id: sends.id });
       if (moved.length === 0) return;
-      await scheduleRetry(tx, claim.enrollmentId, claim.attempt, now, retryAfterMinutes, maxAttempts, error);
+      await scheduleRetry(tx, claim.enrollmentId, claim.attempt, now, retryAfterMinutes, maxAttempts, error, fatal);
     });
+  },
+
+  async releaseForMailbox(claim, error, now) {
+    await db.transaction(async (tx) => {
+      if ((await giveBackAttempt(tx, claim, error)).length === 0) return;
+      await markMailboxUnavailableTx(tx, eq(mailboxes.id, claim.mailbox.id), error, now);
+    });
+  },
+
+  async releaseForProvider(claim, error, until) {
+    await db.transaction(async (tx) => {
+      if ((await giveBackAttempt(tx, claim, error)).length === 0) return;
+      await tx.update(mailboxes).set({ nextSendAt: until, lastError: error }).where(eq(mailboxes.id, claim.mailbox.id));
+    });
+  },
+
+  async failedMailboxes(testedBefore) {
+    return db
+      .select({ id: mailboxes.id, emailAddress: mailboxes.emailAddress })
+      .from(mailboxes)
+      .where(and(eq(mailboxes.status, "failed"), or(isNull(mailboxes.lastTestedAt), lte(mailboxes.lastTestedAt, testedBefore))));
+  },
+
+  async recordMailboxCheck(mailboxId, error, now) {
+    // The takeover clock keeps running until a send succeeds: verify reads the profile, and Gmail can answer that while it refuses every send.
+    await db
+      .update(mailboxes)
+      .set(error === null ? { status: "connected", lastError: null, lastTestedAt: now } : { lastError: error, lastTestedAt: now })
+      .where(and(eq(mailboxes.id, mailboxId), eq(mailboxes.status, "failed")));
   },
 
   async markUnknown(claim, error) {
     await db.update(sends).set({ status: "unknown", error }).where(ownClaim(claim));
   },
 
-  async listUncertain(olderThan, limit): Promise<UncertainSend[]> {
+  async deferUncertain(sendId, until) {
+    await deferUncertainCheck(db, sendId, until);
+  },
+
+  async listUncertain(olderThan, limit, now): Promise<UncertainSend[]> {
     const rows = await db
       .select({
         sendId: sends.id,
@@ -279,8 +314,8 @@ export const drizzleOutreachStore: OutreachStore = {
       .innerJoin(people, eq(people.id, campaignEnrollments.personId))
       .innerJoin(campaigns, eq(campaigns.id, campaignEnrollments.campaignId))
       // Test sends (kind 'test') have no enrollment and are never reconciled here; the inner join already drops them.
-      .where(and(eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan)))
-      .orderBy(asc(sends.claimedAt))
+      .where(and(eq(sends.kind, "campaign"), inArray(sends.status, UNRESOLVED), lte(sends.claimedAt, olderThan), uncertainDue(now)))
+      .orderBy(uncertainOrder)
       .limit(limit);
     return rows.map(({ steps, enrollmentId, stepNumber, ...row }) => ({
       ...row,

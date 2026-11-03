@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { describeDb, dropOrgs, testSql, uniqueKey, useTestEnv } from "@/test-support/db";
 import type { EngineDeps } from "../../application/send-next-email";
 import { FakeMailboxProvider } from "../fake-mailbox-provider";
@@ -237,6 +237,127 @@ describeDb("email send engine", () => {
     expect(count).toBe(2);
   });
 
+  describe("a refusal that is not about the lead", () => {
+    const mailbox = async (id: string) => (await sql`select status, last_error, unavailable_since, next_send_at from mailboxes where id = ${id}`)[0];
+
+    it("marks a revoked mailbox failed at the first refusal, spends no attempt, and carries on from the step once access returns", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "revoked";
+      const d = deps(provider);
+      expect(await send.sendNextEmail(d, f.mailboxIds[0])).toEqual({ kind: "blocked", reason: "mailbox_unavailable" });
+      expect(await mailbox(f.mailboxIds[0])).toMatchObject({ status: "failed", last_error: "Google would not give an access token." });
+      expect((await mailbox(f.mailboxIds[0])).unavailable_since).not.toBeNull();
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt: 0 });
+      expect((await enrollment(f.enrollmentIds[0])).status).not.toBe("failed");
+      // No more claims, so no lead pays while the access stays revoked.
+      advance(24 * 60);
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("idle");
+
+      // The hourly check finds the access back, and the same lead sends the same step.
+      provider.behavior = () => "ok";
+      expect(await send.recheckFailedMailboxes(d)).toEqual({ checked: 1, recovered: 1 });
+      const recovered = await mailbox(f.mailboxIds[0]);
+      expect(recovered).toMatchObject({ status: "connected", last_error: null });
+      // Reading the profile proves less than sending, so the takeover clock runs on until a send succeeds.
+      expect(recovered.unavailable_since).not.toBeNull();
+      expect((await send.sendNextEmail(d, f.mailboxIds[0])).kind).toBe("sent");
+      expect((await mailbox(f.mailboxIds[0])).unavailable_since).toBeNull();
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "sent", attempt: 1 });
+    });
+
+    it("keeps a failed mailbox failed while it still refuses, and checks it at most hourly", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "revoked";
+      const d = deps(provider);
+      await send.sendNextEmail(d, f.mailboxIds[0]);
+      provider.unverifiable.add((await sql`select email_address from mailboxes where id = ${f.mailboxIds[0]}`)[0].email_address as string);
+      expect(await send.recheckFailedMailboxes(d)).toEqual({ checked: 0, recovered: 0 });
+      advance(61);
+      expect(await send.recheckFailedMailboxes(d)).toEqual({ checked: 1, recovered: 0 });
+      expect((await mailbox(f.mailboxIds[0])).status).toBe("failed");
+    });
+
+    it("keeps a mailbox outside the domain policy failed, and never asks the provider about it", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "revoked";
+      const d = deps(provider);
+      await send.sendNextEmail(d, f.mailboxIds[0]);
+      advance(61);
+      provider.behavior = () => "ok";
+      const verify = vi.spyOn(provider, "verify");
+      const report = await send.recheckFailedMailboxes({ ...d, domainPolicy: { allowedDomains: ["other.test"], openSignup: false } });
+      expect(report).toEqual({ checked: 1, recovered: 0 });
+      expect(verify).not.toHaveBeenCalled();
+      expect(await mailbox(f.mailboxIds[0])).toMatchObject({ status: "failed", last_error: expect.stringMatching(/not an allowed mailbox domain/) });
+    });
+
+    it("stops checking at the tick's deadline and leaves the rest due", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "revoked";
+      const d = deps(provider);
+      await send.sendNextEmail(d, f.mailboxIds[0]);
+      advance(61);
+      expect(await send.recheckFailedMailboxes(d, Date.now() - 1)).toEqual({ checked: 0, recovered: 0 });
+      provider.behavior = () => "ok";
+      expect((await send.recheckFailedMailboxes(d)).checked).toBe(1);
+    });
+
+    it("reports a refused send as a failure of the job, though it charges no lead", async () => {
+      await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "outage";
+      const { createEmailJobs } = await import("../../application/email-jobs");
+      const { runTick } = await import("@/platform/jobs/tick");
+      const report = await runTick(createEmailJobs(deps(provider)).filter((job) => job.name === "email.send"));
+      expect(report.jobs[0].failures?.provider_unavailable).toBeGreaterThan(0);
+    });
+
+    it("holds the mailbox through a provider outage, spends no attempt, and leaves its status alone", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "outage";
+      const d = deps(provider);
+      expect(await send.sendNextEmail(d, f.mailboxIds[0])).toEqual({ kind: "blocked", reason: "provider_unavailable" });
+      const held = await mailbox(f.mailboxIds[0]);
+      expect(held.status).toBe("connected");
+      expect(new Date(held.next_send_at).toISOString()).toBe("2026-10-14T10:30:00.000Z");
+      expect((await sendRows(f.enrollmentIds[0]))[0]).toMatchObject({ status: "failed", attempt: 0 });
+      expect((await enrollment(f.enrollmentIds[0])).status).not.toBe("failed");
+    });
+
+    it("ends the step at once for an address that can never receive it", async () => {
+      const f = await fixture();
+      const provider = new FakeMailboxProvider();
+      provider.behavior = () => "bad_address";
+      expect(await send.sendNextEmail(deps(provider), f.mailboxIds[0])).toEqual({ kind: "failed", retry: false });
+      expect((await enrollment(f.enrollmentIds[0])).status).toBe("failed");
+    });
+  });
+
+  it("moves a send it cannot settle behind the rest, so 25 stuck sends hold up nobody", async () => {
+    const stuck = await fixture({ people: 26 });
+    const provider = new FakeMailboxProvider();
+    provider.behavior = () => "timeout-lost";
+    const d = deps(provider);
+    // Every send is unknown and the mailbox cannot answer: the first look defers them all.
+    for (const id of stuck.enrollmentIds) {
+      await sql`insert into sends (organization_id, enrollment_id, step_number, channel, status, mailbox_id, rfc_message_id, claimed_at)
+        values (${stuck.org}, ${id}, 1, 'email', 'unknown', ${stuck.mailboxIds[0]}, ${`<${id}@x.test>`}, ${new Date(current.getTime() - 3 * 60 * 60_000)})`;
+    }
+    provider.findFails = true;
+    expect((await send.reconcileUncertainSends(d, 25)).stillWaiting).toBe(25);
+    expect((await send.reconcileUncertainSends(d, 25)).stillWaiting).toBe(1);
+    expect((await send.reconcileUncertainSends(d, 25)).checked).toBe(0);
+    advance(31);
+    expect((await send.reconcileUncertainSends(d, 25)).checked).toBe(25);
+    // The reconciler reads every organization, so these leave for the tests after this one.
+    await sql`update sends set status = 'sent' where organization_id = ${stuck.org}`;
+  });
+
   it("retries a refused send with backoff and gives up after three attempts", async () => {
     const f = await fixture();
     const provider = new FakeMailboxProvider();
@@ -262,7 +383,7 @@ describeDb("email send engine", () => {
     expect(provider.delivered).toHaveLength(0);
   });
 
-  // Migration 0004 took the cap out of the sends trigger, so these two tests are what holds it.
+  // The sends trigger holds no cap, so these two tests are what holds it.
   describe("the attempt cap", () => {
     it("is three attempts", () => {
       expect(MAX_SEND_ATTEMPTS).toBe(3);
@@ -336,7 +457,7 @@ describeDb("email send engine", () => {
 
       // A reconciler reads attempt 2 and stalls. A person marks it not delivered meanwhile.
       advance(11);
-      const stale = (await store.listUncertain(current, 500)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
+      const stale = (await store.listUncertain(current, 500, current)).find((u) => u.enrollmentId === f.enrollmentIds[0])!;
       expect(stale).toMatchObject({ attempt: 2 });
       const resolved = await resolveUnknownEmailSend({
         organizationId: f.org, campaignId: f.campaign, sendId: stale.sendId, outcome: "not_delivered",
@@ -437,6 +558,8 @@ describeDb("email send engine", () => {
     advance(30);
     expect(await send.reconcileUncertainSends(d)).toMatchObject({ stillWaiting: 1 }); // an outage is not proof
     provider.findFails = false;
+    expect((await send.reconcileUncertainSends(d)).checked).toBe(0); // it looks again later, behind the others
+    advance(31);
     expect(await send.reconcileUncertainSends(d)).toMatchObject({ retryable: 1 });
 
     provider.behavior = () => "ok";
@@ -466,6 +589,7 @@ describeDb("email send engine", () => {
     expect(provider.delivered).toHaveLength(0);
 
     provider.findInconclusive = null;
+    advance(31);
     expect(await send.reconcileUncertainSends(d)).toMatchObject({ retryable: 1, inconclusive: 0 });
   });
 

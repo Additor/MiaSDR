@@ -16,12 +16,21 @@ export interface SuppressionRow {
 }
 
 /** Port. Reads and trims the organization's suppression list. Adding goes through `SuppressionStore.suppressEmail`. */
+export interface SuppressionAudit {
+  organizationId: string;
+  actorUserId: string;
+  action: string;
+  entityId: string | null;
+  meta: Record<string, unknown>;
+}
+
 export interface SuppressionListStore {
   list(organizationId: string, query: { q: string | null; limit: number; offset: number }): Promise<{ rows: SuppressionRow[]; total: number }>;
   existing(organizationId: string, emails: readonly string[]): Promise<Set<string>>;
   find(organizationId: string, id: string): Promise<SuppressionRow | null>;
-  remove(organizationId: string, id: string): Promise<void>;
-  audit(entry: { organizationId: string; actorUserId: string; action: string; entityId: string | null; meta: Record<string, unknown> }): Promise<void>;
+  /** Removes the row and writes `audit` in one transaction. */
+  remove(organizationId: string, id: string, audit: SuppressionAudit): Promise<void>;
+  audit(entry: SuppressionAudit): Promise<void>;
 }
 
 export interface SuppressionListDeps {
@@ -100,6 +109,5 @@ export async function removeSuppression(deps: SuppressionListDeps, actor: Actor,
   const row = await deps.list.find(actor.organizationId, id);
   if (!row) throw new NotFoundError("Address not found");
   if (!row.addedInSettings) throw new ConflictError("Only an address added on this page can be removed. Unsubscribes, stop requests, complaints and bounces stay on the list.");
-  await deps.list.remove(actor.organizationId, id);
-  await deps.list.audit({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "suppression.removed", entityId: id, meta: { email: row.email } });
+  await deps.list.remove(actor.organizationId, id, { organizationId: actor.organizationId, actorUserId: actor.userId, action: "suppression.removed", entityId: id, meta: { email: row.email } });
 }

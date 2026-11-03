@@ -78,11 +78,12 @@ export function handlerReadsBody(file: string, method: HttpMethod): boolean {
 // ---- Next runtime stand-ins -------------------------------------------------------------------------------------
 
 let currentCookie = "";
+let currentHeaders: Record<string, string> = {};
 
 /** Module replacement for `next/headers`: the request headers carry the cookie of the identity under test. */
 export function nextHeadersStandIn() {
   return {
-    headers: async () => new Headers(currentCookie ? { cookie: currentCookie } : {}),
+    headers: async () => new Headers({ ...currentHeaders, ...(currentCookie ? { cookie: currentCookie } : {}) }),
     cookies: async () => ({ get: () => undefined, getAll: () => [], has: () => false, set: () => undefined, delete: () => undefined }),
   };
 }
@@ -148,6 +149,7 @@ export async function callRoute(file: string, method: HttpMethod, options: CallO
     headers.set("content-type", "application/json");
   }
   currentCookie = options.as?.cookie ?? "";
+  currentHeaders = options.headers ?? {};
   if (currentCookie) headers.set("cookie", currentCookie);
   const request = new Request(urlFor(key, options.params, options.query), { method, headers, body });
   try {
@@ -164,6 +166,7 @@ export async function callRoute(file: string, method: HttpMethod, options: CallO
     return { status: 500, body: null, text: String(thrown), thrown, headers: new Headers() };
   } finally {
     currentCookie = "";
+    currentHeaders = {};
   }
 }
 

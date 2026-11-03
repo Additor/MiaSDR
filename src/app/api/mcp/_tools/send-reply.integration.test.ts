@@ -244,7 +244,7 @@ describeDb("MCP send_reply: agent email replies", () => {
     expect(codeOf(await send(thread.conversationId, draft))).toBe("agent_stop_requested");
     const read = await agent.tool("get_conversation", { conversationId: thread.conversationId });
     expect(read.structured.aiPicks).toContainEqual(expect.objectContaining({ replyTypePickId: pick, stopRequested: true }));
-    await sql`update reply_type_picks set status = 'rejected' where id = ${pick}`;
+    await sql`insert into stop_reviews (organization_id, message_id, reviewed_at) select organization_id, message_id, now() from reply_type_picks where id = ${pick}`;
     expect((await send(thread.conversationId, draft)).structured.status).toBe("sent");
   });
 

@@ -3,6 +3,7 @@ import { findOrCreateLeadByLinkedInTx } from "@/contexts/people/infrastructure/i
 import { db } from "@/platform/db/client";
 import { conversations, messages, people, records } from "@/platform/db/schema";
 import type { InboundLinkedInInput, InboundLinkedInStore } from "../application/linkedin-ports";
+import { detectsStopRequest } from "../domain/stop-request";
 import { defaultReplyTypeSetId, findOrCreateRecord, type Tx } from "./drizzle-conversation-store";
 import { stopPersonOutreachOnReplyTx } from "../after-reply/infrastructure/sequence-stop";
 import { autoAssignTx } from "../actions/infrastructure/assignment-sql";
@@ -31,7 +32,7 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
   async ingestLinkedIn(input) {
     return db.transaction(async (tx) => {
       const idempotencyKey = `linkedin:${input.accountRef}:${input.providerMessageId}`;
-      const messageScope = and(eq(messages.channel, "linkedin"), eq(messages.accountRef, input.accountRef), eq(messages.idempotencyKey, idempotencyKey));
+      const messageScope = and(eq(messages.organizationId, input.organizationId), eq(messages.channel, "linkedin"), eq(messages.accountRef, input.accountRef), eq(messages.idempotencyKey, idempotencyKey));
 
       const [stored] = await tx
         .select({ id: messages.id, conversationId: messages.conversationId, personId: records.personId })
@@ -44,12 +45,13 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
       }
 
       const threadScope = and(
+        eq(conversations.organizationId, input.organizationId),
         eq(conversations.channel, "linkedin"),
         eq(conversations.accountRef, input.accountRef),
         eq(conversations.providerThreadId, input.providerThreadId),
       );
       const findConversation = async () =>
-        (await tx.select({ id: conversations.id, recordId: conversations.recordId, organizationId: conversations.organizationId, privateCampaignId: conversations.privateCampaignId }).from(conversations).where(threadScope))[0];
+        (await tx.select({ id: conversations.id, recordId: conversations.recordId, privateCampaignId: conversations.privateCampaignId }).from(conversations).where(threadScope))[0];
 
       // A message in a known chat joins that conversation.
       let conversation = await findConversation();
@@ -78,9 +80,6 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
           })
           .onConflictDoNothing();
         conversation = await findConversation();
-      }
-      if (conversation.organizationId !== input.organizationId) {
-        throw new Error(`Chat ${input.providerThreadId} on account ${input.accountRef} belongs to another organization.`);
       }
       // A reply of a personal-campaign lead makes the thread private for good, even when a public thread existed before.
       if (input.privateCampaignId && !conversation.privateCampaignId) {
@@ -114,7 +113,7 @@ export const drizzleLinkedInConversationStore: InboundLinkedInStore = {
           fromAddress: sender,
           toAddress: input.accountName,
           bodyText: input.bodyText,
-          raw: { memberId: input.counterparty.providerId, profileUrl: input.counterparty.profileUrl },
+          raw: { memberId: input.counterparty.providerId, profileUrl: input.counterparty.profileUrl, ...(detectsStopRequest(input.bodyText) ? { stopAsked: true } : {}) },
           sentAt: input.receivedAt,
         })
         .onConflictDoNothing()

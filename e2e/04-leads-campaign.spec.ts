@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { MOBILE_DARK, csvFile, ensureMailbox, expect, openAddLeads, openCampaignTab, signInAdmin, test, waitForHydrated } from "./support/fixtures";
+import { MOBILE_DARK, csvFile, ensureMailbox, expect, openAddLeads, openCampaignTab, signInAdmin, test, unique, waitForHydrated } from "./support/fixtures";
 
 test.describe("leads import to campaign start", () => {
   test("import a CSV, build a campaign, add the leads and start it", async ({ page }) => {
@@ -121,6 +121,53 @@ test.describe("at 390x844 in dark mode", () => {
     await more.click();
     await expect(page.getByRole("menuitem", { name: "Mark completed" })).toBeVisible();
     await page.keyboard.press("Escape");
+  });
+
+  test("Resume saves an unsaved step first, and a link asks before it drops one", async ({ page }) => {
+    await signInAdmin(page);
+    await page.goto("/campaigns");
+    await page.getByRole("link", { name: /S4 launch/ }).click();
+    await openCampaignTab(page, "sequence");
+    const edited = `Edited ${unique("step")}`;
+    const body = page.getByLabel("Message").first();
+    await waitForHydrated(body);
+    await body.fill(edited);
+
+    // A link keeps the edit until the person says otherwise.
+    await page.getByTestId("campaign-tab-leads").click();
+    await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeVisible();
+    await page.getByRole("button", { name: "Keep editing" }).click();
+    await expect(body).toHaveValue(edited);
+
+    await page.getByRole("button", { name: "Resume" }).click();
+    await expect(page.getByRole("dialog", { name: /Resume S4 launch/ })).toContainText("Steps has unsaved changes");
+    await page.getByRole("button", { name: "Save and resume" }).click();
+    await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+    await page.reload();
+    await openCampaignTab(page, "sequence");
+    await expect(page.getByText(edited).first()).toBeVisible();
+
+    // Back as the earlier test found it, for what runs after.
+    await page.getByRole("button", { name: "Pause" }).click();
+    await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
+  });
+
+  test("a link right after a save does not ask, while the page has yet to refresh", async ({ page }) => {
+    await signInAdmin(page);
+    await page.goto("/campaigns");
+    await page.getByRole("link", { name: /S4 launch/ }).click();
+    await openCampaignTab(page, "sequence");
+    const body = page.getByLabel("Message").first();
+    await waitForHydrated(body);
+    await body.fill(`Saved ${unique("step")}`);
+    await page.route("**/*", async (route) => {
+      if (route.request().headers()["rsc"]) await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.fallback();
+    });
+    await page.getByRole("button", { name: "Save steps" }).click();
+    await expect(page.getByText("Steps saved.")).toBeVisible();
+    await openCampaignTab(page, "leads");
+    await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toHaveCount(0);
   });
 });
 

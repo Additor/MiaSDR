@@ -15,7 +15,6 @@ describeDb("failed AI jobs: requeue and sweep", () => {
   let ops: typeof import("../../application/ai-job-ops");
   let aiJobsApp: typeof import("../../application/ai-jobs");
   let store: typeof import("../drizzle-ai-job-store").drizzleAiJobStore;
-  let audit: typeof import("@/contexts/tenancy/infrastructure/audit").auditSink;
   let FakeAi: typeof import("../fake-reply-ai").FakeReplyAi;
   let db: typeof import("@/platform/db/client").db;
   let restart: typeof import("../../../infrastructure/restart-record-work");
@@ -39,10 +38,10 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     const state = { key: opts.withKey ?? true };
     const clock = () => new Date(Date.now() + shared.offsetMs);
     const resolver = replyAiResolverOf(async (o: string) => (o === org && state.key ? ai : null));
-    const deps = { jobs: store, ai: resolver, now: clock, workerId: "test", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000, audit };
+    const deps = { jobs: store, ai: resolver, now: clock, workerId: "test", leaseMs: aiJobsApp.AI_JOB_LEASE_MS, notConfiguredDelayMs: 60_000, sweepsFailed: true };
     const [tick] = aiJobsApp.createAiJobs(deps) as [Job];
     const run = () => tick.run({ deadline: Date.now() + 60_000, now: clock });
-    const opsDeps = { jobs: store, audit, now: clock };
+    const opsDeps = { jobs: store, now: clock };
     const advance = (ms: number) => void (shared.offsetMs += ms);
     return { org, admin, member, address, ai, state, run, opsDeps, advance, tag, resolver, clock };
   }
@@ -87,7 +86,6 @@ describeDb("failed AI jobs: requeue and sweep", () => {
     ops = await import("../../application/ai-job-ops");
     aiJobsApp = await import("../../application/ai-jobs");
     store = (await import("../drizzle-ai-job-store")).drizzleAiJobStore;
-    audit = (await import("@/contexts/tenancy/infrastructure/audit")).auditSink;
     FakeAi = (await import("../fake-reply-ai")).FakeReplyAi;
     db = (await import("@/platform/db/client")).db;
     restart = await import("../../../infrastructure/restart-record-work");
@@ -251,7 +249,7 @@ describeDb("failed AI jobs: requeue and sweep", () => {
       const a = await claimAt(id, "classification", at(1), "worker-a");
       const b = await claimAt(id, "classification", at(2), "worker-b");
       await store.fail(b, "gave up", at(2));
-      expect(await store.requeueFailed(f.org, { jobId: id }, at(2), 10)).toEqual([id]);
+      expect(await store.requeueFailed(f.org, { jobId: id }, at(2), 10, (ids) => ({ organizationId: f.org, actorUserId: null, action: "ai_jobs.requeued", meta: { count: ids.length } }))).toEqual([id]);
       const c = await claimAt(id, "classification", at(3), "worker-c");
       expect(c.attempts).toBe(a.attempts);
       await settleAll(a, at(3));

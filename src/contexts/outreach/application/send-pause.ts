@@ -1,11 +1,12 @@
 import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
-import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
+import type { AuditEntry } from "@/contexts/tenancy/application/audit-log";
 import { ForbiddenError, viaMeta, type Actor } from "@/shared/errors";
 import { readSendPause, type SendPause } from "../domain/send-pause";
 import type { EmailRulesDeps } from "../email/application/email-rules";
 
 export interface SendPauseDeps extends EmailRulesDeps {
-  audit: AuditSink;
+  /** Saves the pause and writes `audit` in one transaction. */
+  savePause(organizationId: string, pause: SendPause | null, userId: string, audit: AuditEntry): Promise<void>;
 }
 
 /** The organization's own pause, which every member sees on the banner. Null while outreach runs. */
@@ -23,8 +24,7 @@ export async function setSendPause(deps: SendPauseDeps, actor: Actor, input: { p
   // Pausing twice keeps the first time and name, so the banner says when outreach actually stopped.
   if (input.paused && current) return current;
   if (!input.paused && !current) return null;
-  await deps.settings.merge(actor.organizationId, "general", { sendingPaused: input.paused ? { at: input.now.toISOString(), byName: input.byName } : null }, actor.userId);
-  await deps.audit.record({
+  await deps.savePause(actor.organizationId, input.paused ? { at: input.now.toISOString(), byName: input.byName } : null, actor.userId, {
     organizationId: actor.organizationId,
     actorUserId: actor.userId,
     action: input.paused ? "organization.sending_paused" : "organization.sending_resumed",

@@ -1,11 +1,11 @@
-// Pure rules for putting a removed lead back into its campaign. No I/O.
+// Pure rules for putting a removed or failed lead back into its campaign. No I/O.
 
 type Channel = "email" | "linkedin";
 
 export type RestoreRefusal = "not_removed" | "campaign_closed" | "replied" | "do_not_contact" | "suppressed" | "contact" | "active_elsewhere" | "nothing_left";
 
 export const RESTORE_REFUSAL_TEXT: Record<RestoreRefusal, string> = {
-  not_removed: "Only a removed lead can be restored.",
+  not_removed: "Only a removed or failed lead can come back.",
   campaign_closed: "The campaign is completed or archived. Restore the lead to a campaign that is still open.",
   replied: "The person has replied, so no automated message goes to them.",
   do_not_contact: "The person is marked do not contact.",
@@ -65,7 +65,8 @@ function dueAt(facts: RestoreFacts, now: Date): Date {
  * pick `pending` leads at step 0 and `active` leads with a due time: a `pending` lead with progress would wait forever.
  */
 export function decideRestore(facts: RestoreFacts, now: Date): RestoreDecision {
-  if (facts.status !== "removed") return { ok: false, reason: "not_removed" };
+  // A failed lead may have failed for a reason that is gone now. The attempt cap still ends the next failure.
+  if (facts.status !== "removed" && facts.status !== "failed") return { ok: false, reason: "not_removed" };
   if (facts.campaignStatus === "completed" || facts.campaignArchived) return { ok: false, reason: "campaign_closed" };
   if (facts.replied) return { ok: false, reason: "replied" };
   if (facts.doNotContact) return { ok: false, reason: "do_not_contact" };

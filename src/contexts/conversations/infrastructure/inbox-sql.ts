@@ -14,8 +14,8 @@ export const automatedByPattern = (alias: string): SQL =>
   sql`(coalesce(${sql.raw(alias)}.from_address, '') ~* ${AUTOMATED_SENDER_PATTERN}::text or coalesce(${sql.raw(alias)}.subject, '') ~* ${AUTOMATED_SUBJECT_PATTERN}::text)`;
 
 /**
- * An inbound message that never counts as unread: an auto-reply by header, or machine mail by pattern.
- * A possible bounce stays countable so someone looks at a notice the system could not verify.
+ * An inbound message that never counts as unread: an auto-reply by header, or machine mail by pattern. A possible bounce
+ * stays countable so someone looks at a notice the system could not verify, though it is filed with the auto-reply flag.
  */
 export const excludedFromUnread = (alias: string): SQL =>
-  sql`(${autoReplyFlag(alias)} or (${automatedByPattern(alias)} and not ${flag(alias, "possibleBounce")}))`;
+  sql`((${autoReplyFlag(alias)} or ${automatedByPattern(alias)}) and not ${flag(alias, "possibleBounce")})`;

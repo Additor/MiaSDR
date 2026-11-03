@@ -1,3 +1,4 @@
+import type { AuditEntry } from "@/contexts/tenancy/application/audit-log";
 import type { DbHandle } from "@/platform/db/client";
 import type { ArchiveFilter, CampaignStatus, CampaignStatusChange, StepInput } from "../domain/campaign";
 import type { EnrollmentListQuery, TabCounts } from "../domain/enrollment-list";
@@ -66,6 +67,8 @@ export interface EnrollResult {
   alreadyEnrolled: number;
   skippedSuppressed: number;
   skippedDoNotContact: number;
+  /** The latest reply reads as a request to stop and no person reviewed it. */
+  skippedStopRequest: number;
   /** Contacts are not enrolled in campaigns. */
   skippedContact: number;
   skippedNoEmail: number;
@@ -90,7 +93,8 @@ export interface CampaignStore {
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<StepInput>, tx?: DbHandle): Promise<boolean>;
   /** Deletes a draft. Returns false when no draft matched. */
-  delete(organizationId: string, id: string): Promise<boolean>;
+  /** Deletes a draft and writes `audit` in one transaction. False when it is no longer a draft. */
+  delete(organizationId: string, id: string, audit: AuditEntry): Promise<boolean>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** With `dryRun` nothing is written and `wouldAdd` says how many people the same call would enroll. */
@@ -128,10 +132,10 @@ export interface MailboxRecord {
 export interface MailboxStore {
   list(organizationId: string, now: Date): Promise<MailboxRecord[]>;
   get(organizationId: string, id: string): Promise<MailboxRecord | null>;
-  /** Throws ConflictError when the address is already connected anywhere. */
-  insert(organizationId: string, input: { emailAddress: string; displayName: string | null }): Promise<string>;
+  /** Stores a mailbox the provider verified. Throws ConflictError when the address is already connected anywhere. */
+  insert(organizationId: string, input: { emailAddress: string; displayName: string | null; testedAt: Date }): Promise<string>;
   update(organizationId: string, id: string, patch: Partial<Pick<MailboxRecord, "displayName" | "dailySendLimit" | "signatureHtml" | "workingHours">>): Promise<void>;
-  setStatus(organizationId: string, id: string, status: "connecting" | "connected" | "failed" | "disabled", error: string | null, testedAt: Date | null): Promise<void>;
+  setStatus(organizationId: string, id: string, status: "connected" | "failed" | "disabled", error: string | null, testedAt: Date | null): Promise<void>;
   /** Enrollments that finished a step from this mailbox and are still going. */
   activeEnrollmentCount(organizationId: string, id: string): Promise<number>;
   /** Names of campaigns that are not completed and list this mailbox as their only assigned sender. */

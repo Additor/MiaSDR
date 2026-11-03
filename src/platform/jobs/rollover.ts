@@ -1,3 +1,4 @@
+import { errorText } from "@/shared/error-text";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/platform/db/client";
 import { jobRuns } from "@/platform/db/schema";
@@ -43,6 +44,7 @@ export async function organizationDays(zones: OrganizationZones, now: Date): Pro
 export function createDailyRolloverJob(steps: readonly RolloverStep[], zones: OrganizationZones): Job {
   return {
     name: "platform.daily-rollover",
+    failureKeys: ["failed"],
     async run(ctx): Promise<JobResult> {
       if (steps.length === 0) return { processed: 0, more: false };
       const now = ctx.now();
@@ -76,7 +78,7 @@ export function createDailyRolloverJob(steps: readonly RolloverStep[], zones: Or
             ran++;
           } catch (error) {
             failed++;
-            await finishSlot(claim, { status: "failed", error: error instanceof Error ? error.message : String(error), retryAfterMs: ROLLOVER_RETRY_MS });
+            await finishSlot(claim, { status: "failed", error: errorText(error), retryAfterMs: ROLLOVER_RETRY_MS });
           }
         }
       }

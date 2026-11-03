@@ -3,15 +3,27 @@ import type { WorkingHours } from "../../domain/working-hours";
 import type { PriorSend } from "../domain/threading";
 import type { MailboxDomainPolicy } from "./mailbox-management";
 
+/**
+ * Who a refusal is about, so its cost lands on the right thing. `kind` says whether a message may have left; this says why
+ * the provider refused it. An account or provider fault says nothing about the lead, so it spends none of their attempts.
+ *
+ * - recipient: this address can never receive it. The step ends at once.
+ * - message: this message failed. The lead's attempts pay for the retries.
+ * - account: the mailbox cannot send (revoked access, no such user). It goes `failed`, which starts the takeover clock.
+ * - provider: the provider is down or limiting us. The mailbox waits and tries again.
+ */
+export type FailureScope = "recipient" | "message" | "account" | "provider";
+
 /** Outcome classes a provider adapter must report. The engine never guesses. */
 export class ProviderSendError extends Error {
   constructor(
     message: string,
     /**
-     * definite: the provider refused and nothing was sent (auth, bad address). Safe to retry later.
+     * definite: the provider refused and nothing was sent. Safe to retry later, as `scope` says.
      * unknown: timeout or dropped connection; the message may have been accepted. Never retried blindly.
      */
     readonly kind: "definite" | "unknown",
+    readonly scope: FailureScope,
   ) {
     super(message);
   }
@@ -159,10 +171,19 @@ export interface OutreachStore {
   recordRendered(claim: SendClaim, rendered: { subject: string; body: string; rfcMessageId: string }): Promise<void>;
   markSent(claim: SendClaim, sent: SentEmail, now: Date): Promise<void>;
   /** The provider refused; schedule a retry or give up after the last attempt. */
-  markFailed(claim: SendClaim, error: string, now: Date, retryAfterMinutes: number, maxAttempts: number): Promise<void>;
+  markFailed(claim: SendClaim, error: string, now: Date, retryAfterMinutes: number, maxAttempts: number, fatal?: boolean): Promise<void>;
+  /** The mailbox cannot send: gives the attempt back and marks it `failed`, so no lead pays and takeover can start. */
+  releaseForMailbox(claim: SendClaim, error: string, now: Date): Promise<void>;
+  /** The provider is down or limiting us: gives the attempt back and holds the mailbox until `until`. */
+  releaseForProvider(claim: SendClaim, error: string, until: Date): Promise<void>;
+  /** Failed mailboxes not tried since `testedBefore`, for the hourly check that brings them back. */
+  failedMailboxes(testedBefore: Date): Promise<Array<{ id: string; emailAddress: string }>>;
+  recordMailboxCheck(mailboxId: string, error: string | null, now: Date): Promise<void>;
   markUnknown(claim: SendClaim, error: string): Promise<void>;
   /** Sends that are uncertain, or were claimed and never finished. */
-  listUncertain(olderThan: Date, limit: number): Promise<UncertainSend[]>;
+  listUncertain(olderThan: Date, limit: number, now: Date): Promise<UncertainSend[]>;
+  /** A reconciler could not settle this send: it looks again at `until`, behind the sends nobody has looked at. */
+  deferUncertain(sendId: string, until: Date): Promise<void>;
   resolveUncertainAsSent(send: UncertainSend, sent: SentEmail, now: Date): Promise<void>;
   /** Not in the mailbox after the grace period: make the step retryable. */
   resolveUncertainAsNotSent(send: UncertainSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;

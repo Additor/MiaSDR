@@ -32,9 +32,12 @@ export interface OrganizationCreationFacts {
   organizationExists: boolean;
 }
 
+/** Owners and admins of the oldest organization run the install. A single-organization install has no one else. */
+export const adminsTheFirstOrganization = (roles: string | null | undefined): boolean => Boolean(roles && /\b(owner|admin)\b/.test(roles));
+
 /** In invite-only mode only owners and admins of the first organization may create more. */
 export function mayCreateOrganization(f: OrganizationCreationFacts): boolean {
   if (f.mode === "open") return true;
   if (!f.organizationExists) return true;
-  return Boolean(f.rolesInFirstOrganization && /\b(owner|admin)\b/.test(f.rolesInFirstOrganization));
+  return adminsTheFirstOrganization(f.rolesInFirstOrganization);
 }

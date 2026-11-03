@@ -1,5 +1,6 @@
 "use client";
 
+import { unsavedNames, useUnsavedEdits, type UnsavedEdit } from "./unsaved-edits";
 import { EllipsisIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -16,6 +17,11 @@ import { countOf } from "@/shared/format-number";
 
 type Target = "active" | "paused" | "completed";
 
+const unsavedLine = (unsaved: readonly UnsavedEdit[], unsavable: readonly UnsavedEdit[]) =>
+  unsavable.length > 0
+    ? `Save ${unsavedNames(unsavable)} first. The campaign sends what is saved.`
+    : `${unsavedNames(unsaved)} ${unsaved.length > 1 ? "have" : "has"} unsaved changes. The campaign sends what is saved, so they save first.`;
+
 const ACTIONS: Record<string, Array<{ to: Target; label: string; variant?: "default" | "outline" }>> = {
   draft: [{ to: "active", label: "Start campaign" }],
   active: [{ to: "paused", label: "Pause", variant: "outline" }],
@@ -26,7 +32,7 @@ const ACTIONS: Record<string, Array<{ to: Target; label: string; variant?: "defa
   completed: [],
 };
 
-type Dialog = "start" | "complete" | "archive" | "delete";
+type Dialog = "start" | "complete" | "archive" | "delete" | "resume";
 
 interface Control {
   key: string;
@@ -69,6 +75,17 @@ export function CampaignControls({
   const pending = isBusy("status");
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const api = channel === "linkedin" ? "/api/linkedin" : "/api";
+  const unsaved = useUnsavedEdits(id);
+  /** The editors Start cannot save for the person, because their save asks a question of its own. */
+  const unsavable = unsaved.filter((edit) => !edit.save);
+
+  /** Saves what it can before the status changes, since the campaign sends what is saved. */
+  async function saveThenRun() {
+    for (const edit of unsaved) {
+      if (!(await edit.save?.())) throw new Error(`Could not save ${edit.label}. Fix it, then try again.`);
+    }
+    await change("active");
+  }
 
   /**
    * Throws the server's message (and its first detail) so a dialog can show it and a button handler can toast it. The
@@ -115,7 +132,7 @@ export function CampaignControls({
       variant: action.variant ?? "default",
       disabled: pending || (starting && blocked),
       describedBy: starting && blocked ? START_BLOCKERS_ID : undefined,
-      run: () => (starting ? setDialog("start") : action.to === "completed" ? setDialog("complete") : void direct(() => change(action.to))),
+      run: () => (starting ? setDialog("start") : action.to === "completed" ? setDialog("complete") : action.to === "active" && unsaved.length > 0 ? setDialog("resume") : void direct(() => change(action.to))),
     };
   });
   if (status === "completed") {
@@ -162,10 +179,12 @@ export function CampaignControls({
         onOpenChange={(open) => setDialog(open ? "start" : null)}
         title={`Start ${name}?`}
         description="Steps send on their own schedule once the campaign runs. Pause it at any time to stop further sends. Replies to leads go out only when you send them."
-        confirmLabel="Start campaign"
+        confirmLabel={unsaved.length > 0 ? "Save and start" : "Start campaign"}
         pendingLabel="Starting…"
-        onConfirm={() => change("active")}
+        confirmDisabled={unsavable.length > 0}
+        onConfirm={saveThenRun}
       >
+        {unsaved.length > 0 && <p className="text-sm">{unsavedLine(unsaved, unsavable)}</p>}
         <ul className="stack-field text-sm">
           {startLines.map((line) => (
             <li key={line}>{line}</li>
@@ -173,6 +192,17 @@ export function CampaignControls({
         </ul>
         <ResponsibleUseNote kind={channel === "linkedin" ? "linkedin" : "launch"} />
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={dialog === "resume"}
+        onOpenChange={(open) => setDialog(open ? "resume" : null)}
+        title={`Resume ${name}?`}
+        description={unsavedLine(unsaved, unsavable)}
+        confirmLabel="Save and resume"
+        pendingLabel="Resuming…"
+        confirmDisabled={unsavable.length > 0}
+        onConfirm={saveThenRun}
+      />
 
       <ConfirmDialog
         open={dialog === "complete"}

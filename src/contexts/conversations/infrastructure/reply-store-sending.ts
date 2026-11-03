@@ -32,9 +32,9 @@ export const replySendMethods: Pick<ReplyStore, "beginSend" | "checkBlockers" | 
       // (docs/database.md, "Lock modes").
       await tx.select({ id: conversations.id }).from(conversations).where(eq(conversations.id, seen.conversationId)).for("update");
 
-      const [existing] = await tx.select().from(sendAttempts).where(eq(sendAttempts.idempotencyKey, input.idempotencyKey));
+      const [existing] = await tx.select().from(sendAttempts).where(and(eq(sendAttempts.organizationId, input.organizationId), eq(sendAttempts.idempotencyKey, input.idempotencyKey)));
       if (existing) {
-        if (attemptOfAnotherDraft(existing, seen.id) || existing.organizationId !== input.organizationId) throw new ConflictError("This idempotency key belongs to another draft.");
+        if (attemptOfAnotherDraft(existing, seen.id)) throw new ConflictError("This idempotency key belongs to another draft.");
         return { kind: "replay" as const, attempt: toAttempt(existing) };
       }
 

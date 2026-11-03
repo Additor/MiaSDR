@@ -1,5 +1,6 @@
 "use client";
 
+import { useServerDraft } from "@/app/_lib/use-server-draft";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -20,11 +21,11 @@ interface Rules {
 export function SendingRulesForm({ rules, canEdit }: { rules: Rules; canEdit: boolean }) {
   const router = useRouter();
   const saved = { min: String(rules.sendGapMinutes[0]), max: String(rules.sendGapMinutes[1]), takeover: String(rules.takeoverAfterHours) };
-  const [values, setValues] = useState(saved);
+  const { value: values, setValue: setValues, baseChanged, discard, adoptNext, settling } = useServerDraft(saved);
   const [error, setError] = useState<string | null>(null);
   const { isBusy, run } = useApiAction<"save">();
   const pending = isBusy("save");
-  const dirty = Number(values.min) !== rules.sendGapMinutes[0] || Number(values.max) !== rules.sendGapMinutes[1] || Number(values.takeover) !== rules.takeoverAfterHours;
+  const dirty = !settling && (Number(values.min) !== rules.sendGapMinutes[0] || Number(values.max) !== rules.sendGapMinutes[1] || Number(values.takeover) !== rules.takeoverAfterHours);
   useLeaveGuard(dirty);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -38,6 +39,7 @@ export function SendingRulesForm({ rules, canEdit }: { rules: Rules; canEdit: bo
       setError(result.error);
       return;
     }
+    adoptNext();
     toast.success("Sending rules saved.");
   }
 
@@ -66,7 +68,7 @@ export function SendingRulesForm({ rules, canEdit }: { rules: Rules; canEdit: bo
               Follow-ups stay on the mailbox that sent the first email. When that mailbox is disabled or failed for longer than this, another mailbox takes the follow-up over as a new thread. Whole hours, 1 to 168.
             </FieldDescription>
           </Field>
-          {canEdit && <SaveRow dirty={dirty} pending={pending} error={error} onDiscard={() => setValues(saved)} />}
+          {canEdit && <SaveRow dirty={dirty} pending={pending} error={error} baseChanged={baseChanged} onDiscard={discard} />}
         </FieldGroup>
       </form>
     </SettingsSection>

@@ -40,6 +40,12 @@ export const visibleDraftText = (alias: string): string =>
 
 export const visibleDraftSql = (alias: string): SQL => sql.raw(visibleDraftText(alias));
 
+/**
+ * True for a message `alias` that a person wrote to us: inbound, and not flagged as an auto-reply or an unverified bounce
+ * when it was filed. An out-of-office is history, so it makes nobody Replied. Every "did they reply?" reads this.
+ */
+export const genuineInboundSql = (alias: string): SQL => sql.raw(`(${alias}.direction = 'inbound' and coalesce(${alias}.raw->>'autoReply', 'false') <> 'true')`);
+
 /** A classification of a message in a private conversation is not shown. `alias` is the alias of `reply_type_picks`. */
 export const visibleReplyTypePickText = (alias: string): string =>
   `exists (select 1 from messages km join conversations kc on kc.id = km.conversation_id where km.id = ${alias}.message_id and ${publicConversationText("kc")})`;

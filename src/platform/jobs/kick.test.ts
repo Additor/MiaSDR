@@ -16,7 +16,7 @@ describe("kickJob", () => {
     resetKickForTests();
   });
 
-  const job = (name: string, onRun: () => Promise<{ processed: number; more: boolean }>): Job => ({ name, run: onRun });
+  const job = (name: string, onRun: () => Promise<{ processed: number; more: boolean }>): Job => ({ name, failureKeys: [], run: onRun });
 
   it("starts a pass between the enqueue and the tick, without waiting for the tick", async () => {
     const ranAt: number[] = [];

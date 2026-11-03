@@ -175,7 +175,7 @@ describeDb("contact delete: conversations locks, counts, blockers and purge", ()
     // A cc of the neighbour that the target's message carried goes with that message.
     await sql`insert into lead_ccs (organization_id, person_id, email, source_message_id) values (${o.org}, ${neighbour.person}, ${`cc-${o.tag}@lead.test`}, ${target.inbound})`;
     // A neighbour draft that replies to the target's message keeps its row with a null target. drafts_reply_target_ins_trg
-    // refuses that target since migration 0001, but a draft written before it can still hold one.
+    // refuses that target, so the test turns it off to write the row.
     const crossDraft = await sql.begin(async (tx) => {
       await tx`alter table drafts disable trigger drafts_reply_target_ins_trg`;
       const id = await one(tx`

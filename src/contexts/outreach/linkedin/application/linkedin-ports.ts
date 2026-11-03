@@ -229,7 +229,8 @@ export interface LinkedInOutreachStore {
   markResolved(claim: LinkedInResolveClaim, profile: ResolvedProfile, now: Date): Promise<ResolveWriteResult>;
   markResolveFailed(claim: LinkedInResolveClaim, error: string, now: Date, fatal: boolean): Promise<void>;
 
-  listUncertain(olderThan: Date, limit: number): Promise<UncertainLinkedInSend[]>;
+  deferUncertain(sendId: string, until: Date): Promise<void>;
+  listUncertain(olderThan: Date, limit: number, now: Date): Promise<UncertainLinkedInSend[]>;
   resolveUncertainAsSent(send: UncertainLinkedInSend, sent: { providerMessageId: string | null; accepted: boolean }, now: Date): Promise<void>;
   resolveUncertainAsNotSent(send: UncertainLinkedInSend, now: Date, retryAfterMinutes: number, maxAttempts: number, cause: NotSentCause): Promise<void>;
   /** Invitations nobody accepted after the expiry: end the sequence. Returns how many. */
@@ -258,6 +259,8 @@ export type InboundResult = "done" | "skipped";
 /** Persistence for webhook deliveries and the state changes they cause. */
 export interface LinkedInInboundStore {
   /** Inserts the delivery as `processing`. Returns null when the key was seen before. */
+  /** A delivery of an event this app acts on that it could not read. Stored as given up, so a person sees it. */
+  recordUnreadable(input: { organizationId: string; eventType: string; payload: unknown; now: Date }): Promise<void>;
   begin(input: { organizationId: string; key: string; eventType: string; accountRef: string; payload: unknown; now: Date }): Promise<LedgerEvent | null>;
   /** Settles the claim. A worker whose lease ran out, or whose row an admin requeued and another claim took, changes nothing. */
   finish(claim: LedgerEvent, status: "done" | "skipped", note: string | null, now: Date): Promise<void>;
@@ -278,4 +281,6 @@ export interface LinkedInInboundDeps {
   clock: Clock;
   /** Turns a raw provider payload into a normalized event, or null for payloads this app ignores. */
   parse: (payload: unknown) => LinkedInInboundEvent | null;
+  /** The event's name when it is one this app acts on and `parse` could not read it. */
+  unreadable?: (payload: unknown) => string | null;
 }

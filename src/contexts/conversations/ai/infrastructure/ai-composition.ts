@@ -5,7 +5,6 @@ import { linkedinGateways } from "@/contexts/outreach/linkedin/infrastructure/li
 import { aiFakeMode, languageModels } from "@/contexts/ai/infrastructure/composition";
 import { env } from "@/shared/env";
 import type { Job } from "@/platform/jobs/types";
-import { auditSink } from "@/contexts/tenancy/infrastructure/audit";
 import type { AiJobOpsDeps } from "../application/ai-job-ops";
 import { AI_JOB_LEASE_MS, createAiJobs } from "../application/ai-jobs";
 import type { ReplyAi, ReplyAiResolver } from "../application/ai-ports";
@@ -43,7 +42,7 @@ export const replyDeps = (): ReplyDeps => ({
   newToken: () => randomUUID(),
 });
 
-export const aiJobOpsDeps = (): AiJobOpsDeps => ({ jobs: drizzleAiJobStore, audit: auditSink, now: () => new Date() });
+export const aiJobOpsDeps = (): AiJobOpsDeps => ({ jobs: drizzleAiJobStore, now: () => new Date() });
 
 /** The LinkedIn reply use cases that do not send, with a port that looks at LinkedIn and cannot send. */
 export const linkedinReplyDeps = (): LinkedInReplyDeps => ({
@@ -62,13 +61,14 @@ export function conversationJobs(): Job[] {
     workerId: `${hostname()}:${process.pid}`,
     leaseMs: AI_JOB_LEASE_MS,
     notConfiguredDelayMs: 5 * 60_000,
-    audit: auditSink,
+    sweepsFailed: true,
   };
   const jobs = createAiJobs(deps);
   // Reconciling needs the mailbox, so it exists only when a mail adapter is selected. It looks, it never sends.
   if (env().MAILBOX_PROVIDER) {
     jobs.push({
       name: "conversations.reply-reconcile",
+      failureKeys: [],
       async run() {
         const report = await reconcileReplies(replyDeps());
         return { processed: report.found, more: report.checked >= 25, detail: { checked: report.checked, uncertain: report.uncertain, waiting: report.waiting } };
@@ -78,6 +78,7 @@ export function conversationJobs(): Job[] {
   // Looks in LinkedIn chats for replies with no recorded outcome. It never sends. Idle without a LinkedIn connection.
   jobs.push({
     name: "conversations.linkedin-reply-reconcile",
+    failureKeys: [],
     async run() {
       const report = await reconcileLinkedInReplies(linkedinReplyDeps());
       return { processed: report.found, more: report.checked >= 25, detail: { checked: report.checked, uncertain: report.uncertain, waiting: report.waiting } };

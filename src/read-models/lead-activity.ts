@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
-import { publicConversation } from "@/platform/db/conversation-visibility";
+import { publicConversation, genuineInboundSql } from "@/platform/db/conversation-visibility";
 import { db } from "@/platform/db/client";
 import { campaignEnrollments, campaigns, conversations, messages, people, records, sends } from "@/platform/db/schema";
 import type { EnrollmentStatus } from "@/contexts/outreach/domain/enrollment-status";
@@ -40,11 +40,11 @@ const lastSentAt = sql`select max(t.at) as at from (
 /** An enrollment of the lead in a regular campaign has been stopped by a reply. */
 const repliedEnrollment = sql`exists (select 1 from ${campaignEnrollments} inner join ${campaigns} on ${campaigns.id} = ${campaignEnrollments.campaignId} and ${campaigns.organizationId} = ${campaignEnrollments.organizationId} where ${campaignEnrollments.personId} = ${people.id} and ${campaignEnrollments.organizationId} = ${people.organizationId} and ${campaignEnrollments.status} = ${REPLIED} and ${campaigns.type} = 'regular')`;
 
-/** The person wrote at least one message in a public conversation (a personal campaign's private thread never counts). */
-const inboundMessage = sql`exists (select 1 from ${records} inner join ${conversations} on ${conversations.recordId} = ${records.id} and ${conversations.organizationId} = ${records.organizationId} inner join ${messages} on ${messages.conversationId} = ${conversations.id} and ${messages.organizationId} = ${conversations.organizationId} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${publicConversation} and ${messages.direction} = 'inbound')`;
+/** The person wrote at least one genuine message in a public conversation (a personal campaign's private thread never counts). */
+const inboundMessage = sql`exists (select 1 from ${records} inner join ${conversations} on ${conversations.recordId} = ${records.id} and ${conversations.organizationId} = ${records.organizationId} inner join ${messages} on ${messages.conversationId} = ${conversations.id} and ${messages.organizationId} = ${conversations.organizationId} where ${records.personId} = ${people.id} and ${records.organizationId} = ${people.organizationId} and ${publicConversation} and ${genuineInboundSql("messages")})`;
 
 /**
- * Replied: an enrollment has status `replied`, or the person has an inbound message in a public conversation. The lead
+ * Replied: an enrollment has status `replied`, or the person has a genuine inbound message in a public conversation. The lead
  * status (`readLeadStatuses` below) uses the same definition, so an unknown sender who wrote first shows Replied.
  */
 const replied = sql`(${repliedEnrollment} or ${inboundMessage})`;
@@ -131,7 +131,7 @@ export const readLeadStatuses: ReadLeadStatuses = async (organizationId, personI
       .select({
         personId: records.personId,
         lastContactAt: sql<Date | null>`max(${messages.sentAt}) filter (where ${messages.direction} = 'outbound')`,
-        hasInbound: sql<boolean>`coalesce(bool_or(${messages.direction} = 'inbound'), false)`,
+        hasInbound: sql<boolean>`coalesce(bool_or(${genuineInboundSql("messages")}), false)`,
       })
       .from(records)
       .innerJoin(conversations, and(eq(conversations.recordId, records.id), eq(conversations.organizationId, records.organizationId)))

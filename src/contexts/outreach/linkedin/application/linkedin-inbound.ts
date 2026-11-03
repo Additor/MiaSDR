@@ -1,4 +1,5 @@
 import { MAX_EVENT_ATTEMPTS, eventKey, eventRetrySeconds } from "../domain/linkedin";
+import { errorText } from "@/shared/error-text";
 import type { LedgerEvent, LinkedInInboundDeps } from "./linkedin-ports";
 
 export type WebhookResult =
@@ -8,8 +9,6 @@ export type WebhookResult =
   /** Stored, processing failed. The replay job retries it. */
   | { status: "failed"; error: string };
 
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
 /**
  * One authenticated delivery: write the ledger row first, then process synchronously. A failure is
  * recorded for replay and the delivery still counts as received, so the provider's own retries stay quiet.
@@ -17,9 +16,18 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
  */
 export async function receiveLinkedInWebhook(deps: LinkedInInboundDeps, input: { organizationId: string; payload: unknown }): Promise<WebhookResult> {
   const event = deps.parse(input.payload);
-  if (!event) return { status: "ignored" };
+  if (!event) {
+    // An event we act on that we cannot read: Unipile changed its shape, and a reply may be inside. It stays on Inbound events.
+    const unreadable = deps.unreadable?.(input.payload);
+    if (unreadable) await deps.store.recordUnreadable({ organizationId: input.organizationId, eventType: unreadable, payload: input.payload, now: deps.clock.now() });
+    return { status: "ignored" };
+  }
   const key = eventKey(event, input.organizationId);
-  if (!key) return { status: "ignored" };
+  // No id to key it on: the same changed shape, read one field further in.
+  if (!key) {
+    await deps.store.recordUnreadable({ organizationId: input.organizationId, eventType: event.type, payload: input.payload, now: deps.clock.now() });
+    return { status: "ignored" };
+  }
 
   const now = deps.clock.now();
   const row = await deps.store.begin({
@@ -37,7 +45,13 @@ export async function receiveLinkedInWebhook(deps: LinkedInInboundDeps, input: {
 async function process(deps: LinkedInInboundDeps, claim: LedgerEvent, organizationId: string, payload: unknown): Promise<WebhookResult> {
   try {
     const event = deps.parse(payload);
-    if (!event) {
+    if (!event || !eventKey(event, organizationId)) {
+      // An event this app acts on: a reply may be inside, and with no id it would share one idempotency key with every other like it.
+      if (event || deps.unreadable?.(payload)) {
+        const error = "MiaSDR still cannot read this delivery.";
+        await deps.store.fail(claim, error, deps.clock.now(), null);
+        return { status: "failed", error };
+      }
       await deps.store.finish(claim, "skipped", "Payload no longer parses.", deps.clock.now());
       return { status: "skipped" };
     }

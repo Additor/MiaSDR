@@ -5,7 +5,7 @@ import type { Job, TickReport } from "./types";
 
 type Line = { level: string; text: string };
 
-function harness(options: { slowTickMs?: number; repeatEveryMs?: number } = {}) {
+function harness(options: { slowTickMs?: number; repeatEveryMs?: number; clear?: (jobs: string[]) => Promise<void> } = {}) {
   const lines: Line[] = [];
   const persisted: Array<{ job: string; message: string; occurrences: number }> = [];
   const clock = { t: 1_000_000 };
@@ -15,6 +15,7 @@ function harness(options: { slowTickMs?: number; repeatEveryMs?: number } = {}) 
     now: () => clock.t,
     repeatEveryMs: options.repeatEveryMs ?? 600_000,
     slowTickMs: options.slowTickMs,
+    clear: options.clear ?? (async () => undefined),
   });
   const report = (jobs: TickReport["jobs"], durationMs = 10): TickReport => ({ startedAt: new Date(clock.t).toISOString(), durationMs, jobs });
   const parsed = () => lines.map((l) => ({ level: l.level, ...JSON.parse(l.text.replace("[jobs] ", "")) }));
@@ -42,13 +43,42 @@ describe("tick observer", () => {
     expect(h.persisted).toEqual([]);
   });
 
-  it("treats failed items in the job detail as a failure", async () => {
+  it("treats the failure counts a job declared as a failure", async () => {
     const h = harness();
-    await h.observer.observe(h.report([{ name: "conversations.ai", processed: 3, more: false, detail: { drafted: 3, failed: 2, retry: 1 } }]));
+    await h.observer.observe(h.report([{ name: "conversations.ai", processed: 3, more: false, detail: { drafted: 3, failed: 2, retry: 1 }, failures: { failed: 2 } }]));
     expect(h.parsed()).toHaveLength(1);
     expect(h.parsed()[0]).toMatchObject({ job: "conversations.ai", error: "2 failed" });
-    await h.observer.observe(h.report([{ name: "email.inbox-sync", processed: 0, more: false, detail: { mailboxes_failed: 1 } }]));
+    await h.observer.observe(h.report([{ name: "email.inbox-sync", processed: 0, more: false, detail: { mailboxes_failed: 1 }, failures: { mailboxes_failed: 1 } }]));
     expect(h.parsed().find((l) => l.job === "email.inbox-sync")).toMatchObject({ error: "1 mailboxes failed" });
+  });
+
+  it("does not read a failure into a detail key the job did not declare", async () => {
+    const h = harness();
+    await h.observer.observe(h.report([{ name: "conversations.ai", processed: 1, more: false, detail: { failed_over: 1 } }]));
+    expect(h.parsed()).toHaveLength(0);
+  });
+
+  it("clears the rows of the jobs that ran clean, and keeps the rest", async () => {
+    const cleared: string[][] = [];
+    const h = harness({ clear: async (jobs: string[]) => void cleared.push(jobs) });
+    await h.observer.observe(h.report([ok, boom(), { name: "starved", processed: 0, more: true }]));
+    expect(cleared).toEqual([["ok"]]);
+  });
+
+  it("keeps the rows while a job that must do work to prove itself did none", async () => {
+    const cleared: string[][] = [];
+    const h = harness({ clear: async (jobs: string[]) => void cleared.push(jobs) });
+    await h.observer.observe(h.report([{ name: "linkedin.sync-accounts", processed: 0, more: false, needsWork: true }, { name: "email.reconcile", processed: 0, more: false }]));
+    expect(cleared).toEqual([["email.reconcile"]]);
+    await h.observer.observe(h.report([{ name: "linkedin.sync-accounts", processed: 1, more: false, needsWork: true }]));
+    expect(cleared[1]).toEqual(["linkedin.sync-accounts"]);
+  });
+
+  it("does not call a job recovered on a pass that had nothing due", async () => {
+    const h = harness();
+    await h.observer.observe(h.report([{ name: "sync", processed: 0, more: false, needsWork: true, detail: { failed: 1 }, failures: { failed: 1 } }]));
+    await h.observer.observe(h.report([{ name: "sync", processed: 0, more: false, needsWork: true, detail: { failed: 0 } }]));
+    expect(h.parsed().filter((l) => l.event === "job.recovered")).toEqual([]);
   });
 
   it("collapses a repeating failure and reports the skipped ticks on the next line", async () => {
@@ -121,7 +151,7 @@ describe("embedded scheduler", () => {
   it("hands every tick report, including a thrown job error, to the observer", async () => {
     vi.useFakeTimers();
     try {
-      const bad: Job = { name: "bad", run: async () => { throw new Error("kaput"); } };
+      const bad: Job = { name: "bad", failureKeys: [], run: async () => { throw new Error("kaput"); } };
       const reports: TickReport[] = [];
       const stop = startEmbeddedScheduler([bad], 1000, async (r) => void reports.push(r));
       await vi.advanceTimersByTimeAsync(1000);
@@ -138,7 +168,7 @@ describe("embedded scheduler", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       let calls = 0;
-      const stop = startEmbeddedScheduler([{ name: "a", run: async () => ({ processed: 0, more: false }) }], 1000, async () => {
+      const stop = startEmbeddedScheduler([{ name: "a", failureKeys: [], run: async () => ({ processed: 0, more: false }) }], 1000, async () => {
         calls += 1;
         throw new Error("observer broke");
       });

@@ -1,5 +1,7 @@
 "use client";
 
+import { useLeaveGuard } from "@/components/shell/use-leave-guard";
+import { useReportUnsaved } from "./unsaved-edits";
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -104,6 +106,8 @@ export function AfterReplyEditor({
   const [confirmStop, setConfirmStop] = useState<number | null>(null);
 
   const dirty = formChanged({ mode, steps, saved });
+  useLeaveGuard(dirty);
+  useReportUnsaved(campaignId, "Follow-ups", dirty);
   const note = lockedNote(lockedReason, personal);
   const aiOn = mode === "ai_drafts";
   const off = handoffOption(personal);

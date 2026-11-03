@@ -9,7 +9,7 @@ import { type WorkingHours } from "../../domain/working-hours";
 import { LinkedInGatewayError, type GatewayAccount, type LinkedInGateway } from "./linkedin-ports";
 import type { LinkedInConnectStore } from "./linkedin-connect-ports";
 
-import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
+import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
 export type { AuditSink };
 
 /** The last webhook registration, kept on the integration row. It never holds the secret. */
@@ -89,6 +89,8 @@ export interface LinkedInAccountStore {
     organizationId: string,
     id: string,
     patch: { dailyInviteLimit?: number; dailyMessageLimit?: number; isPremium?: boolean; workingHours?: WorkingHours | null; ownerUserId?: string | null },
+    /** The audit rows for the stored values, written in the update's transaction. */
+    audit: (stored: { dailyInviteLimit: number; dailyMessageLimit: number; isPremium: boolean }) => AuditEntry[],
   ): Promise<{ dailyInviteLimit: number; dailyMessageLimit: number; isPremium: boolean } | null>;
 }
 
@@ -443,20 +445,14 @@ export async function updateLinkedInAccount(deps: LinkedInManagementDeps, actor:
     }
   }
   if (settings.ownerUserId && !(await deps.members?.isMember(actor.organizationId, settings.ownerUserId))) throw new ValidationError("The owner must be a member of this organization.");
-  const stored = await deps.accounts.update(actor.organizationId, id, settings);
+  const stored = await deps.accounts.update(actor.organizationId, id, settings, (row) => [
+    ...(settings.ownerUserId !== undefined
+      ? [{ organizationId: actor.organizationId, actorUserId: actor.userId, action: "linkedin.owner_changed", entityType: "linkedin_account", entityId: id, meta: { ownerUserId: settings.ownerUserId } }]
+      : []),
+    ...(settings.dailyInviteLimit !== undefined || settings.dailyMessageLimit !== undefined || settings.isPremium !== undefined
+      ? [{ organizationId: actor.organizationId, actorUserId: actor.userId, action: "linkedin.limits_changed", entityType: "linkedin_account", entityId: id, meta: { dailyInviteLimit: row.dailyInviteLimit, dailyMessageLimit: row.dailyMessageLimit, isPremium: row.isPremium } }]
+      : []),
+  ]);
   if (!stored) throw new NotFoundError("LinkedIn account not found");
-  if (settings.ownerUserId !== undefined) {
-    await deps.audit.record({ organizationId: actor.organizationId, actorUserId: actor.userId, action: "linkedin.owner_changed", entityType: "linkedin_account", entityId: id, meta: { ownerUserId: settings.ownerUserId } });
-  }
-  if (settings.dailyInviteLimit !== undefined || settings.dailyMessageLimit !== undefined || settings.isPremium !== undefined) {
-    await deps.audit.record({
-      organizationId: actor.organizationId,
-      actorUserId: actor.userId,
-      action: "linkedin.limits_changed",
-      entityType: "linkedin_account",
-      entityId: id,
-      meta: { dailyInviteLimit: stored.dailyInviteLimit, dailyMessageLimit: stored.dailyMessageLimit, isPremium: stored.isPremium },
-    });
-  }
   return { warnings: limitWarnings(stored) };
 }

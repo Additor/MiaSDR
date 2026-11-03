@@ -94,6 +94,20 @@ export function createDrizzleLinkedInInboundStore(inbox: InboxFiling): LinkedInI
       return row ? toLedger(row) : null;
     },
 
+    async recordUnreadable({ organizationId, eventType, payload, now }) {
+      await db.insert(inboundEvents).values({
+        organizationId,
+        provider: "unipile",
+        eventType,
+        payload,
+        status: "failed",
+        attempts: MAX_EVENT_ATTEMPTS,
+        nextAttemptAt: now,
+        processedAt: now,
+        log: [{ ts: now.toISOString(), level: "error", message: "MiaSDR could not read this delivery, so it filed nothing. Unipile may have changed its format." }],
+      });
+    },
+
     async finish(claim, status, note, now) {
       await db
         .update(inboundEvents)

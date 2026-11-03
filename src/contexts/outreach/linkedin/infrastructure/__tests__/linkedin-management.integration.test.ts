@@ -350,7 +350,7 @@ describeDb("linkedin connection and campaigns", () => {
     await sql`insert into contact_policies (person_id, organization_id, do_not_contact, source, set_at) values (${dnc}, ${t.id}, true, 'human', now())`;
 
     const first = await campaignsUc.enrollLinkedInLeads(t.campaignDeps, t.actor, id, {});
-    expect(first).toEqual({ requested: 4, added: 2, alreadyEnrolled: 0, skippedDuplicate: 0, skippedMissingIdentity: 1, skippedNoProfile: 1, skippedSuppressed: 0, skippedDoNotContact: 1, skippedContact: 0 });
+    expect(first).toEqual({ requested: 4, added: 2, alreadyEnrolled: 0, skippedDuplicate: 0, skippedMissingIdentity: 1, skippedNoProfile: 1, skippedSuppressed: 0, skippedDoNotContact: 1, skippedStopRequest: 0, skippedContact: 0 });
     const second = await campaignsUc.enrollLinkedInLeads(t.campaignDeps, t.actor, id, {});
     expect(second.added).toBe(0);
     expect(second.alreadyEnrolled).toBe(2);

@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { DbTx } from "@/platform/db/client";
-import { campaignEnrollments, channelSettings, drafts, mailboxes, mcpTokens, records, replyTypePicks, replyTypes, sendAttempts, sends } from "@/platform/db/schema";
+import { campaignEnrollments, channelSettings, drafts, mailboxes, mcpTokens, records, sendAttempts, sends } from "@/platform/db/schema";
 import { readSendPause } from "@/contexts/outreach/domain/send-pause";
 import { readAgentSendGate } from "@/contexts/tenancy/infrastructure/mcp-policy-reader";
 import type { AgentVia } from "@/shared/errors";
@@ -8,6 +8,7 @@ import { isOutboundPaused } from "@/shared/outbound-pause";
 import { ATTEMPT_COUNTED } from "../domain/send-attempt-status";
 import { replyRefusal, type AgentReplyRefusal, type ReplyChannel } from "../domain/reply-send";
 import { utcDayStart } from "@/shared/utc-day";
+import { stopReviewOpen } from "./stop-requested-sql";
 
 /** How long an agent waits between two replies in one reply handling, on either channel. */
 export const AGENT_REPLY_GAP_MS = 24 * 60 * 60 * 1000;
@@ -68,29 +69,6 @@ async function recipientVerified(tx: DbTx, input: AgentReplyCheck): Promise<bool
 }
 
 /**
- * The AI read the person's latest message as a request to stop, and no person has reviewed that yet. A person sees
- * "Possible stop request" before they send; an agent is refused until the pick is reviewed. Reviewing it either records
- * the stop, which the person's rules refuse, or lets the thread go on.
- */
-async function stopRequestOpen(tx: DbTx, recordId: string): Promise<boolean> {
-  const [pick] = await tx
-    .select({ id: replyTypePicks.id })
-    .from(replyTypePicks)
-    .innerJoin(records, eq(records.id, replyTypePicks.recordId))
-    .leftJoin(replyTypes, eq(replyTypes.id, replyTypePicks.proposedReplyTypeId))
-    .where(
-      and(
-        eq(replyTypePicks.recordId, recordId),
-        sql`${replyTypePicks.messageId} = ${records.latestInboundMessageId}`,
-        sql`(${replyTypePicks.status} = 'proposed' or (${replyTypePicks.status} = 'auto_applied' and ${replyTypePicks.acknowledgedAt} is null))`,
-        sql`(coalesce((${replyTypePicks.response}->>'stopRequested')::boolean, false) or ${replyTypes.systemRole} = 'stop_request')`,
-      ),
-    )
-    .limit(1);
-  return Boolean(pick);
-}
-
-/**
  * The agent rules of docs/decisions.md, "Agent sends", run inside a send's transaction after the person's rules and
  * the draft lock, in the order the table lists them. The first one that fails throws its `agent_*` refusal.
  */
@@ -99,7 +77,8 @@ export async function checkAgentReply(tx: DbTx, input: AgentReplyCheck): Promise
   const { policy, settings } = await readAgentSendGate(tx, { organizationId: input.organizationId, tokenId: input.via.tokenId, lock: "exclusive", now });
   if (!policy.replies) throw refuse("agent_send_off", channel);
   if (!(await recipientVerified(tx, input))) throw refuse("agent_unverified_recipient", channel);
-  if (await stopRequestOpen(tx, input.recordId)) throw refuse("agent_stop_requested", channel);
+  const [record] = await tx.select({ latest: records.latestInboundMessageId }).from(records).where(eq(records.id, input.recordId));
+  if (await stopReviewOpen(tx, record?.latest ?? null)) throw refuse("agent_stop_requested", channel);
   if (input.cc.length > 0) throw refuse("agent_cc_not_allowed", channel);
 
   const [general] = await tx

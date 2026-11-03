@@ -1,6 +1,8 @@
+import { UNCONFIRMED_AFTER_MINUTES } from "../../application/campaign-management";
+import type { UnconfirmedSend } from "../../application/management-ports";
 import type { EnrollOptions } from "../../application/enroll-options";
 import type { DbHandle } from "@/platform/db/client";
-import type { AuditSink } from "@/contexts/tenancy/application/audit-log";
+import type { AuditEntry, AuditSink } from "@/contexts/tenancy/application/audit-log";
 import { ConflictError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { parseCampaignType, typeEditable, type ArchiveFilter, type CampaignStatus, type CampaignStatusChange, type CampaignType } from "../../domain/campaign";
 import { archiveOn, changeStatusOn, createCampaignOn, deleteOn, enrollOn, enrollPickedOn, loadCampaign, removeLeadOn, removeLeadsOn, sendersOn, startProblemsOn, unarchiveOn, updateCampaignOn, type CampaignChannel, type CampaignLifecycleDeps } from "../../application/campaign-lifecycle";
@@ -33,6 +35,8 @@ export interface LinkedInEnrollResult {
   alreadyEnrolled: number;
   skippedNoProfile: number;
   skippedDoNotContact: number;
+  /** The latest reply reads as a request to stop and no person reviewed it. */
+  skippedStopRequest: number;
   /** Contacts are not enrolled in campaigns. */
   skippedContact: number;
   /** People this call enrolled. Present only when the caller passed `collectIds`. */
@@ -114,7 +118,10 @@ export interface LinkedInCampaignStore {
   /** Returns false when the campaign moved off `change.from` or its steps changed since the check. */
   setStatus(organizationId: string, id: string, change: CampaignStatusChange<LinkedInStep>, tx?: DbHandle): Promise<boolean>;
   /** Deletes a draft. Returns false when no draft matched. */
-  delete(organizationId: string, id: string): Promise<boolean>;
+  /** Sends in status `unknown` claimed before `olderThan`: the total and the oldest `limit`. */
+  unconfirmedSends(organizationId: string, id: string, olderThan: Date, limit: number): Promise<{ total: number; rows: UnconfirmedSend[] }>;
+  /** Deletes a draft and writes `audit` in one transaction. False when it is no longer a draft. */
+  delete(organizationId: string, id: string, audit: AuditEntry): Promise<boolean>;
   /** Sets or clears `archivedAt`. Archiving applies to a completed campaign only. Returns false when no row matched. */
   setArchived(organizationId: string, id: string, archived: boolean): Promise<boolean>;
   /** People with a LinkedIn profile become enrollments with their LinkedIn progress row, in one transaction. */
@@ -214,9 +221,10 @@ export async function previewLinkedInStep(deps: LinkedInCampaignDeps, actor: Act
 export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, actor: Actor, id: string, query: EnrollmentListQuery) {
   const campaign = await load(deps, actor, id);
   const now = (deps.now ?? (() => new Date()))();
-  const [enrollments, accounts] = await Promise.all([
+  const [enrollments, accounts, unconfirmed] = await Promise.all([
     deps.campaigns.listEnrollments(actor.organizationId, id, { ...query, campaignStatus: campaign.status }),
     deps.campaigns.accountLimits(actor.organizationId, now),
+    deps.campaigns.unconfirmedSends(actor.organizationId, id, new Date(now.getTime() - UNCONFIRMED_AFTER_MINUTES * 60_000), 50),
   ]);
   const invitation = campaign.steps[0]?.kind === "invitation" ? campaign.steps[0] : null;
   const rows: LinkedInEnrollmentView[] = enrollments.rows.map(({ variables, ...row }) => {
@@ -224,7 +232,7 @@ export async function getLinkedInCampaignDetail(deps: LinkedInCampaignDeps, acto
     const noteLength = pending && invitation.body.trim() !== "" ? inviteNoteLength(invitation.body, variables) : null;
     return { ...row, noteLength, noteOverLimit: noteLength !== null && noteLength > INVITE_NOTE_MAX };
   });
-  return { campaign, enrollments: { total: enrollments.total, counts: enrollments.counts, sent: enrollments.sent, rows }, accounts, connectedAccounts: accounts.filter((a) => a.status === "connected").length };
+  return { campaign, enrollments: { total: enrollments.total, counts: enrollments.counts, sent: enrollments.sent, rows }, accounts, unconfirmed, connectedAccounts: accounts.filter((a) => a.status === "connected").length };
 }
 
 export async function enrollPickedLinkedInLeads(deps: LinkedInCampaignDeps, actor: Actor, id: string, personIds: string[], options: EnrollOptions = {}, tx?: DbHandle): Promise<PickedEnrollCounts & LinkedInEnrollResult> {

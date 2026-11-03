@@ -4,6 +4,7 @@ vi.mock("next/server", async () => {
   const actual = await vi.importActual<typeof import("next/server")>("next/server");
   return { ...actual, connection: async () => undefined };
 });
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/contexts/identity/infrastructure/session", () => ({
   apiOrgContext: async () => ({ user: { id: "u" }, organization: { id: "o" }, role: "member" }),
 }));

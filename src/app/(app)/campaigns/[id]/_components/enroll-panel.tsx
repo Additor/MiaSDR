@@ -21,6 +21,8 @@ interface Result {
   added: number;
   alreadyEnrolled: number;
   skippedDoNotContact: number;
+  /** The latest reply seems to ask to stop and no person reviewed it. */
+  skippedStopRequest?: number;
   /** People who became contacts; a campaign does not enroll them. */
   skippedContact?: number;
   /** Email only. */
@@ -37,10 +39,12 @@ interface Result {
 /** The skipped total and its breakdown, the same wording before and after an add. */
 function skippedSummary(result: Result, linkedin: boolean): { count: number; text: string } {
   const contacts = result.skippedContact ?? 0;
-  const count = result.alreadyEnrolled + result.skippedDoNotContact + contacts + (result.skippedSuppressed ?? 0) + (result.skippedNoEmail ?? 0) + (result.skippedNoProfile ?? 0);
+  const stops = result.skippedStopRequest ?? 0;
+  const stopText = stops > 0 ? `, ${formatCount(stops)} seem to ask to stop` : "";
+  const count = result.alreadyEnrolled + result.skippedDoNotContact + stops + contacts + (result.skippedSuppressed ?? 0) + (result.skippedNoEmail ?? 0) + (result.skippedNoProfile ?? 0);
   const text = linkedin
-    ? `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedDoNotContact)} do not contact, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoProfile ?? 0)} without a LinkedIn URL`
-    : `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedSuppressed ?? 0)} unsubscribed, ${formatCount(result.skippedDoNotContact)} do not contact, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoEmail ?? 0)} without an email`;
+    ? `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedDoNotContact)} do not contact${stopText}, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoProfile ?? 0)} without a LinkedIn URL`
+    : `${formatCount(result.alreadyEnrolled)} already added, ${formatCount(result.skippedSuppressed ?? 0)} unsubscribed, ${formatCount(result.skippedDoNotContact)} do not contact${stopText}, ${formatCount(contacts)} are contacts, ${formatCount(result.skippedNoEmail ?? 0)} without an email`;
   return { count, text };
 }
 

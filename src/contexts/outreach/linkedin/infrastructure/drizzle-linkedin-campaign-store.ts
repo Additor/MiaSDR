@@ -1,3 +1,4 @@
+import { unconfirmedSendsOf } from "../../infrastructure/drizzle-management-stores";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { leadSearchCondition } from "@/contexts/people/infrastructure/queries";
 import { db, inTransaction, type DbHandle } from "@/platform/db/client";
@@ -18,6 +19,8 @@ import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns, personVariableColumns } from "../../infrastructure/enrollment-variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { doNotContactSql } from "@/contexts/people/infrastructure/reachability";
+import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../../domain/send-status";
 
 const DAY_MS = 86_400_000;
@@ -73,6 +76,8 @@ async function insertEnrollments(tx: DbHandle, organizationId: string, campaignI
 }
 
 export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
+  unconfirmedSends: (organizationId, id, olderThan, limit) => unconfirmedSendsOf("linkedin", organizationId, id, olderThan, limit),
+
   transaction: (fn, within) => inTransaction(within, fn),
 
   async list(organizationId, archived = "hide") {
@@ -178,10 +183,13 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     return rows.length > 0;
   },
 
-  async delete(organizationId, id) {
+  async delete(organizationId, id, audit) {
     try {
-      const rows = await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
-      return rows.length > 0;
+      return await db.transaction(async (tx) => {
+        const rows = await tx.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
+        if (rows.length > 0) await recordAudit(tx, audit);
+        return rows.length > 0;
+      });
     } catch (error) {
       // conversations_private_campaign_fk: replies of a personal campaign are stored under it and keep it alive.
       const code = (error as { code?: string }).code ?? (error as { cause?: { code?: string } }).cause?.code;
@@ -206,6 +214,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
     const matching = and(eq(people.organizationId, organizationId), leadSearchCondition(filter.query));
     return inTransaction(handle, async (tx) => {
       const dnc = doNotContactSql("people");
+      const stopOpen = personStopReviewOpenSql("people");
       const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
 
       const [skipped] = await tx
@@ -213,14 +222,15 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
           matched: sql<number>`count(*)::int`,
           noProfile: sql<number>`(count(*) filter (where not ${hasProfile}))::int`,
           dnc: sql<number>`(count(*) filter (where ${hasProfile} and ${dnc}))::int`,
+          stopOpen: sql<number>`(count(*) filter (where ${hasProfile} and not ${dnc} and ${stopOpen}))::int`,
           already: sql<number>`(count(*) filter (where ${hasProfile} and ${already}))::int`,
-          contact: sql<number>`(count(*) filter (where ${hasProfile} and not ${already} and not ${dnc} and not ${notContactSql}))::int`,
+          contact: sql<number>`(count(*) filter (where ${hasProfile} and not ${already} and not ${dnc} and not ${stopOpen} and not ${notContactSql}))::int`,
         })
         .from(people)
         .leftJoin(companies, eq(companies.id, people.companyId))
         .where(matching);
 
-      const eligibleWhere = and(matching, hasProfile, sql`not ${dnc}`, sql`not ${already}`, notContactSql);
+      const eligibleWhere = and(matching, hasProfile, sql`not ${dnc}`, sql`not ${stopOpen}`, sql`not ${already}`, notContactSql);
       if (filter.dryRun) {
         const [{ n }] = await tx
           .select({ n: sql<number>`count(*)::int` })
@@ -236,6 +246,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
           alreadyEnrolled: skipped.already,
           skippedNoProfile: skipped.noProfile,
           skippedDoNotContact: skipped.dnc,
+          skippedStopRequest: skipped.stopOpen,
           skippedContact: skipped.contact,
           wouldAdd: Math.min(n, filter.limit),
         };
@@ -261,6 +272,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
         alreadyEnrolled: skipped.already,
         skippedNoProfile: skipped.noProfile,
         skippedDoNotContact: skipped.dnc,
+        skippedStopRequest: skipped.stopOpen,
         skippedContact: skipped.contact + skippedContact,
       };
     });
@@ -451,7 +463,7 @@ export const drizzleLinkedInCampaignStore: LinkedInCampaignStore = {
 
 /**
  * Enrolls specific people (found by a search) into a LinkedIn campaign. Skips people without a profile slug, member URL or member id, with
- * do-not-contact, contacts, or already enrolled, and does nothing for a completed or foreign campaign. Safe to repeat.
+ * do-not-contact, an open stop request, contacts, or already enrolled, and does nothing for a completed or foreign campaign. Safe to repeat.
  */
 export async function enrollPeopleCounted(organizationId: string, campaignId: string, personIds: string[], handle?: DbHandle): Promise<{ added: number; skippedContact: number }> {
   if (personIds.length === 0) return { added: 0, skippedContact: 0 };
@@ -463,7 +475,7 @@ export async function enrollPeopleCounted(organizationId: string, campaignId: st
     if (!campaign || campaign.status === "completed") return { added: 0, skippedContact: 0 };
 
     const dnc = doNotContactSql("people");
-    const picked = and(eq(people.organizationId, organizationId), inArray(people.id, personIds), hasProfile, sql`not ${dnc}`);
+    const picked = and(eq(people.organizationId, organizationId), inArray(people.id, personIds), hasProfile, sql`not ${dnc}`, sql`not ${personStopReviewOpenSql("people")}`);
     const eligible = await tx
       .select({ id: people.id, slug: people.linkedinSlug, url: people.linkedinUrl, memberId: sql<string | null>`${people.raw}->>'linkedin_member_id'` })
       .from(people)

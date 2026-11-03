@@ -34,6 +34,17 @@ export const stepTaken = (stepNumber: SQL) =>
 /** The ON CONFLICT condition of a claim insert: only a failed send goes back to `sending`, as the next attempt (the sends trigger holds the +1). */
 export const reclaimGuard = sql`sends.status = 'failed'`;
 
+/** The unconfirmed sends a reconciler may read at `now`. Pair it with `uncertainOrder`. */
+export const uncertainDue = (now: Date) => sql`(${sends.nextCheckAt} is null or ${sends.nextCheckAt} <= ${now.toISOString()}::timestamptz)`;
+
+/** Oldest look first, so a send that cannot be settled moves behind the sends nobody has looked at. */
+export const uncertainOrder = sql`coalesce(${sends.nextCheckAt}, ${sends.claimedAt})`;
+
+/** Leaves an unconfirmed send for later. Its attempt stays, so a settle that raced this still matches. */
+export async function deferUncertainCheck(handle: DbHandle, sendId: string, until: Date) {
+  await handle.update(sends).set({ nextCheckAt: until }).where(eq(sends.id, sendId));
+}
+
 /** Settles the worker's own claim as failed without counting it: nothing reached the provider. */
 export async function giveBackAttempt(tx: DbHandle, claim: { sendId: string; attempt: number }, error: string) {
   return tx

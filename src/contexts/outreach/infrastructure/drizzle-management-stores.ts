@@ -18,17 +18,56 @@ import { inboxConversationsOfPeople } from "./inbox-thread-lookup";
 import { resolveUnknownEmailSend } from "../email/infrastructure/drizzle-outreach-store";
 import type { CampaignStore, EnrollResult, MailboxRecord, MailboxStore } from "../application/management-ports";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../domain/send-status";
 
 /** SQL condition for an archive filter on `campaigns`. */
 export const archiveCondition = (filter: ArchiveFilter): SQL | undefined =>
   filter === "hide" ? isNull(campaigns.archivedAt) : filter === "only" ? isNotNull(campaigns.archivedAt) : undefined;
 
+/** Sends in status `unknown` of one campaign, on either channel: the total and the oldest `limit`. A person settles them. */
+export async function unconfirmedSendsOf(channel: "email" | "linkedin", organizationId: string, id: string, olderThan: Date, limit: number) {
+  const where = and(
+    eq(sends.organizationId, organizationId),
+    eq(sends.channel, channel),
+    eq(sends.kind, "campaign"),
+    eq(sends.status, "unknown"),
+    lt(sends.claimedAt, olderThan),
+    eq(campaignEnrollments.campaignId, id),
+  );
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(sends)
+    .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
+    .where(where);
+  const rows = await db
+    .select({
+      sendId: sends.id,
+      enrollmentId: sends.enrollmentId,
+      personName: people.fullName,
+      email: people.email,
+      stepNumber: sends.stepNumber,
+      mailboxEmail: mailboxes.emailAddress,
+      claimedAt: sends.claimedAt,
+      note: sends.error,
+    })
+    .from(sends)
+    .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
+    .innerJoin(people, eq(people.id, campaignEnrollments.personId))
+    .leftJoin(mailboxes, eq(mailboxes.id, sends.mailboxId))
+    .where(where)
+    .orderBy(asc(sends.claimedAt), asc(sends.id))
+    .limit(limit);
+  // The enrollment join and kind='campaign' above leave only sends that have an enrollment and a step.
+  return { total, rows: rows.map((r) => ({ ...r, enrollmentId: r.enrollmentId as string, stepNumber: r.stepNumber as number })) };
+}
+
 /** Every outcome but completion: the campaign row counts these as stopped, replies included. */
 const STOPPED: readonly EnrollmentStatus[] = ["replied", "bounced", "suppressed", "failed", "cancelled", "removed"];
 
 /**
- * Enrolls specific people into an email campaign. Skips people without an address and contacts; suppression and
+ * Enrolls specific people into an email campaign. Skips contacts and people with an open stop request; suppression and
  * do-not-contact are the caller's rules (the Grid handoff checks them first). Safe to repeat.
  */
 export async function enrollEmailPeopleCounted(organizationId: string, campaignId: string, personIds: string[], tx?: DbHandle): Promise<{ added: number; skippedContact: number }> {
@@ -41,7 +80,7 @@ export async function enrollEmailPeopleCounted(organizationId: string, campaignI
       const rows = await sp.execute<{ id: string }>(sql`
         insert into campaign_enrollments (organization_id, campaign_id, person_id, channel)
         select people.organization_id, ${campaignId}::uuid, people.id, 'email' from people
-        where people.organization_id = ${organizationId} and people.id in (${sql.join(keep.map((id) => sql`${id}::uuid`), sql`, `)}) and ${notContactSql}
+        where people.organization_id = ${organizationId} and people.id in (${sql.join(keep.map((id) => sql`${id}::uuid`), sql`, `)}) and ${notContactSql} and not ${personStopReviewOpenSql("people")}
         order by people.id
         on conflict do nothing
         returning id`);
@@ -119,41 +158,7 @@ export const drizzleCampaignStore: CampaignStore = {
     return rows.map((r) => ({ ...r, status: r.status as CampaignStatus, sent: sentBy.get(r.id) ?? 0, unconfirmed: unconfirmedBy.get(r.id) ?? 0 }));
   },
 
-  async unconfirmedSends(organizationId, id, olderThan, limit) {
-    const where = and(
-      eq(sends.organizationId, organizationId),
-      eq(sends.channel, "email"),
-      eq(sends.kind, "campaign"),
-      eq(sends.status, "unknown"),
-      lt(sends.claimedAt, olderThan),
-      eq(campaignEnrollments.campaignId, id),
-    );
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(sends)
-      .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-      .where(where);
-    const rows = await db
-      .select({
-        sendId: sends.id,
-        enrollmentId: sends.enrollmentId,
-        personName: people.fullName,
-        email: people.email,
-        stepNumber: sends.stepNumber,
-        mailboxEmail: mailboxes.emailAddress,
-        claimedAt: sends.claimedAt,
-        note: sends.error,
-      })
-      .from(sends)
-      .innerJoin(campaignEnrollments, eq(campaignEnrollments.id, sends.enrollmentId))
-      .innerJoin(people, eq(people.id, campaignEnrollments.personId))
-      .leftJoin(mailboxes, eq(mailboxes.id, sends.mailboxId))
-      .where(where)
-      .orderBy(asc(sends.claimedAt), asc(sends.id))
-      .limit(limit);
-    // The enrollment join and kind='campaign' above leave only sends that have an enrollment and a step.
-    return { total, rows: rows.map((r) => ({ ...r, enrollmentId: r.enrollmentId as string, stepNumber: r.stepNumber as number })) };
-  },
+  unconfirmedSends: (organizationId, id, olderThan, limit) => unconfirmedSendsOf("email", organizationId, id, olderThan, limit),
 
   async get(organizationId, id, tx) {
     const [row] = await (tx ?? db)
@@ -196,9 +201,12 @@ export const drizzleCampaignStore: CampaignStore = {
     return rows.length > 0;
   },
 
-  async delete(organizationId, id) {
-    const rows = await db.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
-    return rows.length > 0;
+  async delete(organizationId, id, audit) {
+    return db.transaction(async (tx) => {
+      const rows = await tx.delete(campaigns).where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.status, "draft"))).returning({ id: campaigns.id });
+      if (rows.length > 0) await recordAudit(tx, audit);
+      return rows.length > 0;
+    });
   },
 
   async setArchived(organizationId, id, archived) {
@@ -218,6 +226,7 @@ export const drizzleCampaignStore: CampaignStore = {
     return inTransaction(handle, async (tx) => {
       const suppressed = suppressedSql("people");
       const dnc = doNotContactSql("people");
+      const stopOpen = personStopReviewOpenSql("people");
       const already = sql`exists (select 1 from campaign_enrollments e where e.campaign_id = ${id} and e.person_id = ${people.id})`;
 
       const [skipped] = await tx
@@ -226,14 +235,15 @@ export const drizzleCampaignStore: CampaignStore = {
           noEmail: sql<number>`(count(*) filter (where ${people.email} is null))::int`,
           suppressed: sql<number>`(count(*) filter (where ${people.email} is not null and ${suppressed}))::int`,
           dnc: sql<number>`(count(*) filter (where ${people.email} is not null and not ${suppressed} and ${dnc}))::int`,
+          stopOpen: sql<number>`(count(*) filter (where ${people.email} is not null and not ${suppressed} and not ${dnc} and ${stopOpen}))::int`,
           already: sql<number>`(count(*) filter (where ${people.email} is not null and ${already}))::int`,
-          contact: sql<number>`(count(*) filter (where ${people.email} is not null and not ${already} and not ${suppressed} and not ${dnc} and not ${notContactSql}))::int`,
+          contact: sql<number>`(count(*) filter (where ${people.email} is not null and not ${already} and not ${suppressed} and not ${dnc} and not ${stopOpen} and not ${notContactSql}))::int`,
         })
         .from(people)
         .leftJoin(companies, eq(companies.id, people.companyId))
         .where(matching);
 
-      const eligibleWhere = and(matching, sql`${people.email} is not null`, sql`not ${suppressed}`, sql`not ${dnc}`, sql`not ${already}`, notContactSql);
+      const eligibleWhere = and(matching, sql`${people.email} is not null`, sql`not ${suppressed}`, sql`not ${dnc}`, sql`not ${stopOpen}`, sql`not ${already}`, notContactSql);
       if (filter.dryRun) {
         const [{ n }] = await tx
           .select({ n: sql<number>`count(*)::int` })
@@ -248,6 +258,7 @@ export const drizzleCampaignStore: CampaignStore = {
           alreadyEnrolled: skipped.already,
           skippedSuppressed: skipped.suppressed,
           skippedDoNotContact: skipped.dnc,
+          skippedStopRequest: skipped.stopOpen,
           skippedContact: skipped.contact,
           skippedNoEmail: skipped.noEmail,
           wouldAdd: Math.min(n, filter.limit),
@@ -284,6 +295,7 @@ export const drizzleCampaignStore: CampaignStore = {
         alreadyEnrolled: skipped.already,
         skippedSuppressed: skipped.suppressed,
         skippedDoNotContact: skipped.dnc,
+        skippedStopRequest: skipped.stopOpen,
         skippedContact,
         skippedNoEmail: skipped.noEmail,
       };
@@ -440,7 +452,7 @@ export const drizzleMailboxStore: MailboxStore = {
     try {
       const [row] = await db
         .insert(mailboxes)
-        .values({ organizationId, emailAddress: input.emailAddress, displayName: input.displayName, status: "connecting" })
+        .values({ organizationId, emailAddress: input.emailAddress, displayName: input.displayName, status: "connected", lastTestedAt: input.testedAt })
         .returning({ id: mailboxes.id });
       return row.id;
     } catch (error) {

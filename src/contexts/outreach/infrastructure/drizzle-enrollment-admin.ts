@@ -7,6 +7,7 @@ import { endEnrollmentsTx } from "./enrollment-end";
 import { profileUrlFor } from "../linkedin/domain/linkedin";
 import { insertSkippingContacts, notContactSql } from "./contact-guard";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
+import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
 import { SEND_COUNTED } from "../domain/send-status";
 import { sqlValues } from "@/platform/db/sql-values";
 
@@ -25,11 +26,12 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
     return inTransaction(handle, async (tx) => {
       const suppressed = sql<boolean>`${suppressedSql("people")}`;
       const dnc = sql<boolean>`${doNotContactSql("people")}`;
+      const stopOpen = sql<boolean>`${personStopReviewOpenSql("people")}`;
       // Qualified by hand: a single-table select renders bare column names, which a subquery would bind to its own table.
       const already = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status <> 'removed')`;
       const removed = sql<boolean>`exists (select 1 from campaign_enrollments e where e.campaign_id = ${campaignId} and e.person_id = people.id and e.status = 'removed')`;
       const contact = sql<boolean>`not ${notContactSql}`;
-      const found = new Map<string, { id: string; hasIdentity: boolean; slug: string | null; suppressed: boolean; dnc: boolean; contact: boolean; already: boolean; removed: boolean }>();
+      const found = new Map<string, { id: string; hasIdentity: boolean; slug: string | null; suppressed: boolean; dnc: boolean; stopOpen: boolean; contact: boolean; already: boolean; removed: boolean }>();
       for (let i = 0; i < ids.length; i += CHUNK) {
         const rows = await tx
           .select({
@@ -38,6 +40,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
             hasEmail: sql<boolean>`people.email is not null`,
             suppressed,
             dnc,
+            stopOpen,
             contact,
             already,
             removed,
@@ -45,10 +48,10 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
           .from(people)
           // The organization filter is what keeps an id of another organization out. It reads as not found.
           .where(and(eq(people.organizationId, organizationId), inArray(people.id, ids.slice(i, i + CHUNK))));
-        for (const r of rows) found.set(r.id, { id: r.id, slug: r.slug, hasIdentity: channel === "email" ? r.hasEmail : r.slug !== null, suppressed: channel === "email" && r.suppressed, dnc: r.dnc, contact: r.contact, already: r.already, removed: r.removed });
+        for (const r of rows) found.set(r.id, { id: r.id, slug: r.slug, hasIdentity: channel === "email" ? r.hasEmail : r.slug !== null, suppressed: channel === "email" && r.suppressed, dnc: r.dnc, stopOpen: r.stopOpen, contact: r.contact, already: r.already, removed: r.removed });
       }
 
-      const counts = { requested: ids.length, added: 0, skippedMissingIdentity: 0, skippedDuplicate: 0, skippedRemoved: 0, skippedSuppressed: 0, skippedDoNotContact: 0, skippedContact: 0, skippedNotFound: 0 };
+      const counts = { requested: ids.length, added: 0, skippedMissingIdentity: 0, skippedDuplicate: 0, skippedRemoved: 0, skippedSuppressed: 0, skippedDoNotContact: 0, skippedStopRequest: 0, skippedContact: 0, skippedNotFound: 0 };
       const eligible: Array<{ id: string; slug: string | null }> = [];
       for (const id of ids) {
         const p = found.get(id);
@@ -58,6 +61,7 @@ export const drizzleEnrollmentAdminStore: EnrollmentAdminStore = {
         else if (p.already) counts.skippedDuplicate += 1;
         else if (p.suppressed) counts.skippedSuppressed += 1;
         else if (p.dnc) counts.skippedDoNotContact += 1;
+        else if (p.stopOpen) counts.skippedStopRequest += 1;
         else if (p.contact) counts.skippedContact += 1;
         else eligible.push(p);
       }

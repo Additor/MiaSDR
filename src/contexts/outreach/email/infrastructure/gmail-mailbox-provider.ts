@@ -59,7 +59,20 @@ export interface GmailProviderOptions {
 }
 
 /** A failure before any message left: the token could not be had. */
-class TokenError extends Error {}
+class TokenError extends Error {
+  constructor(
+    message: string,
+    /** Google down or unreachable says nothing about this mailbox. Anything else is its access. */
+    readonly scope: "account" | "provider",
+  ) {
+    super(message);
+  }
+}
+
+/** Gmail answers a sending limit with 403 as well as 429. */
+const GMAIL_LIMIT = /rate limit|quota|limit exceeded|too many/i;
+/** Gmail's 400 for a To header it cannot parse: no retry will fix it. */
+const GMAIL_BAD_ADDRESS = /invalid to header|invalid recipient|recipient address/i;
 
 const DELEGATION_HINT =
   "Check that domain-wide delegation is enabled for the service account, that its client ID is authorized in the Google Workspace admin console " +
@@ -111,14 +124,14 @@ export class GmailMailboxProvider implements MailboxProvider {
     try {
       raw = toBase64Url(buildMime(email));
     } catch (error) {
-      throw new ProviderSendError(error instanceof Error ? error.message : "The message could not be built.", "definite");
+      throw new ProviderSendError(error instanceof Error ? error.message : "The message could not be built.", "definite", "message");
     }
     let token: string;
     try {
       token = await this.token(address);
     } catch (error) {
-      // No send was attempted, so this is safe to retry later.
-      throw new ProviderSendError(error instanceof Error ? error.message : "Could not get a Google access token.", "definite");
+      // No send was attempted, so this is safe to retry later, and it says nothing about the lead.
+      throw new ProviderSendError(error instanceof Error ? error.message : "Could not get a Google access token.", "definite", error instanceof TokenError ? error.scope : "provider");
     }
 
     let response: Response;
@@ -130,7 +143,7 @@ export class GmailMailboxProvider implements MailboxProvider {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
-      throw new ProviderSendError(`The request to Gmail failed or timed out (${errorName(error)}). The message may have been sent.`, "unknown");
+      throw new ProviderSendError(`The request to Gmail failed or timed out (${errorName(error)}). The message may have been sent.`, "unknown", "message");
     }
 
     if (response.ok) {
@@ -141,17 +154,20 @@ export class GmailMailboxProvider implements MailboxProvider {
         body = null;
       }
       if (!body || typeof body.id !== "string") {
-        throw new ProviderSendError("Gmail accepted the request but the response could not be read. The message may have been sent.", "unknown");
+        throw new ProviderSendError("Gmail accepted the request but the response could not be read. The message may have been sent.", "unknown", "message");
       }
       return { providerMessageId: body.id, threadId: typeof body.threadId === "string" ? body.threadId : null };
     }
 
     const detail = await apiMessage(response);
     if (response.status === 401) this.tokens.delete(address);
-    if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
-      throw new ProviderSendError(definiteMessage(response.status, address, detail), "definite");
+    if (response.status === 429 || (response.status === 403 && GMAIL_LIMIT.test(detail))) {
+      throw new ProviderSendError(`Gmail is limiting this mailbox (${detail}).`, "definite", "provider");
     }
-    throw new ProviderSendError(`Gmail answered ${response.status} (${detail}). The message may have been sent.`, "unknown");
+    if (response.status >= 400 && response.status < 500 && response.status !== 408) {
+      throw new ProviderSendError(definiteMessage(response.status, address, detail), "definite", response.status === 401 || response.status === 403 ? "account" : response.status === 400 && GMAIL_BAD_ADDRESS.test(detail) ? "recipient" : "message");
+    }
+    throw new ProviderSendError(`Gmail answered ${response.status} (${detail}). The message may have been sent.`, "unknown", "provider");
   }
 
   /**
@@ -332,7 +348,7 @@ export class GmailMailboxProvider implements MailboxProvider {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch {
-      throw new TokenError("Could not reach Google to get an access token. Check the server's network access and try again.");
+      throw new TokenError("Could not reach Google to get an access token. Check the server's network access and try again.", "provider");
     }
     if (!response.ok) {
       let code = "";
@@ -349,10 +365,10 @@ export class GmailMailboxProvider implements MailboxProvider {
         code === "invalid_grant" || code === "unauthorized_client"
           ? ` ${DELEGATION_HINT}`
           : " The service account key may be wrong, disabled or deleted.";
-      throw new TokenError(`Google would not give an access token for ${emailAddress} (${label}).${hint}`);
+      throw new TokenError(`Google would not give an access token for ${emailAddress} (${label}).${hint}`, response.status >= 500 || response.status === 429 ? "provider" : "account");
     }
     const body = (await response.json().catch(() => null)) as { access_token?: unknown; expires_in?: unknown } | null;
-    if (!body || typeof body.access_token !== "string") throw new TokenError("Google answered the token request without an access token.");
+    if (!body || typeof body.access_token !== "string") throw new TokenError("Google answered the token request without an access token.", "provider");
     const seconds = typeof body.expires_in === "number" ? body.expires_in : 3600;
     this.tokens.set(emailAddress, { value: body.access_token, expiresAt: this.now().getTime() + seconds * 1000 });
     return body.access_token;
@@ -375,7 +391,7 @@ export class GmailMailboxProvider implements MailboxProvider {
       const signature = createSign("RSA-SHA256").update(unsigned).sign(this.credentials.privateKey).toString("base64url");
       return `${unsigned}.${signature}`;
     } catch {
-      throw new TokenError("The service account private key could not be used to sign. Check that GOOGLE_SERVICE_ACCOUNT_JSON or the key file is the full, unmodified key.");
+      throw new TokenError("The service account private key could not be used to sign. Check that GOOGLE_SERVICE_ACCOUNT_JSON or the key file is the full, unmodified key.", "account");
     }
   }
 }

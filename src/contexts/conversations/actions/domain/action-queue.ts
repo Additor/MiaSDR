@@ -37,6 +37,8 @@ export interface QueueFacts {
   hasDraftToReview: boolean;
   hasReplyTypePickToReview: boolean;
   hasOpenTask: boolean;
+  /** The pick to review is a stop request. It stays listed whatever the record's state, since it keeps refusing agents. */
+  hasStopToReview: boolean;
 }
 
 /**
@@ -44,10 +46,9 @@ export interface QueueFacts {
  * (`typeDecision` in `inbox/[id]/_lib/type-line.ts`); `work-queue-read.ts` computes it in SQL and
  * `action-queue.integration.test.ts` checks that the two agree.
  *
- * - `stop_review`: the reply seems to ask to stop, and the pick is still open (held, or applied and not looked at). Accept
- *   would only change the type, so the row offers Review stop request. A held one stays open past a version bump, because it
- *   keeps refusing agents until a person decides. A person already marked do not contact, or an email address on the
- *   suppression list, has nothing left to stop.
+ * - `stop_review`: a pick reads the reply as a request to stop and no person reviewed it (`stopReviewOpenSql`), whatever the
+ *   pick's status. Accept would only change the type, so the row offers Review stop request. A person already marked do not
+ *   contact, or an email address on the suppression list, has nothing left to stop.
  * - `held`: a current held pick of a type other than the stop request type. Accept applies it.
  * - `looks_right`: an applied pick nobody looked at, of the record's current type, decided with Check after.
  *
@@ -63,8 +64,8 @@ export interface PickReviewFacts {
   /** The held pick names a type that still exists and is active. An archived type cannot be accepted. */
   hasProposedType: boolean;
   proposedSystemRole: SystemRole | null;
-  /** The AI read the reply as a request to stop (`response.stopRequested`). */
-  stopRequested: boolean;
+  /** A pick reads the reply as a request to stop and no person reviewed it. */
+  stopReviewOpen: boolean;
   acknowledged: boolean;
   /** The applied type is the record's type now. A person who changed the type since has answered the pick. */
   appliedIsCurrentType: boolean;
@@ -77,8 +78,7 @@ export interface PickReviewFacts {
 export function pickReviewOf(f: PickReviewFacts): PickReviewKind | null {
   const held = f.status === "proposed" && f.current;
   const applied = f.status === "auto_applied" && !f.acknowledged && f.appliedIsCurrentType;
-  const stopAsked = f.stopRequested || f.proposedSystemRole === "stop_request";
-  if ((f.status === "proposed" || applied) && stopAsked && !f.stopped) return "stop_review";
+  if (f.stopReviewOpen && !f.stopped) return "stop_review";
   if (held && f.hasProposedType && f.proposedSystemRole !== "stop_request") return "held";
   if (applied && (f.checkMode === null || f.checkMode === "after")) return "looks_right";
   return null;
@@ -94,10 +94,11 @@ export function queueGroupOf(facts: QueueFacts): QueueGroup {
 }
 
 /**
- * A record is in the queue when it is `action_required` or `error`, or `waiting` with `next_action_at` due. A `next_step`
- * record with an open task is left out, because the task already puts it in front of a person.
+ * A record is in the queue when it is `action_required` or `error`, or `waiting` with `next_action_at` due, or a stop request
+ * waits on it. A `next_step` record with an open task is left out, because the task already puts it in front of a person.
  */
 export function isInQueue(facts: QueueFacts, now: Date): boolean {
+  if (facts.hasStopToReview) return true;
   const due = facts.workflowState === "waiting" && facts.nextActionAt !== null && facts.nextActionAt.getTime() <= now.getTime();
   if (facts.workflowState !== "action_required" && facts.workflowState !== "error" && !due) return false;
   return !(queueGroupOf(facts) === "next_step" && facts.hasOpenTask);

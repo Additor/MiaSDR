@@ -61,17 +61,22 @@ export const drizzleGridWorkerStore: GridWorkerStore = {
     const stamp = now.toISOString();
     // A job whose lease ran out on its last attempt is finished, not run again.
     if (options?.sweepExhausted !== false) {
-      const exhausted = (await db.execute(sql`
-        update grid_jobs set status = 'failed', locked_at = null, updated_at = now(), error = 'The worker stopped during the last attempt.'
-        where (status = 'running' and locked_at < ${expired}::timestamptz and attempts >= max_attempts) or (status = 'queued' and attempts >= max_attempts)
-        returning organization_id, table_id, row_id, column_key
-      `)) as unknown as Array<{ organization_id: string; table_id: string; row_id: string; column_key: string }>;
-      for (const e of exhausted) {
-        await db
-          .update(gridRows)
-          .set({ cellMeta: sql`${gridRows.cellMeta} || ${jsonb({ [e.column_key]: { status: "error", error: "The worker stopped during the last attempt.", runAt: stamp } })}`, updatedAt: new Date() })
-          .where(and(eq(gridRows.organizationId, e.organization_id), eq(gridRows.tableId, e.table_id), eq(gridRows.id, e.row_id)));
-      }
+      // One statement: a crash between the job and its cell would leave the cell showing Running with no job behind it.
+      const message = "The worker stopped during the last attempt.";
+      await db.execute(sql`
+        with exhausted as (
+          update grid_jobs set status = 'failed', locked_at = null, updated_at = now(), error = ${message}
+          where (status = 'running' and locked_at < ${expired}::timestamptz and attempts >= max_attempts) or (status = 'queued' and attempts >= max_attempts)
+          returning organization_id, table_id, row_id, column_key
+        ),
+        per_row as (
+          select organization_id, table_id, row_id,
+            jsonb_object_agg(column_key, jsonb_build_object('status', 'error', 'error', ${message}::text, 'runAt', ${stamp}::text)) as meta
+          from exhausted group by organization_id, table_id, row_id
+        )
+        update grid_rows r set cell_meta = r.cell_meta || per_row.meta, updated_at = now()
+        from per_row
+        where r.organization_id = per_row.organization_id and r.table_id = per_row.table_id and r.id = per_row.row_id`);
     }
     // One organization runs at most ORG_MAX_RUNNING_CELLS cells at once. A full organization's due jobs are passed over,
     // so another organization's queue is not starved behind a large paste. Below that cap the claim takes one job per

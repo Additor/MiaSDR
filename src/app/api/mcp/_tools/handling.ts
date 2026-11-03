@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { assignRecord, claimRecord } from "@/contexts/conversations/actions/application/assignment";
 import { assignmentDeps } from "@/contexts/conversations/actions/infrastructure/assignment-composition";
+import { replyDeps } from "@/contexts/conversations/ai/infrastructure/ai-composition";
 import { acknowledgeReplyTypePick, addRecordNote, changeReplyType, closeRecord, reopenRecord, undoReplyTypePick } from "@/contexts/conversations/application/reply-handling";
+import { setReplyType } from "@/contexts/conversations/application/reply-management";
 import { replyHandlingDeps } from "@/contexts/conversations/infrastructure/reply-handling-composition";
 import { ValidationError } from "@/shared/errors";
 import { CHANGES, defineTool, need } from "./define";
 
-const REPLY_TYPE_ACTIONS = ["change", "confirm_pick", "undo_pick"] as const;
+const REPLY_TYPE_ACTIONS = ["change", "confirm_pick", "undo_pick", "accept_pick", "override_pick"] as const;
 
 export const setReplyTypeTool = defineTool({
   name: "set_reply_type",
@@ -14,7 +16,8 @@ export const setReplyTypeTool = defineTool({
   description: [
     "Sets how a reply handling is classified, as a person does in the inbox. `change` sets the group and reply type (`recordId`, `groupKey`, `replyTypeId` or null for the group alone, `expectedContextVersion` from get_conversation, optional `note`);",
     "a customer type stays locked unless `confirmUnlock`. `confirm_pick` marks an applied AI pick as seen and `undo_pick` reverts it (`replyTypePickId`).",
-    "A change can retire open drafts and start or end follow-ups; the answer says which.",
+    "For a pick that waits for a check, as get_work_queue lists it: `accept_pick` applies the AI's proposal and `override_pick` applies `replyTypeKey` instead (`conversationId`, `expectedContextVersion`). Both queue a fresh draft when the type writes one.",
+    "A change can retire open drafts and start or end follow-ups; the answer says which. None of these answers a stop request: sending stays refused until a person reviews it.",
   ].join(" "),
   scope: "mcp:write",
   annotations: CHANGES,
@@ -27,6 +30,8 @@ export const setReplyTypeTool = defineTool({
     confirmUnlock: z.boolean().optional(),
     note: z.string().optional(),
     replyTypePickId: z.string().optional(),
+    conversationId: z.string().optional(),
+    replyTypeKey: z.string().optional(),
   }),
   output: z.object({
     action: z.enum(REPLY_TYPE_ACTIONS),
@@ -48,6 +53,21 @@ export const setReplyTypeTool = defineTool({
       });
       const parts = [`Set to ${result.replyTypeKey ?? result.groupKey}, version ${result.contextVersion}.`];
       if (result.draftsRetired > 0) parts.push(`${result.draftsRetired} open draft(s) retired.`);
+      if (result.runEnded) parts.push("Follow-ups of the old type ended.");
+      if (result.runStarted) parts.push("Follow-ups started.");
+      return {
+        summary: parts.join(" "),
+        structured: { action: input.action, recordId: result.recordId, contextVersion: result.contextVersion, draftsRetired: result.draftsRetired, followUpsStarted: result.runStarted, followUpsEnded: result.runEnded },
+      };
+    }
+    if (input.action === "accept_pick" || input.action === "override_pick") {
+      const result = await setReplyType(replyDeps(), actor, need(input.conversationId, "conversationId", input.action), {
+        replyTypeKey: input.action === "accept_pick" ? null : need(input.replyTypeKey, "replyTypeKey", input.action),
+        expectedContextVersion: need(input.expectedContextVersion, "expectedContextVersion", input.action),
+      });
+      const parts = [`Set to ${result.replyTypeKey}, version ${result.contextVersion}.`];
+      if (result.draftsRetired > 0) parts.push(`${result.draftsRetired} open draft(s) retired.`);
+      if (result.draftQueued) parts.push("A fresh draft is on its way.");
       if (result.runEnded) parts.push("Follow-ups of the old type ended.");
       if (result.runStarted) parts.push("Follow-ups started.");
       return {

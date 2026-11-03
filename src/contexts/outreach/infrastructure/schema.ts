@@ -18,7 +18,7 @@ import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { ENROLLMENT_STATUSES, type EnrollmentStatus } from "../domain/enrollment-status";
 import type { CampaignStatus } from "../domain/campaign";
-import { SEND_STATUSES, type SendStatus } from "../domain/send-status";
+import { SEND_STATUSES, SEND_UNRESOLVED, type SendStatus } from "../domain/send-status";
 import { SEARCH_STATUSES, type SearchStatus } from "../linkedin/domain/linkedin-search";
 import { inList } from "@/platform/db/sql-values";
 
@@ -42,10 +42,10 @@ export const mailboxes = pgTable(
     /** Globally unique: inbound Gmail pushes resolve the organization through it. */
     emailAddress: text("email_address").notNull().unique(),
     displayName: text("display_name"),
-    status: text("status").notNull().default("connecting"),
+    status: text("status").notNull(),
     lastError: text("last_error"),
     lastTestedAt: tstz("last_tested_at"),
-    /** When the status last left `connected`; null while connected. Drives follow-up takeover by another mailbox. */
+    /** When the mailbox stopped sending. A send that succeeds or a person's check clears it, not the hourly check. Drives follow-up takeover by another mailbox. */
     unavailableSince: tstz("unavailable_since"),
     /** Gmail History cursor. Never overwritten by a watch renewal. */
     gmailHistoryCursor: text("gmail_history_cursor"),
@@ -318,6 +318,8 @@ export const sends = pgTable(
     error: text("error"),
     claimedAt: tstz("claimed_at").defaultNow().notNull(),
     sentAt: tstz("sent_at"),
+    /** When a reconciler looks at an unconfirmed send again. A send nobody can settle moves back, so it never holds up the rest. */
+    nextCheckAt: tstz("next_check_at"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -343,6 +345,8 @@ export const sends = pgTable(
     index("sends_linkedin_day_idx").on(t.linkedinAccountId, t.claimedAt),
     // Organization-wide reads: the analytics read model, the unconfirmed sends count, the lead delete guard.
     index("sends_org_status_idx").on(t.organizationId, t.status),
+    // What the reconcilers read: the unconfirmed sends due for a look, oldest first.
+    index("sends_uncertain_due_idx").on(t.channel, sql`coalesce(${t.nextCheckAt}, ${t.claimedAt})`).where(inList(t.status, SEND_UNRESOLVED)),
     uniqueIndex("sends_rfc_message_uq").on(t.rfcMessageId).where(sql`${t.rfcMessageId} is not null`),
     uniqueIndex("sends_provider_message_uq")
       .on(t.channel, t.providerMessageId)

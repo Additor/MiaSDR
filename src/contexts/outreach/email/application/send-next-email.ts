@@ -1,11 +1,11 @@
 import { isOutboundPaused } from "@/shared/outbound-pause";
 import { randomUUID } from "node:crypto";
 import { renderEmail } from "../../domain/render";
-import { MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, UNCERTAIN_AFTER_MINUTES, pickGapMinutes, retryDelayMinutes, emailRules } from "../../domain/send-policy";
+import { FAILED_MAILBOX_CHECK_MINUTES, MAX_SEND_ATTEMPTS, NOT_FOUND_GRACE_MINUTES, PROVIDER_HOLD_MINUTES, UNCERTAIN_AFTER_MINUTES, UNCERTAIN_RECHECK_MINUTES, pickGapMinutes, retryDelayMinutes, emailRules } from "../../domain/send-policy";
 import { resolveThreading } from "../domain/threading";
 import { unsubscribeLinks } from "../domain/unsubscribe-token";
 import { defaultWorkingHours } from "../../domain/working-hours";
-import type { MailboxDomainPolicy } from "./mailbox-management";
+import { mailboxPolicyViolation, type MailboxDomainPolicy } from "./mailbox-management";
 import { ProviderSendError, type Clock, type MailboxProvider, type OutreachStore, type SendClaim } from "./ports";
 
 export interface EngineDeps {
@@ -93,13 +93,49 @@ async function deliver(deps: EngineDeps, claim: SendClaim): Promise<SendOutcome>
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof ProviderSendError && error.kind === "definite") {
-      await deps.store.markFailed(claim, message, deps.clock.now(), retryDelayMinutes(claim.attempt), MAX_SEND_ATTEMPTS);
-      return { kind: "failed", retry: claim.attempt < MAX_SEND_ATTEMPTS };
+      const failedAt = deps.clock.now();
+      if (error.scope === "account") {
+        await deps.store.releaseForMailbox(claim, message, failedAt);
+        return { kind: "blocked", reason: "mailbox_unavailable" };
+      }
+      if (error.scope === "provider") {
+        await deps.store.releaseForProvider(claim, message, new Date(failedAt.getTime() + PROVIDER_HOLD_MINUTES * 60_000));
+        return { kind: "blocked", reason: "provider_unavailable" };
+      }
+      const fatal = error.scope === "recipient";
+      await deps.store.markFailed(claim, message, failedAt, retryDelayMinutes(claim.attempt), MAX_SEND_ATTEMPTS, fatal);
+      return { kind: "failed", retry: !fatal && claim.attempt < MAX_SEND_ATTEMPTS };
     }
     // Anything else might have gone out. Never retry on a guess.
     await deps.store.markUnknown(claim, message);
     return { kind: "unknown" };
   }
+}
+
+/**
+ * Tries failed mailboxes again, at most hourly. Access comes back without anyone telling MiaSDR: an admin fixes delegation in
+ * Google, and the mailbox's leads carry on from the step they were on. LinkedIn accounts recover the same way.
+ */
+export async function recheckFailedMailboxes(deps: EngineDeps, deadline = Number.POSITIVE_INFINITY): Promise<{ checked: number; recovered: number }> {
+  const now = deps.clock.now();
+  const report = { checked: 0, recovered: 0 };
+  const policy = deps.domainPolicy ?? { allowedDomains: null, openSignup: false };
+  for (const mailbox of await deps.store.failedMailboxes(new Date(now.getTime() - FAILED_MAILBOX_CHECK_MINUTES * 60_000))) {
+    // A provider outage makes each check wait out its timeout. The rest stay due, so the next tick takes them.
+    if (Date.now() >= deadline) break;
+    report.checked += 1;
+    try {
+      // The same rule as a person's Recheck: an address outside the policy never reaches the provider and never comes back.
+      const violation = mailboxPolicyViolation(policy, mailbox.emailAddress);
+      if (violation) throw new Error(violation);
+      await deps.provider.verify(mailbox.emailAddress);
+      await deps.store.recordMailboxCheck(mailbox.id, null, now);
+      report.recovered += 1;
+    } catch (error) {
+      await deps.store.recordMailboxCheck(mailbox.id, error instanceof Error ? error.message : "Could not verify this mailbox.", now);
+    }
+  }
+  return report;
 }
 
 export interface ReconcileReport {
@@ -117,7 +153,8 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
   const report: ReconcileReport = { checked: 0, foundSent: 0, retryable: 0, stillWaiting: 0, inconclusive: 0 };
   const olderThan = new Date(now.getTime() - UNCERTAIN_AFTER_MINUTES * 60_000);
 
-  for (const send of await deps.store.listUncertain(olderThan, limit)) {
+  const later = new Date(now.getTime() + UNCERTAIN_RECHECK_MINUTES * 60_000);
+  for (const send of await deps.store.listUncertain(olderThan, limit, now)) {
     report.checked += 1;
     if (!send.rfcMessageId) {
       // Crashed before the message was rendered: nothing can have been sent.
@@ -129,6 +166,7 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
     try {
       found = await deps.provider.findSent({ emailAddress: send.mailboxEmail }, send.rfcMessageId, send.claimedAt, send.recipientEmail ? { to: send.recipientEmail } : undefined);
     } catch {
+      await deps.store.deferUncertain(send.sendId, later);
       report.stillWaiting += 1;
       continue;
     }
@@ -138,11 +176,14 @@ export async function reconcileUncertainSends(deps: EngineDeps, limit = 25): Pro
     } else if (found.status === "inconclusive") {
       // No proof either way. Leave the send `unknown` so it is never retried on a guess.
       console.warn(`email reconcile: send ${send.sendId} stays unknown: ${found.reason}`);
+      await deps.store.deferUncertain(send.sendId, later);
       report.inconclusive += 1;
     } else if (now.getTime() - send.claimedAt.getTime() >= NOT_FOUND_GRACE_MINUTES * 60_000) {
       await deps.store.resolveUncertainAsNotSent(send, now, retryDelayMinutes(send.attempt), MAX_SEND_ATTEMPTS, "not_found");
       report.retryable += 1;
     } else {
+      // Looks again when the grace period ends, the moment this answer can change.
+      await deps.store.deferUncertain(send.sendId, new Date(send.claimedAt.getTime() + NOT_FOUND_GRACE_MINUTES * 60_000));
       report.stillWaiting += 1;
     }
   }

@@ -1,3 +1,4 @@
+import { genuineInboundSql } from "@/platform/db/conversation-visibility";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { db, type DbHandle } from "@/platform/db/client";
@@ -23,7 +24,7 @@ async function personFacts(tx: DbHandle, organizationId: string, campaignId: str
       select r.person_id from messages m
       join conversations c on c.id = m.conversation_id and c.organization_id = m.organization_id
       join records r on r.id = c.record_id and r.organization_id = c.organization_id
-      where m.organization_id = ${organizationId} and m.direction = 'inbound' and coalesce(m.raw ->> 'autoReply', 'false') <> 'true'
+      where m.organization_id = ${organizationId} and ${genuineInboundSql("m")}
         and r.person_id in (${uuidList(personIds)})
     `),
     tx.execute(sql`
@@ -158,7 +159,7 @@ export const createEnrollmentRestoreStore = (timeline: PersonTimeline): Enrollme
             // Progress that completed while the lead was removed is written back, so the claims and the lead panel agree with the sends.
             ...(progress > e.currentStep ? { currentStep: progress, lastSentAt: last?.at ?? e.lastSentAt } : {}),
           })
-          .where(and(eq(campaignEnrollments.id, e.id), eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.status, "removed")))
+          .where(and(eq(campaignEnrollments.id, e.id), eq(campaignEnrollments.organizationId, organizationId), eq(campaignEnrollments.status, e.status)))
           .returning({ id: campaignEnrollments.id });
         if (changed.length === 0) {
           refuse("not_removed");
@@ -177,7 +178,7 @@ export const createEnrollmentRestoreStore = (timeline: PersonTimeline): Enrollme
           eventType: "enrollment.restored",
           actorType: "human",
           actorUserId,
-          fromData: { status: "removed" },
+          fromData: { status: e.status },
           toData: { status: decision.status, campaignId, enrollmentId: e.id },
         });
         await recordAudit(tx, {

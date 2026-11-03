@@ -1,5 +1,8 @@
 "use client";
 
+import { useLeaveGuard } from "@/components/shell/use-leave-guard";
+import { useReportUnsaved } from "./unsaved-edits";
+import { useServerDraft } from "@/app/_lib/use-server-draft";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -35,7 +38,7 @@ const renumber = (steps: EditableStep[]): EditableStep[] => steps.map((s, i) => 
 
 export function StepsEditor({ id, initial, editable }: { id: string; initial: EditableStep[]; editable: boolean }) {
   const router = useRouter();
-  const [steps, setSteps] = useState<EditableStep[]>(initial);
+  const { value: steps, setValue: setSteps, baseChanged, discard, adoptNext, settling } = useServerDraft<EditableStep[]>(initial);
   const [selected, setSelected] = useState(1);
   const { isBusy, run } = useApiAction<"save">();
   const saving = isBusy("save");
@@ -43,7 +46,8 @@ export function StepsEditor({ id, initial, editable }: { id: string; initial: Ed
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const dirty = useMemo(() => JSON.stringify(steps) !== JSON.stringify(initial), [steps, initial]);
+  const dirty = useMemo(() => !settling && JSON.stringify(steps) !== JSON.stringify(initial), [settling, steps, initial]);
+  useLeaveGuard(dirty);
   const current = steps[Math.min(selected, steps.length) - 1];
   const fields = useMergeFields();
   const { track, insert } = useFieldInsert({
@@ -76,10 +80,13 @@ export function StepsEditor({ id, initial, editable }: { id: string; initial: Ed
       if (!result.ok) {
         setIssues(result.issues);
         toast.error(result.error);
-        return;
+        return false;
       }
+      adoptNext();
       toast.success("Steps saved.");
+      return true;
     });
+  useReportUnsaved(id, "Steps", dirty, async () => (await save()) === true);
 
   return (
     <div className="grid min-w-0 lg:grid-cols-2 lg:gap-section">
@@ -140,6 +147,14 @@ export function StepsEditor({ id, initial, editable }: { id: string; initial: Ed
             {i.message}
           </p>
         ))}
+        {dirty && (baseChanged || !editable) && (
+          <p role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            {editable ? "Someone changed these steps since you opened them. Save replaces their change." : "These edits were not saved. The campaign sends the saved steps."}
+            <Button type="button" variant="ghost" size="sm" onClick={discard}>
+              Discard
+            </Button>
+          </p>
+        )}
         {editable && (
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" disabled={steps.length >= 10} onClick={() => setSteps((all) => renumber([...all, { stepNumber: all.length + 1, kind: "email", subject: "", body: "", waitDays: 3 }]))}>
