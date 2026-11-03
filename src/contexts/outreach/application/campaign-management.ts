@@ -7,6 +7,7 @@ import { MAX_ENROLL_BATCH, archiveOn, changeStatusOn, createCampaignOn, deleteOn
 import type { EnrollmentListQuery } from "../domain/enrollment-list";
 import type { EnrollmentAdminStore, PickedEnrollCounts, RemoveCounts, SenderRef } from "./enrollment-admin";
 import { renderEmail } from "../domain/render";
+import { NO_POSTAL_ADDRESS } from "../domain/send-policy";
 import { sampleVariables } from "../domain/variables";
 import { unresolvedForLead, type MergeFieldSource } from "./merge-fields";
 import type { CampaignRecord, CampaignStore, EnrollResult, MailboxStore } from "./management-ports";
@@ -20,6 +21,8 @@ export interface CampaignDeps {
   admin?: EnrollmentAdminStore;
   /** Set by composition: real mail would carry unsubscribe links on an address no recipient can open. */
   unreachableUnsubscribe?: boolean;
+  /** Set by composition. `required` holds on real mail: the fake provider sends nothing, so a demo starts without an address. */
+  postalAddress?: { required: boolean; read(organizationId: string, tx?: DbHandle): Promise<string | null> };
   /** Defaults to the system clock. */
   now?: () => Date;
 }
@@ -76,6 +79,7 @@ async function startCheck(deps: CampaignDeps, actor: Actor, id: string, campaign
   let sampled = 0;
   const problems = await startProblemsOn(lifecycle(deps), email(deps), actor, id, campaign, tx, async () => {
     if (deps.unreachableUnsubscribe) return [new ValidationError(UNREACHABLE_UNSUBSCRIBE)];
+    if (deps.postalAddress?.required && !(await deps.postalAddress.read(actor.organizationId, tx))) return [new ValidationError(NO_POSTAL_ADDRESS)];
     // Only the first launch checks the subject. A resume runs the steps the campaign already sent with.
     if (campaign.status !== "draft") return [];
     const leads = await deps.campaigns.liveLeadVariables(actor.organizationId, id, SUBJECT_SAMPLE, tx);
@@ -141,6 +145,7 @@ export async function previewStep(deps: CampaignDeps, actor: Actor, id: string, 
     variables,
     signatureHtml: await deps.mailboxes.firstConnectedSignature(actor.organizationId),
     unsubscribeUrl: "https://your-instance.example/unsubscribe?token=…",
+    postalAddress: (await deps.postalAddress?.read(actor.organizationId)) ?? null,
     random: () => 0,
   });
   return {

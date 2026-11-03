@@ -141,7 +141,7 @@ describe("waiting since", () => {
 });
 
 describe("work totals", () => {
-  const none = { queue: 0, tasks: 0, uncertainCampaignSends: 0, unmatchedSenders: 0, deadLetters: 0 };
+  const none = { queue: 0, tasks: 0, uncertainCampaignSends: 0, unmatchedSenders: 0, deadLetters: 0, bouncePausedCampaigns: 0 };
 
   it("is clear only when every source is empty", () => {
     expect(isWorkClear(none)).toBe(true);

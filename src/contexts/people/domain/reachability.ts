@@ -18,8 +18,7 @@ export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
 export type ReachChannel = "email" | "linkedin";
 
 /**
- * The channels each suppression reason blocks. Enrollment, the send checks and the reach UI all read this table. A
- * complaint asks to stop harder than an unsubscribe does, so it blocks what an unsubscribe blocks.
+ * The channels each suppression reason blocks. Enrollment, the send checks and the reach UI all read this table.
  */
 const SUPPRESSION_BLOCKS: Record<SuppressionReason, readonly ReachChannel[]> = {
   unsubscribed: ["email", "linkedin"],

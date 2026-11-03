@@ -4,7 +4,7 @@ import { isOwnerOrAdmin } from "../domain/roles";
 
 export interface OnboardingStore {
   /** Counts for one organization. Every query filters by it. AI setup comes from `OnboardingDeps.aiSetup`. */
-  facts(organizationId: string): Promise<Omit<OnboardingFacts, "aiSetup" | "draftsAwaiting" | "messagesApproved" | "campaigns" | "activeCampaigns">>;
+  facts(organizationId: string): Promise<Omit<OnboardingFacts, "aiSetup" | "replies" | "campaigns" | "startedCampaigns" | "emailsSent">>;
   isDismissed(organizationId: string): Promise<boolean>;
   dismiss(organizationId: string, userId: string): Promise<void>;
 }
@@ -13,10 +13,10 @@ export interface OnboardingDeps {
   store: OnboardingStore;
   /** Where AI setup stands, from the integrations context. */
   aiSetup(organizationId: string): Promise<AiSetup>;
-  /** Drafts waiting in the Inbox and replies a person sent, from the conversations context. */
-  replies(organizationId: string): Promise<Pick<OnboardingFacts, "draftsAwaiting" | "messagesApproved">>;
-  /** Campaigns, and the running ones a person started, from the outreach context. */
-  campaigns(organizationId: string): Promise<Pick<OnboardingFacts, "campaigns" | "activeCampaigns">>;
+  /** Replies received, from the conversations context. */
+  replies(organizationId: string): Promise<Pick<OnboardingFacts, "replies">>;
+  /** Campaigns, the started ones and the emails they sent, from the outreach context. */
+  campaigns(organizationId: string): Promise<Pick<OnboardingFacts, "campaigns" | "startedCampaigns" | "emailsSent">>;
 }
 
 export interface OnboardingView extends OnboardingChecklist {

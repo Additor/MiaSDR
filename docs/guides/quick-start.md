@@ -6,20 +6,21 @@ To send real email, set `APP_URL` in `.env` to this server's public HTTPS addres
 
 ## 1. Create your account and organization
 
-Open the app. A fresh instance sends you to `/setup`. Create the first admin account and your organization. The setup guide at `/onboarding` shows what is connected and what is missing, and you can return to it at any time.
+Open the app. A fresh instance sends you to `/setup`. Create the first admin account and your organization. The setup guide at `/onboarding` tracks the path to a first reply: a connected mailbox, leads, a started campaign, a first email sent and a first reply. It leaves the sidebar once the first email and the first reply have happened.
 
 ## 2. Connect a mailbox
 
 Campaigns send from mailboxes you connect.
 
 1. Follow [Gmail setup](../setup/gmail.md) once per Google Workspace domain. It creates a service account with domain-wide delegation.
-2. Open Settings, Mailboxes and add the address. Set its daily limit, working hours and signature. Put your postal address in the signature.
+2. Open Settings, Mailboxes and add the address. Set its daily limit, working hours and signature.
+3. Add the [SPF, DKIM and DMARC records](sender-dns.md) to the domain. The Sender DNS block on the same page shows which ones it finds.
 
 To try the app without Google, set `MAILBOX_PROVIDER=fake` in `.env` and restart. The fake provider keeps mail in memory and sends nothing.
 
 ## 3. Set the rules
 
-Open Settings, Organization and check the default time zone. Set the default phone country (for example `KR`) if your lead files hold numbers without a country code. Open Settings, Mailboxes and find Sending rules at the end of the page to see the gap between sends. The default is 18 to 24 minutes.
+Open Settings, Organization and check the default time zone. Set the default phone country (for example `KR`) if your lead files hold numbers without a country code. Open Settings, Mailboxes and find Sending rules at the end of the page to see the gap between sends. The default is 18 to 24 minutes. Enter your postal address there too. Campaign email carries it in the footer, because CAN-SPAM requires one, and a campaign on real mail does not start without it.
 
 ## 4. Import leads
 

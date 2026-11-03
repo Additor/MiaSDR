@@ -105,11 +105,13 @@ interface AppSidebarProps {
   /** Size of the Actions queue. */
   actionsPending?: number;
   setup?: SetupProgress | null;
+  /** The first send and the first reply happened, so the guide has done its job and leaves the sidebar and the palette. */
+  setupHidden?: boolean;
   /** Owners and admins also reach the operations pages in the palette. */
   isAdmin?: boolean;
 }
 
-export function AppSidebar({ organizationName, user, inboxUnread = 0, actionsPending = 0, setup = null, isAdmin = false }: AppSidebarProps) {
+export function AppSidebar({ organizationName, user, inboxUnread = 0, actionsPending = 0, setup = null, setupHidden = false, isAdmin = false }: AppSidebarProps) {
   const pathname = usePathname();
   const { theme = "system", setTheme } = useTheme();
   const { setOpenMobile } = useSidebar();
@@ -118,13 +120,13 @@ export function AppSidebar({ organizationName, user, inboxUnread = 0, actionsPen
   const destinations = useMemo<PaletteDestination[]>(
     () => [
       ...NAV.map((item) => ({ href: item.href, label: item.label, group: item.group === "CRM" ? "CRM" : "Go to" })),
-      { ...SETUP_GUIDE, group: "Go to" },
+      ...(setupHidden ? [] : [{ ...SETUP_GUIDE, group: "Go to" }]),
       { href: "/leads/import", label: "Import leads", group: "Do" },
       { href: "/settings/mailboxes", label: "Connect a mailbox", group: "Do" },
       ...(isAdmin ? [{ href: "/settings/members", label: "Invite a member", group: "Do" }] : []),
       ...SETTINGS_GROUPS.flatMap((g) => g.items.filter((i) => isAdmin || !i.adminOnly).map((i) => ({ href: i.href, label: i.title, group: "Settings" }))),
     ],
-    [isAdmin],
+    [isAdmin, setupHidden],
   );
   async function signOut() {
     const { error } = await authClient.signOut();
@@ -204,7 +206,7 @@ export function AppSidebar({ organizationName, user, inboxUnread = 0, actionsPen
             <SidebarGroupContent>
               <SidebarMenu>
                 {NAV.filter((item) => item.group === group).map((item) => renderItem(item))}
-                {group === "Admin" && (
+                {group === "Admin" && !setupHidden && (
               <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={within(pathname, SETUP_GUIDE.href)}

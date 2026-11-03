@@ -5,6 +5,7 @@ import { actionToken, actionTokenMatches, actionTokenStale } from "@/shared/acti
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type Actor } from "@/shared/errors";
 import { UTC_DAY_MS, utcDayStart } from "@/shared/utc-day";
 import { AGENT_CAMPAIGN_REFUSALS, agentCampaignRefusal, launchToken, launchTokenMatches, type AgentCampaignRefusal, type LaunchPurpose, type LaunchState } from "../domain/agent-campaign";
+import { bouncePauseReason, type BouncePause } from "../domain/bounce-pause";
 import { canTransition, type CampaignStatus } from "../domain/campaign";
 import { changeLinkedInCampaignStatus, deleteLinkedInCampaign, linkedInStartProblems, previewLinkedInStep, type LinkedInCampaignDeps } from "../linkedin/application/linkedin-campaigns";
 import type { UnresolvedToken } from "../domain/variables";
@@ -27,6 +28,8 @@ export interface AgentCampaignRow {
   archivedAt: Date | null;
   /** A person paused it; only a person resumes it. */
   personPaused: boolean;
+  /** Set when the bounce breaker paused it. `personPaused` is true then too. */
+  bouncePause: BouncePause | null;
 }
 
 export interface AgentSender {
@@ -135,7 +138,8 @@ export async function previewLaunch(deps: AgentCampaignDeps, actor: Actor, input
   const startsNow = input.purpose !== "enroll" || row.status === "active";
   if (row.archivedAt) problems.push("The campaign is archived. A person unarchives it first.");
   if (input.purpose !== "enroll" && row.status !== FROM[input.purpose]) problems.push(`A ${row.status} campaign cannot be ${input.purpose === "start" ? "started" : "resumed"}.`);
-  if (input.purpose === "resume" && row.status === "paused" && row.personPaused) problems.push("A person paused this campaign, so only a person resumes it (agent_resume_person_paused).");
+  if (input.purpose === "resume" && row.status === "paused" && row.bouncePause) problems.push(`${bouncePauseReason(row.bouncePause)} Only a person resumes it (agent_resume_bounce_paused).`);
+  else if (input.purpose === "resume" && row.status === "paused" && row.personPaused) problems.push("A person paused this campaign, so only a person resumes it (agent_resume_person_paused).");
   if (input.purpose === "enroll" && row.status === "completed") problems.push("The campaign is completed.");
   if (startsNow && !gate.campaigns) problems.push("Agents may not start campaigns or enroll leads in running ones here (agent_campaigns_off).");
   if (startsNow && paused) problems.push("Sending is paused for this organization (agent_send_paused).");
@@ -193,6 +197,7 @@ export async function launchCampaign(
     const row = await find(deps.store.lockForStart(tx, actor.organizationId, input.campaignId), input.channel);
     if (row.archivedAt) throw new ConflictError("An archived campaign cannot be started. Unarchive it first.");
     if (row.status !== FROM[input.action] || !canTransition(row.status, "active")) throw new ConflictError(`A ${row.status} campaign cannot be ${input.action === "start" ? "started" : "resumed"}.`);
+    if (input.action === "resume" && row.bouncePause) throw agentCampaignRefusal("agent_resume_bounce_paused");
     if (input.action === "resume" && row.personPaused) throw agentCampaignRefusal("agent_resume_person_paused");
     const gate = await deps.store.gate(tx, actor.organizationId, tokenId, deps.now());
     await checkAgentRun(deps, tx, actor, row, input.action, input.launchToken, gate);
@@ -216,7 +221,8 @@ function endRefusals(kind: AgentCampaignEnd, row: AgentCampaignRow): Array<{ cod
   const refuse = (code: AgentCampaignRefusal) => refusals.push({ code, message: AGENT_CAMPAIGN_REFUSALS[code] });
   if (kind === "complete_campaign") {
     if (row.status === "draft") refusals.push({ code: "campaign_not_started", message: "A draft campaign cannot be completed. Delete it instead." });
-    if (row.personPaused) refuse("agent_complete_person_paused");
+    if (row.bouncePause) refuse("agent_complete_bounce_paused");
+    else if (row.personPaused) refuse("agent_complete_person_paused");
   }
   if (kind === "delete_draft_campaign" && row.status !== "draft") refusals.push({ code: "campaign_not_draft", message: "Only a draft campaign can be deleted. Pause it or complete it instead." });
   return refusals;

@@ -16,7 +16,7 @@ export const PUBLIC_ROUTES: Record<string, string> = {
   "jobs/tick": "Scheduler entry point. Authenticated by the CRON_SECRET bearer token.",
   "mcp": "MCP endpoint for AI agents. Authenticated by a personal MCP token, stored as a hash, and the token organization's MCP setting.",
   "outreach/unsubscribe": "Unsubscribe link in outgoing mail. Authenticated by a signed token.",
-  "setup": "First-run setup. Answers 409 once a user exists.",
+  "setup": "First-run setup. Answers 409 once a user or an organization exists.",
   "webhooks/dev-fakes": "Test controls. 404 unless E2E_FAKE_CONTROLS=1 outside production.",
   "webhooks/unipile": "LinkedIn webhook. Authenticated by a per-organization secret.",
   "webhooks/unipile-account": "Unipile hosted-auth callback. Authenticated by a per-link secret in the URL, stored as a hash.",

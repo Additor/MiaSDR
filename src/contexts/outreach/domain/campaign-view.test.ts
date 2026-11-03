@@ -103,6 +103,11 @@ describe("progress text", () => {
 });
 
 describe("startBlockers", () => {
+  it("names a missing postal address on email only when it is flagged", () => {
+    const base: Parameters<typeof startBlockers>[0] = { channel: "email", status: "draft", leads: 3, connectedSenders: 1, offlineAssigned: [], stepIssues: 0, placeholderSteps: [] };
+    expect(startBlockers(base)).toEqual([]);
+    expect(startBlockers({ ...base, noPostalAddress: true })).toEqual([{ code: "no_postal_address", message: "Commercial email must carry your postal address, so add it under Sending rules to start." }]);
+  });
   const ready: Parameters<typeof startBlockers>[0] = { channel: "email", status: "draft", leads: 3, connectedSenders: 1, offlineAssigned: [], stepIssues: 0, placeholderSteps: [] };
   it("is empty when a draft is ready", () => {
     expect(startBlockers(ready)).toEqual([]);

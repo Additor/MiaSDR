@@ -17,6 +17,7 @@ import { mcpTokens } from "@/contexts/agent-access/infrastructure/schema";
 import { people } from "@/contexts/people/infrastructure/schema";
 import { createdAt, orgId, pk, tstz, updatedAt } from "@/platform/db/columns";
 import { ENROLLMENT_STATUSES, type EnrollmentStatus } from "../domain/enrollment-status";
+import type { BouncePause } from "../domain/bounce-pause";
 import type { CampaignStatus } from "../domain/campaign";
 import { SEND_STATUSES, SEND_UNRESOLVED, type SendStatus } from "../domain/send-status";
 import { SEARCH_STATUSES, type SearchStatus } from "../linkedin/domain/linkedin-search";
@@ -172,8 +173,12 @@ export const campaigns = pgTable(
     archivedAt: tstz("archived_at"),
     /** The MCP token of the agent that last started or resumed the campaign; null when a person did. */
     startedViaTokenId: uuid("started_via_token_id"),
-    /** A person paused the campaign, so only a person resumes it. An agent's pause leaves it false. */
+    /** A person or the bounce breaker paused the campaign, so only a person resumes it. An agent's pause leaves it false. */
     personPaused: boolean("person_paused").notNull().default(false),
+    /** The bounce rate counts sends claimed from here on. A start or resume moves it. */
+    sendsCountedFrom: tstz("sends_counted_from").defaultNow().notNull(),
+    /** The count that made the bounce breaker pause the campaign. A start, a resume or a completion clears it. */
+    bouncePause: jsonb("bounce_pause").$type<BouncePause>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -313,6 +318,8 @@ export const sends = pgTable(
     error: text("error"),
     claimedAt: tstz("claimed_at").defaultNow().notNull(),
     sentAt: tstz("sent_at"),
+    /** When a verified hard bounce landed for this send. */
+    bouncedAt: tstz("bounced_at"),
     /** When a reconciler looks at an unconfirmed send again. A send nobody can settle moves back, so it never holds up the rest. */
     nextCheckAt: tstz("next_check_at"),
     createdAt: createdAt(),

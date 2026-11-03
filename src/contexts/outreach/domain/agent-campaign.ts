@@ -13,6 +13,8 @@ export const AGENT_CAMPAIGN_REFUSALS = {
   agent_sender_change_active: "An agent changes the senders of a campaign only while it is not running. Pause it first.",
   agent_resume_person_paused: "A person paused this campaign, so only a person resumes it in MiaSDR.",
   agent_complete_person_paused: "A person paused this campaign, so only a person completes it in MiaSDR.",
+  agent_resume_bounce_paused: "MiaSDR paused this campaign because too many emails bounced, so only a person resumes it in MiaSDR.",
+  agent_complete_bounce_paused: "MiaSDR paused this campaign because too many emails bounced, so only a person completes it in MiaSDR.",
 } as const;
 
 export type AgentCampaignRefusal = keyof typeof AGENT_CAMPAIGN_REFUSALS;

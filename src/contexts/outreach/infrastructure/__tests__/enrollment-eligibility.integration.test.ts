@@ -226,7 +226,6 @@ describeDb("one enrollment rule", () => {
     it.each([
       ["unsubscribed", 0, 1],
       ["manual", 0, 1],
-      ["complaint", 0, 1],
       ["bounced", 1, 0],
     ])("%s", async (reason, added, skipped) => {
       const [li, mail] = [await campaign("linkedin"), await campaign("email")];

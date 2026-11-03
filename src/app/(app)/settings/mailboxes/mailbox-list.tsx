@@ -58,6 +58,7 @@ export function MailboxList({
   unsubscribeUnreachable,
   zones,
   defaultTimeZone,
+  dns,
   rules,
 }: {
   mailboxes: Mailbox[];
@@ -67,6 +68,8 @@ export function MailboxList({
   unsubscribeUnreachable: boolean;
   zones: string[];
   defaultTimeZone: string;
+  /** The sender DNS block, which the server renders while its lookups run. */
+  dns: ReactNode;
   /** The sending rules block, which closes the page. */
   rules: ReactNode;
 }) {
@@ -206,6 +209,7 @@ export function MailboxList({
           </ul>
         )}
       </SettingsSection>
+      {dns}
       {rules}
     </div>
   );

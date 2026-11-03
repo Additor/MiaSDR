@@ -9,11 +9,7 @@ const ONBOARDING_CHANNEL = "onboarding";
 
 export const drizzleOnboardingStore: OnboardingStore = {
   async facts(organizationId) {
-    const [general, mailboxRows, linkedin, leads] = await Promise.all([
-      db
-        .select({ zone: sql<string | null>`${channelSettings.values}->>'timeZone'` })
-        .from(channelSettings)
-        .where(and(eq(channelSettings.organizationId, organizationId), eq(channelSettings.channel, "general"))),
+    const [mailboxRows, linkedin, leads] = await Promise.all([
       db
         .select({ status: mailboxes.status, n: count() })
         .from(mailboxes)
@@ -28,7 +24,6 @@ export const drizzleOnboardingStore: OnboardingStore = {
     ]);
     const sum = (rows: Array<{ n: number }>) => rows.reduce((total, r) => total + r.n, 0);
     return {
-      timeZoneSaved: Boolean(general[0]?.zone),
       connectedMailboxes: sum(mailboxRows.filter((r) => r.status === "connected")),
       totalMailboxes: sum(mailboxRows),
       connectedLinkedInAccounts: linkedin[0]?.n ?? 0,

@@ -56,6 +56,7 @@ export function CampaignControls({
   blockers = [],
   startLines = [],
   inProgress = 0,
+  resumeNote,
 }: {
   id: string;
   name: string;
@@ -68,6 +69,8 @@ export function CampaignControls({
   startLines?: string[];
   /** Leads still waiting or in the sequence, for the Mark completed dialog. */
   inProgress?: number;
+  /** Why this resume needs a second look. Resume asks first while it is set. */
+  resumeNote?: string;
 }) {
   const router = useRouter();
   // Start, Pause, Complete and Archive all change the campaign's state, so they share one key.
@@ -132,7 +135,7 @@ export function CampaignControls({
       variant: action.variant ?? "default",
       disabled: pending || (starting && blocked),
       describedBy: starting && blocked ? START_BLOCKERS_ID : undefined,
-      run: () => (starting ? setDialog("start") : action.to === "completed" ? setDialog("complete") : action.to === "active" && unsaved.length > 0 ? setDialog("resume") : void direct(() => change(action.to))),
+      run: () => (starting ? setDialog("start") : action.to === "completed" ? setDialog("complete") : action.to === "active" && (unsaved.length > 0 || resumeNote) ? setDialog("resume") : void direct(() => change(action.to))),
     };
   });
   if (status === "completed") {
@@ -197,8 +200,8 @@ export function CampaignControls({
         open={dialog === "resume"}
         onOpenChange={(open) => setDialog(open ? "resume" : null)}
         title={`Resume ${name}?`}
-        description={unsavedLine(unsaved, unsavable)}
-        confirmLabel="Save and resume"
+        description={[resumeNote, unsaved.length > 0 ? unsavedLine(unsaved, unsavable) : null].filter(Boolean).join(" ")}
+        confirmLabel={unsaved.length > 0 ? "Save and resume" : "Resume campaign"}
         pendingLabel="Resuming…"
         confirmDisabled={unsavable.length > 0}
         onConfirm={saveThenRun}

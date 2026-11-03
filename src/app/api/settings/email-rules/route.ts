@@ -8,6 +8,6 @@ export const PATCH = (request: Request) =>
     updateEmailRules(
       emailRulesDeps(),
       actor,
-      z.object({ minGapMinutes: z.number(), maxGapMinutes: z.number(), takeoverAfterHours: z.number().optional() }).parse(await request.json()),
+      z.object({ minGapMinutes: z.number(), maxGapMinutes: z.number(), takeoverAfterHours: z.number().optional(), senderPostalAddress: z.string().optional() }).parse(await request.json()),
     ),
   );

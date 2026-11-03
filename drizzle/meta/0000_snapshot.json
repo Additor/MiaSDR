@@ -4202,6 +4202,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sends_counted_from": {
+          "name": "sends_counted_from",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "bounce_pause": {
+          "name": "bounce_pause",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -6154,6 +6167,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "bounced_at": {
+          "name": "bounced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

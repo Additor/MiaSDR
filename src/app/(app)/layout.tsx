@@ -50,7 +50,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
-      <AppSidebar organizationName={organization.name} user={user} inboxUnread={inboxUnread} actionsPending={work.mine} setup={setup} isAdmin={isOwnerOrAdmin(role)} />
+      <AppSidebar organizationName={organization.name} user={user} inboxUnread={inboxUnread} actionsPending={work.mine} setup={setup.progress} setupHidden={setup.hidden} isAdmin={isOwnerOrAdmin(role)} />
       <SidebarInset id="main-content" tabIndex={-1} className="outline-none">
         <OutboundPauseBanner banner={getOutboundPauseBanner(sendPause)} />
         <OrgTimeZoneProvider timeZone={timeZone}>{children}</OrgTimeZoneProvider>
@@ -61,13 +61,15 @@ async function Shell({ children }: { children: React.ReactNode }) {
 
 /**
  * The sidebar highlights the setup guide until required steps are done or an admin dismisses it. Only people who can
- * act on it (owner, admin) see the highlight. A read failure just drops it.
+ * act on it (owner, admin) see the highlight. After the first send and the first reply the link goes too. A read failure
+ * drops the highlight and keeps the link.
  */
 async function setupProgress(actor: Parameters<typeof getOnboarding>[1]) {
   try {
     const view = await getOnboarding(onboardingDeps(), actor);
-    return view.complete || view.dismissed || !view.canDismiss ? null : { done: view.requiredDone, total: view.requiredTotal };
+    const quiet = view.hidden || view.complete || view.dismissed || !view.canDismiss;
+    return { progress: quiet ? null : { done: view.requiredDone, total: view.requiredTotal }, hidden: view.hidden };
   } catch {
-    return null;
+    return { progress: null, hidden: false };
   }
 }

@@ -27,6 +27,24 @@ export function takeoverHoursProblem(hours: unknown): string | null {
   return null;
 }
 
+export const POSTAL_ADDRESS_MAX = 300;
+
+/** Why a sender postal address is unusable, or null when it is valid. */
+export function postalAddressProblem(address: string): string | null {
+  if (address.trim() === "") return "Campaign email needs a postal address, so replace this one instead of clearing it.";
+  if (address.trim().length > POSTAL_ADDRESS_MAX) return `Keep the postal address to ${POSTAL_ADDRESS_MAX} characters.`;
+  return null;
+}
+
+/** The address campaign email carries in its footer, or null when the organization has not set one. */
+export function senderPostalAddress(stored: Record<string, unknown> | null | undefined): string | null {
+  const address = stored?.senderPostalAddress;
+  return typeof address === "string" && address.trim() !== "" ? address.trim() : null;
+}
+
+/** The start check's refusal when real mail would go out without a postal address. */
+export const NO_POSTAL_ADDRESS = "Add your postal address in Settings, Mailboxes, under Sending rules, before starting. CAN-SPAM requires one in commercial email.";
+
 /** Per-organization email rules. Out-of-bound stored values fall back to the defaults. */
 export function emailRules(stored: Record<string, unknown> | null | undefined): { sendGapMinutes: [number, number]; takeoverAfterHours: number } {
   const hours = stored?.takeoverAfterHours;

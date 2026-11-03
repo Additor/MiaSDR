@@ -120,11 +120,11 @@ export interface InboundStore {
 
 /**
  * The person's timeline, which conversations owns (`events`). Outreach records an enrollment change a person made there,
- * inside its own transaction. `src/composition` wires conversations' `appendPersonEvent`, so outreach never imports it.
+ * and the bounce breaker's pause on the person whose bounce tripped it, inside its own transaction. `src/composition` wires conversations' `appendPersonEvent`, so outreach never imports it.
  */
 export interface PersonTimeline {
   append(
     tx: DbTx,
-    event: { organizationId: string; personId: string; eventType: string; actorType: "human" | "system"; actorUserId?: string | null; fromData?: unknown; toData?: unknown },
+    event: { organizationId: string; personId: string; eventType: string; actorType: "human" | "system"; actorUserId?: string | null; fromData?: unknown; toData?: unknown; meta?: Record<string, unknown> },
   ): Promise<void>;
 }

@@ -10,14 +10,14 @@ import { mergeChannelSettings } from "@/contexts/tenancy/infrastructure/channel-
 import { parseAllowedDomains, type MailboxDeps, type MailboxDomainPolicy } from "../email/application/mailbox-management";
 import type { MergeFieldSource } from "../application/merge-fields";
 import { createEmailJobs } from "../email/application/email-jobs";
-import type { ContactStop, InboxFiling } from "../application/inbound-ports";
+import type { ContactStop, InboxFiling, PersonTimeline } from "../application/inbound-ports";
 import { createInboxJobs } from "../email/application/inbox-jobs";
 import type { MailboxProvider } from "../email/application/ports";
 import type { EngineDeps } from "../email/application/send-next-email";
 import { reconcileTestSends, type TestSendDeps } from "../email/application/send-test-email";
 import type { SuppressionStore } from "../email/application/unsubscribe";
 import type { SuppressionListDeps } from "../application/suppression-list";
-import { drizzleChannelSettingsStore } from "./drizzle-channel-settings-store";
+import { drizzleChannelSettingsStore, readSenderPostalAddress } from "./drizzle-channel-settings-store";
 import { drizzleEnrollmentAdminStore } from "./drizzle-enrollment-admin";
 import { createDrizzleInboundStore } from "../email/infrastructure/drizzle-inbound-store";
 import { drizzleMergeFieldSource, drizzleRunningFieldUse } from "./drizzle-merge-fields";
@@ -75,6 +75,7 @@ export function mailboxProvider(): MailboxProvider {
 /** The organization's email channel settings. */
 /** The onboarding checklist's campaign counts, which tenancy reads through a port. */
 export { onboardingCampaignFacts } from "./onboarding-campaign-facts";
+export { resolveTxtRecords } from "../email/infrastructure/dns-txt-resolver";
 
 export const emailRulesDeps = (): EmailRulesDeps => ({ settings: drizzleChannelSettingsStore });
 
@@ -102,7 +103,18 @@ export const suppressionListDeps = (stop: ContactStop): SuppressionListDeps => (
 /** Real mail is on and `APP_URL` is an address recipients cannot open. The demo `fake` provider sends nothing, so it passes. */
 export const unsubscribeUnreachable = (): boolean => env().MAILBOX_PROVIDER === "gmail" && isLocalOrigin(env().APP_URL);
 
-export const campaignDeps = (): CampaignDeps => ({ campaigns: drizzleCampaignStore, mailboxes: drizzleMailboxStore, fields: drizzleMergeFieldSource, audit: auditSink, admin: drizzleEnrollmentAdminStore, unreachableUnsubscribe: unsubscribeUnreachable() });
+/** Only real mail needs the address: the fake provider keeps mail in memory, and no other provider connects a mailbox. */
+export const postalAddressRequired = (): boolean => env().MAILBOX_PROVIDER === "gmail";
+
+export const campaignDeps = (): CampaignDeps => ({
+  campaigns: drizzleCampaignStore,
+  mailboxes: drizzleMailboxStore,
+  fields: drizzleMergeFieldSource,
+  audit: auditSink,
+  admin: drizzleEnrollmentAdminStore,
+  unreachableUnsubscribe: unsubscribeUnreachable(),
+  postalAddress: { required: postalAddressRequired(), read: readSenderPostalAddress },
+});
 
 function mailboxDomainPolicy(): MailboxDomainPolicy {
   return { allowedDomains: parseAllowedDomains(env().MAILBOX_ALLOWED_DOMAINS) };
@@ -134,13 +146,13 @@ function engineDeps(): EngineDeps {
 }
 
 /** Email jobs run only when an adapter is selected: Gmail, or the demo `fake` provider. */
-export function emailJobs(inbox: InboxFiling, stop: ContactStop) {
+export function emailJobs(inbox: InboxFiling, stop: ContactStop, timeline: PersonTimeline) {
   const provider = env().MAILBOX_PROVIDER;
   if (provider !== "fake" && provider !== "gmail") return [];
   try {
     // Inbox sync first, so a reply stops its sequence before the send job looks for due follow-ups.
     return [
-      ...createInboxJobs({ store: createDrizzleInboundStore(inbox, stop), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
+      ...createInboxJobs({ store: createDrizzleInboundStore(inbox, stop, timeline), provider: mailboxProvider(), clock: { now: () => new Date() }, minIntervalSeconds: 60 }),
       ...createEmailJobs(engineDeps()),
       {
         name: "email.reconcile-test",

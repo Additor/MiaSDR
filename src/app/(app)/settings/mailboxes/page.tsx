@@ -11,6 +11,7 @@ import { isOwnerOrAdmin } from "@/contexts/tenancy/domain/roles";
 import { toActor } from "@/app/_lib/api";
 import { timeZoneOptions } from "../time-zone-options";
 import { MailboxList } from "./mailbox-list";
+import { SenderDnsFallback, SenderDnsSection } from "./sender-dns-section";
 import { SendingRulesForm } from "./sending-rules-form";
 
 export const metadata: Metadata = { title: "Mailboxes" };
@@ -44,7 +45,14 @@ async function Mailboxes() {
       unsubscribeUnreachable={unsubscribeUnreachable()}
       zones={zones}
       defaultTimeZone={orgTimeZone}
-      rules={<SendingRulesForm rules={{ sendGapMinutes: rules.sendGapMinutes, takeoverAfterHours: rules.takeoverAfterHours }} canEdit={canManage} />}
+      dns={
+        mailboxes.length > 0 ? (
+          <Suspense fallback={<SenderDnsFallback />}>
+            <SenderDnsSection addresses={mailboxes.map((m) => m.emailAddress)} />
+          </Suspense>
+        ) : null
+      }
+      rules={<SendingRulesForm rules={{ sendGapMinutes: rules.sendGapMinutes, takeoverAfterHours: rules.takeoverAfterHours, senderPostalAddress: rules.senderPostalAddress }} canEdit={canManage} />}
     />
   );
 }

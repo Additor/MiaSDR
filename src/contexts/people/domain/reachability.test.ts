@@ -43,7 +43,7 @@ describe("suppressionReasonLabel", () => {
     expect(suppressionReasonLabel("do_not_mail")).toBe("Do not mail");
   });
 
-  it.each(["unsubscribed", "manual", "complaint"])("closes LinkedIn for an address on the list as %s", (reason) => {
+  it.each(["unsubscribed", "manual"])("closes LinkedIn for an address on the list as %s", (reason) => {
     const since = new Date("2026-10-01T00:00:00Z");
     const reach = reachability({ doNotContact: null, email: "a@b.test", suppression: { reason, since }, hasLinkedin: true });
     expect(reach.email.state).toBe("suppressed");

@@ -20,7 +20,7 @@ If you let an agent run LinkedIn searches, it reads profiles on your account wit
 CAN-SPAM applies to commercial email, including email to business addresses.
 
 - Do not use a misleading From name, subject or routing information.
-- Say the message is an ad when it is one, and include a valid physical postal address. MiaSDR does not add an address. Put it in the signature of each mailbox (Settings, Mailboxes).
+- Say the message is an ad when it is one, and include a valid physical postal address. Enter it in Settings, Mailboxes, under Sending rules. MiaSDR adds it to the footer of campaign email and refuses to start a campaign on real mail without it.
 - Honor an opt-out within 10 business days. MiaSDR puts an unsubscribe link and the one-click `List-Unsubscribe` header on every email, and a confirmed unsubscribe stops that address in your organization at once.
 - You remain responsible for mail that a vendor sends for you.
 
@@ -50,7 +50,7 @@ CASL requires consent for commercial electronic messages. Express consent is saf
 
 | It does | It does not |
 | --- | --- |
-| Add an unsubscribe link and one-click header to every email | Add your postal address |
+| Add an unsubscribe link and one-click header to every email, and your postal address to the footer of campaign email | Enter a postal address that is true |
 | Skip unsubscribed, bounced, suppressed and do-not-contact addresses | Check that you have consent or a legal basis |
 | Stop a sequence on a reply, bounce or unsubscribe | Check the law that applies to a recipient's country |
 | Limit daily volume and pace sends | Make LinkedIn automation permitted by LinkedIn |

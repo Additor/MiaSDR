@@ -134,7 +134,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 ### First account and sign-up
 
-- `/setup` creates the first user, the first organization and the owner membership in one transaction under an advisory lock, and answers 409 once any user exists. Setup marks the email verified (a new instance may have no mail provider) and stores the time zone in `channel_settings` `general` unless it is UTC. Then the form sends the owner to `/onboarding`.
+- `/setup` creates the first user, the first organization and the owner membership in one transaction under an advisory lock, and answers 409 once any user or organization exists. An install with an organization and no users cannot run setup again, because that would add a second organization. Its operator restores a user from a backup or starts from an empty database. Setup marks the email verified (a new instance may have no mail provider) and stores the time zone in `channel_settings` `general` unless it is UTC. Then the form sends the owner to `/onboarding`.
 - While no user exists, `/sign-in` and `/sign-up` redirect to `/setup`, and the `user.create.before` hook refuses every Better Auth sign-up (email and Google).
 - After that, a sign-up needs an address with a pending, unexpired invitation. Rules: `identity/domain/signup-policy.ts`.
 - An invited person reaches the form through `/sign-up?invitation=<id>`; the hook still checks the invitation by email. The verification link of an invited sign-up returns to `/accept-invitation/<id>`.
@@ -184,7 +184,7 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 - `/setup` creates the one organization. Nothing in the app creates a second one or moves a session between organizations, so there is no switcher and no organization header on API calls.
 - Better Auth's organization plugin refuses creation with `allowUserToCreateOrganization: false` and a `beforeCreateOrganization` hook. The hook also covers a server call that names a user, which skips the option. Over HTTP, `/organization/create` and `/organization/set-active` are off the endpoint allow-list as well.
 - An invitation only ever points at the install's organization, so nobody belongs to a second one.
-- The database does not hold the limit. `organization_id` stays on every table and every query filters by it, and test fixtures insert several organizations to prove isolation. `src/architecture/single-organization.test.ts` fails if code outside the setup store inserts an organization.
+- The database does not hold the limit, so setup checks for an organization under its advisory lock. A singleton unique index would refuse the test fixtures, which insert several organizations to prove isolation. `organization_id` stays on every table and every query filters by it. `src/architecture/single-organization.test.ts` fails if code outside the setup store inserts an organization.
 - The slug comes from the name at setup and stays read-only because invitation links carry it.
 - A fresh session opens in the user's oldest membership (`session.create.before`).
 
@@ -199,15 +199,17 @@ Integration credentials use an AES-256-GCM envelope `v2:<keyId>:<iv>:<tag>:<ciph
 
 | Step | Done when |
 |---|---|
-| Set the time zone (`profile`) | a time zone is saved in `channel_settings` `general` |
 | Connect a mailbox | a `connected` mailbox exists; mailboxes with none connected show attention |
-| Import leads | any `people` row |
-| Create your first campaign | any campaign |
-| Approve your first message | any draft with status `sent` |
+| Import leads | any `people` row with lifecycle `lead` |
+| Start a campaign | any campaign past `draft`, whoever started it |
+| Send your first email | a `sends` row with kind `campaign`, channel `email` and status `sent` |
+| Get your first reply | an inbound `messages` row that is not an auto-reply, on any channel |
 | Connect LinkedIn (optional) | a `connected` `linkedin_accounts` row |
 | AI key (optional) | an enabled `anthropic` integration with a stored credential |
 
 - Required steps come first. An owner or admin can hide the guide (`POST /api/onboarding/dismiss`), stored per organization in `channel_settings` channel `onboarding` as `{ dismissedAt, dismissedBy }`. Hiding removes the sidebar count; the page stays reachable by URL.
+- The fake provider marks its message ids with `fake-`. A send or reply with that mark counts only while `MAILBOX_PROVIDER=fake`, so demo mail on an install that later moves to Gmail proves nothing. No flag is stored: every step reads the tables.
+- After the first send and the first reply, the guide leaves the sidebar and the command palette for everyone, and the page says so. The URL still answers.
 
 ### Organization settings and time zone
 
@@ -376,11 +378,21 @@ The From name and body are attacker controlled, so classification alone never su
 
 A failed check stores the message as an auto-reply, sets `possibleBounce: true` in `raw` when we mailed that address, and counts `unverified_bounce` in the job detail. A verified bounce adds the address to `suppression_list` (reason `bounced`), sets the person's pending and active email enrollments to `bounced`, and ends their follow-up runs.
 
+**Bounce breaker.** A verified bounce also stamps `sends.bounced_at` on the send the notice names, or else on the mailbox's latest send to that address. The mark lives on the send because an enrollment that finished its last step stays `completed` when that step bounces. In the same transaction the campaign's rate is read: its email sends with status `sending`, `sent` or `unknown` claimed since `campaigns.sends_counted_from`, against those carrying the mark. At 5% or more with at least 20 sends (`BOUNCE_PAUSE_PERCENT`, `BOUNCE_PAUSE_MIN_SENDS`, no setting), the campaign pauses, `campaigns.bounce_pause` stores the count, `person_paused` goes true so only a person resumes, and an event `campaign.paused_for_bounces` goes on the bounced person. There is no campaign-only event row, because `events.person_id` is required. A start or resume moves `sends_counted_from` and clears `bounce_pause`, so a bounce that lands later for an earlier send does not count against the new window. The check runs only when a bounce lands: a campaign that reaches 20 sends with enough bounces already in hand pauses at its next bounce. Agents get `agent_resume_bounce_paused` and `agent_complete_bounce_paused`. There is no per-mailbox breaker.
+
 ### Unsubscribe and suppression
 
 - One HMAC token (`UNSUBSCRIBE_SECRET`) binds organization and address. The body footer links to the page `/unsubscribe?token=`, which asks for a click because mail scanners follow links.
 - `List-Unsubscribe: <APP_URL/api/outreach/unsubscribe?token=...>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` go on campaign mail, test mail and replies. The POST route is public, accepts only the form body `List-Unsubscribe=One-Click` or the page's JSON `{token}`, and answers 400 for anything else.
 - `suppressEmail` writes `suppression_list` once per organization and address (a conflict does nothing), ends what the trigger's row in `STOP_TABLE` lists for the address's owners in the same transaction (see "One owner for stop"). A bounce ends email enrollments and email runs, as `bounced`. An unsubscribe or a manual suppression ends enrollments and runs on every channel, as `suppressed`, because the person or a teammate wants contact stopped. A send, a test send and a reply draft check the list on email; which reasons also close LinkedIn is in "Reachability and do not contact".
+
+### Sender postal address
+
+`channel_settings.email.senderPostalAddress`, set under Settings, Mailboxes, Sending rules, goes into the footer of campaign email above the unsubscribe link. With `MAILBOX_PROVIDER=gmail`, a start or resume refuses without it, and the MCP launch preview lists the same problem. A saved address can change but cannot go back to blank, so a running campaign keeps it. The fake provider sends nothing, so a demo starts without an address and with no seeded value that could later reach real mail. Test sends and replies carry no address.
+
+### Sender DNS check
+
+Settings, Mailboxes reads TXT records through `node:dns` for each domain among the organization's mailboxes: SPF on the domain, DKIM on `google._domainkey` and DMARC on `_dmarc`. `ENODATA` and `ENOTFOUND` mean DNS answered, so the record is Missing. Any other failure shows Could not check, because it says nothing about the record. The check runs in its own Suspense boundary with a 2 second timeout per lookup, stores nothing and blocks nothing. `docs/guides/sender-dns.md` has the Google Workspace records.
 
 ### Test send
 
@@ -502,7 +514,7 @@ Agents start, resume and fill campaigns through `outreach/application/agent-camp
 - **Preview and start agree.** The preview lists `campaignStartProblems` and `linkedInStartProblems`, the same checks the status change runs before a start, so "nothing stops it" means the start passes them.
 - **Enroll limit.** Every agent enroll, in any status and either channel, counts against `agentEnrollCap` (200 a UTC day); a batch that would pass it is refused whole, dry runs included (`agent_enroll_cap`, `retryAfterSeconds` to midnight UTC).
 - **Locks.** A launch locks the campaign `FOR UPDATE`, then takes `agent-send` shared; the status change runs in the same transaction. An enroll locks the campaign `FOR SHARE`, takes `agent-send` shared, then `agent-enroll:<organization id>` exclusive before it counts. A person's enroll takes no campaign lock: its insert's foreign key check waits for a start that holds the row.
-- **Records.** `campaigns.started_via_token_id` names the agent's token on its start or resume, and a person's start clears it. `campaign_enrollments.enrolled_via_token_id` is written with each row an agent actor's enroll inserts; the limit counts them. Onboarding counts only campaigns a person started.
+- **Records.** `campaigns.started_via_token_id` names the agent's token on its start or resume, and a person's start clears it. `campaign_enrollments.enrolled_via_token_id` is written with each row an agent actor's enroll inserts; the limit counts them. The setup guide counts a campaign an agent started as started, since its mail goes out all the same.
 - **Watching agents.** Settings > MCP shows owners and admins an Agent sends section (`read-models/agent-sends.ts`): the day's agent replies and enrolls against the limits, with a notice once one is reached, the latest agent replies, and the campaigns agents started. Pause campaigns agents started (`POST /api/settings/mcp/pause-agent-campaigns`, owner or admin) pauses every running one through the person's pause, then marks every campaign an agent paused as paused by a person, so no agent resumes it. An agent's unconfirmed send shows in Actions under Problems with the token's name.
 
 ### Agent spending
@@ -603,7 +615,7 @@ The differences are on purpose until someone changes them. A bounce is a fact ab
 
 `stopReasonLabel` exists twice on purpose: `outreach/domain/campaign-view.ts` labels an enrollment's `stop_reason` ("Replied") and `after-reply/domain/after-reply.ts` a run's reason ("The person replied"). An unknown reason humanizes in the first and reads "Stopped" in the second.
 
-Whether a reply asked to stop has one reading: ingest stores `raw.stopAsked` from `detectsStopRequest`, and `replyAskedToStopSql` reads that flag and a pick's `stopRequested`.
+Whether a reply asked to stop has one reading: ingest stores `raw.stopAsked` from `detectsStopRequest`, and `replyAskedToStopSql` reads that flag and a pick's `stopRequested`. The patterns live only in `detectsStopRequest`, as one regex table for English, Korean, Japanese, Spanish, German and French, so SQL holds no copy to drift. A pattern added later does not reach replies already stored.
 
 ### AI providers
 
@@ -633,7 +645,7 @@ Whether a reply asked to stop has one reading: ingest stores `raw.stopAsked` fro
 - `ai_jobs` (job `threads.ai`) uses a lease and `SKIP LOCKED`. The tick sweeps conversations whose latest inbound message has no job. 3 attempts, retry delay `min(5 min, 2 s * 2^(attempts-1))`, a lease older than 5 minutes is taken over. With no AI provider configured the job releases the work without using an attempt.
 - **Untrusted text.** Email text, names, knowledge and operator instructions sit in tags with a per-request nonce. The output is closed: one reply type key (the model field keeps the name `replyTypeKey`), confidence 0 to 1, a reason up to 500 characters. Zod checks it in the adapter and the use case.
 - **Applying** (`reply-type-pick-policy.ts` over `decideReplyType`, deterministic). In order: hold a pick that moves a locked customer out of its group; hold the stop request type; hold below `AI_PICK_CONFIDENCE_FLOOR`; else auto-apply. A pick that applies with no draft and no stop request settles the conversation to `idle` (`settlesAfterAiPick`). The pick stores the hold reason and the rules it used. The write locks the conversation and compares `context_version` and `latest_inbound_message_id`; a mismatch stores a `stale` pick and changes nothing. Under that lock the store decides once, with the lock as it is then, and takes the status, hold reason, draft, settle and follow-ups from that one decision.
-- **Stop requests.** A reply that asks to stop, or a pick of the stop request type, opens the type line in place with "Possible stop request." and Review stop request, which opens Stop contacting and asks how far the stop reaches. Actions shows the same row kind (`stop_review`) and opens the thread with `?stop=1`. Nothing stops contact on its own. Follow-ups do stop: the AI's pick of that reply keeps `response.stopRequested`, its run ends, and no new run starts for that reply, whatever type the AI or a person picks for it (`stopRequestedSql`, `startBlockedReason`). A person who picks a type before any AI pick read the reply, or in an organization with no AI provider, gets the same rule from the reply's text: `replyAskedToStop` runs `detectsStopRequest` over the latest reply for the Change type outcomes, the person's decision and `loadStartOn`, and the person's pick stores `response.stopRequested` so the start sweep sees it too. No draft is queued for such a pick.
+- **Stop requests.** A reply that asks to stop, or a pick of the stop request type, opens the type line in place with "Possible stop request." and Review stop request, which opens Stop contacting and asks how far the stop reaches. Actions shows the same row kind (`stop_review`) and opens the thread with `?stop=1`. Nothing stops contact on its own. Follow-ups do stop: the AI's pick of that reply keeps `response.stopRequested`, its run ends, and no new run starts for that reply, whatever type the AI or a person picks for it (`stopRequestedSql`, `startBlockedReason`). A person who picks a type before any AI pick read the reply, or in an organization with no AI provider, gets the same rule from the reply's text: `replyAskedToStop` reads the flag ingest stored from `detectsStopRequest` for the Change type outcomes, the person's decision and `loadStartOn`, and the person's pick stores `response.stopRequested` so the start sweep sees it too. No draft is queued for such a pick.
 - **Stop reviews.** `stop_reviews` holds the fact that a person reviewed a reply's stop request, one row per reply. A pick's status plays no part, since an agent can move a pick. `personReviewedStopsTx` is the only writer (`stop-review-writer.test.ts`): a person's type change, pick, undo and do not contact write it, and an agent's call writes nothing. `stopReviewOpenSql` is the one rule, and the agent send gate and Actions both read it, so the row stays listed while the gate refuses, whatever the conversation's state. An agent may still change the type, accept or override a held pick or undo a pick, and stays refused. Accepting a held stop request answers `stop_review` for an agent too. A review belongs to its reply, so a newer reply asks again. Ingest stores `raw.stopAsked` when a reply's own words ask (`detectsStopRequest`), so the rule holds before any pick reads the reply and in an organization with no AI provider. Enrollment reads the same rule on every path, the Tables handoff and a LinkedIn search's campaign included: a person whose latest reply waits on a review is skipped (`skippedStopRequest`), since a new campaign would otherwise reach someone who asked to stop.
 - **Unknown senders.** At most 50 AI replies a day for unknown senders (`channel_settings.general`, 0 blocks all). Over-cap jobs end `skipped` with reason `daily_cap`; an admin can requeue them.
 - **Failure kinds** (`payload.failureKind`): `transient` and `lease` failures are requeued by the sweep with backoff from 15 minutes (capped at 6 hours, ceiling 5); `shape` and `permanent` wait for an admin (`POST /api/jobs/ai/requeue`, `/api/jobs/ai/[id]/requeue`).

@@ -70,9 +70,10 @@ export const checkedStatusChange = (organizationId: string, id: string, change: 
 /** Who moved the campaign: a start records the agent's token (null for a person), and a pause records whether a person paused it. */
 export const statusMarks = (change: CampaignStatusChange<unknown>) => {
   const via = change.viaTokenId ?? null;
-  if (change.to === "active") return { startedViaTokenId: via, personPaused: false };
+  // A start or resume restarts the bounce count, and the reason of an earlier breaker pause ends with the pause.
+  if (change.to === "active") return { startedViaTokenId: via, personPaused: false, sendsCountedFrom: sql`now()`, bouncePause: null };
   if (change.to === "paused") return { personPaused: via === null };
-  return {};
+  return { bouncePause: null };
 };
 
 export const drizzleCampaignStore: CampaignStore = {
@@ -87,6 +88,7 @@ export const drizzleCampaignStore: CampaignStore = {
         steps: sql<number>`jsonb_array_length(${campaigns.steps})::int`,
         archivedAt: campaigns.archivedAt,
         createdAt: campaigns.createdAt,
+        bouncePause: campaigns.bouncePause,
         enrolled: sql<number>`(count(${campaignEnrollments.id}) filter (where ${campaignEnrollments.status} <> ${REMOVED_STATUS}))::int`,
         stopped: sql<number>`(count(${campaignEnrollments.id}) filter (where ${inArray(campaignEnrollments.status, [...STOPPED_ENROLLMENT_STATUSES])}))::int`,
         replied: sql<number>`(count(${campaignEnrollments.id}) filter (where ${campaignEnrollments.status} = 'replied'))::int`,
@@ -121,7 +123,7 @@ export const drizzleCampaignStore: CampaignStore = {
 
   async get(organizationId, id, tx) {
     const [row] = await (tx ?? db)
-      .select({ id: campaigns.id, name: campaigns.name, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, createdAt: campaigns.createdAt })
+      .select({ id: campaigns.id, name: campaigns.name, status: campaigns.status, steps: campaigns.steps, archivedAt: campaigns.archivedAt, createdAt: campaigns.createdAt, bouncePause: campaigns.bouncePause })
       .from(campaigns)
       .where(and(eq(campaigns.organizationId, organizationId), eq(campaigns.id, id), eq(campaigns.channel, "email")));
     return row ? { ...row, status: row.status as CampaignStatus, steps: row.steps as StepInput[] } : null;

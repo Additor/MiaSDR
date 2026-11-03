@@ -112,7 +112,7 @@ export function linkedinProgressText(c: { invited: number; connected: number; re
 }
 
 export interface StartBlocker {
-  code: "no_sender" | "offline_sender" | "fix_steps" | "unfinished_steps" | "no_leads";
+  code: "no_sender" | "offline_sender" | "no_postal_address" | "fix_steps" | "unfinished_steps" | "no_leads";
   message: string;
 }
 
@@ -129,12 +129,15 @@ export function startBlockers(input: {
   offlineAssigned: string[];
   stepIssues: number;
   placeholderSteps: number[];
+  /** Real mail would go out with no postal address. Email only. */
+  noPostalAddress?: boolean;
 }): StartBlocker[] {
   if (input.status !== "draft") return [];
   const blockers: StartBlocker[] = [];
   const noun = input.channel === "linkedin" ? "LinkedIn account" : "mailbox";
   if (input.connectedSenders === 0) blockers.push({ code: "no_sender", message: `Connect a ${noun} in Settings to start.` });
   else if (input.offlineAssigned.length > 0) blockers.push({ code: "offline_sender", message: `Reconnect or remove ${input.offlineAssigned.join(", ")} under Senders to start.` });
+  if (input.noPostalAddress) blockers.push({ code: "no_postal_address", message: "Commercial email must carry your postal address, so add it under Sending rules to start." });
   if (input.stepIssues > 0) blockers.push({ code: "fix_steps", message: "Fix the steps to start." });
   if (input.placeholderSteps.length > 0) {
     blockers.push({ code: "unfinished_steps", message: `Replace the [[bracketed text]] in step ${input.placeholderSteps.join(", ")} to start.` });
@@ -192,6 +195,7 @@ export function blockerTab(code: StartBlocker["code"]): CampaignTab | null {
     case "no_leads":
       return "leads";
     case "no_sender":
+    case "no_postal_address":
       return null;
   }
 }
