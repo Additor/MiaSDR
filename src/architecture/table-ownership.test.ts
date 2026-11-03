@@ -45,7 +45,16 @@ const UPWARD_READS: Record<string, string[]> = {
   "src/contexts/outreach/infrastructure/inbox-thread-lookup.ts": ["conversations", "threads"],
   "src/contexts/tenancy/infrastructure/drizzle-onboarding-store.ts": ["linkedinAccounts", "mailboxes", "people"],
   "src/platform/db/columns.ts": ["organizations"],
-  "src/platform/db/stop-review-sql.ts": ["conversations", "messages", "replyTypePicks", "stopReviews"],
+};
+
+/**
+ * Database views, the one way a context publishes a read to the layers below it, for a rule those layers must run inside
+ * their own statements. A view reads tables the scans above cannot see, so each one names its owner and every file outside
+ * the owner that reads it, and the test below fails on anything else.
+ */
+const PUBLISHED_VIEWS: Record<string, { owner: string; readers: string[] }> = {
+  stop_review_open_messages: { owner: "conversations", readers: [] },
+  stop_review_open_people: { owner: "conversations", readers: ["src/contexts/outreach/infrastructure/stop-review-gate.ts"] },
 };
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -179,6 +188,16 @@ describe("table ownership", () => {
 
   it("reads the tables of its own layer or a higher one only where the shrink-only list allows it", () => {
     expect(scan(upwardReads)).toEqual(UPWARD_READS);
+  });
+
+  it("lists every database view, and reads one outside its owner only where the list allows it", () => {
+    const baseline = readFileSync(path.join(ROOT, "drizzle/0000_baseline.sql"), "utf8");
+    expect([...baseline.matchAll(/CREATE VIEW public\.(\w+)/g)].map((m) => m[1]).sort()).toEqual(Object.keys(PUBLISHED_VIEWS).sort());
+    const files = ["contexts", "platform", READ_MODELS, "composition", "app"].flatMap((tier) => sourceFiles(path.join(SRC, tier)));
+    for (const [view, { owner, readers }] of Object.entries(PUBLISHED_VIEWS)) {
+      const foreign = files.filter((file) => ownerOf(file) !== owner && readFileSync(file, "utf8").includes(view)).map((file) => path.relative(ROOT, file).split(path.sep).join("/"));
+      expect(foreign, view).toEqual(readers);
+    }
   });
 
   it("catches a Drizzle write, a raw SQL write, an upward import and a read in a typed sql template", () => {

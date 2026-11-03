@@ -7,7 +7,7 @@ import { endEnrollmentsTx } from "./enrollment-end";
 import { profileUrlFor } from "../linkedin/domain/linkedin";
 import { insertSkippingContacts, notContactSql } from "./contact-guard";
 import { doNotContactSql, suppressedSql } from "@/contexts/people/infrastructure/reachability";
-import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { personStopReviewOpenSql } from "./stop-review-gate";
 import { SEND_COUNTED } from "../domain/send-status";
 import { sqlValues } from "@/platform/db/sql-values";
 

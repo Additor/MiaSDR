@@ -17,7 +17,7 @@ import { buildVariables } from "../../domain/variables";
 import { enrollmentVariableColumns, personVariableColumns } from "../../infrastructure/enrollment-variables";
 import { startOfLocalDay, type WorkingHours } from "../../domain/working-hours";
 import { doNotContactSql } from "@/contexts/people/infrastructure/reachability";
-import { personStopReviewOpenSql } from "@/platform/db/stop-review-sql";
+import { personStopReviewOpenSql } from "../../infrastructure/stop-review-gate";
 import { recordAudit } from "@/contexts/tenancy/infrastructure/audit";
 import { SEND_COUNTED } from "../../domain/send-status";
 
