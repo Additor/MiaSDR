@@ -19,7 +19,8 @@ export function useServerDraft<T>(saved: T) {
   if (savedKey !== seen) {
     setSeen(savedKey);
     const valueKey = JSON.stringify(value);
-    if (valueKey === adopting || valueKey === seen) {
+    // During a save, only the text it sent counts as unedited: typing the old value back right after a save is an edit.
+    if (adopting !== null ? valueKey === adopting : valueKey === seen) {
       setValue(saved);
       setBaseChanged(false);
     } else if (adopting === null && valueKey !== savedKey) setBaseChanged(true);
